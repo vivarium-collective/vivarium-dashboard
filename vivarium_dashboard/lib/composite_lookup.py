@@ -1,0 +1,255 @@
+"""Workspace-local + installed-package composite discovery.
+
+Mirrors pbg_superpowers.composite_spec + composite_discovery for the dashboard's
+use. Self-contained: no dependency on pbg-superpowers (which is a Claude Code
+plugin, not always pip-installable in workspace venvs).
+
+Discovery sources:
+  1. The workspace's own pbg_<slug>/composites/ directory.
+  2. Every installed distribution whose dist-name starts with `pbg-`, scanned
+     for a top-level `composites/` package alongside its other modules.
+
+The latter is what makes `pbg-caspule`, `pbg-tellurium`, etc. surface their
+demo composites in any workspace that has them installed.
+"""
+from __future__ import annotations
+import importlib.metadata as metadata
+import importlib.util
+import json
+import re
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+
+_FULL_PLACEHOLDER = re.compile(r"^\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}$")
+_INLINE_PLACEHOLDER = re.compile(r"\$\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
+
+def load_spec(path: Path) -> dict:
+    text = path.read_text()
+    if path.suffix.lower() == ".json":
+        return json.loads(text)
+    return yaml.safe_load(text)
+
+
+def _spec_record(spec: dict, package: str, stem: str, path: Path,
+                 ws_root: Path | None) -> dict | None:
+    """Validate + shape one discovered spec into the dict the API returns."""
+    if not isinstance(spec, dict) or "state" not in spec or "name" not in spec:
+        return None
+    try:
+        rel = str(path.relative_to(ws_root)) if ws_root else str(path)
+    except ValueError:
+        rel = str(path)
+    return {
+        "id": f"{package}.composites.{stem}",
+        "name": spec.get("name"),
+        "description": spec.get("description", ""),
+        "tags": spec.get("tags") or [],
+        "parameters": spec.get("parameters") or {},
+        "requires": spec.get("requires") or {},
+        "source": rel,
+        "_state": spec.get("state"),
+        "_path": str(path),
+    }
+
+
+def _stem(path: Path) -> str:
+    name = path.name
+    for suffix in (".composite.yaml", ".composite.yml", ".composite.json"):
+        if name.endswith(suffix):
+            return name[: -len(suffix)]
+    return name
+
+
+def _scan_composites_dir(composites_dir: Path, package: str,
+                         ws_root: Path | None) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    if not composites_dir.is_dir():
+        return out
+    for pattern in ("*.composite.yaml", "*.composite.yml", "*.composite.json"):
+        for path in composites_dir.glob(pattern):
+            stem = _stem(path)
+            try:
+                rec = _spec_record(load_spec(path), package, stem, path, ws_root)
+            except Exception:
+                continue
+            if rec is not None:
+                out[rec["id"]] = rec
+    return out
+
+
+def discover_workspace_composites(ws_root: Path, package_path: str) -> dict[str, dict]:
+    """Scan the workspace's own pbg_<slug>/composites/; return {id: spec}."""
+    return _scan_composites_dir(ws_root / package_path / "composites",
+                                package_path, ws_root)
+
+
+def discover_installed_pbg_composites() -> dict[str, dict]:
+    """Scan every installed pbg-* distribution's <package>/composites/ directory.
+
+    Strategy: enumerate installed distributions whose Name starts with `pbg-`,
+    derive the canonical Python package name (`pbg-foo` → `pbg_foo`), then
+    `importlib.util.find_spec` to resolve the on-disk package directory. The
+    `dist.files` shape varies between regular and editable installs, so name
+    derivation is more robust.
+    """
+    out: dict[str, dict] = {}
+    seen_pkgs: set[str] = set()
+    for dist in metadata.distributions():
+        name = (dist.metadata.get("Name") or "").strip()
+        if not name.startswith("pbg-"):
+            continue
+        pkg_name = name.replace("-", "_")
+        if pkg_name in seen_pkgs:
+            continue  # Same package may appear twice (regular + editable shim)
+        seen_pkgs.add(pkg_name)
+        try:
+            spec = importlib.util.find_spec(pkg_name)
+        except (ImportError, ValueError):
+            continue
+        if not spec or not spec.submodule_search_locations:
+            continue
+        for loc in spec.submodule_search_locations:
+            out.update(_scan_composites_dir(Path(loc) / "composites", pkg_name, None))
+    return out
+
+
+def _derive_module_from_spec_id(spec_id: str) -> str:
+    """Best-effort friendly module name from a spec id.
+
+    `pkg.composites.foo` -> `pkg.composites`, otherwise the bit before the
+    last dot (or the whole id if no dot).
+    """
+    if ".composites." in spec_id:
+        return spec_id.split(".composites.", 1)[0] + ".composites"
+    if "." in spec_id:
+        return spec_id.rsplit(".", 1)[0]
+    return spec_id
+
+
+def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]:
+    """Discover composites from the workspace + every installed pbg-* package.
+
+    If the workspace's package is also pip-installed (e.g., `pip install -e .`),
+    the installed scan would re-find the same specs; the workspace scan runs
+    first so workspace-relative `source` paths win.
+
+    Also merges in `@composite_generator`-decorated functions from installed
+    bigraph-schema-dependent packages via
+    :func:`pbg_superpowers.composite_discovery.discover_all`. Generator entries
+    carry ``kind: "generator"`` and a ``module`` field; spec entries are tagged
+    ``kind: "spec"`` and gain a derived ``module``. If pbg-superpowers is not
+    importable the function falls back to spec-only behavior.
+    """
+    out: dict[str, dict] = {}
+    out.update(discover_workspace_composites(ws_root, package_path))
+    for spec_id, rec in discover_installed_pbg_composites().items():
+        if spec_id not in out:
+            out[spec_id] = rec
+
+    # Tag every spec entry with kind + derived module (idempotent).
+    for spec_id, rec in out.items():
+        rec.setdefault("kind", "spec")
+        if not rec.get("module"):
+            rec["module"] = _derive_module_from_spec_id(spec_id)
+
+    # Merge generator entries from pbg-superpowers, if available.
+    try:
+        from pbg_superpowers.composite_discovery import discover_all as _ps_discover_all
+    except ImportError as e:
+        import warnings
+        warnings.warn(
+            f"composite_lookup: pbg-superpowers not importable, "
+            f"generator discovery disabled ({e})",
+            stacklevel=2,
+        )
+        return out
+
+    try:
+        merged = _ps_discover_all()
+    except Exception as e:  # noqa: BLE001 — be defensive; never break catalog
+        import warnings
+        warnings.warn(
+            f"composite_lookup: discover_all raised {type(e).__name__}: {e}",
+            stacklevel=2,
+        )
+        return out
+
+    for gid, entry in merged.items():
+        if entry.get("kind") != "generator":
+            continue
+        if gid in out:
+            continue
+        out[gid] = {
+            "id": gid,
+            "kind": "generator",
+            "name": entry.get("name") or gid.rsplit(".", 1)[-1],
+            "description": entry.get("description", ""),
+            "tags": [],
+            "parameters": entry.get("parameters") or {},
+            "requires": {},
+            "module": entry.get("module") or _derive_module_from_spec_id(gid),
+        }
+    return out
+
+
+def find_composite_path(ws_root: Path, package_path: str, spec_id: str) -> Path | None:
+    """Resolve a composite spec id back to its on-disk path.
+
+    Looks first in the workspace, then in installed pbg-* packages.
+    """
+    parts = spec_id.split(".composites.")
+    if len(parts) != 2:
+        return None
+    pkg, stem = parts
+    # Workspace package first
+    for suffix in (".composite.yaml", ".composite.yml", ".composite.json"):
+        candidate = ws_root / pkg / "composites" / f"{stem}{suffix}"
+        if candidate.is_file():
+            return candidate
+    # Installed packages
+    specs = discover_installed_pbg_composites()
+    rec = specs.get(spec_id)
+    if rec and rec.get("_path"):
+        p = Path(rec["_path"])
+        if p.is_file():
+            return p
+    return None
+
+
+def _cast(value: Any, declared_type: str | None) -> Any:
+    if declared_type == "float":
+        return float(value)
+    if declared_type == "int":
+        return int(value)
+    if declared_type in ("string", "str"):
+        return str(value)
+    if declared_type == "bool":
+        if isinstance(value, str):
+            return value.strip().lower() in ("true", "1", "yes")
+        return bool(value)
+    return value
+
+
+def substitute_parameters(state: Any, params: dict, overrides: dict | None = None) -> Any:
+    overrides = overrides or {}
+    if isinstance(state, dict):
+        return {k: substitute_parameters(v, params, overrides) for k, v in state.items()}
+    if isinstance(state, list):
+        return [substitute_parameters(v, params, overrides) for v in state]
+    if isinstance(state, str):
+        m = _FULL_PLACEHOLDER.match(state)
+        if m:
+            pname = m.group(1)
+            pdef = params.get(pname, {})
+            raw = overrides.get(pname, pdef.get("default"))
+            return _cast(raw, pdef.get("type"))
+        if _INLINE_PLACEHOLDER.search(state):
+            return _INLINE_PLACEHOLDER.sub(
+                lambda mm: str(overrides.get(mm.group(1), params.get(mm.group(1), {}).get("default", ""))),
+                state,
+            )
+    return state

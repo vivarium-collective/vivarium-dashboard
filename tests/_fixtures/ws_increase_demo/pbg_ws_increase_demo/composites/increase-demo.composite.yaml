@@ -1,0 +1,34 @@
+name: increase-demo
+description: "Trivial linear-growth fixture for the Composite Explorer test suite."
+requires:
+  processes: [IncreaseProcess, RAMEmitter]
+parameters:
+  rate:
+    type: float
+    default: 2.0
+    description: "Multiplicative factor applied to level each step"
+  initial_level:
+    type: float
+    default: 1.0
+    description: "Starting value for the level store"
+state:
+  increase:
+    _type: process
+    address: "local:IncreaseProcess"
+    config:
+      rate: "${rate}"
+    inputs:
+      level: ["stores", "level"]
+    outputs:
+      level: ["stores", "level"]
+    interval: 1.0
+  stores:
+    level: "${initial_level}"
+  emitter:
+    _type: step
+    address: "local:RAMEmitter"
+    config:
+      emit:
+        level: "float"
+    inputs:
+      level: ["stores", "level"]

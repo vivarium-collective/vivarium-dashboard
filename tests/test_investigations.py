@@ -1,0 +1,730 @@
+"""Unit tests for vivarium_dashboard.lib.investigations."""
+from pathlib import Path
+
+import pytest
+
+from vivarium_dashboard.lib.investigations import (
+    load_spec, expand_simulations, InvestigationSpecError,
+)
+
+
+def _write_spec(tmp_path, text):
+    p = tmp_path / "spec.yaml"
+    p.write_text(text)
+    return p
+
+
+def test_load_spec_valid(tmp_path):
+    p = _write_spec(tmp_path, """
+name: minimal
+composite: pkg.composites.demo
+simulations:
+  - name: single
+    kind: single
+    overrides: {rate: 1.0}
+    steps: 5
+observables: [level]
+""")
+    spec = load_spec(p)
+    assert spec["name"] == "minimal"
+    assert spec["composite"] == "pkg.composites.demo"
+    assert len(spec["simulations"]) == 1
+
+
+def test_load_spec_missing_name(tmp_path):
+    p = _write_spec(tmp_path, """
+composite: pkg.x
+simulations: []
+observables: []
+""")
+    with pytest.raises(InvestigationSpecError, match="name"):
+        load_spec(p)
+
+
+def test_load_spec_missing_composite(tmp_path):
+    p = _write_spec(tmp_path, """
+name: x
+simulations: []
+observables: []
+""")
+    with pytest.raises(InvestigationSpecError, match="composite"):
+        load_spec(p)
+
+
+def test_load_spec_bad_simulation_kind(tmp_path):
+    p = _write_spec(tmp_path, """
+name: x
+composite: pkg.x
+simulations:
+  - {name: s, kind: bogus, steps: 1}
+observables: [a]
+""")
+    with pytest.raises(InvestigationSpecError, match="kind"):
+        load_spec(p)
+
+
+def test_load_spec_seeds_zero(tmp_path):
+    p = _write_spec(tmp_path, """
+name: x
+composite: pkg.x
+simulations:
+  - {name: s, kind: seeds, n_seeds: 0, steps: 1, base_overrides: {}}
+observables: [a]
+""")
+    with pytest.raises(InvestigationSpecError, match="n_seeds"):
+        load_spec(p)
+
+
+def test_expand_simulations_single():
+    spec = {"simulations": [
+        {"name": "s1", "kind": "single",
+         "overrides": {"rate": 1.0}, "steps": 5},
+    ]}
+    runs = expand_simulations(spec)
+    assert len(runs) == 1
+    assert runs[0]["sim_name"] == "s1"
+    assert runs[0]["overrides"] == {"rate": 1.0}
+    assert runs[0]["steps"] == 5
+    assert "run_label" in runs[0]
+
+
+def test_expand_simulations_sweep_1d():
+    spec = {"simulations": [
+        {"name": "sw", "kind": "sweep",
+         "sweep_over": {"rate": [0.1, 0.5, 1.0]},
+         "base_overrides": {"unbinding": 0.01},
+         "steps": 10},
+    ]}
+    runs = expand_simulations(spec)
+    assert len(runs) == 3
+    assert all(r["sim_name"] == "sw" for r in runs)
+    rates = sorted(r["overrides"]["rate"] for r in runs)
+    assert rates == [0.1, 0.5, 1.0]
+    assert all(r["overrides"]["unbinding"] == 0.01 for r in runs)
+
+
+def test_expand_simulations_sweep_2d():
+    spec = {"simulations": [
+        {"name": "grid", "kind": "sweep",
+         "sweep_over": {"a": [1, 2], "b": [10, 20, 30]},
+         "base_overrides": {}, "steps": 1},
+    ]}
+    runs = expand_simulations(spec)
+    assert len(runs) == 6  # 2 × 3
+
+
+def test_expand_simulations_seeds():
+    spec = {"simulations": [
+        {"name": "rep", "kind": "seeds",
+         "n_seeds": 5, "base_overrides": {"rate": 0.1}, "steps": 4},
+    ]}
+    runs = expand_simulations(spec)
+    assert len(runs) == 5
+    seeds = sorted(r["overrides"]["seed"] for r in runs)
+    assert seeds == [0, 1, 2, 3, 4]
+    assert all(r["overrides"]["rate"] == 0.1 for r in runs)
+
+
+def test_expand_simulations_mixed():
+    spec = {"simulations": [
+        {"name": "a", "kind": "single", "overrides": {}, "steps": 1},
+        {"name": "b", "kind": "sweep", "sweep_over": {"x": [1, 2]},
+         "base_overrides": {}, "steps": 1},
+        {"name": "c", "kind": "seeds", "n_seeds": 3,
+         "base_overrides": {}, "steps": 1},
+    ]}
+    runs = expand_simulations(spec)
+    assert len(runs) == 1 + 2 + 3
+    names = {r["sim_name"] for r in runs}
+    assert names == {"a", "b", "c"}
+
+
+import json
+import sqlite3
+
+from vivarium_dashboard.lib.investigations import gather_results, load_overlays
+
+
+def _setup_runs_db(tmp_path):
+    """Create a minimal runs.db matching the SQLiteEmitter + runs_meta shape."""
+    db = tmp_path / "runs.db"
+    conn = sqlite3.connect(str(db))
+    conn.execute("""
+        CREATE TABLE runs_meta (
+            run_id TEXT PRIMARY KEY, spec_id TEXT, sim_name TEXT,
+            label TEXT, params_json TEXT, started_at REAL,
+            completed_at REAL, n_steps INTEGER, status TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            simulation_id TEXT, step INTEGER, global_time REAL, state TEXT
+        )
+    """)
+    # one sim "single" with one run, three step rows
+    conn.execute(
+        "INSERT INTO runs_meta VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("r1", "spec", "single", "single", json.dumps({"rate": 1.0}),
+         0.0, 1.0, 3, "completed"),
+    )
+    for i in range(3):
+        conn.execute(
+            "INSERT INTO history (simulation_id, step, global_time, state) VALUES (?, ?, ?, ?)",
+            ("r1", i, float(i), json.dumps({"level": float(i + 1)})),
+        )
+    conn.commit()
+    conn.close()
+    return db
+
+
+def test_gather_results_one_sim_one_run(tmp_path):
+    db = _setup_runs_db(tmp_path)
+    spec = {"simulations": [{"name": "single", "kind": "single",
+                              "overrides": {"rate": 1.0}, "steps": 3}]}
+    results = gather_results(spec, db)
+    assert "single" in results
+    assert len(results["single"]["runs"]) == 1
+    run = results["single"]["runs"][0]
+    assert run["run_id"] == "r1"
+    assert run["params"] == {"rate": 1.0}
+    assert len(run["trajectory"]) == 3
+    assert run["trajectory"][2]["state"] == {"level": 3.0}
+
+
+def test_load_overlays_reference_range(tmp_path):
+    spec = {}
+    viz = {"overlays": [{"kind": "reference-range", "y_min": 1.0, "y_max": 5.0,
+                          "label": "x"}]}
+    payload = load_overlays(spec, viz, tmp_path, "demo")
+    assert len(payload) == 1
+    assert payload[0]["kind"] == "reference-range"
+    assert payload[0]["y_min"] == 1.0
+
+
+def test_load_overlays_experimental_points_missing_csv(tmp_path):
+    spec = {}
+    viz = {"overlays": [{"kind": "experimental-points",
+                          "data": "data/missing.csv",
+                          "x_column": "t", "y_column": "v",
+                          "label": "experiments"}]}
+    payload = load_overlays(spec, viz, tmp_path, "demo")
+    assert len(payload) == 1
+    assert payload[0]["kind"] == "warning"
+    assert "missing" in payload[0]["message"]
+
+
+def test_load_overlays_experimental_points_ok(tmp_path):
+    inv_dir = tmp_path / "investigations" / "demo"
+    inv_dir.mkdir(parents=True)
+    data_dir = inv_dir / "data"
+    data_dir.mkdir()
+    (data_dir / "exp.csv").write_text("t,v\n0,1.0\n1,2.5\n2,3.7\n")
+    spec = {}
+    viz = {"overlays": [{"kind": "experimental-points",
+                          "data": "data/exp.csv",
+                          "x_column": "t", "y_column": "v",
+                          "label": "exp"}]}
+    payload = load_overlays(spec, viz, tmp_path, "demo")
+    assert len(payload) == 1
+    assert payload[0]["kind"] == "experimental-points"
+    assert payload[0]["points"] == [
+        {"x": "0", "y": "1.0"}, {"x": "1", "y": "2.5"}, {"x": "2", "y": "3.7"},
+    ]
+
+
+def test_load_overlays_cross_investigation_missing(tmp_path):
+    spec = {}
+    viz = {"overlays": [{"kind": "cross-investigation-series",
+                          "investigation": "ghost", "observable": "x",
+                          "label": "ghost"}]}
+    payload = load_overlays(spec, viz, tmp_path, "demo")
+    assert len(payload) == 1
+    assert payload[0]["kind"] == "warning"
+
+
+from vivarium_dashboard.lib.investigations import (
+    update_spec_status, acquire_run_lock, release_run_lock,
+    gather_emitter_outputs, build_viz_composite,
+)
+
+
+def test_update_spec_status_writes_status_and_last_run(tmp_path):
+    inv_dir = tmp_path / "investigations" / "demo"
+    inv_dir.mkdir(parents=True)
+    (inv_dir / "spec.yaml").write_text("""
+name: demo
+composite: pkg.x
+simulations: []
+observables: []
+status: planned
+""")
+    update_spec_status(tmp_path, "demo", status="complete", last_run="2026-05-12T10:00:00")
+    new_text = (inv_dir / "spec.yaml").read_text()
+    assert "status: complete" in new_text
+    assert "2026-05-12T10:00:00" in new_text
+
+
+def test_acquire_and_release_run_lock(tmp_path):
+    inv_dir = tmp_path / "investigations" / "x"
+    inv_dir.mkdir(parents=True)
+    assert acquire_run_lock(tmp_path, "x") is True
+    # Second acquire on same investigation must fail
+    assert acquire_run_lock(tmp_path, "x") is False
+    release_run_lock(tmp_path, "x")
+    # After release, acquire succeeds again
+    assert acquire_run_lock(tmp_path, "x") is True
+    release_run_lock(tmp_path, "x")
+
+
+# ---------------------------------------------------------------------------
+# Visualization v2 helpers
+# ---------------------------------------------------------------------------
+
+
+def _setup_db_with_schema(tmp_path):
+    db = tmp_path / 'runs.db'
+    conn = sqlite3.connect(str(db))
+    conn.execute('CREATE TABLE runs_meta ('
+                 ' run_id TEXT PRIMARY KEY, spec_id TEXT, sim_name TEXT,'
+                 ' label TEXT, params_json TEXT, started_at REAL,'
+                 ' completed_at REAL, n_steps INTEGER, status TEXT)')
+    conn.execute('CREATE TABLE history (simulation_id TEXT, step INTEGER, '
+                 'global_time REAL, state TEXT)')
+    conn.execute('CREATE TABLE simulations (simulation_id TEXT PRIMARY KEY, '
+                 'name TEXT, started_at TEXT, emit_schema TEXT)')
+    conn.execute('INSERT INTO runs_meta VALUES (?,?,?,?,?,?,?,?,?)',
+                 ('r1', 'spec', 'baseline', 'baseline',
+                  json.dumps({'rate': 1.0}), 0.0, 1.0, 3, 'completed'))
+    conn.execute('INSERT INTO simulations(simulation_id, started_at, emit_schema) '
+                 'VALUES (?, ?, ?)',
+                 ('r1', '2026-05-12', json.dumps({'level': 'float', 'time': 'float'})))
+    for i in range(3):
+        conn.execute('INSERT INTO history VALUES (?,?,?,?)',
+                     ('r1', i, float(i),
+                      json.dumps({'level': float(i + 1), 'time': float(i)})))
+    conn.commit(); conn.close()
+    return db
+
+
+def test_gather_emitter_outputs_returns_schema(tmp_path):
+    db = _setup_db_with_schema(tmp_path)
+    out = gather_emitter_outputs(db)
+    assert 'schemas' in out
+    assert out['schemas']['r1'] == {'level': 'float', 'time': 'float'}
+
+
+def test_gather_emitter_outputs_by_sim(tmp_path):
+    db = _setup_db_with_schema(tmp_path)
+    out = gather_emitter_outputs(db)
+    assert 'baseline' in out['by_sim']
+    runs = out['by_sim']['baseline']
+    assert len(runs) == 1
+    run = runs[0]
+    assert run['run_id'] == 'r1'
+    assert run['params'] == {'rate': 1.0}
+    assert run['observables']['level'] == [1.0, 2.0, 3.0]
+    assert run['observables']['time'] == [0.0, 1.0, 2.0]
+
+
+def test_build_viz_composite_shape():
+    viz_spec = {
+        'name': 'levels', 'address': 'local:TimeSeriesPlot',
+        'config': {'title': 'Demo'},
+    }
+    gathered = {
+        'schemas': {'r1': {'level': 'float', 'time': 'float'}},
+        'by_sim': {'baseline': [{
+            'run_id': 'r1', 'params': {}, 'sim_name': 'baseline',
+            'observables': {'level': [1.0, 2.0, 4.0], 'time': [0.0, 1.0, 2.0]},
+        }]},
+    }
+    class _Stub:
+        def inputs(self): return {'observable': 'list[float]', 'time': 'list[float]'}
+        def outputs(self): return {'html': 'string'}
+    registry = {'TimeSeriesPlot': _Stub}
+    doc = build_viz_composite(viz_spec, gathered, registry)
+    assert 'visualization' in doc
+    assert doc['visualization']['_type'] == 'step'
+    assert doc['visualization']['address'] == 'local:TimeSeriesPlot'
+    assert 'outputs' in doc['visualization']
+    assert doc['visualization']['outputs']['html'] == ['output_store']
+
+
+def test_render_visualizations_v2_writes_html(tmp_path):
+    """End-to-end: build_viz_composite + Composite.run(1) writes html to viz/."""
+    from vivarium_dashboard.lib.investigations import render_visualizations
+
+    inv_dir = tmp_path / "investigations" / "demo"
+    inv_dir.mkdir(parents=True)
+    _setup_db_with_schema(inv_dir)  # writes investigations/demo/runs.db
+
+    class _Stub:
+        @classmethod
+        def is_visualization(cls): return True
+        def inputs(self): return {'observable': 'list[float]', 'time': 'list[float]'}
+        def outputs(self): return {'html': 'string'}
+        def update(self, state):
+            return {'html': '<p>obs=' + str(state.get('observable')) + '</p>'}
+
+    registry = {'TimeSeriesPlot': _Stub}
+    spec = {
+        'composite': 'pkg.composites.demo',
+        'simulations': [{'name': 'baseline', 'kind': 'single',
+                          'overrides': {}, 'steps': 3}],
+        'observables': ['level'],
+        'visualizations': [{
+            'name': 'levels',
+            'address': 'local:TimeSeriesPlot',
+            'config': {'title': 'T', 'inputs_map': {'observable': 'level'}},
+        }],
+    }
+
+    def fake_build_and_run(doc, registry_arg):
+        viz_class = registry_arg[doc['visualization']['address'].split(':', 1)[1]]
+        inst = viz_class.__new__(viz_class)
+        state = dict(doc['inputs_store'])
+        out = inst.update(state)
+        return out.get('html', '')
+
+    paths = render_visualizations(spec, inv_dir, 'demo',
+                                   core_registry=registry,
+                                   build_and_run=fake_build_and_run)
+    assert paths
+    html_path = inv_dir / 'viz' / 'levels.html'
+    assert html_path.is_file()
+    text = html_path.read_text()
+    assert '<p>obs=' in text
+
+
+# ---------------------------------------------------------------------------
+# Multi-composite (composites: list) shape tests
+# ---------------------------------------------------------------------------
+
+def test_load_spec_accepts_composites_list(tmp_path):
+    """Legacy ``composites:`` shape is auto-migrated to ``variants:`` on read."""
+    from vivarium_dashboard.lib.investigations import load_spec
+    spec_path = tmp_path / 'spec.yaml'
+    spec_path.write_text(
+        'name: multi\n'
+        'composites:\n'
+        '  - {name: baseline, source: pkg.composites.foo, document: ./composites/baseline.yaml}\n'
+        '  - {name: hi, extends: baseline, parameter_overrides: {rate: 2.0}, document: ./composites/hi.yaml}\n'
+        'observables:\n'
+        '  - {path: [chromosome, DnaA_count]}\n'
+        'runs:\n'
+        '  - {composite: baseline, params: {seed: 1}, steps: 10}\n'
+        '  - {composite: hi, params: {seed: 1}, steps: 10}\n'
+        'visualizations: []\n'
+    )
+    spec = load_spec(spec_path)
+    # Migration has run: composites is gone, variants is present.
+    assert 'composites' not in spec
+    assert len(spec['variants']) == 2
+    assert spec['variants'][0]['name'] == 'baseline'
+    assert spec['variants'][1]['extends'] == 'baseline'
+    assert spec['runs'][0]['composite'] == 'baseline'
+
+
+def test_load_spec_rejects_runs_without_composite_when_multi():
+    from vivarium_dashboard.lib.investigations import load_spec, InvestigationSpecError
+    import tempfile, pathlib, yaml
+    bad = {
+        'name': 'x',
+        'composites': [{'name': 'baseline', 'source': 'pkg.x', 'document': './c/b.yaml'}],
+        'runs': [{'steps': 10}],
+    }
+    with tempfile.TemporaryDirectory() as d:
+        p = pathlib.Path(d) / 'spec.yaml'
+        p.write_text(yaml.safe_dump(bad))
+        try:
+            load_spec(p)
+        except InvestigationSpecError as e:
+            assert 'composite' in str(e).lower()
+            return
+    raise AssertionError('expected InvestigationSpecError')
+
+
+def test_load_spec_rejects_extends_referencing_undeclared():
+    from vivarium_dashboard.lib.investigations import load_spec, InvestigationSpecError
+    import tempfile, pathlib, yaml
+    bad = {
+        'name': 'x',
+        'composites': [
+            {'name': 'a', 'extends': 'nonexistent', 'document': './c/a.yaml'},
+        ],
+        'runs': [],
+    }
+    with tempfile.TemporaryDirectory() as d:
+        p = pathlib.Path(d) / 'spec.yaml'
+        p.write_text(yaml.safe_dump(bad))
+        try:
+            load_spec(p)
+        except InvestigationSpecError as e:
+            assert 'nonexistent' in str(e).lower() or 'extends' in str(e).lower()
+            return
+    raise AssertionError('expected InvestigationSpecError')
+
+
+def test_load_spec_rejects_duplicate_composite_names():
+    from vivarium_dashboard.lib.investigations import load_spec, InvestigationSpecError
+    import tempfile, pathlib, yaml
+    bad = {
+        'name': 'x',
+        'composites': [
+            {'name': 'baseline', 'source': 'pkg.x', 'document': './c/b.yaml'},
+            {'name': 'baseline', 'source': 'pkg.y', 'document': './c/b2.yaml'},
+        ],
+        'runs': [],
+    }
+    with tempfile.TemporaryDirectory() as d:
+        p = pathlib.Path(d) / 'spec.yaml'
+        p.write_text(yaml.safe_dump(bad))
+        try:
+            load_spec(p)
+        except InvestigationSpecError as e:
+            assert 'duplicate' in str(e).lower() or 'baseline' in str(e)
+            return
+    raise AssertionError('expected InvestigationSpecError')
+
+
+def test_load_spec_legacy_single_composite_still_accepted(tmp_path):
+    """During migration window, the old single-composite shape must still load."""
+    from vivarium_dashboard.lib.investigations import load_spec
+    spec_path = tmp_path / 'spec.yaml'
+    spec_path.write_text(
+        'name: legacy\n'
+        'composite: pkg.composites.foo\n'
+        'simulations: [{name: s1, kind: single, overrides: {}, steps: 10}]\n'
+        'observables: []\n'
+        'visualizations: []\n'
+    )
+    spec = load_spec(spec_path)
+    assert 'name' in spec
+    # The legacy field must remain so migration can detect it
+    assert spec.get('composite') == 'pkg.composites.foo' or spec.get('composites')
+
+
+# ---------------------------------------------------------------------------
+# inject_emitter_step tests
+# ---------------------------------------------------------------------------
+
+def test_inject_emitter_from_observables_paths():
+    """Orchestrator helper: given a composite doc + spec.yaml.observables,
+    rewrite (or add) the emitter step to record those paths."""
+    from vivarium_dashboard.lib.investigations import inject_emitter_step
+
+    doc = {
+        'state': {
+            'chromosome': {
+                'DnaA_count': {'_type': 'integer', '_default': 100},
+                'free_DnaA': {'_type': 'float', '_default': 50.0},
+            },
+        },
+    }
+    observables = [
+        {'path': ['chromosome', 'DnaA_count']},
+        {'path': ['chromosome', 'free_DnaA']},
+    ]
+    out = inject_emitter_step(doc, observables)
+
+    em = out['state']['emitter']
+    assert em['_type'] == 'step'
+    assert em['inputs']['DnaA_count'] == ['chromosome', 'DnaA_count']
+    assert em['inputs']['free_DnaA'] == ['chromosome', 'free_DnaA']
+    assert em['config']['emit'] == {'DnaA_count': 'integer', 'free_DnaA': 'float'}
+
+
+def test_inject_emitter_skips_missing_paths():
+    from vivarium_dashboard.lib.investigations import inject_emitter_step
+
+    doc = {'state': {'chromosome': {'DnaA_count': {'_type': 'integer', '_default': 100}}}}
+    observables = [
+        {'path': ['chromosome', 'DnaA_count']},
+        {'path': ['chromosome', 'missing']},
+    ]
+    out = inject_emitter_step(doc, observables)
+    em = out['state']['emitter']
+    assert 'DnaA_count' in em['inputs']
+    assert 'missing' not in em['inputs']
+
+
+def test_inject_emitter_empty_observables_returns_empty_emit():
+    from vivarium_dashboard.lib.investigations import inject_emitter_step
+    doc = {'state': {'chromosome': {'DnaA_count': {'_type': 'integer', '_default': 100}}}}
+    out = inject_emitter_step(doc, [])
+    em = out['state']['emitter']
+    # No observables = empty inputs + empty emit schema; runtime decides what to do.
+    assert em['inputs'] == {}
+    assert em['config']['emit'] == {}
+
+
+def test_inject_emitter_handles_emit_all_sentinel():
+    """The set-observables endpoint represents 'emit entire state' as [{path: []}].
+    The injector should treat this as wiring an emitter at the root."""
+    from vivarium_dashboard.lib.investigations import inject_emitter_step
+    doc = {'state': {'chromosome': {'DnaA_count': {'_type': 'integer', '_default': 100}}}}
+    out = inject_emitter_step(doc, [{'path': []}])
+    em = out['state']['emitter']
+    # 'state' port wires at root; emit schema is left empty (runtime serializes everything)
+    assert em.get('inputs', {}).get('state') == [] or em.get('config', {}).get('emit_all') is True
+
+
+# ---------------------------------------------------------------------------
+# run_investigation multi-composite end-to-end stub test
+# ---------------------------------------------------------------------------
+
+def test_run_investigation_iterates_runs_and_passes_state_doc(tmp_path):
+    """Stub run_one_composite to verify the orchestrator loads each composite
+    document and passes it forward as state_doc."""
+    from vivarium_dashboard.lib.investigations import run_investigation
+    import yaml as _yaml
+
+    inv = tmp_path / 'investigations' / 'demo'
+    composites = inv / 'composites'
+    composites.mkdir(parents=True)
+    (composites / 'baseline.yaml').write_text(_yaml.safe_dump({
+        'name': 'b',
+        'state': {'chromosome': {'DnaA_count': {'_type': 'integer', '_default': 100}}},
+    }))
+    (composites / 'high.yaml').write_text(_yaml.safe_dump({
+        'name': 'h',
+        'state': {'chromosome': {'DnaA_count': {'_type': 'integer', '_default': 200}}},
+    }))
+    (inv / 'spec.yaml').write_text(_yaml.safe_dump({
+        'name': 'demo',
+        'composites': [
+            {'name': 'baseline', 'source': 'pkg.x',
+             'document': './composites/baseline.yaml'},
+            {'name': 'high', 'source': 'pkg.y',
+             'document': './composites/high.yaml'},
+        ],
+        'observables': [{'path': ['chromosome', 'DnaA_count']}],
+        'runs': [
+            {'composite': 'baseline', 'params': {}, 'steps': 5},
+            {'composite': 'high', 'params': {}, 'steps': 5},
+        ],
+        'visualizations': [],
+    }, sort_keys=False))
+
+    captured = []
+    def fake_run(spec_id, overrides, steps, sim_name, run_id, state_doc=None, **kwargs):
+        captured.append({'sim_name': sim_name, 'has_doc': state_doc is not None,
+                         'emitter_inputs': (state_doc or {}).get('state', {}).get('emitter', {}).get('inputs', {})})
+        return {'ok': True, 'run_id': run_id}
+
+    # Minimal core_registry stub
+    summary = run_investigation(
+        tmp_path, 'demo',
+        run_one_composite=fake_run,
+        core_registry={},
+        build_and_run=lambda doc, reg: '',
+    )
+
+    sim_names = [c['sim_name'] for c in captured]
+    assert sim_names == ['baseline', 'high']
+    assert all(c['has_doc'] for c in captured), 'state_doc must be passed'
+    # Both injected emitters wired to chromosome.DnaA_count
+    for c in captured:
+        assert 'DnaA_count' in c['emitter_inputs']
+
+
+# ---------------------------------------------------------------------------
+# v2 variants-shape tests (load_spec auto-migration + baseline validation)
+# ---------------------------------------------------------------------------
+
+def test_load_spec_accepts_variants_shape(tmp_path):
+    p = tmp_path / 'spec.yaml'
+    p.write_text(
+        "name: s\n"
+        "baseline: a\n"
+        "variants:\n"
+        "  - {name: a, source: pkg.a}\n"
+    )
+    spec = load_spec(p)
+    assert spec['baseline'] == 'a'
+    assert len(spec['variants']) == 1
+
+
+def test_load_spec_migrates_legacy_composites_shape_on_read(tmp_path):
+    p = tmp_path / 'spec.yaml'
+    p.write_text(
+        "name: s\n"
+        "composites:\n"
+        "  - {name: a, source: pkg.a}\n"
+    )
+    spec = load_spec(p)
+    assert 'variants' in spec
+    assert 'composites' not in spec
+    # File on disk was rewritten.
+    assert 'variants' in p.read_text()
+    assert 'composites' not in p.read_text()
+
+
+def test_load_spec_validates_baseline_references_a_variant(tmp_path):
+    p = tmp_path / 'spec.yaml'
+    p.write_text(
+        "name: s\n"
+        "baseline: missing\n"
+        "variants:\n"
+        "  - {name: a, source: pkg.a}\n"
+    )
+    with pytest.raises(InvestigationSpecError, match="baseline 'missing'"):
+        load_spec(p)
+
+
+# ---------------------------------------------------------------------------
+# v2 groups: list validation (Task B7)
+# ---------------------------------------------------------------------------
+
+def test_load_spec_accepts_groups_list(tmp_path):
+    """A top-level `groups:` list with valid variant refs should load cleanly."""
+    p = tmp_path / 'spec.yaml'
+    p.write_text(
+        "name: s\n"
+        "baseline: a\n"
+        "variants:\n"
+        "  - {name: a, source: pkg.a}\n"
+        "  - {name: b, extends: a}\n"
+        "groups:\n"
+        "  - name: control\n"
+        "    description: Unmodified baseline.\n"
+        "    variants: [a]\n"
+        "  - name: treated\n"
+        "    description: Drug applied.\n"
+        "    variants: [b]\n"
+    )
+    spec = load_spec(p)
+    assert len(spec['groups']) == 2
+    assert spec['groups'][0]['name'] == 'control'
+    assert spec['groups'][0]['variants'] == ['a']
+    assert spec['groups'][1]['variants'] == ['b']
+
+
+def test_load_spec_rejects_group_with_unknown_variant(tmp_path):
+    p = tmp_path / 'spec.yaml'
+    p.write_text(
+        "name: s\n"
+        "baseline: a\n"
+        "variants:\n"
+        "  - {name: a, source: pkg.a}\n"
+        "groups:\n"
+        "  - {name: control, variants: [ghost]}\n"
+    )
+    with pytest.raises(InvestigationSpecError, match="ghost"):
+        load_spec(p)
+
+
+def test_load_spec_rejects_duplicate_group_names(tmp_path):
+    p = tmp_path / 'spec.yaml'
+    p.write_text(
+        "name: s\n"
+        "baseline: a\n"
+        "variants:\n"
+        "  - {name: a, source: pkg.a}\n"
+        "groups:\n"
+        "  - {name: control, variants: [a]}\n"
+        "  - {name: control, variants: [a]}\n"
+    )
+    with pytest.raises(InvestigationSpecError, match="duplicate group name"):
+        load_spec(p)

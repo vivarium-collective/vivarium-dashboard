@@ -1,0 +1,11 @@
+schema_version: 2
+name: ws_increase_demo
+package_path: pbg_ws_increase_demo
+phases: []
+observables: []
+visualizations: []
+simulations: []
+datasets: []
+references_bib: references/papers.bib
+server:
+  enabled: true

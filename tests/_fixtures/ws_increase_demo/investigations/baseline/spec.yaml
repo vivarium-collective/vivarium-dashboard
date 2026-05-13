@@ -1,0 +1,22 @@
+name: baseline
+description: "Sanity-check fixture investigation."
+composite: pbg_ws_increase_demo.composites.increase-demo
+simulations:
+  - name: single
+    kind: single
+    overrides: {rate: 2.0}
+    steps: 5
+  - name: rate-sweep
+    kind: sweep
+    sweep_over: {rate: [1.0, 2.0, 4.0]}
+    base_overrides: {}
+    steps: 5
+observables: [level]
+visualizations:
+  - name: levels
+    address: "local:TimeSeriesPlot"
+    config:
+      observable: level
+      sources: [single, rate-sweep]
+      title: "Level trajectories"
+status: planned

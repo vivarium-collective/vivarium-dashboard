@@ -1,0 +1,1207 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><title>{{ workspace_name }}</title>
+<link rel="stylesheet" href="assets/style.css">
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+/* Modal overlay */
+.modal-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modal-box {
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px 28px;
+  min-width: 360px;
+  max-width: 560px;
+  width: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  position: relative;
+}
+.modal-box h3 { margin-top: 0; }
+.modal-box label { display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.9em; }
+.modal-box input, .modal-box select, .modal-box textarea {
+  width: 100%; box-sizing: border-box;
+  border: 1px solid #ccc; border-radius: 4px;
+  padding: 6px 8px; font-size: 0.92em; margin-bottom: 12px;
+}
+.modal-box textarea { min-height: 90px; font-family: monospace; }
+.modal-box button[type=submit] {
+  background: #1976d2; color: #fff; border: none;
+  border-radius: 4px; padding: 8px 18px; cursor: pointer; font-size: 0.95em;
+}
+.modal-box button[type=submit]:disabled { opacity: 0.6; cursor: not-allowed; }
+.modal-close {
+  position: absolute; top: 10px; right: 14px;
+  background: none; border: none; font-size: 1.3em; cursor: pointer; color: #888;
+}
+.form-error { color: #c00; font-size: 0.9em; margin-top: 4px; min-height: 1.2em; }
+.action-btn {
+  margin-top: 10px; padding: 5px 12px;
+  border: 1px solid #1976d2; background: #e3f2fd;
+  border-radius: 4px; cursor: pointer; font-size: 0.88em;
+}
+.action-btn:hover { background: #bbdefb; }
+.action-btn--secondary {
+  margin-top: 10px; padding: 5px 12px;
+  border: 1px solid #b91c1c; background: #fef2f2;
+  border-radius: 4px; cursor: pointer; font-size: 0.88em; color: #b91c1c;
+}
+.action-btn--secondary:hover { background: #fee2e2; }
+.action-btn-small {
+  padding: 2px 8px; border: 1px solid #c62828; background: #ffebee;
+  border-radius: 4px; cursor: pointer; font-size: 0.82em; color: #c62828;
+}
+.action-btn-small:hover { background: #ffcdd2; }
+.pill-btn {
+  font-size: 0.78em; padding: 2px 8px; border-radius: 3px;
+  border: 1px solid #666; background: #fff; cursor: pointer; margin-left: 6px;
+  vertical-align: middle;
+}
+.pill-btn:hover { background: #eee; }
+.btn-mini {
+  font-size: 0.78em; padding: 2px 8px; border-radius: 3px;
+  border: 1px solid #1976d2; background: #e3f2fd; cursor: pointer; margin-left: 8px;
+  vertical-align: middle;
+}
+.btn-mini:hover { background: #bbdefb; }
+.section-header {
+  margin: 28px 0 6px 0;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #e0e0e0;
+  color: #333;
+}
+.section-lead {
+  color: #666; font-size: 0.92em; margin: 0 0 16px 0; font-style: italic;
+}
+.source-artifact-tag {
+  font-size: 0.78em; color: #555; font-style: italic; margin-left: 8px;
+}
+#run-tests-output {
+  white-space: pre-wrap; font-family: monospace; font-size: 0.82em;
+  background: #f8f8f8; border: 1px solid #ccc; border-radius: 4px;
+  padding: 10px; margin-top: 10px; max-height: 420px; overflow-y: auto;
+  display: none;
+}
+#run-tests-spinner { display: none; margin-left: 8px; color: #888; }
+.panel-lead { color: #6b7280; margin-bottom: 16px; font-size: 0.92em; }
+.status-pill.installed{ background:#d1fae5; color:#065f46 }
+.status-pill.not_installed{ background:#fef3c7; color:#92400e }
+.registry-hint{
+  background:#eff6ff; border-left:4px solid #3b82f6; padding:10px 14px;
+  border-radius:4px; margin:0 0 16px; font-size:0.92em;
+}
+/* Composite Explorer editing tab panels (Tasks 4-6 populate these) */
+.ce-panel {
+  border: 1px solid #eee; border-radius: 4px; padding: 12px; background: #fff;
+}
+</style>
+</head><body>
+
+<div class="viv-layout">
+
+  <!-- LEFT RAIL -->
+  <aside id="viv-rail" class="viv-rail">
+
+    <!-- Brand + workspace switcher -->
+    <div class="viv-rail-header">
+      <img class="viv-rail-logo" src="assets/vivarium-logo.png" alt="Vivarium" loading="lazy">
+      <div class="viv-rail-brand">
+        <strong>Vivarium</strong>
+        <small>dashboard</small>
+      </div>
+    </div>
+
+    <div class="viv-workspace-switcher viv-tooltip" data-tooltip="Other workspaces coming soon">
+      <strong>{{ workspace_name }}</strong> <span class="viv-arrow">▾</span>
+    </div>
+
+    <!-- Primary nav -->
+    <nav class="viv-rail-section" role="tablist">
+      <div class="viv-rail-section-label">Workspace</div>
+      <a href="#workspace-inputs"  class="viv-rail-link menu-link" data-page="workspace-inputs">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2Z"/>
+            <path d="M13 3v6h6"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">Workspace inputs</span>
+      </a>
+      <a href="#registry"          class="viv-rail-link menu-link" data-page="registry">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <path d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">Registry</span>
+      </a>
+      <a href="#simulation-setup"  class="viv-rail-link menu-link" data-page="simulation-setup">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <path d="M10.5 6h9.75M10.5 6a1.5 1.5 0 1 1-3 0m3 0a1.5 1.5 0 1 0-3 0M3.75 6H7.5m3 12h9.75m-9.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-3.75 0H7.5m9-6h3.75m-3.75 0a1.5 1.5 0 0 1-3 0m3 0a1.5 1.5 0 0 0-3 0m-9.75 0h9.75"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">Composites</span>
+      </a>
+      <a href="#investigations"    class="viv-rail-link menu-link" data-page="investigations">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <path d="M9.75 3.104v5.714a2.25 2.25 0 0 1-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 0 1 4.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0 1 12 15a9.065 9.065 0 0 0-6.23-.693L5 14.5m14.8.8 1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0 1 12 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">Investigations</span>
+      </a>
+      <a href="#visualizations"    class="viv-rail-link menu-link" data-page="visualizations">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <path d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 0 1 3 19.875v-6.75ZM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V8.625ZM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 0 1-1.125-1.125V4.125Z"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">Visualizations</span>
+      </a>
+      <a href="#branches"          class="viv-rail-link menu-link" data-page="branches">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <circle cx="6" cy="5" r="2"/>
+            <circle cx="6" cy="19" r="2"/>
+            <circle cx="18" cy="12" r="2"/>
+            <path d="M6 7v10"/>
+            <path d="M6 12h6a4 4 0 0 0 4-4V7"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">GitHub Branches</span>
+      </a>
+    </nav>
+
+    <!-- Investigations grouped list -->
+    <div class="viv-rail-section">
+      <div class="viv-rail-section-label">Studies</div>
+      <div id="viv-rail-investigations">
+        <p class="viv-rail-empty" style="font-size:0.85em;color:#9ca3af;padding:4px 12px">Loading…</p>
+      </div>
+    </div>
+
+    <!-- Footer: user identity + collapse toggle -->
+    <div class="viv-rail-footer">
+      <div class="viv-avatar viv-avatar-rail">{{ owner_initials or '—' }}</div>
+      <div class="viv-rail-footer-text">
+        <strong>{{ owner_name or 'Workspace owner' }}</strong>
+        <small>{{ owner_email or '' }}</small>
+      </div>
+    </div>
+
+    <button class="viv-rail-toggle" id="viv-rail-toggle" type="button" aria-label="Collapse rail" onclick="_vivToggleRail()">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-toggle-svg">
+        <path d="M15 18l-6-6 6-6"/>
+      </svg>
+    </button>
+
+  </aside>
+
+  <!-- MAIN: topbar + content -->
+  <div class="viv-main">
+
+    <header class="viv-topbar">
+      <nav class="viv-topbar-breadcrumbs" id="viv-breadcrumbs">
+        <span>{{ workspace_name }} dashboard</span>
+      </nav>
+      <div class="viv-topbar-actions" id="viv-topbar-actions">
+        <!-- Branch chip + dirty pill + work-status buttons populated by JS (V4) -->
+        <span class="viv-branch-chip" id="viv-branch-chip">…</span>
+        {% if github_url %}<a class="viv-icon-btn" href="{{ github_url }}" target="_blank" rel="noopener" title="Open on GitHub">↗</a>{% endif %}
+        <span class="viv-btn viv-tooltip" data-tooltip="Coming soon — share workspace link">Share</span>
+        <span class="viv-kebab viv-tooltip" data-tooltip="Workspace settings — coming soon">⋯</span>
+        <span class="viv-avatar viv-avatar-topbar" title="{{ owner_email or '' }}">{{ owner_initials or '—' }}</span>
+      </div>
+    </header>
+
+    <!-- Workstream strip is now driven by viv-topbar-actions; this hidden node
+         preserves the existing _renderWorkStrip JS contract until V4 lifts it. -->
+    <div id="workstream-strip" class="workstream-strip" style="display:none"></div>
+
+    <main class="viv-content pages" id="viv-content">
+
+<!-- ===== PAGE: WORKSPACE INPUTS ===== -->
+<section id="page-workspace-inputs" class="page" data-page="workspace-inputs">
+  <h2 class="page-title">Workspace inputs</h2>
+  <p class="page-lead">External resources you bring into the workspace. Datasets feed validation, references and expert docs anchor the science. Simulation modules (the Python packages providing Processes/Steps) live in the <a href="#registry">Registry</a> tab.</p>
+
+  <!-- Datasets panel -->
+  <div class="panel">
+    <h3>Datasets</h3>
+    <p class="panel-lead">Register datasets your model will compare against. Each entry maps to specific model claims it supports.</p>
+    {% if datasets %}
+    <table><thead><tr><th>Name</th><th>Source</th><th>Claims</th></tr></thead><tbody>
+    {% for ds in datasets %}
+    <tr>
+      <td><code>{{ ds.name }}</code></td>
+      <td>
+        {% if ds.file_exists %}
+          {% if ds.sha256_valid == False %}<span class="file-status status-mismatch">⚠ sha mismatch</span>{% else %}<span class="file-status status-ok">✓ {{ ds.size_human }}</span>{% endif %}
+          <a href="/{{ ds.path }}" target="_blank" class="file-link">Open ↗</a><br>
+          <small class="muted">{{ ds.path }}</small>
+        {% elif ds.file_exists == False %}
+          <span class="file-status status-missing">⚠ missing</span><br>
+          <small class="muted">{{ ds.path }}</small>
+        {% elif ds.url %}
+          <a href="{{ ds.url }}" target="_blank" class="file-link">{{ ds.url }} ↗</a>
+        {% else %}
+          <small class="muted">{{ ds.path or '(no source)' }}</small>
+        {% endif %}
+      </td>
+      <td>{{ (ds.claims or [])|join(', ') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}
+    <p style="color:#888;font-style:italic">No datasets registered yet.</p>
+    {% endif %}
+    <button class="action-btn" onclick="openModal('modal-dataset')">+ Add dataset</button>
+  </div>
+
+  <!-- References panel -->
+  <div class="panel">
+    <h3>References</h3>
+    <p class="panel-lead">BibTeX bibliography + claim &rarr; paper mapping. Adds entries to <code>references/papers.bib</code> and <code>references/claims.yaml</code>.</p>
+    <p>Entries in <code>references/papers.bib</code>: <strong>{{ references_count }}</strong> &nbsp;&middot;&nbsp; PDFs committed: <strong>{{ (references_pdfs or [])|length }}</strong></p>
+    {% if references_pdfs %}
+    <table style="font-size:0.86em;margin-bottom:10px"><thead><tr><th>Bib key</th><th>File</th></tr></thead><tbody>
+    {% for pdf in references_pdfs %}
+    <tr>
+      <td><code>{{ pdf.bib_key }}</code>{% if pdf._metadata_pending %} <span class="stage-label optional">Needs metadata</span>{% endif %}</td>
+      <td>
+        {% if pdf.file_exists %}
+          {% if pdf.sha256_valid == False %}<span class="file-status status-mismatch">⚠ sha mismatch</span>{% else %}<span class="file-status status-ok">✓ {{ pdf.size_human }}</span>{% endif %}
+          <a href="/{{ pdf.path }}" target="_blank" class="file-link">Open ↗</a><br>
+          <small class="muted">{{ pdf.path }}</small>
+        {% elif pdf.file_exists == False %}
+          <span class="file-status status-missing">⚠ missing</span><br>
+          <small class="muted">{{ pdf.path }}</small>
+        {% else %}
+          <small class="muted">{{ pdf.path }}</small>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    {% endif %}
+    <button class="action-btn" onclick="openModal('modal-reference')">+ Add reference (PDF)</button>
+  </div>
+
+  <!-- Expert knowledge panel -->
+  <div class="panel">
+    <h3>Expert knowledge</h3>
+    <p class="panel-lead">Curated expert documents &mdash; PDFs, lab notes, expert review docs &mdash; that aren&rsquo;t formal publications but capture domain knowledge driving the model. Linked to the claims they support.</p>
+    {% if expert_docs %}
+    <table><thead><tr><th>Name</th><th>File</th><th>Description</th><th>Contributor</th><th>Claims</th></tr></thead><tbody>
+    {% for doc in expert_docs %}
+    <tr>
+      <td><strong>{{ doc.name }}</strong></td>
+      <td>
+        {% if doc.file_exists %}
+          {% if doc.sha256_valid == False %}<span class="file-status status-mismatch" title="sha256 in workspace.yaml doesn't match disk">⚠ sha mismatch</span>{% else %}<span class="file-status status-ok">✓ {{ doc.size_human }}</span>{% endif %}
+          <a href="/{{ doc.path }}" target="_blank" class="file-link">Open ↗</a><br>
+          <small class="muted">{{ doc.path }}</small>
+        {% elif doc.file_exists == False %}
+          <span class="file-status status-missing" title="path in workspace.yaml does not exist on disk">⚠ missing</span><br>
+          <small class="muted">{{ doc.path }}</small>
+        {% else %}
+          <small class="muted">{{ doc.path or '(no path)' }}</small>
+        {% endif %}
+      </td>
+      <td>{{ doc.description or '' }}</td>
+      <td>{{ doc.contributor or '' }}</td>
+      <td>{{ (doc.claims_supported or [])|join(', ') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}
+    <p style="color:#888;font-style:italic">No expert documents registered yet.</p>
+    {% endif %}
+    <button class="action-btn" onclick="openModal('modal-expert-doc')">+ Add expert document</button>
+  </div>
+
+</section>
+
+<!-- ===== PAGE: SIMULATION SETUP ===== -->
+<section id="page-simulation-setup" class="page" data-page="simulation-setup">
+  <h2 class="page-title">Composites</h2>
+  <p class="page-lead">Browse and explore the composites available in this workspace. Each composite packages a runnable simulation state with parameters you can configure. Click <strong>Explore</strong> to open its wiring diagram and start a Study.</p>
+
+  <!-- Available Composites (workspace-local discovery) -->
+  <div class="panel">
+    <h3>Available Composites <span id="composite-count" class="count-badge"></span></h3>
+    <p class="panel-lead">Discoverable composite documents from <code>pbg_&lt;slug&gt;/composites/*.composite.{yaml,json}</code>. Each one packages a runnable simulation state with parameters you can configure. Click <strong>Explore</strong> to open it in Composite Explorer.</p>
+    <div class="card-browse-toolbar" id="composite-toolbar">
+      <input type="search" class="card-browse-search" id="composite-search" placeholder="Filter composites…">
+      <div class="card-browse-chips" id="composite-tag-chips"></div>
+      <span class="card-browse-view-toggle">
+        <button class="view-btn active" data-view="grid" onclick="_setCompositeView('grid')" title="Grid view">&#9638;</button>
+        <button class="view-btn" data-view="list" onclick="_setCompositeView('list')" title="List view">&#8801;</button>
+      </span>
+      <select id="composites-sort" class="composites-sort-select" onchange="_setCompositesSort(this.value)" title="Sort composites">
+        <option value="name">Sort: Name</option>
+        <option value="module">Sort: Module</option>
+        <option value="kind">Sort: Kind</option>
+      </select>
+    </div>
+    <div id="composite-cards" class="module-grid">
+      <p class="empty-state">Loading composites&hellip;</p>
+    </div>
+  </div>
+
+</section>
+
+<!-- ===== PAGE: VISUALIZATIONS ===== -->
+<section id="page-visualizations" class="page" data-page="visualizations">
+  <h2 class="page-title">Visualizations</h2>
+  <p class="page-lead">Charts rendered from observable trajectories. Either configure a registered class with specific settings, or describe what to plot in natural language and let <code>/pbg-viz</code> generate the function.</p>
+
+
+  <!-- Workspace visualizations (workspace.yaml-driven, primary panel) -->
+  <div class="panel">
+    <h3>Workspace visualizations</h3>
+    <p class="panel-lead">Configured visualizations registered in <code>workspace.yaml</code>. <strong>Class-backed</strong> entries are ready to use immediately in investigations. <strong>Description-only</strong> entries follow the Create/Add/Commit lifecycle to generate code via <code>/pbg-viz</code>.</p>
+    <div style="margin-bottom:8px">
+      <button class="action-btn" onclick="_openWorkspaceVizModal()">+ Add visualization</button>
+      <button class="action-btn" onclick="_vizCommitAll()">Commit all staged</button>
+    </div>
+    {% if visualizations %}
+    <table><thead><tr><th>Name</th><th>Class / Description</th><th>Config</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    {% for viz in visualizations %}
+    <tr id="viz-row-{{ viz.name }}">
+      <td><code>{{ viz.name }}</code>{% if viz.type %}<br><small style="color:#888">{{ viz.type }}{% if viz.observables %}: {{ viz.observables | join(', ') }}{% endif %}</small>{% endif %}</td>
+      <td class="viz-description">
+        {% if viz.class %}<strong>{{ viz.class }}</strong>{% if viz.description %}<br>{% endif %}{% endif %}
+        {% if viz.description %}{{ viz.description }}{% elif not viz.class and not viz.type %}<em style="color:#888">No description</em>{% endif %}
+      </td>
+      <td><small style="color:#666;font-family:monospace">{% if viz.config %}{{ viz.config | tojson }}{% else %}—{% endif %}</small></td>
+      <td><span class="status-pill" id="viz-status-{{ viz.name }}">…</span></td>
+      <td class="viz-actions">
+        <button class="btn-mini" onclick="_vizPreview('{{ viz.name }}')">Preview</button>
+        {% if viz.description and not viz.class %}<button class="btn-mini" onclick="_vizCreate('{{ viz.name }}')">Create</button>{% endif %}
+        <button class="btn-mini" onclick="_vizAddToProject('{{ viz.name }}')">Add to project</button>
+        <button class="btn-mini" onclick="_vizCommit(['{{ viz.name }}'])">Commit</button>
+        <button class="btn-mini" onclick="_vizRemove('{{ viz.name }}')" style="color:#c00">Remove</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody></table>
+    {% else %}
+    <p style="color:#888;font-style:italic">No visualizations registered yet.</p>
+    {% endif %}
+  </div>
+
+  <!-- Available Visualization classes (registry-driven, secondary catalog) -->
+  <div class="panel">
+    <h3>Available Visualization classes <span id="viz-count" class="count-badge"></span></h3>
+    <p class="panel-lead">Visualization classes discovered from <code>core.link_registry</code> (subclasses of <code>pbg_superpowers.visualization.Visualization</code> from any installed pbg-* package). Click <strong>Preview</strong> to see a demo render; <strong>Use</strong> to register it as a Workspace visualization.</p>
+    <input type="search" id="viz-catalog-search" placeholder="Search Visualization classes by name or doc…"
+           style="width:100%;padding:6px;margin-bottom:8px;font-size:0.9em"
+           oninput="_filterVizCatalog(this.value)">
+    <div id="viz-picker-container">
+      <p class="empty-state">Loading from Registry&hellip;</p>
+    </div>
+  </div>
+
+  <!-- Generate new visualization class -->
+  <div class="panel">
+    <h3>Generate new visualization class</h3>
+    <p class="panel-lead">Nothing in the catalog above matches? Describe what you want. The
+      <code>/pbg-viz</code> skill writes a decorated function to
+      <code>&lt;workspace_pkg&gt;/visualizations/&lt;snake&gt;.py</code>. After accepting, the new
+      class joins the catalog for everyone.</p>
+    <form id="form-viz-generate" onsubmit="event.preventDefault(); _submitVizGenerate(this)">
+      <label>Name (kebab-case)
+        <input name="name" pattern="^[a-zA-Z0-9_-]+$" required
+               placeholder="e.g. dna-a-trajectory">
+      </label>
+      <label>Description
+        <textarea name="description" rows="4" required
+                  placeholder="e.g. 'free_DnaA concentration vs time with a horizontal line at the binding threshold of 50 molecules.'"></textarea>
+      </label>
+      <div class="form-error"></div>
+      <button type="submit" class="action-btn">Generate</button>
+    </form>
+    <div id="viz-generate-status" style="margin-top:12px;font-size:0.9em;color:#555"></div>
+  </div>
+
+</section>
+
+<!-- Preview modal (iframe-based) -->
+<div id="modal-viz-preview" class="modal-overlay">
+  <div class="modal-box" style="max-width:900px">
+    <button class="modal-close" onclick="closeModal('modal-viz-preview')">&times;</button>
+    <h3 id="viz-preview-title">Preview</h3>
+    <div id="viz-preview-source-row" style="margin-bottom:8px;font-size:0.9em;color:#555"></div>
+    <iframe id="viz-preview-iframe" style="width:100%;height:480px;border:1px solid #ddd;background:#fff"></iframe>
+    <div id="viz-preview-notes" style="margin-top:8px;font-size:0.85em;color:#666"></div>
+  </div>
+</div>
+
+<!-- ===== PAGE: REGISTRY ===== -->
+<section id="page-registry" class="page" data-page="registry">
+  <h2 class="page-title">Registry</h2>
+  <p class="page-lead">Simulation modules: browse the catalog, install pbg-* packages, see what processes and types they contribute. Installing a module adds it as a submodule under <code>external/</code>, pip-installs it into the workspace venv, and appends it to <code>pyproject.toml</code> dependencies.</p>
+
+  <!-- Section 1: Available modules (catalog) -->
+  <section class="panel">
+    <h3>Available modules</h3>
+    <p class="panel-lead">Curated catalog of pbg-* packages. Click Install to add one to this workspace.</p>
+    <div class="card-browse-toolbar" id="catalog-toolbar">
+      <input type="search" class="card-browse-search" id="catalog-search" placeholder="Filter modules…">
+      <div class="card-browse-chips" id="catalog-tag-chips"></div>
+      <div class="card-browse-options">
+        <label><input type="radio" name="catalog-installed-filter" value="all" checked> All</label>
+        <label><input type="radio" name="catalog-installed-filter" value="installed"> Installed</label>
+        <label><input type="radio" name="catalog-installed-filter" value="uninstalled"> Available</label>
+        <span class="card-browse-view-toggle">
+          <button class="view-btn active" data-view="grid" onclick="_setCatalogView('grid')" title="Grid view">&#9638;</button>
+          <button class="view-btn" data-view="list" onclick="_setCatalogView('list')" title="List view">&#8801;</button>
+        </span>
+      </div>
+    </div>
+    <div id="catalog-modules-grid" class="module-grid">
+      <p class="empty-state">Loading catalog&hellip;</p>
+    </div>
+  </section>
+
+  <!-- Section 2: Installed modules -->
+  <section class="panel">
+    <h3>Installed modules <span id="installed-modules-count" class="count-badge muted"></span></h3>
+    <p class="panel-lead">Modules currently active in this workspace. Each contributes Processes/Steps and Types to <code>build_core()</code>. Uninstall removes from this workspace's <code>pyproject.toml</code> + <code>workspace.yaml</code> (Available modules above remains in the catalog).</p>
+    <div id="installed-modules-list">
+      <p class="empty-state">Loading&hellip;</p>
+    </div>
+    <div id="installed-modules-sync-warning" style="display:none"></div>
+  </section>
+
+  <!-- Section 3: Discovered registry (tabbed browser, lazy-loaded) -->
+  <section class="panel">
+    <h3>Discovered registry <span class="count-badge muted" id="registry-total-count"></span></h3>
+    <p class="panel-lead">Live snapshot of <code>build_core()</code> &mdash; every Process, Step, Emitter, Visualization, and Type that <code>allocate_core()</code> registers via auto-discovery. Grouped by kind.</p>
+
+    <button class="action-btn" onclick="_loadRegistry(true)">Refresh registry</button>
+    <div id="registry-status" class="muted" style="margin:8px 0"></div>
+
+    <div class="registry-tabs">
+      <button class="registry-tab active" data-kind="process"       onclick="_setRegistryTab('process')">Processes <span class="count-badge" id="registry-process-count"></span></button>
+      <button class="registry-tab"        data-kind="step"          onclick="_setRegistryTab('step')">Steps <span class="count-badge" id="registry-step-count"></span></button>
+      <button class="registry-tab"        data-kind="emitter"       onclick="_setRegistryTab('emitter')">Emitters <span class="count-badge" id="registry-emitter-count"></span></button>
+      <button class="registry-tab"        data-kind="visualization" onclick="_setRegistryTab('visualization')">Visualizations <span class="count-badge" id="registry-visualization-count"></span></button>
+      <button class="registry-tab"        data-kind="type"          onclick="_setRegistryTab('type')">Types <span class="count-badge" id="registry-type-count"></span></button>
+    </div>
+
+    <input type="search" class="registry-search" id="registry-search" placeholder="Filter&hellip;" oninput="_filterRegistry(this.value)">
+
+    <div class="registry-tab-panel active" data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>
+    <div class="registry-tab-panel"        data-kind="step"          id="registry-steps-container"></div>
+    <div class="registry-tab-panel"        data-kind="emitter"       id="registry-emitters-container"></div>
+    <div class="registry-tab-panel"        data-kind="visualization" id="registry-visualizations-container"></div>
+    <div class="registry-tab-panel"        data-kind="type"          id="registry-types-container"></div>
+  </section>
+</section>
+
+<!-- ===== PAGE: INVESTIGATIONS ===== -->
+<section id="page-investigations" class="page" data-page="investigations">
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <h2 class="page-title" style="margin:0">Investigations</h2>
+    <button class="action-btn" onclick="_createInvestigation()">+ New investigation</button>
+  </div>
+  <p class="page-lead">Declarative research recipes — pick a composite, declare simulations (single / sweep / seeds), name observables, choose visualizations. Run, save, compare.</p>
+
+  <!-- Browse toolbar matches v0.5.6 catalog/composite browse -->
+  <div class="card-browse-toolbar" id="investigations-toolbar">
+    <input type="search" class="card-browse-search" id="investigations-search" placeholder="Filter investigations…">
+    <div class="card-browse-chips" id="investigations-tag-chips"></div>
+    <select id="investigations-sort" onchange="_setInvestigationsSort(this.value)" style="margin-left:12px">
+      <option value="name">Sort: Name</option>
+      <option value="last_run">Sort: Last run</option>
+      <option value="status">Sort: Status</option>
+      <option value="topic">Sort: Topic</option>
+      <option value="n_runs">Sort: Run count</option>
+    </select>
+    <span class="card-browse-view-toggle">
+      <button class="view-btn active" data-view="grid" onclick="_setInvestigationsView('grid')">▦</button>
+      <button class="view-btn" data-view="list" onclick="_setInvestigationsView('list')">≡</button>
+    </span>
+  </div>
+
+  <div id="investigations-grid">
+    <p class="empty-state">Loading investigations…</p>
+  </div>
+
+  <!-- Detail panel renders inline after a row is clicked -->
+  <div id="investigation-detail" style="display:none; margin-top:16px"></div>
+</section>
+
+<!-- Modal: create investigation -->
+<div id="modal-investigation-create" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-investigation-create')">&times;</button>
+    <h3>Create investigation</h3>
+    <form id="form-investigation-create" onsubmit="event.preventDefault(); _submitInvestigationCreate(this)">
+      <label>Name <input name="name" placeholder="dnaa-binding-baseline" required pattern="[a-zA-Z0-9_-]+"></label>
+      <label>Starting composite (optional — pick from workspace catalog)
+        <select name="source" id="create-inv-source">
+          <option value="">— blank composites list, add later —</option>
+        </select>
+      </label>
+      <div class="form-error"></div>
+      <button type="submit">Create</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: add visualization to an investigation -->
+<div id="modal-investigation-add-viz" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-investigation-add-viz')">&times;</button>
+    <h3>Add visualization</h3>
+    <form id="form-investigation-add-viz" onsubmit="event.preventDefault(); _submitAddViz(this)">
+      <input type="hidden" name="investigation" id="add-viz-investigation">
+      <label>Name <input name="name" placeholder="trajectory" required pattern="[a-zA-Z0-9_-]+"></label>
+      <label>Visualization class <select name="address" id="add-viz-class" required></select></label>
+      <label>Config (JSON; e.g. <code>{"observable":"level","sources":["baseline"]}</code>)
+        <textarea name="config" rows="4" placeholder='{"observable": "level", "sources": ["baseline"]}'></textarea>
+      </label>
+      <div class="form-error"></div>
+      <button type="submit">Add</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Investigation — Add composite from Registry -->
+<div id="modal-inv-add-composite" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-inv-add-composite')">&times;</button>
+    <h3>Add composite from Registry</h3>
+    <form id="form-inv-add-composite"
+          onsubmit="event.preventDefault(); _submitAddComposite(this)">
+      <label>Composite (workspace catalog)
+        <select name="source" id="inv-add-composite-source" required></select>
+      </label>
+      <label>Name in this study
+        <input name="name" pattern="^[a-zA-Z0-9_-]+$" required placeholder="baseline">
+      </label>
+      <div class="form-error"></div>
+      <button type="submit" class="action-btn">Add</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Investigation — Perturb composite -->
+<div id="modal-inv-perturb" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-inv-perturb')">&times;</button>
+    <h3>Perturb composite</h3>
+    <form id="form-inv-perturb"
+          onsubmit="event.preventDefault(); _submitPerturb(this)">
+      <input type="hidden" name="extends">
+      <label>New composite name
+        <input name="name" pattern="^[a-zA-Z0-9_-]+$" required placeholder="high-rate">
+      </label>
+      <label>Parameter overrides (JSON; dotted-path keys)
+        <textarea name="parameter_overrides" rows="3"
+                  placeholder='{"state.replication.config.rate": 2.0}'></textarea>
+      </label>
+      <label>Process overrides (JSON; null to remove, str for new address, dict for both)
+        <textarea name="process_overrides" rows="3"
+                  placeholder='{"replication": null}'></textarea>
+      </label>
+      <div class="form-error"></div>
+      <button type="submit" class="action-btn">Perturb</button>
+    </form>
+  </div>
+</div>
+
+<!-- ===== PAGE: BRANCHES ===== -->
+<section id="page-branches" class="page" data-page="branches">
+  <h2 class="page-title">Branches</h2>
+  <p class="page-lead">All stage/* branches in this workspace, with one-click merge / PR / diff actions. Branches accumulate as the dashboard creates them on actions (Add observable, Install module, etc.). Use this tab to land them on main.</p>
+  <div id="branch-timeline-body"></div>
+</section>
+
+<!-- ===== PAGE: COMPOSITE EXPLORER ===== -->
+<section id="page-composite-explore" class="page" data-page="composite-explore">
+  <h2 class="page-title">Composite Explorer</h2>
+  <p class="page-lead">Inspect a composite's wiring, run it, and view results. To configure parameters, design variants, and capture conclusions, start a <strong>Composite Study</strong>.</p>
+
+  <div id="ce-loading" class="empty-state">Loading composite&hellip;</div>
+
+  <div id="ce-main" style="display:none">
+
+    <!-- Begin Study CTA -->
+    <div id="ce-begin-study-bar" class="panel" style="display:flex;align-items:center;gap:12px;background:#f0f9ff;border:1px solid #bae6fd">
+      <div style="flex:1">
+        <strong>Ready to investigate?</strong>
+        <span class="muted">Start a Composite Study to design variants, run simulations, and capture conclusions.</span>
+      </div>
+      <button class="action-btn" id="ce-begin-study-btn" onclick="_beginStudyFromComposite()">Begin Study</button>
+    </div>
+
+    <!-- Metadata header -->
+    <div class="panel">
+      <h3 id="ce-name"></h3>
+      <p id="ce-description" class="muted"></p>
+      <p><strong>ID:</strong> <code id="ce-id"></code></p>
+      <p><strong>Module:</strong> <code id="ce-module"></code> <span id="ce-kind" class="kind-badge"></span></p>
+    </div>
+
+    <!-- Loom-explore iframe — internal View/Run/Document tabs live inside -->
+    <div class="panel">
+      <div class="loom-frame-toolbar" style="display:flex;justify-content:flex-end;margin-bottom:6px">
+        <button class="btn-mini" onclick="_popoutLoom('composite-explore-frame')" title="Open in separate window">Pop out &#8599;</button>
+      </div>
+      <iframe id="composite-explore-frame"
+              src="/loom-explore/index.html"
+              title="Composite Explorer"
+              style="width:100%;height:720px;border:1px solid #ddd;background:#fff"></iframe>
+    </div>
+
+  </div>
+</section>
+
+</main>
+
+  </div> <!-- /.viv-main -->
+</div> <!-- /.viv-layout -->
+
+<!-- ============================================================ -->
+<!-- MODALS -->
+<!-- ============================================================ -->
+
+<!-- Dataset modal -->
+<div id="modal-dataset" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-dataset')">&times;</button>
+    <h3>Add dataset</h3>
+    <form id="form-dataset" onsubmit="event.preventDefault(); _submitDataset(this)">
+      <label>Name *<input name="name" placeholder="e.g. bremer-1996" required></label>
+      <label style="margin-bottom:4px">Drop the data file here <small>(or skip if URL-based)</small></label>
+      <div id="ds-drop-zone" class="drop-zone">
+        <span class="drop-hint">Drag &amp; drop data file here, or click to select</span>
+        <div class="file-info"></div>
+        <div class="file-hash"></div>
+      </div>
+      <div id="ds-url-row" style="margin-top:8px">
+        <label>URL <small>(required if no file dropped)</small><input name="url" placeholder="https://example.com/data.csv"></label>
+        <label>SHA256 (required with URL)<input name="sha256" placeholder="abc123..."></label>
+      </div>
+      <label>Claims (comma-separated claim IDs)<input name="claims" placeholder="growth-rate-vs-medium, ribo-fraction"></label>
+      <div class="form-error"></div>
+      <button type="submit">Add dataset</button>
+    </form>
+  </div>
+</div>
+
+<!-- Reference modal -->
+<div id="modal-reference" class="modal-overlay">
+  <div class="modal-box" style="max-width:600px">
+    <button class="modal-close" onclick="closeModal('modal-reference')">&times;</button>
+    <h3>Add reference</h3>
+    <p class="subtitle" style="font-size:0.85em;color:#555;margin-bottom:12px">
+      Drop a PDF &mdash; metadata is auto-extracted from the PDF&rsquo;s embedded fields.
+    </p>
+
+    <label style="margin-bottom:4px;font-weight:600">Drop a PDF here *</label>
+    <div id="ref-pdf-drop-zone" class="drop-zone">
+      <span class="drop-hint">&#128196; Drop a PDF here, or click to browse</span>
+      <div class="file-info"></div>
+      <div class="file-hash"></div>
+    </div>
+
+    <details style="margin-top:14px">
+      <summary style="cursor:pointer;font-size:0.88em;color:#555;font-weight:600">Refinements (optional)</summary>
+      <div style="padding:12px 0;display:flex;flex-direction:column;gap:8px">
+        <label style="font-size:0.88em">bib_key (auto-generated if blank):
+          <input type="text" id="ref-bib_key" name="bib_key" placeholder="e.g. Smith2024" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+        <label style="font-size:0.88em">Title (auto-extracted if blank):
+          <input type="text" id="ref-title" name="title" placeholder="Full paper title" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+        <label style="font-size:0.88em">Authors (semicolon-separated; auto-extracted if blank):
+          <input type="text" id="ref-authors" name="authors" placeholder="Smith, J.; Doe, J." style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+        <label style="font-size:0.88em">Year (auto-extracted if blank):
+          <input type="number" id="ref-year" name="year" placeholder="2024" min="1000" max="2100" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+        <label style="font-size:0.88em">Journal (optional):
+          <input type="text" id="ref-journal" name="journal" placeholder="e.g. EcoSal Plus" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+        <label style="font-size:0.88em">DOI (optional):
+          <input type="text" id="ref-doi" name="doi" placeholder="e.g. 10.1145/..." style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+        <label style="font-size:0.88em">Maps to claims (comma-separated, optional):
+          <input type="text" id="ref-claim_mappings" name="claim_mappings" placeholder="phase-1.dnaA-accumulation" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+      </div>
+    </details>
+
+    <details style="margin-top:8px">
+      <summary style="cursor:pointer;font-size:0.88em;color:#555;font-weight:600">Or paste an existing BibTeX entry (no PDF)</summary>
+      <div style="padding:12px 0">
+        <label style="font-size:0.88em;display:block">BibTeX entry:
+          <textarea id="ref-bibtex_text" name="bibtex_text" rows="6" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px;font-family:monospace"
+            placeholder="@article{Bremer1996,&#10;  author = {Bremer, H. and Dennis, P.},&#10;  title  = {...},&#10;  ...&#10;}"></textarea>
+        </label>
+        <label style="font-size:0.88em;display:block">Maps to claims (optional, format: <code>claim-id:bibkey, ...</code>):
+          <input type="text" id="ref-bibtex_claim_mappings" name="bibtex_claim_mappings" placeholder="growth-rate-vs-medium:Bremer1996" style="width:100%;box-sizing:border-box;border:1px solid #ccc;border-radius:4px;padding:5px 8px">
+        </label>
+      </div>
+    </details>
+
+    <div class="form-error" id="ref-form-error" style="margin-top:8px"></div>
+    <div style="margin-top:12px;display:flex;gap:8px">
+      <button class="action-btn" style="background:#1976d2;color:#fff;border-color:#1976d2" onclick="submitReferenceForm()">Submit</button>
+      <button class="action-btn" onclick="closeModal('modal-reference')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Expert document modal -->
+<div id="modal-expert-doc" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-expert-doc')">&times;</button>
+    <h3>Add expert document</h3>
+    <p style="font-size:0.85em;color:#555">
+      Registers a local file (PDF, lab notes, etc.) in <code>workspace.yaml</code> and copies it to
+      <code>references/expert/</code> on a new <code>stage/5-expert-doc-*</code> branch.
+    </p>
+    <form id="form-expert-doc" onsubmit="event.preventDefault(); _submitExpertDoc(this)">
+      <label>Name * <small>(short label, used as filename stem)</small>
+        <input name="name" placeholder="e.g. ecoli-replication-review-2025" required>
+      </label>
+      <label style="margin-bottom:4px">Drop the expert document here * <small>(PDF / md / txt / &hellip;)</small></label>
+      <div id="expert-drop-zone" class="drop-zone">
+        <span class="drop-hint">Drag &amp; drop file here, or click to select</span>
+        <div class="file-info"></div>
+        <div class="file-hash"></div>
+      </div>
+      <label style="margin-top:8px">Description (optional)
+        <textarea name="description" placeholder="Expert review of E. coli chromosome replication mechanism"></textarea>
+      </label>
+      <label>Contributor (optional)
+        <input name="contributor" placeholder="Dr. Jane Smith">
+      </label>
+      <label>Claims supported (optional, comma-separated claim IDs)
+        <input name="claims_supported" placeholder="rep-initiation, ori-firing-rate">
+      </label>
+      <div class="form-error"></div>
+      <button type="submit">Register expert document</button>
+    </form>
+  </div>
+</div>
+
+<!-- Observable modal -->
+<div id="modal-observable" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-observable')">&times;</button>
+    <h3>Add observable</h3>
+    <p style="font-size:0.85em;color:#555">Register a state variable to track. The store path is a dotted path into the composite document.</p>
+    <form id="form-observable" onsubmit="event.preventDefault(); submitForm(this, '/api/observable', function(f){ return { name: f.obs_name.value.trim(), store_path: f.store_path.value.trim(), units: f.units.value.trim() || null, description: f.description.value.trim() || null }; })">
+      <label>Name * <small>(e.g. DnaA)</small><input name="obs_name" placeholder="DnaA" required></label>
+      <label>Store path * <small>(e.g. chromosome.DnaA_count)</small><input name="store_path" placeholder="chromosome.DnaA_count" required></label>
+      <label>Units (optional)<input name="units" placeholder="molecules"></label>
+      <label>Description (optional)<input name="description" placeholder="DnaA protein count in chromosome compartment"></label>
+      <div class="form-error"></div>
+      <button type="submit">Add observable</button>
+    </form>
+  </div>
+</div>
+
+<!-- Visualization modal -->
+<div id="modal-visualization" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-visualization')">&times;</button>
+    <h3>Add visualization</h3>
+    <p id="viz-already-registered" style="font-size:0.85em;color:#555;margin-bottom:8px"></p>
+    <form id="form-visualization" onsubmit="event.preventDefault(); submitForm(this, '/api/visualization', function(f){
+      var classVal = (f.viz_class.value || '').trim();
+      var cfgRaw = (f.viz_config.value || '').trim();
+      var cfg = null;
+      if (cfgRaw) {
+        try { cfg = JSON.parse(cfgRaw); }
+        catch (e) {
+          var err = f.querySelector('.form-error');
+          if (err) err.textContent = 'Invalid JSON in config: ' + String(e);
+          return null;
+        }
+      }
+      return {
+        name: f.viz_name.value.trim(),
+        description: (f.description.value.trim() || null),
+        'class': classVal || null,
+        config: cfg,
+      };
+    })">
+      <label>Name <input name="viz_name" pattern="^[a-zA-Z0-9_-]+$" required placeholder="e.g. free_DnaA-trajectory"></label>
+      <label>Class (optional &mdash; pick a registered Visualization to make this a configured instance)
+        <select name="viz_class" id="viz-class-picker"><option value="">— none (description-only) —</option></select>
+      </label>
+      <label>Config (JSON; required when a class is picked)
+        <textarea name="viz_config" rows="3" placeholder='{"observable": "free_DnaA", "sources": ["baseline"]}'></textarea>
+      </label>
+      <label>Description (natural language &mdash; required when no class is picked)
+        <textarea name="description" rows="3"
+                  placeholder="e.g. 'A time-series of free_DnaA concentration over the baseline simulation, with a horizontal line at the binding threshold of 50 molecules.'"></textarea>
+      </label>
+      <p style="font-size:0.85em;color:#555">
+        Class-backed: ready to use immediately in investigations.<br>
+        Description-only: click <strong>Create</strong> after to invoke the <code>/pbg-viz</code> skill which generates the function.
+      </p>
+      <div class="form-error"></div>
+      <button type="submit" class="action-btn">Add visualization</button>
+    </form>
+  </div>
+</div>
+
+<!-- Configure composite modal -->
+<div id="modal-configure-composite" class="modal-overlay">
+  <div class="modal-box" style="max-width:560px">
+    <button class="modal-close" onclick="closeModal('modal-configure-composite')">&times;</button>
+    <h3>Configure composite</h3>
+    <p id="cc-composite-name" class="muted" style="margin:0 0 12px"></p>
+    <form id="form-configure-composite" onsubmit="event.preventDefault(); _submitConfigureComposite(this);">
+      <label>Simulation name <input name="sim_name" pattern="^[a-zA-Z0-9_-]+$" required></label>
+      <label>t_start <input name="t_start" type="number" step="any" min="0" value="0" required></label>
+      <label>t_end <input name="t_end" type="number" step="any" required value="10"></label>
+      <div id="cc-parameter-fields"></div>
+      <input type="hidden" name="composite_id">
+      <div class="form-error"></div>
+      <button type="submit" class="action-btn">Create simulation</button>
+    </form>
+  </div>
+</div>
+
+<!-- Phase plan modal -->
+<div id="modal-phase-plan" class="modal-overlay">
+  <div class="modal-box" style="max-width:640px">
+    <button class="modal-close" onclick="closeModal('modal-phase-plan')">&times;</button>
+    <h3>Add phase plan</h3>
+    <p style="font-size:0.85em;color:#555">
+      Enter phases as JSON. Each phase needs <code>n</code> (integer) and <code>name</code> (string).
+      Optional: <code>objective</code>, <code>prereq_phases</code>, <code>acceptance_tests</code>.
+    </p>
+    <label>Phases JSON *
+      <textarea id="phase-plan-json" style="width:100%;min-height:180px;font-family:monospace;font-size:0.88em;border:1px solid #ccc;border-radius:4px;padding:8px;box-sizing:border-box"
+        placeholder='[{"n": 1, "name": "Baseline", "objective": "Establish replication initiation baseline"}, {"n": 2, "name": "DnaA accumulation", "objective": "Add DnaA binding dynamics"}]'></textarea>
+    </label>
+    <div class="form-error" id="phase-plan-error"></div>
+    <div style="margin-top:10px;display:flex;gap:8px">
+      <button class="action-btn" style="background:#1976d2;color:#fff;border-color:#1976d2" onclick="submitPhasePlan()">Submit phase plan</button>
+      <button class="action-btn" onclick="closeModal('modal-phase-plan')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Create GitHub repo -->
+<div id="modal-create-github-repo" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-create-github-repo')">&times;</button>
+    <h3>Create GitHub repo</h3>
+    <form id="form-create-github-repo" onsubmit="event.preventDefault(); _submitCreateGithubRepo(this);">
+      <label>Repo name
+        <div class="input-with-suggest">
+          <input name="repo_name" pattern="^[A-Za-z0-9._-]+$" required>
+          <button type="button" class="btn-suggest" onclick="_suggestInto(this, 'repo-name', 'repo_name')">Suggest</button>
+        </div>
+      </label>
+      <label>Visibility
+        <select name="visibility">
+          <option value="private" selected>private</option>
+          <option value="public">public</option>
+          <option value="internal">internal</option>
+        </select>
+      </label>
+      <label>Description
+        <textarea name="description" rows="2"></textarea>
+      </label>
+      <div class="form-error"></div>
+      <button type="submit" class="action-btn">Create + push</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Create PR -->
+<div id="modal-create-pr" class="modal-overlay">
+  <div class="modal-box" style="max-width:640px">
+    <button class="modal-close" onclick="closeModal('modal-create-pr')">&times;</button>
+    <h3>Create PR</h3>
+    <form id="form-create-pr" onsubmit="event.preventDefault(); _submitCreatePR(this);">
+      <label>Title
+        <div class="input-with-suggest">
+          <input name="title" required maxlength="100">
+          <button type="button" class="btn-suggest" onclick="_suggestInto(this, 'pr-title', 'title')">Suggest</button>
+        </div>
+      </label>
+      <label>Body
+        <div class="input-with-suggest input-with-suggest-textarea">
+          <textarea name="body" rows="6" placeholder="Summary + Test plan (markdown)"></textarea>
+          <button type="button" class="btn-suggest" onclick="_suggestInto(this, 'pr-body', 'body')">Suggest</button>
+        </div>
+      </label>
+      <div class="form-error"></div>
+      <button type="submit" class="action-btn">Create PR</button>
+    </form>
+  </div>
+</div>
+
+<script src="assets/render-helpers.js"></script>
+<script src="assets/client.js" onerror="/* live mode unavailable */"></script>
+<script src="assets/walkthrough.js" onerror="/* walkthrough unavailable */"></script>
+<script>
+// Initialize drop zones once walkthrough.js is loaded.
+document.addEventListener("DOMContentLoaded", function() {
+  if (typeof setupDropZone === "function") {
+    setupDropZone("ds-drop-zone", "dataset");
+    setupDropZone("ref-pdf-drop-zone", "reference_pdf_primary");
+    setupDropZone("expert-drop-zone", "expert_doc");
+  }
+});
+
+// Dataset form submission.
+function _submitDataset(form) {
+  submitForm(form, '/api/dataset', function(f) {
+    var data = { name: f.name.value.trim(), claims: f.claims.value.trim() };
+    var stored = (typeof _dropZoneStore !== "undefined") ? _dropZoneStore["dataset"] : null;
+    if (stored && stored.file_b64) {
+      data.file_b64 = stored.file_b64;
+      data.filename = stored.filename;
+    } else {
+      var url = f.url.value.trim();
+      if (url) {
+        data.url = url;
+        if (f.sha256.value.trim()) data.sha256 = f.sha256.value.trim();
+      } else {
+        var errEl = form.querySelector(".form-error");
+        if (errEl) errEl.textContent = "Error: drop a file or enter a URL.";
+        return null;
+      }
+    }
+    return data;
+  });
+}
+
+// Reference form submission.
+function submitReferenceForm() {
+  var errEl = document.getElementById("ref-form-error");
+  if (errEl) errEl.textContent = "";
+
+  var pdfStored = (typeof _dropZoneStore !== "undefined") ? _dropZoneStore["reference_pdf_primary"] : null;
+  var bibtexText = (document.getElementById("ref-bibtex_text") || {}).value || "";
+  bibtexText = bibtexText.trim();
+
+  if (pdfStored && pdfStored.file_b64) {
+    var data = { pdf_b64: pdfStored.file_b64, pdf_filename: pdfStored.filename };
+    var bibKey    = (document.getElementById("ref-bib_key") || {}).value || "";
+    var title     = (document.getElementById("ref-title") || {}).value || "";
+    var authors   = (document.getElementById("ref-authors") || {}).value || "";
+    var yearStr   = (document.getElementById("ref-year") || {}).value || "";
+    var journal   = (document.getElementById("ref-journal") || {}).value || "";
+    var doi       = (document.getElementById("ref-doi") || {}).value || "";
+    var claims    = (document.getElementById("ref-claim_mappings") || {}).value || "";
+    if (bibKey.trim())  data.bib_key  = bibKey.trim();
+    if (title.trim())   data.title    = title.trim();
+    if (authors.trim()) data.authors  = authors.trim();
+    if (yearStr.trim()) data.year     = parseInt(yearStr.trim(), 10);
+    if (journal.trim()) data.journal  = journal.trim();
+    if (doi.trim())     data.doi      = doi.trim();
+    if (claims.trim()) {
+      data.claim_mappings = claims.trim().split(",").map(function(s) { return s.trim(); }).filter(Boolean);
+    }
+    _postReferenceData("/api/reference-pdf", data);
+
+  } else if (bibtexText) {
+    var bibClaims = (document.getElementById("ref-bibtex_claim_mappings") || {}).value || "";
+    var data = { bibtex_text: bibtexText, claim_mappings: bibClaims.trim() };
+    _postReferenceData("/api/reference-bibtex", data);
+
+  } else {
+    if (errEl) errEl.textContent = "Error: drop a PDF or paste a BibTeX entry.";
+  }
+}
+
+function _postReferenceData(endpoint, data) {
+  var errEl = document.getElementById("ref-form-error");
+  fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  })
+    .then(function(res) {
+      return res.json().then(function(json) { return { ok: res.ok, status: res.status, json: json }; });
+    })
+    .then(function(r) {
+      if (!r.ok) {
+        var msg = (r.json && r.json.error) ? r.json.error : ("HTTP " + r.status);
+        if (errEl) errEl.textContent = "Error: " + msg;
+        return;
+      }
+      var branch = r.json.branch || "";
+      var commit = r.json.commit || "";
+      var bib_key = r.json.bib_key || "";
+      var pending = r.json.metadata_pending;
+      var msg = "Done!";
+      if (bib_key) msg += " bib_key: " + bib_key;
+      if (branch)  msg += "\nBranch: " + branch + (commit ? " (" + commit + ")" : "");
+      if (pending) msg += "\n\nNote: metadata incomplete — entry marked 'Needs metadata'.";
+      fetch("/api/render", { method: "POST" }).finally(function() {
+        alert(msg);
+        location.reload();
+      });
+    })
+    .catch(function(err) {
+      if (errEl) errEl.textContent = "Network error: " + String(err);
+    });
+}
+
+// Expert doc form submission.
+function _submitExpertDoc(form) {
+  submitForm(form, '/api/expert-doc', function(f) {
+    var stored = (typeof _dropZoneStore !== "undefined") ? _dropZoneStore["expert_doc"] : null;
+    if (!stored || !stored.file_b64) {
+      var errEl = form.querySelector(".form-error");
+      if (errEl) errEl.textContent = "Error: please drop or select a file first.";
+      return null;
+    }
+    var data = {
+      name: f.name.value.trim(),
+      file_b64: stored.file_b64,
+      filename: stored.filename,
+    };
+    if (f.description && f.description.value.trim()) data.description = f.description.value.trim();
+    if (f.contributor && f.contributor.value.trim()) data.contributor = f.contributor.value.trim();
+    if (f.claims_supported && f.claims_supported.value.trim()) data.claims_supported = f.claims_supported.value.trim();
+    return data;
+  });
+}
+
+// Visualization form submission — v0.4.2: name + description only.
+// (The submitForm call is now inline in the form's onsubmit attribute.)
+// Kept as no-op for backward compat with any external callers.
+function _submitVisualization(form) {
+  submitForm(form, '/api/visualization', function(f) {
+    return {
+      name: f.viz_name.value.trim(),
+      description: f.description ? (f.description.value.trim() || null) : null,
+    };
+  });
+}
+
+// Phase plan submission.
+function submitPhasePlan() {
+  var errEl = document.getElementById("phase-plan-error");
+  if (errEl) errEl.textContent = "";
+  var raw = document.getElementById("phase-plan-json").value.trim();
+  var phases;
+  try {
+    phases = JSON.parse(raw);
+  } catch (e) {
+    if (errEl) errEl.textContent = "Invalid JSON: " + e.message;
+    return;
+  }
+  if (!Array.isArray(phases) || !phases.length) {
+    if (errEl) errEl.textContent = "phases must be a non-empty JSON array";
+    return;
+  }
+  fetch("/api/phase-plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phases: phases }),
+  })
+    .then(function(res) { return res.json().then(function(j) { return { ok: res.ok, json: j }; }); })
+    .then(function(r) {
+      if (!r.ok) {
+        if (errEl) errEl.textContent = "Error: " + (r.json.error || "unknown");
+        return;
+      }
+      fetch("/api/render", { method: "POST" }).finally(function() {
+        alert("Phase plan created!\nBranch: " + (r.json.branch || "") + "\nMerge it to make phases appear on main.");
+        location.reload();
+      });
+    })
+    .catch(function(err) {
+      if (errEl) errEl.textContent = "Network error: " + String(err);
+    });
+}
+
+// Phase start.
+function phaseStart(n) {
+  fetch("/api/phase-start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ n: n }),
+  })
+    .then(function(res) { return res.json().then(function(j) { return { ok: res.ok, json: j }; }); })
+    .then(function(r) {
+      if (!r.ok) { alert("Error: " + (r.json.error || "unknown")); return; }
+      fetch("/api/render", { method: "POST" }).finally(function() {
+        alert("Phase " + n + " started!\nBranch: " + (r.json.branch || ""));
+        location.reload();
+      });
+    })
+    .catch(function(err) { alert("Network error: " + err); });
+}
+
+// Phase gate.
+function phaseGate(n) {
+  fetch("/api/phase-gate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ n: n }),
+  })
+    .then(function(res) { return res.json().then(function(j) { return { ok: res.ok, json: j }; }); })
+    .then(function(r) {
+      if (!r.ok) { alert("Error: " + (r.json.error || "unknown")); return; }
+      fetch("/api/render", { method: "POST" }).finally(function() {
+        alert("Gate evaluated for phase " + n + ": " + (r.json.gate_status || "?") + "\nBranch: " + (r.json.branch || ""));
+        location.reload();
+      });
+    })
+    .catch(function(err) { alert("Network error: " + err); });
+}
+
+// Run tests.
+function runTests() {
+  var btn = document.getElementById("run-tests-btn");
+  var spinner = document.getElementById("run-tests-spinner");
+  var output = document.getElementById("run-tests-output");
+  if (btn) btn.disabled = true;
+  if (spinner) spinner.style.display = "inline";
+  if (output) { output.style.display = "none"; output.textContent = ""; }
+  fetch("/api/run-tests", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  })
+    .then(function(res) { return res.json(); })
+    .then(function(r) {
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.style.display = "none";
+      if (output) {
+        output.style.display = "block";
+        var text = "";
+        if (r.error) {
+          text = "Error: " + r.error;
+        } else {
+          text = "Exit code: " + r.returncode + "\n\n" + (r.stdout || "") + (r.stderr ? "\nSTDERR:\n" + r.stderr : "");
+        }
+        output.textContent = text;
+      }
+    })
+    .catch(function(err) {
+      if (btn) btn.disabled = false;
+      if (spinner) spinner.style.display = "none";
+      if (output) { output.style.display = "block"; output.textContent = "Network error: " + err; }
+    });
+}
+</script>
+</body></html>
