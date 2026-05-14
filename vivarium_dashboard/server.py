@@ -4176,7 +4176,8 @@ if __name__ == "__main__":
         label = body.get("label") or f"ad-hoc {sim_name}"
         import time as _time
         cr.save_metadata(conn, spec_id=composite_name, run_id=run_id,
-                          params=overrides, label=label, started_at=_time.time())
+                          params=overrides, label=label, started_at=_time.time(),
+                          n_steps=steps)
         conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?", (sim_name, run_id))
         conn.commit()
         conn.close()
@@ -5534,7 +5535,7 @@ if __name__ == "__main__":
             try:
                 cr.save_metadata(conn, spec_id=spec_id, run_id=run_id,
                                   params=overrides, label=label,
-                                  started_at=time.time())
+                                  started_at=time.time(), n_steps=steps)
             except sqlite3.IntegrityError:
                 return self._json({
                     "simulation_id": run_id,

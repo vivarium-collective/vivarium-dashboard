@@ -995,7 +995,8 @@ def run_investigation(ws_root: Path, name: str, *,
                 cr.save_metadata(conn, spec_id=composite_name, run_id=run_id,
                                   params=overrides,
                                   label=composite_name,
-                                  started_at=_time.time())
+                                  started_at=_time.time(),
+                                  n_steps=steps)
                 conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?",
                               (composite_name, run_id))
                 conn.commit()
@@ -1031,7 +1032,8 @@ def run_investigation(ws_root: Path, name: str, *,
                 cr.save_metadata(conn, spec_id=spec["composite"], run_id=run_id,
                                   params=run["overrides"],
                                   label=run["run_label"],
-                                  started_at=_time.time())
+                                  started_at=_time.time(),
+                                  n_steps=run["steps"])
                 conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?",
                               (run["sim_name"], run_id))
                 conn.commit()

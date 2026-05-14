@@ -1,6 +1,7 @@
 """Unit tests for vivarium_dashboard.lib.composite_runs."""
 from vivarium_dashboard.lib.composite_runs import (
     connect, save_metadata, complete_metadata, query_runs, query_run,
+    query_run_meta, update_progress, set_pid, mark_orphaned, prune_runs,
     inject_sqlite_emitter, auto_label, inject_emitter_for_paths,
 )
 
@@ -24,6 +25,7 @@ def test_save_and_query_metadata(tmp_path):
         params={"rate": 0.5},
         label="rate=0.5",
         started_at=1715470512.0,
+        n_steps=10,
     )
     runs = query_runs(conn, spec_id="pkg.composites.demo")
     assert len(runs) == 1
@@ -36,7 +38,7 @@ def test_complete_metadata_updates_status(tmp_path):
     db_file = tmp_path / "runs.db"
     conn = connect(db_file)
     save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
-                  started_at=0.0)
+                  started_at=0.0, n_steps=10)
     complete_metadata(conn, run_id="r1", n_steps=10, status="completed")
     runs = query_runs(conn, spec_id="s")
     assert runs[0]["status"] == "completed"
@@ -48,11 +50,11 @@ def test_query_runs_filtered_by_spec_id(tmp_path):
     db_file = tmp_path / "runs.db"
     conn = connect(db_file)
     save_metadata(conn, spec_id="A", run_id="r1", params={}, label="",
-                  started_at=1.0)
+                  started_at=1.0, n_steps=10)
     save_metadata(conn, spec_id="B", run_id="r2", params={}, label="",
-                  started_at=2.0)
+                  started_at=2.0, n_steps=10)
     save_metadata(conn, spec_id="A", run_id="r3", params={}, label="",
-                  started_at=3.0)
+                  started_at=3.0, n_steps=10)
     runs_a = query_runs(conn, spec_id="A")
     assert sorted(r["run_id"] for r in runs_a) == ["r1", "r3"]
 
@@ -61,9 +63,9 @@ def test_query_runs_returns_newest_first(tmp_path):
     db_file = tmp_path / "runs.db"
     conn = connect(db_file)
     save_metadata(conn, spec_id="A", run_id="r_old", params={}, label="",
-                  started_at=1.0)
+                  started_at=1.0, n_steps=10)
     save_metadata(conn, spec_id="A", run_id="r_new", params={}, label="",
-                  started_at=10.0)
+                  started_at=10.0, n_steps=10)
     runs = query_runs(conn, spec_id="A")
     assert runs[0]["run_id"] == "r_new"
 
@@ -73,7 +75,7 @@ def test_query_run_returns_empty_when_no_history(tmp_path):
     conn = connect(db_file)
     # No SQLiteEmitter ran against this DB yet → history table empty.
     save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
-                  started_at=0.0)
+                  started_at=0.0, n_steps=10)
     trajectory = query_run(conn, run_id="r1")
     assert trajectory == []
 
@@ -252,3 +254,87 @@ def test_connect_adds_sim_name_to_legacy_db(tmp_path):
     conn.close()
     assert "sim_name" in cols
     assert n == 1
+
+
+def test_connect_adds_new_columns_to_legacy_db(tmp_path):
+    """connect() migrates a pre-existing DB that lacks the new columns."""
+    import sqlite3
+    db_file = tmp_path / "runs.db"
+    # Simulate a legacy DB: original 8-column schema, one row.
+    legacy = sqlite3.connect(str(db_file))
+    legacy.execute(
+        "CREATE TABLE runs_meta (run_id TEXT PRIMARY KEY, spec_id TEXT NOT NULL, "
+        "label TEXT, params_json TEXT, started_at REAL NOT NULL, "
+        "completed_at REAL, n_steps INTEGER, status TEXT NOT NULL)"
+    )
+    legacy.execute(
+        "INSERT INTO runs_meta (run_id, spec_id, started_at, status) "
+        "VALUES ('r-old', 's', 1.0, 'completed')"
+    )
+    legacy.commit()
+    legacy.close()
+
+    conn = connect(db_file)
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(runs_meta)")}
+    assert {"pid", "progress_step", "log_path", "heartbeat_at"} <= cols
+    # Legacy row survived.
+    row = conn.execute("SELECT spec_id FROM runs_meta WHERE run_id='r-old'").fetchone()
+    assert row["spec_id"] == "s"
+
+
+def test_save_metadata_stores_requested_n_steps_and_log_path(tmp_path):
+    conn = connect(tmp_path / "runs.db")
+    save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
+                  started_at=1.0, n_steps=20, log_path=".pbg/runs/r1/run.log")
+    meta = query_run_meta(conn, run_id="r1")
+    assert meta["n_steps"] == 20
+    assert meta["log_path"] == ".pbg/runs/r1/run.log"
+    assert meta["status"] == "running"
+    assert meta["progress_step"] == 0
+
+
+def test_update_progress_advances_step_and_heartbeat(tmp_path):
+    conn = connect(tmp_path / "runs.db")
+    save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
+                  started_at=1.0, n_steps=10)
+    update_progress(conn, run_id="r1", progress_step=4, heartbeat_at=123.0)
+    meta = query_run_meta(conn, run_id="r1")
+    assert meta["progress_step"] == 4
+    assert meta["heartbeat_at"] == 123.0
+
+
+def test_set_pid_records_pid(tmp_path):
+    conn = connect(tmp_path / "runs.db")
+    save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
+                  started_at=1.0, n_steps=10)
+    set_pid(conn, run_id="r1", pid=4242)
+    assert query_run_meta(conn, run_id="r1")["pid"] == 4242
+
+
+def test_mark_orphaned_sets_terminal_status(tmp_path):
+    conn = connect(tmp_path / "runs.db")
+    save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
+                  started_at=1.0, n_steps=10)
+    mark_orphaned(conn, run_id="r1")
+    meta = query_run_meta(conn, run_id="r1")
+    assert meta["status"] == "orphaned"
+    assert meta["completed_at"] is not None
+
+
+def test_query_run_meta_returns_none_for_unknown(tmp_path):
+    conn = connect(tmp_path / "runs.db")
+    assert query_run_meta(conn, run_id="nope") is None
+
+
+def test_prune_runs_keeps_only_newest_n_per_spec(tmp_path):
+    conn = connect(tmp_path / "runs.db")
+    for i in range(5):
+        save_metadata(conn, spec_id="s", run_id=f"r{i}", params={}, label="",
+                      started_at=float(i), n_steps=1)
+    save_metadata(conn, spec_id="other", run_id="x", params={}, label="",
+                  started_at=99.0, n_steps=1)
+    prune_runs(conn, spec_id="s", keep=2)
+    remaining = sorted(r["run_id"] for r in query_runs(conn, spec_id="s"))
+    assert remaining == ["r3", "r4"]
+    # Other spec untouched.
+    assert len(query_runs(conn, spec_id="other")) == 1

@@ -34,18 +34,38 @@ CREATE INDEX IF NOT EXISTS idx_runs_meta_spec ON runs_meta(spec_id);
 """
 
 
+# Nullable columns added to runs_meta after the original 8-column schema.
+# `connect()` ALTERs in any that a pre-existing DB is missing. `sim_name`
+# predates the detached-runs rework but is migrated through the same path.
+_NEW_COLUMNS = {
+    "sim_name": "TEXT",
+    "pid": "INTEGER",
+    "progress_step": "INTEGER",
+    "log_path": "TEXT",
+    "heartbeat_at": "REAL",
+}
+
+
+def _migrate_runs_meta(conn: sqlite3.Connection) -> None:
+    """Add any missing nullable columns to an existing runs_meta table."""
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(runs_meta)")}
+    for name, sqltype in _NEW_COLUMNS.items():
+        if name not in existing:
+            conn.execute(f"ALTER TABLE runs_meta ADD COLUMN {name} {sqltype}")
+    conn.commit()
+
+
 def connect(db_file: str | Path) -> sqlite3.Connection:
-    """Open the runs DB and ensure the metadata schema exists."""
+    """Open the runs DB, ensure schema + migrations, enable WAL."""
     db_file = Path(db_file)
     db_file.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(db_file))
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     conn.execute(_SCHEMA_RUNS_META)
     conn.execute(_INDEX_RUNS_META)
-    # Legacy DBs created before sim_name was in the base schema: ALTER it in.
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(runs_meta)")}
-    if "sim_name" not in cols:
-        conn.execute("ALTER TABLE runs_meta ADD COLUMN sim_name TEXT")
+    _migrate_runs_meta(conn)
     conn.commit()
     return conn
 
@@ -61,14 +81,21 @@ def generate_run_id(spec_id: str, params: dict | None = None,
 
 
 def save_metadata(conn: sqlite3.Connection, *, spec_id: str, run_id: str,
-                  params: dict | None, label: str, started_at: float) -> None:
-    """Insert a new run row with status='running'."""
+                  params: dict | None, label: str, started_at: float,
+                  n_steps: int, log_path: str | None = None) -> None:
+    """Insert a new run row with status='running'.
+
+    ``n_steps`` is the *requested* step total — stored up front so the UI
+    progress bar always has a denominator. ``complete_metadata`` may later
+    overwrite it with the actual count.
+    """
     conn.execute(
         "INSERT INTO runs_meta "
-        "(run_id, spec_id, label, params_json, started_at, status) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "(run_id, spec_id, label, params_json, started_at, status, "
+        " n_steps, log_path, progress_step) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)",
         (run_id, spec_id, label, json.dumps(params or {}),
-         started_at, "running"),
+         started_at, "running", n_steps, log_path),
     )
     conn.commit()
 
@@ -82,6 +109,82 @@ def complete_metadata(conn: sqlite3.Connection, *, run_id: str,
         (time.time(), n_steps, status, run_id),
     )
     conn.commit()
+
+
+def query_run_meta(conn: sqlite3.Connection, *, run_id: str) -> dict | None:
+    """Return the runs_meta row for one run as a dict, or None if absent."""
+    row = conn.execute(
+        "SELECT run_id, spec_id, label, params_json, started_at, completed_at, "
+        "n_steps, status, pid, progress_step, log_path, heartbeat_at "
+        "FROM runs_meta WHERE run_id=?",
+        (run_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    d = dict(row)
+    try:
+        d["params"] = json.loads(d.pop("params_json") or "{}")
+    except json.JSONDecodeError:
+        d["params"] = {}
+    return d
+
+
+def update_progress(conn: sqlite3.Connection, *, run_id: str,
+                    progress_step: int, heartbeat_at: float) -> None:
+    """Advance the live progress counter + heartbeat for a running run."""
+    conn.execute(
+        "UPDATE runs_meta SET progress_step=?, heartbeat_at=? WHERE run_id=?",
+        (progress_step, heartbeat_at, run_id),
+    )
+    conn.commit()
+
+
+def set_pid(conn: sqlite3.Connection, *, run_id: str, pid: int) -> None:
+    """Record the detached child PID once it has been spawned."""
+    conn.execute("UPDATE runs_meta SET pid=? WHERE run_id=?", (pid, run_id))
+    conn.commit()
+
+
+def mark_orphaned(conn: sqlite3.Connection, *, run_id: str) -> None:
+    """Mark a run whose process died without writing a terminal status."""
+    conn.execute(
+        "UPDATE runs_meta SET status='orphaned', completed_at=? WHERE run_id=?",
+        (time.time(), run_id),
+    )
+    conn.commit()
+
+
+PRUNE_KEEP = 20
+
+
+def prune_runs(conn: sqlite3.Connection, *, spec_id: str,
+               keep: int = PRUNE_KEEP) -> int:
+    """Delete all but the newest ``keep`` runs for ``spec_id``.
+
+    Removes both the runs_meta rows and their history rows. Returns the
+    number of runs deleted.
+    """
+    rows = conn.execute(
+        "SELECT run_id FROM runs_meta WHERE spec_id=? "
+        "ORDER BY started_at DESC", (spec_id,),
+    ).fetchall()
+    stale = [r[0] for r in rows[keep:]]
+    if not stale:
+        return 0
+    placeholders = ",".join("?" * len(stale))
+    has_history = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='history'"
+    ).fetchone()
+    if has_history:
+        conn.execute(
+            f"DELETE FROM history WHERE simulation_id IN ({placeholders})",
+            stale,
+        )
+    conn.execute(
+        f"DELETE FROM runs_meta WHERE run_id IN ({placeholders})", stale,
+    )
+    conn.commit()
+    return len(stale)
 
 
 def query_runs(conn: sqlite3.Connection, *, spec_id: str) -> list[dict]:
