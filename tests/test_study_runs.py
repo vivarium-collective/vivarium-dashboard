@@ -55,3 +55,22 @@ def test_run_baseline_missing_study(_study_ws):
     from vivarium_dashboard.server import _post_study_run_baseline_for_test
     resp, code = _post_study_run_baseline_for_test(_study_ws, {"study": "nope"})
     assert code == 404
+
+
+def test_run_variant_layers_overrides(_study_ws):
+    from vivarium_dashboard.server import _post_study_run_variant_for_test
+    resp, code = _post_study_run_variant_for_test(
+        _study_ws, {"study": "s1", "variant": "fast"})
+    assert code == 200, resp
+    spec = yaml.safe_load((_study_ws / "studies" / "s1" / "study.yaml").read_text())
+    # The new run records the variant name.
+    variant_runs = [r for r in spec["runs"] if r.get("variant") == "fast"]
+    assert len(variant_runs) == 1
+    assert variant_runs[0]["run_id"] == resp["simulation_id"]
+
+
+def test_run_variant_unknown_variant(_study_ws):
+    from vivarium_dashboard.server import _post_study_run_variant_for_test
+    resp, code = _post_study_run_variant_for_test(
+        _study_ws, {"study": "s1", "variant": "ghost"})
+    assert code == 404

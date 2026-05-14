@@ -100,7 +100,8 @@ _GET_STUDY_ALIASES: list[tuple[str, str]] = [
 _POST_STUDY_ALIASES: dict[str, str] = {
     "/api/investigation-create":             "/api/study-create",
     "/api/investigation-delete":             "/api/study-delete",
-    "/api/investigation-run-one":            "/api/study-run-variant",
+    # /api/study-run-variant is now a v3-native route (not an alias), so it
+    # intentionally maps to _post_study_run_variant, not _post_investigation_run_one.
     "/api/investigation-render-viz":         "/api/study-viz-render",
     "/api/investigation-add-viz":            "/api/study-viz-add",
     "/api/investigation-run-delete":         "/api/study-run-delete",
@@ -178,6 +179,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-rename":                     "_post_study_rename",
     "/api/study-create-from-run":            "_post_study_create_from_run",
     "/api/study-run-baseline":               "_post_study_run_baseline",
+    "/api/study-run-variant":               "_post_study_run_variant",
 }
 # Inject study-alias routes into the POST route map (same method name as old).
 for _old, _new in _POST_STUDY_ALIASES.items():
@@ -641,10 +643,74 @@ def _post_study_run_baseline_for_test(ws_root, body):
     response, code = _run_composite_subprocess(
         pkg=pkg, state=state, steps=steps, db_file=db_file,
         run_id=run_id, spec_id=spec_id, label="baseline", sim_name="baseline",
+        overrides=generator_overrides,
     )
     if code == 200:
         _append_study_run(study_dir, {
             "run_id": run_id, "variant": None, "label": "baseline",
+            "status": "completed", "n_steps": steps,
+        })
+    return response, code
+
+
+def _post_study_run_variant_for_test(ws_root, body):
+    """Run a Study variant (baseline + param overrides). Returns (response_dict, status_code)."""
+    from vivarium_dashboard.lib import composite_runs as cr
+
+    name = _study_name_from_body(body)
+    variant_name = (body.get("variant") or "").strip()
+    if not name or not variant_name:
+        return {"error": "missing study or variant"}, 400
+    study_dir = _study_dir(name)
+    sf = study_dir / "study.yaml"
+    if not sf.is_file():
+        return {"error": "study not found"}, 404
+
+    spec = yaml.safe_load(sf.read_text()) or {}
+    baseline = spec.get("baseline") or {}
+    spec_id = baseline.get("composite")
+    if not spec_id:
+        return {"error": "study has no baseline.composite"}, 400
+
+    variant = next((v for v in (spec.get("variants") or [])
+                    if v.get("name") == variant_name), None)
+    if variant is None:
+        return {"error": f"variant {variant_name!r} not found"}, 404
+
+    # Layer the variant's parameter_overrides on top of baseline.params.
+    params = dict(baseline.get("params") or {})
+    intervention = variant.get("intervention") or {}
+    params.update(intervention.get("parameter_overrides") or {})
+
+    # n_steps is a run-level setting, not a generator parameter — extract it
+    # unconditionally before passing the remainder as generator overrides.
+    params_n_steps = params.pop("n_steps", None)
+    steps = int(body.get("steps") or params_n_steps or 5)
+    generator_overrides = params  # remaining keys are true generator parameters
+
+    ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text())
+    pkg = ws_data.get("package_path") or ("pbg_" + ws_data.get("name", "").replace("-", "_"))
+
+    state, err = _resolve_study_baseline_state(pkg, spec_id, generator_overrides)
+    if err is not None:
+        return err, 400
+
+    # Reconstruct the full params dict (with n_steps) for run_id generation,
+    # mirroring Task 3's pattern.
+    full_params = dict(generator_overrides)
+    if params_n_steps is not None:
+        full_params["n_steps"] = params_n_steps
+
+    db_file = str(study_dir / "runs.db")
+    run_id = cr.generate_run_id(spec_id, full_params)
+    response, code = _run_composite_subprocess(
+        pkg=pkg, state=state, steps=steps, db_file=db_file,
+        run_id=run_id, spec_id=spec_id, label=variant_name,
+        sim_name=variant_name, overrides=generator_overrides,
+    )
+    if code == 200:
+        _append_study_run(study_dir, {
+            "run_id": run_id, "variant": variant_name, "label": variant_name,
             "status": "completed", "n_steps": steps,
         })
     return response, code
@@ -5036,6 +5102,11 @@ if __name__ == "__main__":
     def _post_study_run_baseline(self, body: dict):
         """POST /api/study-run-baseline {study, steps?}"""
         response, code = _post_study_run_baseline_for_test(WORKSPACE, body)
+        return self._json(response, code)
+
+    def _post_study_run_variant(self, body: dict):
+        """POST /api/study-run-variant {study, variant, steps?}"""
+        response, code = _post_study_run_variant_for_test(WORKSPACE, body)
         return self._json(response, code)
 
     def _get_study_export(self):

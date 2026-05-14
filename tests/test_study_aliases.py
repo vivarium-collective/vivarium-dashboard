@@ -23,7 +23,8 @@ POST_ALIAS_PAIRS = [
     ("/api/investigation-delete",             "/api/study-delete"),
     # /api/study-run-baseline is now a v3-native route (not an alias), so it
     # intentionally maps to _post_study_run_baseline, not _post_investigation_run.
-    ("/api/investigation-run-one",            "/api/study-run-variant"),
+    # /api/study-run-variant is now a v3-native route (not an alias), so it
+    # intentionally maps to _post_study_run_variant, not _post_investigation_run_one.
     ("/api/investigation-render-viz",         "/api/study-viz-render"),
     ("/api/investigation-add-viz",            "/api/study-viz-add"),
     ("/api/investigation-run-delete",         "/api/study-run-delete"),
