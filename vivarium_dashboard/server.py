@@ -933,9 +933,11 @@ def _render_study_detail_html(name: str, spec: dict) -> str:
 
 def _is_generated_path(path: str) -> bool:
     """True if `path` is a generated report file (the dashboard rebuilds these
-    on every page load, so they're chronically dirty and shouldn't block actions).
+    on every page load, so they're chronically dirty and shouldn't block actions)
+    or a large untracked artifact directory (out/ — the ~175 MB ParCa cache —
+    which must never block actions and must never be committed).
     """
-    return path.startswith("reports/")
+    return path.startswith("reports/") or path.startswith("out/") or path == "out/"
 
 
 def _submodule_paths() -> set[str]:
@@ -1256,8 +1258,29 @@ def _active_branch_action(commit_message: str, action_fn) -> tuple[dict, int]:
 
     try:
         action_fn()
-        subprocess.run(["git", "add", "-A"], cwd=WORKSPACE, check=True, capture_output=True)
-        subprocess.run(["git", "reset", "HEAD", "--", "reports/"], cwd=WORKSPACE, check=False, capture_output=True)
+        # Stage only the content the dashboard authors. A blanket `git add -A`
+        # can sweep large untracked artifact dirs (out/, the ~175 MB ParCa
+        # cache) into the commit; scoping the pathspec makes that impossible.
+        # reports/ is intentionally excluded — it is generated, not authored.
+        # Absent pathspecs are a fatal error for `git add`, so we filter the
+        # list down to paths that actually exist in the workspace first.
+        _STAGE_PATHS = [
+            "studies/", "investigations/", "models/", "scripts/",
+            "workspace.yaml", "pyproject.toml", ".gitmodules", ".gitignore",
+            "external/",
+        ]
+        present = [p for p in _STAGE_PATHS if (WORKSPACE / p).exists()]
+        if present:
+            subprocess.run(
+                ["git", "add", "-A", "--", *present],
+                cwd=WORKSPACE, check=True, capture_output=True,
+            )
+        # Also stage any already-tracked top-level *.py / *.yaml the action
+        # touched, without picking up untracked files.
+        subprocess.run(
+            ["git", "add", "--update"],
+            cwd=WORKSPACE, check=True, capture_output=True,
+        )
         diff = subprocess.run(
             ["git", "diff", "--cached", "--stat"],
             cwd=WORKSPACE, capture_output=True, text=True, check=True,
