@@ -83,9 +83,9 @@ _VALID_OVERVIEW_STATUSES = {"draft", "in-progress", "completed", "archived"}
 # ---------------------------------------------------------------------------
 # Study-alias route tables
 # ---------------------------------------------------------------------------
-# GET routes use a startswith() chain inside do_GET.  Each entry is
-# (existing_prefix, new_alias_prefix) — do_GET maps each alias by adding a
-# sibling branch that calls the same handler.
+# GET routes: do_GET rewrites self.path at entry using this table so the rest
+# of the dispatch chain only sees /api/investigation-* paths.  Each entry is
+# (existing_prefix, alias_prefix) — matching alias paths are rewritten in-place.
 _GET_STUDY_ALIASES: list[tuple[str, str]] = [
     ("/api/investigations",            "/api/studies"),
     ("/api/investigation-viz-html",    "/api/study-viz-html"),
@@ -808,6 +808,14 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
+        # Resolve /api/study-* aliases to their /api/investigation-* originals so
+        # the rest of the dispatch chain only needs to know one set of paths.
+        for old_prefix, new_prefix in _GET_STUDY_ALIASES:
+            if self.path.startswith(new_prefix):
+                tail = self.path[len(new_prefix):]
+                self.path = old_prefix + tail
+                break
+
         # Strip query string for route matching (self.path includes ?focus=...).
         path_only = self.path.split("?", 1)[0]
         if path_only in ("/", "/index.html"):
@@ -836,17 +844,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_composite_state()
         if self.path.startswith("/api/composite-resolve"):
             return self._get_composite_resolve()
-        if self.path.startswith("/api/investigation-viz-html") or self.path.startswith("/api/study-viz-html"):
+        if self.path.startswith("/api/investigation-viz-html"):
             return self._get_investigation_viz_html()
-        if self.path.startswith("/api/investigation-composites") or self.path.startswith("/api/study-composites"):
+        if self.path.startswith("/api/investigation-composites"):
             return self._get_investigation_composites()
-        if self.path.startswith("/api/investigation-state-tree") or self.path.startswith("/api/study-state-tree"):
+        if self.path.startswith("/api/investigation-state-tree"):
             return self._get_investigation_state_tree()
         if self.path.startswith("/api/investigation-composite-doc"):
             return self._get_investigation_composite_doc()
-        if self.path.startswith("/api/investigation/") or self.path.startswith("/api/study/"):
+        if self.path.startswith("/api/investigation/"):
             return self._get_investigation_detail()
-        if self.path.startswith("/api/investigations") or self.path.startswith("/api/studies"):
+        if self.path.startswith("/api/investigations"):
             return self._get_investigations()
         if self.path.startswith("/api/composites"):
             return self._get_composites()

@@ -1,10 +1,10 @@
 """Verify /api/study-* aliases hit the same handlers as /api/investigation-*.
 
 Dispatcher structure in server.py:
-- GET  routes: if/elif chain in Handler.do_GET using self.path.startswith(...)
-               Aliases are sibling branches calling the same handler method.
-               _GET_STUDY_ALIASES (list of (old_prefix, new_prefix)) is the
-               canonical registry; tests inspect it directly.
+- GET  routes: do_GET rewrites self.path at entry using _GET_STUDY_ALIASES so
+               the rest of the dispatch chain only sees /api/investigation-*
+               paths.  _GET_STUDY_ALIASES is the single source of truth;
+               tests inspect it directly.
 - POST routes: module-level _POST_ROUTE_MAP dict {route: method_name_str}.
                do_POST resolves route → getattr(self, method_name)(body).
                _POST_STUDY_ALIASES injects alias keys at import time so both
