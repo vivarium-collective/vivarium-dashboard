@@ -2890,6 +2890,12 @@
           }
         }
         window._ceCurrent.parameters = data.parameters;
+        // Pre-fill the steps input from default_n_steps when the composite
+        // declares one; otherwise fall back to 5.
+        var stepsInput = document.getElementById('ce-steps');
+        if (stepsInput) {
+          stepsInput.value = (data.default_n_steps != null) ? data.default_n_steps : 5;
+        }
         // Send wiring state to loom-explore iframe via postMessage
         _loadCompositeExplorer(data.id, data.state, data.name);
         // Render parameter editor

@@ -157,3 +157,15 @@ def test_distinct_runs_get_distinct_ids(server):
         "id": spec_id, "overrides": {"rate": 2.0}, "steps": 2,
     })
     assert b1["simulation_id"] != b2["simulation_id"]
+
+
+def test_api_composites_includes_default_n_steps(server):
+    """Composites with default_n_steps surface it via /api/composites."""
+    base = server["url"]
+    status, response = _get(f"{base}/api/composites")
+    assert status == 200
+    composites = response["composites"]
+    # The fixtures workspace has a generator with default_n_steps=42
+    # (defined in pbg_ws_increase_demo/composites/__init__.py).
+    matching = [c for c in composites if c.get("default_n_steps") == 42]
+    assert matching, f"no composite has default_n_steps=42 in {composites}"

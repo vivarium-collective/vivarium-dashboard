@@ -4830,8 +4830,10 @@ if __name__ == "__main__":
 
         Each record includes ``kind`` (``"spec"`` | ``"generator"``) and
         ``module`` so dashboards can tell static specs from
-        ``@composite_generator`` functions.
+        ``@composite_generator`` functions. Generator entries also include
+        ``default_n_steps`` (int | None) for UI pre-fill.
         """
+        import importlib as _importlib
         _ws_add_to_sys_path()
         try:
             from vivarium_dashboard.lib.composite_lookup import discover_all_composites
@@ -4841,12 +4843,25 @@ if __name__ == "__main__":
         try:
             ws_data = yaml.safe_load((WORKSPACE / "workspace.yaml").read_text())
             pkg = ws_data.get("package_path") or ("pbg_" + ws_data.get("name", "").replace("-", "_"))
+            # Eagerly import the workspace package so any @composite_generator
+            # decorators inside it fire and register into pbg-superpowers'
+            # _REGISTRY before discover_all_composites calls discover_generators().
+            # The workspace is already on sys.path via _ws_add_to_sys_path().
+            try:
+                _importlib.import_module(pkg)
+            except Exception:
+                pass
             specs = discover_all_composites(WORKSPACE, pkg)
             out = []
             for s in specs.values():
                 rec = {k: v for k, v in s.items() if not k.startswith("_")}
                 rec.setdefault("kind", "spec")
                 rec.setdefault("module", "")
+                # Ensure default_n_steps is always present in every entry so
+                # the UI can rely on the key existing (None for spec entries
+                # that don't declare one).
+                if "default_n_steps" not in rec:
+                    rec["default_n_steps"] = None
                 out.append(rec)
             return self._json({"composites": out}, 200)
         except Exception as e:
@@ -4972,6 +4987,7 @@ if __name__ == "__main__":
                 "svg": svg,
                 "kind": "generator",
                 "module": entry.module,
+                "default_n_steps": entry.default_n_steps,
             }, 200)
 
         path = find_composite_path(WORKSPACE, pkg, spec_id)
@@ -5000,6 +5016,7 @@ if __name__ == "__main__":
             "svg": svg,
             "kind": "spec",
             "module": _derive_module_from_spec_id(spec_id),
+            "default_n_steps": None,
         }, 200)
 
     def _post_composite_test_run(self, body: dict):
