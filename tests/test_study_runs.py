@@ -74,3 +74,69 @@ def test_run_variant_unknown_variant(_study_ws):
     resp, code = _post_study_run_variant_for_test(
         _study_ws, {"study": "s1", "variant": "ghost"})
     assert code == 404
+
+
+def _seed_run(study_ws, run_id, variant=None):
+    """Helper: put one run row in the Study's runs.db + study.yaml."""
+    import sqlite3
+    from vivarium_dashboard.lib.composite_runs import connect
+    sd = study_ws / "studies" / "s1"
+    db = sd / "runs.db"
+    conn = connect(db)
+    conn.execute(
+        "INSERT INTO runs_meta (run_id, spec_id, label, params_json, "
+        "started_at, status) VALUES (?,?,?,?,?,?)",
+        (run_id, "pkg.foo", "lbl", "{}", 1.0, "completed"),
+    )
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS history (simulation_id TEXT, step INTEGER, "
+        "global_time REAL, state TEXT, PRIMARY KEY (simulation_id, step))"
+    )
+    conn.execute("INSERT INTO history VALUES (?,?,?,?)", (run_id, 0, 0.0, "{}"))
+    conn.commit()
+    conn.close()
+    sf = sd / "study.yaml"
+    spec = yaml.safe_load(sf.read_text())
+    spec.setdefault("runs", []).append(
+        {"run_id": run_id, "variant": variant, "label": "lbl", "status": "completed"})
+    sf.write_text(yaml.safe_dump(spec, sort_keys=False))
+
+
+def test_run_delete_removes_from_db_and_yaml(_study_ws):
+    from vivarium_dashboard.server import _post_study_run_delete_for_test
+    _seed_run(_study_ws, "r1")
+    _seed_run(_study_ws, "r2")
+    resp, code = _post_study_run_delete_for_test(
+        _study_ws, {"study": "s1", "run_id": "r1"})
+    assert code == 200
+    import sqlite3
+    conn = sqlite3.connect(str(_study_ws / "studies" / "s1" / "runs.db"))
+    meta_ids = [r[0] for r in conn.execute("SELECT run_id FROM runs_meta")]
+    hist_ids = [r[0] for r in conn.execute("SELECT DISTINCT simulation_id FROM history")]
+    conn.close()
+    assert meta_ids == ["r2"]
+    assert hist_ids == ["r2"]
+    spec = yaml.safe_load((_study_ws / "studies" / "s1" / "study.yaml").read_text())
+    assert [r["run_id"] for r in spec["runs"]] == ["r2"]
+
+
+def test_runs_clear_empties_everything(_study_ws):
+    from vivarium_dashboard.server import _post_study_runs_clear_for_test
+    _seed_run(_study_ws, "r1")
+    _seed_run(_study_ws, "r2")
+    resp, code = _post_study_runs_clear_for_test(_study_ws, {"study": "s1"})
+    assert code == 200
+    import sqlite3
+    conn = sqlite3.connect(str(_study_ws / "studies" / "s1" / "runs.db"))
+    n_meta = conn.execute("SELECT COUNT(*) FROM runs_meta").fetchone()[0]
+    n_hist = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+    conn.close()
+    assert n_meta == 0 and n_hist == 0
+    spec = yaml.safe_load((_study_ws / "studies" / "s1" / "study.yaml").read_text())
+    assert spec["runs"] == []
+
+
+def test_run_delete_missing_study(_study_ws):
+    from vivarium_dashboard.server import _post_study_run_delete_for_test
+    resp, code = _post_study_run_delete_for_test(_study_ws, {"study": "nope", "run_id": "r1"})
+    assert code == 404

@@ -104,8 +104,8 @@ _POST_STUDY_ALIASES: dict[str, str] = {
     # intentionally maps to _post_study_run_variant, not _post_investigation_run_one.
     "/api/investigation-render-viz":         "/api/study-viz-render",
     "/api/investigation-add-viz":            "/api/study-viz-add",
-    "/api/investigation-run-delete":         "/api/study-run-delete",
-    "/api/investigation-runs-clear":         "/api/study-runs-clear",
+    # /api/study-run-delete is now a v3-native route (not an alias).
+    # /api/study-runs-clear is now a v3-native route (not an alias).
     # /api/study-variant-add is now a v3-native route (not an alias), so it
     # intentionally maps to _post_study_variant_add, not _post_investigation_composite_perturb.
     "/api/investigation-composite-rebuild":  "/api/study-variant-rebuild",
@@ -183,6 +183,8 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-run-variant":               "_post_study_run_variant",
     "/api/study-variant-add":               "_post_study_variant_add",
     "/api/study-variant-delete":            "_post_study_variant_delete",
+    "/api/study-run-delete":                "_post_study_run_delete",
+    "/api/study-runs-clear":                "_post_study_runs_clear",
 }
 # Inject study-alias routes into the POST route map (same method name as old).
 for _old, _new in _POST_STUDY_ALIASES.items():
@@ -761,6 +763,67 @@ def _post_study_variant_delete_for_test(ws_root, body):
     if len(remaining) == len(variants):
         return {"error": f"variant {variant_name!r} not found"}, 404
     spec["variants"] = remaining
+    sf.write_text(yaml.safe_dump(spec, sort_keys=False))
+    return {"ok": True}, 200
+
+
+def _post_study_run_delete_for_test(ws_root, body):
+    """Remove one run from runs.db + study.yaml. Returns (response_dict, status_code)."""
+    study = _study_name_from_body(body)
+    run_id = (body.get("run_id") or "").strip()
+    if not study or not run_id:
+        return {"error": "missing study or run_id"}, 400
+    study_dir = _study_dir(study)
+    sf = study_dir / "study.yaml"
+    if not sf.is_file():
+        return {"error": "study not found"}, 404
+
+    db = study_dir / "runs.db"
+    if db.is_file():
+        conn = sqlite3.connect(str(db))
+        try:
+            conn.execute("DELETE FROM runs_meta WHERE run_id = ?", (run_id,))
+            has_history = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='history'"
+            ).fetchone()
+            if has_history:
+                conn.execute("DELETE FROM history WHERE simulation_id = ?", (run_id,))
+            conn.commit()
+        finally:
+            conn.close()
+
+    spec = yaml.safe_load(sf.read_text()) or {}
+    spec["runs"] = [r for r in (spec.get("runs") or []) if r.get("run_id") != run_id]
+    sf.write_text(yaml.safe_dump(spec, sort_keys=False))
+    return {"ok": True}, 200
+
+
+def _post_study_runs_clear_for_test(ws_root, body):
+    """Remove all runs from runs.db + study.yaml. Returns (response_dict, status_code)."""
+    study = _study_name_from_body(body)
+    if not study:
+        return {"error": "missing study"}, 400
+    study_dir = _study_dir(study)
+    sf = study_dir / "study.yaml"
+    if not sf.is_file():
+        return {"error": "study not found"}, 404
+
+    db = study_dir / "runs.db"
+    if db.is_file():
+        conn = sqlite3.connect(str(db))
+        try:
+            conn.execute("DELETE FROM runs_meta")
+            has_history = conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='history'"
+            ).fetchone()
+            if has_history:
+                conn.execute("DELETE FROM history")
+            conn.commit()
+        finally:
+            conn.close()
+
+    spec = yaml.safe_load(sf.read_text()) or {}
+    spec["runs"] = []
     sf.write_text(yaml.safe_dump(spec, sort_keys=False))
     return {"ok": True}, 200
 
@@ -5167,6 +5230,16 @@ if __name__ == "__main__":
     def _post_study_variant_delete(self, body: dict):
         """POST /api/study-variant-delete {study, variant}"""
         response, code = _post_study_variant_delete_for_test(WORKSPACE, body)
+        return self._json(response, code)
+
+    def _post_study_run_delete(self, body: dict):
+        """POST /api/study-run-delete {study, run_id}"""
+        response, code = _post_study_run_delete_for_test(WORKSPACE, body)
+        return self._json(response, code)
+
+    def _post_study_runs_clear(self, body: dict):
+        """POST /api/study-runs-clear {study}"""
+        response, code = _post_study_runs_clear_for_test(WORKSPACE, body)
         return self._json(response, code)
 
     def _get_study_export(self):
