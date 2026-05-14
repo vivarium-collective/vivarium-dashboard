@@ -141,3 +141,44 @@ def test_get_composite_doc_handles_generator_entry():
     finally:
         # Clean up: keep the registry pristine between tests.
         _REGISTRY.pop(expected_id, None)
+
+
+def test_discover_all_composites_propagates_default_n_steps(tmp_path, monkeypatch):
+    """Generator entries with default_n_steps surface that field in the catalog."""
+    from pbg_superpowers.composite_generator import (
+        composite_generator, _REGISTRY,
+    )
+    from vivarium_dashboard.lib.composite_lookup import discover_all_composites
+
+    _REGISTRY.clear()
+
+    @composite_generator(name="hint", description="", parameters={},
+                          default_n_steps=123)
+    def builder(core=None):
+        return {}
+
+    # Stub: pretend pbg-superpowers discovery returned just our entry
+    import pbg_superpowers.composite_discovery as cd
+
+    def fake_discover_all():
+        entry_id = f"{builder.__module__}.hint"
+        return {
+            entry_id: {
+                "kind": "generator",
+                "id": entry_id,
+                "name": "hint",
+                "description": "",
+                "module": builder.__module__,
+                "parameters": {},
+                "default_n_steps": 123,
+            }
+        }
+
+    monkeypatch.setattr(cd, "discover_all", fake_discover_all)
+
+    out = discover_all_composites(tmp_path, "pkg")
+    entry_id = f"{builder.__module__}.hint"
+    assert entry_id in out
+    assert out[entry_id]["default_n_steps"] == 123
+
+    _REGISTRY.clear()

@@ -183,7 +183,7 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
             continue
         if gid in out:
             continue
-        out[gid] = {
+        rec: dict = {
             "id": gid,
             "kind": "generator",
             "name": entry.get("name") or gid.rsplit(".", 1)[-1],
@@ -193,6 +193,9 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
             "requires": {},
             "module": entry.get("module") or _derive_module_from_spec_id(gid),
         }
+        if "default_n_steps" in entry:
+            rec["default_n_steps"] = entry["default_n_steps"]
+        out[gid] = rec
     return out
 
 
