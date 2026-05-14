@@ -134,15 +134,15 @@
     alert('Edit variant not implemented in Phase 1 — delete + re-add for now.');
   });
 
-  // study-variant-delete — no alias defined yet; send to study-variant-add is wrong.
-  // Best effort: alert not implemented, or try investigation-composite-rebuild.
-  // The task plan does not define /api/study-variant-delete; show a clear message.
   bindAll('.btn-delete-variant', function(btn) {
     var variant = btn.dataset.variant;
     if (!confirm('Delete variant ' + variant + '?')) return;
-    // No dedicated endpoint yet — inform user.
-    alert('Variant deletion not yet implemented server-side (Phase 1). ' +
-          'Edit studies/' + studyName() + '/study.yaml directly to remove "' + variant + '".');
+    api('POST', '/api/study-variant-delete',
+        {study: studyName(), variant: variant})
+      .then(function(res) {
+        if (res.status === 200) location.reload();
+        else alert(res.body.error || 'Delete variant failed');
+      });
   });
 
   // --- Runs ---
