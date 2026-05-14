@@ -80,6 +80,106 @@ _REGISTRY_TTL = 30.0  # seconds
 # Canonical investigation Overview status values (see Task A3.5 / set-overview).
 _VALID_OVERVIEW_STATUSES = {"draft", "in-progress", "completed", "archived"}
 
+# ---------------------------------------------------------------------------
+# Study-alias route tables
+# ---------------------------------------------------------------------------
+# GET routes use a startswith() chain inside do_GET.  Each entry is
+# (existing_prefix, new_alias_prefix) — do_GET maps each alias by adding a
+# sibling branch that calls the same handler.
+_GET_STUDY_ALIASES: list[tuple[str, str]] = [
+    ("/api/investigations",            "/api/studies"),
+    ("/api/investigation-viz-html",    "/api/study-viz-html"),
+    ("/api/investigation-composites",  "/api/study-composites"),
+    ("/api/investigation-state-tree",  "/api/study-state-tree"),
+    # /api/investigation/<name>  →  /api/study/<name>
+    ("/api/investigation/",            "/api/study/"),
+]
+
+# POST routes use a dict keyed on the exact path.  Each entry maps an
+# existing investigation route to its study alias.
+_POST_STUDY_ALIASES: dict[str, str] = {
+    "/api/investigation-create":             "/api/study-create",
+    "/api/investigation-delete":             "/api/study-delete",
+    "/api/investigation-run":                "/api/study-run-baseline",
+    "/api/investigation-run-one":            "/api/study-run-variant",
+    "/api/investigation-render-viz":         "/api/study-viz-render",
+    "/api/investigation-add-viz":            "/api/study-viz-add",
+    "/api/investigation-run-delete":         "/api/study-run-delete",
+    "/api/investigation-runs-clear":         "/api/study-runs-clear",
+    "/api/investigation-composite-perturb":  "/api/study-variant-add",
+    "/api/investigation-composite-rebuild":  "/api/study-variant-rebuild",
+    "/api/investigation-set-observables":    "/api/study-set-observables",
+    "/api/investigation-set-conclusions":    "/api/study-set-conclusion",
+    "/api/investigation-set-overview":       "/api/study-set-description",
+    "/api/investigation-comparison-add":     "/api/study-comparison-add",
+    "/api/investigation-comparison-update":  "/api/study-comparison-update",
+    "/api/investigation-group-add":          "/api/study-group-add",
+    "/api/investigation-group-update":       "/api/study-group-update",
+}
+
+# Module-level POST route map (route → handler method name).  Used by do_POST
+# and inspectable by tests without instantiating the handler.
+_POST_ROUTE_MAP: dict[str, str] = {
+    "/api/click":              "_post_click",
+    "/api/import":             "_post_import",
+    "/api/import-install":     "_post_import_install",
+    "/api/dataset":            "_post_dataset",
+    "/api/reference-pdf":      "_post_reference_pdf",
+    "/api/reference-bibtex":   "_post_reference",
+    # Legacy alias kept for backward compat (v0.1.9 and earlier).
+    "/api/reference":          "_post_reference",
+    "/api/expert-doc":         "_post_expert_doc",
+    "/api/observable":         "_post_observable",
+    "/api/visualization":                "_post_visualization",
+    "/api/visualization-create":         "_post_visualization_create",
+    "/api/visualization-add-to-project": "_post_visualization_add_to_project",
+    "/api/visualization-commit-batch":   "_post_visualization_commit_batch",
+    "/api/visualization-preview":          "_post_visualization_preview",
+    "/api/visualization-preview-instance": "_post_visualization_preview_instance",
+    "/api/visualization-generate":         "_post_visualization_generate",
+    "/api/visualization-accept":           "_post_visualization_accept",
+    "/api/simulation":                   "_post_simulation",
+    "/api/run-tests":          "_post_run_tests",
+    "/api/render":             "_post_render",
+    "/api/work-start":         "_post_work_start",
+    "/api/work-push":          "_post_work_push",
+    "/api/work-create-github-repo": "_post_work_create_github_repo",
+    "/api/work-create-pr":     "_post_work_create_pr",
+    "/api/work-end":           "_post_work_end",
+    "/api/dirty-commit-all":   "_post_dirty_commit_all",
+    "/api/catalog-install":    "_post_catalog_install",
+    "/api/catalog-uninstall":  "_post_catalog_uninstall",
+    "/api/system-deps-install": "_post_system_deps_install",
+    "/api/open-window":        "_post_open_window",
+    "/api/suggest":            "_post_suggest",
+    "/api/composite-test-run": "_post_composite_test_run",
+    "/api/investigation-create":      "_post_investigation_create",
+    "/api/investigation-delete":      "_post_investigation_delete",
+    "/api/investigation-run":         "_post_investigation_run",
+    "/api/investigation-render-viz":  "_post_investigation_render_viz",
+    "/api/investigation-add-viz":     "_post_investigation_add_viz",
+    "/api/investigation-run-delete":  "_post_investigation_run_delete",
+    "/api/investigation-runs-clear":  "_post_investigation_runs_clear",
+    "/api/investigation-run-one":     "_post_investigation_run_one",
+    "/api/investigation-create-from-composite":  "_post_investigation_create_from_composite",
+    "/api/investigation-composite-add":          "_post_investigation_composite_add",
+    "/api/investigation-composite-perturb":      "_post_investigation_composite_perturb",
+    "/api/investigation-composite-rebuild":      "_post_investigation_composite_rebuild",
+    "/api/composite-promote-to-catalog":         "_post_composite_promote_to_catalog",
+    "/api/investigation-set-observables":    "_post_investigation_set_observables",
+    "/api/investigation-set-conclusions":    "_post_investigation_set_conclusions",
+    "/api/investigation-set-overview":       "_post_investigation_set_overview",
+    "/api/investigation-comparison-add":     "_post_investigation_comparison_add",
+    "/api/investigation-comparison-update":  "_post_investigation_comparison_update",
+    "/api/investigation-group-add":          "_post_investigation_group_add",
+    "/api/investigation-group-update":       "_post_investigation_group_update",
+}
+# Inject study-alias routes into the POST route map (same method name as old).
+for _old, _new in _POST_STUDY_ALIASES.items():
+    if _old in _POST_ROUTE_MAP:
+        _POST_ROUTE_MAP[_new] = _POST_ROUTE_MAP[_old]
+del _old, _new  # clean up loop variables from module scope
+
 
 def _get_registry_data(bypass_cache: bool = False) -> dict:
     """Return registry data from build_core() subprocess, with 30s caching.
@@ -736,17 +836,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_composite_state()
         if self.path.startswith("/api/composite-resolve"):
             return self._get_composite_resolve()
-        if self.path.startswith("/api/investigation-viz-html"):
+        if self.path.startswith("/api/investigation-viz-html") or self.path.startswith("/api/study-viz-html"):
             return self._get_investigation_viz_html()
-        if self.path.startswith("/api/investigation-composites"):
+        if self.path.startswith("/api/investigation-composites") or self.path.startswith("/api/study-composites"):
             return self._get_investigation_composites()
-        if self.path.startswith("/api/investigation-state-tree"):
+        if self.path.startswith("/api/investigation-state-tree") or self.path.startswith("/api/study-state-tree"):
             return self._get_investigation_state_tree()
         if self.path.startswith("/api/investigation-composite-doc"):
             return self._get_investigation_composite_doc()
-        if self.path.startswith("/api/investigation/"):
+        if self.path.startswith("/api/investigation/") or self.path.startswith("/api/study/"):
             return self._get_investigation_detail()
-        if self.path.startswith("/api/investigations"):
+        if self.path.startswith("/api/investigations") or self.path.startswith("/api/studies"):
             return self._get_investigations()
         if self.path.startswith("/api/composites"):
             return self._get_composites()
@@ -820,65 +920,10 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError as e:
             return self._json({"error": f"invalid JSON: {e}"}, 400)
 
-        route_map = {
-            "/api/click":              self._post_click,
-            "/api/import":             self._post_import,
-            "/api/import-install":     self._post_import_install,
-            "/api/dataset":            self._post_dataset,
-            "/api/reference-pdf":      self._post_reference_pdf,
-            "/api/reference-bibtex":   self._post_reference,
-            # Legacy alias kept for backward compat (v0.1.9 and earlier).
-            "/api/reference":          self._post_reference,
-            "/api/expert-doc":         self._post_expert_doc,
-            "/api/observable":         self._post_observable,
-            "/api/visualization":                self._post_visualization,
-            "/api/visualization-create":         self._post_visualization_create,
-            "/api/visualization-add-to-project": self._post_visualization_add_to_project,
-            "/api/visualization-commit-batch":   self._post_visualization_commit_batch,
-            "/api/visualization-preview":          self._post_visualization_preview,
-            "/api/visualization-preview-instance": self._post_visualization_preview_instance,
-            "/api/visualization-generate":         self._post_visualization_generate,
-            "/api/visualization-accept":           self._post_visualization_accept,
-            "/api/simulation":                   self._post_simulation,
-            "/api/run-tests":          self._post_run_tests,
-            "/api/render":             self._post_render,
-            "/api/work-start":         self._post_work_start,
-            "/api/work-push":          self._post_work_push,
-            "/api/work-create-github-repo": self._post_work_create_github_repo,
-            "/api/work-create-pr":     self._post_work_create_pr,
-            "/api/work-end":           self._post_work_end,
-            "/api/dirty-commit-all":   self._post_dirty_commit_all,
-            "/api/catalog-install":    self._post_catalog_install,
-            "/api/catalog-uninstall":  self._post_catalog_uninstall,
-            "/api/system-deps-install": self._post_system_deps_install,
-            "/api/open-window":        self._post_open_window,
-            "/api/suggest":            self._post_suggest,
-            "/api/composite-test-run": self._post_composite_test_run,
-            "/api/investigation-create":      self._post_investigation_create,
-            "/api/investigation-delete":      self._post_investigation_delete,
-            "/api/investigation-run":         self._post_investigation_run,
-            "/api/investigation-render-viz":  self._post_investigation_render_viz,
-            "/api/investigation-add-viz":     self._post_investigation_add_viz,
-            "/api/investigation-run-delete":  self._post_investigation_run_delete,
-            "/api/investigation-runs-clear":  self._post_investigation_runs_clear,
-            "/api/investigation-run-one":     self._post_investigation_run_one,
-            "/api/investigation-create-from-composite":  self._post_investigation_create_from_composite,
-            "/api/investigation-composite-add":          self._post_investigation_composite_add,
-            "/api/investigation-composite-perturb":      self._post_investigation_composite_perturb,
-            "/api/investigation-composite-rebuild":      self._post_investigation_composite_rebuild,
-            "/api/composite-promote-to-catalog":         self._post_composite_promote_to_catalog,
-            "/api/investigation-set-observables":    self._post_investigation_set_observables,
-            "/api/investigation-set-conclusions":    self._post_investigation_set_conclusions,
-            "/api/investigation-set-overview":       self._post_investigation_set_overview,
-            "/api/investigation-comparison-add":     self._post_investigation_comparison_add,
-            "/api/investigation-comparison-update":  self._post_investigation_comparison_update,
-            "/api/investigation-group-add":          self._post_investigation_group_add,
-            "/api/investigation-group-update":       self._post_investigation_group_update,
-        }
-        handler_fn = route_map.get(self.path)
-        if handler_fn is None:
+        method_name = _POST_ROUTE_MAP.get(self.path)
+        if method_name is None:
             return self._json({"error": "not found"}, 404)
-        handler_fn(body)
+        getattr(self, method_name)(body)
 
     def do_DELETE(self):
         length = int(self.headers.get("Content-Length", 0))
