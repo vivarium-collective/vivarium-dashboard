@@ -85,6 +85,30 @@ def migrate_v2_to_v3(spec: dict) -> dict:
 
     Idempotent: returns *the same object* unchanged if ``schema_version`` is
     already 3.
+
+    Two calling paths reach this function:
+
+    1. ``load_spec`` (in-memory only) — runs after ``migrate_study_to_v2_vocabulary``
+       which converts ``composites: [...]`` → ``variants:``.  By the time this
+       function is called from ``load_spec`` the spec always has ``variants:`` or
+       a bare ``composite:`` (legacy single-composite shape); the latter is
+       guarded by the ``version != 2 and not has_composites_key`` early-return so
+       the ``elif "composite" in spec`` branch is **not** reachable via this path.
+
+    2. ``migrate_investigations_to_studies`` (Task 5.1 CLI) — loads raw YAML from
+       disk and calls ``migrate_v2_to_v3(spec)`` directly, *without* first running
+       ``migrate_study_to_v2_vocabulary``.  A v2 investigation that was hand-authored
+       with a top-level ``composite: "pkg.composites.foo"`` string instead of the
+       ``composites: [...]`` list **will** have ``schema_version: 2`` and a bare
+       ``composite:`` key, making the ``elif`` branch reachable.  Example raw YAML::
+
+           schema_version: 2
+           name: my-study
+           composite: pkg.composites.chemotaxis
+           parameters: {rate: 0.5}
+
+       In this case the branch promotes ``composite`` + ``parameters`` into
+       ``baseline: {composite: ..., params: {...}}`` exactly as the list path does.
     """
     if spec.get("schema_version") == 3:
         return spec

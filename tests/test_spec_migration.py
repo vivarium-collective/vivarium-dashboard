@@ -1,8 +1,9 @@
 """Tests for migrating a study spec.yaml from legacy `composites:` to v2 `variants:`."""
 import textwrap
+import warnings
 import yaml
 
-from vivarium_dashboard.lib.spec_migration import migrate_study_to_v2_vocabulary
+from vivarium_dashboard.lib.spec_migration import migrate_study_to_v2_vocabulary, migrate_v2_to_v3
 
 
 def _write(tmp_path, body):
@@ -111,10 +112,8 @@ def test_migrate_idempotent(tmp_path):
     assert p.read_text() == before
 
 
-def test_migrate_v2_to_v3_lifts_first_composite_to_baseline(tmp_path):
+def test_migrate_v2_to_v3_lifts_first_composite_to_baseline():
     """v3 has `baseline: {composite, params}` + drops `composites: [...]`."""
-    from vivarium_dashboard.lib.spec_migration import migrate_v2_to_v3
-
     v2 = {
         "schema_version": 2,
         "name": "x",
@@ -135,9 +134,6 @@ def test_migrate_v2_to_v3_lifts_first_composite_to_baseline(tmp_path):
 
 def test_migrate_v2_to_v3_warns_on_multi_composite():
     """If v2 has >1 composite, migration keeps the first + emits a warning."""
-    import warnings
-    from vivarium_dashboard.lib.spec_migration import migrate_v2_to_v3
-
     v2 = {
         "schema_version": 2,
         "name": "y",
@@ -155,6 +151,26 @@ def test_migrate_v2_to_v3_warns_on_multi_composite():
 
 
 def test_migrate_v2_to_v3_idempotent():
-    from vivarium_dashboard.lib.spec_migration import migrate_v2_to_v3
     v3_already = {"schema_version": 3, "baseline": {"composite": "x"}}
     assert migrate_v2_to_v3(v3_already) is v3_already
+
+
+def test_migrate_v2_to_v3_bare_composite_key():
+    """elif branch: v2 spec with a lone `composite:` string (not a composites list).
+
+    This shape is reachable when the Task 5.1 CLI calls migrate_v2_to_v3 directly
+    on raw YAML — without running migrate_study_to_v2_vocabulary first.
+    """
+    v2 = {
+        "schema_version": 2,
+        "name": "my-study",
+        "composite": "pkg.composites.chemotaxis",
+        "parameters": {"rate": 0.5},
+    }
+    v3 = migrate_v2_to_v3(v2)
+    assert v3["schema_version"] == 3
+    assert v3["baseline"] == {"composite": "pkg.composites.chemotaxis", "params": {"rate": 0.5}}
+    assert "composite" not in v3
+    assert "parameters" not in v3
+    assert v3.get("objective") == ""
+    assert v3.get("parent_studies") == []
