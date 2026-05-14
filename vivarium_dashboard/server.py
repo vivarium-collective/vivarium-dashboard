@@ -27,6 +27,7 @@ import base64
 import hashlib
 import html as _html
 import json
+import math
 import os
 import re
 import shutil
@@ -68,6 +69,34 @@ def _json_default(o):
     if isinstance(o, Path):
         return str(o)
     return repr(o)
+
+
+def _nan_to_null(obj):
+    """Recursively replace non-finite floats (NaN, ±Infinity) with None.
+
+    Python's json.dumps emits NaN/Infinity/-Infinity as bare literal tokens —
+    accepted by Python's json.load but rejected by JavaScript's JSON.parse,
+    which breaks every browser consumer with a SyntaxError. Whole-cell
+    composite states legitimately contain Infinity (e.g. unbounded environment
+    concentrations), so HTTP responses sanitize rather than crash or emit
+    invalid JSON. Used only by _json() (HTTP responses) — the
+    subprocess-embedding json.dumps calls deliberately keep raw values.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _nan_to_null(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_nan_to_null(v) for v in obj]
+    # numpy arrays / scalars: convert via tolist()/item() then recurse, so
+    # non-finite values buried inside them are sanitized too.
+    tolist = getattr(obj, "tolist", None)
+    if callable(tolist):
+        try:
+            return _nan_to_null(tolist())
+        except Exception:
+            pass
+    return obj
 
 
 # ---------------------------------------------------------------------------
@@ -6511,7 +6540,13 @@ if __name__ == "__main__":
             return
 
     def _json(self, data: dict, code: int):
-        body = json.dumps(data, default=_json_default).encode()
+        # _nan_to_null: emit standards-compliant JSON (no bare NaN/Infinity
+        # tokens) so browser JSON.parse doesn't choke. allow_nan=False is a
+        # belt-and-suspenders guard — if anything non-finite still slips
+        # through, fail loudly here rather than shipping invalid JSON.
+        body = json.dumps(
+            _nan_to_null(data), default=_json_default, allow_nan=False,
+        ).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
