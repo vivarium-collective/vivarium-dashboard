@@ -67,6 +67,22 @@ backing the interactive dashboard.
 > launched the wrong one — stop it and use `bash scripts/serve.sh` (or
 > `vivarium-dashboard serve --workspace .`) instead.
 
+### Migration: Investigations → Studies (one-time)
+
+If your workspace has `investigations/<name>/spec.yaml` directories created
+before schema_version 3 / Studies, run the migration once:
+
+```bash
+vivarium-dashboard migrate-investigations --workspace /path/to/workspace
+```
+
+The script renames `investigations/` → `studies/`, bumps each spec from
+v2 to v3, and lifts the first composite into `baseline:`. Multi-composite
+investigations are migrated with a warning — recreate the extra composites
+as variants from the new Study Detail view.
+
+Add `--dry-run` to preview without writing.
+
 ## What's included
 
 - `vivarium_dashboard.server` — REST + SSE server (`/api/state`, `/api/composites`,
