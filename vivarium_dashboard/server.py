@@ -27,6 +27,7 @@ import base64
 import hashlib
 import html as _html
 import json
+import math
 import os
 import re
 import shutil
@@ -68,6 +69,49 @@ def _json_default(o):
     if isinstance(o, Path):
         return str(o)
     return repr(o)
+
+
+def _json_sanitize(obj):
+    """Recursively replace non-finite floats (inf/-inf/nan) with None.
+
+    json.dumps emits bare ``Infinity`` / ``NaN`` tokens for these — valid Python
+    but invalid JSON, which a browser's JSON.parse rejects.
+
+    Non-native objects (numpy arrays, etc.) are normalized once through
+    _json_default so inf/nan buried inside them is caught too — but only when
+    that conversion yields a JSON-native value. If _json_default returns yet
+    another non-native object (e.g. a pint Quantity, whose .item() is itself a
+    Quantity), the ORIGINAL object is left untouched for the final
+    json.dumps(default=_json_default) pass to handle — recursing on it would
+    loop forever.
+    """
+    if obj is None or isinstance(obj, (int, str)):  # int covers bool
+        return obj
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_sanitize(v) for v in obj]
+    converted = _json_default(obj)
+    if isinstance(converted, (dict, list, tuple, float, int, str)) or converted is None:
+        return _json_sanitize(converted)
+    return obj
+
+
+def _json_body(data) -> bytes:
+    """Serialize ``data`` to spec-compliant JSON bytes.
+
+    Fast path: dump with ``allow_nan=False`` (raises on non-finite floats). Only
+    when that raises do we walk the structure and replace inf/nan with null —
+    so all-finite payloads (the common case) pay nothing extra.
+    """
+    try:
+        return json.dumps(data, default=_json_default, allow_nan=False).encode()
+    except ValueError:
+        return json.dumps(
+            _json_sanitize(data), default=_json_default, allow_nan=False
+        ).encode()
 
 
 # ---------------------------------------------------------------------------
@@ -6816,7 +6860,7 @@ if __name__ == "__main__":
             return
 
     def _json(self, data: dict, code: int):
-        body = json.dumps(data, default=_json_default).encode()
+        body = _json_body(data)
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
