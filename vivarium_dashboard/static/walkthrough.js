@@ -48,6 +48,11 @@
     if (ev.data && ev.data.type === 'explore:emit-changed') {
       window._explorerEmitPaths = ev.data.paths || [];
     }
+    if (ev.data && ev.data.type === 'explore:run-complete') {
+      window._ceLastRunId = ev.data.simulation_id || null;
+      var bar = document.getElementById('ce-post-run-bar');
+      if (bar) bar.style.display = 'flex';
+    }
   });
 
   // Pop the current loom-explore iframe contents into a separate window.
@@ -2448,6 +2453,10 @@
       return;
     }
     window._ceCurrent = {id: id, overrides: {}};
+    window._ceLastRunId = null;
+    // Hide the post-run bar when loading a fresh composite.
+    var bar = document.getElementById('ce-post-run-bar');
+    if (bar) bar.style.display = 'none';
     // Eagerly populate the composite card cache so "Create simulation" can
     // open the Configure modal even when the user lands here directly
     // (deep-link / Use button) without ever visiting Simulation Setup.
@@ -3163,6 +3172,82 @@
       });
   }
   window._ceTestRun = _ceTestRun;
+
+  // ---------------------------------------------------------------------------
+  // Save-as-Study modal (wired to explore:run-complete postMessage from loom iframe)
+  // ---------------------------------------------------------------------------
+
+  function _ceOpenSaveAsStudyModal() {
+    var nameInput = document.getElementById('sas-name');
+    if (nameInput) {
+      // Pre-fill: <composite-leaf>-<YYMMDD>
+      var composite = (window._ceCurrent && window._ceCurrent.id) || '';
+      var leaf = composite.indexOf('.') >= 0 ? composite.split('.').pop() : composite;
+      var date = new Date();
+      var yymmdd = String(date.getFullYear()).slice(2) +
+        String(date.getMonth() + 1).padStart(2, '0') +
+        String(date.getDate()).padStart(2, '0');
+      nameInput.value = leaf ? (leaf + '-' + yymmdd) : '';
+    }
+    var objEl = document.getElementById('sas-objective');
+    if (objEl) objEl.value = '';
+    var descEl = document.getElementById('sas-description');
+    if (descEl) descEl.value = '';
+    var errEl = document.getElementById('sas-error');
+    if (errEl) { errEl.textContent = ''; errEl.style.display = 'none'; }
+    openModal('modal-save-as-study');
+  }
+  window._ceOpenSaveAsStudyModal = _ceOpenSaveAsStudyModal;
+
+  function _ceSubmitSaveAsStudy() {
+    var name = (document.getElementById('sas-name') || {}).value || '';
+    name = name.trim();
+    var objective = (document.getElementById('sas-objective') || {}).value || '';
+    var description = (document.getElementById('sas-description') || {}).value || '';
+    var sourceRunId = window._ceLastRunId || '';
+    var errEl = document.getElementById('sas-error');
+
+    if (!name) {
+      if (errEl) { errEl.textContent = 'Study name is required.'; errEl.style.display = 'block'; }
+      return;
+    }
+    if (!sourceRunId) {
+      if (errEl) { errEl.textContent = 'No run ID — please complete a test run first.'; errEl.style.display = 'block'; }
+      return;
+    }
+
+    var submitBtn = document.querySelector('#form-save-as-study button[type="submit"]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Creating…'; }
+
+    fetch('/api/study-create-from-run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        name: name,
+        objective: objective,
+        description: description,
+        source_run_id: sourceRunId,
+      }),
+    })
+      .then(function(r) { return r.json().then(function(d) { return {status: r.status, body: d}; }); })
+      .then(function(res) {
+        if (res.status === 200) {
+          closeModal('modal-save-as-study');
+          window.location = res.body.url || ('/studies/' + encodeURIComponent(name));
+        } else {
+          if (errEl) {
+            errEl.textContent = res.body.error || 'Unknown error';
+            errEl.style.display = 'block';
+          }
+          if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create Study'; }
+        }
+      })
+      .catch(function(err) {
+        if (errEl) { errEl.textContent = 'Network error: ' + String(err); errEl.style.display = 'block'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Create Study'; }
+      });
+  }
+  window._ceSubmitSaveAsStudy = _ceSubmitSaveAsStudy;
 
   function _cePromoteSimulation() {
     // Re-use the existing _useComposite flow (Configure modal) with current overrides pre-applied.

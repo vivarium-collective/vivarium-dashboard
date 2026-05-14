@@ -666,6 +666,12 @@
               style="width:100%;height:720px;border:1px solid #ddd;background:#fff"></iframe>
     </div>
 
+    <!-- Post-run actions: shown after a successful test run via explore:run-complete postMessage -->
+    <div id="ce-post-run-bar" style="display:none;margin-top:8px;padding:12px 16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;align-items:center;gap:12px">
+      <span style="flex:1;color:#166534;font-size:0.9em">Run complete. Save this run as a Study to track variants and conclusions.</span>
+      <button id="save-as-study-btn" class="action-btn" onclick="_ceOpenSaveAsStudyModal()" style="background:#16a34a;border-color:#16a34a">Save as Study</button>
+    </div>
+
   </div>
 </section>
 
@@ -950,6 +956,30 @@
       </label>
       <div class="form-error"></div>
       <button type="submit" class="action-btn">Create PR</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Save as Study (from Composite Explorer test run) -->
+<div id="modal-save-as-study" class="modal-overlay">
+  <div class="modal-box" style="max-width:520px">
+    <button class="modal-close" onclick="closeModal('modal-save-as-study')">&times;</button>
+    <h3>Save as Study</h3>
+    <form id="form-save-as-study" onsubmit="event.preventDefault(); _ceSubmitSaveAsStudy()">
+      <label>Study name
+        <input id="sas-name" name="name" type="text" placeholder="chemotaxis-260513" required pattern="[a-zA-Z0-9_-]+">
+      </label>
+      <label>Objective
+        <textarea id="sas-objective" name="objective" rows="3" placeholder="What question does this study address?"></textarea>
+      </label>
+      <label>Description
+        <input id="sas-description" name="description" type="text" placeholder="Optional short description">
+      </label>
+      <div class="form-error" id="sas-error" style="display:none"></div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button type="button" onclick="closeModal('modal-save-as-study')">Cancel</button>
+        <button type="submit" class="action-btn">Create Study</button>
+      </div>
     </form>
   </div>
 </div>
