@@ -366,24 +366,24 @@
     window.open('/composite-explorer?run_id=' + encodeURIComponent(runId), '_blank');
   });
 
-  // study-run-delete → _post_investigation_run_delete, key "investigation" + "run_id"
+  // study-run-delete → _post_investigation_run_delete
   bindAll('.btn-delete-run', function(btn) {
     var runId = btn.dataset.runId;
     if (!confirm('Delete this run?')) return;
     api('POST', '/api/study-run-delete', {
-      investigation: studyName(), study: studyName(), run_id: runId,
+      study: studyName(), run_id: runId,
     }).then(function() { location.reload(); });
   });
 
-  // study-runs-clear → _post_investigation_runs_clear, key "investigation"
+  // study-runs-clear → _post_investigation_runs_clear
   bindAll('.btn-clear-runs', function() {
     if (!confirm('Clear ALL runs in this study?')) return;
     api('POST', '/api/study-runs-clear', {
-      investigation: studyName(), study: studyName(),
+      study: studyName(),
     }).then(function() { location.reload(); });
   });
 
-  // study-comparison-add → _post_investigation_comparison_add, key "investigation"
+  // study-comparison-add → _post_investigation_comparison_add
   bindAll('.btn-compare-selected', function() {
     var ids = [];
     document.querySelectorAll('.run-compare-checkbox:checked').forEach(function(c) {
@@ -391,7 +391,7 @@
     });
     if (ids.length < 2) return alert('Select at least two runs.');
     api('POST', '/api/study-comparison-add', {
-      investigation: studyName(), study: studyName(), run_ids: ids,
+      study: studyName(), run_ids: ids,
     }).then(function(res) {
       if (res.status === 200) location.reload();
       else alert(res.body.error || 'Compare failed');
@@ -399,8 +399,10 @@
   });
 
   // --- Viz ---
+  // NOTE: .btn-view-run intentionally left as-is (broken URL is a follow-up task).
   bindAll('.btn-add-viz', function() {
-    alert('Add visualization: not implemented in Phase 1.');
+    // The add-viz modal lives on the main dashboard page. Take the user there.
+    location.href = '/#composite-explore?study=' + encodeURIComponent(studyName());
   });
 
   // --- Conclusion ---

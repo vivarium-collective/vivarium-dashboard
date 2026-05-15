@@ -175,3 +175,19 @@ def test_interventions_panel_has_new_button(_ws):
     spec = _study_detail_spec("study-monod_kinetics-096184")
     html = _render_study_detail_html("study-monod_kinetics-096184", spec)
     assert 'btn-intervention-new' in html
+
+
+def test_runs_panel_has_runs_table(_ws):
+    from vivarium_dashboard.server import _render_study_detail_html, _study_detail_spec
+    spec = _study_detail_spec("study-monod_kinetics-096184")
+    html = _render_study_detail_html("study-monod_kinetics-096184", spec)
+    assert 'id="runs-table"' in html
+
+
+def test_runs_panel_includes_visualizations(_ws):
+    """Runs panel folds in the visualizations section."""
+    from vivarium_dashboard.server import _render_study_detail_html, _study_detail_spec
+    spec = _study_detail_spec("study-monod_kinetics-096184")
+    html = _render_study_detail_html("study-monod_kinetics-096184", spec)
+    assert 'id="viz-list"' in html
+    assert 'btn-add-viz' in html
