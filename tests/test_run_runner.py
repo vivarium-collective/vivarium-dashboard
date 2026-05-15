@@ -5,11 +5,35 @@ from pathlib import Path
 
 import pytest
 
-from vivarium_dashboard.lib.run_runner import execute
+from vivarium_dashboard.lib.run_runner import execute, _emit_paths_for, RunRequest
 from vivarium_dashboard.lib.composite_runs import connect, query_run_meta, query_run
 
 _REPO_ROOT = Path(__file__).parent.parent
 FIXTURE_WS = _REPO_ROOT / "tests" / "_fixtures" / "ws_increase_demo"
+
+
+def _req(emit_paths):
+    return RunRequest(
+        run_id="r", spec_id="s", pkg="p", workspace=Path("/tmp"),
+        overrides={}, steps=1, emit_paths=emit_paths,
+        db_file="/tmp/x.db", log_path="x.log",
+    )
+
+
+def test_emit_paths_for_defaults_to_all_stores_when_request_empty():
+    """Empty emit_paths (no wiring-view selection) → emit every store."""
+    state = {
+        "stores": {"level": 1.0},
+        "increase": {"_type": "process", "address": "local:Foo"},
+        "emitter": {"_type": "step", "address": "local:RAMEmitter"},
+    }
+    assert _emit_paths_for(_req([]), state) == ["stores"]
+
+
+def test_emit_paths_for_uses_explicit_selection_verbatim():
+    """A non-empty emit_paths is used as-is — hand-picked stores win."""
+    state = {"stores": {"level": 1.0, "other": 2.0}}
+    assert _emit_paths_for(_req(["stores/level"]), state) == ["stores/level"]
 
 
 def _write_request(tmp_path, *, steps=3, spec_id=None, overrides=None):

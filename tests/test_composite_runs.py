@@ -3,6 +3,7 @@ from vivarium_dashboard.lib.composite_runs import (
     connect, save_metadata, complete_metadata, query_runs, query_run,
     query_run_meta, update_progress, set_pid, mark_orphaned, prune_runs,
     inject_sqlite_emitter, auto_label, inject_emitter_for_paths,
+    all_store_paths,
 )
 
 
@@ -138,6 +139,37 @@ def test_inject_sqlite_emitter_no_emitter_in_spec():
     assert out["sqlite_emitter"]["inputs"] == {}
 
 
+def test_inject_sqlite_emitter_prefers_user_emitter():
+    """When inject_emitter_for_paths has added a user_emitter, the SQLite
+    emitter mirrors THAT (the explicit emit selection) rather than the
+    composite's own emitter — even though the latter appears earlier in the
+    state dict's iteration order."""
+    state = {
+        "stores": {"level": 1.0, "extra": 2.0},
+        # Composite's own emitter — narrow, appears first in iteration order.
+        "emitter": {
+            "_type": "step", "address": "local:RAMEmitter",
+            "config": {"emit": {"level": "float"}},
+            "inputs": {"level": ["stores", "level"]},
+        },
+        # Injected by inject_emitter_for_paths — the user's emit selection.
+        "user_emitter": {
+            "_type": "step", "address": "local:RAMEmitter",
+            "config": {"emit": {"stores_level": "node", "stores_extra": "node"}},
+            "inputs": {"stores_level": ["stores", "level"],
+                       "stores_extra": ["stores", "extra"]},
+        },
+    }
+    out = inject_sqlite_emitter(state, run_id="r1", db_file="/tmp/x.db")
+    assert out["sqlite_emitter"]["config"]["emit"] == {
+        "stores_level": "node", "stores_extra": "node",
+    }
+    assert out["sqlite_emitter"]["inputs"] == {
+        "stores_level": ["stores", "level"],
+        "stores_extra": ["stores", "extra"],
+    }
+
+
 def test_inject_sqlite_emitter_idempotent():
     state = _example_state_with_emitter()
     once = inject_sqlite_emitter(state, run_id="r1", db_file="/tmp/x.db")
@@ -216,6 +248,27 @@ def test_inject_emitter_for_paths_empty_list_noop():
     out = inject_emitter_for_paths(state, [])
     assert out is state
     assert "user_emitter" not in out
+
+
+# -- all_store_paths ---------------------------------------------------------
+
+def test_all_store_paths_returns_store_keys_skipping_steps_and_processes():
+    """all_store_paths lists top-level store keys, omitting step/process nodes
+    so an empty wiring-view selection can default to emitting every store."""
+    state = {
+        "biomodel_id": "BIOMD0000000001",
+        "results": {"copasi": {}, "tellurium": {}},
+        "comparison": {},
+        "load": {"_type": "step", "address": "local:LoadBiomodelStep"},
+        "sim_proc": {"_type": "process", "address": "local:Sim"},
+    }
+    assert all_store_paths(state) == ["biomodel_id", "results", "comparison"]
+
+
+def test_all_store_paths_empty_state():
+    """No stores (only steps) yields an empty list."""
+    state = {"load": {"_type": "step", "address": "local:LoadBiomodelStep"}}
+    assert all_store_paths(state) == []
 
 
 def test_connect_runs_meta_has_sim_name(tmp_path):

@@ -290,7 +290,14 @@ def inject_sqlite_emitter(state: dict, *, run_id: str,
 
     emit_schema: dict = {}
     inputs: dict = {}
-    for key, node in state.items():
+    # The user_emitter (added by inject_emitter_for_paths) carries the explicit
+    # emit selection — prefer it over a composite's own emitter, which would
+    # otherwise win simply by appearing earlier in iteration order.
+    candidates = []
+    if isinstance(state.get("user_emitter"), dict):
+        candidates.append(state["user_emitter"])
+    candidates.extend(v for k, v in state.items() if k != "user_emitter")
+    for node in candidates:
         if not isinstance(node, dict):
             continue
         if node.get("_type") != "step":
@@ -362,6 +369,22 @@ def inject_emitter_for_paths(state: dict, explicit_paths: list[str]) -> dict:
         "inputs": inputs,
     }
     return new_state
+
+
+def all_store_paths(state: dict) -> list[str]:
+    """Return every top-level store key in ``state``, skipping step/process
+    nodes.
+
+    Used as the Composite Explorer Run tab's default emit selection: when the
+    user hasn't hand-picked stores in the wiring view, the run emits every
+    store. The returned keys feed ``inject_emitter_for_paths``, which walks
+    each into its leaf stores.
+    """
+    return [
+        key for key, node in state.items()
+        if not (isinstance(node, dict)
+                and node.get("_type") in ("process", "step"))
+    ]
 
 
 def _collect_emit_leaves(state: dict,

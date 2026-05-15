@@ -90,6 +90,16 @@ def _resolve_state(req: RunRequest) -> dict:
                                  req.overrides)
 
 
+def _emit_paths_for(req: RunRequest, state: dict) -> list[str]:
+    """Resolve which store paths the run should emit.
+
+    The wiring-view paths the user hand-picked, or — when they picked none —
+    every store in the composite. This makes "emit all" the Composite Explorer
+    Run tab's default; an explicit selection always wins.
+    """
+    return req.emit_paths or cr.all_store_paths(state)
+
+
 def _render_viz(composite, run_dir: Path) -> None:
     """Render Visualization-step HTML to viz.json. Best-effort — never raises."""
     try:
@@ -131,8 +141,9 @@ def execute(request_path: Path) -> int:
                                  status="failed")
             return 1
 
-        if req.emit_paths:
-            state = cr.inject_emitter_for_paths(state, req.emit_paths)
+        emit_paths = _emit_paths_for(req, state)
+        if emit_paths:
+            state = cr.inject_emitter_for_paths(state, emit_paths)
         state = cr.inject_sqlite_emitter(state, run_id=req.run_id,
                                          db_file=req.db_file)
 
