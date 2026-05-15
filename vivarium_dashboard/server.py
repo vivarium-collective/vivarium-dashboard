@@ -1598,6 +1598,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_composite_run()
         if self.path.startswith("/api/composite-runs"):
             return self._get_composite_runs()
+        if self.path.startswith("/api/simulations"):
+            return self._get_simulations()
         if self.path.startswith("/api/composite-state"):
             return self._get_composite_state()
         if self.path.startswith("/api/composite-resolve"):
@@ -3389,6 +3391,21 @@ if __name__ == "__main__":
         except Exception as e:
             data = {"error": str(e), "processes": [], "types": []}
         return self._json(data, 200)
+
+    def _get_simulations(self):
+        """GET /api/simulations — all persisted runs across the workspace.
+
+        Returns ``{simulations: [...]}`` aggregated from ``.pbg/composite-runs.db``
+        and every ``studies/<name>/runs.db``, with Studies-association annotated
+        from each ``study.yaml``'s ``runs[]``. Newest first.
+        """
+        _ws_add_to_sys_path()
+        try:
+            from vivarium_dashboard.lib.simulations_index import list_simulations
+            sims = list_simulations(WORKSPACE)
+        except Exception as e:  # noqa: BLE001 — never blank-page the user
+            return self._json({"error": f"simulations index failed: {e}"}, 500)
+        return self._json({"simulations": sims}, 200)
 
     def _get_composite_runs(self):
         """GET /api/composite-runs?spec_id=X — list runs for one composite spec."""
