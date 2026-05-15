@@ -5987,7 +5987,7 @@
       bannerHtml =
         '<p style="color:#6b7280; font-size:13px; margin:0 0 10px;">Run complete — ' +
         '<strong>' + _esc(String(n)) + '</strong> steps. ' +
-        Object.keys(results).length + ' observables.</p>';
+        String(Object.keys(results).length) + ' observables.</p>';
     }
 
     var tableHtml = '';
@@ -6050,9 +6050,17 @@
    *  transforms the trajectory, renders. If status is 'running', starts a
    *  1.5s setInterval that re-fetches + re-renders until terminal.
    */
+  // Monotonically-incrementing token. Every call to _ceLoadRunFromId bumps
+  // this and captures its value in a closure; ticks check that they still
+  // own the active token before writing to the DOM or stopping the poll.
+  window._cePollToken = 0;
+
   function _ceLoadRunFromId(run_id) {
     if (!run_id) return;
     _ceStopRunPoll();  // clear any prior interval
+    var myToken = ++window._cePollToken;
+    var el = document.getElementById('ce-test-results');
+    if (el) el.innerHTML = '<p class="empty-state">Loading run&hellip;</p>';
 
     function tick() {
       Promise.all([
@@ -6065,6 +6073,10 @@
           .then(function(r) { return r.ok ? r.json() : { trajectory: [] }; })
           .catch(function() { return { trajectory: [] }; }),
       ]).then(function(parts) {
+        // A newer _ceLoadRunFromId invocation has superseded this one —
+        // drop the tick's writes on the floor to avoid stale-overwrite or
+        // accidental stop of the newer poll.
+        if (myToken !== window._cePollToken) return;
         var statusBody = parts[0] || {};
         var trajBody = parts[1] || {};
         if (statusBody._gone || statusBody.error === 'run not found') {
@@ -6086,7 +6098,10 @@
                     || statusBody.status === 'failed'
                     || statusBody.status === 'orphaned';
         if (terminal) _ceStopRunPoll();
-      }).catch(function() { /* transient — next tick retries */ });
+      }).catch(function(e) {
+        // Transient — next tick retries. Surface to devtools for debugging.
+        if (window.console && console.warn) console.warn('CE poll tick failed:', e);
+      });
     }
     tick();
     window._cePollIntervalId = setInterval(tick, 1500);
