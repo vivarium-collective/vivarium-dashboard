@@ -7140,7 +7140,10 @@ if __name__ == "__main__":
                     )
 
         commit_msg = f"feat(catalog): install {name}"
-        resp, code = _active_branch_action(commit_msg, action)
+        # _commit_or_run falls back to running the install action directly
+        # when there's no active workstream — so users can install composites
+        # / run things without first creating a workstream branch.
+        resp, code = _commit_or_run(commit_msg, action)
         log_excerpt = log_holder[0] if log_holder else ""
         install_mode = install_mode_holder[0] if install_mode_holder else ("pypi" if pypi_name else "git")
 
@@ -7296,7 +7299,8 @@ if __name__ == "__main__":
             save_workspace(ws_file, ws2)
 
         commit_msg = f"feat(catalog): uninstall {name}"
-        resp, code = _active_branch_action(commit_msg, action)
+        # Fall back to direct run when there's no active workstream.
+        resp, code = _commit_or_run(commit_msg, action)
         log_excerpt = "\n".join(log_holder)[-500:]
         uninstall_mode = uninstall_mode_holder[0] if uninstall_mode_holder else mode
 
