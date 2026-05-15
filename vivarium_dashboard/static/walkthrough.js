@@ -2453,17 +2453,22 @@
 
   function _initCompositeExplorer() {
     // Called when the explorer page is activated. Parses ?id=<spec_id> from
-    // the URL, fetches the resolved composite, populates the page.
+    // the URL, fetches the resolved composite, populates the page. Also
+    // parses ?run_id=<run_id> — when present, loads that run's results and
+    // viz into the Run tab (a Simulations-row deep link or a refresh of a
+    // URL captured after kicking off a run).
     var params = new URLSearchParams(window.location.search);
     var id = params.get('id');
+    var run_id = params.get('run_id');
     if (!id) {
       document.getElementById('ce-loading').textContent =
         'No composite id specified. Open via the Use button on a composite card.';
       return;
     }
-    window._ceCurrent = {id: id, overrides: {}};
-    window._ceLastRunId = null;
-    // Hide the post-run bar when loading a fresh composite.
+    window._ceCurrent = {id: id, overrides: {}, run_id: run_id || null};
+    window._ceLastRunId = run_id || null;
+    // Hide the post-run bar when loading a fresh composite (it's set by the
+    // explore:run-complete postMessage path).
     var bar = document.getElementById('ce-post-run-bar');
     if (bar) bar.style.display = 'none';
     // Eagerly populate the composite card cache so "Create simulation" can
@@ -2473,6 +2478,11 @@
       _loadComposites();
     }
     _ceFetch();
+    if (run_id) {
+      // Run tab loads in parallel with _ceFetch's wiring fetch; no need to
+      // await, the two writes target different DOM containers.
+      _ceLoadRunFromId(run_id);
+    }
   }
   window._initCompositeExplorer = _initCompositeExplorer;
 
