@@ -101,6 +101,61 @@
 .ce-panel {
   border: 1px solid #eee; border-radius: 4px; padding: 12px; background: #fff;
 }
+
+/* Workspace switcher (top of the left rail). */
+.viv-workspace-switcher { position: relative; padding: 8px 12px; }
+.viv-workspace-switcher-trigger {
+  display: flex; align-items: center; gap: 6px;
+  width: 100%; padding: 6px 8px; background: #fff;
+  border: 1px solid #ddd; border-radius: 4px; cursor: pointer;
+  font-size: 13px;
+}
+.viv-workspace-switcher-trigger:hover { background: #f5f5f5; }
+.viv-workspace-switcher-glyph { color: #2ea043; font-size: 14px; }
+.viv-workspace-switcher-panel {
+  position: absolute; top: 100%; left: 12px; right: 12px;
+  background: #fff; border: 1px solid #ccc; border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+  z-index: 1000; max-height: 70vh; overflow-y: auto;
+}
+.viv-workspace-switcher-header {
+  padding: 8px 12px; border-bottom: 1px solid #eee;
+  font-weight: 600; font-size: 12px; color: #666;
+}
+.viv-workspace-switcher-list { list-style: none; margin: 0; padding: 0; }
+.viv-workspace-switcher-list li {
+  padding: 8px 12px; border-bottom: 1px solid #f0f0f0;
+  display: flex; align-items: center; gap: 8px;
+}
+.viv-workspace-switcher-list li:last-child { border-bottom: none; }
+.viv-workspace-switcher-list a {
+  flex: 1; text-decoration: none; color: inherit;
+  display: flex; flex-direction: column;
+}
+.viv-workspace-switcher-list a:hover { color: #0366d6; }
+.viv-workspace-switcher-list .viv-ws-path {
+  font-size: 11px; color: #888; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.viv-workspace-switcher-list .viv-ws-glyph { width: 18px; text-align: center; }
+.viv-workspace-switcher-list .viv-ws-row-current { background: #f8f9fb; }
+.viv-workspace-switcher-list button {
+  font-size: 11px; padding: 3px 8px; cursor: pointer;
+  border: 1px solid #ccc; background: #fff; border-radius: 3px;
+}
+.viv-workspace-switcher-list button:hover { background: #f0f0f0; }
+.viv-workspace-switcher-footer {
+  padding: 8px 12px; border-top: 1px solid #eee;
+}
+.viv-workspace-switcher-add {
+  background: none; border: none; color: #0366d6;
+  cursor: pointer; font-size: 12px; padding: 0;
+}
+.viv-glyph-running { color: #2ea043; }
+.viv-glyph-stopped { color: #999; }
+.viv-glyph-stale   { color: #d29922; }
+.viv-glyph-missing { color: #cf222e; }
+.viv-ws-error { color: #cf222e; font-size: 11px; padding: 2px 0; }
 </style>
 </head><body>
 
@@ -118,8 +173,26 @@
       </div>
     </div>
 
-    <div class="viv-workspace-switcher viv-tooltip" data-tooltip="Other workspaces coming soon">
-      <strong>{{ workspace_name }}</strong> <span class="viv-arrow">▾</span>
+    <div class="viv-workspace-switcher" id="viv-workspace-switcher">
+      <button class="viv-workspace-switcher-trigger" type="button"
+              aria-haspopup="true" aria-expanded="false"
+              id="viv-workspace-switcher-trigger">
+        <span class="viv-workspace-switcher-glyph">●</span>
+        <strong>{{ workspace_name }}</strong>
+        <span class="viv-arrow">▾</span>
+      </button>
+      <div class="viv-workspace-switcher-panel" id="viv-workspace-switcher-panel" hidden>
+        <div class="viv-workspace-switcher-header">Workspaces</div>
+        <ul class="viv-workspace-switcher-list" id="viv-workspace-switcher-list">
+          <li class="viv-workspace-switcher-loading">Loading…</li>
+        </ul>
+        <div class="viv-workspace-switcher-footer">
+          <button class="viv-workspace-switcher-add" type="button"
+                  id="viv-workspace-switcher-add">
+            + Add existing workspace…
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- Primary nav -->
@@ -1054,6 +1127,7 @@
 <script src="assets/render-helpers.js"></script>
 <script src="assets/client.js" onerror="/* live mode unavailable */"></script>
 <script src="assets/walkthrough.js" onerror="/* walkthrough unavailable */"></script>
+<script src="assets/workspace-switcher.js"></script>
 <script>
 // Initialize drop zones once walkthrough.js is loaded.
 document.addEventListener("DOMContentLoaded", function() {
