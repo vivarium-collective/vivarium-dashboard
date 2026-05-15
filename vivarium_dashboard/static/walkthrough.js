@@ -3127,6 +3127,14 @@
           window.history.replaceState({}, '', url.toString());
           if (window._ceCurrent) window._ceCurrent.run_id = run_id;
         } catch (e) { /* non-critical */ }
+        // Invalidate the cached History list so the new run shows up the next
+        // time the Results tab is opened; refresh it now if it's already active.
+        window._ceHistoryLoaded = false;
+        var resultsPanel = document.querySelector('.ce-tab-panel[data-tab="results"]');
+        if (resultsPanel && resultsPanel.classList.contains('active')
+            && typeof _ceLoadHistory === 'function') {
+          _ceLoadHistory();
+        }
         // Hand off to the shared loader — same render path as URL deep-link.
         _ceLoadRunFromId(run_id);
       })
