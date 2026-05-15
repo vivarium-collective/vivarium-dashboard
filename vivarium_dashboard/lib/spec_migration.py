@@ -146,6 +146,7 @@ def migrate_v2_to_v3(spec: dict) -> dict:
     out["schema_version"] = 3
     out.setdefault("objective", "")
     out.setdefault("parent_studies", [])
+    out.setdefault("interventions", [])
 
     if is_variants_as_composites:
         baseline_list = []

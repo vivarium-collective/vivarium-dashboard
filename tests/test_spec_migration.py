@@ -240,3 +240,18 @@ def test_migrate_v2_to_v3_reshapes_variants_as_composites_shape():
          "base_composite": "chromosome-partition",
          "parameter_overrides": {"p.count": 2.0}},
     ]
+
+
+def test_migrate_v2_to_v3_defaults_interventions_to_empty_list():
+    out = migrate_v2_to_v3({"schema_version": 2, "name": "s",
+                            "composites": [{"name": "a", "source": "pkg.a"}]})
+    assert out["interventions"] == []
+
+
+def test_migrate_v2_to_v3_preserves_existing_interventions():
+    out = migrate_v2_to_v3({
+        "schema_version": 2, "name": "s",
+        "composites": [{"name": "a", "source": "pkg.a"}],
+        "interventions": [{"name": "hi-glu", "description": "glucose 25mM"}],
+    })
+    assert out["interventions"] == [{"name": "hi-glu", "description": "glucose 25mM"}]
