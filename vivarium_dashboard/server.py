@@ -679,28 +679,46 @@ def _resolve_study_baseline_state(pkg, spec_id, params):
 
 
 def _post_study_run_baseline_for_test(ws_root, body):
-    """Run a Study's baseline composite. Returns (response_dict, status_code)."""
+    """Run a Study's baseline composite. Returns (response_dict, status_code).
+
+    Body:
+      study:     <name>  (or `name`/`investigation`)
+      composite: <baseline-entry name>  (optional; default = baseline[0].name)
+      steps:     <int>   (optional; overrides params.n_steps; default 5)
+    """
     from vivarium_dashboard.lib import composite_runs as cr
 
     name = _study_name_from_body(body)
     if not name:
         return {"error": "missing study"}, 400
-    study_dir = _study_dir(name)
+    # Resolve study dir from ws_root so _for_test callers don't need WORKSPACE patched.
+    studies_path = ws_root / "studies" / name
+    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / name
     sf = study_dir / "study.yaml"
     if not sf.is_file():
         return {"error": "study not found"}, 404
 
     spec = yaml.safe_load(sf.read_text()) or {}
-    baseline = spec.get("baseline") or {}
-    spec_id = baseline.get("composite")
+    baseline = spec.get("baseline") or []
+    if not isinstance(baseline, list) or not baseline:
+        return {"error": "study has no baseline composites"}, 400
+
+    requested = (body.get("composite") or "").strip()
+    if requested:
+        entry = next((b for b in baseline if isinstance(b, dict) and b.get("name") == requested),
+                     None)
+        if entry is None:
+            return {"error": f"baseline composite {requested!r} not found"}, 404
+    else:
+        entry = baseline[0]
+    spec_id = entry.get("composite")
     if not spec_id:
-        return {"error": "study has no baseline.composite"}, 400
-    params = dict(baseline.get("params") or {})
-    # n_steps is a run-level setting, not a generator parameter — extract it
-    # unconditionally before passing the remainder as generator overrides.
+        return {"error": f"baseline entry {entry.get('name')!r} has no composite"}, 400
+
+    params = dict(entry.get("params") or {})
     params_n_steps = params.pop("n_steps", None)
     steps = int(body.get("steps") or params_n_steps or 5)
-    generator_overrides = params  # remaining keys are true generator parameters
+    generator_overrides = params
 
     ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text())
     pkg = ws_data.get("package_path") or ("pbg_" + ws_data.get("name", "").replace("-", "_"))
@@ -709,24 +727,23 @@ def _post_study_run_baseline_for_test(ws_root, body):
     if err is not None:
         return err, 400
 
-    # Reconstruct the full params dict (with n_steps) for run_id generation,
-    # mirroring _post_study_run_variant_for_test so baseline and variant runs
-    # hash their run_ids consistently.
     full_params = dict(generator_overrides)
     if params_n_steps is not None:
         full_params["n_steps"] = params_n_steps
 
     db_file = str(study_dir / "runs.db")
     run_id = cr.generate_run_id(spec_id, full_params)
+    label = entry.get("name") or "baseline"
     response, code = _run_composite_subprocess(
         pkg=pkg, state=state, steps=steps, db_file=db_file,
-        run_id=run_id, spec_id=spec_id, label="baseline", sim_name="baseline",
+        run_id=run_id, spec_id=spec_id, label=label, sim_name=label,
         overrides=generator_overrides,
     )
     if code == 200:
         _append_study_run(study_dir, {
-            "run_id": run_id, "variant": None, "label": "baseline",
+            "run_id": run_id, "variant": None, "label": label,
             "status": "completed", "n_steps": steps,
+            "composite": entry.get("name"),
         })
     return response, code
 
