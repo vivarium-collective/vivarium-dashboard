@@ -63,6 +63,84 @@
 
   function studyName() { return window._studyName; }
 
+  // Fetch the param schema for a composite and render an input form.
+  // currentOverrides: {} or existing overrides (for edit flow).
+  // Returns a Promise<{collect, ok}>: collect() reads back the current input
+  // values and returns an overrides dict; ok=false if fetch failed (containerEl
+  // shows the error message in that case).
+  function renderParamForm(containerEl, specId, currentOverrides) {
+    var overridesJson = encodeURIComponent(JSON.stringify(currentOverrides || {}));
+    return fetch('/api/composite-resolve?id=' +
+                 encodeURIComponent(specId) + '&overrides=' + overridesJson)
+      .then(function(r) { return r.json().then(function(b) { return {status: r.status, body: b}; }); })
+      .then(function(r) {
+        if (r.status !== 200) {
+          containerEl.innerHTML = '<p class="error">Could not resolve composite: ' +
+            (r.body && r.body.error || r.status) + '</p>';
+          return {collect: function() { return {}; }, ok: false};
+        }
+        var params = r.body.parameters || {};
+        containerEl.innerHTML = '';
+        var inputs = {};
+        Object.keys(params).forEach(function(k) {
+          var def = params[k] || {};
+          var type = def.type || 'string';
+          var current = (currentOverrides && k in currentOverrides) ? currentOverrides[k] : def.default;
+          var row = document.createElement('div');
+          row.className = 'param-row';
+          var label = document.createElement('label');
+          label.className = 'param-label';
+          var nameSpan = document.createElement('span');
+          nameSpan.innerHTML = '<code>' + k + '</code> <span class="muted">(' + type + ')</span>';
+          var input = document.createElement('input');
+          input.className = 'param-input';
+          input.dataset.paramKey = k;
+          input.dataset.paramType = type;
+          if (type === 'integer' || type === 'number' || type === 'float') {
+            input.type = 'number';
+            input.step = (type === 'integer') ? '1' : 'any';
+          } else if (type === 'boolean') {
+            input.type = 'checkbox';
+            if (current === true) input.checked = true;
+          } else {
+            input.type = 'text';
+          }
+          if (input.type !== 'checkbox' && current !== undefined && current !== null) {
+            input.value = current;
+          }
+          label.appendChild(nameSpan);
+          label.appendChild(input);
+          row.appendChild(label);
+          if (def.description) {
+            var desc = document.createElement('div');
+            desc.className = 'param-desc muted';
+            desc.textContent = def.description;
+            row.appendChild(desc);
+          }
+          containerEl.appendChild(row);
+          inputs[k] = input;
+        });
+        var collect = function() {
+          var out = {};
+          Object.keys(inputs).forEach(function(k) {
+            var el = inputs[k];
+            var t = el.dataset.paramType;
+            if (t === 'boolean') out[k] = !!el.checked;
+            else if (t === 'integer') out[k] = el.value === '' ? null : parseInt(el.value, 10);
+            else if (t === 'number' || t === 'float') out[k] = el.value === '' ? null : parseFloat(el.value);
+            else out[k] = el.value;
+          });
+          // Remove null/empty entries (don't send them as overrides).
+          Object.keys(out).forEach(function(k) {
+            if (out[k] === null || out[k] === '' || out[k] === undefined) delete out[k];
+          });
+          return out;
+        };
+        return {collect: collect, ok: true};
+      });
+  }
+  // Not exposed on window; consumed internally by the Variants tab.
+
   // --- Header actions ---
   bindAll('.btn-rename', function() {
     var n = prompt('New name (lowercase + dashes):', studyName());
