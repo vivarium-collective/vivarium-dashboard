@@ -7059,6 +7059,63 @@ if __name__ == "__main__":
                 pass
         self._json({"ok": True}, 200)
 
+    def _post_workspaces_start(self, body: dict):
+        """POST /api/workspaces/start — spawn `vivarium-dashboard serve` for a
+        stopped workspace and poll until it registers. Idempotent: returns
+        the existing URL if a live entry already exists. Returns 504 with
+        log_path if the child doesn't register within 8 s."""
+        path = body.get("path") if isinstance(body, dict) else None
+        if not path or not isinstance(path, str) or not path.startswith("/"):
+            self._json({"error": "path must be an absolute string"}, 400)
+            return
+
+        target = Path(path).expanduser().resolve()
+        if not (target / "workspace.yaml").is_file():
+            self._json({"error": "not a workspace (no workspace.yaml)"}, 400)
+            return
+
+        from pbg_superpowers import workspace_catalog
+
+        # Safety: only catalog paths can be spawned. Prevents the dashboard
+        # from being used to launch processes against arbitrary directories.
+        if not any(Path(e["path"]).resolve() == target
+                   for e in workspace_catalog.list_workspaces()):
+            self._json({"error": "workspace not in catalog — Add it first"}, 400)
+            return
+
+        # Idempotent: if a live entry exists, return it.
+        live = workspace_catalog.find_running(target)
+        if live is not None:
+            self._json({"url": live["url"], "pid": live["pid"]}, 200)
+            return
+
+        import time as _time
+        log_path = target / ".pbg" / "server" / "start.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as logf:
+            subprocess.Popen(
+                [sys.executable, "-m", "vivarium_dashboard.cli",
+                 "serve", "--workspace", str(target)],
+                stdout=logf, stderr=logf, stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+                cwd=str(target),
+            )
+
+        deadline = _time.monotonic() + 8.0
+        while _time.monotonic() < deadline:
+            entry = workspace_catalog.find_running(target)
+            if entry is not None:
+                self._json({"url": entry["url"], "pid": entry["pid"]}, 200)
+                return
+            _time.sleep(0.1)
+
+        self._json({
+            "error": "start_timeout",
+            "log_path": str(log_path),
+            "hint": f"tail {log_path}",
+        }, 504)
+
     def _read_workspace_name(self, root: Path) -> str:
         """Read `name` from <root>/workspace.yaml; fall back to dir basename."""
         try:

@@ -239,7 +239,7 @@ def test_catalog_with_stale_entry(server, tmp_path):
     )
 
 
-def _post_json(url, payload):
+def _post_json(url, payload, timeout=10):
     """POST JSON to url; return (status_code, response_dict).
     Raises urllib.error.HTTPError on 4xx/5xx (caller can catch and read body).
     """
@@ -250,7 +250,7 @@ def _post_json(url, payload):
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=10) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.status, json.loads(r.read().decode())
 
 
@@ -441,3 +441,114 @@ def test_post_workspaces_cleanup_stale_refuses_alive(server, tmp_path):
     assert exc.value.code == 409
     body = json.loads(exc.value.read())
     assert body["error"] == "server is still running"
+
+
+# ---------------------------------------------------------------------------
+# POST /api/workspaces/start tests
+# ---------------------------------------------------------------------------
+
+
+def test_post_workspaces_start_spawns_dashboard(server, tmp_path):
+    """Posting start for a stopped workspace should spawn `vivarium-dashboard
+    serve` and return its URL once it has registered itself."""
+    import urllib.error
+
+    # Create a minimal workspace that cmd_serve can handle.
+    other_ws = tmp_path / "start-target"
+    other_ws.mkdir()
+    (other_ws / "workspace.yaml").write_text(
+        "name: start-target\npackage: pbg_start_target\n"
+    )
+    # cmd_serve renders reports; the directory must exist.
+    (other_ws / "reports").mkdir()
+
+    # Add the workspace to the catalog via the running server (shares PBG_HOME).
+    _post_json(
+        f"{server['url']}/api/workspaces/add",
+        {"path": str(other_ws)},
+    )
+
+    spawned_pid = None
+    try:
+        status, resp = _post_json(
+            f"{server['url']}/api/workspaces/start",
+            {"path": str(other_ws)},
+            timeout=15,
+        )
+        assert status == 200, f"Expected 200, got {status}: {resp}"
+        assert resp["url"].startswith("http://127.0.0.1:"), (
+            f"url looks wrong: {resp['url']}"
+        )
+        assert isinstance(resp["pid"], int) and resp["pid"] > 0, (
+            f"pid looks wrong: {resp['pid']}"
+        )
+        spawned_pid = resp["pid"]
+    finally:
+        if spawned_pid:
+            try:
+                os.kill(spawned_pid, 15)  # SIGTERM
+                time.sleep(0.5)          # give child a moment to unregister
+            except ProcessLookupError:
+                pass
+
+
+def test_post_workspaces_start_refuses_arbitrary_path(server, tmp_path):
+    """Paths not in the catalog must be refused (safety guard)."""
+    import urllib.error
+
+    not_in_catalog = tmp_path / "uncatalogued"
+    not_in_catalog.mkdir()
+    (not_in_catalog / "workspace.yaml").write_text(
+        "name: uncatalogued\npackage: pbg_uncatalogued\n"
+    )
+    # Deliberately do NOT add it to the catalog.
+
+    req = urllib.request.Request(
+        f"{server['url']}/api/workspaces/start",
+        data=json.dumps({"path": str(not_in_catalog)}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=10)
+    assert exc.value.code == 400
+    body = json.loads(exc.value.read())
+    assert "catalog" in body["error"]
+
+
+def test_post_workspaces_start_returns_existing_url_if_live(server, tmp_path):
+    """If a live entry already exists for the path, the handler returns
+    immediately (idempotent) without spawning a new process."""
+    pbg_home = server["pbg_home"]
+
+    other_ws = tmp_path / "already-up"
+    other_ws.mkdir()
+    (other_ws / "workspace.yaml").write_text(
+        "name: already-up\npackage: pbg_already_up\n"
+    )
+
+    # Add to catalog via the running server.
+    _post_json(
+        f"{server['url']}/api/workspaces/add",
+        {"path": str(other_ws)},
+    )
+
+    # Write a live servers/ entry using os.getpid() (this process is alive).
+    servers_dir = pbg_home / "servers"
+    servers_dir.mkdir(parents=True, exist_ok=True)
+    server_entry = {
+        "name": "already-up",
+        "path": str(other_ws.resolve()),
+        "pid": os.getpid(),
+        "port": 8006,
+        "url": "http://127.0.0.1:8006",
+    }
+    (servers_dir / "already-up.json").write_text(json.dumps(server_entry))
+
+    status, resp = _post_json(
+        f"{server['url']}/api/workspaces/start",
+        {"path": str(other_ws)},
+    )
+    assert status == 200
+    assert resp["url"] == "http://127.0.0.1:8006"
+    assert resp["pid"] == os.getpid()
