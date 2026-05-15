@@ -95,3 +95,24 @@ def test_study_detail_page_loads_set_tab_helper(_ws):
     html = _render_study_detail_html("study-monod_kinetics-096184", spec)
     # The page must reference _setStudyTab somewhere (in the script tag or via onclick)
     assert "_setStudyTab" in html
+
+
+def test_overview_panel_has_objective_and_conclusion_editables(_ws):
+    """Overview tab includes inline-editable objective and conclusion fields."""
+    from vivarium_dashboard.server import _render_study_detail_html, _study_detail_spec
+    spec = _study_detail_spec("study-monod_kinetics-096184")
+    html = _render_study_detail_html("study-monod_kinetics-096184", spec)
+    assert 'id="objective-text"' in html
+    assert 'id="conclusion-text"' in html
+    assert 'data-editable="true"' in html
+
+
+def test_overview_panel_has_counts_strip(_ws):
+    """Overview tab shows a counts strip: variants · runs · interventions."""
+    from vivarium_dashboard.server import _render_study_detail_html, _study_detail_spec
+    spec = _study_detail_spec("study-monod_kinetics-096184")
+    html = _render_study_detail_html("study-monod_kinetics-096184", spec)
+    assert 'study-counts-strip' in html or 'class="counts-strip"' in html
+    # Each label appears
+    for label in ('variants', 'runs', 'interventions'):
+        assert label in html.lower()

@@ -50,8 +50,8 @@
   );
   makeEditable(
     document.getElementById('conclusion-text'),
-    '/api/study-set-conclusion', 'conclusion',
-    '(blank)'
+    '/api/study-set-conclusion', 'text',
+    '(fill in when the study wraps)'
   );
 
   // --- Helpers: attach a click handler to every button matching a CSS class ---
