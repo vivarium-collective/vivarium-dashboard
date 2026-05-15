@@ -406,6 +406,10 @@
     if (pageId === 'composite-explore') {
       _initCompositeExplorer();
     }
+    if (pageId === 'simulations') {
+      _wireSimulationsUiOnce();
+      _initSimulations();
+    }
     if (pageId === 'investigations') {
       if (!window._investigationsLoaded) {
         window._investigationsLoaded = true;
@@ -419,7 +423,7 @@
     var params = new URLSearchParams(window.location.search);
     var focus = params.get('focus');
     if (focus) {
-      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'branches', 'composite-explore'];
+      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'simulations', 'branches', 'composite-explore'];
       if (validPages.indexOf(focus) >= 0) {
         document.body.classList.add('focus-mode', 'focus-' + focus);
         _switchPage(focus);
@@ -429,7 +433,7 @@
 
     function fromHash() {
       var h = (window.location.hash || '').replace(/^#/, '');
-      var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'branches', 'composite-explore'];
+      var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'simulations', 'branches', 'composite-explore'];
       _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
     }
     window.addEventListener('hashchange', fromHash);
@@ -5647,5 +5651,224 @@
       });
   }
   window._acceptGeneratedClass = _acceptGeneratedClass;
+
+  // ===========================================================================
+  // Simulations tab — workspace-wide run listing + delete
+  // ===========================================================================
+
+  function _escSim(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  function _simRelativeTime(epoch) {
+    if (!epoch) return '—';
+    var d = Math.floor(Date.now() / 1000 - epoch);
+    if (d < 60)        return d + 's ago';
+    if (d < 3600)      return Math.floor(d / 60) + 'm ago';
+    if (d < 86400)     return Math.floor(d / 3600) + 'h ago';
+    return Math.floor(d / 86400) + 'd ago';
+  }
+
+  function _simStatusChip(status) {
+    var colors = {
+      completed: ['#dcfce7', '#166534'],
+      running:   ['#dbeafe', '#1e40af'],
+      failed:    ['#fee2e2', '#991b1b'],
+      orphaned:  ['#e5e7eb', '#374151'],
+    };
+    var c = colors[status] || ['#e5e7eb', '#374151'];
+    return '<span style="background:' + c[0] + '; color:' + c[1] +
+      '; padding:2px 8px; border-radius:10px; font-size:12px;">' +
+      _escSim(status || '?') + '</span>';
+  }
+
+  function _simStudyChips(studies) {
+    if (!studies || !studies.length) return '<span style="color:#9ca3af;">—</span>';
+    return studies.map(function (name) {
+      return '<a href="#investigations?name=' + encodeURIComponent(name) +
+        '" style="display:inline-block; background:#eef2ff; color:#3730a3; ' +
+        'padding:1px 7px; margin:0 2px 2px 0; border-radius:10px; font-size:12px; ' +
+        'text-decoration:none;">' + _escSim(name) + '</a>';
+    }).join('');
+  }
+
+  function _simShortId(run_id) {
+    if (!run_id) return '';
+    // Show the last 6 chars (the hash suffix) of "<spec>__<ts>__<hash6>".
+    return run_id.slice(-6);
+  }
+
+  // Module-scope cache so the filter and delete flows can read current rows.
+  window._simRows = [];
+
+  function _renderSimRow(sim) {
+    var composite = _escSim(sim.spec_id || '');
+    // Last segment bold for scannability
+    var segs = composite.split('.');
+    if (segs.length > 1) {
+      segs[segs.length - 1] = '<strong>' + segs[segs.length - 1] + '</strong>';
+      composite = segs.join('.');
+    }
+    var stepsTxt = (sim.status === 'running')
+      ? (sim.progress_step || 0) + '/' + (sim.n_steps || '?')
+      : (sim.n_steps != null ? String(sim.n_steps) : '—');
+    var label = sim.sim_name || sim.label || '';
+    var startedFull = sim.started_at
+      ? new Date(sim.started_at * 1000).toISOString()
+      : '';
+    var runTooltip = (sim.run_id || '') + '\n' + (sim.db_path || '');
+    return (
+      '<tr data-run-id="' + _escSim(sim.run_id) + '" ' +
+        'style="border-bottom:1px solid #f3f4f6;">' +
+      '<td style="padding:6px 8px;"><code>' + composite + '</code></td>' +
+      '<td style="padding:6px 8px;">' + _simStudyChips(sim.studies) + '</td>' +
+      '<td style="padding:6px 8px;">' + _simStatusChip(sim.status) + '</td>' +
+      '<td style="padding:6px 8px;">' + _escSim(stepsTxt) + '</td>' +
+      '<td style="padding:6px 8px; color:#374151;">' + _escSim(label) + '</td>' +
+      '<td style="padding:6px 8px; color:#6b7280;" title="' + _escSim(startedFull) +
+        '">' + _escSim(_simRelativeTime(sim.started_at)) + '</td>' +
+      '<td style="padding:6px 8px;"><code title="' + _escSim(runTooltip) +
+        '" style="font-size:11px; color:#6b7280;">' + _escSim(_simShortId(sim.run_id)) +
+        '</code></td>' +
+      '<td style="padding:6px 8px; text-align:center;">' +
+        '<button class="action-btn" title="Delete simulation" ' +
+        'onclick="_deleteSimulationRun(\'' + _escSim(sim.run_id) + '\')">🗑</button>' +
+      '</td>' +
+      '</tr>'
+    );
+  }
+
+  function _applySimFilter() {
+    var q = (document.getElementById('sim-filter') || {}).value || '';
+    q = q.toLowerCase().trim();
+    var rows = window._simRows || [];
+    var visible = q ? rows.filter(function (s) {
+      var hay = (s.spec_id + ' ' + (s.sim_name || '') + ' ' + (s.label || '') +
+                  ' ' + (s.studies || []).join(' ')).toLowerCase();
+      return hay.indexOf(q) >= 0;
+    }) : rows;
+    var tbody = document.getElementById('sim-tbody');
+    if (!tbody) return;
+    tbody.innerHTML = visible.map(_renderSimRow).join('');
+  }
+
+  function _initSimulations() {
+    var loading = document.getElementById('sim-loading');
+    var empty   = document.getElementById('sim-empty');
+    var table   = document.getElementById('sim-table');
+    if (loading) loading.style.display = '';
+    if (empty)   empty.style.display = 'none';
+    if (table)   table.style.display = 'none';
+
+    fetch('/api/simulations')
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) {
+          if (loading) loading.innerHTML =
+            '<span style="color:#c00;">Could not load simulations: ' +
+            _escSim(data.error) + ' <button class="action-btn" ' +
+            'onclick="_initSimulations()">Retry</button></span>';
+          return;
+        }
+        window._simRows = data.simulations || [];
+        if (loading) loading.style.display = 'none';
+        if (!window._simRows.length) {
+          if (empty) empty.style.display = '';
+          return;
+        }
+        if (table) table.style.display = '';
+        _applySimFilter();
+      })
+      .catch(function (err) {
+        if (loading) loading.innerHTML =
+          '<span style="color:#c00;">Network error: ' + _escSim(String(err)) +
+          ' <button class="action-btn" onclick="_initSimulations()">Retry</button></span>';
+      });
+  }
+  window._initSimulations = _initSimulations;
+
+  // Wire the filter input + refresh button + cancel button (once, on first init)
+  function _wireSimulationsUiOnce() {
+    var f = document.getElementById('sim-filter');
+    if (f && !f.dataset.wired) {
+      f.addEventListener('input', _applySimFilter);
+      f.dataset.wired = '1';
+    }
+    var r = document.getElementById('sim-refresh');
+    if (r && !r.dataset.wired) {
+      r.addEventListener('click', _initSimulations);
+      r.dataset.wired = '1';
+    }
+    var cancel = document.getElementById('sim-delete-cancel');
+    if (cancel && !cancel.dataset.wired) {
+      cancel.addEventListener('click', function () {
+        var dlg = document.getElementById('sim-delete-dialog');
+        if (dlg) dlg.style.display = 'none';
+      });
+      cancel.dataset.wired = '1';
+    }
+  }
+  window._wireSimulationsUiOnce = _wireSimulationsUiOnce;
+
+  function _deleteSimulationRun(run_id) {
+    _wireSimulationsUiOnce();
+    var rows = window._simRows || [];
+    var sim = null;
+    for (var i = 0; i < rows.length; i++) {
+      if (rows[i].run_id === run_id) { sim = rows[i]; break; }
+    }
+    if (!sim) return;
+
+    var studiesTxt = (sim.studies && sim.studies.length)
+      ? sim.studies.map(_escSim).join(', ')
+      : '<em>none</em>';
+    var stillRunning = (sim.status === 'running')
+      ? '<p style="color:#b45309; margin:8px 0 0;"><strong>⚠ This run is still running.</strong> ' +
+        'Deleting now will orphan the detached process (it will fail-write later, harmlessly).</p>'
+      : '';
+    var body = document.getElementById('sim-delete-body');
+    if (body) body.innerHTML =
+      '<p style="margin:0 0 8px;"><code>' + _escSim(run_id) + '</code></p>' +
+      '<p style="margin:0 0 8px;">Composite: <code>' + _escSim(sim.spec_id) + '</code></p>' +
+      '<p style="margin:0 0 4px;">This will permanently remove:</p>' +
+      '<ul style="margin:0 0 4px 24px;">' +
+        '<li>1 row in <code>' + _escSim(sim.db_path) + '</code></li>' +
+        '<li>All history rows (trajectory data) for this run</li>' +
+        '<li>The run directory <code>.pbg/runs/' + _escSim(run_id) + '/</code> (if any)</li>' +
+        '<li>References from study.yaml(s): ' + studiesTxt + '</li>' +
+      '</ul>' + stillRunning;
+    var dlg = document.getElementById('sim-delete-dialog');
+    if (dlg) dlg.style.display = 'flex';
+    var confirm = document.getElementById('sim-delete-confirm');
+    // Replace the confirm handler each time to bind the current run_id.
+    confirm.onclick = function () {
+      confirm.disabled = true;
+      fetch('/api/simulation-run', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ run_id: run_id }),
+      }).then(function (r) { return r.json().then(function (d) {
+        return { ok: r.ok, status: r.status, body: d };
+      }); }).then(function (res) {
+        confirm.disabled = false;
+        if (dlg) dlg.style.display = 'none';
+        if (!res.ok) {
+          alert('Delete failed: ' + (res.body.error || 'HTTP ' + res.status));
+          return;
+        }
+        if (res.body.errors && res.body.errors.length) {
+          alert('Deleted, but with warnings:\n' + res.body.errors.join('\n'));
+        }
+        _initSimulations();
+      }).catch(function (err) {
+        confirm.disabled = false;
+        if (dlg) dlg.style.display = 'none';
+        alert('Network error: ' + err);
+      });
+    };
+  }
+  window._deleteSimulationRun = _deleteSimulationRun;
 
 })();
