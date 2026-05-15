@@ -19,6 +19,15 @@ def _pick_free_port() -> int:
     return port
 
 
+def _workspace_name(workspace: Path) -> str:
+    """Read `name` from <workspace>/workspace.yaml, falling back to dir name."""
+    try:
+        data = yaml.safe_load((workspace / "workspace.yaml").read_text()) or {}
+        return data.get("name") or workspace.name
+    except (OSError, yaml.YAMLError):
+        return workspace.name
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Render the workspace dashboard once and start the HTTP server."""
     workspace = Path(args.workspace).resolve()
@@ -56,6 +65,43 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "state_dir": str(server_dir / "state"),
     }
     (server_dir / "server-info").write_text(json.dumps(info))
+
+    # Write PID file (consumed by /pbg-server stop and the switcher's
+    # cleanup-stale endpoint).
+    pid_file = server_dir / "server.pid"
+    pid_file.write_text(str(os.getpid()))
+
+    # Register the running dashboard in ~/.pbg/servers/<name>.json so the
+    # workspace switcher in other dashboards can see it.
+    from pbg_superpowers import workspace_catalog
+    ws_name = _workspace_name(workspace)
+    workspace_catalog.register_server(
+        name=ws_name, path=workspace,
+        pid=os.getpid(), port=port,
+        url=f"http://127.0.0.1:{port}",
+    )
+
+    def _unregister():
+        try:
+            workspace_catalog.unregister_server(workspace)
+        except Exception:
+            pass
+        try:
+            pid_file.unlink()
+        except FileNotFoundError:
+            pass
+
+    import atexit
+    import signal as _signal
+    atexit.register(_unregister)
+
+    def _sig_handler(signum, frame):
+        _unregister()
+        if signum == _signal.SIGTERM:
+            sys.exit(0)
+
+    _signal.signal(_signal.SIGTERM, _sig_handler)
+
     print(f"\nWorkspace dashboard: http://127.0.0.1:{port}")
     print("   (Ctrl-C to stop)\n")
 
