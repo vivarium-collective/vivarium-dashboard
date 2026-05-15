@@ -124,6 +124,7 @@ def _validate_study_v3(spec: dict) -> None:
         if not c.get("composite"):
             raise InvestigationSpecError(f"v3 study: baseline[{i}].composite is required")
 
+    baseline_names = {c["name"] for c in baseline}
     variants = spec.get("variants", [])
     if not isinstance(variants, list):
         raise InvestigationSpecError("v3 study: 'variants' must be a list")
@@ -131,6 +132,17 @@ def _validate_study_v3(spec: dict) -> None:
         if not isinstance(v, dict) or not v.get("name"):
             raise InvestigationSpecError(
                 f"v3 study: variants[{i}] must be a mapping with a 'name'"
+            )
+        base = v.get("base_composite")
+        if base and base not in baseline_names:
+            raise InvestigationSpecError(
+                f"v3 study: variants[{i}].base_composite {base!r} is not a "
+                f"declared baseline composite ({sorted(baseline_names)})"
+            )
+        po = v.get("parameter_overrides", {})
+        if not isinstance(po, dict):
+            raise InvestigationSpecError(
+                f"v3 study: variants[{i}].parameter_overrides must be a mapping"
             )
 
     runs = spec.get("runs", [])
@@ -140,6 +152,15 @@ def _validate_study_v3(spec: dict) -> None:
     visualizations = spec.get("visualizations", [])
     if not isinstance(visualizations, list):
         raise InvestigationSpecError("v3 study: 'visualizations' must be a list")
+
+    interventions = spec.get("interventions", [])
+    if not isinstance(interventions, list):
+        raise InvestigationSpecError("v3 study: 'interventions' must be a list")
+    for i, iv in enumerate(interventions):
+        if not isinstance(iv, dict) or not iv.get("name"):
+            raise InvestigationSpecError(
+                f"v3 study: interventions[{i}] must be a mapping with a 'name'"
+            )
 
 
 def _validate_variants_list(spec: dict) -> None:

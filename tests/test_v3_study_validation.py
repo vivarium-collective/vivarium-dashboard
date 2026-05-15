@@ -75,3 +75,46 @@ def test_v3_validation_rejects_baseline_entry_missing_composite():
             "baseline": [{"name": "a", "params": {}}],
             "variants": [], "runs": [], "visualizations": [],
         })
+
+
+def test_v3_validation_accepts_variant_with_base_composite():
+    from vivarium_dashboard.lib.investigations import _validate_study_v3
+    _validate_study_v3({
+        "schema_version": 3, "name": "s",
+        "baseline": [{"name": "a", "composite": "pkg.a", "params": {}}],
+        "variants": [{"name": "v1", "base_composite": "a",
+                      "parameter_overrides": {"rate": 2.0}}],
+        "runs": [], "visualizations": [],
+    })  # must not raise
+
+
+def test_v3_validation_rejects_variant_base_composite_not_in_baseline():
+    from vivarium_dashboard.lib.investigations import _validate_study_v3, InvestigationSpecError
+    with pytest.raises(InvestigationSpecError):
+        _validate_study_v3({
+            "schema_version": 3, "name": "s",
+            "baseline": [{"name": "a", "composite": "pkg.a", "params": {}}],
+            "variants": [{"name": "v1", "base_composite": "nope"}],
+            "runs": [], "visualizations": [],
+        })
+
+
+def test_v3_validation_accepts_interventions_list():
+    from vivarium_dashboard.lib.investigations import _validate_study_v3
+    _validate_study_v3({
+        "schema_version": 3, "name": "s",
+        "baseline": [{"name": "a", "composite": "pkg.a", "params": {}}],
+        "variants": [], "runs": [], "visualizations": [],
+        "interventions": [{"name": "hi-glu", "description": "glucose 25mM"}],
+    })  # must not raise
+
+
+def test_v3_validation_rejects_intervention_missing_name():
+    from vivarium_dashboard.lib.investigations import _validate_study_v3, InvestigationSpecError
+    with pytest.raises(InvestigationSpecError):
+        _validate_study_v3({
+            "schema_version": 3, "name": "s",
+            "baseline": [{"name": "a", "composite": "pkg.a", "params": {}}],
+            "variants": [], "runs": [], "visualizations": [],
+            "interventions": [{"description": "no name"}],
+        })
