@@ -194,6 +194,8 @@ def _rewrite_study_yaml_without(yaml_path: Path, run_id: str) -> bool:
     on write failure (caller catches per-file).
     """
     data = yaml.safe_load(yaml_path.read_text()) or {}
+    if not isinstance(data, dict):
+        return False
     runs = data.get("runs") or []
     if not isinstance(runs, list):
         return False
@@ -213,7 +215,11 @@ def _rewrite_study_yaml_without(yaml_path: Path, run_id: str) -> bool:
         return False
     data["runs"] = new_runs
     tmp = yaml_path.with_suffix(yaml_path.suffix + ".tmp")
-    tmp.write_text(yaml.safe_dump(data, sort_keys=False))
+    try:
+        tmp.write_text(yaml.safe_dump(data, sort_keys=False))
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
     tmp.replace(yaml_path)
     return True
 

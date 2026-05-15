@@ -212,3 +212,20 @@ def test_delete_dict_form_run_entry(tmp_path):
     delete_simulation(ws, "r-1")
     spec = yaml.safe_load((sdir / "study.yaml").read_text())
     assert spec["runs"] == [{"run_id": "r-other", "label": "v"}]
+
+
+def test_delete_tolerates_non_dict_study_yaml(tmp_path):
+    """study.yaml whose top-level is a list (or scalar) must not crash delete."""
+    ws = tmp_path / "ws"
+    (ws / ".pbg").mkdir(parents=True)
+    _seed_run(ws / ".pbg" / "composite-runs.db",
+              spec_id="pkg.x", run_id="r-1", started_at=1.0)
+    sdir = ws / "studies" / "weird"
+    sdir.mkdir(parents=True)
+    # Top-level is a YAML list, not a dict — mimics a malformed/legacy file.
+    (sdir / "study.yaml").write_text("- not a dict\n- still not a dict\n")
+
+    summary = delete_simulation(ws, "r-1")
+    assert summary["deleted_rows"] == 1
+    assert summary["unlinked_studies"] == []   # nothing to unlink
+    assert summary["errors"] == []             # tolerated, not error'd
