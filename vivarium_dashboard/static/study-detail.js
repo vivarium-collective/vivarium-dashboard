@@ -309,6 +309,57 @@
     });
   });
 
+  // ===== Interventions tab handlers =====
+
+  function _submitInterventionAdd(ev) {
+    ev.preventDefault();
+    var form = ev.target;
+    api('POST', '/api/study-intervention-add', {
+      study: studyName(),
+      name: form.name.value.trim(),
+      description: form.description.value
+    }).then(function(r) {
+      if (r.status === 200) location.reload();
+      else alert('Add failed: ' + (r.body && r.body.error || r.status));
+    });
+    return false;
+  }
+  window._submitInterventionAdd = _submitInterventionAdd;
+
+  bindAll('.btn-intervention-delete', function(btn) {
+    var name = btn.dataset.interventionName;
+    if (!confirm('Delete intervention "' + name + '"?')) return;
+    api('POST', '/api/study-intervention-delete', {
+      study: studyName(), name: name
+    }).then(function(r) {
+      if (r.status === 200) location.reload();
+      else alert('Delete failed: ' + (r.body && r.body.error || r.status));
+    });
+  });
+
+  // Inline-edit intervention descriptions. Uses a click-to-textarea pattern
+  // parallel to makeEditable but POSTs to the intervention-update endpoint.
+  document.querySelectorAll('[data-editable-intervention]').forEach(function(el) {
+    el.addEventListener('click', function() {
+      var name = el.dataset.editableIntervention;
+      var current = el.textContent;
+      var t = document.createElement('textarea');
+      t.value = current;
+      t.style.width = '100%';
+      t.rows = 3;
+      el.replaceWith(t);
+      t.focus();
+      t.addEventListener('blur', function() {
+        api('POST', '/api/study-intervention-update', {
+          study: studyName(), name: name, description: t.value
+        }).then(function(r) {
+          if (r.status === 200) location.reload();
+          else { alert('Update failed: ' + (r.body && r.body.error || r.status)); }
+        });
+      });
+    });
+  });
+
   // --- Runs ---
   bindAll('.btn-view-run', function(btn) {
     var runId = btn.dataset.runId;

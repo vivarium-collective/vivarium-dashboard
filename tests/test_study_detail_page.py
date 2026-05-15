@@ -161,3 +161,17 @@ def test_variants_panel_has_new_variant_button(_ws):
     spec = _study_detail_spec("study-monod_kinetics-096184")
     html = _render_study_detail_html("study-monod_kinetics-096184", spec)
     assert 'btn-variant-new' in html
+
+
+def test_interventions_panel_lists_entries(_ws):
+    from vivarium_dashboard.server import _render_study_detail_html, _study_detail_spec
+    spec = _study_detail_spec("study-monod_kinetics-096184")
+    html = _render_study_detail_html("study-monod_kinetics-096184", spec)
+    assert 'intervention-row' in html or 'No interventions yet' in html
+
+
+def test_interventions_panel_has_new_button(_ws):
+    from vivarium_dashboard.server import _render_study_detail_html, _study_detail_spec
+    spec = _study_detail_spec("study-monod_kinetics-096184")
+    html = _render_study_detail_html("study-monod_kinetics-096184", spec)
+    assert 'btn-intervention-new' in html

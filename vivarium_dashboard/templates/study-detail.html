@@ -157,7 +157,32 @@
 </section>
 
 <section class="study-tab-panel" data-kind="interventions" id="panel-interventions">
-  <!-- Task 6 fills this -->
+  <div class="interventions-list">
+    {% for i in (study.interventions or []) %}
+    <article class="intervention-row" data-intervention-name="{{ i.name }}">
+      <header class="intervention-row-header">
+        <h3 class="intervention-name">{{ i.name }}</h3>
+      </header>
+      <p class="intervention-description"
+         id="intervention-description-{{ i.name }}"
+         data-editable-intervention="{{ i.name }}">{{ i.description or '' }}</p>
+      <div class="intervention-row-actions">
+        <button class="btn-intervention-delete" data-intervention-name="{{ i.name }}">Delete</button>
+      </div>
+    </article>
+    {% else %}
+    <p class="empty-message">No interventions yet. Add one to record an experimental condition.</p>
+    {% endfor %}
+  </div>
+
+  <details class="intervention-add-form-wrapper">
+    <summary class="btn-intervention-new">+ New intervention</summary>
+    <form id="intervention-new-form" onsubmit="return _submitInterventionAdd(event)">
+      <label>Name: <input name="name" required pattern="[a-zA-Z0-9_-]+"></label>
+      <label>Description: <textarea name="description" placeholder="Describe the experimental condition"></textarea></label>
+      <button type="submit">Add</button>
+    </form>
+  </details>
 </section>
 
 <section class="study-tab-panel" data-kind="runs" id="panel-runs">
