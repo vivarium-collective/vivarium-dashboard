@@ -358,3 +358,86 @@ def test_post_workspaces_forget_refuses_running(server, tmp_path):
     assert exc.value.code == 409
     body = json.loads(exc.value.read())
     assert body["error"] == "stop the server before forgetting"
+
+
+def test_post_workspaces_cleanup_stale_happy_path(server, tmp_path):
+    """POST /api/workspaces/cleanup-stale removes registry entry + orphan files; returns 200."""
+    pbg_home = server["pbg_home"]
+
+    # Create a workspace on disk with orphan .pbg/server files
+    ws = tmp_path / "stale-cleanup-ws"
+    ws.mkdir()
+    (ws / "workspace.yaml").write_text("name: stale-cleanup-ws\npackage: pbg_stale_cleanup\n")
+    ws_sdir = ws / ".pbg" / "server"
+    ws_sdir.mkdir(parents=True)
+    (ws_sdir / "server-info").write_text("http://127.0.0.1:9996")
+    (ws_sdir / "server.pid").write_text("99996")
+
+    # Spawn a real subprocess and wait for it to exit so we have a guaranteed-dead PID.
+    proc = subprocess.Popen([sys.executable, "-c", "pass"])
+    proc.wait()
+    dead_pid = proc.pid
+
+    # Register the stale workspace in ~/.pbg/servers/ with the dead PID
+    servers_dir = pbg_home / "servers"
+    servers_dir.mkdir(parents=True, exist_ok=True)
+    server_entry = {
+        "name": "stale-cleanup-ws",
+        "path": str(ws.resolve()),
+        "pid": dead_pid,
+        "port": 9996,
+        "url": "http://127.0.0.1:9996",
+    }
+    (servers_dir / "stale-cleanup-ws.json").write_text(json.dumps(server_entry))
+
+    # POST cleanup-stale — should succeed
+    status, resp = _post_json(
+        f"{server['url']}/api/workspaces/cleanup-stale", {"path": str(ws)}
+    )
+    assert status == 200
+    assert resp == {"ok": True}
+
+    # Global registry entry is gone
+    remaining = list(servers_dir.glob("stale-cleanup-ws*.json"))
+    assert remaining == [], f"Expected no server files, got: {remaining}"
+
+    # Orphan workspace-local files are removed
+    assert not (ws_sdir / "server-info").exists(), "server-info should have been deleted"
+    assert not (ws_sdir / "server.pid").exists(), "server.pid should have been deleted"
+
+
+def test_post_workspaces_cleanup_stale_refuses_alive(server, tmp_path):
+    """POST /api/workspaces/cleanup-stale returns 409 when the workspace server is alive."""
+    import urllib.error
+
+    pbg_home = server["pbg_home"]
+
+    # Create a workspace
+    ws = tmp_path / "alive-cleanup-ws"
+    ws.mkdir()
+    (ws / "workspace.yaml").write_text("name: alive-cleanup-ws\npackage: pbg_alive_cleanup\n")
+
+    # Register it as running with the current (alive) PID
+    servers_dir = pbg_home / "servers"
+    servers_dir.mkdir(parents=True, exist_ok=True)
+    server_entry = {
+        "name": "alive-cleanup-ws",
+        "path": str(ws.resolve()),
+        "pid": os.getpid(),
+        "port": 9995,
+        "url": "http://127.0.0.1:9995",
+    }
+    (servers_dir / "alive-cleanup-ws.json").write_text(json.dumps(server_entry))
+
+    # Attempt cleanup — should be refused with 409
+    req = urllib.request.Request(
+        f"{server['url']}/api/workspaces/cleanup-stale",
+        data=json.dumps({"path": str(ws)}).encode(),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        urllib.request.urlopen(req, timeout=10)
+    assert exc.value.code == 409
+    body = json.loads(exc.value.read())
+    assert body["error"] == "server is still running"

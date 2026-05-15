@@ -7037,6 +7037,28 @@ if __name__ == "__main__":
         workspace_catalog.forget(path)
         self._json({"ok": True}, 200)
 
+    def _post_workspaces_cleanup_stale(self, body: dict):
+        """POST /api/workspaces/cleanup-stale — remove a stale running-registry
+        entry plus orphan workspace-local files. Refuses if the PID is in
+        fact alive."""
+        path = body.get("path") if isinstance(body, dict) else None
+        if not path or not isinstance(path, str):
+            self._json({"error": "path required"}, 400)
+            return
+        from pbg_superpowers import workspace_catalog
+        if workspace_catalog.find_running(path) is not None:
+            self._json({"error": "server is still running"}, 409)
+            return
+        workspace_catalog.unregister_server(path)
+        # Best-effort removal of the orphan workspace-local files.
+        sdir = Path(path).expanduser().resolve() / ".pbg" / "server"
+        for fname in ("server-info", "server.pid"):
+            try:
+                (sdir / fname).unlink()
+            except FileNotFoundError:
+                pass
+        self._json({"ok": True}, 200)
+
     def _read_workspace_name(self, root: Path) -> str:
         """Read `name` from <root>/workspace.yaml; fall back to dir basename."""
         try:
