@@ -76,7 +76,7 @@ def migrate_v2_to_v3(spec: dict) -> dict:
 
     1. **Legacy `composites:` list** — each entry becomes a baseline composite.
     2. **Lone `composite:` string** (CLI bare-composite path) — wrapped as a
-       single baseline entry whose `name` defaults to the FQN.
+       single baseline entry whose `name` is the FQN.
     3. **"Variants-as-composites" v2 shape** — variants carrying `source:`
        split into the baseline list; variants carrying `extends:` /
        `intervention:` become v3 variants with `base_composite` +
