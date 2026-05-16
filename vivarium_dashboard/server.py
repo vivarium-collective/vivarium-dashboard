@@ -220,6 +220,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/work-start":         "_post_work_start",
     "/api/work-push":          "_post_work_push",
     "/api/work-create-github-repo": "_post_work_create_github_repo",
+    "/api/work-link-branch":   "_post_work_link_branch",
     "/api/work-create-pr":     "_post_work_create_pr",
     "/api/work-end":           "_post_work_end",
     "/api/dirty-commit-all":   "_post_dirty_commit_all",
@@ -3632,6 +3633,104 @@ if __name__ == "__main__":
             "visibility": visibility,
             "branch": branch,
         }, 200)
+
+    def _post_work_link_branch(self, body: dict):
+        """Link the workspace to an upstream branch.
+
+        Body: {upstream_repo?: "owner/name", branch_name?: str, push?: bool=True}.
+
+        - Sets git origin to the upstream (https://github.com/<repo>.git) if absent.
+        - Pushes the current branch (or `branch_name`, after renaming if provided).
+        - Marks workstream as pushed.
+        """
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.work_state import load_state, save_state
+        state = load_state()
+        current_branch = state.get("active_branch")
+        if not current_branch:
+            return self._json({"error": "no active workstream — Start one first so the push has a target"}, 409)
+
+        if not shutil.which("gh"):
+            return self._json({"error": "gh CLI not installed. Install via `brew install gh` then `gh auth login`."}, 500)
+        auth = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
+        if auth.returncode != 0:
+            return self._json({"error": "gh not authenticated. Run `gh auth login`."}, 500)
+
+        upstream_repo = (body.get("upstream_repo") or "").strip() or self._default_upstream_repo()
+        if not re.match(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", upstream_repo):
+            return self._json({"error": f"upstream_repo must look like owner/name; got {upstream_repo!r}"}, 400)
+
+        # Optional rename of the current branch before pushing.
+        target_branch = (body.get("branch_name") or "").strip() or current_branch
+        if not re.match(r"^[A-Za-z0-9._/-]+$", target_branch):
+            return self._json({"error": "invalid branch name"}, 400)
+        if target_branch != current_branch:
+            r = subprocess.run(["git", "branch", "-m", current_branch, target_branch],
+                               cwd=WORKSPACE, capture_output=True, text=True)
+            if r.returncode != 0:
+                return self._json({"error": f"branch rename failed: {(r.stderr or r.stdout)[:300]}"}, 500)
+
+        # Set origin if not present (or replace if it points elsewhere).
+        upstream_url = f"https://github.com/{upstream_repo}.git"
+        existing = subprocess.run(["git", "remote", "get-url", "origin"],
+                                  cwd=WORKSPACE, capture_output=True, text=True)
+        if existing.returncode != 0:
+            r = subprocess.run(["git", "remote", "add", "origin", upstream_url],
+                               cwd=WORKSPACE, capture_output=True, text=True)
+            if r.returncode != 0:
+                return self._json({"error": f"git remote add origin failed: {(r.stderr or r.stdout)[:300]}"}, 500)
+        else:
+            # If origin already points somewhere else, refuse rather than silently overwriting.
+            current_url = (existing.stdout or "").strip()
+            if current_url and current_url != upstream_url and current_url != upstream_url.replace("https://github.com/", "git@github.com:"):
+                return self._json({
+                    "error": f"origin already configured to {current_url}; refusing to overwrite",
+                    "current_origin": current_url,
+                }, 409)
+
+        # Push the current branch to origin.
+        if body.get("push", True):
+            r = subprocess.run(["git", "push", "-u", "origin", target_branch],
+                               cwd=WORKSPACE, capture_output=True, text=True, timeout=120)
+            if r.returncode != 0:
+                return self._json({"error": f"git push failed: {(r.stderr or r.stdout)[:500]}"}, 500)
+
+        state["pushed"] = True
+        save_state(state)
+
+        return self._json({
+            "ok": True,
+            "upstream_repo": upstream_repo,
+            "branch": target_branch,
+            "branch_url": f"https://github.com/{upstream_repo}/tree/{target_branch}",
+        }, 200)
+
+    def _default_upstream_repo(self) -> str:
+        """Auto-detect upstream repo from workspace.yaml or external/v2ecoli/.git/config.
+
+        Falls back to ``vivarium-collective/v2ecoli`` if nothing else is configured.
+        """
+        ws_path = WORKSPACE / "workspace.yaml"
+        if ws_path.exists():
+            try:
+                ws_data = yaml.safe_load(ws_path.read_text()) or {}
+                ur = (ws_data.get("upstream_repo") or "").strip()
+                if ur:
+                    return ur
+            except yaml.YAMLError:
+                pass
+        # Try external/v2ecoli's origin.
+        external = WORKSPACE / "external" / "v2ecoli"
+        if external.is_dir():
+            r = subprocess.run(["git", "remote", "get-url", "origin"],
+                               cwd=external, capture_output=True, text=True)
+            if r.returncode == 0:
+                url = r.stdout.strip()
+                # https://github.com/owner/name.git or git@github.com:owner/name.git
+                m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", url)
+                if m:
+                    return m.group(1)
+        return "vivarium-collective/v2ecoli"
 
     def _post_work_create_pr(self, body: dict):
         _ws_add_to_sys_path()
