@@ -6170,4 +6170,52 @@
   }
   window._ceLoadRunFromId = _ceLoadRunFromId;
 
+  // -------------------------------------------------------------------------
+  // Top-bar "Open PR" action
+  // -------------------------------------------------------------------------
+
+  function _openPRDialog() {
+    // Prefill title from active branch.
+    fetch('/api/state').then(function (r) { return r.json(); }).then(function (state) {
+      var branch = (state && state.active_branch) || '';
+      var base = (state && state.base) || 'main';
+      var titleField = document.querySelector('#form-open-pr input[name=title]');
+      if (titleField && branch && !titleField.value) titleField.value = 'Workstream: ' + branch;
+      var baseDisp = document.getElementById('pr-base-display');
+      if (baseDisp) baseDisp.textContent = base;
+      openModal('modal-open-pr');
+    });
+  }
+  window._openPRDialog = _openPRDialog;
+
+  function _submitOpenPR(form) {
+    var fd = new FormData(form);
+    var body = {
+      title: (fd.get('title') || '').trim(),
+      body: (fd.get('body') || '').trim(),
+    };
+    var submit = form.querySelector('button[type=submit]');
+    if (submit) { submit.disabled = true; submit.textContent = 'Creating…'; }
+    fetch('/api/work-create-pr', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); })
+      .then(function (pair) {
+        var ok = pair[0], j = pair[1];
+        if (!ok) {
+          var msg = j.error || 'unknown error';
+          if (j.manual_url) msg += '\n\nManual URL: ' + j.manual_url;
+          alert('PR create failed: ' + msg);
+          return;
+        }
+        closeModal('modal-open-pr');
+        alert('PR created: ' + (j.pr_url || ''));
+        window.open(j.pr_url, '_blank');
+      })
+      .finally(function () {
+        if (submit) { submit.disabled = false; submit.textContent = 'Create PR'; }
+      });
+  }
+  window._submitOpenPR = _submitOpenPR;
+
 })();

@@ -1248,3 +1248,7 @@ body.focus-mode::before{
 }
 .conclusion-field h3 { margin-top: 0; }
 .conclusion-field textarea { width: 100%; box-sizing: border-box; font-family: inherit; padding: 0.5rem; }
+
+/* Top-bar "Open PR" button */
+.topbar-actions { display: inline-flex; gap: 0.5rem; margin-left: 1rem; vertical-align: middle; }
+#btn-open-pr { padding: 0.4rem 0.8rem; font-weight: 500; }
