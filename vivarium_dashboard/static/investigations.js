@@ -201,12 +201,109 @@
     }, {once: true});
   }
 
+  function _populateBaselineList() {
+    var box = document.getElementById('add-study-baseline-list');
+    if (!box) return;
+    fetch('/api/composites').then(function (r) { return r.json(); }).then(function (catalog) {
+      box.innerHTML = '';
+      var comps = (catalog && catalog.composites) || [];
+      if (!comps.length) {
+        box.innerHTML = '<p class="muted">No composites in workspace catalog.</p>';
+        return;
+      }
+      comps.forEach(function (c) {
+        var label = document.createElement('label');
+        label.className = 'baseline-checkbox';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = c.id;
+        cb.dataset.name = c.name || c.id.split('.').pop();
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(' ' + (c.name || c.id) + ' '));
+        var fqn = document.createElement('code');
+        fqn.className = 'muted';
+        fqn.textContent = c.id;
+        label.appendChild(fqn);
+        box.appendChild(label);
+      });
+    });
+  }
+
+  function _setAddStudyFeedback(msg, kind) {
+    var el = document.getElementById('add-study-feedback');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'muted' + (kind === 'ok' ? ' ok' : kind === 'fail' ? ' fail' : '');
+  }
+
+  window._submitAddStudy = function (event) {
+    event.preventDefault();
+    var form = event.target;
+    var fd = new FormData(form);
+    var slug = String(fd.get('slug') || '').trim();
+    var objective = String(fd.get('objective') || '').trim();
+    var gate = String(fd.get('gate') || '');
+    var checked = Array.prototype.slice.call(form.querySelectorAll('input[type=checkbox]:checked'));
+    if (!slug) { _setAddStudyFeedback('slug required', 'fail'); return false; }
+    if (!checked.length) { _setAddStudyFeedback('pick at least one baseline composite', 'fail'); return false; }
+    var invSlug = state.activeSlug;
+    if (!invSlug) { _setAddStudyFeedback('no active investigation', 'fail'); return false; }
+
+    _setAddStudyFeedback('creating study…', '');
+
+    fetch('/api/investigation-create', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({name: slug, objective: objective}),
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || 'create failed'); });
+      // Sequentially add baseline entries so server-side state stays consistent.
+      var seq = Promise.resolve();
+      checked.forEach(function (cb, idx) {
+        seq = seq.then(function () {
+          return fetch('/api/study-baseline-add', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              study: slug,
+              name: cb.dataset.name + (idx ? '-' + idx : ''),
+              composite: cb.value,
+              params: {},
+            }),
+          }).then(function (resp) {
+            if (!resp.ok) return resp.json().then(function (e) { throw new Error(e.error || 'baseline-add failed'); });
+          });
+        });
+      });
+      return seq;
+    }).then(function () {
+      return fetch('/api/plan-study-add', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({slug: invSlug, study: slug, gate: gate || null}),
+      });
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || 'plan-study-add failed'); });
+      _setAddStudyFeedback('created', 'ok');
+      form.reset();
+      var details = document.querySelector('.add-study-details');
+      if (details) details.open = false;
+      openInvestigation(invSlug);  // refresh the detail view
+    }).catch(function (e) {
+      _setAddStudyFeedback('error: ' + e.message, 'fail');
+    });
+    return false;
+  };
+
   // Wire button event listeners after DOM is ready.
   document.addEventListener('DOMContentLoaded', function () {
     var btn = document.getElementById('new-investigation-btn');
     if (btn) btn.addEventListener('click', openCreateDialog);
     var back = document.getElementById('investigation-back');
     if (back) back.addEventListener('click', backToList);
+    // Populate baseline checkboxes whenever the user opens the add-study details.
+    document.addEventListener('toggle', function (e) {
+      if (e.target && e.target.classList && e.target.classList.contains('add-study-details')) {
+        if (e.target.open) _populateBaselineList();
+      }
+    }, true);
   });
 
   // Expose for the page-router (walkthrough.js's _switchPage).

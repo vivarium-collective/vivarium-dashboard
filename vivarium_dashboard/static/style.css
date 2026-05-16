@@ -1276,3 +1276,14 @@ body.focus-mode::before{
 }
 .conclusion-field h3 { margin-top: 0; }
 .conclusion-field textarea { width: 100%; box-sizing: border-box; font-family: inherit; padding: 0.5rem; }
+.add-study-form-section { margin: 1rem 0; padding: 0.6rem; background: #fafafa; border-radius: 6px; }
+.btn-add-study { cursor: pointer; padding: 0.4rem 0.6rem; background: #e7f3ff; border-radius: 4px; display: inline-block; }
+.btn-add-study:hover { background: #d0e7ff; }
+#add-study-form label { display: block; margin: 0.5rem 0; }
+#add-study-form fieldset { margin: 0.5rem 0; padding: 0.5rem; }
+#add-study-form fieldset legend { font-weight: bold; }
+.baseline-checkbox { display: block; padding: 0.2rem 0.4rem; }
+.add-study-baseline-list { max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 0.3rem; background: white; }
+.form-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+#add-study-feedback.ok { color: #228B22; }
+#add-study-feedback.fail { color: #B22222; }

@@ -737,6 +737,35 @@
       <h4>Studies (sequential)</h4>
       <ol id="investigation-study-cards"></ol>
     </section>
+    <section class="add-study-form-section">
+      <details class="add-study-details">
+        <summary class="btn-add-study">+ Add study to this investigation</summary>
+        <form id="add-study-form" onsubmit="return _submitAddStudy(event)">
+          <label>Slug (short, lowercase):
+            <input name="slug" required pattern="[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?">
+          </label>
+          <fieldset>
+            <legend>Baseline composite(s)</legend>
+            <div id="add-study-baseline-list" class="add-study-baseline-list">
+              <p class="muted">(loading workspace composites…)</p>
+            </div>
+          </fieldset>
+          <label>Objective:<br>
+            <textarea name="objective" rows="3" placeholder="What is this study testing?"></textarea>
+          </label>
+          <label>Gate:
+            <select name="gate">
+              <option value="tests-pass" selected>tests-pass (block next study until tests pass)</option>
+              <option value="">none (next study unblocked immediately)</option>
+            </select>
+          </label>
+          <div class="form-actions">
+            <button type="submit" class="action-btn">Create study</button>
+            <span id="add-study-feedback" class="muted"></span>
+          </div>
+        </form>
+      </details>
+    </section>
   </div>
 </section>
 
