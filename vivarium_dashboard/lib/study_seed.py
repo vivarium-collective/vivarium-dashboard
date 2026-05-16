@@ -162,4 +162,61 @@ def seed_followup_study(workspace: Path, parent_name: str,
     )
     new_yaml.write_text(header + yaml.safe_dump(
         child_spec, sort_keys=False, default_flow_style=False, allow_unicode=True))
+
+    # Add the new study to every investigation.yaml that references the
+    # parent — otherwise the seeded study is orphaned (on disk but invisible
+    # in the dashboard's Investigations DAG view).
+    _add_to_parent_investigations(workspace, parent_name, new_name)
+
     return new_name
+
+
+def _add_to_parent_investigations(workspace: Path, parent_name: str,
+                                  new_study_name: str) -> list[Path]:
+    """Append new_study_name to the studies: list of every investigation.yaml
+    that already lists parent_name. Returns the list of files updated.
+
+    Uses ruamel.yaml when available so formatting + comments survive; falls
+    back to a minimal text-append that preserves the rest of the file
+    byte-for-byte.
+    """
+    invs_root = Path(workspace) / "investigations"
+    if not invs_root.is_dir():
+        return []
+    updated: list[Path] = []
+    for inv_yaml in invs_root.glob("*/investigation.yaml"):
+        try:
+            text = inv_yaml.read_text()
+            spec = yaml.safe_load(text) or {}
+        except Exception:
+            continue
+        studies = spec.get("studies") or []
+        if not isinstance(studies, list) or parent_name not in studies:
+            continue
+        if new_study_name in studies:
+            continue   # already there (idempotent)
+        # Minimal text edit: insert "  - <new>\n" right after the
+        # parent_name entry under studies:. Preserves YAML formatting +
+        # comments without round-tripping via yaml.safe_dump.
+        lines = text.splitlines(keepends=True)
+        out_lines = []
+        in_studies = False
+        inserted = False
+        for line in lines:
+            out_lines.append(line)
+            if line.startswith("studies:"):
+                in_studies = True
+                continue
+            if in_studies and not inserted:
+                if line.lstrip().startswith("- " + parent_name):
+                    indent = line[: len(line) - len(line.lstrip())]
+                    out_lines.append(f"{indent}- {new_study_name}\n")
+                    inserted = True
+                elif line.strip() and not line.startswith((" ", "\t", "-")):
+                    # left the studies: block without finding parent_name —
+                    # bail rather than insert in the wrong section
+                    in_studies = False
+        if inserted:
+            inv_yaml.write_text("".join(out_lines))
+            updated.append(inv_yaml)
+    return updated
