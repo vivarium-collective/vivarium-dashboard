@@ -2141,6 +2141,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_investigation_detail()
         if self.path.startswith("/api/investigations"):
             return self._get_investigations()
+        if self.path.startswith("/api/plan/"):
+            return self._get_plan_detail()
+        if self.path.startswith("/api/plans"):
+            return self._get_plans_list()
         if self.path.startswith("/api/study-export"):
             return self._get_study_export()
         if self.path.startswith("/api/composites"):
@@ -4315,6 +4319,23 @@ if __name__ == "__main__":
                     "name": d.name, "status": "invalid", "error": str(e),
                 })
         return self._json({"investigations": out}, 200)
+
+    def _get_plans_list(self):
+        """GET /api/plans — return summaries of all investigation plans."""
+        from vivarium_dashboard.lib.investigation_plans import list_plans
+        return self._json(list_plans(WORKSPACE), 200)
+
+    def _get_plan_detail(self):
+        """GET /api/plan/<slug> — return a plan with per-study derived status."""
+        from vivarium_dashboard.lib.investigation_plans import get_plan_detail
+        path_only = self.path.split("?", 1)[0]
+        slug = path_only[len("/api/plan/"):]
+        if "/" in slug or not slug:
+            return self._json({"error": "bad route"}, 400)
+        plan = get_plan_detail(WORKSPACE, slug)
+        if plan is None:
+            return self._json({"error": f"plan not found: {slug}"}, 404)
+        return self._json(plan, 200)
 
     def _post_investigation_create(self, body: dict):
         """POST /api/investigation-create {name, source?} — scaffold a new investigation.
