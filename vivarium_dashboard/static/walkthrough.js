@@ -364,7 +364,14 @@
       _initSimulations();
     }
     if (pageId === 'studies') {
-      if (!window._investigationsLoaded) {
+      // Always retry if we don't have any studies in memory yet — the prior
+      // load may have failed (server still booting, transient 404) and the
+      // memo flag stuck without a way to recover. Only the first SUCCESS
+      // permanently silences the auto-retry.
+      var alreadyLoaded = window._investigationsLoaded
+        && Array.isArray(window._investigations)
+        && window._investigations.length > 0;
+      if (!alreadyLoaded) {
         window._investigationsLoaded = true;
         _loadInvestigations();
       }
@@ -1950,7 +1957,7 @@
     if (!investigations.length) {
       host.innerHTML =
         '<p class="viv-rail-empty" style="font-size:0.85em;color:#9ca3af;padding:4px 12px">' +
-        'No investigations yet' +
+        'No studies yet' +
         '</p>';
       return;
     }
@@ -3084,15 +3091,22 @@
 
   function _loadInvestigations() {
     fetch('/api/investigations')
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
       .then(function(data) {
         window._investigations = data.investigations || [];
         _buildInvestigationTagChips();
         _renderInvestigations();
       })
       .catch(function(err) {
+        // Reset the memo so the next navigation to Studies retries.
+        window._investigationsLoaded = false;
         var grid = document.getElementById('investigations-grid');
-        if (grid) grid.innerHTML = '<p style="color:#c00">Failed to load: ' + _esc(String(err)) + '</p>';
+        if (grid) grid.innerHTML = '<p class="empty-state" style="color:#c00">' +
+            'Failed to load studies: ' + _esc(String(err)) +
+            ' <button class="btn-mini" onclick="window._investigationsLoaded=false;_loadInvestigations()">Retry</button></p>';
       });
   }
   window._loadInvestigations = _loadInvestigations;
@@ -3139,8 +3153,8 @@
       return true;
     });
     if (!filtered.length) {
-      grid.innerHTML = '<p class="empty-state">No investigations match the filter. ' +
-                       'Click <em>New investigation</em> to create one.</p>';
+      grid.innerHTML = '<p class="empty-state">No studies match the filter. ' +
+                       'Click <em>+ New study</em> to create one.</p>';
       grid.classList.remove('list-view');
       return;
     }
