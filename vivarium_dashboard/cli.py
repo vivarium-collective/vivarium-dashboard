@@ -19,6 +19,15 @@ def _pick_free_port() -> int:
     return port
 
 
+def _workspace_name(workspace: Path) -> str:
+    """Read `name` from <workspace>/workspace.yaml, falling back to dir name."""
+    try:
+        data = yaml.safe_load((workspace / "workspace.yaml").read_text()) or {}
+        return data.get("name") or workspace.name
+    except (OSError, yaml.YAMLError):
+        return workspace.name
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     """Render the workspace dashboard once and start the HTTP server."""
     workspace = Path(args.workspace).resolve()
@@ -56,6 +65,53 @@ def cmd_serve(args: argparse.Namespace) -> int:
         "state_dir": str(server_dir / "state"),
     }
     (server_dir / "server-info").write_text(json.dumps(info))
+
+    # Write PID file (consumed by /pbg-server stop and the switcher's
+    # cleanup-stale endpoint).
+    pid_file = server_dir / "server.pid"
+    pid_file.write_text(str(os.getpid()))
+
+    def _unregister():
+        try:
+            from pbg_superpowers import workspace_catalog
+            workspace_catalog.unregister_server(workspace)
+        except Exception:
+            pass
+        try:
+            pid_file.unlink()
+        except FileNotFoundError:
+            pass
+
+    # Register the cleanup hook FIRST so pid_file is always removed, even
+    # if registration in the global running registry fails below.
+    import atexit
+    atexit.register(_unregister)
+
+    # Register the running dashboard in ~/.pbg/servers/<name>.json so the
+    # workspace switcher in other dashboards can see it. Failure here is
+    # non-fatal — the dashboard still works, it just won't appear in other
+    # dashboards' switchers.
+    try:
+        from pbg_superpowers import workspace_catalog
+        ws_name = _workspace_name(workspace)
+        # Ensure this workspace appears in OTHER dashboards' switchers.
+        # add() is idempotent; safe to call on every boot.
+        workspace_catalog.add(workspace)
+        workspace_catalog.register_server(
+            name=ws_name, path=workspace,
+            pid=os.getpid(), port=port,
+            url=f"http://127.0.0.1:{port}",
+        )
+        import signal as _signal
+
+        def _sig_handler(signum, frame):
+            _unregister()
+            sys.exit(0)
+
+        _signal.signal(_signal.SIGTERM, _sig_handler)
+    except Exception as e:
+        print(f"warning: workspace switcher registration failed: {e}", file=sys.stderr)
+
     print(f"\nWorkspace dashboard: http://127.0.0.1:{port}")
     print("   (Ctrl-C to stop)\n")
 

@@ -31,6 +31,7 @@ import math
 import os
 import re
 import shutil
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -265,6 +266,12 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-run-delete":            "_post_study_run_delete",
     "/api/study-runs-clear":            "_post_study_runs_clear",
     "/api/study-comparison-add":        "_post_study_comparison_add",
+    # Workspace-switcher POST endpoints.
+    "/api/workspaces/add":           "_post_workspaces_add",
+    "/api/workspaces/forget":        "_post_workspaces_forget",
+    "/api/workspaces/cleanup-stale": "_post_workspaces_cleanup_stale",
+    "/api/workspaces/start":         "_post_workspaces_start",
+    "/api/workspaces/stop":          "_post_workspaces_stop",
 }
 # Inject study-alias routes into the POST route map (same method name as old).
 for _old, _new in _POST_STUDY_ALIASES.items():
@@ -2091,6 +2098,8 @@ class Handler(BaseHTTPRequestHandler):
         path_only = self.path.split("?", 1)[0]
         if path_only in ("/", "/index.html"):
             return self._serve_file(WORKSPACE / "reports" / "index.html", "text/html")
+        if self.path.startswith("/api/workspaces"):
+            return self._get_workspaces()
         if self.path.startswith("/api/state"):
             return self._serve_state()
         if self.path.startswith("/api/events"):
@@ -7151,7 +7160,8 @@ if __name__ == "__main__":
                 try:
                     result = subprocess.run(
                         pypi_install_cmd,
-                        cwd=WORKSPACE, capture_output=True, text=True, timeout=180,
+                        cwd=WORKSPACE, capture_output=True,
+                        encoding="utf-8", errors="replace", timeout=180,
                     )
                 except subprocess.TimeoutExpired:
                     raise RuntimeError("pip install from PyPI timed out after 180s")
@@ -7208,7 +7218,8 @@ if __name__ == "__main__":
                     r = subprocess.run(
                         ["git", "submodule", "add", "-b", catalog_entry["ref"],
                          catalog_entry["source"], target_path],
-                        cwd=WORKSPACE, capture_output=True, text=True, timeout=120,
+                        cwd=WORKSPACE, capture_output=True,
+                        encoding="utf-8", errors="replace", timeout=120,
                     )
                     if r.returncode != 0:
                         raise RuntimeError(
@@ -7219,7 +7230,8 @@ if __name__ == "__main__":
                 try:
                     result = subprocess.run(
                         pip_cmd_base + [str(abs_target)],
-                        cwd=WORKSPACE, capture_output=True, text=True, timeout=180,
+                        cwd=WORKSPACE, capture_output=True,
+                        encoding="utf-8", errors="replace", timeout=180,
                     )
                 except subprocess.TimeoutExpired:
                     raise RuntimeError("pip install timed out after 180s")
@@ -7465,6 +7477,265 @@ if __name__ == "__main__":
         self.send_header("Cache-Control", "no-store")
         self.end_headers()
         self.wfile.write(data)
+
+    def _get_workspaces(self):
+        """GET /api/workspaces — dropdown payload for the workspace switcher.
+
+        Reads ~/.pbg/workspaces.json (catalog) and joins each entry with
+        ~/.pbg/servers/<name>.json to determine status. No HTTP probes.
+        Falls back to current-workspace-only on missing/corrupt catalog.
+        """
+        from pbg_superpowers import workspace_catalog
+
+        current_root = WORKSPACE
+        current_resolved = str(current_root.resolve())
+
+        current_name = self._read_workspace_name(current_root)
+        result = {
+            "current": {"name": current_name, "path": current_resolved},
+            "workspaces": [],
+        }
+
+        try:
+            catalog = workspace_catalog.list_workspaces()
+        except Exception:
+            catalog = []
+
+        if not any(e.get("path") == current_resolved for e in catalog):
+            catalog = [{
+                "name": current_name,
+                "path": current_resolved,
+                "package": None,
+                "added_at": None,
+            }] + list(catalog)
+
+        for entry in catalog:
+            path = entry.get("path", "")
+            row = {"name": entry.get("name") or Path(path).name, "path": path}
+            if not Path(path).is_dir():
+                row["status"] = "missing"
+            elif path == current_resolved:
+                row["status"] = "current"
+                entry = workspace_catalog.find_entry(path)
+                if entry is not None:
+                    pid_val = int(entry.get("pid") or 0)
+                    if pid_val <= 0:
+                        alive = False
+                    else:
+                        try:
+                            os.kill(pid_val, 0)
+                            alive = True
+                        except ProcessLookupError:
+                            alive = False
+                        except PermissionError:
+                            alive = True  # PID exists but owned by another user
+                        except (OSError, ValueError):
+                            alive = False
+                    if alive:
+                        row["url"] = entry["url"]
+                        row["pid"] = entry["pid"]
+            else:
+                entry = workspace_catalog.find_entry(path)
+                if entry is None:
+                    row["status"] = "stopped"
+                else:
+                    pid_val = int(entry.get("pid") or 0)
+                    if pid_val <= 0:
+                        alive = False
+                    else:
+                        try:
+                            os.kill(pid_val, 0)
+                            alive = True
+                        except ProcessLookupError:
+                            alive = False
+                        except PermissionError:
+                            alive = True  # PID exists but owned by another user
+                        except (OSError, ValueError):
+                            alive = False
+                    if alive:
+                        row["status"] = "running"
+                        row["url"] = entry["url"]
+                        row["pid"] = entry["pid"]
+                    else:
+                        row["status"] = "stale"
+                        row["pid"] = entry.get("pid")
+            result["workspaces"].append(row)
+
+        order = {"current": 0, "running": 1, "stopped": 2, "stale": 3, "missing": 4}
+        result["workspaces"].sort(key=lambda r: (order.get(r["status"], 99), r["name"]))
+
+        self._json(result, 200)
+
+    def _post_workspaces_add(self, body: dict):
+        """POST /api/workspaces/add — register an existing workspace in the catalog."""
+        path = body.get("path") if isinstance(body, dict) else None
+        if not path or not isinstance(path, str) or not path.startswith("/"):
+            self._json({"error": "path must be an absolute string"}, 400)
+            return
+        from pbg_superpowers import workspace_catalog
+        try:
+            entry = workspace_catalog.add(path)
+        except ValueError as e:
+            self._json({"error": str(e)}, 400)
+            return
+        self._json(entry, 200)
+
+    def _post_workspaces_forget(self, body: dict):
+        """POST /api/workspaces/forget — remove the catalog entry. Refuses
+        to forget a running workspace; caller must stop it first."""
+        path = body.get("path") if isinstance(body, dict) else None
+        if not path or not isinstance(path, str):
+            self._json({"error": "path required"}, 400)
+            return
+        from pbg_superpowers import workspace_catalog
+        if workspace_catalog.find_running(path) is not None:
+            self._json({"error": "stop the server before forgetting"}, 409)
+            return
+        workspace_catalog.forget(path)
+        self._json({"ok": True}, 200)
+
+    def _post_workspaces_cleanup_stale(self, body: dict):
+        """POST /api/workspaces/cleanup-stale — remove a stale running-registry
+        entry plus orphan workspace-local files. Refuses if the PID is in
+        fact alive."""
+        path = body.get("path") if isinstance(body, dict) else None
+        if not path or not isinstance(path, str):
+            self._json({"error": "path required"}, 400)
+            return
+        from pbg_superpowers import workspace_catalog
+        if workspace_catalog.find_running(path) is not None:
+            self._json({"error": "server is still running"}, 409)
+            return
+        workspace_catalog.unregister_server(path)
+        # Best-effort removal of the orphan workspace-local files.
+        sdir = Path(path).expanduser().resolve() / ".pbg" / "server"
+        for fname in ("server-info", "server.pid"):
+            try:
+                (sdir / fname).unlink()
+            except FileNotFoundError:
+                pass
+        self._json({"ok": True}, 200)
+
+    def _post_workspaces_start(self, body: dict):
+        """POST /api/workspaces/start — spawn `vivarium-dashboard serve` for a
+        stopped workspace and poll until it registers. Idempotent: returns
+        the existing URL if a live entry already exists. Returns 504 with
+        log_path if the child doesn't register within 8 s."""
+        path = body.get("path") if isinstance(body, dict) else None
+        if not path or not isinstance(path, str) or not path.startswith("/"):
+            self._json({"error": "path must be an absolute string"}, 400)
+            return
+
+        target = Path(path).expanduser().resolve()
+        if not (target / "workspace.yaml").is_file():
+            self._json({"error": "not a workspace (no workspace.yaml)"}, 400)
+            return
+
+        from pbg_superpowers import workspace_catalog
+
+        # Safety: only catalog paths can be spawned. Prevents the dashboard
+        # from being used to launch processes against arbitrary directories.
+        if not any(Path(e.get("path") or "").resolve() == target
+                   for e in workspace_catalog.list_workspaces()):
+            self._json({"error": "workspace not in catalog — Add it first"}, 400)
+            return
+
+        # Idempotent: if a live entry exists, return it.
+        live = workspace_catalog.find_running(target)
+        if live is not None:
+            self._json({"url": live["url"], "pid": live["pid"]}, 200)
+            return
+
+        log_path = target / ".pbg" / "server" / "start.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("ab") as logf:
+            subprocess.Popen(
+                [sys.executable, "-m", "vivarium_dashboard.cli",
+                 "serve", "--workspace", str(target)],
+                stdout=logf, stderr=logf, stdin=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+                cwd=str(target),
+            )
+
+        deadline = time.monotonic() + 8.0
+        while time.monotonic() < deadline:
+            entry = workspace_catalog.find_running(target)
+            if entry is not None:
+                self._json({"url": entry["url"], "pid": entry["pid"]}, 200)
+                return
+            time.sleep(0.1)
+
+        self._json({
+            "error": "start_timeout",
+            "log_path": str(log_path),
+            "hint": f"tail {log_path}",
+        }, 504)
+
+    def _post_workspaces_stop(self, body: dict):
+        """POST /api/workspaces/stop — SIGTERM a running workspace's dashboard
+        and poll for the child's atexit hook to remove the global registry
+        entry. Refuses self-stop and uncatalogued paths. Does NOT escalate
+        to SIGKILL on timeout — returns 504 with the PID instead."""
+        path = body.get("path") if isinstance(body, dict) else None
+        if not path or not isinstance(path, str) or not path.startswith("/"):
+            self._json({"error": "path must be an absolute string"}, 400)
+            return
+
+        target = Path(path).expanduser().resolve()
+
+        from pbg_superpowers import workspace_catalog
+
+        # Catalog membership guard (same as /start).
+        if not any(Path(e.get("path") or "").resolve() == target
+                   for e in workspace_catalog.list_workspaces()):
+            self._json({"error": "workspace not in catalog"}, 400)
+            return
+
+        # Refuse self-stop: WORKSPACE is the dashboard's own bound workspace,
+        # already resolved by serve(). Stopping it would kill the dashboard
+        # the user is currently using.
+        if target == WORKSPACE:
+            entry_self = workspace_catalog.find_running(target)
+            pid_self = entry_self["pid"] if entry_self else os.getpid()
+            self._json({
+                "error": f"refusing to stop self \u2014 use the terminal: kill {pid_self}"
+            }, 400)
+            return
+
+        entry = workspace_catalog.find_running(target)
+        if entry is None:
+            self._json({"error": "not running"}, 400)
+            return
+
+        pid = int(entry["pid"])
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            # Already dead between find_running and os.kill \u2014 treat as success.
+            self._json({"ok": True}, 200)
+            return
+
+        # Poll for the child's atexit to remove the global entry.
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            if workspace_catalog.find_entry(target) is None:
+                self._json({"ok": True}, 200)
+                return
+            time.sleep(0.1)
+
+        self._json({
+            "error": "stop_timeout",
+            "hint": f"PID {pid} still alive; SIGKILL it manually if stuck",
+        }, 504)
+
+    def _read_workspace_name(self, root: Path) -> str:
+        """Read `name` from <root>/workspace.yaml; fall back to dir basename."""
+        try:
+            data = yaml.safe_load((root / "workspace.yaml").read_text()) or {}
+            return data.get("name") or root.name
+        except Exception:
+            return root.name
 
     def _serve_state(self):
         ws_file = WORKSPACE / "workspace.yaml"
