@@ -2166,6 +2166,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_visualization_classes()
         if self.path.startswith("/api/ui-config"):
             return self._get_ui_config()
+        if self.path.startswith("/api/git-status"):
+            return self._get_git_status()
         # Serve the bundled loom-explore viewer.
         if self.path.startswith("/loom-explore"):
             # Strip query string before resolving to the file on disk; popup
@@ -3739,6 +3741,17 @@ if __name__ == "__main__":
         branch = state.get("active_branch")
         if not branch:
             return self._json({"error": "no active workstream"}, 409)
+        # Opportunistic: if local matches origin/<branch>, mark pushed automatically.
+        if not state.get("pushed"):
+            check = subprocess.run(
+                ["git", "rev-list", "--left-right", "--count", f"origin/{branch}...HEAD"],
+                cwd=WORKSPACE, capture_output=True, text=True,
+            )
+            if check.returncode == 0:
+                parts = (check.stdout or "").strip().split()
+                if len(parts) == 2 and parts[1] == "0":
+                    state["pushed"] = True
+                    save_state(state)
         if not state.get("pushed"):
             return self._json({"error": "push to origin first (Push button)"}, 409)
         if state.get("pr_url"):
@@ -3760,11 +3773,12 @@ if __name__ == "__main__":
                 "manual_url": manual,
             }, 500)
 
-        r = subprocess.run(
-            ["gh", "pr", "create", "--base", base, "--head", branch,
-             "--title", title, "--body", body_text],
-            cwd=WORKSPACE, capture_output=True, text=True, timeout=30,
-        )
+        draft = bool(body.get("draft", True))
+        cmd = ["gh", "pr", "create", "--base", base, "--head", branch,
+               "--title", title, "--body", body_text]
+        if draft:
+            cmd.append("--draft")
+        r = subprocess.run(cmd, cwd=WORKSPACE, capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
             return self._json({"error": f"gh pr create failed: {(r.stderr or r.stdout)[:300]}"}, 500)
         pr_url = r.stdout.strip().splitlines()[-1] if r.stdout else ""
@@ -3897,6 +3911,75 @@ if __name__ == "__main__":
                 continue
             files.append({"status": raw[:2].strip(), "path": raw[3:]})
         return self._json({"count": len(files), "files": files}, 200)
+
+    def _get_git_status(self):
+        """GET /api/git-status — live sync state for the workspace's git.
+
+        Returns:
+            {
+              upstream_repo: "owner/name" | null,
+              branch: str | null,
+              push_state: "pushed" | "ahead" | "no_origin" | "diverged" | "behind",
+              ahead: int,
+              behind: int,
+              branch_url: str | null,
+              repo_url: str | null,
+              pr_number: int | null,
+              pr_url: str | null,
+            }
+        """
+        result = {
+            "upstream_repo": None, "branch": None, "push_state": "no_origin",
+            "ahead": 0, "behind": 0,
+            "branch_url": None, "repo_url": None,
+            "pr_number": None, "pr_url": None,
+        }
+        # current branch
+        r = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                           cwd=WORKSPACE, capture_output=True, text=True)
+        if r.returncode != 0:
+            return self._json(result, 200)
+        result["branch"] = (r.stdout or "").strip()
+        # upstream repo (from origin remote)
+        r = subprocess.run(["git", "remote", "get-url", "origin"],
+                           cwd=WORKSPACE, capture_output=True, text=True)
+        if r.returncode != 0:
+            return self._json(result, 200)
+        origin_url = (r.stdout or "").strip()
+        m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", origin_url)
+        if m:
+            result["upstream_repo"] = m.group(1)
+            result["repo_url"] = f"https://github.com/{m.group(1)}"
+            result["branch_url"] = f"https://github.com/{m.group(1)}/tree/{result['branch']}"
+        # ahead/behind vs origin/<branch>
+        ref = f"origin/{result['branch']}"
+        r = subprocess.run(["git", "rev-list", "--left-right", "--count", f"{ref}...HEAD"],
+                           cwd=WORKSPACE, capture_output=True, text=True)
+        if r.returncode != 0:
+            # origin/<branch> probably doesn't exist yet
+            result["push_state"] = "no_origin"
+        else:
+            parts = (r.stdout or "").strip().split()
+            if len(parts) == 2:
+                behind = int(parts[0]); ahead = int(parts[1])
+                result["ahead"] = ahead; result["behind"] = behind
+                if ahead == 0 and behind == 0:
+                    result["push_state"] = "pushed"
+                elif ahead > 0 and behind == 0:
+                    result["push_state"] = "ahead"
+                elif ahead == 0 and behind > 0:
+                    result["push_state"] = "behind"
+                else:
+                    result["push_state"] = "diverged"
+        # PR state — read from .pbg/state.json (cheaper than gh API)
+        try:
+            from vivarium_dashboard.lib.work_state import load_state
+            state = load_state()
+            result["pr_url"] = state.get("pr_url")
+            result["pr_number"] = state.get("pr_number")
+        except Exception:
+            pass
+        return self._json(result, 200)
 
     def _post_dirty_commit_all(self, body: dict):
         """Stage and commit all dirty files (minus reports/) under the active workstream."""

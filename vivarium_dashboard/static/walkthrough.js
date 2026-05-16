@@ -6175,14 +6175,18 @@
   // -------------------------------------------------------------------------
 
   function _openPRDialog() {
-    // Prefill title from active branch.
     fetch('/api/state').then(function (r) { return r.json(); }).then(function (state) {
       var branch = (state && state.active_branch) || '';
       var base = (state && state.base) || 'main';
       var titleField = document.querySelector('#form-open-pr input[name=title]');
       if (titleField && branch && !titleField.value) titleField.value = 'Workstream: ' + branch;
-      var baseDisp = document.getElementById('pr-base-display');
-      if (baseDisp) baseDisp.textContent = base;
+      var setText = function (id, txt) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = txt;
+      };
+      setText('pr-head-display', branch || '<branch>');
+      setText('pr-base-display', base);
+      setText('pr-base-display-2', base);
       openModal('modal-open-pr');
     });
   }
@@ -6193,6 +6197,7 @@
     var body = {
       title: (fd.get('title') || '').trim(),
       body: (fd.get('body') || '').trim(),
+      draft: !!fd.get('draft'),
     };
     var submit = form.querySelector('button[type=submit]');
     if (submit) { submit.disabled = true; submit.textContent = 'Creating…'; }
@@ -6211,11 +6216,44 @@
         closeModal('modal-open-pr');
         alert('PR created: ' + (j.pr_url || ''));
         window.open(j.pr_url, '_blank');
+        _refreshGitStatus();
       })
       .finally(function () {
         if (submit) { submit.disabled = false; submit.textContent = 'Create PR'; }
       });
   }
   window._submitOpenPR = _submitOpenPR;
+
+
+  // -------------------------------------------------------------------------
+  // Top-bar live git-status strip
+  // -------------------------------------------------------------------------
+
+  function _refreshGitStatus() {
+    fetch('/api/git-status').then(function (r) { return r.json(); }).then(function (s) {
+      var box = document.getElementById('viv-git-status');
+      if (!box) return;
+      if (!s.branch) { box.hidden = true; return; }
+      box.hidden = false;
+      var stateBadge;
+      switch (s.push_state) {
+        case 'pushed':    stateBadge = '<span class="git-badge git-badge-ok">✓ pushed</span>'; break;
+        case 'ahead':     stateBadge = '<span class="git-badge git-badge-ahead">↑ ' + s.ahead + ' ahead</span>'; break;
+        case 'behind':    stateBadge = '<span class="git-badge git-badge-behind">↓ ' + s.behind + ' behind</span>'; break;
+        case 'diverged':  stateBadge = '<span class="git-badge git-badge-warn">! diverged</span>'; break;
+        default:          stateBadge = '<span class="git-badge git-badge-warn">⊘ no origin</span>';
+      }
+      var repoPart = s.upstream_repo
+        ? '<a href="' + s.repo_url + '" target="_blank" rel="noopener" class="git-repo">' + s.upstream_repo + '</a>'
+        : '<span class="muted">no upstream</span>';
+      var branchPart = s.branch_url
+        ? ' @ <a href="' + s.branch_url + '" target="_blank" rel="noopener" class="git-branch">' + s.branch + '</a>'
+        : ' @ <span class="git-branch">' + s.branch + '</span>';
+      box.innerHTML = repoPart + branchPart + ' ' + stateBadge;
+    }).catch(function () { /* silent */ });
+  }
+  window._refreshGitStatus = _refreshGitStatus;
+
+  document.addEventListener('DOMContentLoaded', _refreshGitStatus);
 
 })();

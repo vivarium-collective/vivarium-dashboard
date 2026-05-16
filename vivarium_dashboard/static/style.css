@@ -1252,3 +1252,23 @@ body.focus-mode::before{
 /* Top-bar "Open PR" button */
 .topbar-actions { display: inline-flex; gap: 0.5rem; margin-left: 1rem; vertical-align: middle; }
 #btn-open-pr { padding: 0.4rem 0.8rem; font-weight: 500; }
+
+/* Top-bar live git-status strip */
+.git-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.6rem;
+  background: #f1f3f5;
+  border-radius: 6px;
+  font-size: 0.9em;
+  margin-left: 0.5rem;
+}
+.git-status .git-repo, .git-status .git-branch { color: #0366d6; text-decoration: none; font-family: monospace; }
+.git-status .git-repo:hover, .git-status .git-branch:hover { text-decoration: underline; }
+.git-badge { padding: 0.1rem 0.5rem; border-radius: 10px; font-size: 0.85em; font-weight: 500; }
+.git-badge-ok { background: #d4edda; color: #155724; }
+.git-badge-ahead { background: #fff3cd; color: #856404; }
+.git-badge-behind { background: #ffeeba; color: #856404; }
+.git-badge-warn { background: #f8d7da; color: #721c24; }
+.checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }

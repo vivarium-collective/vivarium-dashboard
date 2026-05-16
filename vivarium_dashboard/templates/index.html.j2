@@ -353,7 +353,7 @@
       <div class="viv-topbar-actions" id="viv-topbar-actions">
         <!-- Branch chip + dirty pill + work-status buttons populated by JS (V4) -->
         <span class="viv-branch-chip" id="viv-branch-chip">…</span>
-        {% if github_url %}<a class="viv-icon-btn" href="{{ github_url }}" target="_blank" rel="noopener" title="Open on GitHub">↗</a>{% endif %}
+        <div id="viv-git-status" class="git-status" hidden></div>
         <div class="topbar-actions">
           <button id="btn-open-pr" class="action-btn" onclick="_openPRDialog()" title="Open PR for current branch">
             Open PR ↗
@@ -1178,13 +1178,20 @@
   <div class="modal-box" style="max-width:640px">
     <button class="modal-close" onclick="closeModal('modal-open-pr')">&times;</button>
     <h3>Open Pull Request</h3>
-    <p class="muted">Opens a PR from the current branch into <code id="pr-base-display">main</code>.</p>
+    <p class="muted">Opens a <strong>draft proposal</strong> to merge
+<code id="pr-head-display">…</code> → <code id="pr-base-display">main</code>.
+Nothing on <code id="pr-base-display-2">main</code> changes until someone presses
+"Merge" on the GitHub PR page. You can leave a draft PR open indefinitely.</p>
     <form id="form-open-pr" onsubmit="event.preventDefault(); _submitOpenPR(this);">
       <label>Title:
         <input name="title" required>
       </label>
       <label>Body:<br>
         <textarea name="body" rows="6" placeholder="Summary, what changed, test plan..."></textarea>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="draft" id="pr-draft-checkbox" checked>
+        Draft PR (recommended — can be marked ready for review later)
       </label>
       <div class="form-actions">
         <button type="submit" class="action-btn">Create PR</button>
