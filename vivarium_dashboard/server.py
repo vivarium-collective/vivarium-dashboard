@@ -3926,6 +3926,11 @@ if __name__ == "__main__":
               repo_url: str | null,
               pr_number: int | null,
               pr_url: str | null,
+              base: str,
+              ahead_of_base: int,
+              dirty_count: int,
+              compare_url: str | null,
+              pr_state: str | null,
             }
         """
         result = {
@@ -3933,6 +3938,8 @@ if __name__ == "__main__":
             "ahead": 0, "behind": 0,
             "branch_url": None, "repo_url": None,
             "pr_number": None, "pr_url": None,
+            "base": "main", "ahead_of_base": 0,
+            "dirty_count": 0, "compare_url": None, "pr_state": None,
         }
         # current branch
         r = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -3971,14 +3978,55 @@ if __name__ == "__main__":
                     result["push_state"] = "behind"
                 else:
                     result["push_state"] = "diverged"
-        # PR state — read from .pbg/state.json (cheaper than gh API)
+        # PR info + base — read from .pbg/state.json (cheaper than gh API)
         try:
             from vivarium_dashboard.lib.work_state import load_state
             state = load_state()
             result["pr_url"] = state.get("pr_url")
             result["pr_number"] = state.get("pr_number")
+            result["base"] = state.get("base") or "main"
         except Exception:
             pass
+        # ahead_of_base: commits on branch not yet merged into base
+        base = result["base"]
+        branch = result["branch"]
+        if branch:
+            for base_ref in (base, f"origin/{base}"):
+                r_aob = subprocess.run(
+                    ["git", "rev-list", "--count", f"{base_ref}..HEAD"],
+                    cwd=WORKSPACE, capture_output=True, text=True,
+                )
+                if r_aob.returncode == 0:
+                    try:
+                        result["ahead_of_base"] = int(r_aob.stdout.strip())
+                    except ValueError:
+                        pass
+                    break
+            if result["upstream_repo"]:
+                result["compare_url"] = (
+                    f"https://github.com/{result['upstream_repo']}"
+                    f"/compare/{base}...{branch}"
+                )
+        # dirty_count: number of uncommitted files (filtered, same as dirty-status)
+        try:
+            dirty_output = _dirty_workspace()
+            result["dirty_count"] = len([
+                l for l in dirty_output.splitlines() if len(l) >= 4
+            ])
+        except Exception:
+            pass
+        # pr_state: query gh if a PR number is known
+        if result.get("pr_number"):
+            try:
+                r_pr = subprocess.run(
+                    ["gh", "pr", "view", str(result["pr_number"]),
+                     "--json", "state", "--jq", ".state"],
+                    cwd=WORKSPACE, capture_output=True, text=True, timeout=5,
+                )
+                if r_pr.returncode == 0:
+                    result["pr_state"] = r_pr.stdout.strip() or None
+            except Exception:
+                pass
         return self._json(result, 200)
 
     def _post_dirty_commit_all(self, body: dict):

@@ -1271,4 +1271,13 @@ body.focus-mode::before{
 .git-badge-ahead { background: #fff3cd; color: #856404; }
 .git-badge-behind { background: #ffeeba; color: #856404; }
 .git-badge-warn { background: #f8d7da; color: #721c24; }
+.git-status { flex-wrap: wrap; }
+.git-badge-info { background: #cce5ff; color: #004085; text-decoration: none; }
+.git-badge-info:hover { text-decoration: underline; }
+.git-badge-pr { text-decoration: none; }
+.git-badge-pr.pr-state-open { background: #d4edda; color: #155724; }
+.git-badge-pr.pr-state-draft { background: #e2e3e5; color: #41464b; }
+.git-badge-pr.pr-state-merged { background: #cce5ff; color: #004085; }
+.git-badge-pr.pr-state-closed { background: #f8d7da; color: #721c24; }
+.dirty-pill { cursor: pointer; }
 .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }

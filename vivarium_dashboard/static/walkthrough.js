@@ -6235,6 +6235,8 @@
       if (!box) return;
       if (!s.branch) { box.hidden = true; return; }
       box.hidden = false;
+
+      // push-state badge
       var stateBadge;
       switch (s.push_state) {
         case 'pushed':    stateBadge = '<span class="git-badge git-badge-ok">✓ pushed</span>'; break;
@@ -6243,13 +6245,37 @@
         case 'diverged':  stateBadge = '<span class="git-badge git-badge-warn">! diverged</span>'; break;
         default:          stateBadge = '<span class="git-badge git-badge-warn">⊘ no origin</span>';
       }
+
       var repoPart = s.upstream_repo
-        ? '<a href="' + s.repo_url + '" target="_blank" rel="noopener" class="git-repo">' + s.upstream_repo + '</a>'
+        ? '<a href="' + s.repo_url + '" target="_blank" rel="noopener" class="git-repo">' + _esc(s.upstream_repo) + '</a>'
         : '<span class="muted">no upstream</span>';
       var branchPart = s.branch_url
-        ? ' @ <a href="' + s.branch_url + '" target="_blank" rel="noopener" class="git-branch">' + s.branch + '</a>'
-        : ' @ <span class="git-branch">' + s.branch + '</span>';
-      box.innerHTML = repoPart + branchPart + ' ' + stateBadge;
+        ? ' @ <a href="' + s.branch_url + '" target="_blank" rel="noopener" class="git-branch">' + _esc(s.branch) + '</a>'
+        : ' @ <span class="git-branch">' + _esc(s.branch) + '</span>';
+
+      // ahead-of-base badge
+      var aheadOfBasePart = (s.ahead_of_base > 0 && s.compare_url)
+        ? ' <a class="git-badge git-badge-info" href="' + s.compare_url + '" target="_blank" rel="noopener">↗ ' + s.ahead_of_base + ' ahead of ' + _esc(s.base) + '</a>'
+        : (s.ahead_of_base > 0
+          ? ' <span class="git-badge git-badge-info">↗ ' + s.ahead_of_base + ' ahead of ' + _esc(s.base) + '</span>'
+          : '');
+
+      // dirty-files pill
+      var dirtyPart = (s.dirty_count > 0)
+        ? ' <span class="git-badge git-badge-warn dirty-pill" onclick="event.stopPropagation();_toggleDirtyPanel()" title="' + s.dirty_count + ' uncommitted file' + (s.dirty_count === 1 ? '' : 's') + '">' + s.dirty_count + ' uncommitted</span>'
+        : '';
+
+      // PR badge
+      var prState = (s.pr_state || 'open').toLowerCase();
+      var prPart = s.pr_url
+        ? ' <a class="git-badge git-badge-pr pr-state-' + prState + '" href="' + s.pr_url + '" target="_blank" rel="noopener">PR #' + s.pr_number + ' ↗</a>'
+        : '';
+
+      box.innerHTML = repoPart + branchPart + ' ' + stateBadge + aheadOfBasePart + dirtyPart + prPart;
+
+      // Goal 5: hide "Open PR" button when a PR already exists
+      var openPrBtn = document.getElementById('btn-open-pr');
+      if (openPrBtn) openPrBtn.hidden = !!s.pr_url;
     }).catch(function () { /* silent */ });
   }
   window._refreshGitStatus = _refreshGitStatus;
