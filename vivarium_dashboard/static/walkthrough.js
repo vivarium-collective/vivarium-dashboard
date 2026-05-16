@@ -477,7 +477,7 @@
       _wireSimulationsUiOnce();
       _initSimulations();
     }
-    if (pageId === 'investigations') {
+    if (pageId === 'studies') {
       if (!window._investigationsLoaded) {
         window._investigationsLoaded = true;
         _loadInvestigations();
@@ -490,7 +490,7 @@
     var params = new URLSearchParams(window.location.search);
     var focus = params.get('focus');
     if (focus) {
-      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'simulations', 'branches', 'composite-explore'];
+      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'studies', 'simulations', 'branches', 'composite-explore'];
       if (validPages.indexOf(focus) >= 0) {
         document.body.classList.add('focus-mode', 'focus-' + focus);
         _switchPage(focus);
@@ -500,7 +500,9 @@
 
     function fromHash() {
       var h = (window.location.hash || '').replace(/^#/, '');
-      var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'simulations', 'branches', 'composite-explore'];
+      // '#investigations' is kept as an alias for backwards-compatible bookmarks
+      if (h === 'investigations') h = 'studies';
+      var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'studies', 'simulations', 'branches', 'composite-explore'];
       _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
     }
     window.addEventListener('hashchange', fromHash);
@@ -2274,7 +2276,7 @@
                   : (inv.n_simulations !== undefined ? inv.n_simulations : 0);
         var isActive = (inv.name === active) ? ' active' : '';
         return '<a class="viv-rail-link viv-rail-study-link' + isActive + '" ' +
-               'href="#investigations" ' +
+               'href="#studies" ' +
                'onclick="_vivOpenInvestigationFromRail(\'' + _esc(inv.name) + '\'); return false;">' +
                  '<span class="viv-rail-link-label">' + _esc(inv.name) + '</span>' +
                  '<small class="viv-rail-link-sublabel">' + _esc(baseline) +
@@ -2307,9 +2309,9 @@
   window._vivToggleInvGroup = _vivToggleInvGroup;
 
   function _vivOpenInvestigationFromRail(name) {
-    // Switch to Investigations page first, then open the detail panel and
+    // Switch to Studies page first, then open the detail panel and
     // refresh the rail so the active-state moves with the selection.
-    if (typeof _switchPage === 'function') _switchPage('investigations');
+    if (typeof _switchPage === 'function') _switchPage('studies');
     if (typeof _openInvestigation === 'function') _openInvestigation(name);
     _vivRefreshInvestigationsRail();
   }
@@ -2572,10 +2574,10 @@
         var newName = res.body.name;
         var url = new URL(window.location.href);
         url.searchParams.delete('id');
-        url.hash = '#investigations';
+        url.hash = '#studies';
         window.history.pushState({}, '', url.toString());
         window._currentInvestigation = newName;
-        _switchPage('investigations');
+        _switchPage('studies');
         // Open the detail pane. Prefer the existing helper if available.
         if (typeof _openInvestigation === 'function') {
           _openInvestigation(newName);
@@ -3272,12 +3274,12 @@
       .then(function(res) {
         if (res.status === 200) {
           closeModal('modal-save-as-study');
-          // Bring the user to Investigations with the new study already
+          // Bring the user to Studies with the new study already
           // embedded. The legacy /studies/<name> URL still works as a direct
           // link (in res.body.url) but full-window navigation is reserved
           // for that fallback path.
-          window.location.hash = '#investigations';
-          _switchPage('investigations');
+          window.location.hash = '#studies';
+          _switchPage('studies');
           _loadInvestigations();
           _openStudyEmbedded(name);
         } else {
@@ -3533,7 +3535,7 @@
         }
         closeModal('modal-investigation-create');
         window._investigationsLoaded = false;
-        _switchPage('investigations');
+        _switchPage('studies');
         _vivRefreshInvestigationsRail();
       });
   }
@@ -3563,7 +3565,7 @@
   window._openInvestigation = _openInvestigation;
 
   function _setInvestigationsFocusMode(on) {
-    var page = document.getElementById('page-investigations');
+    var page = document.getElementById('page-studies');
     if (!page) return;
     page.classList.toggle('inv-focus-mode', !!on);
     // Rail mirrors focus state: shows just the active study while focused,
@@ -3735,7 +3737,7 @@
       '<div class="inv-detail-back" style="margin-bottom:12px">' +
         '<a href="#" onclick="_closeInvestigationFocus(); return false;" ' +
            'style="color:#3b82f6; text-decoration:none; font-size:0.9em">' +
-          '← Back to all investigations' +
+          '← Back to all studies' +
         '</a>' +
       '</div>' +
       '<header class="study-header">' +
@@ -5724,7 +5726,7 @@
   function _simStudyChips(studies) {
     if (!studies || !studies.length) return '<span style="color:#9ca3af;">—</span>';
     return studies.map(function (name) {
-      return '<a href="#investigations" title="' + _escSim(name) +
+      return '<a href="#studies" title="' + _escSim(name) +
         '" style="display:inline-block; background:#eef2ff; color:#3730a3; ' +
         'padding:1px 7px; margin:0 2px 2px 0; border-radius:10px; font-size:12px; ' +
         'text-decoration:none;">' + _escSim(name) + '</a>';

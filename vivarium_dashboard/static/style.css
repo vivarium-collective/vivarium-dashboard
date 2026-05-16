@@ -510,21 +510,21 @@ body.focus-mode::before{
   margin-left:auto;
 }
 
-/* Investigations focus-mode: hide index chrome, show only the detail -------- */
-#page-investigations.inv-focus-mode #investigations-toolbar,
-#page-investigations.inv-focus-mode .investigations-search,
-#page-investigations.inv-focus-mode #investigations-tag-chips,
-#page-investigations.inv-focus-mode #investigations-grid,
-#page-investigations.inv-focus-mode .page-title,
-#page-investigations.inv-focus-mode .page-lead{
+/* Studies (formerly Investigations) focus-mode: hide index chrome, show only the detail -------- */
+#page-studies.inv-focus-mode #investigations-toolbar,
+#page-studies.inv-focus-mode .investigations-search,
+#page-studies.inv-focus-mode #investigations-tag-chips,
+#page-studies.inv-focus-mode #investigations-grid,
+#page-studies.inv-focus-mode .page-title,
+#page-studies.inv-focus-mode .page-lead{
   display:none;
 }
 /* The page-title shares a flex-row with the "+ New investigation" button.
  * Hide that wrapper entirely while focused so the button doesn't dangle. */
-#page-investigations.inv-focus-mode > div:first-child{
+#page-studies.inv-focus-mode > div:first-child{
   display:none;
 }
-#page-investigations.inv-focus-mode #investigation-detail{
+#page-studies.inv-focus-mode #investigation-detail{
   display:block;
 }
 .inv-detail-back a:hover{
