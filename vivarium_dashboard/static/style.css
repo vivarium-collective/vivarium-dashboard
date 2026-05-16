@@ -1250,3 +1250,12 @@ body.focus-mode::before{
 .study-card .study-link { cursor: pointer; flex: 1; }
 .study-card .study-link:hover { text-decoration: underline; }
 .study-card .study-status { color: #666; font-size: 0.9em; }
+.study-card { cursor: pointer; }
+.study-card.expanded { background: #fafafa; flex-wrap: wrap; }
+.study-card-content { flex-basis: 100%; padding: 0.6rem 0 0 0; border-top: 1px solid #eee; margin-top: 0.4rem; }
+.study-card-content .card-section { margin: 0.4rem 0; }
+.study-card-content .card-section h5 { margin: 0.2rem 0; font-size: 0.85em; text-transform: uppercase; color: #555; }
+.study-card-content .card-section p { margin: 0.2rem 0; }
+.study-card-content .card-section ul { margin: 0.2rem 0 0.2rem 1rem; padding: 0; }
+.study-card-content .open-study-link { color: #4a90e2; text-decoration: none; font-size: 0.9em; }
+.study-card-content .open-study-link:hover { text-decoration: underline; }

@@ -98,14 +98,66 @@
             ' <a class="study-link">' + (i + 1) + '. ' + escapeHtml(s.study) + '</a>' +
             ' <span class="study-status">' + escapeHtml(s.derived_status) + '</span> ' +
             gateNote;
-          li.querySelector('.study-link').addEventListener('click', function () {
-            // Navigate to the study detail.
-            location.hash = '#studies/' + encodeURIComponent(s.study);
+          li.addEventListener('click', function (e) {
+            // Allow the "Open in own page" link inside expanded content to navigate normally.
+            if (e.target.matches('.open-study-link')) return;
+            toggleStudyCard(li, s.study);
           });
           cards.appendChild(li);
         });
       }
     });
+  }
+
+  function toggleStudyCard(li, slug) {
+    if (li.classList.contains('expanded')) {
+      li.classList.remove('expanded');
+      var content = li.querySelector('.study-card-content');
+      if (content) content.remove();
+      return;
+    }
+    li.classList.add('expanded');
+    fetch('/api/investigation/' + encodeURIComponent(slug)).then(function (r) {
+      if (!r.ok) { li.classList.remove('expanded'); return; }
+      return r.json();
+    }).then(function (study) {
+      if (!study) return;
+      var content = document.createElement('div');
+      content.className = 'study-card-content';
+      content.innerHTML = renderStudyExpanded(study);
+      li.appendChild(content);
+    });
+  }
+
+  function renderStudyExpanded(study) {
+    function esc(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+        return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+      });
+    }
+    var baselines = (study.baseline || []).map(function (b) {
+      return '<li><code>' + esc(b.name) + '</code> — <code class="muted">' + esc(b.composite) + '</code></li>';
+    }).join('');
+    var variants = (study.variants || []).map(function (v) {
+      return '<li><code>' + esc(v.name) + '</code></li>';
+    }).join('');
+    var interventions = (study.interventions || []).map(function (i) {
+      return '<li><strong>' + esc(i.name) + '</strong>: ' + esc(i.description || '') + '</li>';
+    }).join('');
+    var lr = (study.tests && study.tests.last_results) || null;
+    var testsLine = lr
+      ? (lr.passed + ' passed / ' + lr.failed + ' failed / ' + lr.skipped + ' skipped')
+      : '(no test results yet)';
+    return [
+      '<div class="card-section"><h5>Objective</h5><p>' + esc(study.objective || '(none)') + '</p></div>',
+      '<div class="card-section"><h5>Question</h5><p>' + esc(study.question || '(none)') + '</p></div>',
+      '<div class="card-section"><h5>Hypothesis</h5><p>' + esc(study.hypothesis || '(none)') + '</p></div>',
+      '<div class="card-section"><h5>Baseline (' + (study.baseline || []).length + ')</h5><ul>' + (baselines || '<li class="muted">(none)</li>') + '</ul></div>',
+      '<div class="card-section"><h5>Variants (' + (study.variants || []).length + ')</h5><ul>' + (variants || '<li class="muted">(none)</li>') + '</ul></div>',
+      '<div class="card-section"><h5>Interventions (' + (study.interventions || []).length + ')</h5><ul>' + (interventions || '<li class="muted">(none)</li>') + '</ul></div>',
+      '<div class="card-section"><h5>Tests</h5><p>' + esc(testsLine) + '</p></div>',
+      '<div class="card-section"><a class="open-study-link" href="#studies/' + encodeURIComponent(study.name || '') + '">Open in own page →</a></div>',
+    ].join('');
   }
 
   function backToList() {
