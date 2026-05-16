@@ -294,7 +294,7 @@
             <path d="M8.5 12L16 19"/>
           </svg>
         </span>
-        <span class="viv-rail-link-label">Investigations</span>
+        <span class="viv-rail-link-label">Investigation</span>
       </a>
       <a href="#simulations"       class="viv-rail-link menu-link" data-page="simulations">
         <span class="viv-rail-link-icon">
@@ -323,9 +323,9 @@
       </a>
     </nav>
 
-    <!-- Investigations: collapsible groups of studies, dependency-ordered within each. -->
+    <!-- Studies of the active investigation, dependency-ordered. -->
     <div class="viv-rail-section">
-      <div class="viv-rail-section-label">Investigations</div>
+      <div class="viv-rail-section-label">Studies</div>
       <div id="viv-rail-investigations">
         <p class="viv-rail-empty" style="font-size:0.85em;color:#9ca3af;padding:4px 12px">Loading…</p>
       </div>
@@ -726,9 +726,10 @@
 <!-- ===== PAGE: STUDIES ===== -->
 <section id="page-investigations" class="page" data-page="investigations">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-    <h2 class="page-title" style="margin:0">Investigations</h2>
+    <h2 class="page-title" style="margin:0">Investigation</h2>
+    <button class="btn-mini" id="investigation-switch-btn" onclick="_showInvestigationList()" style="display:none">Switch investigation ↓</button>
   </div>
-  <p class="page-lead">Investigations are named collections of related studies with explicit dependencies. Click one to see its dependency DAG; click a node to open the study.</p>
+  <p class="page-lead" id="investigation-page-lead">The active investigation. Click a node in the DAG to open a study. Use <em>Switch investigation</em> when more than one investigation exists in the workspace.</p>
 
   <!-- List view: investigation cards. -->
   <div id="investigations-list" class="investigations-list-grid" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap:12px;">

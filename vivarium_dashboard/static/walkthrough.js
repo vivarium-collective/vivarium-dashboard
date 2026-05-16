@@ -3247,6 +3247,28 @@
         window._isetIndex = j.investigations || [];
         _renderInvestigationSets();
         _renderRailInvestigationGroups();
+        // New behavior: skip the list-of-cards UI. Auto-open the active
+        // investigation directly. Pick from (in order): the currently-open
+        // iset (refresh case), the iset matching the current branch when
+        // the branch follows `investigation/<name>`, or just the first iset.
+        if (!window._isetIndex.length) return;
+        var active = window._currentIset;
+        if (!active) {
+          var branch = (window._gitStatus && window._gitStatus.active_branch) || '';
+          var m = /^investigation\/(.+)$/.exec(branch);
+          if (m) {
+            for (var i = 0; i < window._isetIndex.length; i++) {
+              if (window._isetIndex[i].name === m[1]) { active = m[1]; break; }
+            }
+          }
+        }
+        if (!active) active = window._isetIndex[0].name;
+        // Toggle the "switch investigation" button visibility based on count.
+        var switchBtn = document.getElementById('investigation-switch-btn');
+        if (switchBtn) {
+          switchBtn.style.display = window._isetIndex.length > 1 ? '' : 'none';
+        }
+        _openInvestigationDetail(active);
       })
       .catch(function(err) {
         if (list) list.innerHTML = '<p class="empty-state" style="color:#b91c1c">' +
@@ -3254,6 +3276,19 @@
       });
   }
   window._loadInvestigationSets = _loadInvestigationSets;
+
+  // Exposed by the "Switch investigation ↓" button when more than one iset
+  // exists in the workspace. Shows the list-of-cards UI; clicking a card
+  // opens its detail view (existing _openInvestigationDetail flow).
+  function _showInvestigationList() {
+    var list = document.getElementById('investigations-list');
+    var detail = document.getElementById('investigation-detail-view');
+    if (list) list.style.display = '';
+    if (detail) detail.style.display = 'none';
+    window._currentIset = null;
+    _renderInvestigationSets();
+  }
+  window._showInvestigationList = _showInvestigationList;
 
   function _renderInvestigationSets() {
     var list = document.getElementById('investigations-list');
@@ -4932,6 +4967,25 @@
     });
     var ungrouped = window._investigations.filter(function(s) { return !seen[s.name]; });
     if (ungrouped.length) groups.push({name: '__ungrouped__', title: 'Ungrouped', studies: ungrouped});
+
+    // Flat-list mode: when there's exactly one investigation (no
+    // ungrouped studies), render its studies as a flat list directly
+    // under the "Studies" rail-section label — no redundant group header.
+    if (groups.length === 1 && groups[0].name !== '__ungrouped__') {
+      var g = groups[0];
+      host.innerHTML = g.studies.map(function(s) {
+        var status = s.status || 'planned';
+        return '<a class="viv-rail-sublink" ' +
+               'onclick="event.preventDefault();_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\');return false;" ' +
+               'href="#" ' +
+               'style="display:flex;align-items:baseline;gap:6px;padding:4px 12px;color:#374151;text-decoration:none;font-size:0.86em;">' +
+                 '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _esc(s.name) + '</span>' +
+                 (s.blocked ? '<span title="blocked" style="font-size:0.85em">🔒</span>' : '') +
+                 '<span class="muted" style="font-size:0.72em">' + _esc(status) + '</span>' +
+               '</a>';
+      }).join('');
+      return;
+    }
 
     var collapsedState = window._isetRailCollapsed || {};
     host.innerHTML = groups.map(function(g) {
