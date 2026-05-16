@@ -13,11 +13,51 @@ main{padding:20px;margin:0 auto}
  * (max-width:1200px, line 862). Studies and the embedded study-detail page
  * fill the whole window. */
 #page-studies, .viv-content > #page-studies{max-width:none;width:auto}
-#investigations-grid{width:100%}
-main.study-page{max-width:none;padding:16px 24px;width:100%;box-sizing:border-box}
-/* Embedded study iframe — taller so the study fills more vertical space too. */
-#study-detail-frame{height:calc(100vh - 160px) !important; min-height:720px !important; width:100% !important}
-#study-detail-panel{max-width:none !important}
+main.study-page{max-width:none;padding:12px 16px;width:100%;box-sizing:border-box}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Studies-tab fullscreen layout.
+ *
+ * Problem this fixes: viv-content has padding 24px + overflow-y:auto, the
+ * embedded study iframe was sized via calc(100vh - 160px), and the iframe
+ * itself scrolls. That stacks 24px margins all around with one outer
+ * scrollbar and one iframe scrollbar.
+ *
+ * Solution: when Studies is the active page, kill viv-content's own
+ * padding + scroll, lay out #page-studies as a flex column, and let
+ * the embedded study panel flex-grow into the remaining viewport area.
+ * The iframe takes 100% of its (flex-sized) parent — no calc, no nested
+ * scroll.
+ * ───────────────────────────────────────────────────────────────────── */
+.viv-content:has(> #page-studies.active){
+  padding:8px 12px;
+  overflow:hidden;
+}
+#page-studies.active{
+  display:flex; flex-direction:column;
+  height:100%; min-height:0;
+  gap:8px;
+}
+#page-studies.active > *{ flex:0 0 auto }
+#page-studies.active > .page-lead{ margin-bottom:0 }
+/* The card grid flexes; on its own it fills the area, when the embedded
+ * study panel is also visible it caps at ~half the height so both stay
+ * readable. */
+#page-studies.active > #investigations-grid{
+  flex:1 1 200px; min-height:160px; max-height:55vh;
+  overflow-y:auto; width:100%;
+}
+#study-detail-panel{
+  display:flex; flex-direction:column;
+  flex:2 1 400px; min-height:0;
+  margin-top:0 !important; max-width:none !important;
+}
+#study-detail-panel .study-embed-header{ flex:0 0 auto }
+#study-detail-frame{
+  flex:1 1 auto;
+  height:100% !important; min-height:0 !important;
+  width:100% !important;
+}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:18px;margin-bottom:18px}
 .guidance{background:linear-gradient(180deg,#fff7e6,#fff);border:2px solid #f5b042;display:none}
 .guidance.active{display:block}
