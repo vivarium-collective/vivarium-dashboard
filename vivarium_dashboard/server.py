@@ -4651,16 +4651,27 @@ if __name__ == "__main__":
             except InvestigationSpecError as e:
                 studies_out.append({"name": slug, "status": "invalid", "error": str(e)})
                 continue
+            # New-template aware: derive counts from new fields when present,
+            # fall back to legacy fields. Purpose.question wins over top-level
+            # question if both exist.
+            sim_set = study_spec.get("simulation_set") or []
+            beh_tests = study_spec.get("behavior_tests") or study_spec.get("expected_behavior") or []
+            readouts = study_spec.get("readouts") or study_spec.get("observables") or []
+            purpose = study_spec.get("purpose") or {}
+            question = (purpose.get("question") if isinstance(purpose, dict) else None) or study_spec.get("question", "")
             studies_out.append({
                 "name":            study_spec["name"],
                 "status":          study_spec.get("status", "planned"),
-                "question":        study_spec.get("question", ""),
-                "n_variants":      len(study_spec.get("variants") or []),
+                "phase":           study_spec.get("phase"),
+                "question":        question,
+                "n_variants":      len(sim_set) if sim_set else len(study_spec.get("variants") or []),
                 "n_interventions": len(study_spec.get("interventions") or []),
                 "n_runs":          len(study_spec.get("runs") or []),
                 "baseline_source": _format_baseline_source(study_spec),
                 "parent_studies":  _normalize_parents(study_spec),
-                "n_behaviors":     len(study_spec.get("expected_behavior") or []),
+                "n_behaviors":     len(beh_tests),
+                "n_readouts":      len(readouts),
+                "n_requirements":  len(study_spec.get("implementation_requirements") or study_spec.get("gaps") or []),
             })
 
         return self._json({

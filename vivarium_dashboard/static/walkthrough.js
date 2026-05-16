@@ -3472,17 +3472,36 @@
         'cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:box-shadow 0.1s,border-color 0.1s;' +
         'border-left: 4px solid ' + statusColor + ';' +
         'box-sizing:border-box;overflow:hidden;';
+      // Phase chip color mapping (mirrors study-detail.html .phase-* CSS).
+      var phaseColors = {
+        Design:   {bg: '#e0e7ff', fg: '#3730a3'},
+        Build:    {bg: '#fef3c7', fg: '#92400e'},
+        Simulate: {bg: '#dbeafe', fg: '#1e40af'},
+        Evaluate: {bg: '#fce7f3', fg: '#9d174d'},
+        Decide:   {bg: '#d1fae5', fg: '#065f46'},
+      };
+      var pc = phaseColors[s.phase] || null;
+      var phaseChip = (s.phase && pc)
+        ? '<span class="phase-pill" style="background:' + pc.bg + ';color:' + pc.fg +
+          ';font-size:0.7em;padding:1px 8px;border-radius:9999px;margin-right:4px">' + _esc(s.phase) + '</span>'
+        : '';
+      // Composite counts line — readouts (new) | variants (legacy) + behavior tests + requirements (new).
+      var nReadouts = (s.n_readouts !== undefined) ? s.n_readouts : 0;
+      var nReqs = (s.n_requirements !== undefined) ? s.n_requirements : 0;
       node.innerHTML =
         '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:4px">' +
           '<strong style="font-size:0.95em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _esc(s.name) + '</strong>' +
-          '<span class="status-pill" style="background:#f1f5f9;color:#475569;font-size:0.7em;padding:1px 6px;">' + _esc(s.status || 'planned') + '</span>' +
+          '<span style="white-space:nowrap">' + phaseChip +
+            '<span class="status-pill" style="background:#f1f5f9;color:#475569;font-size:0.7em;padding:1px 6px;">' + _esc(s.status || 'planned') + '</span>' +
+          '</span>' +
         '</div>' +
         '<div style="font-size:0.78em;color:#64748b;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
           _esc(s.baseline_source || '—') + '</div>' +
         '<div style="font-size:0.78em;color:#64748b;margin-top:6px">' +
-          (s.n_variants || 0) + ' variants &middot; ' +
-          (s.n_interventions || 0) + ' interventions &middot; ' +
+          (s.n_variants || 0) + ' sim · ' +
           (s.n_behaviors || 0) + ' tests' +
+          (nReadouts ? ' · ' + nReadouts + ' readouts' : '') +
+          (nReqs ? ' · ' + nReqs + ' reqs' : '') +
         '</div>' +
         '<div style="font-size:0.72em;color:#94a3b8;margin-top:4px">Click to open study</div>';
       nodesHost.appendChild(node);

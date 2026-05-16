@@ -10,91 +10,314 @@
 <header class="study-header">
   <h1 class="study-title">
     <span class="study-name" id="study-name">{{ name }}</span>
+    {% if study.phase %}
+    <span class="phase-pill phase-{{ study.phase|lower }}" title="Lifecycle: Design → Build → Simulate → Evaluate → Decide">{{ study.phase }}</span>
+    {% endif %}
     <span class="status-pill status-{{ study.status or 'planned' }}">{{ study.status or 'planned' }}</span>
   </h1>
 </header>
 
 <nav class="study-tabs" aria-label="Study sections">
   <button class="study-tab active" data-kind="overview"      onclick="_setStudyTab('overview')">Overview</button>
+  {% if study.model_change or study.implementation_requirements %}
+  <button class="study-tab"        data-kind="build"         onclick="_setStudyTab('build')">Build</button>
+  {% endif %}
+  {% if study.simulation_set %}
+  <button class="study-tab"        data-kind="simulations"   onclick="_setStudyTab('simulations')">Simulations</button>
+  {% else %}
   <button class="study-tab"        data-kind="baseline"      onclick="_setStudyTab('baseline')">Baseline</button>
-  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">Observables</button>
   <button class="study-tab"        data-kind="variants"      onclick="_setStudyTab('variants')">Variants</button>
   <button class="study-tab"        data-kind="interventions" onclick="_setStudyTab('interventions')">Interventions</button>
+  {% endif %}
+  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">{{ "Readouts" if study.readouts else "Observables" }}</button>
   <button class="study-tab"        data-kind="runs"          onclick="_setStudyTab('runs')">Runs</button>
-  <button class="study-tab"        data-kind="tests"          onclick="_setStudyTab('tests')">Tests</button>
+  <button class="study-tab"        data-kind="tests"         onclick="_setStudyTab('tests')">Tests</button>
   <button class="study-tab"        data-kind="visualizations" onclick="_setStudyTab('visualizations')">Visualizations</button>
-  <button class="study-tab"        data-kind="conclusions"    onclick="_setStudyTab('conclusions')">Conclusions</button>
+  <button class="study-tab"        data-kind="conclusions"   onclick="_setStudyTab('conclusions')">{{ "Decide" if study.conclusion_logic else "Conclusions" }}</button>
 </nav>
+<style>
+.phase-pill{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;margin-right:6px;font-weight:500;background:#e0e7ff;color:#3730a3}
+.phase-design   { background:#e0e7ff; color:#3730a3 }
+.phase-build    { background:#fef3c7; color:#92400e }
+.phase-simulate { background:#dbeafe; color:#1e40af }
+.phase-evaluate { background:#fce7f3; color:#9d174d }
+.phase-decide   { background:#d1fae5; color:#065f46 }
+.classification-pill{display:inline-block;font-size:0.7em;padding:1px 8px;border-radius:9999px;margin-right:4px;font-weight:500}
+.classification-primary    { background:#fee2e2; color:#991b1b }
+.classification-supporting { background:#dbeafe; color:#1e40af }
+.classification-diagnostic { background:#fef3c7; color:#92400e }
+.classification-regression { background:#e5e7eb; color:#374151 }
+.sim-status-pill{display:inline-block;font-size:0.72em;padding:1px 8px;border-radius:9999px;margin-left:4px}
+.sim-status-ready  { background:#d1fae5; color:#065f46 }
+.sim-status-gated  { background:#fef3c7; color:#92400e }
+.sim-status-running{ background:#dbeafe; color:#1e40af }
+.sim-status-ran    { background:#d1fae5; color:#065f46 }
+</style>
 
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
   <div class="study-overview">
+
+    {% if study.purpose %}
+    <div class="overview-section">
+      <h2 class="overview-label">Purpose</h2>
+      {% if study.purpose.question %}
+      <div style="margin-bottom:10px;padding:10px 14px;background:#eff6ff;border-left:4px solid #3b82f6;border-radius:4px">
+        <strong>Question.</strong> <span class="overview-prose">{{ study.purpose.question }}</span>
+      </div>
+      {% endif %}
+      {% if study.purpose.mechanism %}
+      <div style="margin-bottom:10px;padding:10px 14px;background:#fefce8;border-left:4px solid #facc15;border-radius:4px">
+        <strong>Mechanism / Model change.</strong> <span class="overview-prose">{{ study.purpose.mechanism }}</span>
+      </div>
+      {% endif %}
+      {% if study.purpose.expected_outcome %}
+      <div style="margin-bottom:10px;padding:10px 14px;background:#f0fdf4;border-left:4px solid #10b981;border-radius:4px">
+        <strong>Expected outcome.</strong> <span class="overview-prose">{{ study.purpose.expected_outcome }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    {# Fallback: old narrative fields #}
+    {% if study.question %}
     <div class="overview-section">
       <h2 class="overview-label">Question</h2>
-      <div id="question-text" class="overview-prose" data-editable="true"
-           data-field="question"
-           data-placeholder="(what research question is this study asking?)">{{ study.question or '' }}</div>
+      <div id="question-text" class="overview-prose" data-editable="true" data-field="question">{{ study.question }}</div>
     </div>
-
+    {% endif %}
+    {% if study.hypothesis %}
     <div class="overview-section">
       <h2 class="overview-label">Hypothesis</h2>
-      <div id="hypothesis-text" class="overview-prose" data-editable="true"
-           data-field="hypothesis"
-           data-placeholder="(predicted outcome)">{{ study.hypothesis or '' }}</div>
+      <div id="hypothesis-text" class="overview-prose" data-editable="true" data-field="hypothesis">{{ study.hypothesis }}</div>
     </div>
+    {% endif %}
+    {% if study.objective %}
+    <div class="overview-section">
+      <h2 class="overview-label">Objective</h2>
+      <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective }}</div>
+    </div>
+    {% endif %}
+    {% endif %}
+
+    {% if study.pipeline_gate %}
+    <div class="overview-section">
+      <h2 class="overview-label">Pipeline gate</h2>
+      <p class="muted" style="margin: 0 0 8px 0;font-size:0.88em">
+        Each study is a model-building gate: it answers <em>"Can we safely build the next layer?"</em>
+      </p>
+      {% if study.pipeline_gate.prerequisites %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong>
+        {% for p in study.pipeline_gate.prerequisites %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% else %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong> <em class="muted">none (root study)</em></div>
+      {% endif %}
+      {% if study.pipeline_gate.enables %}
+      <div style="margin-bottom:6px"><strong>Enables:</strong>
+        {% for p in study.pipeline_gate.enables %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if study.pipeline_gate.proceed_condition %}
+      <div><strong>Proceed when:</strong> <span class="muted">{{ study.pipeline_gate.proceed_condition }}</span></div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if study.key_assumptions %}
+    <div class="overview-section">
+      <h2 class="overview-label">Key assumptions</h2>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for a in study.key_assumptions %}<li style="margin:2px 0">{{ a }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if study.behavior_tests or study.expected_behavior %}
+    <div class="overview-section">
+      <h2 class="overview-label">Behavioral tests</h2>
+      {% set _eb = study.behavior_tests or study.expected_behavior %}
+      {% set _primary = _eb | selectattr('classification', 'equalto', 'primary') | list | length %}
+      {% set _supporting = _eb | selectattr('classification', 'equalto', 'supporting') | list | length %}
+      {% set _diagnostic = _eb | selectattr('classification', 'equalto', 'diagnostic') | list | length %}
+      {% set _regression = _eb | selectattr('classification', 'equalto', 'regression') | list | length %}
+      <p style="margin:0">
+        <strong>{{ _eb|length }}</strong> tests defined{% if _primary %} —
+          <span class="classification-pill classification-primary">{{ _primary }} primary</span>{% endif %}{% if _supporting %}
+          <span class="classification-pill classification-supporting">{{ _supporting }} supporting</span>{% endif %}{% if _diagnostic %}
+          <span class="classification-pill classification-diagnostic">{{ _diagnostic }} diagnostic</span>{% endif %}{% if _regression %}
+          <span class="classification-pill classification-regression">{{ _regression }} regression</span>{% endif %}
+        <a onclick="_setStudyTab('tests')" style="cursor:pointer;color:#3b82f6;text-decoration:underline;margin-left:6px">View on Tests tab →</a>
+      </p>
+    </div>
+    {% endif %}
+
+    {% if study.limitations %}
+    <div class="overview-section">
+      <h2 class="overview-label">Limitations</h2>
+      <p class="muted" style="margin:0 0 6px 0;font-size:0.85em">What this study explicitly does NOT validate (prevents overclaim).</p>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for l in study.limitations %}<li style="margin:2px 0">{{ l }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
 
     <div class="overview-section">
       <h2 class="overview-label">Status</h2>
       <select id="status-select" data-field="status" class="overview-status-select">
         <option value="planned"     {% if study.status == 'planned'     %}selected{% endif %}>planned</option>
-        <option value="draft"       {% if study.status == 'draft'       %}selected{% endif %}>draft</option>
-        <option value="in-progress" {% if study.status == 'in-progress' %}selected{% endif %}>in-progress</option>
         <option value="running"     {% if study.status == 'running'     %}selected{% endif %}>running</option>
         <option value="ran"         {% if study.status == 'ran'         %}selected{% endif %}>ran</option>
-        <option value="completed"   {% if study.status == 'completed'   %}selected{% endif %}>completed</option>
         <option value="complete"    {% if study.status == 'complete'    %}selected{% endif %}>complete</option>
-        <option value="archived"    {% if study.status == 'archived'    %}selected{% endif %}>archived</option>
+        <option value="failed"      {% if study.status == 'failed'      %}selected{% endif %}>failed</option>
       </select>
+      {% if study.phase %}
+      <p class="muted" style="margin:6px 0 0 0;font-size:0.85em">Lifecycle phase: <strong>{{ study.phase }}</strong> (Design → Build → Simulate → Evaluate → Decide).</p>
+      {% endif %}
     </div>
-
-    <div class="overview-section">
-      <h2 class="overview-label">Objective</h2>
-      <div id="objective-text" class="overview-prose" data-editable="true"
-           data-field="objective"
-           data-placeholder="(set an objective for this study)">{{ study.objective or '' }}</div>
-    </div>
-
-    {% if study.expected_behavior %}
-    <div class="overview-section">
-      <h2 class="overview-label">Behavioral tests</h2>
-      {% set _eb = study.expected_behavior %}
-      {% set _impl = _eb | selectattr('status', 'equalto', 'implemented') | list | length %}
-      {% set _stub = _eb | selectattr('status', 'equalto', 'stub') | list | length %}
-      {% set _gated = _eb | length - _impl - _stub %}
-      <p style="margin: 0;">
-        <strong>{{ _eb | length }}</strong> behavioral test{{ '' if _eb|length == 1 else 's' }} defined
-        ({{ _impl }} implemented{% if _stub %}, {{ _stub }} stub{% endif %}{% if _gated %}, {{ _gated }} gated{% endif %}).
-        <a onclick="_setStudyTab('tests')" style="cursor: pointer; color: #3b82f6; text-decoration: underline; margin-left: 6px;">View on Tests tab →</a>
-      </p>
-    </div>
-    {% endif %}
 
     <div class="study-counts-strip">
       <div class="count-cell">
-        <strong>{{ (study.variants or [])|length }}</strong>
-        <span class="count-label">variants</span>
+        <strong>{{ (study.simulation_set or study.variants or [])|length }}</strong>
+        <span class="count-label">{{ "simulations" if study.simulation_set else "variants" }}</span>
+      </div>
+      <div class="count-cell">
+        <strong>{{ (study.readouts or study.observables or [])|length }}</strong>
+        <span class="count-label">readouts</span>
+      </div>
+      <div class="count-cell">
+        <strong>{{ (study.implementation_requirements or study.gaps or [])|length }}</strong>
+        <span class="count-label">requirements</span>
       </div>
       <div class="count-cell">
         <strong>{{ (study.runs or [])|length }}</strong>
         <span class="count-label">runs</span>
       </div>
-      <div class="count-cell">
-        <strong>{{ (study.interventions or [])|length }}</strong>
-        <span class="count-label">interventions</span>
-      </div>
     </div>
 
   </div>
 </section>
+
+
+{# ─── Build tab: model_change + implementation_requirements ─────────── #}
+{% if study.model_change or study.implementation_requirements %}
+<section class="study-tab-panel" data-kind="build" id="panel-build" hidden>
+
+  {% if study.model_change %}
+  <div class="overview-section">
+    <h3>Model change</h3>
+    <p class="muted" style="font-size:0.88em">What code lands in this study. Separated from biology (which lives in Key assumptions on Overview).</p>
+    {% if study.model_change.base_model %}<p><strong>Base model:</strong> <code>{{ study.model_change.base_model }}</code></p>{% endif %}
+    {% if study.model_change.new_processes %}
+    <p><strong>New processes:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for p in study.model_change.new_processes %}<li><code>{{ p.name }}</code> <span class="muted">({{ p.kind or 'Process' }}{% if p.requirement_id %} · req: {{ p.requirement_id }}{% endif %})</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.new_state_variables %}
+    <p><strong>New state variables:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for v in study.model_change.new_state_variables %}<li><code>{{ v.id or v }}</code>{% if v.kind %} <span class="muted">({{ v.kind }}{% if v.units %}, {{ v.units }}{% endif %})</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.new_parameters %}
+    <p><strong>New parameters:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for p in study.model_change.new_parameters %}<li><code>{{ p.name }}</code>{% if p.default is defined %} <span class="muted">= {{ p.default }}</span>{% endif %}{% if p.units %} <span class="muted">({{ p.units }})</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.new_listeners %}
+    <p><strong>New listeners:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for l in study.model_change.new_listeners %}<li><code>{{ l.name }}</code>{% if l.emits %} → <code style="font-size:0.85em">{{ l.emits | join(', ') }}</code>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.modified_processes %}
+    <p><strong>Modified processes:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for m in study.model_change.modified_processes %}<li>{{ m }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.notes %}<p class="muted" style="font-size:0.88em">{{ study.model_change.notes }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if study.implementation_requirements %}
+  <div class="overview-section">
+    <h3>Implementation requirements <span class="muted" style="font-size:0.85em;font-weight:normal">({{ study.implementation_requirements | length }} items)</span></h3>
+    <p class="muted" style="font-size:0.88em">Concrete pieces of work that gate this study from Design → Build. Each generates a task.</p>
+    {% for r in study.implementation_requirements %}
+    <details style="margin:8px 0;padding:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;border-left:3px solid {% if r.effort == 'XS' %}#10b981{% elif r.effort == 'S' %}#3b82f6{% elif r.effort == 'M' %}#f59e0b{% elif r.effort == 'L' %}#dc2626{% else %}#94a3b8{% endif %}">
+      <summary style="cursor:pointer">
+        <strong>{{ r.id }}</strong> — {{ r.title }}
+        {% if r.effort %}<span style="font-size:0.75em;background:#f1f5f9;color:#475569;padding:1px 7px;border-radius:9999px;margin-left:6px">{{ r.effort }}</span>{% endif %}
+        {% if r.kind %}<span class="muted" style="font-size:0.78em;margin-left:4px">[{{ r.kind }}]</span>{% endif %}
+      </summary>
+      {% if r.description %}<p style="margin:8px 0">{{ r.description }}</p>{% endif %}
+      {% if r.steps %}
+      <p style="margin:8px 0 4px 0"><strong>Steps:</strong></p>
+      <ol style="margin:0 0 8px 18px;font-size:0.9em">
+        {% for s in r.steps %}<li style="margin:2px 0">{{ s }}</li>{% endfor %}
+      </ol>
+      {% endif %}
+      {% if r.unblocks %}
+      <p style="margin:8px 0 0 0;font-size:0.88em"><strong>Unblocks:</strong>
+        {% for u in r.unblocks %}<code>{{ u }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </p>
+      {% endif %}
+      {% if r.defer_until %}<p class="muted" style="margin:4px 0 0 0;font-size:0.85em">Deferred until: <code>{{ r.defer_until }}</code></p>{% endif %}
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+
+{# ─── Simulations tab: simulation_set ───────────────────────────────── #}
+{% if study.simulation_set %}
+<section class="study-tab-panel" data-kind="simulations" id="panel-simulations" hidden>
+  <h3>Simulation set <span class="muted" style="font-size:0.85em;font-weight:normal">({{ study.simulation_set | length }} runs planned)</span></h3>
+  <p class="muted" style="font-size:0.88em">Each entry is a concrete run plan: baseline or perturbation, condition, duration, seeds, readouts collected, and tests applied.</p>
+  {% for sim in study.simulation_set %}
+  <div class="panel" style="padding:14px 18px;margin-bottom:12px">
+    <header style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <strong style="font-size:1.05em">{{ sim.name }}</strong>
+      <span class="sim-status-pill sim-status-{{ sim.status or 'ready' }}">{{ sim.status or 'ready' }}</span>
+      {% if sim.condition %}<span class="muted" style="font-size:0.85em">condition: {{ sim.condition }}</span>{% endif %}
+    </header>
+    <div style="font-size:0.9em;margin-bottom:6px">
+      <strong>Base model:</strong> <code>{{ sim.base_model }}</code>
+    </div>
+    {% if sim.perturbation %}
+    <details style="margin:4px 0">
+      <summary style="cursor:pointer;font-size:0.9em"><strong>Perturbation</strong></summary>
+      <pre style="background:#f1f5f9;padding:8px 10px;border-radius:4px;font-size:0.85em;overflow-x:auto;margin:6px 0">{{ sim.perturbation | tojson(indent=2) }}</pre>
+    </details>
+    {% else %}
+    <p style="margin:4px 0;font-size:0.9em" class="muted">No perturbation (baseline run)</p>
+    {% endif %}
+    <p style="margin:6px 0;font-size:0.9em">
+      <strong>Duration:</strong> {{ sim.duration_min or '?' }} min · <strong>Seeds:</strong>
+      {% if sim.seeds %}<code>{{ sim.seeds | join(', ') }}</code>{% else %}<em>not set</em>{% endif %}
+    </p>
+    {% if sim.readouts %}
+    <p style="margin:4px 0;font-size:0.88em"><strong>Readouts:</strong>
+      {% for r in sim.readouts %}<code>{{ r }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% if sim.applies_tests %}
+    <p style="margin:4px 0;font-size:0.88em"><strong>Applies tests:</strong>
+      {% for t in sim.applies_tests %}<code>{{ t }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% if sim.blocked_by_requirements %}
+    <p style="margin:4px 0;font-size:0.85em;color:#92400e">🔒 <strong>Blocked by:</strong>
+      {% for r in sim.blocked_by_requirements %}<code>{{ r }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
 
 <section class="study-tab-panel" data-kind="baseline" id="panel-baseline">
   <div class="baseline-list">
@@ -137,9 +360,10 @@
 
 <section class="study-tab-panel" data-kind="observables" id="panel-observables" hidden>
   <div class="observables-section">
-    <h3 class="section-title">Observables</h3>
-    <p class="muted">Experimental measurements selected from the composite's bigraph state. Each observable resolves to a <code>store_path</code> (and optional <code>index_by</code> when the underlying store is indexed by ID).</p>
-    {% if study.observables %}
+    <h3 class="section-title">{{ "Readouts" if study.readouts else "Observables" }}</h3>
+    <p class="muted">{{ "Quantities collected from each simulation run. Each readout resolves to a `store_path` (and optional `index_by` when the underlying store is indexed by ID)." if study.readouts else "Experimental measurements selected from the composite's bigraph state. Each observable resolves to a `store_path` (and optional `index_by` when the underlying store is indexed by ID)." | safe }}</p>
+    {% set _obs = study.readouts or study.observables %}
+    {% if _obs %}
     <table class="observables-table" style="width:100%; border-collapse: collapse;">
       <thead>
         <tr>
@@ -151,7 +375,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for o in study.observables %}
+        {% for o in _obs %}
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td style="padding:6px; vertical-align: top;"><code>{{ o.name }}</code></td>
           <td style="padding:6px; vertical-align: top;">
@@ -540,29 +764,41 @@
     </div>
   </div>
 
-  {% if study.expected_behavior %}
+  {% set _bt = study.behavior_tests or study.expected_behavior %}
+  {% if _bt %}
   <ul class="expected-behavior-list" id="tests-list" style="list-style:none; padding-left:0; margin-top: 12px;">
-    {% for b in study.expected_behavior %}
+    {% for b in _bt %}
+    {% set _cls = b.classification or 'unclassified' %}
+    {% set _border = '#10b981' if _cls == 'primary' else ('#3b82f6' if _cls == 'supporting' else ('#f59e0b' if _cls == 'diagnostic' else ('#94a3b8' if _cls == 'regression' else '#cbd5e1'))) %}
     <li class="expected-behavior-item" id="bt-{{ b.name or loop.index0 }}"
         data-pytest-node="{{ b.name or '' }}"
-        style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {% if b.status == 'implemented' %}#10b981{% elif b.status == 'stub' %}#f59e0b{% else %}#94a3b8{% endif %}; background: #f8fafc; border-radius: 4px;">
+        data-classification="{{ _cls }}"
+        style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {{ _border }}; background: #f8fafc; border-radius: 4px;">
       <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
         <span class="bt-result" style="font-size: 0.75em; color: #94a3b8; font-family: monospace; min-width: 60px;">
           ⏳ pending
         </span>
-        <span style="font-size: 0.78em; color: #475569; font-family: monospace;">
-          {% if b.status == 'implemented' %}✓ implemented{% elif b.status == 'stub' %}◯ stub{% else %}⏳ {{ b.status or 'gated' }}{% endif %}
-        </span>
+        <span class="classification-pill classification-{{ _cls }}">{{ _cls }}</span>
         <strong style="font-size: 0.9em;">{{ b.name or '(unnamed)' }}</strong>
+        {% if b.requires_simulation %}
+        <span class="muted" style="font-size:0.78em">requires: <code>{{ b.requires_simulation }}</code></span>
+        {% endif %}
       </div>
-      <div style="margin-top: 6px; font-size: 0.95em;">{{ b.en or '' }}</div>
-      {% if b.given or b.measure or b.expect %}
+      <div style="margin-top: 6px; font-size: 0.95em;">{{ b.description or b.en or '' }}</div>
+      {% if b.measure or b.pass_if or b.given or b.expect %}
       <details style="margin-top: 6px; font-size: 0.82em;">
-        <summary class="muted" style="cursor: pointer;">Assertion (given / measure / expect)</summary>
-        <pre style="background:#fff; padding:8px; margin:4px 0 0 0; border:1px solid #e2e8f0; border-radius:3px; overflow-x:auto;">given:   {{ b.given|tojson }}
-measure: {{ b.measure|tojson }}
-expect:  {{ b.expect|tojson }}{% if b.requires %}
-requires: {{ b.requires|tojson }}{% endif %}</pre>
+        <summary class="muted" style="cursor: pointer;">Assertion</summary>
+        <pre style="background:#fff; padding:8px; margin:4px 0 0 0; border:1px solid #e2e8f0; border-radius:3px; overflow-x:auto;">{% if b.given %}given:   {{ b.given|tojson }}
+{% endif %}measure: {{ b.measure|tojson }}
+{% if b.pass_if %}pass_if: {{ b.pass_if|tojson }}{% else %}expect:  {{ b.expect|tojson }}{% endif %}{% if b.requires %}
+requires: {{ b.requires|tojson }}{% endif %}{% if b.cites %}
+cites:   {{ b.cites|tojson }}{% endif %}</pre>
+      </details>
+      {% endif %}
+      {% if b.calibration_anchor %}
+      <details style="margin-top: 6px; font-size: 0.82em">
+        <summary class="muted" style="cursor:pointer; color:#92400e">⚠ Calibration anchor</summary>
+        <pre style="background:#fff7ed; padding:8px; margin:4px 0 0 0; border:1px solid #fdba74; border-radius:3px; overflow-x:auto">{{ b.calibration_anchor | tojson(indent=2) }}</pre>
       </details>
       {% endif %}
       {% if b.notes %}
