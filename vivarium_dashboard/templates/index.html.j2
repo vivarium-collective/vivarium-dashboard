@@ -747,7 +747,12 @@
     <p id="investigation-detail-description" class="muted" style="white-space:pre-wrap; margin: 0 0 12px 0;"></p>
     <div id="investigation-dag-shell"
          style="position: relative; border: 1px solid #e2e8f0; border-radius: 6px; background: #fafafa;
-                overflow-x: auto; overflow-y: visible;">
+                overflow-x: auto; overflow-y: hidden;">
+      <!-- overflow-y must be hidden (not visible): per CSS spec, when one axis
+           is `visible` and the other isn't, `visible` gets promoted to `auto`,
+           which gives this shell its own vertical scrollbar in addition to
+           .viv-content's. JS sets shell.style.height = canvasH so the full
+           DAG fits and the parent .viv-content handles vertical scroll. -->
       <svg id="investigation-dag-edges" style="position:absolute; top:0; left:0; pointer-events:none;"></svg>
       <div id="investigation-dag-nodes" style="position:relative; top:0; left:0;"></div>
     </div>
