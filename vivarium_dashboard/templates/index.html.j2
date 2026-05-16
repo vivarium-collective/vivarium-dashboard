@@ -1244,7 +1244,7 @@
   <div class="modal-box">
     <button class="modal-close" onclick="closeModal('modal-link-branch')">&times;</button>
     <h3>Link to upstream branch</h3>
-    <p class="muted">Push the current workstream branch to a branch on the upstream repo.</p>
+    <p class="muted">Push the current investigation branch to its upstream counterpart on GitHub.</p>
     <form id="form-link-branch" onsubmit="event.preventDefault(); _submitLinkBranch(this);">
       <label>Upstream repo:
         <input name="upstream_repo" value="{{ upstream_repo or 'vivarium-collective/v2ecoli' }}"

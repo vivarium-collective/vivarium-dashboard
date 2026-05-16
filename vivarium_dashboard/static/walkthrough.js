@@ -1355,7 +1355,7 @@
   window._installFromCatalog = _installFromCatalog;
 
   function _proceedWithCatalogInstall(name, opts) {
-    if (!confirm("Install '" + name + "' as a workstream commit?\n\nThis adds a submodule, pip installs the package, and appends it to pyproject.toml. Requires an active workstream.")) return;
+    if (!confirm("Install '" + name + "' on the active investigation branch?\n\nThis adds a submodule, pip installs the package, and appends it to pyproject.toml. Requires an active investigation branch.")) return;
     var body = {name: name};
     if (opts && opts.skip_system_deps_check) body.skip_system_deps_check = true;
     fetch('/api/catalog-install', {
@@ -1740,7 +1740,7 @@
   window._submitLinkBranch = _submitLinkBranch;
 
   function _startWork() {
-    var name = prompt("Workstream branch name (e.g., feat/baseline-work):");
+    var name = prompt("Investigation branch name (suggested: investigation/<short-slug>):", "investigation/");
     if (!name) return;
     fetch('/api/work-start', {
       method: 'POST',
@@ -1749,7 +1749,7 @@
     })
       .then(function(r){ return r.json().then(function(j){ return [r.ok, j]; }); })
       .then(function(parts){
-        if (!parts[0]) { alert("Could not start workstream:\n" + (parts[1].error || 'unknown')); return; }
+        if (!parts[0]) { alert("Could not start investigation branch:\n" + (parts[1].error || 'unknown')); return; }
         _refreshGitStatus();
         location.reload();
       });
@@ -1855,11 +1855,11 @@
   }
 
   function _endWork() {
-    if (!confirm("End workstream? This switches you back to base. Your branch is preserved.")) return;
+    if (!confirm("End this investigation branch? Switches you back to base; the branch is preserved.")) return;
     fetch('/api/work-end', {method: 'POST'})
       .then(function(r){ return r.json().then(function(j){ return [r.ok, j]; }); })
       .then(function(parts){
-        if (!parts[0]) { alert("Could not end workstream:\n" + (parts[1].error || 'unknown')); return; }
+        if (!parts[0]) { alert("Could not end investigation branch:\n" + (parts[1].error || 'unknown')); return; }
         location.reload();
       });
   }
@@ -7892,7 +7892,12 @@
       var branch = (state && state.active_branch) || '';
       var base = (state && state.base) || 'main';
       var titleField = document.querySelector('#form-open-pr input[name=title]');
-      if (titleField && branch && !titleField.value) titleField.value = 'Workstream: ' + branch;
+      if (titleField && branch && !titleField.value) {
+        // Strip the `investigation/` prefix in the suggested title since the
+        // PR will already announce its head branch in the GitHub UI.
+        var shortBranch = branch.replace(/^investigation\//, '');
+        titleField.value = 'Investigation: ' + shortBranch;
+      }
       var setText = function (id, txt) {
         var el = document.getElementById(id);
         if (el) el.textContent = txt;
@@ -7968,102 +7973,225 @@
     if (field === 'body') {
       var bodyEl = form.querySelector('textarea[name=body]');
       if (!bodyEl) return;
-      var lines = [];
-      // Header — investigation question + hypothesis when present.
-      lines.push('## Investigation: `' + iset.name + '`');
-      if (iset.question) lines.push('', '> ' + iset.question.replace(/\n+/g, ' ').trim());
-      lines.push('');
+      var origBtn = (typeof event !== 'undefined') ? event.target : null;
+      if (origBtn) { origBtn.disabled = true; origBtn.textContent = 'Drafting…'; }
 
-      // Findings: the headline section a biologist would read first.
-      if (allFindings.length) {
-        lines.push('## Findings (' + allFindings.length + ')');
-        lines.push('');
-        ['biological', 'computational', 'methodological'].forEach(function (kind) {
-          var kindFindings = allFindings.filter(function (e) { return e.f.kind === kind; });
-          if (!kindFindings.length) return;
-          lines.push('### ' + kind.charAt(0).toUpperCase() + kind.slice(1) + ' (' + kindFindings.length + ')');
-          kindFindings.forEach(function (e) {
-            var f = e.f;
-            var glyph = ({confirms: '✓', contradicts: '✗', partial: '◐', novel: '◆'})[f.status || 'novel'];
-            var stmt = (f.statement || '').split('\n')[0].slice(0, 200);
-            var ref = '';
-            if (f.expected && f.expected.cites && f.expected.cites.length) {
-              ref = ' (cites: ' + f.expected.cites.slice(0, 3).map(function (c) { return '`' + c + '`'; }).join(', ') + ')';
-            } else if (f.expert_reference && f.expert_reference.doc) {
-              ref = ' (expert ref: `' + f.expert_reference.doc + '`)';
-            }
-            lines.push('- **' + glyph + ' ' + (f.id || '') + '** (' + e.study + '): ' + stmt + ref);
-          });
-          lines.push('');
+      // Fetch composite diff in parallel so the "Model changes" section can
+      // include actual file paths + line counts. Best-effort; renders without
+      // the section if the fetch fails or returns no model-code changes.
+      fetch('/api/work-composite-diff').then(function (r) { return r.ok ? r.json() : {changes: []}; })
+        .catch(function () { return {changes: []}; })
+        .then(function (diff) {
+          var modelChanges = (diff && diff.changes) || [];
+          bodyEl.value = _renderPRBody(iset, studies, allFindings, allFollowups, modelChanges);
+          bodyEl.focus();
+          if (origBtn) { origBtn.disabled = false; origBtn.textContent = 'Suggest from investigation'; }
         });
-      }
-
-      // Per-study summary — phase + status + outcome counts.
-      lines.push('## Studies (' + studies.length + ')');
-      lines.push('');
-      lines.push('| Study | Phase | Status | Findings | Follow-ups |');
-      lines.push('|---|---|---|---|---|');
-      studies.forEach(function (s) {
-        lines.push('| `' + s.name + '` | ' + (s.phase || '—') + ' | ' + (s.status || '—') +
-                   ' | ' + ((s.findings || []).length) + ' | ' + ((s.follow_up_studies || []).length) + ' |');
-      });
-      lines.push('');
-
-      // Test plan — derived from follow-ups marked open + acceptance criteria.
-      var openFollowups = allFollowups.filter(function (e) { return e.f.status !== 'done'; });
-      if (openFollowups.length) {
-        lines.push('## Test plan');
-        lines.push('');
-        openFollowups.slice(0, 10).forEach(function (e) {
-          var t = (e.f.title || '').replace(/\n+/g, ' ').trim();
-          lines.push('- [ ] ' + t + ' _(' + (e.f.kind || 'other') + ', from ' + e.study + ')_');
-        });
-        lines.push('');
-      }
-
-      // Footer
-      lines.push('---');
-      lines.push('_Drafted from the dashboard\'s Investigations view — `' + iset.name + '` (' +
-                 studies.length + ' studies). Edit freely before submitting._');
-
-      bodyEl.value = lines.join('\n');
-      bodyEl.focus();
       return;
     }
   }
   window._draftPRFromInvestigation = _draftPRFromInvestigation;
 
+  function _renderPRBody(iset, studies, allFindings, allFollowups, modelChanges) {
+    var lines = [];
+    // Header — investigation question.
+    lines.push('## Investigation: `' + iset.name + '`');
+    if (iset.question) lines.push('', '> ' + iset.question.replace(/\n+/g, ' ').trim());
+    lines.push('');
+
+    // ── Model changes (composite/process/step files) ─────────────────────
+    if (modelChanges && modelChanges.length) {
+      lines.push('## Model changes (' + modelChanges.length + ' file' + (modelChanges.length === 1 ? '' : 's') + ')');
+      lines.push('');
+      // Group by category for skimmability.
+      var byCat = {};
+      modelChanges.forEach(function (c) {
+        (byCat[c.category] = byCat[c.category] || []).push(c);
+      });
+      Object.keys(byCat).sort().forEach(function (cat) {
+        var rows = byCat[cat];
+        var totalLines = rows.reduce(function (acc, c) { return acc + c.lines_added + c.lines_removed; }, 0);
+        lines.push('**' + cat + '** (' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ', ±' + totalLines + ' lines)');
+        rows.slice(0, 8).forEach(function (c) {
+          lines.push('- `' + c.path + '` (+' + c.lines_added + '/−' + c.lines_removed + ')');
+        });
+        if (rows.length > 8) lines.push('- _…' + (rows.length - 8) + ' more_');
+        lines.push('');
+      });
+    }
+
+    // ── Findings (the biology/computational headline) ────────────────────
+    if (allFindings.length) {
+      lines.push('## Findings (' + allFindings.length + ')');
+      lines.push('');
+      ['biological', 'computational', 'methodological'].forEach(function (kind) {
+        var kf = allFindings.filter(function (e) { return e.f.kind === kind; });
+        if (!kf.length) return;
+        lines.push('### ' + kind.charAt(0).toUpperCase() + kind.slice(1) + ' (' + kf.length + ')');
+        kf.forEach(function (e) {
+          var f = e.f;
+          var glyph = ({confirms: '✓', contradicts: '✗', partial: '◐', novel: '◆'})[f.status || 'novel'];
+          var stmt = (f.statement || '').split('\n')[0].slice(0, 220);
+          var ref = '';
+          if (f.expected && f.expected.cites && f.expected.cites.length) {
+            ref = ' (cites: ' + f.expected.cites.slice(0, 3).map(function (c) { return '`' + c + '`'; }).join(', ') + ')';
+          } else if (f.expert_reference && f.expert_reference.doc) {
+            ref = ' (expert ref: `' + f.expert_reference.doc + '`)';
+          }
+          lines.push('- **' + glyph + ' ' + (f.id || '') + '** (' + e.study + '): ' + stmt + ref);
+        });
+        lines.push('');
+      });
+    }
+
+    // ── Studies summary ──────────────────────────────────────────────────
+    lines.push('## Studies (' + studies.length + ')');
+    lines.push('');
+    lines.push('| Study | Phase | Status | Findings | Follow-ups |');
+    lines.push('|---|---|---|---|---|');
+    studies.forEach(function (s) {
+      lines.push('| `' + s.name + '` | ' + (s.phase || '—') + ' | ' + (s.status || '—') +
+                 ' | ' + ((s.findings || []).length) + ' | ' + ((s.follow_up_studies || []).length) + ' |');
+    });
+    lines.push('');
+
+    // ── Report ───────────────────────────────────────────────────────────
+    // Committed by the Open-PR flow before the PR is created.
+    lines.push('## Generated report');
+    lines.push('');
+    lines.push('Committed alongside this PR as `reports/investigation-' + iset.name + '.html`. ' +
+               'Open it from the GitHub file browser to read the per-study findings inline.');
+    lines.push('');
+
+    // ── Test plan ────────────────────────────────────────────────────────
+    var openF = allFollowups.filter(function (e) { return e.f.status !== 'done'; });
+    if (openF.length) {
+      lines.push('## Test plan');
+      lines.push('');
+      openF.slice(0, 10).forEach(function (e) {
+        var t = (e.f.title || '').replace(/\n+/g, ' ').trim();
+        lines.push('- [ ] ' + t + ' _(' + (e.f.kind || 'other') + ', from ' + e.study + ')_');
+      });
+      lines.push('');
+    }
+
+    lines.push('---');
+    lines.push('_Drafted from the dashboard\'s Investigations view — `' + iset.name + '` (' +
+               studies.length + ' studies). Edit freely before submitting._');
+    return lines.join('\n');
+  }
+
+  // Stub remaining `}` from the previous function body — restore the original
+  // closing in case downstream parsers rely on it.
   function _submitOpenPR(form) {
     var fd = new FormData(form);
-    var body = {
+    var prBody = {
       title: (fd.get('title') || '').trim(),
       body: (fd.get('body') || '').trim(),
       draft: !!fd.get('draft'),
     };
     var submit = form.querySelector('button[type=submit]');
-    if (submit) { submit.disabled = true; submit.textContent = 'Creating…'; }
-    fetch('/api/work-create-pr', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body),
-    }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); })
-      .then(function (pair) {
-        var ok = pair[0], j = pair[1];
+    var origLabel = submit ? submit.textContent : 'Create PR';
+    var setStatus = function(label) {
+      if (submit) { submit.disabled = true; submit.textContent = label; }
+    };
+    var resetStatus = function() {
+      if (submit) { submit.disabled = false; submit.textContent = origLabel; }
+    };
+
+    // Step 1: when an investigation is open, generate + attach its HTML
+    // report so the PR ships with the report under /reports/<name>.html.
+    // The flow is best-effort — if report generation fails we still create
+    // the PR (with a warning).
+    var iset = window._currentIsetData;
+    var attachPromise;
+    if (iset && iset.name) {
+      setStatus('Generating report…');
+      attachPromise = _generateReportHtmlForCurrentIset()
+        .then(function (html) {
+          if (!html) return null;
+          var filename = 'investigation-' + iset.name + '.html';
+          setStatus('Committing report…');
+          return fetch('/api/work-attach-report', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              filename: filename,
+              html: html,
+              commit_message: 'docs(report): refresh investigation report for PR',
+            }),
+          }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); });
+        });
+    } else {
+      attachPromise = Promise.resolve(null);
+    }
+
+    attachPromise.then(function (attachRes) {
+      // Attachment is best-effort. Log + continue; don't block the PR.
+      if (attachRes && Array.isArray(attachRes)) {
+        var ok = attachRes[0], j = attachRes[1];
         if (!ok) {
-          var msg = j.error || 'unknown error';
-          if (j.manual_url) msg += '\n\nManual URL: ' + j.manual_url;
-          alert('PR create failed: ' + msg);
-          return;
+          console.warn('Report attach failed (continuing without):', j);
         }
-        closeModal('modal-open-pr');
-        alert('PR created: ' + (j.pr_url || ''));
-        window.open(j.pr_url, '_blank');
-        _refreshGitStatus();
-      })
-      .finally(function () {
-        if (submit) { submit.disabled = false; submit.textContent = 'Create PR'; }
-      });
+      }
+      setStatus('Creating PR…');
+      return fetch('/api/work-create-pr', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(prBody),
+      }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); });
+    })
+    .then(function (pair) {
+      var ok = pair[0], j = pair[1];
+      if (!ok) {
+        var msg = j.error || 'unknown error';
+        if (j.manual_url) msg += '\n\nManual URL: ' + j.manual_url;
+        alert('PR create failed: ' + msg);
+        return;
+      }
+      closeModal('modal-open-pr');
+      alert('PR created: ' + (j.pr_url || ''));
+      window.open(j.pr_url, '_blank');
+      _refreshGitStatus();
+    })
+    .catch(function (e) {
+      console.error('Open-PR flow error:', e);
+      alert('Open-PR flow error: ' + (e && e.message || e));
+    })
+    .finally(resetStatus);
   }
   window._submitOpenPR = _submitOpenPR;
+
+  // Generate the investigation HTML report for the currently-open iset by
+  // re-running the same client-side build path as the "Generate report"
+  // button. Returns a Promise<string|null>.
+  function _generateReportHtmlForCurrentIset() {
+    var name = window._currentIset;
+    if (!name) return Promise.resolve(null);
+    return fetch('/api/iset/' + encodeURIComponent(name)).then(function (r) { return r.json(); })
+      .then(function (iset) {
+        var studyFetches = (iset.studies || []).map(function (s) {
+          return fetch('/api/study/' + encodeURIComponent(s.name))
+            .then(function (r) { return r.ok ? r.json() : {spec: {name: s.name}}; })
+            .then(function (j) { return j.spec || j; });
+        });
+        var bibFetch = fetch('/api/references-bib')
+          .then(function (r) { return r.ok ? r.json() : {entries: []}; })
+          .then(function (j) { return j.entries || []; })
+          .catch(function () { return []; });
+        var chartFetches = (iset.studies || []).map(function (s) {
+          return fetch('/api/study-charts/' + encodeURIComponent(s.name))
+            .then(function (r) { return r.ok ? r.json() : {charts: []}; })
+            .then(function (j) { return {name: s.name, charts: j.charts || []}; })
+            .catch(function () { return {name: s.name, charts: []}; });
+        });
+        return Promise.all([Promise.all(studyFetches), bibFetch, Promise.all(chartFetches)])
+          .then(function (arr) {
+            var chartsByStudy = {};
+            arr[2].forEach(function (c) { chartsByStudy[c.name] = c.charts; });
+            return _buildInvestigationReportHtml(iset, arr[0], arr[1], chartsByStudy);
+          });
+      });
+  }
+  window._generateReportHtmlForCurrentIset = _generateReportHtmlForCurrentIset;
 
 
   // -------------------------------------------------------------------------

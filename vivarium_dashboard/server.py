@@ -219,6 +219,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/render":             "_post_render",
     "/api/work-start":         "_post_work_start",
     "/api/work-push":          "_post_work_push",
+    "/api/work-attach-report": "_post_work_attach_report",
     "/api/work-link-branch":   "_post_work_link_branch",
     "/api/work-create-pr":     "_post_work_create_pr",
     "/api/work-end":           "_post_work_end",
@@ -2210,6 +2211,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_iset_detail()
         if self.path.startswith("/api/study-charts/"):
             return self._get_study_charts()
+        if self.path.startswith("/api/work-composite-diff"):
+            return self._get_work_composite_diff()
         if self.path.startswith("/api/references-bib"):
             return self._get_references_bib()
         if self.path.startswith("/api/investigation-composite-doc"):
@@ -3633,6 +3636,63 @@ if __name__ == "__main__":
         save_state(state)
         return self._json({"ok": True, "branch": branch, "log": r.stdout[-300:]}, 200)
 
+    def _post_work_attach_report(self, body: dict):
+        """POST /api/work-attach-report {filename, html, commit_message?}
+
+        Writes ``html`` to ``reports/<filename>`` and creates a single commit
+        on the current branch. Used by the Open-PR flow so the generated
+        investigation report ships with the PR as a checked-in artifact
+        (reviewers can read it inline on GitHub instead of downloading).
+
+        Idempotent: re-runs with the same filename overwrite + amend nothing
+        — they create a new commit each time (so reviewers see the report
+        evolve alongside the code).
+        """
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.work_state import load_state
+        state = load_state()
+        branch = state.get("active_branch")
+        if not branch:
+            return self._json({"error": "no active investigation branch"}, 409)
+
+        filename = (body.get("filename") or "").strip()
+        html = body.get("html")
+        if not filename or not isinstance(html, str) or not html:
+            return self._json({"error": "filename + html required"}, 400)
+        if "/" in filename or filename.startswith("."):
+            return self._json({"error": "filename must be a bare name (no path / no leading .)"}, 400)
+        commit_message = (body.get("commit_message") or
+                          f"docs(report): attach {filename}").strip()
+
+        reports_dir = WORKSPACE / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        out_path = reports_dir / filename
+        out_path.write_text(html)
+
+        # Stage + commit. Allow the commit to fail cleanly when the file
+        # hasn't actually changed (caller still gets a success response with
+        # an `unchanged: true` flag).
+        rel = str(out_path.relative_to(WORKSPACE))
+        add = subprocess.run(["git", "add", "--", rel],
+                             cwd=WORKSPACE, capture_output=True, text=True, timeout=10)
+        if add.returncode != 0:
+            return self._json({"error": f"git add failed: {(add.stderr or add.stdout)[:300]}"}, 500)
+        commit = subprocess.run(
+            ["git", "commit", "-m", commit_message, "--", rel],
+            cwd=WORKSPACE, capture_output=True, text=True, timeout=15,
+        )
+        if commit.returncode != 0:
+            stderr = (commit.stderr or commit.stdout)
+            # git returns non-zero when there's nothing to commit — treat as a soft success.
+            if "nothing to commit" in stderr or "nothing added" in stderr:
+                return self._json({"ok": True, "unchanged": True, "path": rel,
+                                   "branch": branch}, 200)
+            return self._json({"error": f"git commit failed: {stderr[:300]}"}, 500)
+        sha = subprocess.run(["git", "rev-parse", "HEAD"],
+                             cwd=WORKSPACE, capture_output=True, text=True, timeout=5)
+        return self._json({"ok": True, "path": rel, "branch": branch,
+                           "commit_sha": sha.stdout.strip()}, 200)
+
     def _post_work_link_branch(self, body: dict):
         """Link the workspace to an upstream branch.
 
@@ -4604,6 +4664,88 @@ if __name__ == "__main__":
         except Exception as e:
             return self._json({"error": str(e)}, 500)
         return self._json({"entries": entries}, 200)
+
+    def _get_work_composite_diff(self):
+        """GET /api/work-composite-diff — files changed on the active branch
+        that look like model code (composites + processes + steps + library
+        helpers). Powers a "Model changes" section in the PR body Suggest.
+
+        Returns ``{base, branch, changes: [{path, lines_added, lines_removed,
+        category}, ...]}``. Empty list when the branch is at base, or when
+        the diff is huge (capped at 500 entries).
+        """
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.work_state import load_state
+        state = load_state()
+        branch = state.get("active_branch") or ""
+        if not branch:
+            head = subprocess.run(["git", "branch", "--show-current"],
+                                  cwd=WORKSPACE, capture_output=True, text=True, timeout=5)
+            if head.returncode == 0:
+                branch = head.stdout.strip()
+        base = state.get("base") or "main"
+
+        # Get numstat (per-file lines added/removed) vs the merge-base with base.
+        mb = subprocess.run(
+            ["git", "merge-base", base, "HEAD"],
+            cwd=WORKSPACE, capture_output=True, text=True, timeout=10,
+        )
+        if mb.returncode != 0:
+            return self._json({"base": base, "branch": branch, "changes": [],
+                               "error": f"merge-base failed: {(mb.stderr or mb.stdout)[:200]}"}, 200)
+        ref = mb.stdout.strip() or base
+        diff = subprocess.run(
+            ["git", "diff", "--numstat", f"{ref}...HEAD"],
+            cwd=WORKSPACE, capture_output=True, text=True, timeout=15,
+        )
+        if diff.returncode != 0:
+            return self._json({"base": base, "branch": branch, "changes": [],
+                               "error": f"diff failed: {(diff.stderr or diff.stdout)[:200]}"}, 200)
+
+        # Category mapping: a file is included only if it matches one of these
+        # path patterns (model code in the v2ecoli layout). Other repos can
+        # extend the pattern list; for now we hardcode the canonical roots.
+        CATEGORIES = [
+            ("composites/",      "composite"),
+            ("/composites/",     "composite"),
+            ("processes/",       "process"),
+            ("/processes/",      "process"),
+            ("steps/",           "step"),
+            ("/steps/",          "step"),
+            ("library/",         "library helper"),
+            ("/library/",        "library helper"),
+            ("types/",           "type definition"),
+            ("/types/",          "type definition"),
+        ]
+
+        changes = []
+        for line in diff.stdout.splitlines()[:500]:
+            parts = line.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            added, removed, path = parts
+            try:
+                a = int(added) if added != "-" else 0
+                r = int(removed) if removed != "-" else 0
+            except ValueError:
+                continue
+            cat = None
+            for sub, label in CATEGORIES:
+                if sub in "/" + path:
+                    cat = label
+                    break
+            if cat is None:
+                continue
+            changes.append({
+                "path": path,
+                "lines_added": a,
+                "lines_removed": r,
+                "category": cat,
+            })
+
+        # Sort by largest diff first (lines_added + lines_removed).
+        changes.sort(key=lambda c: -(c["lines_added"] + c["lines_removed"]))
+        return self._json({"base": base, "branch": branch, "changes": changes}, 200)
 
     def _get_study_charts(self):
         """GET /api/study-charts/<name> — inline-SVG charts for the latest run.
