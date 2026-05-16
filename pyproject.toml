@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 viz = ["matplotlib", "imageio", "numpy"]
-dev = ["pytest>=7.4", "pytest-timeout"]
+dev = ["pytest>=7.4", "pytest-timeout", "pytest-json-report>=1.5"]
 
 [project.scripts]
 vivarium-dashboard = "vivarium_dashboard.cli:main"
