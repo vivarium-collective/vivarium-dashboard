@@ -4325,11 +4325,13 @@ if __name__ == "__main__":
         if inv_dir.exists() or (WORKSPACE / "investigations" / name).exists():
             return self._json({"error": f"investigation '{name}' already exists"}, 409)
 
-        # Resolve source composite if provided. Accepts both legacy YAML
-        # composite docs and Python @composite_generator entries; for the
-        # latter the doc is materialized here and written below.
+        # Resolve source composite if provided. YAML refs land in the
+        # legacy v2-shape with a copied sidecar; @composite_generator refs
+        # land in the v3 shape (no sidecar — just store the dotted ref in
+        # `baseline:`), which sidesteps the "can't serialize live Process
+        # instances" problem for v2ecoli-style composites.
         source_path = None
-        source_doc = None
+        is_generator = False
         baseline_name = None
         if source:
             _ws_add_to_sys_path()
@@ -4337,7 +4339,7 @@ if __name__ == "__main__":
                 _resolve_composite_source_or_generate,
             )
             try:
-                source_path, source_doc, baseline_name = (
+                source_path, is_generator, baseline_name = (
                     _resolve_composite_source_or_generate(source, WORKSPACE)
                 )
             except (FileNotFoundError, ValueError) as e:
@@ -4349,15 +4351,32 @@ if __name__ == "__main__":
             (inv_dir / "data").mkdir()
             (inv_dir / "data" / ".keep").write_text("")
 
-            if (source_path or source_doc) and baseline_name:
-                # New-shape spec: seed with a baseline composite entry
+            if is_generator and baseline_name:
+                # v3-shape spec: dotted ref lives in `baseline:`; no sidecar.
+                spec = {
+                    "name": name,
+                    "description": "",
+                    "status": "planned",
+                    "baseline": [
+                        {
+                            "name": baseline_name,
+                            "composite": source,
+                            "params": {},
+                        }
+                    ],
+                    "variants": [],
+                    "interventions": [],
+                    "observables": [],
+                    "visualizations": [],
+                    "runs": [],
+                }
+                (inv_dir / "study.yaml").write_text(yaml.safe_dump(spec, sort_keys=False))
+            elif source_path and baseline_name:
+                # Legacy v2-shape spec: seed with a baseline composite entry.
                 composites_dir = inv_dir / "composites"
                 composites_dir.mkdir(parents=True, exist_ok=True)
                 sidecar = composites_dir / f"{baseline_name}.yaml"
-                if source_path is not None:
-                    _shutil.copy2(source_path, sidecar)
-                else:
-                    sidecar.write_text(yaml.safe_dump(source_doc, sort_keys=False))
+                _shutil.copy2(source_path, sidecar)
                 spec = {
                     "name": name,
                     "description": "",
@@ -5574,9 +5593,10 @@ if __name__ == "__main__":
         _ws_add_to_sys_path()
         from vivarium_dashboard.lib.investigation_migrate import (
             _resolve_composite_source_or_generate,
+            materialize_generator_doc,
         )
         try:
-            source_path, source_doc, _stem = (
+            source_path, is_generator, _stem = (
                 _resolve_composite_source_or_generate(source, WORKSPACE)
             )
         except (FileNotFoundError, ValueError) as e:
@@ -5592,6 +5612,24 @@ if __name__ == "__main__":
         if sidecar.is_file():
             return self._json({"error": f"composite {comp_name!r} already exists"}, 409)
 
+        # For generator refs we materialize the doc now so the YAML sidecar
+        # write below has something concrete to dump. Composites whose
+        # state contains non-serializable objects (e.g. live Process
+        # instances) will surface a clear error here.
+        if is_generator:
+            try:
+                generator_doc = materialize_generator_doc(source)
+            except Exception as e:  # noqa: BLE001
+                return self._json(
+                    {"error": (
+                        f"composite {source!r} can't be serialized as a "
+                        f"YAML sidecar: {e}"
+                    )},
+                    400,
+                )
+        else:
+            generator_doc = None
+
         commit_msg = f"feat(investigations/{inv_name}): add composite '{comp_name}'"
 
         def do_action():
@@ -5599,7 +5637,7 @@ if __name__ == "__main__":
             if source_path is not None:
                 shutil.copy2(source_path, sidecar)
             else:
-                sidecar.write_text(yaml.safe_dump(source_doc, sort_keys=False))
+                sidecar.write_text(yaml.safe_dump(generator_doc, sort_keys=False))
             spec = yaml.safe_load(spec_path.read_text()) or {}
             composites = spec.setdefault('composites', [])
             composites.append({
