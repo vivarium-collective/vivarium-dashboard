@@ -42,42 +42,6 @@ img{max-width:100%}
 }
 .stage-label.optional{background:#7c7c7c}
 .stage-explainer{color:var(--gray);font-size:0.92em;margin:-4px 0 12px}
-.workstream-strip{
-  background:#f0f9ff; border-bottom:2px solid #3b82f6;
-  padding:10px 20px;
-  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
-  font-size:0.92em;
-  position:sticky; top:0; z-index:45;
-}
-.workstream-strip.inactive{
-  background:#fef3c7; border-bottom-color:#d97706;
-}
-.workstream-strip .ws-label{ color:#6b7280; font-weight:500 }
-.workstream-strip .ws-branch{
-  background:#dbeafe; padding:3px 10px; border-radius:4px; color:#1e3a8a; font-size:0.95em;
-}
-.workstream-strip .ws-meta{ color:#6b7280; font-size:0.88em }
-.workstream-strip .ws-link{
-  color:#1e40af; text-decoration:none; padding:3px 10px; border-radius:4px; background:#eff6ff;
-}
-.workstream-strip .ws-link:hover{ background:#dbeafe }
-.workstream-strip .ws-btn{
-  padding:5px 12px; border:1px solid #3b82f6; background:#fff; color:#1e40af;
-  border-radius:4px; cursor:pointer; font-size:0.88em;
-}
-.workstream-strip .ws-btn:hover{ background:#eff6ff }
-.workstream-strip .ws-btn.ws-primary{
-  background:#3b82f6; color:#fff;
-}
-.workstream-strip .ws-btn.ws-primary:hover{ background:#2563eb }
-.workstream-strip .ws-btn.ws-end{
-  border-color:#dc2626; color:#991b1b; margin-left:auto;
-}
-.workstream-strip .ws-btn.ws-end:hover{ background:#fef2f2 }
-.workstream-strip .ws-warn{
-  color:#92400e; font-weight:500; font-size:0.85em;
-  background:#fef3c7; padding:3px 10px; border-radius:4px;
-}
 .status-pill{
   font-size:0.78em; padding:2px 10px; border-radius:10px;
 }
@@ -217,7 +181,6 @@ img{max-width:100%}
  * skill-driven modal-like interactions. */
 body.focus-mode header.top-header{ display:none }
 body.focus-mode nav.top-menu{ display:none }
-body.focus-mode .workstream-strip{ display:none }
 body.focus-mode .page{ display:none }
 body.focus-mode .page.active{ display:block }
 body.focus-mode main.pages{ padding-top:8px }
@@ -832,29 +795,6 @@ body.focus-mode::before{
   flex:0 0 auto;
 }
 
-/* Branch chip --------------------------------------------------------------- */
-.viv-branch-chip{
-  display:inline-flex; align-items:center; gap:6px;
-  padding:4px 10px;
-  background:#f3f4f6; color:#1f2937;
-  border:1px solid #e5e7eb; border-radius:9999px;
-  font-family:ui-monospace,Menlo,monospace; font-size:0.82em;
-  cursor:pointer; user-select:none;
-}
-.viv-branch-chip:hover{ background:#e5e7eb }
-.viv-branch-chip .viv-branch-icon{ color:#6b7280; font-size:0.95em }
-.viv-branch-chip .viv-branch-name{
-  max-width:200px;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
-.viv-branch-chip .viv-branch-caret{ color:#9ca3af; font-size:0.72em }
-.viv-branch-chip .viv-branch-dirty-pill{
-  background:#fef3c7; color:#92400e;
-  padding:1px 7px; border-radius:9999px;
-  font-size:0.74em; font-weight:600;
-  font-family:-apple-system,"Segoe UI",sans-serif;
-}
-
 /* Topbar buttons ----------------------------------------------------------- */
 .viv-icon-btn{
   width:32px; height:32px;
@@ -1280,4 +1220,11 @@ body.focus-mode::before{
 .git-badge-pr.pr-state-merged { background: #cce5ff; color: #004085; }
 .git-badge-pr.pr-state-closed { background: #f8d7da; color: #721c24; }
 .dirty-pill { cursor: pointer; }
+/* Action buttons inside the git-status strip (merged from former workstream-strip) */
+.git-status-actions { display: inline-flex; gap: 0.4rem; margin-left: 0.5rem; }
+.git-status-actions .ws-btn { padding: 0.2rem 0.6rem; font-size: 0.85em; border-radius: 4px; background: #e7f3ff; cursor: pointer; border: 1px solid #cfe2ff; }
+.git-status-actions .ws-btn.ws-primary { background: #cce5ff; border-color: #aacfff; }
+.git-status-actions .ws-btn.ws-end { background: #f8d7da; border-color: #f1aeb5; color: #721c24; }
+.git-status-actions .ws-btn:hover { filter: brightness(0.97); }
+.git-status-actions .ws-warn { color: #92400e; font-size: 0.85em; background: #fef3c7; padding: 0.2rem 0.5rem; border-radius: 4px; }
 .checkbox-row { display: flex; align-items: center; gap: 0.5rem; margin: 0.5rem 0; }

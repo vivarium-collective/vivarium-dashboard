@@ -219,7 +219,6 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/render":             "_post_render",
     "/api/work-start":         "_post_work_start",
     "/api/work-push":          "_post_work_push",
-    "/api/work-create-github-repo": "_post_work_create_github_repo",
     "/api/work-link-branch":   "_post_work_link_branch",
     "/api/work-create-pr":     "_post_work_create_pr",
     "/api/work-end":           "_post_work_end",
@@ -3557,85 +3556,6 @@ if __name__ == "__main__":
         save_state(state)
         return self._json({"ok": True, "branch": branch, "log": r.stdout[-300:]}, 200)
 
-    def _post_work_create_github_repo(self, body: dict):
-        """gh repo create + set origin + initial push, in one shot.
-
-        Body: {visibility?: "public"|"private", name?: str, description?: str}.
-        Defaults: visibility=private, name=<workspace_name>, description=workspace.yaml.description.
-        """
-        _ws_add_to_sys_path()
-        from vivarium_dashboard.lib.work_state import load_state, save_state
-        state = load_state()
-        branch = state.get("active_branch")
-        if not branch:
-            return self._json({"error": "no active workstream — Start one first so the initial push has commits"}, 409)
-
-        if not shutil.which("gh"):
-            return self._json({
-                "error": "gh CLI not installed",
-                "diagnosis": {
-                    "category": "gh_missing",
-                    "summary": "GitHub CLI (`gh`) is not installed.",
-                    "suggestion": "Install gh (`brew install gh` on macOS), then run `gh auth login`. After that, click Create GitHub repo again.",
-                },
-            }, 500)
-
-        # Verify gh is authenticated
-        auth = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
-        if auth.returncode != 0:
-            return self._json({
-                "error": "gh not authenticated",
-                "diagnosis": {
-                    "category": "gh_auth",
-                    "summary": "GitHub CLI isn't logged in.",
-                    "suggestion": "Run `gh auth login` in your terminal, then click Create GitHub repo again.",
-                },
-            }, 500)
-
-        if _has_origin_remote():
-            return self._json({"error": "origin remote already configured — use Push instead"}, 409)
-
-        ws_data = yaml.safe_load((WORKSPACE / "workspace.yaml").read_text())
-        default_name = ws_data.get("name", WORKSPACE.name)
-        repo_name = (body.get("name") or "").strip() or default_name
-        if not re.match(r"^[A-Za-z0-9._-]+$", repo_name):
-            return self._json({"error": "invalid repo name (must match [A-Za-z0-9._-]+)"}, 400)
-        visibility = (body.get("visibility") or "private").strip().lower()
-        if visibility not in ("public", "private", "internal"):
-            return self._json({"error": "visibility must be one of: public, private, internal"}, 400)
-        description = (body.get("description") or "").strip()
-        if not description:
-            description = ws_data.get("description") or f"Process-bigraph workspace: {repo_name}"
-
-        # gh repo create <name> --<visibility> --source=. --remote=origin --push --description "..."
-        # NOTE: --push pushes the current branch to the new remote.
-        cmd = [
-            "gh", "repo", "create", repo_name,
-            "--" + visibility,
-            "--source=.",
-            "--remote=origin",
-            "--push",
-            "--description", description,
-        ]
-        r = subprocess.run(cmd, cwd=WORKSPACE, capture_output=True, text=True, timeout=60)
-        if r.returncode != 0:
-            return self._json({
-                "error": "gh repo create failed",
-                "log": (r.stderr or r.stdout).strip()[-500:],
-            }, 500)
-
-        # Successful: gh pushed the current branch. Mark workstream pushed.
-        state["pushed"] = True
-        save_state(state)
-
-        url = r.stdout.strip().splitlines()[-1] if r.stdout else ""
-        return self._json({
-            "ok": True,
-            "repo_url": url,
-            "visibility": visibility,
-            "branch": branch,
-        }, 200)
-
     def _post_work_link_branch(self, body: dict):
         """Link the workspace to an upstream branch.
 
@@ -3940,6 +3860,8 @@ if __name__ == "__main__":
             "pr_number": None, "pr_url": None,
             "base": "main", "ahead_of_base": 0,
             "dirty_count": 0, "compare_url": None, "pr_state": None,
+            "gh_available": bool(shutil.which("gh")),
+            "has_active_workstream": False,
         }
         # current branch
         r = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
@@ -3985,6 +3907,7 @@ if __name__ == "__main__":
             result["pr_url"] = state.get("pr_url")
             result["pr_number"] = state.get("pr_number")
             result["base"] = state.get("base") or "main"
+            result["has_active_workstream"] = bool(state.get("active_branch"))
         except Exception:
             pass
         # ahead_of_base: commits on branch not yet merged into base

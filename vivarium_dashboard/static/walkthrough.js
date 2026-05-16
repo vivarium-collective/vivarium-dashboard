@@ -423,7 +423,7 @@
         }
         var msg = "Done! Branch: " + (json.branch || "?");
         fetch("/api/render", {method: "POST"}).finally(function() {
-          _refreshWorkStrip();
+          _refreshGitStatus();
           alert(msg);
           location.reload();
         });
@@ -1638,152 +1638,6 @@
   }
   window._installImport = _installImport;
 
-  // -------------------------------------------------------------------------
-  // Workstream strip (v0.4.0b)
-  // -------------------------------------------------------------------------
-
-  function _refreshWorkStrip() {
-    Promise.all([
-      fetch('/api/work-status').then(function(r){ return r.json(); }),
-      fetch('/api/dirty-status').then(function(r){ return r.json(); }).catch(function(){ return {count: 0, files: []}; }),
-    ]).then(function(parts){
-      _renderWorkStrip(parts[0], parts[1]);
-    }).catch(function(err){ console.warn('work-status failed:', err); });
-    // Start a 30s poller once so the pill updates against external edits.
-    if (!window._dirtyPollerStarted) {
-      window._dirtyPollerStarted = true;
-      setInterval(_refreshWorkStrip, 30000);
-    }
-  }
-  window._refreshWorkStrip = _refreshWorkStrip;
-
-  function _renderWorkStrip(s, dirty) {
-    // V4: drive the new topbar (#viv-topbar-actions). The old #workstream-strip
-    // is kept as a hidden back-compat node and mirrored to so any legacy probe
-    // continues to read sensible markup.
-    var legacy = document.getElementById('workstream-strip');
-    var chip = document.getElementById('viv-branch-chip');
-    var topActions = document.getElementById('viv-topbar-actions');
-
-    // --- Inactive case --------------------------------------------------------
-    if (!s.active) {
-      if (chip) {
-        chip.innerHTML =
-          '<span class="viv-branch-icon">▴</span>' +
-          '<span class="viv-branch-name">no workstream</span>';
-        chip.title = 'No active workstream';
-      }
-      // Render the "Start workstream" button in the topbar buttons container.
-      var buttonsEl = _vivEnsureWorkButtonsContainer();
-      if (buttonsEl) {
-        buttonsEl.innerHTML =
-          '<button class="ws-btn ws-primary" onclick="_startWork()">Start workstream</button>';
-      }
-      if (legacy) {
-        legacy.classList.add('inactive');
-        legacy.innerHTML =
-          '<span class="ws-label">No active workstream.</span>' +
-          '<button class="ws-btn ws-primary" onclick="_startWork()">Start workstream</button>';
-      }
-      // Active state means no dirty pill — drop any open panel.
-      var openP0 = document.getElementById('ws-dirty-panel');
-      if (openP0) openP0.remove();
-      return;
-    }
-
-    // --- Active case ----------------------------------------------------------
-    var ahead = s.commits_ahead;
-    var aheadTxt = ahead + ' ahead of ' + s.base;
-    var dirtyPillHtml = '';
-    if (dirty && dirty.count > 0) {
-      dirtyPillHtml =
-        '<span class="viv-branch-dirty-pill" ' +
-              'title="' + dirty.count + ' uncommitted file' + (dirty.count === 1 ? '' : 's') + '" ' +
-              'onclick="event.stopPropagation(); _toggleDirtyPanel()">' +
-          dirty.count + ' uncommitted' +
-        '</span>';
-    } else {
-      // Pill no longer applies — close any open dirty panel.
-      var openPanel = document.getElementById('ws-dirty-panel');
-      if (openPanel) openPanel.remove();
-    }
-
-    if (chip) {
-      chip.innerHTML =
-        '<span class="viv-branch-icon">⎇</span>' +
-        '<span class="viv-branch-name">' + _esc(s.branch) + '</span>' +
-        '<span class="viv-branch-caret">·</span>' +
-        '<span class="viv-branch-caret">' + ahead + ' ahead</span>' +
-        dirtyPillHtml;
-      chip.title = aheadTxt;
-    }
-
-    // Build the action buttons that sit alongside the chip.
-    var btnParts = [];
-    if (s.has_origin === false) {
-      if (s.gh_available === false) {
-        btnParts.push('<span class="ws-warn" title="Install GitHub CLI to enable one-click repo creation">gh CLI missing</span>');
-      } else {
-        btnParts.push('<button class="ws-btn ws-primary" onclick="_linkBranch()" title="Link this workspace to an upstream branch and push">Link branch to upstream</button>');
-      }
-    } else {
-      if (s.unpushed > 0 || (!s.pushed && s.commits_ahead > 0)) {
-        btnParts.push('<button class="ws-btn" onclick="_pushWork()">Push (' + s.unpushed + ')</button>');
-      }
-      if (s.pr_url) {
-        btnParts.push('<a class="ws-link" href="' + _esc(s.pr_url) + '" target="_blank">PR #' + s.pr_number + ' &#8599;</a>');
-      } else if (s.pushed) {
-        btnParts.push('<button class="ws-btn" onclick="_createPR()">Create PR</button>');
-      }
-    }
-    btnParts.push('<button class="ws-btn ws-end" onclick="_endWork()" title="Switch back to ' + _esc(s.base) + ' (workstream branch is preserved)">End</button>');
-
-    var btnHost = _vivEnsureWorkButtonsContainer();
-    if (btnHost) btnHost.innerHTML = btnParts.join(' ');
-
-    // Mirror to the legacy strip so any back-compat probe keeps reading sane
-    // markup (it's hidden via display:none).
-    if (legacy) {
-      legacy.classList.remove('inactive');
-      var legacyParts = [
-        '<span class="ws-label">Working on:</span>',
-        '<code class="ws-branch">' + _esc(s.branch) + '</code>',
-        '<span class="ws-meta">' + ahead + ' commit' + (ahead === 1 ? '' : 's') + ' ahead of ' + _esc(s.base) + '</span>',
-      ].concat(btnParts);
-      if (dirty && dirty.count > 0) {
-        legacyParts.push(
-          '<span class="ws-dirty-pill" ' +
-            'title="' + dirty.count + ' uncommitted file' + (dirty.count === 1 ? '' : 's') + '" ' +
-            'onclick="_toggleDirtyPanel()" ' +
-            'style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;cursor:pointer;margin-left:6px">' +
-            '&#x1F7E1; ' + dirty.count + ' uncommitted' +
-          '</span>'
-        );
-      }
-      legacy.innerHTML = legacyParts.join(' ');
-    }
-  }
-
-  // Ensure #viv-topbar-work-buttons exists, sitting immediately after the
-  // branch chip and before the GitHub icon / Share / kebab / avatar elements.
-  function _vivEnsureWorkButtonsContainer() {
-    var topActions = document.getElementById('viv-topbar-actions');
-    if (!topActions) return null;
-    var existing = document.getElementById('viv-topbar-work-buttons');
-    if (existing) return existing;
-    var chip = document.getElementById('viv-branch-chip');
-    var span = document.createElement('span');
-    span.id = 'viv-topbar-work-buttons';
-    span.className = 'viv-topbar-work-buttons';
-    span.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-left:4px';
-    if (chip && chip.parentNode === topActions) {
-      chip.insertAdjacentElement('afterend', span);
-    } else {
-      topActions.appendChild(span);
-    }
-    return span;
-  }
-
   function _toggleDirtyPanel() {
     var panel = document.getElementById('ws-dirty-panel');
     if (panel) { panel.remove(); return; }
@@ -1798,10 +1652,7 @@
     var existing = document.getElementById('ws-dirty-panel');
     if (existing) existing.remove();
     if (!d || !d.files || d.files.length === 0) return;
-    // V4: anchor below the new topbar; fall back to the legacy strip if the new
-    // chrome isn't rendered (older templates).
-    var anchor = document.getElementById('viv-topbar-actions')
-              || document.getElementById('workstream-strip');
+    var anchor = document.getElementById('viv-topbar-actions');
     if (!anchor) return;
     var div = document.createElement('div');
     div.id = 'ws-dirty-panel';
@@ -1814,7 +1665,7 @@
       rows +
       '<div style="margin-top:8px">' +
         '<button class="ws-btn ws-primary" onclick="_commitDirtyAll()">Commit all</button> ' +
-        '<button class="ws-btn" onclick="_refreshWorkStrip(); _toggleDirtyPanel()">Refresh</button> ' +
+        '<button class="ws-btn" onclick="_refreshGitStatus(); _toggleDirtyPanel()">Refresh</button> ' +
         '<button class="ws-btn" onclick="_toggleDirtyPanel()">Close</button>' +
       '</div>';
     anchor.insertAdjacentElement('afterend', div);
@@ -1834,7 +1685,7 @@
         }
         if (typeof _showToast === 'function') _showToast('Committed: ' + res.body.message);
         _toggleDirtyPanel();
-        _refreshWorkStrip();
+        _refreshGitStatus();
       })
       .catch(function(e){ alert('Network error: ' + e); });
   }
@@ -1877,15 +1728,6 @@
   }
   window._submitLinkBranch = _submitLinkBranch;
 
-  // Deprecated alias — kept for backwards compat with any cached HTML that still
-  // references _submitCreateGithubRepo.
-  function _submitCreateGithubRepo(form) { _submitLinkBranch(form); }
-  window._submitCreateGithubRepo = _submitCreateGithubRepo;
-
-  // Deprecated alias for _linkBranch (was _createGithubRepo).
-  function _createGithubRepo() { _linkBranch(); }
-  window._createGithubRepo = _createGithubRepo;
-
   function _startWork() {
     var name = prompt("Workstream branch name (e.g., feat/baseline-work):");
     if (!name) return;
@@ -1897,7 +1739,7 @@
       .then(function(r){ return r.json().then(function(j){ return [r.ok, j]; }); })
       .then(function(parts){
         if (!parts[0]) { alert("Could not start workstream:\n" + (parts[1].error || 'unknown')); return; }
-        _refreshWorkStrip();
+        _refreshGitStatus();
         location.reload();
       });
   }
@@ -1914,11 +1756,11 @@
             msg = "⚠ " + json.diagnosis.summary + "\n→ " + json.diagnosis.suggestion;
           }
           alert(msg);
-          _refreshWorkStrip();
+          _refreshGitStatus();
           return;
         }
         alert("Pushed.");
-        _refreshWorkStrip();
+        _refreshGitStatus();
       });
   }
   window._pushWork = _pushWork;
@@ -1951,7 +1793,7 @@
         }
         closeModal('modal-create-pr');
         window.open(json.pr_url, '_blank');
-        _refreshWorkStrip();
+        _refreshGitStatus();
       });
   }
   window._submitCreatePR = _submitCreatePR;
@@ -2159,8 +2001,8 @@
     // Restore Vivarium left-rail collapsed state (V4).
     _vivRestoreRailState();
 
-    // Initialize workstream strip.
-    _refreshWorkStrip();
+    // _refreshGitStatus is registered on DOMContentLoaded at the bottom of this file;
+    // no duplicate call needed here.
 
     // Populate the Investigations rail section (V4).
     _vivRefreshInvestigationsRail();
@@ -6276,6 +6118,22 @@
       // Goal 5: hide "Open PR" button when a PR already exists
       var openPrBtn = document.getElementById('btn-open-pr');
       if (openPrBtn) openPrBtn.hidden = !!s.pr_url;
+
+      // Action buttons (unified from former _refreshWorkStrip)
+      var actions = [];
+      if (!s.upstream_repo) {
+        actions.push(s.gh_available
+          ? '<button class="ws-btn ws-primary" onclick="_linkBranch()">Link branch to upstream</button>'
+          : '<span class="ws-warn" title="Install GitHub CLI">gh CLI missing</span>');
+      } else if (s.push_state === 'ahead') {
+        actions.push('<button class="ws-btn" onclick="_pushWork()">Push (' + s.ahead + ')</button>');
+      }
+      if (s.has_active_workstream) {
+        actions.push('<button class="ws-btn ws-end" onclick="_endWork()" title="Switch back to ' + _esc(s.base) + ' (workstream branch is preserved)">End</button>');
+      }
+      if (actions.length) {
+        box.innerHTML += ' <span class="git-status-actions">' + actions.join(' ') + '</span>';
+      }
     }).catch(function () { /* silent */ });
   }
   window._refreshGitStatus = _refreshGitStatus;

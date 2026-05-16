@@ -351,8 +351,7 @@
         <span>{{ workspace_name }} dashboard</span>
       </nav>
       <div class="viv-topbar-actions" id="viv-topbar-actions">
-        <!-- Branch chip + dirty pill + work-status buttons populated by JS (V4) -->
-        <span class="viv-branch-chip" id="viv-branch-chip" hidden>…</span>
+        <!-- Git status strip + action buttons populated by JS (_refreshGitStatus) -->
         <div id="viv-git-status" class="git-status" hidden></div>
         <div class="topbar-actions">
           <button id="btn-open-pr" class="action-btn" onclick="_openPRDialog()" title="Open PR for current branch">
@@ -364,10 +363,6 @@
         <span class="viv-avatar viv-avatar-topbar" title="{{ owner_email or '' }}">{{ owner_initials or '—' }}</span>
       </div>
     </header>
-
-    <!-- Workstream strip is now driven by viv-topbar-actions; this hidden node
-         preserves the existing _renderWorkStrip JS contract until V4 lifts it. -->
-    <div id="workstream-strip" class="workstream-strip" style="display:none"></div>
 
     <main class="viv-content pages" id="viv-content">
 
