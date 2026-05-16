@@ -284,19 +284,6 @@
         </span>
         <span class="viv-rail-link-label">Studies</span>
       </a>
-      <!-- Investigations: chain-of-studies research plans -->
-      <a href="#investigations" class="viv-rail-link menu-link" data-page="investigations">
-        <span class="viv-rail-link-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <path d="M9 3H5a2 2 0 0 0-2 2v4"/>
-            <path d="M9 3h10a2 2 0 0 1 2 2v4"/>
-            <path d="M3 9h18"/>
-            <path d="M5 9v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9"/>
-            <line x1="10" y1="13" x2="14" y2="13"/>
-          </svg>
-        </span>
-        <span class="viv-rail-link-label">Investigations</span>
-      </a>
       <a href="#simulations"       class="viv-rail-link menu-link" data-page="simulations">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
@@ -664,7 +651,7 @@
 <section id="page-studies" class="page" data-page="studies">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
     <h2 class="page-title" style="margin:0">Studies</h2>
-    <button class="action-btn" onclick="_createInvestigation()">+ New investigation</button>
+    <button class="action-btn" onclick="_createInvestigation()">+ New study</button>
   </div>
   <p class="page-lead">Declarative research recipes — pick a composite, declare simulations (single / sweep / seeds), name observables, choose visualizations. Run, save, compare.</p>
 
@@ -711,77 +698,6 @@
             style="width:100%; height:calc(100vh - 220px); min-height:560px; border:0; display:block"></iframe>
   </div>
 </section>
-
-<!-- ===== PAGE: INVESTIGATIONS ===== -->
-<section id="page-investigations" class="page" data-page="investigations" hidden>
-  <div class="page-header">
-    <h2 class="page-title">Investigations</h2>
-    <button id="new-investigation-btn" class="action-btn" onclick="document.getElementById('new-investigation-dialog').showModal()">+ New investigation</button>
-  </div>
-
-  <ul id="investigations-list" class="investigation-list"></ul>
-
-  <div id="investigation-detail" hidden>
-    <button id="investigation-back" class="btn-text" onclick="">← Investigations</button>
-    <h3 id="investigation-title"></h3>
-    <p class="muted" id="investigation-status"></p>
-    <section class="meta">
-      <h4>Objective</h4>
-      <p id="investigation-objective"></p>
-      <h4>Hypothesis</h4>
-      <p id="investigation-hypothesis"></p>
-      <h4>References</h4>
-      <ul id="investigation-references"></ul>
-    </section>
-    <section class="study-cards">
-      <h4>Studies (sequential)</h4>
-      <ol id="investigation-study-cards"></ol>
-    </section>
-    <section class="add-study-form-section">
-      <details class="add-study-details">
-        <summary class="btn-add-study">+ Add study to this investigation</summary>
-        <form id="add-study-form" onsubmit="return _submitAddStudy(event)">
-          <label>Slug (short, lowercase):
-            <input name="slug" required pattern="[a-z0-9](?:[a-z0-9_-]*[a-z0-9])?">
-          </label>
-          <fieldset>
-            <legend>Baseline composite(s)</legend>
-            <div id="add-study-baseline-list" class="add-study-baseline-list">
-              <p class="muted">(loading workspace composites…)</p>
-            </div>
-          </fieldset>
-          <label>Objective:<br>
-            <textarea name="objective" rows="3" placeholder="What is this study testing?"></textarea>
-          </label>
-          <label>Gate:
-            <select name="gate">
-              <option value="tests-pass" selected>tests-pass (block next study until tests pass)</option>
-              <option value="">none (next study unblocked immediately)</option>
-            </select>
-          </label>
-          <div class="form-actions">
-            <button type="submit" class="action-btn">Create study</button>
-            <span id="add-study-feedback" class="muted"></span>
-          </div>
-        </form>
-      </details>
-    </section>
-  </div>
-</section>
-
-<dialog id="new-investigation-dialog">
-  <form method="dialog">
-    <h3>New investigation</h3>
-    <label>Name: <input type="text" id="new-inv-name" required></label><br>
-    <label>Objective:<br><textarea id="new-inv-objective" rows="3"></textarea></label><br>
-    <label>Hypothesis:<br><textarea id="new-inv-hypothesis" rows="3"></textarea></label><br>
-    <label>Studies (comma-separated slugs):<br><input type="text" id="new-inv-studies"></label><br>
-    <menu>
-      <button value="cancel">Cancel</button>
-      <button id="new-inv-submit" value="create">Create</button>
-    </menu>
-  </form>
-</dialog>
 
 <!-- ===== PAGE: SIMULATIONS ===== -->
 <section id="page-simulations" class="page" data-page="simulations">

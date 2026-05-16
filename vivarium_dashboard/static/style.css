@@ -1232,34 +1232,6 @@ body.focus-mode::before{
 .test-duration { color: #666; font-size: 0.85em; }
 .test-row details pre { background: #fff; padding: 0.6rem; border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow: auto; }
 
-/* ---------- Investigations (top-level) ---------- */
-.investigation-list { list-style: none; padding: 0; }
-.investigation-card { padding: 0.8rem; border: 1px solid #ddd; border-radius: 6px; margin: 0.4rem 0; cursor: pointer; }
-.investigation-card:hover { background: #f7f7f7; }
-.investigation-card .investigation-title { font-weight: 600; cursor: pointer; }
-.investigation-card .badge { margin-left: 0.5rem; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
-.investigation-card .status-planned { background: #e0e0e0; }
-.investigation-card .status-in-progress { background: #fff3cd; color: #856404; }
-.investigation-card .status-complete { background: #d4edda; color: #155724; }
-.study-cards ol { list-style: none; padding: 0; }
-.study-card { display: flex; gap: 0.6rem; align-items: center; padding: 0.5rem 0.8rem; border: 1px solid #ddd; border-radius: 4px; margin: 0.3rem 0; }
-.study-card.study-complete { border-left: 3px solid #228B22; }
-.study-card.study-in-progress { border-left: 3px solid #f0ad4e; }
-.study-card.study-blocked { border-left: 3px solid #888; opacity: 0.7; }
-.study-card.study-planned { border-left: 3px solid #4a90e2; }
-.study-card .study-link { cursor: pointer; flex: 1; }
-.study-card .study-link:hover { text-decoration: underline; }
-.study-card .study-status { color: #666; font-size: 0.9em; }
-.study-card { cursor: pointer; }
-.study-card.expanded { background: #fafafa; flex-wrap: wrap; }
-.study-card-content { flex-basis: 100%; padding: 0.6rem 0 0 0; border-top: 1px solid #eee; margin-top: 0.4rem; }
-.study-card-content .card-section { margin: 0.4rem 0; }
-.study-card-content .card-section h5 { margin: 0.2rem 0; font-size: 0.85em; text-transform: uppercase; color: #555; }
-.study-card-content .card-section p { margin: 0.2rem 0; }
-.study-card-content .card-section ul { margin: 0.2rem 0 0.2rem 1rem; padding: 0; }
-.study-card-content .open-study-link { color: #4a90e2; text-decoration: none; font-size: 0.9em; }
-.study-card-content .open-study-link:hover { text-decoration: underline; }
-
 .overview-status-select {
   font-size: 1rem;
   padding: 0.3rem 0.5rem;
@@ -1276,14 +1248,3 @@ body.focus-mode::before{
 }
 .conclusion-field h3 { margin-top: 0; }
 .conclusion-field textarea { width: 100%; box-sizing: border-box; font-family: inherit; padding: 0.5rem; }
-.add-study-form-section { margin: 1rem 0; padding: 0.6rem; background: #fafafa; border-radius: 6px; }
-.btn-add-study { cursor: pointer; padding: 0.4rem 0.6rem; background: #e7f3ff; border-radius: 4px; display: inline-block; }
-.btn-add-study:hover { background: #d0e7ff; }
-#add-study-form label { display: block; margin: 0.5rem 0; }
-#add-study-form fieldset { margin: 0.5rem 0; padding: 0.5rem; }
-#add-study-form fieldset legend { font-weight: bold; }
-.baseline-checkbox { display: block; padding: 0.2rem 0.4rem; }
-.add-study-baseline-list { max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 0.3rem; background: white; }
-.form-actions { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
-#add-study-feedback.ok { color: #228B22; }
-#add-study-feedback.fail { color: #B22222; }
