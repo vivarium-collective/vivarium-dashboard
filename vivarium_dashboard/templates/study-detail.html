@@ -17,23 +17,34 @@
   </h1>
 </header>
 
+{# v3 detection: any of these fields being present (even as an empty list/dict)
+   means the study was authored against the 8-section / 5-phase schema, and
+   should get the v3 tab set even when the lists haven't been populated yet
+   (e.g. immediately after seeding from a follow-up). #}
+{% set _is_v3 = study.purpose is defined
+                or study.pipeline_gate is defined
+                or study.simulation_set is defined
+                or study.behavior_tests is defined
+                or study.follow_up_studies is defined
+                or study.conclusion_logic is defined %}
 <nav class="study-tabs" aria-label="Study sections">
   <button class="study-tab active" data-kind="overview"      onclick="_setStudyTab('overview')">Overview</button>
-  {% if study.model_change or study.implementation_requirements %}
+  {% if _is_v3 or study.model_change or study.implementation_requirements %}
   <button class="study-tab"        data-kind="build"         onclick="_setStudyTab('build')">Build</button>
   {% endif %}
-  {% if study.simulation_set %}
+  {% if _is_v3 %}
   <button class="study-tab"        data-kind="simulations"   onclick="_setStudyTab('simulations')">Simulations</button>
+  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">Readouts</button>
   {% else %}
   <button class="study-tab"        data-kind="baseline"      onclick="_setStudyTab('baseline')">Baseline</button>
   <button class="study-tab"        data-kind="variants"      onclick="_setStudyTab('variants')">Variants</button>
   <button class="study-tab"        data-kind="interventions" onclick="_setStudyTab('interventions')">Interventions</button>
+  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">Observables</button>
   {% endif %}
-  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">{{ "Readouts" if study.readouts else "Observables" }}</button>
   <button class="study-tab"        data-kind="runs"          onclick="_setStudyTab('runs')">Runs</button>
   <button class="study-tab"        data-kind="tests"         onclick="_setStudyTab('tests')">Tests</button>
   <button class="study-tab"        data-kind="visualizations" onclick="_setStudyTab('visualizations')">Visualizations</button>
-  <button class="study-tab"        data-kind="conclusions"   onclick="_setStudyTab('conclusions')">{{ "Decide" if study.conclusion_logic else "Conclusions" }}</button>
+  <button class="study-tab"        data-kind="conclusions"   onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
 </nav>
 <style>
 .phase-pill{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;margin-right:6px;font-weight:500;background:#e0e7ff;color:#3730a3}
