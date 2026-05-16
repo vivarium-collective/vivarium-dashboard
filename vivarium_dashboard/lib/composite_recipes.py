@@ -84,6 +84,63 @@ def apply_process_overrides(doc: dict, overrides: dict) -> None:
         raise TypeError(f"process_overrides[{proc_name!r}] must be None, str, or dict")
 
 
+def walk_state_snapshot(state: dict, *, max_depth: int = 8) -> list[dict]:
+    """Flatten a process-bigraph STATE SNAPSHOT into a list of leaf records.
+
+    Unlike ``walk_state_tree`` (which reads composite documents with
+    ``_type`` / ``address`` metadata), this walks a serialized state — the
+    ``.pbg`` files dropped by ``v2ecoli.pbg.save_pbg``, runs.db history
+    rows, etc. Output records are intentionally narrow so a thousand
+    leaves stay browser-friendly:
+
+        {path: [...], kind: 'structured_array' | 'array' | 'object' |
+                            'string' | 'int' | 'float' | 'bool' | 'null',
+         fields?: [...]        # structured arrays only
+         length?: int          # arrays only
+         preview?: str         # scalars, truncated to 50 chars
+        }
+
+    Stops at depth ``max_depth`` to keep the response bounded; deeper
+    subtrees collapse into an `object` leaf with the path you'd recurse
+    into.
+    """
+    out: list[dict] = []
+
+    def _walk(node, path: tuple, depth: int):
+        if isinstance(node, dict):
+            # Process-bigraph structured arrays carry a marker key.
+            if node.get("__structured_array__"):
+                fields = [f[0] for f in (node.get("dtype") or []) if isinstance(f, (list, tuple)) and f]
+                out.append({"path": list(path), "kind": "structured_array", "fields": fields})
+                return
+            if not node:
+                out.append({"path": list(path), "kind": "object", "length": 0})
+                return
+            if depth >= max_depth:
+                out.append({"path": list(path), "kind": "object", "length": len(node), "truncated": True})
+                return
+            for k, v in node.items():
+                _walk(v, path + (str(k),), depth + 1)
+        elif isinstance(node, list):
+            out.append({"path": list(path), "kind": "array", "length": len(node)})
+        elif isinstance(node, bool):
+            out.append({"path": list(path), "kind": "bool", "preview": str(node)})
+        elif isinstance(node, int):
+            out.append({"path": list(path), "kind": "int", "preview": str(node)})
+        elif isinstance(node, float):
+            out.append({"path": list(path), "kind": "float", "preview": f"{node:.6g}"})
+        elif node is None:
+            out.append({"path": list(path), "kind": "null"})
+        else:
+            s = str(node)
+            out.append({"path": list(path), "kind": type(node).__name__, "preview": (s[:50] + "…") if len(s) > 50 else s})
+
+    if isinstance(state, dict):
+        for k, v in state.items():
+            _walk(v, (str(k),), 1)
+    return out
+
+
 def walk_state_tree(doc: dict) -> list[dict]:
     """Flatten ``doc['state']`` into a list of node records.
 

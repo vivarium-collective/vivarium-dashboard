@@ -2135,6 +2135,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_investigation_composites()
         if self.path.startswith("/api/investigation-state-tree"):
             return self._get_investigation_state_tree()
+        if self.path.startswith("/api/study-bigraph-paths"):
+            return self._get_study_bigraph_paths()
         if self.path.startswith("/api/investigation-composite-doc"):
             return self._get_investigation_composite_doc()
         if self.path.startswith("/api/investigation/"):
@@ -4477,6 +4479,98 @@ if __name__ == "__main__":
         except Exception as e:
             return self._json({"error": f"failed to parse composite: {e}"}, 500)
         return self._json({"nodes": walk_state_tree(doc)}, 200)
+
+    # --- /api/study-bigraph-paths: walk a saved composite state snapshot --
+    #
+    # Returns the legal store paths a user can pick when authoring observables
+    # for a study. Reads the composite's serialized .pbg / .json state file
+    # under <workspace>/models/, walks it, and emits a flat list of leaf
+    # entries with type hints.
+    _bigraph_path_cache = {}  # {(path, mtime, max_depth): [nodes]}
+
+    def _get_study_bigraph_paths(self):
+        """GET /api/study-bigraph-paths?study=<slug>[&baseline=<name>][&max_depth=<n>]
+
+        Returns: {composite, source_file, max_depth, node_count, nodes:[{path,kind,...}]}
+        """
+        import urllib.parse
+        qs = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(self.path).query))
+        slug = qs.get("study", "").strip()
+        baseline_name = qs.get("baseline", "").strip()
+        try:
+            max_depth = int(qs.get("max_depth", "8"))
+        except ValueError:
+            max_depth = 8
+        if not slug:
+            return self._json({"error": "study slug required (?study=<slug>)"}, 400)
+
+        spec_path = _study_dir(slug) / "study.yaml"
+        if not spec_path.is_file():
+            spec_path = _study_dir(slug) / "spec.yaml"
+        if not spec_path.is_file():
+            return self._json({"error": f"no study.yaml or spec.yaml at {_study_dir(slug)}"}, 404)
+        try:
+            spec = yaml.safe_load(spec_path.read_text()) or {}
+        except Exception as e:
+            return self._json({"error": f"failed to parse study spec: {e}"}, 500)
+
+        baselines = spec.get("baseline") or []
+        if not baselines:
+            return self._json({"error": "study has no baseline entries"}, 400)
+        if baseline_name:
+            chosen = next((b for b in baselines if b.get("name") == baseline_name), None)
+            if chosen is None:
+                return self._json(
+                    {"error": f"baseline {baseline_name!r} not found in study {slug!r}"}, 404,
+                )
+        else:
+            chosen = baselines[0]
+
+        composite_ref = chosen.get("composite") or ""
+        basename = composite_ref.rsplit(".", 1)[-1] if composite_ref else ""
+
+        candidates = [
+            WORKSPACE / "models" / f"{basename}.pbg",
+            WORKSPACE / "models" / f"{basename}.json",
+        ]
+        # v2ecoli legacy: the "baseline" composite is serialized as "partitioned".
+        if basename == "baseline":
+            candidates.append(WORKSPACE / "models" / "partitioned.pbg")
+        source_file = next((p for p in candidates if p.is_file()), None)
+        if source_file is None:
+            return self._json({
+                "error":     "no serialized composite state found",
+                "composite": composite_ref,
+                "looked_in": [str(p) for p in candidates],
+                "hint":      "run the baseline to populate <workspace>/models/<composite>.pbg, or commit a snapshot.",
+            }, 404)
+
+        mtime = source_file.stat().st_mtime
+        cache_key = (str(source_file), mtime, max_depth)
+        nodes = self._bigraph_path_cache.get(cache_key)
+        if nodes is None:
+            from vivarium_dashboard.lib.composite_recipes import walk_state_snapshot
+            try:
+                doc = json.loads(source_file.read_text())
+            except Exception as e:
+                return self._json({"error": f"failed to parse {source_file.name}: {e}"}, 500)
+            nodes = walk_state_snapshot(doc, max_depth=max_depth)
+            if len(self._bigraph_path_cache) > 8:
+                self._bigraph_path_cache.clear()
+            self._bigraph_path_cache[cache_key] = nodes
+
+        source_display = (
+            str(source_file.relative_to(WORKSPACE))
+            if str(source_file).startswith(str(WORKSPACE))
+            else str(source_file)
+        )
+        return self._json({
+            "composite":   composite_ref,
+            "source_file": source_display,
+            "max_depth":   max_depth,
+            "node_count":  len(nodes),
+            "nodes":       nodes,
+        }, 200)
 
     def _get_investigation_composite_doc(self):
         """GET /api/investigation-composite-doc?investigation=<n>&composite=<c>
