@@ -3708,38 +3708,78 @@
       var bib = (s.bibliography && s.bibliography.bib_keys) || [];
       var bibList = bib.map(function(k) { return '<code>' + _h(k) + '</code>'; }).join(', ');
 
+      // Sub-section ids — used by the per-study sticky sub-nav so each
+      // section is clickable to scroll-to.
+      var slug = _h(s.name);
+      var sidQ  = 'study-' + slug + '-qh';
+      var sidBg = 'study-' + slug + '-background';
+      var sidPr = 'study-' + slug + '-predictions';
+      var sidVa = 'study-' + slug + '-variants';
+      var sidIn = 'study-' + slug + '-interventions';
+      var sidGa = 'study-' + slug + '-gaps';
+      var sidQu = 'study-' + slug + '-questions';
+      var sidRe = 'study-' + slug + '-refs';
+
+      // Per-study sub-nav. CSS makes it sticky inside the .study section,
+      // so it sticks at the top of the viewport while you're in the study
+      // and is naturally replaced by the next study's nav as you scroll
+      // past.
+      var subNav = '';
+      var links = [];
+      links.push('<a href="#' + sidQ + '">Question</a>');
+      if (s.description)  links.push('<a href="#' + sidBg + '">Background</a>');
+      if (ebRows)         links.push('<a href="#' + sidPr + '">Predictions <span class="sn-count">' + (s.expected_behavior||[]).length + '</span></a>');
+      if (variants)       links.push('<a href="#' + sidVa + '">Variants <span class="sn-count">' + (s.variants||[]).length + '</span></a>');
+      if (interventions)  links.push('<a href="#' + sidIn + '">Interventions <span class="sn-count">' + (s.interventions||[]).length + '</span></a>');
+      if (gaps)           links.push('<a href="#' + sidGa + '">Gaps <span class="sn-count">' + (s.gaps||[]).length + '</span></a>');
+      if (expertQs)       links.push('<a href="#' + sidQu + '">Expert questions <span class="sn-count">' + (s.expert_questions||[]).length + '</span></a>');
+      if (bibList)        links.push('<a href="#' + sidRe + '">Cited refs <span class="sn-count">' + bib.length + '</span></a>');
+      var dependsBrief = parents ? 'Depends on: ' + parents : '<em>Root study (no dependencies)</em>';
+
+      subNav = ''
+        + '<div class="study-nav">'
+        +   '<div class="study-nav-row1">'
+        +     '<span class="study-nav-num">' + (i + 1) + '.</span>'
+        +     '<strong class="study-nav-name">' + _h(s.name) + '</strong>'
+        +     statusBadge
+        +     '<span class="study-nav-deps muted small">' + dependsBrief + '</span>'
+        +   '</div>'
+        +   '<nav class="study-nav-row2">' + links.join('') + '</nav>'
+        + '</div>';
+
       return ''
-        + '<section class="study" id="study-' + _h(s.name) + '">'
+        + '<section class="study" id="study-' + slug + '">'
+        +   subNav
         +   '<header class="study-header">'
         +     '<h2><span class="study-num">' + (i + 1) + '.</span> ' + _h(s.name) + ' ' + statusBadge + '</h2>'
         +     (parents ? '<p class="muted small">Depends on: ' + parents + '</p>' : '<p class="muted small">Root study (no dependencies).</p>')
         +     (kids    ? '<p class="muted small">Blocks: '     + kids    + '</p>' : '')
         +   '</header>'
 
-        +   '<div class="qh">'
+        +   '<div class="qh" id="' + sidQ + '">'
         +     (s.question   ? '<p><strong>Question.</strong> '   + _multiline(s.question)   + '</p>' : '')
         +     (s.hypothesis ? '<p><strong>Hypothesis.</strong> ' + _multiline(s.hypothesis) + '</p>' : '')
         +     (s.objective  ? '<p><strong>Objective.</strong> '  + _multiline(s.objective)  + '</p>' : '')
         +   '</div>'
 
-        +   (s.description ? '<div class="description"><h3>Background</h3><p>' + _multiline(s.description) + '</p></div>' : '')
+        +   (s.description ? '<div class="description" id="' + sidBg + '"><h3>Background</h3><p>' + _multiline(s.description) + '</p></div>' : '')
 
-        +   (ebRows ? '<div><h3>Predicted behavior (assumptions to validate)</h3>'
+        +   (ebRows ? '<div id="' + sidPr + '"><h3>Predicted behavior (assumptions to validate)</h3>'
                     + '<p class="muted small">Each row is a precise, testable prediction. Status indicates whether the supporting code is in place today (implemented) or gated on upstream work (gated / stub).</p>'
                     + '<table class="eb"><thead><tr><th>Name</th><th>Prediction</th><th>Status</th><th>Citations</th></tr></thead>'
                     + '<tbody>' + ebRows + '</tbody></table></div>' : '')
 
-        +   (variants ? '<div><h3>Variants (perturbations to be tested)</h3>' + variants + '</div>' : '')
+        +   (variants ? '<div id="' + sidVa + '"><h3>Variants (perturbations to be tested)</h3>' + variants + '</div>' : '')
 
-        +   (interventions ? '<div><h3>Interventions (simulation plans)</h3>' + interventions + '</div>' : '')
+        +   (interventions ? '<div id="' + sidIn + '"><h3>Interventions (simulation plans)</h3>' + interventions + '</div>' : '')
 
-        +   (gaps ? '<div><h3>Open gaps / explicit deferrals</h3>'
+        +   (gaps ? '<div id="' + sidGa + '"><h3>Open gaps / explicit deferrals</h3>'
                   + '<p class="muted small">Concrete pieces of code that need to land before this study can run end-to-end.</p>'
                   + gaps + '</div>' : '')
 
-        +   (expertQs ? '<div><h3>Questions for domain experts</h3><ul class="expert-qs">' + expertQs + '</ul></div>' : '')
+        +   (expertQs ? '<div id="' + sidQu + '"><h3>Questions for domain experts</h3><ul class="expert-qs">' + expertQs + '</ul></div>' : '')
 
-        +   (bibList ? '<div><h3>References cited by this study</h3><p>' + bibList + '</p></div>' : '')
+        +   (bibList ? '<div id="' + sidRe + '"><h3>References cited by this study</h3><p>' + bibList + '</p></div>' : '')
 
         + '</section>';
     }
@@ -3872,7 +3912,24 @@
       + 'details[open]{background:#fff;border-left-color:#3b82f6}'
       + 'details details{margin-left:0;background:#fff}'
       // ── per-study sections ──
-      + '.study{margin-top:40px;padding-top:8px;scroll-margin-top:16px}'
+      // Each .study is a sticky container for its own .study-nav. As the
+      // user scrolls past a study, its .study-nav exits its bounding
+      // .study div and the next study's nav takes over.
+      + '.study{margin-top:40px;padding-top:8px;scroll-margin-top:16px;position:relative}'
+      + '.study-nav{position:sticky;top:0;z-index:20;background:rgba(255,255,255,0.96);backdrop-filter:saturate(120%) blur(2px);'
+      +     '-webkit-backdrop-filter:saturate(120%) blur(2px);'
+      +     'border-bottom:1px solid #e2e8f0;padding:8px 12px 6px 12px;margin:0 -12px 12px -12px;border-radius:4px}'
+      + '.study-nav .study-nav-row1{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}'
+      + '.study-nav .study-nav-num{color:#94a3b8;font-family:ui-monospace,monospace;font-size:0.85em}'
+      + '.study-nav .study-nav-name{font-size:1.02em}'
+      + '.study-nav .study-nav-deps{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      + '.study-nav-row2{display:flex;flex-wrap:wrap;gap:4px}'
+      + '.study-nav-row2 a{display:inline-block;padding:2px 10px;border-radius:9999px;font-size:0.83em;color:#3b82f6;text-decoration:none;background:#eff6ff;border:1px solid transparent}'
+      + '.study-nav-row2 a:hover{background:#dbeafe;border-color:#bfdbfe}'
+      + '.sn-count{display:inline-block;margin-left:4px;font-size:0.8em;color:#64748b;background:#fff;padding:0 5px;border-radius:9999px;border:1px solid #e2e8f0}'
+      // Scroll-margin so links to sub-sections don't get hidden under the
+      // sticky study-nav.
+      + '.study [id^="study-"]{scroll-margin-top:96px}'
       + '.study-header h2{border:0;padding:0;margin:0 0 4px 0}'
       + '.study-num{color:#94a3b8;font-weight:normal;font-size:0.85em;margin-right:4px}'
       + '.qh{padding:12px 16px;background:#f8fafc;border-left:4px solid #3b82f6;border-radius:4px;margin:12px 0}'
