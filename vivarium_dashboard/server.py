@@ -268,8 +268,11 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-comparison-add":        "_post_study_comparison_add",
     "/api/study-tests-run":             "_post_study_tests_run",
     # Investigation-plan mutating endpoints.
-    "/api/plan-create":   "_post_plan_create",
-    "/api/plan-set-meta": "_post_plan_set_meta",
+    "/api/plan-create":           "_post_plan_create",
+    "/api/plan-set-meta":         "_post_plan_set_meta",
+    "/api/plan-study-add":        "_post_plan_study_add",
+    "/api/plan-study-remove":     "_post_plan_study_remove",
+    "/api/plan-study-set-status": "_post_plan_study_set_status",
     # Workspace-switcher POST endpoints.
     "/api/workspaces/add":           "_post_workspaces_add",
     "/api/workspaces/forget":        "_post_workspaces_forget",
@@ -4348,6 +4351,8 @@ if __name__ == "__main__":
         if not name:
             return self._json({"error": "missing 'name'"}, 400)
         slug = name  # simple convention
+        if not _SLUG_RE.match(slug):
+            return self._json({"error": "slug must be lowercase alphanumeric (and -/_)"}, 400)
         p = WORKSPACE / "investigations" / slug / "investigation.yaml"
         if p.exists():
             return self._json({"error": f"plan already exists: {slug}"}, 409)
@@ -4372,6 +4377,8 @@ if __name__ == "__main__":
         slug = (body or {}).get("slug")
         if not slug:
             return self._json({"error": "missing 'slug'"}, 400)
+        if not _SLUG_RE.match(slug):
+            return self._json({"error": "slug must be lowercase alphanumeric (and -/_)"}, 400)
         p = WORKSPACE / "investigations" / slug / "investigation.yaml"
         if not p.exists():
             return self._json({"error": f"plan not found: {slug}"}, 404)
@@ -4390,10 +4397,74 @@ if __name__ == "__main__":
         slug = (body or {}).get("slug")
         if not slug:
             return self._json({"error": "missing 'slug'"}, 400)
+        if not _SLUG_RE.match(slug):
+            return self._json({"error": "slug must be lowercase alphanumeric (and -/_)"}, 400)
         plan_dir = WORKSPACE / "investigations" / slug
         if not plan_dir.exists():
             return self._json({"error": f"plan not found: {slug}"}, 404)
         shutil.rmtree(plan_dir)
+        return self._json({"ok": True}, 200)
+
+    def _post_plan_study_add(self, body: dict):
+        """POST /api/plan-study-add — append or insert a study entry into a plan."""
+        from .lib.investigation_plans import load_plan, save_plan, InvestigationPlanError
+        slug = (body or {}).get("slug"); study = (body or {}).get("study")
+        if not slug or not study:
+            return self._json({"error": "missing 'slug' or 'study'"}, 400)
+        p = WORKSPACE / "investigations" / slug / "investigation.yaml"
+        if not p.exists():
+            return self._json({"error": f"plan not found: {slug}"}, 404)
+        data = load_plan(p)
+        if any(s.get("study") == study for s in data.get("studies", [])):
+            return self._json({"error": f"study {study!r} already in plan"}, 400)
+        entry = {"study": study}
+        if body.get("gate"):
+            entry["gate"] = body["gate"]
+        pos = body.get("position")
+        if pos is None:
+            data["studies"].append(entry)
+        else:
+            data["studies"].insert(int(pos), entry)
+        try:
+            save_plan(p, data)
+        except InvestigationPlanError as e:
+            return self._json({"error": str(e)}, 400)
+        return self._json({"ok": True}, 200)
+
+    def _post_plan_study_remove(self, body: dict):
+        """POST /api/plan-study-remove — remove a study entry from a plan."""
+        from .lib.investigation_plans import load_plan, save_plan
+        slug = (body or {}).get("slug"); study = (body or {}).get("study")
+        if not slug or not study:
+            return self._json({"error": "missing 'slug' or 'study'"}, 400)
+        p = WORKSPACE / "investigations" / slug / "investigation.yaml"
+        if not p.exists():
+            return self._json({"error": f"plan not found: {slug}"}, 404)
+        data = load_plan(p)
+        data["studies"] = [s for s in data.get("studies", []) if s.get("study") != study]
+        save_plan(p, data)
+        return self._json({"ok": True}, 200)
+
+    def _post_plan_study_set_status(self, body: dict):
+        """POST /api/plan-study-set-status — set or clear a status_override on a study entry."""
+        from .lib.investigation_plans import load_plan, save_plan
+        slug = (body or {}).get("slug"); study = (body or {}).get("study"); status = body.get("status")
+        if not slug or not study:
+            return self._json({"error": "missing 'slug' or 'study'"}, 400)
+        p = WORKSPACE / "investigations" / slug / "investigation.yaml"
+        if not p.exists():
+            return self._json({"error": f"plan not found: {slug}"}, 404)
+        data = load_plan(p)
+        for s in data.get("studies", []):
+            if s.get("study") == study:
+                if status is None:
+                    s.pop("status_override", None)
+                else:
+                    s["status_override"] = status
+                break
+        else:
+            return self._json({"error": f"study {study!r} not in plan"}, 404)
+        save_plan(p, data)
         return self._json({"ok": True}, 200)
 
     def _post_investigation_create(self, body: dict):

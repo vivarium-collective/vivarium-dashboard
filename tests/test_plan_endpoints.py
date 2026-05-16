@@ -106,3 +106,58 @@ def test_post_plan_set_meta(tmp_path, dashboard_client):
     assert data["objective"] == "new obj"
     assert data["hypothesis"] == "h"
     assert data["status"] == "in-progress"
+
+
+def test_post_plan_study_add_appends(tmp_path, dashboard_client):
+    _scaffold_workspace(tmp_path)
+    _scaffold_plan(tmp_path, "demo", studies=[{"study": "s1"}])
+    client = dashboard_client(workspace=tmp_path)
+    resp = client.post("/api/plan-study-add", json={
+        "slug": "demo", "study": "s2", "gate": "tests-pass",
+    })
+    assert resp.status_code == 200, resp.text
+    data = yaml.safe_load((tmp_path / "investigations" / "demo" / "investigation.yaml").read_text())
+    assert [s["study"] for s in data["studies"]] == ["s1", "s2"]
+    assert data["studies"][1]["gate"] == "tests-pass"
+
+
+def test_post_plan_study_add_inserts_at_position(tmp_path, dashboard_client):
+    _scaffold_workspace(tmp_path)
+    _scaffold_plan(tmp_path, "demo", studies=[{"study": "s1"}, {"study": "s3"}])
+    client = dashboard_client(workspace=tmp_path)
+    resp = client.post("/api/plan-study-add", json={
+        "slug": "demo", "study": "s2", "position": 1,
+    })
+    assert resp.status_code == 200, resp.text
+    data = yaml.safe_load((tmp_path / "investigations" / "demo" / "investigation.yaml").read_text())
+    assert [s["study"] for s in data["studies"]] == ["s1", "s2", "s3"]
+
+
+def test_post_plan_study_add_rejects_duplicate(tmp_path, dashboard_client):
+    _scaffold_workspace(tmp_path)
+    _scaffold_plan(tmp_path, "demo", studies=[{"study": "s1"}])
+    client = dashboard_client(workspace=tmp_path)
+    resp = client.post("/api/plan-study-add", json={"slug": "demo", "study": "s1"})
+    assert resp.status_code == 400
+
+
+def test_post_plan_study_remove(tmp_path, dashboard_client):
+    _scaffold_workspace(tmp_path)
+    _scaffold_plan(tmp_path, "demo", studies=[{"study": "s1"}, {"study": "s2"}])
+    client = dashboard_client(workspace=tmp_path)
+    resp = client.post("/api/plan-study-remove", json={"slug": "demo", "study": "s2"})
+    assert resp.status_code == 200, resp.text
+    data = yaml.safe_load((tmp_path / "investigations" / "demo" / "investigation.yaml").read_text())
+    assert [s["study"] for s in data["studies"]] == ["s1"]
+
+
+def test_post_plan_study_set_status_writes_override(tmp_path, dashboard_client):
+    _scaffold_workspace(tmp_path)
+    _scaffold_plan(tmp_path, "demo", studies=[{"study": "s1"}])
+    client = dashboard_client(workspace=tmp_path)
+    resp = client.post("/api/plan-study-set-status", json={
+        "slug": "demo", "study": "s1", "status": "complete",
+    })
+    assert resp.status_code == 200, resp.text
+    data = yaml.safe_load((tmp_path / "investigations" / "demo" / "investigation.yaml").read_text())
+    assert data["studies"][0]["status_override"] == "complete"
