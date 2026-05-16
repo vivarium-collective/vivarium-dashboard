@@ -133,6 +133,51 @@ def _find_study_dir(test_file: Path) -> Path:
     )
 
 
+def _all_run_ids(db_path: Path) -> list[str]:
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        return [r["run_id"] for r in conn.execute(
+            "SELECT run_id FROM runs_meta ORDER BY timestamp ASC"
+        ).fetchall()]
+    finally:
+        conn.close()
+
+
+def pytest_generate_tests(metafunc):
+    """Parametrize the `runs` fixture with one Run per row in runs.db
+    when the study's data_source is `all_runs`."""
+    if "runs" not in metafunc.fixturenames:
+        return
+    test_file = Path(str(metafunc.module.__file__))
+    try:
+        study_dir = _find_study_dir(test_file)
+    except RunNotAvailableError:
+        return
+    spec = yaml.safe_load((study_dir / "study.yaml").read_text()) or {}
+    if (spec.get("tests") or {}).get("data_source") != "all_runs":
+        return
+    db = study_dir / "runs.db"
+    if not db.exists():
+        return
+    ids = _all_run_ids(db)
+    metafunc.parametrize("runs", ids, ids=ids, indirect=True)
+
+
+@pytest.fixture
+def runs(request) -> Run:
+    """Parametrized fixture: one Run per row in the study's runs.db.
+
+    Activated when study.yaml has tests.data_source: all_runs. The
+    `pytest_generate_tests` hook supplies the run_id parameter; this fixture
+    converts it to a Run.
+    """
+    test_file = Path(str(request.fspath))
+    study_dir = _find_study_dir(test_file)
+    db = study_dir / "runs.db"
+    return Run(db, run_id=request.param)
+
+
 @pytest.fixture
 def run(request) -> Run:
     """Latest run of the study under test. Reads study.yaml to discover

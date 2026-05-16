@@ -108,3 +108,37 @@ def test_run_raises_when_no_runs(tmp_path):
     _make_runs_db(db, runs=[])
     with pytest.raises(RunNotAvailableError):
         Run(db)
+
+
+# Inline test of the `runs` fixture via subprocess pytest, since pytest's own
+# fixture machinery is hard to invoke directly in a unit test.
+
+import subprocess, sys, textwrap
+
+
+def test_runs_fixture_parametrizes_over_all_runs(tmp_path):
+    study = tmp_path / "studies" / "demo"
+    study.mkdir(parents=True)
+    (study / "study.yaml").write_text(
+        "schema_version: 4\nname: demo\nbaseline: []\n"
+        "tests: {auto_discover: true, data_source: all_runs, pytest_args: [], last_results: null}\n"
+        "references: []\nimplementation_tasks: ''\n"
+    )
+    _make_runs_db(study / "runs.db", runs=[
+        {"run_id": "a", "timestamp": "2026-05-14T00:00:00", "observables": {"x": [1.0]}},
+        {"run_id": "b", "timestamp": "2026-05-15T00:00:00", "observables": {"x": [2.0]}},
+    ])
+    (study / "tests").mkdir()
+    (study / "tests" / "conftest.py").write_text(
+        "from vivarium_dashboard.testing import run, runs, pytest_generate_tests  # noqa: F401\n"
+    )
+    (study / "tests" / "test_demo.py").write_text(textwrap.dedent("""
+        def test_each_run(runs):
+            assert runs.final("x") in (1.0, 2.0)
+    """))
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", str(study / "tests"), "-v"],
+        capture_output=True, text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "2 passed" in result.stdout
