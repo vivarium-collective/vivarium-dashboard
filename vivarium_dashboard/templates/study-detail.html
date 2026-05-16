@@ -20,6 +20,7 @@
   <button class="study-tab"        data-kind="variants"      onclick="_setStudyTab('variants')">Variants</button>
   <button class="study-tab"        data-kind="interventions" onclick="_setStudyTab('interventions')">Interventions</button>
   <button class="study-tab"        data-kind="runs"          onclick="_setStudyTab('runs')">Runs</button>
+  <button class="study-tab"        data-kind="tests"         onclick="_setStudyTab('tests')">Tests</button>
 </nav>
 
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
@@ -233,6 +234,21 @@
     </div>
     <button class="btn-add-viz">+ Add visualization</button>
   </div>
+</section>
+
+<section class="study-tab-panel" data-kind="tests" id="panel-tests" hidden>
+  <div class="tests-header">
+    <h3>Behavioral Tests</h3>
+    <div class="tests-summary" id="tests-summary">— no test results yet —</div>
+    <button id="run-tests-btn" class="btn-primary">Run tests</button>
+  </div>
+  <div class="tests-config">
+    <span class="badge">auto_discover: <code id="tests-auto-discover">true</code></span>
+    <span class="badge">data_source: <code id="tests-data-source">latest_run</code></span>
+  </div>
+  <ul class="tests-list" id="tests-list">
+    <li class="placeholder">Click "Run tests" to discover and execute studies/&lt;slug&gt;/tests/test_*.py</li>
+  </ul>
 </section>
 
 </main>
