@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from .spec_migration import migrate_study_to_v2_vocabulary, migrate_v2_to_v3
+from .spec_migration import migrate_study_to_v2_vocabulary, migrate_v2_to_v3, migrate_v3_to_v4
 
 
 class InvestigationSpecError(ValueError):
@@ -101,8 +101,8 @@ def _validate_composites_list(spec: dict) -> None:
                 )
 
 
-def _validate_study_v3(spec: dict) -> None:
-    """Validate a schema_version=3 Study spec.
+def _validate_study_v3_or_v4(spec: dict) -> None:
+    """Validate a schema_version=3 or 4 Study spec.
 
     v3 shape (distinct from the v2 ``variants:``-as-composites shape):
       - ``baseline``: a non-empty list of ``{name, composite, params}`` mappings.
@@ -110,6 +110,11 @@ def _validate_study_v3(spec: dict) -> None:
         mappings, each with a ``name``.
       - ``runs``, ``visualizations``: optional lists.
       - ``objective``, ``conclusion``: optional.
+
+    v4 shape: adds three new fields:
+      - ``tests``: mapping with auto_discover, data_source, pytest_args, last_results
+      - ``references``: list of reference mappings (each with at least a 'file' key)
+      - ``implementation_tasks``: string field for tracking tasks
     """
     baseline = spec.get("baseline")
     if not isinstance(baseline, list) or not baseline:
@@ -161,6 +166,27 @@ def _validate_study_v3(spec: dict) -> None:
             raise InvestigationSpecError(
                 f"v3 study: interventions[{i}] must be a mapping with a 'name'"
             )
+
+    # v4-only field validation
+    if spec.get("schema_version") == 4:
+        tests = spec.get("tests") or {}
+        if not isinstance(tests, dict):
+            raise InvestigationSpecError("tests must be a mapping")
+        ds = tests.get("data_source", "latest_run")
+        if ds not in ("latest_run", "first_run", "all_runs"):
+            raise InvestigationSpecError(
+                f"tests.data_source must be one of latest_run|first_run|all_runs, got {ds!r}"
+            )
+        if not isinstance(tests.get("pytest_args", []), list):
+            raise InvestigationSpecError("tests.pytest_args must be a list")
+        refs = spec.get("references") or []
+        if not isinstance(refs, list):
+            raise InvestigationSpecError("references must be a list")
+        for i, ref in enumerate(refs):
+            if not isinstance(ref, dict) or not ref.get("file"):
+                raise InvestigationSpecError(f"references[{i}] must be a mapping with at least a 'file' key")
+        if not isinstance(spec.get("implementation_tasks", ""), str):
+            raise InvestigationSpecError("implementation_tasks must be a string")
 
 
 def _validate_variants_list(spec: dict) -> None:
@@ -316,13 +342,16 @@ def load_spec(path: Path) -> dict:
     # Phase 1 transition: auto-migrate v2 → v3 on read (in-memory only).
     spec = migrate_v2_to_v3(spec)
 
+    # Phase 2 transition: auto-migrate v3 → v4 on read (in-memory only).
+    spec = migrate_v3_to_v4(spec)
+
     # name is always required
     if not spec.get("name"):
         raise InvestigationSpecError("missing required field: name")
 
-    # v3 (Studies) shape: single baseline + optional variants/runs/etc.
-    if spec.get("schema_version") == 3:
-        _validate_study_v3(spec)
+    # v3/v4 (Studies) shape: single baseline + optional variants/runs/etc.
+    if spec.get("schema_version") in (3, 4):
+        _validate_study_v3_or_v4(spec)
         return spec
 
     has_variants_list = "variants" in spec
