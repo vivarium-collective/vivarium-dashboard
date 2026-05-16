@@ -219,7 +219,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/render":             "_post_render",
     "/api/work-start":         "_post_work_start",
     "/api/work-push":          "_post_work_push",
-    "/api/work-create-github-repo": "_post_work_create_github_repo",
+    "/api/work-link-branch":   "_post_work_link_branch",
     "/api/work-create-pr":     "_post_work_create_pr",
     "/api/work-end":           "_post_work_end",
     "/api/dirty-commit-all":   "_post_dirty_commit_all",
@@ -267,6 +267,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-run-delete":            "_post_study_run_delete",
     "/api/study-runs-clear":            "_post_study_runs_clear",
     "/api/study-comparison-add":        "_post_study_comparison_add",
+    "/api/study-tests-run":             "_post_study_tests_run",
     # Workspace-switcher POST endpoints.
     "/api/workspaces/add":           "_post_workspaces_add",
     "/api/workspaces/forget":        "_post_workspaces_forget",
@@ -285,6 +286,15 @@ def _get_registry_data(bypass_cache: bool = False) -> dict:
     """Return registry data from build_core() subprocess, with 30s caching.
 
     Always returns {processes: [...], types: [...]} plus optional 'error' key.
+    Each process entry includes a ``source`` field:
+      - ``"in_workspace"`` — class belongs to the workspace's own package or a
+        declared import (workspace.yaml.imports).
+      - ``"framework"`` — class is from the process-bigraph framework infrastructure
+        (process_bigraph, bigraph_schema, bigraph_viz, pbg_superpowers,
+        vivarium_dashboard).
+      - ``"environment_only"`` — discovered via allocate_core() entry-point scan
+        but not declared in workspace.yaml.  Installed in the Python env but not
+        explicitly imported by this workspace.
     Never raises.
     """
     global _REGISTRY_CACHE
@@ -300,6 +310,23 @@ def _get_registry_data(bypass_cache: bool = False) -> dict:
         # Support explicit package_path in workspace.yaml (most reliable).
         package_name = ws_data.get("package_path") or ("pbg_" + slug.replace("-", "_"))
 
+        # Build the set of top-level package names that this workspace explicitly
+        # owns or imports.  Used inside the subprocess to tag each discovered class.
+        # imports is a dict keyed by catalog name; the Python package name lives
+        # in imports[name].get("package") or falls back to name.replace("-", "_").
+        imports_dict = ws_data.get("imports", {}) or {}
+        _ws_import_pkgs: list[str] = []
+        for cat_name, imp_val in imports_dict.items():
+            if isinstance(imp_val, dict):
+                pkg = imp_val.get("package") or cat_name.replace("-", "_")
+            else:
+                pkg = cat_name.replace("-", "_")
+            _ws_import_pkgs.append(pkg.split(".")[0])
+        # The workspace's own package is always "in_workspace".
+        _ws_import_pkgs.append(package_name.split(".")[0])
+        # Dedupe while preserving insertion order.
+        _workspace_pkgs_repr = repr(list(dict.fromkeys(_ws_import_pkgs)))
+
         py = sys.executable
         script = textwrap.dedent(f"""
 import json, sys
@@ -313,6 +340,25 @@ try:
         from pbg_superpowers.visualization import Visualization as VISUALIZATION_CLS
     except ImportError:
         VISUALIZATION_CLS = None
+
+    # Packages declared in this workspace (own package + workspace.yaml imports).
+    _WORKSPACE_PKGS = set({_workspace_pkgs_repr})
+    # Framework infrastructure packages — always shown, never "environment_only".
+    _FRAMEWORK_PKGS = {{
+        'process_bigraph', 'bigraph_schema', 'bigraph_viz',
+        'pbg_superpowers', 'vivarium_dashboard',
+    }}
+
+    def _classify_source(cls):
+        try:
+            top_pkg = cls.__module__.split('.')[0]
+        except Exception:
+            return 'environment_only'
+        if top_pkg in _WORKSPACE_PKGS:
+            return 'in_workspace'
+        if top_pkg in _FRAMEWORK_PKGS:
+            return 'framework'
+        return 'environment_only'
 
     # Processes (and other linkable components) live in core.link_registry,
     # a dict keyed by both short names ('Composite') and fully-qualified
@@ -358,6 +404,7 @@ try:
                 schema_preview = json.dumps(cls.config_schema, default=str)[:400]
             except Exception:
                 schema_preview = "<unserializable>"
+        source = _classify_source(cls)
         seen_classes[cls_id] = len(processes)
         processes.append({{
             "name": name,
@@ -365,9 +412,12 @@ try:
             "kind": kind,
             "schema_preview": schema_preview,
             "aliases": [],
+            "source": source,
         }})
     # Re-sort by name so output is deterministic; promote short names.
-    processes.sort(key=lambda p: ('.' in p['name'], p['name']))
+    # Within each source group: in_workspace first, then framework, then environment_only.
+    _source_order = {{"in_workspace": 0, "framework": 1, "environment_only": 2}}
+    processes.sort(key=lambda p: (_source_order.get(p.get('source', 'environment_only'), 2), '.' in p['name'], p['name']))
 
     # Types: core.registry is a dict of registered type schemas.
     types = []
@@ -380,7 +430,7 @@ try:
             preview = f"<error: {{e}}>"
         types.append({{"name": name, "schema_preview": preview}})
 
-    print(json.dumps({{"processes": processes, "types": types}}))
+    print(json.dumps({{"processes": processes, "types": types, "workspace_pkgs": list(_WORKSPACE_PKGS)}}))
 except ImportError as e:
     print(json.dumps({{"error": f"could not import {package_name}.core: {{e}}", "processes": [], "types": []}}))
 except Exception as e:
@@ -2210,6 +2260,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_investigation_composites()
         if self.path.startswith("/api/investigation-state-tree"):
             return self._get_investigation_state_tree()
+        if self.path.startswith("/api/study-bigraph-paths"):
+            return self._get_study_bigraph_paths()
         if self.path.startswith("/api/investigation-composite-doc"):
             return self._get_investigation_composite_doc()
         if self.path.startswith("/api/investigation/"):
@@ -2240,6 +2292,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_visualization_classes()
         if self.path.startswith("/api/ui-config"):
             return self._get_ui_config()
+        if self.path.startswith("/api/git-status"):
+            return self._get_git_status()
         # Serve the bundled loom-explore viewer.
         if self.path.startswith("/loom-explore"):
             # Strip query string before resolving to the file on disk; popup
@@ -3629,84 +3683,183 @@ if __name__ == "__main__":
         save_state(state)
         return self._json({"ok": True, "branch": branch, "log": r.stdout[-300:]}, 200)
 
-    def _post_work_create_github_repo(self, body: dict):
-        """gh repo create + set origin + initial push, in one shot.
+    def _post_work_link_branch(self, body: dict):
+        """Link the workspace to an upstream branch.
 
-        Body: {visibility?: "public"|"private", name?: str, description?: str}.
-        Defaults: visibility=private, name=<workspace_name>, description=workspace.yaml.description.
+        Body: {upstream_repo?: "owner/name", branch_name?: str, push?: bool=True,
+               mode?: "branch" | "fork"}.
+
+        mode="branch" (default):
+        - Sets git origin to the upstream (https://github.com/<repo>.git) if absent.
+        - Pushes the current branch (or `branch_name`, after renaming if provided).
+        - Marks workstream as pushed.
+
+        mode="fork":
+        - Forks the upstream repo under the authenticated gh user (gh repo fork).
+        - Sets origin to the fork URL; adds upstream remote pointing to the original.
+        - Pushes the current branch to origin (the fork).
+        - Returns fork and upstream full names in the response.
+
+        Any other mode value returns 400.
         """
         _ws_add_to_sys_path()
         from vivarium_dashboard.lib.work_state import load_state, save_state
         state = load_state()
-        branch = state.get("active_branch")
-        if not branch:
-            return self._json({"error": "no active workstream — Start one first so the initial push has commits"}, 409)
+        current_branch = state.get("active_branch")
+        if not current_branch:
+            return self._json({"error": "no active workstream — Start one first so the push has a target"}, 409)
 
         if not shutil.which("gh"):
-            return self._json({
-                "error": "gh CLI not installed",
-                "diagnosis": {
-                    "category": "gh_missing",
-                    "summary": "GitHub CLI (`gh`) is not installed.",
-                    "suggestion": "Install gh (`brew install gh` on macOS), then run `gh auth login`. After that, click Create GitHub repo again.",
-                },
-            }, 500)
-
-        # Verify gh is authenticated
+            return self._json({"error": "gh CLI not installed. Install via `brew install gh` then `gh auth login`."}, 500)
         auth = subprocess.run(["gh", "auth", "status"], capture_output=True, text=True)
         if auth.returncode != 0:
+            return self._json({"error": "gh not authenticated. Run `gh auth login`."}, 500)
+
+        mode = (body.get("mode") or "branch").strip().lower()
+        if mode not in ("branch", "fork"):
+            return self._json({"error": f"mode must be 'branch' or 'fork'; got {mode!r}"}, 400)
+
+        upstream_repo = (body.get("upstream_repo") or "").strip() or self._default_upstream_repo()
+        if not re.match(r"^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$", upstream_repo):
+            return self._json({"error": f"upstream_repo must look like owner/name; got {upstream_repo!r}"}, 400)
+
+        # Optional rename of the current branch before pushing.
+        target_branch = (body.get("branch_name") or "").strip() or current_branch
+        if not re.match(r"^[A-Za-z0-9._/-]+$", target_branch):
+            return self._json({"error": "invalid branch name"}, 400)
+        if target_branch != current_branch:
+            r = subprocess.run(["git", "branch", "-m", current_branch, target_branch],
+                               cwd=WORKSPACE, capture_output=True, text=True)
+            if r.returncode != 0:
+                return self._json({"error": f"branch rename failed: {(r.stderr or r.stdout)[:300]}"}, 500)
+
+        if mode == "fork":
+            # --- Fork mode ---
+            # 1. Fork the upstream repo (no local clone, no remote change yet).
+            repo_name = upstream_repo.split("/")[1]
+            r = subprocess.run(
+                ["gh", "repo", "fork", upstream_repo, "--remote=false", "--clone=false"],
+                capture_output=True, text=True,
+            )
+            if r.returncode != 0:
+                return self._json({"error": f"gh repo fork failed: {(r.stderr or r.stdout)[:500]}"}, 500)
+
+            # 2. Resolve the fork's full name via gh api user.
+            login_r = subprocess.run(
+                ["gh", "api", "user", "--jq", ".login"],
+                capture_output=True, text=True,
+            )
+            if login_r.returncode != 0:
+                return self._json({"error": f"could not resolve gh login: {(login_r.stderr or login_r.stdout)[:300]}"}, 500)
+            gh_login = login_r.stdout.strip()
+            fork_repo = f"{gh_login}/{repo_name}"
+            fork_url = f"https://github.com/{fork_repo}.git"
+            upstream_url = f"https://github.com/{upstream_repo}.git"
+
+            # 3. Set origin to fork; add upstream remote.
+            existing = subprocess.run(["git", "remote", "get-url", "origin"],
+                                      cwd=WORKSPACE, capture_output=True, text=True)
+            if existing.returncode != 0:
+                r = subprocess.run(["git", "remote", "add", "origin", fork_url],
+                                   cwd=WORKSPACE, capture_output=True, text=True)
+                if r.returncode != 0:
+                    return self._json({"error": f"git remote add origin failed: {(r.stderr or r.stdout)[:300]}"}, 500)
+            else:
+                r = subprocess.run(["git", "remote", "set-url", "origin", fork_url],
+                                   cwd=WORKSPACE, capture_output=True, text=True)
+                if r.returncode != 0:
+                    return self._json({"error": f"git remote set-url origin failed: {(r.stderr or r.stdout)[:300]}"}, 500)
+
+            # Add or update upstream remote.
+            up_existing = subprocess.run(["git", "remote", "get-url", "upstream"],
+                                         cwd=WORKSPACE, capture_output=True, text=True)
+            if up_existing.returncode != 0:
+                subprocess.run(["git", "remote", "add", "upstream", upstream_url],
+                               cwd=WORKSPACE, capture_output=True, text=True)
+            else:
+                subprocess.run(["git", "remote", "set-url", "upstream", upstream_url],
+                               cwd=WORKSPACE, capture_output=True, text=True)
+
+            # 4. Push to fork.
+            if body.get("push", True):
+                r = subprocess.run(["git", "push", "-u", "origin", target_branch],
+                                   cwd=WORKSPACE, capture_output=True, text=True, timeout=120)
+                if r.returncode != 0:
+                    return self._json({"error": f"git push to fork failed: {(r.stderr or r.stdout)[:500]}"}, 500)
+
+            state["pushed"] = True
+            save_state(state)
+
             return self._json({
-                "error": "gh not authenticated",
-                "diagnosis": {
-                    "category": "gh_auth",
-                    "summary": "GitHub CLI isn't logged in.",
-                    "suggestion": "Run `gh auth login` in your terminal, then click Create GitHub repo again.",
-                },
-            }, 500)
+                "ok": True,
+                "fork": fork_repo,
+                "upstream": upstream_repo,
+                "branch": target_branch,
+                "branch_url": f"https://github.com/{fork_repo}/tree/{target_branch}",
+            }, 200)
 
-        if _has_origin_remote():
-            return self._json({"error": "origin remote already configured — use Push instead"}, 409)
+        # --- Branch mode (default) ---
+        # Set origin if not present (or replace if it points elsewhere).
+        upstream_url = f"https://github.com/{upstream_repo}.git"
+        existing = subprocess.run(["git", "remote", "get-url", "origin"],
+                                  cwd=WORKSPACE, capture_output=True, text=True)
+        if existing.returncode != 0:
+            r = subprocess.run(["git", "remote", "add", "origin", upstream_url],
+                               cwd=WORKSPACE, capture_output=True, text=True)
+            if r.returncode != 0:
+                return self._json({"error": f"git remote add origin failed: {(r.stderr or r.stdout)[:300]}"}, 500)
+        else:
+            # If origin already points somewhere else, refuse rather than silently overwriting.
+            current_url = (existing.stdout or "").strip()
+            if current_url and current_url != upstream_url and current_url != upstream_url.replace("https://github.com/", "git@github.com:"):
+                return self._json({
+                    "error": f"origin already configured to {current_url}; refusing to overwrite",
+                    "current_origin": current_url,
+                }, 409)
 
-        ws_data = yaml.safe_load((WORKSPACE / "workspace.yaml").read_text())
-        default_name = ws_data.get("name", WORKSPACE.name)
-        repo_name = (body.get("name") or "").strip() or default_name
-        if not re.match(r"^[A-Za-z0-9._-]+$", repo_name):
-            return self._json({"error": "invalid repo name (must match [A-Za-z0-9._-]+)"}, 400)
-        visibility = (body.get("visibility") or "private").strip().lower()
-        if visibility not in ("public", "private", "internal"):
-            return self._json({"error": "visibility must be one of: public, private, internal"}, 400)
-        description = (body.get("description") or "").strip()
-        if not description:
-            description = ws_data.get("description") or f"Process-bigraph workspace: {repo_name}"
+        # Push the current branch to origin.
+        if body.get("push", True):
+            r = subprocess.run(["git", "push", "-u", "origin", target_branch],
+                               cwd=WORKSPACE, capture_output=True, text=True, timeout=120)
+            if r.returncode != 0:
+                return self._json({"error": f"git push failed: {(r.stderr or r.stdout)[:500]}"}, 500)
 
-        # gh repo create <name> --<visibility> --source=. --remote=origin --push --description "..."
-        # NOTE: --push pushes the current branch to the new remote.
-        cmd = [
-            "gh", "repo", "create", repo_name,
-            "--" + visibility,
-            "--source=.",
-            "--remote=origin",
-            "--push",
-            "--description", description,
-        ]
-        r = subprocess.run(cmd, cwd=WORKSPACE, capture_output=True, text=True, timeout=60)
-        if r.returncode != 0:
-            return self._json({
-                "error": "gh repo create failed",
-                "log": (r.stderr or r.stdout).strip()[-500:],
-            }, 500)
-
-        # Successful: gh pushed the current branch. Mark workstream pushed.
         state["pushed"] = True
         save_state(state)
 
-        url = r.stdout.strip().splitlines()[-1] if r.stdout else ""
         return self._json({
             "ok": True,
-            "repo_url": url,
-            "visibility": visibility,
-            "branch": branch,
+            "upstream_repo": upstream_repo,
+            "branch": target_branch,
+            "branch_url": f"https://github.com/{upstream_repo}/tree/{target_branch}",
         }, 200)
+
+    def _default_upstream_repo(self) -> str:
+        """Auto-detect upstream repo from workspace.yaml or external/v2ecoli/.git/config.
+
+        Falls back to ``vivarium-collective/v2ecoli`` if nothing else is configured.
+        """
+        ws_path = WORKSPACE / "workspace.yaml"
+        if ws_path.exists():
+            try:
+                ws_data = yaml.safe_load(ws_path.read_text()) or {}
+                ur = (ws_data.get("upstream_repo") or "").strip()
+                if ur:
+                    return ur
+            except yaml.YAMLError:
+                pass
+        # Try external/v2ecoli's origin.
+        external = WORKSPACE / "external" / "v2ecoli"
+        if external.is_dir():
+            r = subprocess.run(["git", "remote", "get-url", "origin"],
+                               cwd=external, capture_output=True, text=True)
+            if r.returncode == 0:
+                url = r.stdout.strip()
+                # https://github.com/owner/name.git or git@github.com:owner/name.git
+                m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", url)
+                if m:
+                    return m.group(1)
+        return "vivarium-collective/v2ecoli"
 
     def _post_work_create_pr(self, body: dict):
         _ws_add_to_sys_path()
@@ -3715,6 +3868,17 @@ if __name__ == "__main__":
         branch = state.get("active_branch")
         if not branch:
             return self._json({"error": "no active workstream"}, 409)
+        # Opportunistic: if local matches origin/<branch>, mark pushed automatically.
+        if not state.get("pushed"):
+            check = subprocess.run(
+                ["git", "rev-list", "--left-right", "--count", f"origin/{branch}...HEAD"],
+                cwd=WORKSPACE, capture_output=True, text=True,
+            )
+            if check.returncode == 0:
+                parts = (check.stdout or "").strip().split()
+                if len(parts) == 2 and parts[1] == "0":
+                    state["pushed"] = True
+                    save_state(state)
         if not state.get("pushed"):
             return self._json({"error": "push to origin first (Push button)"}, 409)
         if state.get("pr_url"):
@@ -3736,11 +3900,12 @@ if __name__ == "__main__":
                 "manual_url": manual,
             }, 500)
 
-        r = subprocess.run(
-            ["gh", "pr", "create", "--base", base, "--head", branch,
-             "--title", title, "--body", body_text],
-            cwd=WORKSPACE, capture_output=True, text=True, timeout=30,
-        )
+        draft = bool(body.get("draft", True))
+        cmd = ["gh", "pr", "create", "--base", base, "--head", branch,
+               "--title", title, "--body", body_text]
+        if draft:
+            cmd.append("--draft")
+        r = subprocess.run(cmd, cwd=WORKSPACE, capture_output=True, text=True, timeout=30)
         if r.returncode != 0:
             return self._json({"error": f"gh pr create failed: {(r.stderr or r.stdout)[:300]}"}, 500)
         pr_url = r.stdout.strip().splitlines()[-1] if r.stdout else ""
@@ -3873,6 +4038,126 @@ if __name__ == "__main__":
                 continue
             files.append({"status": raw[:2].strip(), "path": raw[3:]})
         return self._json({"count": len(files), "files": files}, 200)
+
+    def _get_git_status(self):
+        """GET /api/git-status — live sync state for the workspace's git.
+
+        Returns:
+            {
+              upstream_repo: "owner/name" | null,
+              branch: str | null,
+              push_state: "pushed" | "ahead" | "no_origin" | "diverged" | "behind",
+              ahead: int,
+              behind: int,
+              branch_url: str | null,
+              repo_url: str | null,
+              pr_number: int | null,
+              pr_url: str | null,
+              base: str,
+              ahead_of_base: int,
+              dirty_count: int,
+              compare_url: str | null,
+              pr_state: str | null,
+            }
+        """
+        result = {
+            "upstream_repo": None, "branch": None, "push_state": "no_origin",
+            "ahead": 0, "behind": 0,
+            "branch_url": None, "repo_url": None,
+            "pr_number": None, "pr_url": None,
+            "base": "main", "ahead_of_base": 0,
+            "dirty_count": 0, "compare_url": None, "pr_state": None,
+            "gh_available": bool(shutil.which("gh")),
+            "has_active_workstream": False,
+        }
+        # current branch
+        r = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                           cwd=WORKSPACE, capture_output=True, text=True)
+        if r.returncode != 0:
+            return self._json(result, 200)
+        result["branch"] = (r.stdout or "").strip()
+        # upstream repo (from origin remote)
+        r = subprocess.run(["git", "remote", "get-url", "origin"],
+                           cwd=WORKSPACE, capture_output=True, text=True)
+        if r.returncode != 0:
+            return self._json(result, 200)
+        origin_url = (r.stdout or "").strip()
+        m = re.search(r"github\.com[:/]([\w.-]+/[\w.-]+?)(?:\.git)?$", origin_url)
+        if m:
+            result["upstream_repo"] = m.group(1)
+            result["repo_url"] = f"https://github.com/{m.group(1)}"
+            result["branch_url"] = f"https://github.com/{m.group(1)}/tree/{result['branch']}"
+        # ahead/behind vs origin/<branch>
+        ref = f"origin/{result['branch']}"
+        r = subprocess.run(["git", "rev-list", "--left-right", "--count", f"{ref}...HEAD"],
+                           cwd=WORKSPACE, capture_output=True, text=True)
+        if r.returncode != 0:
+            # origin/<branch> probably doesn't exist yet
+            result["push_state"] = "no_origin"
+        else:
+            parts = (r.stdout or "").strip().split()
+            if len(parts) == 2:
+                behind = int(parts[0]); ahead = int(parts[1])
+                result["ahead"] = ahead; result["behind"] = behind
+                if ahead == 0 and behind == 0:
+                    result["push_state"] = "pushed"
+                elif ahead > 0 and behind == 0:
+                    result["push_state"] = "ahead"
+                elif ahead == 0 and behind > 0:
+                    result["push_state"] = "behind"
+                else:
+                    result["push_state"] = "diverged"
+        # PR info + base — read from .pbg/state.json (cheaper than gh API)
+        try:
+            from vivarium_dashboard.lib.work_state import load_state
+            state = load_state()
+            result["pr_url"] = state.get("pr_url")
+            result["pr_number"] = state.get("pr_number")
+            result["base"] = state.get("base") or "main"
+            result["has_active_workstream"] = bool(state.get("active_branch"))
+        except Exception:
+            pass
+        # ahead_of_base: commits on branch not yet merged into base
+        base = result["base"]
+        branch = result["branch"]
+        if branch:
+            for base_ref in (base, f"origin/{base}"):
+                r_aob = subprocess.run(
+                    ["git", "rev-list", "--count", f"{base_ref}..HEAD"],
+                    cwd=WORKSPACE, capture_output=True, text=True,
+                )
+                if r_aob.returncode == 0:
+                    try:
+                        result["ahead_of_base"] = int(r_aob.stdout.strip())
+                    except ValueError:
+                        pass
+                    break
+            if result["upstream_repo"]:
+                result["compare_url"] = (
+                    f"https://github.com/{result['upstream_repo']}"
+                    f"/compare/{base}...{branch}"
+                )
+        # dirty_count: number of uncommitted files (filtered, same as dirty-status)
+        try:
+            dirty_output = _dirty_workspace()
+            result["dirty_count"] = len([
+                l for l in dirty_output.splitlines() if len(l) >= 4
+            ])
+        except Exception:
+            pass
+        # pr_state: query gh if a PR number is known
+        if result.get("pr_number"):
+            try:
+                r_pr = subprocess.run(
+                    ["gh", "pr", "view", str(result["pr_number"]),
+                     "--json", "state", "--jq", ".state"],
+                    cwd=WORKSPACE, capture_output=True, text=True, timeout=5,
+                )
+                if r_pr.returncode == 0:
+                    result["pr_state"] = r_pr.stdout.strip() or None
+            except Exception:
+                pass
+        return self._json(result, 200)
 
     def _post_dirty_commit_all(self, body: dict):
         """Stage and commit all dirty files (minus reports/) under the active workstream."""
@@ -4319,6 +4604,98 @@ if __name__ == "__main__":
         except Exception as e:
             return self._json({"error": f"failed to parse composite: {e}"}, 500)
         return self._json({"nodes": walk_state_tree(doc)}, 200)
+
+    # --- /api/study-bigraph-paths: walk a saved composite state snapshot --
+    #
+    # Returns the legal store paths a user can pick when authoring observables
+    # for a study. Reads the composite's serialized .pbg / .json state file
+    # under <workspace>/models/, walks it, and emits a flat list of leaf
+    # entries with type hints.
+    _bigraph_path_cache = {}  # {(path, mtime, max_depth): [nodes]}
+
+    def _get_study_bigraph_paths(self):
+        """GET /api/study-bigraph-paths?study=<slug>[&baseline=<name>][&max_depth=<n>]
+
+        Returns: {composite, source_file, max_depth, node_count, nodes:[{path,kind,...}]}
+        """
+        import urllib.parse
+        qs = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(self.path).query))
+        slug = qs.get("study", "").strip()
+        baseline_name = qs.get("baseline", "").strip()
+        try:
+            max_depth = int(qs.get("max_depth", "8"))
+        except ValueError:
+            max_depth = 8
+        if not slug:
+            return self._json({"error": "study slug required (?study=<slug>)"}, 400)
+
+        spec_path = _study_dir(slug) / "study.yaml"
+        if not spec_path.is_file():
+            spec_path = _study_dir(slug) / "spec.yaml"
+        if not spec_path.is_file():
+            return self._json({"error": f"no study.yaml or spec.yaml at {_study_dir(slug)}"}, 404)
+        try:
+            spec = yaml.safe_load(spec_path.read_text()) or {}
+        except Exception as e:
+            return self._json({"error": f"failed to parse study spec: {e}"}, 500)
+
+        baselines = spec.get("baseline") or []
+        if not baselines:
+            return self._json({"error": "study has no baseline entries"}, 400)
+        if baseline_name:
+            chosen = next((b for b in baselines if b.get("name") == baseline_name), None)
+            if chosen is None:
+                return self._json(
+                    {"error": f"baseline {baseline_name!r} not found in study {slug!r}"}, 404,
+                )
+        else:
+            chosen = baselines[0]
+
+        composite_ref = chosen.get("composite") or ""
+        basename = composite_ref.rsplit(".", 1)[-1] if composite_ref else ""
+
+        candidates = [
+            WORKSPACE / "models" / f"{basename}.pbg",
+            WORKSPACE / "models" / f"{basename}.json",
+        ]
+        # v2ecoli legacy: the "baseline" composite is serialized as "partitioned".
+        if basename == "baseline":
+            candidates.append(WORKSPACE / "models" / "partitioned.pbg")
+        source_file = next((p for p in candidates if p.is_file()), None)
+        if source_file is None:
+            return self._json({
+                "error":     "no serialized composite state found",
+                "composite": composite_ref,
+                "looked_in": [str(p) for p in candidates],
+                "hint":      "run the baseline to populate <workspace>/models/<composite>.pbg, or commit a snapshot.",
+            }, 404)
+
+        mtime = source_file.stat().st_mtime
+        cache_key = (str(source_file), mtime, max_depth)
+        nodes = self._bigraph_path_cache.get(cache_key)
+        if nodes is None:
+            from vivarium_dashboard.lib.composite_recipes import walk_state_snapshot
+            try:
+                doc = json.loads(source_file.read_text())
+            except Exception as e:
+                return self._json({"error": f"failed to parse {source_file.name}: {e}"}, 500)
+            nodes = walk_state_snapshot(doc, max_depth=max_depth)
+            if len(self._bigraph_path_cache) > 8:
+                self._bigraph_path_cache.clear()
+            self._bigraph_path_cache[cache_key] = nodes
+
+        source_display = (
+            str(source_file.relative_to(WORKSPACE))
+            if str(source_file).startswith(str(WORKSPACE))
+            else str(source_file)
+        )
+        return self._json({
+            "composite":   composite_ref,
+            "source_file": source_display,
+            "max_depth":   max_depth,
+            "node_count":  len(nodes),
+            "nodes":       nodes,
+        }, 200)
 
     def _get_investigation_composite_doc(self):
         """GET /api/investigation-composite-doc?investigation=<n>&composite=<c>
@@ -6156,6 +6533,27 @@ if __name__ == "__main__":
         """POST /api/study-comparison-add {study, run_ids, name?}"""
         response, code = _post_study_comparison_add_for_test(WORKSPACE, body)
         return self._json(response, code)
+
+    def _post_study_tests_run(self, body: dict):
+        """POST /api/study-tests-run {study} — run pytest against
+        studies/<study>/tests/. Returns {summary, tests, note?}.
+        """
+        from .lib.study_tests import run_study_tests, StudyTestsConcurrentError
+        slug = (body or {}).get("study")
+        if not slug:
+            return self._json({"error": "missing 'study' in body"}, 400)
+        spec_path = WORKSPACE / "studies" / slug / "study.yaml"
+        if not spec_path.exists():
+            return self._json({"error": f"study not found: {slug}"}, 404)
+        try:
+            result = run_study_tests(WORKSPACE, slug)
+        except StudyTestsConcurrentError as e:
+            return self._json({"error": str(e)}, 409)
+        return self._json({
+            "summary": result.summary,
+            "tests": result.tests,
+            "note": result.note,
+        }, 200)
 
     def _get_study_export(self):
         """GET /api/study-export?study=<name>"""

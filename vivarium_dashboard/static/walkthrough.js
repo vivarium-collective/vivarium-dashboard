@@ -301,113 +301,6 @@
     return obj;
   }
 
-  // -------------------------------------------------------------------------
-  // Branch timeline
-  // -------------------------------------------------------------------------
-
-  function _showBranchDiff(branch, rowEl) {
-    var detailId = "branch-diff-" + branch.replace(/[^a-zA-Z0-9]/g, "_");
-    var existing = document.getElementById(detailId);
-    if (existing) {
-      existing.style.display = existing.style.display === "none" ? "" : "none";
-      return;
-    }
-    fetch("/api/branch-diff?branch=" + encodeURIComponent(branch))
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        var details = document.createElement("tr");
-        details.id = detailId;
-        var content = "";
-        if (data.error) {
-          content = "<em style='color:#c00'>Error: " + _esc(data.error) + "</em>";
-        } else {
-          content = "<details open><summary><strong>diff</strong></summary><pre style='font-size:0.8em;background:#f8f8f8;padding:8px;border-radius:4px;overflow-x:auto'>" +
-            _esc((data.log || "(no commits)") + (data.diff_stat ? "\n---\n" + data.diff_stat : "")) +
-            "</pre></details>";
-        }
-        details.innerHTML = "<td colspan='6' style='padding:8px 12px'>" + content + "</td>";
-        if (rowEl && rowEl.parentNode) {
-          rowEl.parentNode.insertBefore(details, rowEl.nextSibling);
-        }
-      })
-      .catch(function(err) {
-        var details = document.createElement("tr");
-        details.id = detailId;
-        details.innerHTML = "<td colspan='6' style='color:#c00'>Network error: " + _esc(String(err)) + "</td>";
-        if (rowEl && rowEl.parentNode) {
-          rowEl.parentNode.insertBefore(details, rowEl.nextSibling);
-        }
-      });
-  }
-
-  function loadBranches() {
-    var container = document.getElementById("branch-timeline-body");
-    if (!container) return;
-    fetch("/api/branches")
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        var branches = data.branches || [];
-        if (!branches.length) {
-          container.innerHTML = "<p style='color:#888;font-style:italic'>No stage/* branches yet. Each browser action creates one.</p>";
-          return;
-        }
-        var table = document.createElement("table");
-        table.innerHTML = "<thead><tr><th>Branch</th><th>SHA</th><th>Subject</th><th>Date</th><th>Ahead</th><th>Actions</th></tr></thead><tbody></tbody>";
-        var tbody = table.querySelector("tbody");
-        branches.forEach(function(b) {
-          var sha = (b.last_commit && b.last_commit.sha) ? b.last_commit.sha : "?";
-          var subject = (b.last_commit && b.last_commit.subject) ? b.last_commit.subject : "";
-          var date = (b.last_commit && b.last_commit.date) ? b.last_commit.date.slice(0, 10) : "";
-          var ahead = b.ahead_of_main || 0;
-          var tr = document.createElement("tr");
-          tr.innerHTML =
-            "<td><code>" + _esc(b.name) + "</code></td>" +
-            "<td><code>" + _esc(sha) + "</code></td>" +
-            "<td>" + _esc(subject) + "</td>" +
-            "<td>" + _esc(date) + "</td>" +
-            "<td><span style='background:#e8f5e9;color:#2e7d32;border-radius:3px;padding:1px 6px;font-size:0.82em'>+" + ahead + "</span></td>" +
-            "<td></td>";
-          var actCell = tr.querySelector("td:last-child");
-          // Copy gh pr create button
-          var btnPR = document.createElement("button");
-          btnPR.className = "pill-btn";
-          btnPR.textContent = "Copy gh pr create";
-          btnPR.title = "Copy: gh pr create --base main --head " + b.name;
-          btnPR.onclick = function() {
-            navigator.clipboard.writeText("gh pr create --base main --head " + b.name).then(function() {
-              btnPR.textContent = "Copied!";
-              setTimeout(function() { btnPR.textContent = "Copy gh pr create"; }, 1500);
-            });
-          };
-          actCell.appendChild(btnPR);
-          // Copy git merge button
-          var btnMerge = document.createElement("button");
-          btnMerge.className = "pill-btn";
-          btnMerge.textContent = "Copy git merge";
-          btnMerge.title = "Copy: git merge " + b.name;
-          btnMerge.onclick = function() {
-            navigator.clipboard.writeText("git merge " + b.name).then(function() {
-              btnMerge.textContent = "Copied!";
-              setTimeout(function() { btnMerge.textContent = "Copy git merge"; }, 1500);
-            });
-          };
-          actCell.appendChild(btnMerge);
-          // Show diff button
-          var btnDiff = document.createElement("button");
-          btnDiff.className = "pill-btn";
-          btnDiff.textContent = "Show diff";
-          btnDiff.onclick = function() { _showBranchDiff(b.name, tr); };
-          actCell.appendChild(btnDiff);
-          tbody.appendChild(tr);
-        });
-        container.innerHTML = "";
-        container.appendChild(table);
-      })
-      .catch(function () {
-        if (container) container.innerHTML = "<p style='color:#c00'>Could not load branches (server not running?).</p>";
-      });
-  }
-
   function _postPhaseAction(endpoint, data) {
     fetch("/api/" + endpoint, {
       method: "POST",
@@ -423,7 +316,7 @@
         }
         var msg = "Done! Branch: " + (json.branch || "?");
         fetch("/api/render", {method: "POST"}).finally(function() {
-          _refreshWorkStrip();
+          _refreshGitStatus();
           alert(msg);
           location.reload();
         });
@@ -457,13 +350,6 @@
     if (pageId === 'simulation-setup') {
       _loadComposites();
     }
-    // Lazy-load branches when switching to the Branches tab.
-    if (pageId === 'branches') {
-      if (!window._branchesLoaded) {
-        window._branchesLoaded = true;
-        loadBranches();
-      }
-    }
     // Stop any running poll-loop started by the Composite Explorer's Run tab
     // before activating a new page. _ceLoadRunFromId will restart polling if
     // the next page is the explorer with a still-running run.
@@ -477,8 +363,15 @@
       _wireSimulationsUiOnce();
       _initSimulations();
     }
-    if (pageId === 'investigations') {
-      if (!window._investigationsLoaded) {
+    if (pageId === 'studies') {
+      // Always retry if we don't have any studies in memory yet — the prior
+      // load may have failed (server still booting, transient 404) and the
+      // memo flag stuck without a way to recover. Only the first SUCCESS
+      // permanently silences the auto-retry.
+      var alreadyLoaded = window._investigationsLoaded
+        && Array.isArray(window._investigations)
+        && window._investigations.length > 0;
+      if (!alreadyLoaded) {
         window._investigationsLoaded = true;
         _loadInvestigations();
       }
@@ -490,7 +383,7 @@
     var params = new URLSearchParams(window.location.search);
     var focus = params.get('focus');
     if (focus) {
-      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'simulations', 'branches', 'composite-explore'];
+      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'studies', 'simulations', 'composite-explore'];
       if (validPages.indexOf(focus) >= 0) {
         document.body.classList.add('focus-mode', 'focus-' + focus);
         _switchPage(focus);
@@ -500,7 +393,7 @@
 
     function fromHash() {
       var h = (window.location.hash || '').replace(/^#/, '');
-      var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'simulations', 'branches', 'composite-explore'];
+      var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'studies', 'simulations', 'composite-explore'];
       _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
     }
     window.addEventListener('hashchange', fromHash);
@@ -633,6 +526,20 @@
   }
   window._useRegistryClass = _useRegistryClass;
 
+  function _renderRegistryEntry(p) {
+    var aliases = (p.aliases || []).length
+      ? ' <small style="color:#888">(aliases: ' + p.aliases.map(_esc).join(', ') + ')</small>'
+      : '';
+    var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
+    return '<div class="registry-entry"' + sourceAttr + '>' +
+      '<strong>' + _esc(p.name) + '</strong>' + aliases + '<br>' +
+      '<small><code>' + _esc(p.address) + '</code></small>' +
+      (p.schema_preview
+        ? '<details><summary>config schema</summary><pre class="json-tree">' + _esc(p.schema_preview) + '</pre></details>'
+        : '') +
+    '</div>';
+  }
+
   function _renderRegistryGrid(containerId, entries) {
     var el = document.getElementById(containerId);
     if (!el) return;
@@ -640,18 +547,37 @@
       el.innerHTML = '<p class="empty-state">None registered.</p>';
       return;
     }
-    el.innerHTML = entries.map(function(p) {
-      var aliases = (p.aliases || []).length
-        ? ' <small style="color:#888">(aliases: ' + p.aliases.map(_esc).join(', ') + ')</small>'
-        : '';
-      return '<div class="registry-entry">' +
-        '<strong>' + _esc(p.name) + '</strong>' + aliases + '<br>' +
-        '<small><code>' + _esc(p.address) + '</code></small>' +
-        (p.schema_preview
-          ? '<details><summary>config schema</summary><pre class="json-tree">' + _esc(p.schema_preview) + '</pre></details>'
-          : '') +
-      '</div>';
-    }).join('');
+
+    // Partition by source: in_workspace first, then framework, then environment_only.
+    var inWs = entries.filter(function(p) { return p.source === 'in_workspace'; });
+    var framework = entries.filter(function(p) { return p.source === 'framework'; });
+    var envOnly = entries.filter(function(p) { return p.source === 'environment_only' || !p.source; });
+
+    var html = '';
+
+    // In-workspace and framework entries render normally.
+    var primary = inWs.concat(framework);
+    if (primary.length) {
+      html += primary.map(_renderRegistryEntry).join('');
+    } else {
+      html += '<p class="empty-state muted" style="font-size:0.9em">No workspace-declared entries of this kind.</p>';
+    }
+
+    // Environment-only entries: collapsible section, dimmed.
+    if (envOnly.length) {
+      html +=
+        '<details class="registry-env-section" style="margin-top:12px">' +
+        '<summary style="cursor:pointer;color:#6b7280;font-size:0.9em;padding:4px 0">' +
+        'Also available in environment (' + envOnly.length + ') — not declared in workspace.yaml' +
+        '</summary>' +
+        '<div style="opacity:0.6;margin-top:6px">' +
+        envOnly.map(_renderRegistryEntry).join('') +
+        '</div>' +
+        '<p style="font-size:0.8em;color:#9ca3af;margin:4px 0 0">Run <code>/pbg-install &lt;pkg&gt;</code> to add a package to this workspace\'s imports.</p>' +
+        '</details>';
+    }
+
+    el.innerHTML = html;
   }
 
   function _renderRegistryTypesGrid(containerId, types) {
@@ -692,6 +618,15 @@
       var text = row.textContent.toLowerCase();
       row.style.display = (!q || text.indexOf(q) !== -1) ? '' : 'none';
     });
+    // Auto-open the environment-only details section when a search matches entries inside it.
+    activePanel.querySelectorAll('.registry-env-section').forEach(function(details) {
+      if (!q) { details.open = false; return; }
+      var hasVisible = false;
+      details.querySelectorAll('.registry-entry').forEach(function(row) {
+        if (row.style.display !== 'none') hasVisible = true;
+      });
+      if (hasVisible) details.open = true;
+    });
   }
   window._filterRegistry = _filterRegistry;
 
@@ -724,26 +659,48 @@
         _renderRegistryGrid('registry-visualizations-container', byKind.visualization);
         _renderRegistryTypesGrid('registry-types-container', types);
 
-        // Per-tab counts + total.
-        var setCount = function(id, n) {
+        // Per-tab count badges: show workspace-declared count + total in parens.
+        // "in_workspace" entries are the actionable ones; environment_only are dimmed.
+        var setCount = function(id, entries) {
           var el = document.getElementById(id);
-          if (el) el.textContent = n;
+          if (!el) return;
+          var wsCount = entries.filter(function(e) { return e.source === 'in_workspace'; }).length;
+          var total = entries.length;
+          if (wsCount === total) {
+            el.textContent = total;
+          } else {
+            el.textContent = wsCount + ' / ' + total;
+            el.title = wsCount + ' from this workspace, ' + (total - wsCount) + ' from environment';
+          }
         };
-        setCount('registry-process-count', byKind.process.length);
-        setCount('registry-step-count', byKind.step.length);
-        setCount('registry-emitter-count', byKind.emitter.length);
-        setCount('registry-visualization-count', byKind.visualization.length);
-        setCount('registry-type-count', types.length);
+        setCount('registry-process-count', byKind.process);
+        setCount('registry-step-count', byKind.step);
+        setCount('registry-emitter-count', byKind.emitter);
+        setCount('registry-visualization-count', byKind.visualization);
+        var typeCountEl = document.getElementById('registry-type-count');
+        if (typeCountEl) typeCountEl.textContent = types.length;
         var total = document.getElementById('registry-total-count');
-        if (total) total.textContent = (processes.length + types.length) + ' total';
+        if (total) {
+          var wsProcessCount = processes.filter(function(p) { return p.source === 'in_workspace'; }).length;
+          if (wsProcessCount < processes.length) {
+            total.textContent = wsProcessCount + ' workspace + ' + (processes.length - wsProcessCount) + ' env / ' + types.length + ' types';
+          } else {
+            total.textContent = (processes.length + types.length) + ' total';
+          }
+        }
 
         // Populate sim-process picker if present (Composite Explorer / setup forms).
+        // Only show in-workspace processes in the picker; environment-only are not
+        // declared by this workspace and using them would be unreliable.
         var picker = document.getElementById('sim-process-picker');
         if (picker) {
-          if (processes.length === 0) {
-            picker.innerHTML = '<p class="muted">No processes registered yet.</p>';
+          var wsProcesses = processes.filter(function(p) {
+            return p.source === 'in_workspace' || p.source === 'framework';
+          });
+          if (wsProcesses.length === 0) {
+            picker.innerHTML = '<p class="muted">No workspace processes registered yet.</p>';
           } else {
-            picker.innerHTML = processes.map(function(p) {
+            picker.innerHTML = wsProcesses.map(function(p) {
               return '<label style="display:inline-block; margin-right:12px">' +
                 '<input type="checkbox" name="processes" value="' + p.name + '"> ' + p.name +
                 '</label>';
@@ -1638,152 +1595,6 @@
   }
   window._installImport = _installImport;
 
-  // -------------------------------------------------------------------------
-  // Workstream strip (v0.4.0b)
-  // -------------------------------------------------------------------------
-
-  function _refreshWorkStrip() {
-    Promise.all([
-      fetch('/api/work-status').then(function(r){ return r.json(); }),
-      fetch('/api/dirty-status').then(function(r){ return r.json(); }).catch(function(){ return {count: 0, files: []}; }),
-    ]).then(function(parts){
-      _renderWorkStrip(parts[0], parts[1]);
-    }).catch(function(err){ console.warn('work-status failed:', err); });
-    // Start a 30s poller once so the pill updates against external edits.
-    if (!window._dirtyPollerStarted) {
-      window._dirtyPollerStarted = true;
-      setInterval(_refreshWorkStrip, 30000);
-    }
-  }
-  window._refreshWorkStrip = _refreshWorkStrip;
-
-  function _renderWorkStrip(s, dirty) {
-    // V4: drive the new topbar (#viv-topbar-actions). The old #workstream-strip
-    // is kept as a hidden back-compat node and mirrored to so any legacy probe
-    // continues to read sensible markup.
-    var legacy = document.getElementById('workstream-strip');
-    var chip = document.getElementById('viv-branch-chip');
-    var topActions = document.getElementById('viv-topbar-actions');
-
-    // --- Inactive case --------------------------------------------------------
-    if (!s.active) {
-      if (chip) {
-        chip.innerHTML =
-          '<span class="viv-branch-icon">▴</span>' +
-          '<span class="viv-branch-name">no workstream</span>';
-        chip.title = 'No active workstream';
-      }
-      // Render the "Start workstream" button in the topbar buttons container.
-      var buttonsEl = _vivEnsureWorkButtonsContainer();
-      if (buttonsEl) {
-        buttonsEl.innerHTML =
-          '<button class="ws-btn ws-primary" onclick="_startWork()">Start workstream</button>';
-      }
-      if (legacy) {
-        legacy.classList.add('inactive');
-        legacy.innerHTML =
-          '<span class="ws-label">No active workstream.</span>' +
-          '<button class="ws-btn ws-primary" onclick="_startWork()">Start workstream</button>';
-      }
-      // Active state means no dirty pill — drop any open panel.
-      var openP0 = document.getElementById('ws-dirty-panel');
-      if (openP0) openP0.remove();
-      return;
-    }
-
-    // --- Active case ----------------------------------------------------------
-    var ahead = s.commits_ahead;
-    var aheadTxt = ahead + ' ahead of ' + s.base;
-    var dirtyPillHtml = '';
-    if (dirty && dirty.count > 0) {
-      dirtyPillHtml =
-        '<span class="viv-branch-dirty-pill" ' +
-              'title="' + dirty.count + ' uncommitted file' + (dirty.count === 1 ? '' : 's') + '" ' +
-              'onclick="event.stopPropagation(); _toggleDirtyPanel()">' +
-          dirty.count + ' uncommitted' +
-        '</span>';
-    } else {
-      // Pill no longer applies — close any open dirty panel.
-      var openPanel = document.getElementById('ws-dirty-panel');
-      if (openPanel) openPanel.remove();
-    }
-
-    if (chip) {
-      chip.innerHTML =
-        '<span class="viv-branch-icon">⎇</span>' +
-        '<span class="viv-branch-name">' + _esc(s.branch) + '</span>' +
-        '<span class="viv-branch-caret">·</span>' +
-        '<span class="viv-branch-caret">' + ahead + ' ahead</span>' +
-        dirtyPillHtml;
-      chip.title = aheadTxt;
-    }
-
-    // Build the action buttons that sit alongside the chip.
-    var btnParts = [];
-    if (s.has_origin === false) {
-      if (s.gh_available === false) {
-        btnParts.push('<span class="ws-warn" title="Install GitHub CLI to enable one-click repo creation">gh CLI missing</span>');
-      } else {
-        btnParts.push('<button class="ws-btn ws-primary" onclick="_createGithubRepo()" title="Create a GitHub repo for this workspace and push in one step">Create GitHub repo</button>');
-      }
-    } else {
-      if (s.unpushed > 0 || (!s.pushed && s.commits_ahead > 0)) {
-        btnParts.push('<button class="ws-btn" onclick="_pushWork()">Push (' + s.unpushed + ')</button>');
-      }
-      if (s.pr_url) {
-        btnParts.push('<a class="ws-link" href="' + _esc(s.pr_url) + '" target="_blank">PR #' + s.pr_number + ' &#8599;</a>');
-      } else if (s.pushed) {
-        btnParts.push('<button class="ws-btn" onclick="_createPR()">Create PR</button>');
-      }
-    }
-    btnParts.push('<button class="ws-btn ws-end" onclick="_endWork()" title="Switch back to ' + _esc(s.base) + ' (workstream branch is preserved)">End</button>');
-
-    var btnHost = _vivEnsureWorkButtonsContainer();
-    if (btnHost) btnHost.innerHTML = btnParts.join(' ');
-
-    // Mirror to the legacy strip so any back-compat probe keeps reading sane
-    // markup (it's hidden via display:none).
-    if (legacy) {
-      legacy.classList.remove('inactive');
-      var legacyParts = [
-        '<span class="ws-label">Working on:</span>',
-        '<code class="ws-branch">' + _esc(s.branch) + '</code>',
-        '<span class="ws-meta">' + ahead + ' commit' + (ahead === 1 ? '' : 's') + ' ahead of ' + _esc(s.base) + '</span>',
-      ].concat(btnParts);
-      if (dirty && dirty.count > 0) {
-        legacyParts.push(
-          '<span class="ws-dirty-pill" ' +
-            'title="' + dirty.count + ' uncommitted file' + (dirty.count === 1 ? '' : 's') + '" ' +
-            'onclick="_toggleDirtyPanel()" ' +
-            'style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;cursor:pointer;margin-left:6px">' +
-            '&#x1F7E1; ' + dirty.count + ' uncommitted' +
-          '</span>'
-        );
-      }
-      legacy.innerHTML = legacyParts.join(' ');
-    }
-  }
-
-  // Ensure #viv-topbar-work-buttons exists, sitting immediately after the
-  // branch chip and before the GitHub icon / Share / kebab / avatar elements.
-  function _vivEnsureWorkButtonsContainer() {
-    var topActions = document.getElementById('viv-topbar-actions');
-    if (!topActions) return null;
-    var existing = document.getElementById('viv-topbar-work-buttons');
-    if (existing) return existing;
-    var chip = document.getElementById('viv-branch-chip');
-    var span = document.createElement('span');
-    span.id = 'viv-topbar-work-buttons';
-    span.className = 'viv-topbar-work-buttons';
-    span.style.cssText = 'display:inline-flex;align-items:center;gap:6px;margin-left:4px';
-    if (chip && chip.parentNode === topActions) {
-      chip.insertAdjacentElement('afterend', span);
-    } else {
-      topActions.appendChild(span);
-    }
-    return span;
-  }
-
   function _toggleDirtyPanel() {
     var panel = document.getElementById('ws-dirty-panel');
     if (panel) { panel.remove(); return; }
@@ -1798,10 +1609,7 @@
     var existing = document.getElementById('ws-dirty-panel');
     if (existing) existing.remove();
     if (!d || !d.files || d.files.length === 0) return;
-    // V4: anchor below the new topbar; fall back to the legacy strip if the new
-    // chrome isn't rendered (older templates).
-    var anchor = document.getElementById('viv-topbar-actions')
-              || document.getElementById('workstream-strip');
+    var anchor = document.getElementById('viv-topbar-actions');
     if (!anchor) return;
     var div = document.createElement('div');
     div.id = 'ws-dirty-panel';
@@ -1814,7 +1622,7 @@
       rows +
       '<div style="margin-top:8px">' +
         '<button class="ws-btn ws-primary" onclick="_commitDirtyAll()">Commit all</button> ' +
-        '<button class="ws-btn" onclick="_refreshWorkStrip(); _toggleDirtyPanel()">Refresh</button> ' +
+        '<button class="ws-btn" onclick="_refreshGitStatus(); _toggleDirtyPanel()">Refresh</button> ' +
         '<button class="ws-btn" onclick="_toggleDirtyPanel()">Close</button>' +
       '</div>';
     anchor.insertAdjacentElement('afterend', div);
@@ -1834,46 +1642,55 @@
         }
         if (typeof _showToast === 'function') _showToast('Committed: ' + res.body.message);
         _toggleDirtyPanel();
-        _refreshWorkStrip();
+        _refreshGitStatus();
       })
       .catch(function(e){ alert('Network error: ' + e); });
   }
   window._commitDirtyAll = _commitDirtyAll;
 
-  function _createGithubRepo() {
-    openModal('modal-create-github-repo');
+  function _linkBranch() {
+    openModal('modal-link-branch');
   }
-  window._createGithubRepo = _createGithubRepo;
+  window._linkBranch = _linkBranch;
 
-  function _submitCreateGithubRepo(form) {
-    var data = {
-      name: form.repo_name.value.trim(),
-      visibility: form.visibility.value,
-      description: form.description.value.trim() || null,
+  function _submitLinkBranch(form) {
+    var fd = new FormData(form);
+    var body = {
+      upstream_repo: (fd.get('upstream_repo') || '').trim(),
+      branch_name:   (fd.get('branch_name')   || '').trim(),
+      mode: fd.get('mode') || 'branch',
     };
-    var errEl = form.querySelector('.form-error');
-    errEl.textContent = '';
-    fetch('/api/work-create-github-repo', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(data),
-    })
-      .then(function(r){ return r.json().then(function(j){ return [r.ok, j]; }); })
-      .then(function(parts){
-        var ok = parts[0], json = parts[1];
+    var submitBtn = form.querySelector('button[type=submit]');
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Pushing…'; }
+    fetch('/api/work-link-branch', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); })
+      .then(function (pair) {
+        var ok = pair[0], j = pair[1];
         if (!ok) {
-          var msg = json.error || 'unknown';
-          if (json.diagnosis) msg += " — " + json.diagnosis.suggestion;
-          errEl.textContent = msg;
+          alert('Push failed: ' + (j.error || 'unknown error'));
           return;
         }
-        closeModal('modal-create-github-repo');
-        alert("Created " + json.visibility + " repo. Opening on GitHub...");
-        if (json.repo_url) window.open(json.repo_url, '_blank');
-        _refreshWorkStrip();
+        closeModal('modal-link-branch');
+        var url = j.branch_url || '#';
+        var msg;
+        if (j.fork) {
+          msg = 'Fork created at ' + j.fork + '; branch pushed to fork.\nBranch URL: ' + url;
+        } else {
+          msg = 'Branch pushed: ' + j.branch + ' → ' + j.upstream_repo;
+          msg += '\n\nOpen in browser: ' + url;
+        }
+        alert(msg);
+        // Refresh workstream state UI if there is one.
+        if (typeof _refreshWorkstreamState === 'function') _refreshWorkstreamState();
+      })
+      .catch(function (e) { alert('Push failed: ' + e.message); })
+      .finally(function () {
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Push branch'; }
       });
   }
-  window._submitCreateGithubRepo = _submitCreateGithubRepo;
+  window._submitLinkBranch = _submitLinkBranch;
 
   function _startWork() {
     var name = prompt("Workstream branch name (e.g., feat/baseline-work):");
@@ -1886,7 +1703,7 @@
       .then(function(r){ return r.json().then(function(j){ return [r.ok, j]; }); })
       .then(function(parts){
         if (!parts[0]) { alert("Could not start workstream:\n" + (parts[1].error || 'unknown')); return; }
-        _refreshWorkStrip();
+        _refreshGitStatus();
         location.reload();
       });
   }
@@ -1903,11 +1720,11 @@
             msg = "⚠ " + json.diagnosis.summary + "\n→ " + json.diagnosis.suggestion;
           }
           alert(msg);
-          _refreshWorkStrip();
+          _refreshGitStatus();
           return;
         }
         alert("Pushed.");
-        _refreshWorkStrip();
+        _refreshGitStatus();
       });
   }
   window._pushWork = _pushWork;
@@ -1940,7 +1757,7 @@
         }
         closeModal('modal-create-pr');
         window.open(json.pr_url, '_blank');
-        _refreshWorkStrip();
+        _refreshGitStatus();
       });
   }
   window._submitCreatePR = _submitCreatePR;
@@ -2135,11 +1952,9 @@
   window.openModal = openModal;
   window.closeModal = closeModal;
   window.submitForm = submitForm;
-  window.loadBranches = loadBranches;
   window.runTests = runTests;
   window.setupDropZone = setupDropZone;
   window._dropZoneStore = _dropZoneStore;
-  window._showBranchDiff = _showBranchDiff;
 
   document.addEventListener("DOMContentLoaded", function () {
     // Initialize menu navigation.
@@ -2148,14 +1963,13 @@
     // Restore Vivarium left-rail collapsed state (V4).
     _vivRestoreRailState();
 
-    // Initialize workstream strip.
-    _refreshWorkStrip();
+    // _refreshGitStatus is registered on DOMContentLoaded at the bottom of this file;
+    // no duplicate call needed here.
 
     // Populate the Investigations rail section (V4).
     _vivRefreshInvestigationsRail();
 
-    // Branches are now lazy-loaded when switching to the Branches tab.
-    // (loadBranches() is called from _switchPage when pageId === 'branches'.)
+    // (The GitHub Branches tab has been removed.)
   });
 
   // -------------------------------------------------------------------------
@@ -2207,7 +2021,7 @@
     if (!investigations.length) {
       host.innerHTML =
         '<p class="viv-rail-empty" style="font-size:0.85em;color:#9ca3af;padding:4px 12px">' +
-        'No investigations yet' +
+        'No studies yet' +
         '</p>';
       return;
     }
@@ -2274,7 +2088,7 @@
                   : (inv.n_simulations !== undefined ? inv.n_simulations : 0);
         var isActive = (inv.name === active) ? ' active' : '';
         return '<a class="viv-rail-link viv-rail-study-link' + isActive + '" ' +
-               'href="#investigations" ' +
+               'href="#studies" ' +
                'onclick="_vivOpenInvestigationFromRail(\'' + _esc(inv.name) + '\'); return false;">' +
                  '<span class="viv-rail-link-label">' + _esc(inv.name) + '</span>' +
                  '<small class="viv-rail-link-sublabel">' + _esc(baseline) +
@@ -2307,9 +2121,9 @@
   window._vivToggleInvGroup = _vivToggleInvGroup;
 
   function _vivOpenInvestigationFromRail(name) {
-    // Switch to Investigations page first, then open the detail panel and
+    // Switch to Studies page first, then open the detail panel and
     // refresh the rail so the active-state moves with the selection.
-    if (typeof _switchPage === 'function') _switchPage('investigations');
+    if (typeof _switchPage === 'function') _switchPage('studies');
     if (typeof _openInvestigation === 'function') _openInvestigation(name);
     _vivRefreshInvestigationsRail();
   }
@@ -2572,10 +2386,10 @@
         var newName = res.body.name;
         var url = new URL(window.location.href);
         url.searchParams.delete('id');
-        url.hash = '#investigations';
+        url.hash = '#studies';
         window.history.pushState({}, '', url.toString());
         window._currentInvestigation = newName;
-        _switchPage('investigations');
+        _switchPage('studies');
         // Open the detail pane. Prefer the existing helper if available.
         if (typeof _openInvestigation === 'function') {
           _openInvestigation(newName);
@@ -3272,12 +3086,12 @@
       .then(function(res) {
         if (res.status === 200) {
           closeModal('modal-save-as-study');
-          // Bring the user to Investigations with the new study already
+          // Bring the user to Studies with the new study already
           // embedded. The legacy /studies/<name> URL still works as a direct
           // link (in res.body.url) but full-window navigation is reserved
           // for that fallback path.
-          window.location.hash = '#investigations';
-          _switchPage('investigations');
+          window.location.hash = '#studies';
+          _switchPage('studies');
           _loadInvestigations();
           _openStudyEmbedded(name);
         } else {
@@ -3341,15 +3155,22 @@
 
   function _loadInvestigations() {
     fetch('/api/investigations')
-      .then(function(r) { return r.json(); })
+      .then(function(r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        return r.json();
+      })
       .then(function(data) {
         window._investigations = data.investigations || [];
         _buildInvestigationTagChips();
         _renderInvestigations();
       })
       .catch(function(err) {
+        // Reset the memo so the next navigation to Studies retries.
+        window._investigationsLoaded = false;
         var grid = document.getElementById('investigations-grid');
-        if (grid) grid.innerHTML = '<p style="color:#c00">Failed to load: ' + _esc(String(err)) + '</p>';
+        if (grid) grid.innerHTML = '<p class="empty-state" style="color:#c00">' +
+            'Failed to load studies: ' + _esc(String(err)) +
+            ' <button class="btn-mini" onclick="window._investigationsLoaded=false;_loadInvestigations()">Retry</button></p>';
       });
   }
   window._loadInvestigations = _loadInvestigations;
@@ -3396,8 +3217,8 @@
       return true;
     });
     if (!filtered.length) {
-      grid.innerHTML = '<p class="empty-state">No investigations match the filter. ' +
-                       'Click <em>New investigation</em> to create one.</p>';
+      grid.innerHTML = '<p class="empty-state">No studies match the filter. ' +
+                       'Click <em>+ New study</em> to create one.</p>';
       grid.classList.remove('list-view');
       return;
     }
@@ -3533,7 +3354,7 @@
         }
         closeModal('modal-investigation-create');
         window._investigationsLoaded = false;
-        _switchPage('investigations');
+        _switchPage('studies');
         _vivRefreshInvestigationsRail();
       });
   }
@@ -3563,7 +3384,7 @@
   window._openInvestigation = _openInvestigation;
 
   function _setInvestigationsFocusMode(on) {
-    var page = document.getElementById('page-investigations');
+    var page = document.getElementById('page-studies');
     if (!page) return;
     page.classList.toggle('inv-focus-mode', !!on);
     // Rail mirrors focus state: shows just the active study while focused,
@@ -3735,7 +3556,7 @@
       '<div class="inv-detail-back" style="margin-bottom:12px">' +
         '<a href="#" onclick="_closeInvestigationFocus(); return false;" ' +
            'style="color:#3b82f6; text-decoration:none; font-size:0.9em">' +
-          '← Back to all investigations' +
+          '← Back to all studies' +
         '</a>' +
       '</div>' +
       '<header class="study-header">' +
@@ -5724,7 +5545,7 @@
   function _simStudyChips(studies) {
     if (!studies || !studies.length) return '<span style="color:#9ca3af;">—</span>';
     return studies.map(function (name) {
-      return '<a href="#investigations" title="' + _escSim(name) +
+      return '<a href="#studies" title="' + _escSim(name) +
         '" style="display:inline-block; background:#eef2ff; color:#3730a3; ' +
         'padding:1px 7px; margin:0 2px 2px 0; border-radius:10px; font-size:12px; ' +
         'text-decoration:none;">' + _escSim(name) + '</a>';
@@ -6158,5 +5979,133 @@
     window._cePollIntervalId = setInterval(tick, 1500);
   }
   window._ceLoadRunFromId = _ceLoadRunFromId;
+
+  // -------------------------------------------------------------------------
+  // Top-bar "Open PR" action
+  // -------------------------------------------------------------------------
+
+  function _openPRDialog() {
+    fetch('/api/state').then(function (r) { return r.json(); }).then(function (state) {
+      var branch = (state && state.active_branch) || '';
+      var base = (state && state.base) || 'main';
+      var titleField = document.querySelector('#form-open-pr input[name=title]');
+      if (titleField && branch && !titleField.value) titleField.value = 'Workstream: ' + branch;
+      var setText = function (id, txt) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = txt;
+      };
+      setText('pr-head-display', branch || '<branch>');
+      setText('pr-base-display', base);
+      setText('pr-base-display-2', base);
+      openModal('modal-open-pr');
+    });
+  }
+  window._openPRDialog = _openPRDialog;
+
+  function _submitOpenPR(form) {
+    var fd = new FormData(form);
+    var body = {
+      title: (fd.get('title') || '').trim(),
+      body: (fd.get('body') || '').trim(),
+      draft: !!fd.get('draft'),
+    };
+    var submit = form.querySelector('button[type=submit]');
+    if (submit) { submit.disabled = true; submit.textContent = 'Creating…'; }
+    fetch('/api/work-create-pr', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); })
+      .then(function (pair) {
+        var ok = pair[0], j = pair[1];
+        if (!ok) {
+          var msg = j.error || 'unknown error';
+          if (j.manual_url) msg += '\n\nManual URL: ' + j.manual_url;
+          alert('PR create failed: ' + msg);
+          return;
+        }
+        closeModal('modal-open-pr');
+        alert('PR created: ' + (j.pr_url || ''));
+        window.open(j.pr_url, '_blank');
+        _refreshGitStatus();
+      })
+      .finally(function () {
+        if (submit) { submit.disabled = false; submit.textContent = 'Create PR'; }
+      });
+  }
+  window._submitOpenPR = _submitOpenPR;
+
+
+  // -------------------------------------------------------------------------
+  // Top-bar live git-status strip
+  // -------------------------------------------------------------------------
+
+  function _refreshGitStatus() {
+    fetch('/api/git-status').then(function (r) { return r.json(); }).then(function (s) {
+      var box = document.getElementById('viv-git-status');
+      if (!box) return;
+      if (!s.branch) { box.hidden = true; return; }
+      box.hidden = false;
+
+      // push-state badge
+      var stateBadge;
+      switch (s.push_state) {
+        case 'pushed':    stateBadge = '<span class="git-badge git-badge-ok">✓ pushed</span>'; break;
+        case 'ahead':     stateBadge = '<span class="git-badge git-badge-ahead">↑ ' + s.ahead + ' ahead</span>'; break;
+        case 'behind':    stateBadge = '<span class="git-badge git-badge-behind">↓ ' + s.behind + ' behind</span>'; break;
+        case 'diverged':  stateBadge = '<span class="git-badge git-badge-warn">! diverged</span>'; break;
+        default:          stateBadge = '<span class="git-badge git-badge-warn">⊘ no origin</span>';
+      }
+
+      var repoPart = s.upstream_repo
+        ? '<a href="' + s.repo_url + '" target="_blank" rel="noopener" class="git-repo">' + _esc(s.upstream_repo) + '</a>'
+        : '<span class="muted">no upstream</span>';
+      var branchPart = s.branch_url
+        ? ' @ <a href="' + s.branch_url + '" target="_blank" rel="noopener" class="git-branch">' + _esc(s.branch) + '</a>'
+        : ' @ <span class="git-branch">' + _esc(s.branch) + '</span>';
+
+      // ahead-of-base badge
+      var aheadOfBasePart = (s.ahead_of_base > 0 && s.compare_url)
+        ? ' <a class="git-badge git-badge-info" href="' + s.compare_url + '" target="_blank" rel="noopener">↗ ' + s.ahead_of_base + ' ahead of ' + _esc(s.base) + '</a>'
+        : (s.ahead_of_base > 0
+          ? ' <span class="git-badge git-badge-info">↗ ' + s.ahead_of_base + ' ahead of ' + _esc(s.base) + '</span>'
+          : '');
+
+      // dirty-files pill
+      var dirtyPart = (s.dirty_count > 0)
+        ? ' <span class="git-badge git-badge-warn dirty-pill" onclick="event.stopPropagation();_toggleDirtyPanel()" title="' + s.dirty_count + ' uncommitted file' + (s.dirty_count === 1 ? '' : 's') + '">' + s.dirty_count + ' uncommitted</span>'
+        : '';
+
+      // PR badge
+      var prState = (s.pr_state || 'open').toLowerCase();
+      var prPart = s.pr_url
+        ? ' <a class="git-badge git-badge-pr pr-state-' + prState + '" href="' + s.pr_url + '" target="_blank" rel="noopener">PR #' + s.pr_number + ' ↗</a>'
+        : '';
+
+      box.innerHTML = repoPart + branchPart + ' ' + stateBadge + aheadOfBasePart + dirtyPart + prPart;
+
+      // Goal 5: hide "Open PR" button when a PR already exists
+      var openPrBtn = document.getElementById('btn-open-pr');
+      if (openPrBtn) openPrBtn.hidden = !!s.pr_url;
+
+      // Action buttons (unified from former _refreshWorkStrip)
+      var actions = [];
+      if (!s.upstream_repo) {
+        actions.push(s.gh_available
+          ? '<button class="ws-btn ws-primary" onclick="_linkBranch()">Link branch to upstream</button>'
+          : '<span class="ws-warn" title="Install GitHub CLI">gh CLI missing</span>');
+      } else if (s.push_state === 'ahead') {
+        actions.push('<button class="ws-btn" onclick="_pushWork()">Push (' + s.ahead + ')</button>');
+      }
+      if (s.has_active_workstream) {
+        actions.push('<button class="ws-btn ws-end" onclick="_endWork()" title="Switch back to ' + _esc(s.base) + ' (workstream branch is preserved)">End</button>');
+      }
+      if (actions.length) {
+        box.innerHTML += ' <span class="git-status-actions">' + actions.join(' ') + '</span>';
+      }
+    }).catch(function () { /* silent */ });
+  }
+  window._refreshGitStatus = _refreshGitStatus;
+
+  document.addEventListener('DOMContentLoaded', _refreshGitStatus);
 
 })();

@@ -426,8 +426,9 @@ def test_load_spec_accepts_composites_list(tmp_path):
     )
     spec = load_spec(spec_path)
     # Migration has run: composites is gone; v3 list-baseline shape is present.
+    # Schema may be v3 or v4 depending on whether v3→v4 migration is active.
     assert 'composites' not in spec
-    assert spec.get('schema_version') == 3
+    assert spec.get('schema_version') in (3, 4)
     # The source-bearing composite becomes the sole baseline entry.
     assert isinstance(spec['baseline'], list)
     assert len(spec['baseline']) == 1
@@ -635,7 +636,7 @@ def test_load_spec_accepts_variants_shape(tmp_path):
         "  - {name: a, source: pkg.a}\n"
     )
     spec = load_spec(p)
-    assert spec.get('schema_version') == 3
+    assert spec.get('schema_version') in (3, 4)
     assert isinstance(spec['baseline'], list)
     assert len(spec['baseline']) == 1
     assert spec['baseline'][0]['name'] == 'a'

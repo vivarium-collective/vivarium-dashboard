@@ -202,6 +202,17 @@
   padding: 16px 18px; color: #999; font-size: 12px;
 }
 /* .viv-ws-error reused from v1; no rule change needed. */
+.mode-selector { margin: 0.5rem 0; padding: 0.5rem; border: 1px solid #ddd; border-radius: 4px; }
+.mode-selector legend { font-weight: bold; padding: 0 0.3rem; }
+.mode-selector label { display: block; margin: 0.3rem 0; font-weight: normal; }
+.viv-workspace-switcher-actions {
+  border-top: 1px solid #eee; margin-top: 0.4rem; padding-top: 0.4rem;
+}
+.viv-workspace-switcher-actions button {
+  display: block; width: 100%; text-align: left;
+  padding: 0.4rem 0.6rem; background: transparent; border: none; cursor: pointer;
+}
+.viv-workspace-switcher-actions button:hover { background: #f0f0f0; }
 </style>
 </head><body>
 
@@ -269,8 +280,8 @@
         </span>
         <span class="viv-rail-link-label">Composites</span>
       </a>
-      <!-- Investigations: baseline process branching to variants — the Studies fan -->
-      <a href="#investigations"    class="viv-rail-link menu-link" data-page="investigations">
+      <!-- Studies: baseline process branching to variants — the Studies fan -->
+      <a href="#studies"    class="viv-rail-link menu-link" data-page="studies">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
             <rect x="2.5" y="9" width="6" height="6"/>
@@ -282,7 +293,7 @@
             <path d="M8.5 12L16 19"/>
           </svg>
         </span>
-        <span class="viv-rail-link-label">Investigations</span>
+        <span class="viv-rail-link-label">Studies</span>
       </a>
       <a href="#simulations"       class="viv-rail-link menu-link" data-page="simulations">
         <span class="viv-rail-link-icon">
@@ -292,29 +303,22 @@
             <path d="M4 12c0 1.657 3.582 3 8 3s8-1.343 8-3"/>
           </svg>
         </span>
-        <span class="viv-rail-link-label">Simulations</span>
+        <span class="viv-rail-link-label">Simulations DB</span>
       </a>
-      <!-- Visualizations: a process emitting a curve — Visualization-as-Step -->
+      <!-- Visualizations: axes + scientific curve + data points -->
       <a href="#visualizations"    class="viv-rail-link menu-link" data-page="visualizations">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="2.5" y="8.5" width="6" height="7"/>
-            <path d="M8.5 12c1.5 0 2.5-5 4.5-5s2.5 10 4.5 10 2.5-5 4-5"/>
+            <!-- L-shaped axes -->
+            <path d="M4 4 V20 H20"/>
+            <!-- smooth sigmoid-style curve rising left → right -->
+            <path d="M6 17 C 8.5 17, 10 13, 12 11 S 16.5 6.5, 19 6.5"/>
+            <!-- data points on the curve -->
+            <circle cx="9.2" cy="14.8" r="1.1" fill="currentColor" stroke="none"/>
+            <circle cx="14" cy="8.7" r="1.1" fill="currentColor" stroke="none"/>
           </svg>
         </span>
         <span class="viv-rail-link-label">Visualizations</span>
-      </a>
-      <a href="#branches"          class="viv-rail-link menu-link" data-page="branches">
-        <span class="viv-rail-link-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <circle cx="6" cy="5" r="2"/>
-            <circle cx="6" cy="19" r="2"/>
-            <circle cx="18" cy="12" r="2"/>
-            <path d="M6 7v10"/>
-            <path d="M6 12h6a4 4 0 0 0 4-4V7"/>
-          </svg>
-        </span>
-        <span class="viv-rail-link-label">GitHub Branches</span>
       </a>
     </nav>
 
@@ -351,18 +355,18 @@
         <span>{{ workspace_name }} dashboard</span>
       </nav>
       <div class="viv-topbar-actions" id="viv-topbar-actions">
-        <!-- Branch chip + dirty pill + work-status buttons populated by JS (V4) -->
-        <span class="viv-branch-chip" id="viv-branch-chip">…</span>
-        {% if github_url %}<a class="viv-icon-btn" href="{{ github_url }}" target="_blank" rel="noopener" title="Open on GitHub">↗</a>{% endif %}
+        <!-- Git status strip + action buttons populated by JS (_refreshGitStatus) -->
+        <div id="viv-git-status" class="git-status" hidden></div>
+        <div class="topbar-actions">
+          <button id="btn-open-pr" class="action-btn" onclick="_openPRDialog()" title="Open PR for current branch">
+            Open PR ↗
+          </button>
+        </div>
         <span class="viv-btn viv-tooltip" data-tooltip="Coming soon — share workspace link">Share</span>
         <span class="viv-kebab viv-tooltip" data-tooltip="Workspace settings — coming soon">⋯</span>
         <span class="viv-avatar viv-avatar-topbar" title="{{ owner_email or '' }}">{{ owner_initials or '—' }}</span>
       </div>
     </header>
-
-    <!-- Workstream strip is now driven by viv-topbar-actions; this hidden node
-         preserves the existing _renderWorkStrip JS contract until V4 lifts it. -->
-    <div id="workstream-strip" class="workstream-strip" style="display:none"></div>
 
     <main class="viv-content pages" id="viv-content">
 
@@ -624,7 +628,7 @@
   <!-- Section 3: Discovered registry (tabbed browser, lazy-loaded) -->
   <section class="panel">
     <h3>Discovered registry <span class="count-badge muted" id="registry-total-count"></span></h3>
-    <p class="panel-lead">Live snapshot of <code>build_core()</code> &mdash; every Process, Step, Emitter, Visualization, and Type that <code>allocate_core()</code> registers via auto-discovery. Grouped by kind.</p>
+    <p class="panel-lead">Live snapshot of <code>build_core()</code> — every Process, Step, Emitter, Visualization, and Type registered via auto-discovery. Classes from this workspace's own package and declared <code>imports</code> are shown first. Classes discovered from the Python environment but <em>not</em> declared in <code>workspace.yaml</code> appear collapsed under <em>Also available in environment</em>.</p>
 
     <button class="action-btn" onclick="_loadRegistry(true)">Refresh registry</button>
     <div id="registry-status" class="muted" style="margin:8px 0"></div>
@@ -647,17 +651,17 @@
   </section>
 </section>
 
-<!-- ===== PAGE: INVESTIGATIONS ===== -->
-<section id="page-investigations" class="page" data-page="investigations">
+<!-- ===== PAGE: STUDIES ===== -->
+<section id="page-studies" class="page" data-page="studies">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
-    <h2 class="page-title" style="margin:0">Investigations</h2>
-    <button class="action-btn" onclick="_createInvestigation()">+ New investigation</button>
+    <h2 class="page-title" style="margin:0">Studies</h2>
+    <button class="action-btn" onclick="_createInvestigation()">+ New study</button>
   </div>
   <p class="page-lead">Declarative research recipes — pick a composite, declare simulations (single / sweep / seeds), name observables, choose visualizations. Run, save, compare.</p>
 
   <!-- Browse toolbar matches v0.5.6 catalog/composite browse -->
   <div class="card-browse-toolbar" id="investigations-toolbar">
-    <input type="search" class="card-browse-search" id="investigations-search" placeholder="Filter investigations…">
+    <input type="search" class="card-browse-search" id="investigations-search" placeholder="Filter studies…">
     <div class="card-browse-chips" id="investigations-tag-chips"></div>
     <select id="investigations-sort" onchange="_setInvestigationsSort(this.value)" style="margin-left:12px">
       <option value="name">Sort: Name</option>
@@ -673,7 +677,7 @@
   </div>
 
   <div id="investigations-grid">
-    <p class="empty-state">Loading investigations…</p>
+    <p class="empty-state">Loading studies…</p>
   </div>
 
   <!-- Detail panel renders inline after a row is clicked -->
@@ -701,7 +705,7 @@
 
 <!-- ===== PAGE: SIMULATIONS ===== -->
 <section id="page-simulations" class="page" data-page="simulations">
-  <h2 class="page-title">Simulations</h2>
+  <h2 class="page-title">Simulations DB</h2>
   <p class="page-lead">
     All persisted runs across this workspace, gathered from
     <code>.pbg/composite-runs.db</code> and every
@@ -720,7 +724,7 @@
   <div id="sim-empty"   style="color: #6b7280; padding: 12px; display: none;">
     No simulations yet. Run a composite from the
     <a href="#composite-explore">Composite Explorer</a> or from a
-    <a href="#investigations">Study</a> to see entries here.
+    <a href="#studies">Study</a> to see entries here.
   </div>
 
   <table id="sim-table" style="width:100%; border-collapse: collapse; font-size: 13px; display: none;">
@@ -835,13 +839,6 @@
     </form>
   </div>
 </div>
-
-<!-- ===== PAGE: BRANCHES ===== -->
-<section id="page-branches" class="page" data-page="branches">
-  <h2 class="page-title">Branches</h2>
-  <p class="page-lead">All stage/* branches in this workspace, with one-click merge / PR / diff actions. Branches accumulate as the dashboard creates them on actions (Add observable, Install module, etc.). Use this tab to land them on main.</p>
-  <div id="branch-timeline-body"></div>
-</section>
 
 <!-- ===== PAGE: COMPOSITE EXPLORER ===== -->
 <section id="page-composite-explore" class="page" data-page="composite-explore">
@@ -1122,30 +1119,29 @@
   </div>
 </div>
 
-<!-- Modal: Create GitHub repo -->
-<div id="modal-create-github-repo" class="modal-overlay">
+<!-- Modal: Link to upstream branch -->
+<div id="modal-link-branch" class="modal-overlay">
   <div class="modal-box">
-    <button class="modal-close" onclick="closeModal('modal-create-github-repo')">&times;</button>
-    <h3>Create GitHub repo</h3>
-    <form id="form-create-github-repo" onsubmit="event.preventDefault(); _submitCreateGithubRepo(this);">
-      <label>Repo name
-        <div class="input-with-suggest">
-          <input name="repo_name" pattern="^[A-Za-z0-9._-]+$" required>
-          <button type="button" class="btn-suggest" onclick="_suggestInto(this, 'repo-name', 'repo_name')">Suggest</button>
-        </div>
+    <button class="modal-close" onclick="closeModal('modal-link-branch')">&times;</button>
+    <h3>Link to upstream branch</h3>
+    <p class="muted">Push the current workstream branch to a branch on the upstream repo.</p>
+    <form id="form-link-branch" onsubmit="event.preventDefault(); _submitLinkBranch(this);">
+      <label>Upstream repo:
+        <input name="upstream_repo" value="{{ upstream_repo or 'vivarium-collective/v2ecoli' }}"
+               pattern="[A-Za-z0-9._-]+/[A-Za-z0-9._-]+" required>
       </label>
-      <label>Visibility
-        <select name="visibility">
-          <option value="private" selected>private</option>
-          <option value="public">public</option>
-          <option value="internal">internal</option>
-        </select>
+      <label>Branch name (optional — defaults to current branch):
+        <input name="branch_name" placeholder="leave blank to keep current">
       </label>
-      <label>Description
-        <textarea name="description" rows="2"></textarea>
-      </label>
-      <div class="form-error"></div>
-      <button type="submit" class="action-btn">Create + push</button>
+      <fieldset class="mode-selector">
+        <legend>Mode:</legend>
+        <label><input type="radio" name="mode" value="branch" checked> Branch off upstream (push current branch to a branch on the upstream repo)</label>
+        <label><input type="radio" name="mode" value="fork"> Fork upstream (create your own fork; current branch pushes to your fork's origin)</label>
+      </fieldset>
+      <div class="form-actions">
+        <button type="submit" class="action-btn">Push branch</button>
+        <button type="button" class="action-btn--secondary" onclick="closeModal('modal-link-branch')">Cancel</button>
+      </div>
     </form>
   </div>
 </div>
@@ -1170,6 +1166,34 @@
       </label>
       <div class="form-error"></div>
       <button type="submit" class="action-btn">Create PR</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Open PR (top-bar action) -->
+<div id="modal-open-pr" class="modal-overlay">
+  <div class="modal-box" style="max-width:640px">
+    <button class="modal-close" onclick="closeModal('modal-open-pr')">&times;</button>
+    <h3>Open Pull Request</h3>
+    <p class="muted">Opens a <strong>draft proposal</strong> to merge
+<code id="pr-head-display">…</code> → <code id="pr-base-display">main</code>.
+Nothing on <code id="pr-base-display-2">main</code> changes until someone presses
+"Merge" on the GitHub PR page. You can leave a draft PR open indefinitely.</p>
+    <form id="form-open-pr" onsubmit="event.preventDefault(); _submitOpenPR(this);">
+      <label>Title:
+        <input name="title" required>
+      </label>
+      <label>Body:<br>
+        <textarea name="body" rows="6" placeholder="Summary, what changed, test plan..."></textarea>
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" name="draft" id="pr-draft-checkbox" checked>
+        Draft PR (recommended — can be marked ready for review later)
+      </label>
+      <div class="form-actions">
+        <button type="submit" class="action-btn">Create PR</button>
+        <button type="button" class="action-btn--secondary" onclick="closeModal('modal-open-pr')">Cancel</button>
+      </div>
     </form>
   </div>
 </div>
@@ -1201,6 +1225,7 @@
 <script src="assets/render-helpers.js"></script>
 <script src="assets/client.js" onerror="/* live mode unavailable */"></script>
 <script src="assets/walkthrough.js" onerror="/* walkthrough unavailable */"></script>
+<script src="assets/investigations.js" onerror="/* investigations unavailable */"></script>
 <script src="assets/workspace-switcher.js"></script>
 <script>
 // Initialize drop zones once walkthrough.js is loaded.

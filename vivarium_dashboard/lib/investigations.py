@@ -18,7 +18,7 @@ from typing import Any
 
 import yaml
 
-from .spec_migration import migrate_study_to_v2_vocabulary, migrate_v2_to_v3
+from .spec_migration import migrate_study_to_v2_vocabulary, migrate_v2_to_v3, migrate_v3_to_v4
 
 
 class InvestigationSpecError(ValueError):
@@ -101,8 +101,23 @@ def _validate_composites_list(spec: dict) -> None:
                 )
 
 
-def _validate_study_v3(spec: dict) -> None:
-    """Validate a schema_version=3 Study spec.
+def _v4_field_hint(field_name: str) -> str:
+    """Return a suffix hint for v4 reserved-field validation errors.
+
+    Appended to error messages when a v4 reserved field fails shape validation.
+    This helps users who authored v3 specs with custom fields that collide with
+    v4 reserved names (e.g. ``references: {a: b}`` instead of the required list
+    of ``{file: ...}`` dicts).
+    """
+    return (
+        f" (Note: `{field_name}` is reserved by schema_version 4. "
+        f"If you authored this as a custom field in a v3 spec, rename it to avoid the collision. "
+        f"See docs/concepts/vivarium-dashboard-model.md#v4-reserved-fields for the list.)"
+    )
+
+
+def _validate_study_v3_or_v4(spec: dict) -> None:
+    """Validate a schema_version=3 or 4 Study spec.
 
     v3 shape (distinct from the v2 ``variants:``-as-composites shape):
       - ``baseline``: a non-empty list of ``{name, composite, params}`` mappings.
@@ -110,6 +125,11 @@ def _validate_study_v3(spec: dict) -> None:
         mappings, each with a ``name``.
       - ``runs``, ``visualizations``: optional lists.
       - ``objective``, ``conclusion``: optional.
+
+    v4 shape: adds three new fields:
+      - ``tests``: mapping with auto_discover, data_source, pytest_args, last_results
+      - ``references``: list of reference mappings (each with at least a 'file' key)
+      - ``implementation_tasks``: string field for tracking tasks
     """
     baseline = spec.get("baseline")
     if not isinstance(baseline, list) or not baseline:
@@ -161,6 +181,132 @@ def _validate_study_v3(spec: dict) -> None:
             raise InvestigationSpecError(
                 f"v3 study: interventions[{i}] must be a mapping with a 'name'"
             )
+
+    # v4-only field validation
+    if spec.get("schema_version") == 4:
+        tests = spec.get("tests")
+        if tests is not None and not isinstance(tests, dict):
+            raise InvestigationSpecError("tests must be a mapping" + _v4_field_hint("tests"))
+        tests = tests or {}
+        ds = tests.get("data_source", "latest_run")
+        if ds not in ("latest_run", "first_run", "all_runs"):
+            raise InvestigationSpecError(
+                f"tests.data_source must be one of latest_run|first_run|all_runs, got {ds!r}"
+                + _v4_field_hint("tests")
+            )
+        if not isinstance(tests.get("pytest_args", []), list):
+            raise InvestigationSpecError("tests.pytest_args must be a list" + _v4_field_hint("tests"))
+        refs = spec.get("references")
+        if refs is not None and not isinstance(refs, list):
+            raise InvestigationSpecError("references must be a list" + _v4_field_hint("references"))
+        refs = refs or []
+        for i, ref in enumerate(refs):
+            if not isinstance(ref, dict) or not ref.get("file"):
+                raise InvestigationSpecError(
+                    f"references[{i}] must be a mapping with at least a 'file' key"
+                    + _v4_field_hint("references")
+                )
+        if not isinstance(spec.get("implementation_tasks", ""), str):
+            raise InvestigationSpecError(
+                "implementation_tasks must be a string" + _v4_field_hint("implementation_tasks")
+            )
+        _validate_expected_behavior(spec)
+
+
+def _validate_expected_behavior(spec: dict) -> None:
+    """Validate the ``expected_behavior:`` field (v4 structured form).
+
+    Accepts two shapes for backward compatibility:
+
+    1. Legacy free-form — a list of plain strings (v3 / unstructured studies).
+       Passes without validation.
+    2. Structured DSL (v4) — a list of mappings with at least ``name``,
+       ``en``, ``measure``, and ``expect`` fields.
+
+    Each structured entry must have:
+      - ``name`` (str, required, non-empty)
+      - ``en`` (str, required, non-empty)
+      - ``given`` (dict, optional)
+      - ``measure`` (dict, required, with at least ``kind``)
+      - ``expect`` (dict, required, with at least ``op``)
+      - ``status`` (str, optional)
+      - ``requires`` (list, optional)
+
+    Unknown ``measure.kind`` / ``expect.op`` values are **not** validated
+    here (forward-compatible; the evaluator catches them at run time).
+    """
+    entries = spec.get("expected_behavior")
+    if entries is None:
+        return
+    if not isinstance(entries, list):
+        raise InvestigationSpecError(
+            "expected_behavior must be a list"
+        )
+    if not entries:
+        return
+
+    # Detect free-form (all strings) — pass through.
+    if all(isinstance(e, str) for e in entries):
+        return
+
+    # Mixed or structured form.
+    for i, entry in enumerate(entries):
+        if isinstance(entry, str):
+            continue  # tolerate strings mixed with dicts during migration
+        if not isinstance(entry, dict):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}] must be a string or mapping"
+            )
+        # Required fields
+        if not entry.get("name"):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].name is required and must be non-empty"
+            )
+        if not entry.get("en"):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].en is required and must be non-empty"
+            )
+        measure = entry.get("measure")
+        if measure is None:
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].measure is required"
+            )
+        if not isinstance(measure, dict):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].measure must be a mapping"
+            )
+        if not measure.get("kind"):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].measure.kind is required"
+            )
+        expect = entry.get("expect")
+        if expect is None:
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].expect is required"
+            )
+        if not isinstance(expect, dict):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].expect must be a mapping"
+            )
+        if not expect.get("op"):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].expect.op is required"
+            )
+        # Optional fields — type checks only
+        given = entry.get("given")
+        if given is not None and not isinstance(given, dict):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].given must be a mapping"
+            )
+        requires = entry.get("requires")
+        if requires is not None and not isinstance(requires, list):
+            raise InvestigationSpecError(
+                f"expected_behavior[{i}].requires must be a list"
+            )
+
+
+# Backwards-compatible alias for tests that pre-date v4 migration
+_validate_study_v3 = _validate_study_v3_or_v4
 
 
 def _validate_variants_list(spec: dict) -> None:
@@ -316,13 +462,25 @@ def load_spec(path: Path) -> dict:
     # Phase 1 transition: auto-migrate v2 → v3 on read (in-memory only).
     spec = migrate_v2_to_v3(spec)
 
+    # Phase 2 transition: auto-migrate v3 → v4 on read (in-memory only).
+    spec = migrate_v3_to_v4(spec)
+
     # name is always required
     if not spec.get("name"):
         raise InvestigationSpecError("missing required field: name")
 
-    # v3 (Studies) shape: single baseline + optional variants/runs/etc.
-    if spec.get("schema_version") == 3:
-        _validate_study_v3(spec)
+    # v3/v4 (Studies) shape: single baseline + optional variants/runs/etc.
+    # Detect v3-shape even when schema_version is absent: a top-level
+    # ``baseline:`` that is a list-of-mappings is v3 (legacy v2 used a
+    # string ``baseline:`` naming a single variant, or no ``baseline:`` at all).
+    baseline_field = spec.get("baseline")
+    looks_like_v3 = isinstance(baseline_field, list) and all(
+        isinstance(b, dict) for b in baseline_field
+    )
+    if spec.get("schema_version") in (3, 4) or looks_like_v3:
+        spec.setdefault("schema_version", 3)
+        spec = migrate_v3_to_v4(spec)
+        _validate_study_v3_or_v4(spec)
         return spec
 
     has_variants_list = "variants" in spec

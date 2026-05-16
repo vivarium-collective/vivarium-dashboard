@@ -18,12 +18,91 @@
     document.querySelectorAll('.study-tab-panel').forEach(function(p) {
       p.classList.toggle('active', p.dataset.kind === kind);
     });
+    if (kind === 'tests') {
+      loadTestsTab(window._study);
+    }
+    if (kind === 'conclusions') {
+      _loadConclusionsTab(window._study);
+    }
   }
   window._setStudyTab = _setStudyTab;
 
-  // --- Inline-edit (objective + conclusion) ---
-  function makeEditable(el, savePath, field, placeholder) {
+  // --- Inline-edit (overview fields: objective, conclusion, question, hypothesis, status) ---
+  function _saveOverviewField(field, value) {
+    if (field === 'objective') {
+      return api('POST', '/api/study-set-objective', {study: studyName(), text: value});
+    }
+    if (field === 'conclusion') {
+      return api('POST', '/api/study-set-conclusion', {study: studyName(), text: value});
+    }
+    if (field === 'question' || field === 'hypothesis' || field === 'status') {
+      var body = {investigation: studyName(), fields: {}};
+      body.fields[field] = value;
+      return api('POST', '/api/investigation-set-overview', body);
+    }
+    return Promise.resolve();
+  }
+
+  // --- Conclusions tab: split/join helpers + load/save ---
+  function _splitConclusion(md) {
+    var sections = { Claims: '', Evidence: '', Limitations: '', 'Next steps': '' };
+    if (!md) return sections;
+    var parts = md.split(/(?:^|\n)##\s+/);
+    if (parts.length === 1) {
+      sections.Claims = parts[0].trim();
+      return sections;
+    }
+    var preamble = parts.shift();
+    if (preamble && preamble.trim()) sections.Claims = preamble.trim();
+    parts.forEach(function(chunk) {
+      var nl = chunk.indexOf('\n');
+      var header = (nl === -1 ? chunk : chunk.slice(0, nl)).trim();
+      var body = (nl === -1 ? '' : chunk.slice(nl + 1)).trim();
+      if (header in sections) {
+        if (sections[header]) sections[header] += '\n\n' + body;
+        else sections[header] = body;
+      }
+    });
+    return sections;
+  }
+
+  function _joinConclusion(sections) {
+    var labels = ['Claims', 'Evidence', 'Limitations', 'Next steps'];
+    var parts = labels.map(function(label) {
+      var body = (sections[label] || '').trim();
+      return '## ' + label + (body ? '\n\n' + body : '');
+    });
+    return parts.join('\n\n') + '\n';
+  }
+
+  function _loadConclusionsTab(study) {
+    var s = _splitConclusion((study && study.conclusion) || '');
+    var ids = { Claims: 'conclusion-claims', Evidence: 'conclusion-evidence',
+                Limitations: 'conclusion-limitations', 'Next steps': 'conclusion-next-steps' };
+    Object.keys(ids).forEach(function(label) {
+      var el = document.getElementById(ids[label]);
+      if (el) el.value = s[label] || '';
+    });
+  }
+
+  function _saveConclusion() {
+    var sections = {
+      Claims:       (document.getElementById('conclusion-claims') || {}).value || '',
+      Evidence:     (document.getElementById('conclusion-evidence') || {}).value || '',
+      Limitations:  (document.getElementById('conclusion-limitations') || {}).value || '',
+      'Next steps': (document.getElementById('conclusion-next-steps') || {}).value || '',
+    };
+    return fetch('/api/study-set-conclusion', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({study: studyName(), text: _joinConclusion(sections)}),
+    });
+  }
+
+  function makeEditable(el) {
     if (!el) return;
+    var placeholder = el.dataset.placeholder || '';
+    var field = el.dataset.field || el.id.replace(/-text$/, '');
     el.addEventListener('click', function() {
       if (el.querySelector('textarea')) return;
       var current = el.textContent.trim();
@@ -35,24 +114,28 @@
       el.appendChild(t);
       t.focus();
       t.addEventListener('blur', function() {
-        var body = {study: window._studyName};
-        body[field] = t.value;
-        api('POST', savePath, body).then(function() {
+        _saveOverviewField(field, t.value).then(function() {
           el.textContent = t.value || placeholder;
         });
       });
     });
   }
-  makeEditable(
-    document.getElementById('objective-text'),
-    '/api/study-set-objective', 'text',
-    '(blank — click to write)'
-  );
-  makeEditable(
-    document.getElementById('conclusion-text'),
-    '/api/study-set-conclusion', 'text',
-    '(fill in when the study wraps)'
-  );
+
+  document.querySelectorAll('[data-editable="true"]').forEach(function(el) {
+    makeEditable(el);
+  });
+
+  var statusSel = document.getElementById('status-select');
+  if (statusSel) {
+    statusSel.addEventListener('change', function() {
+      _saveOverviewField('status', statusSel.value);
+    });
+  }
+
+  ['conclusion-claims', 'conclusion-evidence', 'conclusion-limitations', 'conclusion-next-steps'].forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.addEventListener('blur', _saveConclusion);
+  });
 
   // --- Helpers: attach a click handler to every button matching a CSS class ---
   function bindAll(selector, handler) {
@@ -413,4 +496,97 @@
       investigation: studyName(), study: studyName(), mark_complete: true,
     }).then(function() { location.reload(); });
   });
+
+  // ----- Tests tab -----
+
+  function loadTestsTab(spec) {
+    var cfg = (spec && spec.tests) || {};
+    var autoEl = document.getElementById('tests-auto-discover');
+    var dsEl = document.getElementById('tests-data-source');
+    if (autoEl) autoEl.textContent = String(cfg.auto_discover !== undefined ? cfg.auto_discover : true);
+    if (dsEl) dsEl.textContent = cfg.data_source || 'latest_run';
+    var lr = cfg.last_results;
+    var summary = document.getElementById('tests-summary');
+    if (!summary) return;
+    if (lr) {
+      summary.innerHTML =
+        '<span class="ok">' + (lr.passed || 0) + ' passed</span>' +
+        ' / <span class="fail">' + (lr.failed || 0) + ' failed</span>' +
+        ' / <span class="skip">' + (lr.skipped || 0) + ' skipped</span>' +
+        ' <span class="muted">(' + ((lr.duration_s || 0).toFixed(2)) + 's' +
+        (lr.timestamp ? ', ' + lr.timestamp : '') + ')</span>';
+    } else {
+      summary.textContent = '— no test results yet —';
+    }
+  }
+
+  function escapeHtmlForTests(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+      return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c];
+    });
+  }
+
+  function renderTestResults(body) {
+    var list = document.getElementById('tests-list');
+    if (!list) return;
+    list.innerHTML = '';
+    if (body.note === 'no tests directory') {
+      list.innerHTML = '<li class="placeholder">No tests/ directory found in this study.</li>';
+      return;
+    }
+    var icons = {passed: '✅', failed: '❌', skipped: '⏭'};
+    (body.tests || []).forEach(function(t) {
+      var li = document.createElement('li');
+      li.className = 'test-row test-' + t.outcome;
+      var icon = icons[t.outcome] || '•';
+      var tb = t.traceback
+        ? '<details><summary>traceback</summary><pre>' + escapeHtmlForTests(t.traceback) + '</pre></details>'
+        : '';
+      li.innerHTML =
+        '<span class="test-icon">' + icon + '</span>' +
+        '<code class="test-nodeid">' + escapeHtmlForTests(t.nodeid) + '</code>' +
+        '<span class="test-duration">' + ((t.duration || 0).toFixed(3)) + 's</span>' +
+        tb;
+      list.appendChild(li);
+    });
+    var s = body.summary || {};
+    var summary = document.getElementById('tests-summary');
+    if (summary) {
+      summary.innerHTML =
+        '<span class="ok">' + (s.passed || 0) + ' passed</span>' +
+        ' / <span class="fail">' + (s.failed || 0) + ' failed</span>' +
+        ' / <span class="skip">' + (s.skipped || 0) + ' skipped</span>' +
+        ' <span class="muted">(' + ((s.duration_s || 0).toFixed(2)) + 's)</span>';
+    }
+  }
+
+  function runStudyTests() {
+    var btn = document.getElementById('run-tests-btn');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = 'Running…';
+    fetch('/api/study-tests-run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({study: studyName()}),
+    }).then(function(resp) {
+      return resp.json().then(function(d) { return {status: resp.status, body: d}; });
+    }).then(function(r) {
+      if (r.status !== 200) {
+        alert('Test run failed: ' + (r.body && r.body.error || r.status));
+        return;
+      }
+      renderTestResults(r.body);
+    }).catch(function(err) {
+      alert('Test run error: ' + err);
+    }).then(function() {
+      btn.disabled = false;
+      btn.textContent = 'Run tests';
+    });
+  }
+
+  var runBtn = document.getElementById('run-tests-btn');
+  if (runBtn) {
+    runBtn.addEventListener('click', runStudyTests);
+  }
 })();

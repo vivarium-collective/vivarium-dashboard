@@ -167,3 +167,26 @@ def migrate_v2_to_v3(spec: dict) -> dict:
         out.pop("parameters", None)
 
     return out
+
+
+def migrate_v3_to_v4(spec: dict) -> dict:
+    """Migrate a v3 study spec to v4 in-memory by adding the tests / references /
+    implementation_tasks fields. Idempotent. Only touches specs with
+    ``schema_version == 3``.
+    """
+    if spec.get("schema_version") != 3:
+        return spec
+
+    out = dict(spec)
+    out["schema_version"] = 4
+
+    existing_tests = out.get("tests") or {}
+    out["tests"] = {
+        "auto_discover": existing_tests.get("auto_discover", True),
+        "data_source": existing_tests.get("data_source", "latest_run"),
+        "pytest_args": existing_tests.get("pytest_args", []),
+        "last_results": existing_tests.get("last_results"),
+    }
+    out.setdefault("references", [])
+    out.setdefault("implementation_tasks", "")
+    return out

@@ -17,18 +17,66 @@
 <nav class="study-tabs" aria-label="Study sections">
   <button class="study-tab active" data-kind="overview"      onclick="_setStudyTab('overview')">Overview</button>
   <button class="study-tab"        data-kind="baseline"      onclick="_setStudyTab('baseline')">Baseline</button>
+  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">Observables</button>
   <button class="study-tab"        data-kind="variants"      onclick="_setStudyTab('variants')">Variants</button>
   <button class="study-tab"        data-kind="interventions" onclick="_setStudyTab('interventions')">Interventions</button>
   <button class="study-tab"        data-kind="runs"          onclick="_setStudyTab('runs')">Runs</button>
+  <button class="study-tab"        data-kind="tests"          onclick="_setStudyTab('tests')">Tests</button>
+  <button class="study-tab"        data-kind="visualizations" onclick="_setStudyTab('visualizations')">Visualizations</button>
+  <button class="study-tab"        data-kind="conclusions"    onclick="_setStudyTab('conclusions')">Conclusions</button>
 </nav>
 
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
   <div class="study-overview">
     <div class="overview-section">
+      <h2 class="overview-label">Question</h2>
+      <div id="question-text" class="overview-prose" data-editable="true"
+           data-field="question"
+           data-placeholder="(what research question is this study asking?)">{{ study.question or '' }}</div>
+    </div>
+
+    <div class="overview-section">
+      <h2 class="overview-label">Hypothesis</h2>
+      <div id="hypothesis-text" class="overview-prose" data-editable="true"
+           data-field="hypothesis"
+           data-placeholder="(predicted outcome)">{{ study.hypothesis or '' }}</div>
+    </div>
+
+    <div class="overview-section">
+      <h2 class="overview-label">Status</h2>
+      <select id="status-select" data-field="status" class="overview-status-select">
+        <option value="planned"     {% if study.status == 'planned'     %}selected{% endif %}>planned</option>
+        <option value="draft"       {% if study.status == 'draft'       %}selected{% endif %}>draft</option>
+        <option value="in-progress" {% if study.status == 'in-progress' %}selected{% endif %}>in-progress</option>
+        <option value="running"     {% if study.status == 'running'     %}selected{% endif %}>running</option>
+        <option value="ran"         {% if study.status == 'ran'         %}selected{% endif %}>ran</option>
+        <option value="completed"   {% if study.status == 'completed'   %}selected{% endif %}>completed</option>
+        <option value="complete"    {% if study.status == 'complete'    %}selected{% endif %}>complete</option>
+        <option value="archived"    {% if study.status == 'archived'    %}selected{% endif %}>archived</option>
+      </select>
+    </div>
+
+    <div class="overview-section">
       <h2 class="overview-label">Objective</h2>
       <div id="objective-text" class="overview-prose" data-editable="true"
+           data-field="objective"
            data-placeholder="(set an objective for this study)">{{ study.objective or '' }}</div>
     </div>
+
+    {% if study.expected_behavior %}
+    <div class="overview-section">
+      <h2 class="overview-label">Behavioral tests</h2>
+      {% set _eb = study.expected_behavior %}
+      {% set _impl = _eb | selectattr('status', 'equalto', 'implemented') | list | length %}
+      {% set _stub = _eb | selectattr('status', 'equalto', 'stub') | list | length %}
+      {% set _gated = _eb | length - _impl - _stub %}
+      <p style="margin: 0;">
+        <strong>{{ _eb | length }}</strong> behavioral test{{ '' if _eb|length == 1 else 's' }} defined
+        ({{ _impl }} implemented{% if _stub %}, {{ _stub }} stub{% endif %}{% if _gated %}, {{ _gated }} gated{% endif %}).
+        <a onclick="_setStudyTab('tests')" style="cursor: pointer; color: #3b82f6; text-decoration: underline; margin-left: 6px;">View on Tests tab →</a>
+      </p>
+    </div>
+    {% endif %}
 
     <div class="study-counts-strip">
       <div class="count-cell">
@@ -45,11 +93,6 @@
       </div>
     </div>
 
-    <div class="overview-section">
-      <h2 class="overview-label">Conclusion</h2>
-      <div id="conclusion-text" class="overview-prose" data-editable="true"
-           data-placeholder="(fill in when the study wraps)">{{ study.conclusion or '' }}</div>
-    </div>
   </div>
 </section>
 
@@ -90,6 +133,257 @@
       <button type="submit">Add</button>
     </form>
   </details>
+</section>
+
+<section class="study-tab-panel" data-kind="observables" id="panel-observables" hidden>
+  <div class="observables-section">
+    <h3 class="section-title">Observables</h3>
+    <p class="muted">Experimental measurements selected from the composite's bigraph state. Each observable resolves to a <code>store_path</code> (and optional <code>index_by</code> when the underlying store is indexed by ID).</p>
+    {% if study.observables %}
+    <table class="observables-table" style="width:100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th style="text-align:left; padding:6px; border-bottom: 1px solid #e2e8f0;">Name</th>
+          <th style="text-align:left; padding:6px; border-bottom: 1px solid #e2e8f0;">Status</th>
+          <th style="text-align:left; padding:6px; border-bottom: 1px solid #e2e8f0;">Store path</th>
+          <th style="text-align:left; padding:6px; border-bottom: 1px solid #e2e8f0;">Indexed by</th>
+          <th style="text-align:left; padding:6px; border-bottom: 1px solid #e2e8f0;">Description</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in study.observables %}
+        <tr style="border-bottom: 1px solid #f1f5f9;">
+          <td style="padding:6px; vertical-align: top;"><code>{{ o.name }}</code></td>
+          <td style="padding:6px; vertical-align: top;">
+            <span style="font-size: 0.75em; color: #475569;">
+              {% if o.status == 'available' %}✓ available
+              {% elif o.status == 'derived-needed' %}🛠 needs listener
+              {% elif o.status == 'aspirational' %}⏳ aspirational
+              {% else %}{{ o.status or '—' }}{% endif %}
+            </span>
+          </td>
+          <td style="padding:6px; vertical-align: top;"><code style="font-size: 0.85em;">{{ o.store_path or '' }}</code></td>
+          <td style="padding:6px; vertical-align: top;">
+            {% if o.index_by %}
+            <code style="font-size: 0.85em;">{{ o.index_by.type }}={{ o.index_by.value }}</code>
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td style="padding:6px; vertical-align: top; max-width: 380px; font-size: 0.9em;">{{ o.description or '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty-message">No observables declared yet.</p>
+    {% endif %}
+
+    <details class="observables-add-form" style="margin-top: 1.2em;" id="bigraph-picker-details">
+      <summary class="btn-baseline-add">+ Add observable from bigraph state</summary>
+      <div class="bigraph-picker" style="display: grid; grid-template-columns: minmax(360px, 2fr) 1fr; gap: 16px; margin-top: 10px;">
+        <div>
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px;">
+            <input type="search" id="bigraph-filter" placeholder="Filter paths (regex)…"
+                   style="flex:1; padding:4px 6px; font-size:0.9em;">
+            <button class="btn-mini" onclick="_reloadBigraphPaths()">Reload</button>
+          </div>
+          <div id="bigraph-tree" style="border:1px solid #e2e8f0; border-radius:4px; padding:8px; max-height:520px; overflow:auto; font-family: ui-monospace, monospace; font-size:0.82em; background:#fafafa;">
+            <span class="muted">Click "Reload" or expand this panel to load the path tree.</span>
+          </div>
+          <div id="bigraph-source-info" class="muted" style="font-size:0.75em; margin-top:4px;"></div>
+        </div>
+        <aside style="border:1px solid #e2e8f0; border-radius:4px; padding:10px; background:#fff;">
+          <h4 style="margin:0 0 6px 0; font-size:0.9em;">Selected path</h4>
+          <div id="bigraph-selected" class="muted" style="font-size:0.85em;">Pick a leaf on the left.</div>
+          <h4 style="margin:12px 0 6px 0; font-size:0.9em;">Observable spec</h4>
+          <p class="muted" style="margin:0 0 6px 0; font-size:0.78em;">Copy into <code>studies/{{ name }}/study.yaml</code> under <code>observables:</code>.</p>
+          <textarea id="bigraph-spec" readonly rows="8"
+                    style="width:100%; font-family: ui-monospace, monospace; font-size:0.78em; box-sizing: border-box;"></textarea>
+          <button class="btn-mini" onclick="_copyBigraphSpec()" style="margin-top:6px;">Copy</button>
+        </aside>
+      </div>
+    </details>
+    <script>
+      // Lazy load the bigraph tree the first time the observables panel
+      // becomes visible OR the details element opens.
+      (function() {
+        var loaded = false;
+        function load() {
+          if (loaded) return; loaded = true; _reloadBigraphPaths();
+        }
+        document.getElementById('bigraph-picker-details')
+                .addEventListener('toggle', function() {
+                  if (this.open) load();
+                });
+        // Also load on tab activation if the panel is already visible.
+        document.querySelector('[data-kind="observables"].study-tab')
+                .addEventListener('click', function() { setTimeout(load, 50); });
+      })();
+
+      function _reloadBigraphPaths() {
+        var tree = document.getElementById('bigraph-tree');
+        var info = document.getElementById('bigraph-source-info');
+        tree.innerHTML = '<span class="muted">Loading…</span>';
+        info.textContent = '';
+        fetch('/api/study-bigraph-paths?study={{ name }}', {headers: {Accept: 'application/json'}})
+          .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, body: j}; }); })
+          .then(function(res) {
+            if (!res.ok) {
+              tree.innerHTML = '<span style="color:#b91c1c;">' + (res.body.error || 'failed to load') + '</span>';
+              if (res.body.looked_in) {
+                tree.innerHTML += '<br><span class="muted" style="font-size:0.78em;">looked in: ' + res.body.looked_in.join(', ') + '</span>';
+              }
+              if (res.body.hint) {
+                tree.innerHTML += '<br><span class="muted" style="font-size:0.78em;">hint: ' + res.body.hint + '</span>';
+              }
+              return;
+            }
+            window._bigraphNodes = res.body.nodes || [];
+            info.textContent = res.body.composite + '  ·  ' + res.body.source_file + '  ·  ' + res.body.node_count + ' leaves (max_depth=' + res.body.max_depth + ')';
+            _renderBigraphTree(window._bigraphNodes, '');
+          });
+      }
+
+      // Render the flat list as a nested <ul>. Group nodes by path[0..n] so
+      // siblings collapse under shared parents.
+      function _renderBigraphTree(nodes, filter) {
+        var tree = document.getElementById('bigraph-tree');
+        tree.innerHTML = '';
+        var rx = null;
+        if (filter) { try { rx = new RegExp(filter, 'i'); } catch (e) {} }
+        // Build a nested object: tree[seg] = {__leaf?:node, __children?:tree}
+        var root = {};
+        nodes.forEach(function(n) {
+          var p = n.path;
+          if (rx && !rx.test(p.join('.'))) return;
+          var cursor = root;
+          for (var i = 0; i < p.length - 1; i++) {
+            var seg = p[i];
+            if (!cursor[seg]) cursor[seg] = {__children: {}};
+            cursor = cursor[seg].__children;
+          }
+          var last = p[p.length - 1];
+          if (!cursor[last]) cursor[last] = {};
+          cursor[last].__leaf = n;
+        });
+
+        function render(level, container, prefix) {
+          Object.keys(level).sort().forEach(function(seg) {
+            var entry = level[seg];
+            var li = document.createElement('li');
+            li.style.listStyle = 'none';
+            li.style.margin = '1px 0';
+
+            var fullPath = prefix.concat([seg]);
+            var leaf = entry.__leaf;
+            var children = entry.__children;
+
+            if (leaf && !children) {
+              // Pure leaf — clickable.
+              var btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'bigraph-leaf-btn';
+              btn.style.cssText = 'background:none; border:none; padding:2px 4px; cursor:pointer; text-align:left; font-family:inherit; font-size:inherit; color:#1d4ed8; width:100%;';
+              btn.innerHTML = '<span style="color:#9ca3af;">·</span> ' + seg
+                + ' <span class="muted" style="font-size:0.85em;">(' + leaf.kind
+                + (leaf.fields ? ': ' + leaf.fields.join(', ') : '')
+                + (leaf.length !== undefined ? ', n=' + leaf.length : '')
+                + ')</span>';
+              btn.onclick = function() { _selectBigraphLeaf(leaf); };
+              li.appendChild(btn);
+            } else {
+              // Has children — make collapsible.
+              var det = document.createElement('details');
+              det.open = (prefix.length < 2);  // expand top-2 levels by default
+              var sum = document.createElement('summary');
+              sum.style.cursor = 'pointer';
+              sum.innerHTML = '<strong>' + seg + '</strong>';
+              det.appendChild(sum);
+              var ul = document.createElement('ul');
+              ul.style.cssText = 'margin:0 0 0 14px; padding:0;';
+              render(children, ul, fullPath);
+              det.appendChild(ul);
+              li.appendChild(det);
+              if (leaf) {  // both a leaf and has children — rare
+                var hint = document.createElement('span');
+                hint.className = 'muted';
+                hint.style.fontSize = '0.78em';
+                hint.textContent = ' (' + leaf.kind + ')';
+                sum.appendChild(hint);
+              }
+            }
+            container.appendChild(li);
+          });
+        }
+
+        var ul = document.createElement('ul');
+        ul.style.cssText = 'margin:0; padding:0;';
+        render(root, ul, []);
+        tree.appendChild(ul);
+      }
+
+      function _selectBigraphLeaf(leaf) {
+        var sel = document.getElementById('bigraph-selected');
+        sel.innerHTML = '<code style="font-size:0.85em;">' + leaf.path.join('.') + '</code>'
+          + '<br><span class="muted" style="font-size:0.78em;">kind: ' + leaf.kind
+          + (leaf.fields ? ', fields: [' + leaf.fields.join(', ') + ']' : '')
+          + (leaf.length !== undefined ? ', length: ' + leaf.length : '')
+          + (leaf.preview !== undefined ? ', value: ' + leaf.preview : '')
+          + '</span>';
+        // Suggest a slug from the last segment, with -<parent> for disambiguation if generic.
+        var last = leaf.path[leaf.path.length - 1] || 'obs';
+        var second = leaf.path[leaf.path.length - 2] || '';
+        var slug = (last === 'count' || last === 'id' || second.length > 0 && /listeners?$/.test(second))
+          ? (second + '_' + last).replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase()
+          : last.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+        var pathStr = leaf.path.join('.');
+        var spec;
+        if (leaf.kind === 'structured_array') {
+          spec = '- name: ' + slug + '_by_id\n'
+            + '  status: available\n'
+            + '  description: |\n'
+            + '    Bulk count by molecule id. Replace EXAMPLE_ID with the actual id\n'
+            + '    (e.g. "MONOMER0-160[c]" for DnaA).\n'
+            + '  store_path: ' + pathStr + '\n'
+            + '  index_by: {type: bulk_id, value: "EXAMPLE_ID"}\n';
+        } else if (leaf.kind === 'array') {
+          spec = '- name: ' + slug + '\n'
+            + '  status: available\n'
+            + '  description: |\n'
+            + '    Array listener at ' + pathStr + ' (length=' + leaf.length + ' at snapshot time).\n'
+            + '    If this is indexed by id (e.g. tu_id, tf_id), add index_by:.\n'
+            + '  store_path: ' + pathStr + '\n';
+        } else {
+          spec = '- name: ' + slug + '\n'
+            + '  status: available\n'
+            + '  description: "Scalar observable at ' + pathStr + '"\n'
+            + '  store_path: ' + pathStr + '\n';
+        }
+        document.getElementById('bigraph-spec').value = spec;
+      }
+
+      function _copyBigraphSpec() {
+        var ta = document.getElementById('bigraph-spec');
+        if (!ta.value) return;
+        ta.select();
+        document.execCommand('copy');
+      }
+
+      document.getElementById('bigraph-filter').addEventListener('input', function(e) {
+        if (window._bigraphNodes) _renderBigraphTree(window._bigraphNodes, e.target.value);
+      });
+    </script>
+
+    {% if study.expected_behavior %}
+    <details style="margin-top: 1.4em;">
+      <summary class="muted">How observables tie to Expected Behavior</summary>
+      <p style="font-size: 0.9em;">Observables can be referenced by name in an
+      <code>expected_behavior[i].measure</code> block (e.g. <code>kind: bulk_count, id:
+      "MONOMER0-160[c]"</code>). When the dashboard validates a study, it cross-checks
+      that every <code>measure</code> resolves to a declared observable, or to a
+      built-in helper.</p>
+    </details>
+    {% endif %}
+  </div>
 </section>
 
 <section class="study-tab-panel" data-kind="variants" id="panel-variants">
@@ -224,6 +518,70 @@
     </div>
   </div>
 
+</section>
+
+<section class="study-tab-panel" data-kind="tests" id="panel-tests" hidden>
+  <div class="tests-header">
+    <h3>Behavioral Tests</h3>
+    <p class="muted" style="margin: 0 0 8px 0;">
+      Each prediction below is paired with a precise <code>given / measure / expect</code>
+      rule so one English sentence auto-generates one pytest assertion. The
+      generic evaluator in <code>tests/_behaviors.py</code> dispatches on
+      <code>measure.kind</code> + <code>expect.op</code> to compute pass/fail
+      against the latest simulation run.
+    </p>
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+      <button id="run-tests-btn" class="btn-primary">Run tests</button>
+      <div class="tests-summary muted" id="tests-summary">— no test results yet —</div>
+    </div>
+    <div class="tests-config" style="margin-top: 6px;">
+      <span class="badge">auto_discover: <code id="tests-auto-discover">true</code></span>
+      <span class="badge">data_source: <code id="tests-data-source">latest_run</code></span>
+    </div>
+  </div>
+
+  {% if study.expected_behavior %}
+  <ul class="expected-behavior-list" id="tests-list" style="list-style:none; padding-left:0; margin-top: 12px;">
+    {% for b in study.expected_behavior %}
+    <li class="expected-behavior-item" id="bt-{{ b.name or loop.index0 }}"
+        data-pytest-node="{{ b.name or '' }}"
+        style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {% if b.status == 'implemented' %}#10b981{% elif b.status == 'stub' %}#f59e0b{% else %}#94a3b8{% endif %}; background: #f8fafc; border-radius: 4px;">
+      <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
+        <span class="bt-result" style="font-size: 0.75em; color: #94a3b8; font-family: monospace; min-width: 60px;">
+          ⏳ pending
+        </span>
+        <span style="font-size: 0.78em; color: #475569; font-family: monospace;">
+          {% if b.status == 'implemented' %}✓ implemented{% elif b.status == 'stub' %}◯ stub{% else %}⏳ {{ b.status or 'gated' }}{% endif %}
+        </span>
+        <strong style="font-size: 0.9em;">{{ b.name or '(unnamed)' }}</strong>
+      </div>
+      <div style="margin-top: 6px; font-size: 0.95em;">{{ b.en or '' }}</div>
+      {% if b.given or b.measure or b.expect %}
+      <details style="margin-top: 6px; font-size: 0.82em;">
+        <summary class="muted" style="cursor: pointer;">Assertion (given / measure / expect)</summary>
+        <pre style="background:#fff; padding:8px; margin:4px 0 0 0; border:1px solid #e2e8f0; border-radius:3px; overflow-x:auto;">given:   {{ b.given|tojson }}
+measure: {{ b.measure|tojson }}
+expect:  {{ b.expect|tojson }}{% if b.requires %}
+requires: {{ b.requires|tojson }}{% endif %}</pre>
+      </details>
+      {% endif %}
+      {% if b.notes %}
+      <p class="muted" style="margin: 6px 0 0 0; font-size: 0.8em;">Note: {{ b.notes }}</p>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <ul class="tests-list" id="tests-list" style="margin-top: 12px;">
+    <li class="placeholder">No <code>expected_behavior:</code> entries declared in study.yaml yet.
+      Add some to see them appear here as test rows. Click "Run tests" to discover and
+      execute additional <code>studies/&lt;slug&gt;/tests/test_*.py</code> files alongside
+      the auto-generated assertions.</li>
+  </ul>
+  {% endif %}
+</section>
+
+<section class="study-tab-panel" data-kind="visualizations" id="panel-visualizations" hidden>
   <div class="viz-section">
     <h3 class="section-title">Visualizations</h3>
     <div id="viz-list">
@@ -233,6 +591,28 @@
     </div>
     <button class="btn-add-viz">+ Add visualization</button>
   </div>
+</section>
+
+<section class="study-tab-panel" data-kind="conclusions" id="panel-conclusions" hidden>
+  <div class="conclusions-grid">
+    <div class="conclusion-field">
+      <h3>Claims</h3>
+      <textarea id="conclusion-claims" rows="6" data-section="Claims"></textarea>
+    </div>
+    <div class="conclusion-field">
+      <h3>Evidence</h3>
+      <textarea id="conclusion-evidence" rows="6" data-section="Evidence"></textarea>
+    </div>
+    <div class="conclusion-field">
+      <h3>Limitations</h3>
+      <textarea id="conclusion-limitations" rows="6" data-section="Limitations"></textarea>
+    </div>
+    <div class="conclusion-field">
+      <h3>Next steps</h3>
+      <textarea id="conclusion-next-steps" rows="6" data-section="Next steps"></textarea>
+    </div>
+  </div>
+  <p class="muted">Saved as one markdown blob in study.yaml.conclusion with H2 headers.</p>
 </section>
 
 </main>
