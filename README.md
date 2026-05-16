@@ -10,31 +10,69 @@ and reports.
 
 > **Status:** in active beta. APIs and UI may change before 1.0.
 
-## Install
+## Getting Started
 
-Not yet on PyPI. Install editable from a clone:
+### 1. Install
+
+```bash
+pip install vivarium-dashboard         # or: uv pip install vivarium-dashboard
+```
+
+Not on PyPI yet during beta — install editable from a clone instead:
 
 ```bash
 git clone https://github.com/vivarium-collective/vivarium-dashboard ~/code/vivarium-dashboard
 ./.venv/bin/pip install -e ~/code/vivarium-dashboard   # into your workspace's venv
 ```
 
-For workspaces scaffolded from [pbg-template](https://github.com/vivarium-collective/pbg-template),
-`template-init.sh` wires this up automatically when a sibling
-`../vivarium-dashboard/` directory is detected.
+### 2. Get a workspace
 
-## Quick start
+The dashboard serves a [pbg-template](https://github.com/vivarium-collective/pbg-template)
+workspace. Two ways to scaffold one — same files either way, pick whichever
+interface you prefer:
 
-From inside a workspace:
+**Standalone (no AI required).** On the pbg-template GitHub page, click
+**Use this template → Create a new repository**, clone your new repo, then run:
 
 ```bash
-vivarium-dashboard serve                      # default port
-vivarium-dashboard serve --port 8765          # pin a port
-vivarium-dashboard serve --workspace /path/to/ws --port 8765
+bash use-this-template-init.sh
 ```
 
-Then open the printed URL in your browser. Workspaces scaffolded from
-`pbg-template` also expose this as `bash scripts/serve.sh`.
+**With AI authoring.** Install the
+[pbg-superpowers](https://github.com/vivarium-collective/pbg-superpowers)
+Claude Code plugin and from inside Claude Code run:
+
+```
+/pbg-workspace my-project
+```
+
+See [pbg-superpowers' Getting Started](https://github.com/vivarium-collective/pbg-superpowers#getting-started)
+for the full walkthrough.
+
+### 3. Serve
+
+```bash
+cd my-workspace
+vivarium-dashboard serve --workspace .
+# or, from inside a scaffolded workspace:
+bash scripts/serve.sh
+```
+
+Open the printed URL.
+
+### What to expect
+
+You land on a UI with **seven tabs**: Workspace inputs, Registry, Composites,
+Studies, Investigations, Visualizations, and GitHub Branches. Every action you
+take — creating a study, registering an observable, kicking off a run — commits
+to your active workstream branch, so there's a full git audit trail visible
+under **GitHub Branches**. The dashboard reads the workspace's `.pbg/schemas/`
+validators, so malformed YAML is caught at save time rather than at run time.
+If you installed the **pbg-superpowers** plugin, every dashboard action can
+also be driven by natural-language `/pbg-*` skills against the same files —
+use whichever interface fits the moment. For the full AI-augmented authoring
+experience, see the
+[pbg-superpowers Getting Started](https://github.com/vivarium-collective/pbg-superpowers#getting-started).
 
 ## Tabs at a glance
 
