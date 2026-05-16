@@ -54,6 +54,27 @@
 .sim-status-ran    { background:#d1fae5; color:#065f46 }
 .purpose-callout{margin-bottom:10px;padding:10px 14px;border-radius:4px;line-height:1.55}
 .purpose-callout strong{margin-right:6px}
+.followup-list{display:flex;flex-direction:column;gap:10px}
+.followup-card{padding:10px 14px;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:4px;background:#f8fafc;font-size:0.93em}
+.followup-card.followup-kind-existing{border-left-color:#3b82f6;background:#eff6ff}
+.followup-card.followup-kind-infrastructure_fix{border-left-color:#dc2626;background:#fef2f2}
+.followup-card.followup-kind-calibration_task{border-left-color:#f59e0b;background:#fefce8}
+.followup-card.followup-kind-expert_question{border-left-color:#a855f7;background:#faf5ff}
+.followup-card.followup-kind-new{border-left-color:#10b981;background:#f0fdf4}
+.followup-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.followup-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}
+.followup-effort{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-family:ui-monospace,monospace}
+.followup-status{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}
+.followup-status.status-blocked{background:#fef3c7;color:#92400e}
+.followup-status.status-done{background:#d1fae5;color:#065f46}
+.followup-title{flex:1;font-size:1em}
+.followup-why,.followup-unblocks,.followup-acceptance,.followup-hypothesis{margin:4px 0 0 0;font-size:0.92em;line-height:1.45}
+.followup-hypothesis{padding:6px 10px;background:#fff;border-radius:3px;border:1px dashed #cbd5e1}
+.btn-seed-followup{font-size:0.85em;padding:4px 12px;border:1px solid #3b82f6;background:#fff;color:#3b82f6;border-radius:4px;cursor:pointer}
+.btn-seed-followup:hover{background:#3b82f6;color:#fff}
+.charts-panel{margin-top:18px;display:flex;flex-direction:column;gap:18px}
+.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px 12px 12px}
+.chart-caption{font-size:0.83em;color:#475569;margin-top:4px;line-height:1.4}
 </style>
 
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
@@ -159,6 +180,45 @@
       <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
         {% for l in study.limitations %}<li style="margin:2px 0">{{ l }}</li>{% endfor %}
       </ul>
+    </div>
+    {% endif %}
+
+    {% if study.follow_up_studies %}
+    <div class="overview-section">
+      <h2 class="overview-label">Follow-up studies + decisions</h2>
+      <p class="muted" style="margin:0 0 8px 0;font-size:0.85em">Concrete next steps derived from this study's runs. Click <em>Seed new study</em> to scaffold a child study.yaml from any entry.</p>
+      <div class="followup-list">
+        {% for f in study.follow_up_studies %}
+        <div class="followup-card followup-kind-{{ f.kind or 'other' }}">
+          <div class="followup-header">
+            <span class="followup-kind">{{ f.kind or 'other' }}</span>
+            {% if f.effort %}<span class="followup-effort" title="Effort">{{ f.effort }}</span>{% endif %}
+            {% if f.status %}<span class="followup-status status-{{ f.status }}">{{ f.status }}</span>{% endif %}
+            <strong class="followup-title">{{ f.title }}</strong>
+          </div>
+          {% if f.why %}<div class="followup-why"><em>Why:</em> {{ f.why }}</div>{% endif %}
+          {% if f.unblocks %}
+          <div class="followup-unblocks"><em>Unblocks:</em>
+            <ul style="margin:2px 0 0 18px;padding:0">{% for u in f.unblocks %}<li>{{ u }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if f.acceptance %}
+          <div class="followup-acceptance"><em>Acceptance:</em>
+            <ul style="margin:2px 0 0 18px;padding:0">{% for a in f.acceptance %}<li>{{ a }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if f.hypothesized_mechanism %}
+          <div class="followup-hypothesis"><em>Hypothesized mechanism:</em> {{ f.hypothesized_mechanism }}</div>
+          {% endif %}
+          {% if f.kind not in ('existing',) %}
+          <div class="followup-actions" style="margin-top:8px">
+            <button class="btn-seed-followup" data-followup-idx="{{ loop.index0 }}"
+                    onclick="_seedFollowupStudy('{{ name }}', {{ loop.index0 }})">Seed new study →</button>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
     </div>
     {% endif %}
 
@@ -708,6 +768,7 @@
 
 <section class="study-tab-panel" data-kind="runs" id="panel-runs">
   <div class="runs-section">
+    <div id="charts-panel" class="charts-panel"></div>
     <h3 class="section-title">Runs</h3>
     <table id="runs-table">
       <thead>

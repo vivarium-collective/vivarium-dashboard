@@ -3575,12 +3575,23 @@
           .then(function(r) { return r.ok ? r.json() : {entries: []}; })
           .then(function(j) { return j.entries || []; })
           .catch(function() { return []; });
-        return Promise.all([Promise.all(studyFetches), bibFetch]).then(function(arr) {
-          return {iset: iset, specs: arr[0], bibEntries: arr[1]};
+        var chartFetches = (iset.studies || []).map(function(s) {
+          return fetch('/api/study-charts/' + encodeURIComponent(s.name))
+            .then(function(r) { return r.ok ? r.json() : {charts: []}; })
+            .then(function(j) { return {name: s.name, charts: j.charts || []}; })
+            .catch(function() { return {name: s.name, charts: []}; });
+        });
+        return Promise.all([Promise.all(studyFetches), bibFetch,
+                            Promise.all(chartFetches)]).then(function(arr) {
+          var chartsByStudy = {};
+          arr[2].forEach(function(c) { chartsByStudy[c.name] = c.charts; });
+          return {iset: iset, specs: arr[0], bibEntries: arr[1],
+                  chartsByStudy: chartsByStudy};
         });
       })
       .then(function(bundle) {
-        var html = _buildInvestigationReportHtml(bundle.iset, bundle.specs, bundle.bibEntries);
+        var html = _buildInvestigationReportHtml(bundle.iset, bundle.specs,
+                                                  bundle.bibEntries, bundle.chartsByStudy);
         var dateStr = new Date().toISOString().slice(0, 10);
         var filename = 'investigation-' + name + '-' + dateStr + '.html';
         _triggerDownload(filename, html, 'text/html');
@@ -3625,8 +3636,9 @@
   }
 
   // Construct the report's HTML body from the investigation + per-study specs.
-  function _buildInvestigationReportHtml(iset, specs, bibEntries) {
+  function _buildInvestigationReportHtml(iset, specs, bibEntries, chartsByStudy) {
     bibEntries = bibEntries || [];
+    chartsByStudy = chartsByStudy || {};
     var bibByKey = {};
     bibEntries.forEach(function(e) { bibByKey[e.key] = e; });
     var now = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
@@ -3671,9 +3683,11 @@
         gate:      'study-' + slug + '-gate',
         build:     'study-' + slug + '-build',
         sims:      'study-' + slug + '-simulations',
+        charts:    'study-' + slug + '-charts',
         readouts:  'study-' + slug + '-readouts',
         tests:     'study-' + slug + '-tests',
         decide:    'study-' + slug + '-decide',
+        followups: 'study-' + slug + '-followups',
         limits:    'study-' + slug + '-limitations',
         refs:      'study-' + slug + '-refs',
       };
@@ -3688,7 +3702,9 @@
       var tests = s.behavior_tests || s.expected_behavior || [];
       var decide = s.conclusion_logic || {};
       var limitations = s.limitations || [];
+      var followUps = s.follow_up_studies || [];
       var bib = (s.bibliography && s.bibliography.bib_keys) || [];
+      var charts = (chartsByStudy && chartsByStudy[s.name]) || [];
 
       var hasBuild = !!modelChange || assumptions.length || reqs.length;
       var hasDecide = !!(decide.if_pass || decide.if_fail
@@ -3705,6 +3721,8 @@
       if (readouts.length)    links.push('<a href="#' + sid.readouts + '">Readouts <span class="sn-count">' + readouts.length + '</span></a>');
       if (tests.length)       links.push('<a href="#' + sid.tests + '">Tests <span class="sn-count">' + tests.length + '</span></a>');
       if (hasDecide)          links.push('<a href="#' + sid.decide + '">Decide</a>');
+      if (charts.length)      links.push('<a href="#' + sid.charts + '">Charts <span class="sn-count">' + charts.length + '</span></a>');
+      if (followUps.length)   links.push('<a href="#' + sid.followups + '">Follow-ups <span class="sn-count">' + followUps.length + '</span></a>');
       if (limitations.length) links.push('<a href="#' + sid.limits + '">Limitations <span class="sn-count">' + limitations.length + '</span></a>');
       if (bib.length)         links.push('<a href="#' + sid.refs + '">Cited refs <span class="sn-count">' + bib.length + '</span></a>');
 
@@ -3843,6 +3861,46 @@
           + '</div>';
       }
 
+      var chartsHtml = charts.length
+        ? '<div id="' + sid.charts + '"><h3>Simulation visualizations (latest run)</h3>'
+          + charts.map(function(c) {
+              return '<div class="chart-card">' + c.svg
+                   + '<div class="chart-caption">' + _h(c.caption || '') + '</div></div>';
+            }).join('')
+          + '</div>'
+        : '';
+
+      var followUpsHtml = followUps.length
+        ? '<div id="' + sid.followups + '"><h3>Follow-up studies + decisions</h3>'
+          + '<p class="muted small">Concrete next steps derived from this study\'s outcomes. '
+          + '<em>Non-existing</em> entries can be seeded into a new study.yaml via the '
+          + 'dashboard\'s study-detail page → Overview → "Seed new study →" button.</p>'
+          + followUps.map(function(f) {
+              var kind = f.kind || 'other';
+              var why = f.why ? '<div class="fu-why"><em>Why:</em> ' + _multiline(f.why) + '</div>' : '';
+              var hyp = f.hypothesized_mechanism
+                ? '<div class="fu-hyp"><em>Hypothesized mechanism:</em> ' + _multiline(f.hypothesized_mechanism) + '</div>'
+                : '';
+              var unb = (f.unblocks && f.unblocks.length)
+                ? '<div class="fu-unblocks"><em>Unblocks:</em> ' + f.unblocks.map(function(x){return '<code>' + _h(x) + '</code>';}).join(' · ') + '</div>'
+                : '';
+              var acc = (f.acceptance && f.acceptance.length)
+                ? '<div class="fu-acc"><em>Acceptance:</em><ul>' + f.acceptance.map(function(a){return '<li>' + _h(a) + '</li>';}).join('') + '</ul></div>'
+                : '';
+              var status = f.status ? '<span class="fu-status fu-status-' + _h(f.status) + '">' + _h(f.status) + '</span>' : '';
+              var effort = f.effort ? '<span class="fu-effort">' + _h(f.effort) + '</span>' : '';
+              return '<div class="fu-card fu-kind-' + _h(kind) + '">'
+                   +   '<div class="fu-head">'
+                   +     '<span class="fu-kind">' + _h(kind) + '</span>'
+                   +     effort + status
+                   +     '<strong class="fu-title">' + _h(f.title || '(untitled)') + '</strong>'
+                   +   '</div>'
+                   +   why + hyp + unb + acc
+                   + '</div>';
+            }).join('')
+          + '</div>'
+        : '';
+
       var limitsHtml = limitations.length
         ? '<div id="' + sid.limits + '"><h3>Limitations</h3><ul>'
           + limitations.map(function(l) { return '<li>' + _multiline(typeof l === 'string' ? l : (l.text || JSON.stringify(l))) + '</li>'; }).join('')
@@ -3867,9 +3925,11 @@
         +   gateHtml
         +   buildHtml
         +   simsHtml
+        +   chartsHtml
         +   readoutsHtml
         +   testsHtml
         +   decideHtml
+        +   followUpsHtml
         +   limitsHtml
         +   refsHtml
         + '</section>';
@@ -4151,6 +4211,26 @@
       + '.callout.cl-yellow{background:#fefce8;border-left:4px solid #facc15}'
       + '.callout.cl-green{background:#f0fdf4;border-left:4px solid #10b981}'
       + '.callout strong{margin-right:6px}'
+      // follow-up cards
+      + '.fu-card{padding:10px 14px;margin:8px 0;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:4px;background:#f8fafc;font-size:0.93em}'
+      + '.fu-kind-existing{border-left-color:#3b82f6;background:#eff6ff}'
+      + '.fu-kind-infrastructure_fix{border-left-color:#dc2626;background:#fef2f2}'
+      + '.fu-kind-calibration_task{border-left-color:#f59e0b;background:#fefce8}'
+      + '.fu-kind-expert_question{border-left-color:#a855f7;background:#faf5ff}'
+      + '.fu-kind-new{border-left-color:#10b981;background:#f0fdf4}'
+      + '.fu-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}'
+      + '.fu-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}'
+      + '.fu-effort{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-family:ui-monospace,monospace}'
+      + '.fu-status{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}'
+      + '.fu-status-blocked{background:#fef3c7;color:#92400e}'
+      + '.fu-status-done{background:#d1fae5;color:#065f46}'
+      + '.fu-title{flex:1}'
+      + '.fu-why,.fu-unblocks,.fu-acc,.fu-hyp{margin:4px 0 0 0;font-size:0.92em;line-height:1.45}'
+      + '.fu-hyp{padding:6px 10px;background:#fff;border-radius:3px;border:1px dashed #cbd5e1}'
+      + '.fu-acc ul{margin:2px 0 0 18px;padding:0}'
+      // charts
+      + '.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px 12px 12px;margin:10px 0}'
+      + '.chart-caption{font-size:0.83em;color:#475569;margin-top:4px;line-height:1.4}'
       // ── eb table row coloring ──
       + 'tr.eb-stub td{background:#fefce8}'
       + 'tr.eb-gated td{background:#fff7ed}'

@@ -267,6 +267,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-runs-clear":            "_post_study_runs_clear",
     "/api/study-comparison-add":        "_post_study_comparison_add",
     "/api/study-tests-run":             "_post_study_tests_run",
+    "/api/study-seed-followup":         "_post_study_seed_followup",
     # Workspace-switcher POST endpoints.
     "/api/workspaces/add":           "_post_workspaces_add",
     "/api/workspaces/forget":        "_post_workspaces_forget",
@@ -2207,6 +2208,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_iset_list()
         if self.path.startswith("/api/iset/"):
             return self._get_iset_detail()
+        if self.path.startswith("/api/study-charts/"):
+            return self._get_study_charts()
         if self.path.startswith("/api/references-bib"):
             return self._get_references_bib()
         if self.path.startswith("/api/investigation-composite-doc"):
@@ -4602,6 +4605,31 @@ if __name__ == "__main__":
             return self._json({"error": str(e)}, 500)
         return self._json({"entries": entries}, 200)
 
+    def _get_study_charts(self):
+        """GET /api/study-charts/<name> — inline-SVG charts for the latest run.
+
+        Reads ``studies/<name>/runs.db`` (the per-step history emitted by
+        SQLiteEmitter), picks the latest entry from the ``simulations`` table
+        (filtered to ``baseline-steady-state`` when present), and renders a
+        small canonical set of line charts as inline SVG so they can be
+        embedded directly in the offline HTML report.
+        """
+        import urllib.parse
+        from vivarium_dashboard.lib.study_charts import render_study_charts
+        path = urllib.parse.urlparse(self.path).path
+        name = path[len("/api/study-charts/"):].strip("/")
+        if not name:
+            return self._json({"error": "missing study name"}, 400)
+        runs_db = WORKSPACE / "studies" / name / "runs.db"
+        try:
+            charts = render_study_charts(runs_db, run_name="baseline-steady-state")
+            if not charts:
+                charts = render_study_charts(runs_db, run_name=None)
+        except Exception as e:
+            return self._json({"error": str(e), "study": name}, 500)
+        return self._json({"study": name, "charts": charts,
+                           "db_exists": runs_db.exists()}, 200)
+
     def _get_iset_detail(self):
         """GET /api/iset/<name> — return one investigation + its resolved studies.
 
@@ -6542,6 +6570,28 @@ if __name__ == "__main__":
         """POST /api/study-set-objective {study, text}"""
         response, code = _post_study_set_objective_for_test(WORKSPACE, body)
         return self._json(response, code)
+
+    def _post_study_seed_followup(self, body: dict):
+        """POST /api/study-seed-followup {parent, followup_idx} → seed child study.
+
+        Reads parent study.yaml, picks ``follow_up_studies[followup_idx]``,
+        and writes a new ``studies/<new-name>/study.yaml`` whose Purpose +
+        Pipeline gate inherit context from the follow-up entry. The new
+        study comes up as ``phase: Design`` / ``status: planned`` and is
+        immediately visible in the dashboard's Investigations tab.
+        """
+        from vivarium_dashboard.lib.study_seed import seed_followup_study
+        try:
+            new_name = seed_followup_study(
+                WORKSPACE, body.get("parent"), int(body.get("followup_idx", -1))
+            )
+        except FileNotFoundError as e:
+            return self._json({"error": str(e)}, 404)
+        except (ValueError, KeyError, IndexError) as e:
+            return self._json({"error": str(e)}, 400)
+        except Exception as e:
+            return self._json({"error": f"seed failed: {e}"}, 500)
+        return self._json({"new_study_name": new_name}, 200)
 
 
     def _post_study_rename(self, body: dict):

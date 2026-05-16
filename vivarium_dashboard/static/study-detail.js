@@ -24,8 +24,56 @@
     if (kind === 'conclusions') {
       _loadConclusionsTab(window._study);
     }
+    if (kind === 'runs') {
+      _loadChartsForRunsTab();
+    }
   }
   window._setStudyTab = _setStudyTab;
+
+  // ── Charts panel (top of Runs tab): inline SVGs from /api/study-charts ─────
+  var _chartsLoaded = false;
+  function _loadChartsForRunsTab() {
+    if (_chartsLoaded) return;
+    var panel = document.getElementById('charts-panel');
+    if (!panel) return;
+    _chartsLoaded = true;
+    panel.innerHTML = '<p class="muted" style="margin:0">Loading charts from runs.db…</p>';
+    fetch('/api/study-charts/' + encodeURIComponent(studyName()))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d || !d.charts || !d.charts.length) {
+          panel.innerHTML = (d && d.db_exists === false)
+            ? '<p class="muted" style="margin:0">No <code>runs.db</code> yet. Run a baseline to populate charts.</p>'
+            : '<p class="muted" style="margin:0">No chart data available for this study.</p>';
+          return;
+        }
+        panel.innerHTML = '<h3 class="section-title">Latest run — visualizations</h3>' +
+          d.charts.map(function(c) {
+            return '<div class="chart-card">' + c.svg +
+                   '<div class="chart-caption">' + (c.caption || '') + '</div></div>';
+          }).join('');
+      })
+      .catch(function(e) {
+        panel.innerHTML = '<p class="muted" style="color:#dc2626">Chart load failed: ' + (e && e.message || e) + '</p>';
+      });
+  }
+
+  // ── Seed a new study from a follow_up_studies[] entry ────────────────────
+  function _seedFollowupStudy(parentStudyName, followupIdx) {
+    if (!confirm('Seed a new study from this follow-up?\n\nA new study.yaml will be created under studies/<new-name>/ pre-populated with the follow-up context.')) {
+      return;
+    }
+    api('POST', '/api/study-seed-followup', {parent: parentStudyName, followup_idx: followupIdx})
+      .then(function(res) {
+        if (res.status !== 200 || res.body.error) {
+          alert('Seed failed: ' + (res.body.error || res.status));
+          return;
+        }
+        alert('Created: ' + res.body.new_study_name + '\nOpening it now.');
+        window.location.href = '/studies/' + encodeURIComponent(res.body.new_study_name);
+      });
+  }
+  window._seedFollowupStudy = _seedFollowupStudy;
 
   // --- Inline-edit (overview fields: objective, conclusion, question, hypothesis, status) ---
   function _saveOverviewField(field, value) {
