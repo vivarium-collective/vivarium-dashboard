@@ -175,8 +175,7 @@
     var name = window._studyDetailCurrent;
     if (!name) return;
     var url = '/studies/' + encodeURIComponent(name);
-    var w = window.open(url, '_blank',
-      'width=1200,height=800,menubar=no,toolbar=no,location=no,resizable=yes,scrollbars=yes');
+    var w = _openDetachedWindow(url, 1200, 800);
     if (!w) {
       alert('Popup blocked. Allow popups from this site to pop out the study view.');
       return;
@@ -191,6 +190,33 @@
     }, 1000);
   }
   window._popoutStudy = _popoutStudy;
+
+  // Try to open the URL as a true detached browser window (not a tab).
+  // The `popup` keyword + concrete dimensions triggers a popup window in
+  // Chromium / Safari; Firefox honors width/height with the
+  // dom.disable_window_open_feature.* prefs left at defaults. Browsers
+  // that hard-coded tab-only behavior (e.g. user pref) ignore us; that
+  // is the user's setting and can't be overridden by JS.
+  function _openDetachedWindow(url, width, height) {
+    width = width || 1280;
+    height = height || 900;
+    var features = [
+      'popup=yes',
+      'width=' + width,
+      'height=' + height,
+      'left=' + Math.max(0, (window.screen.availWidth - width) / 2),
+      'top=' + Math.max(0, (window.screen.availHeight - height) / 2),
+      'menubar=no',
+      'toolbar=no',
+      'location=no',
+      'status=no',
+      'resizable=yes',
+      'scrollbars=yes',
+      'noopener',           // discourage tab grouping with opener
+    ].join(',');
+    return window.open(url, '_blank', features);
+  }
+  window._openDetachedWindow = _openDetachedWindow;
 
   function _closeStudyEmbedded() {
     var frame = document.getElementById('study-detail-frame');
@@ -3496,13 +3522,17 @@
   function _popoutInvestigationStudy() {
     var name = window._currentInvestigationStudy;
     if (!name) return;
-    window.open('/studies/' + encodeURIComponent(name), '_blank');
+    var w = _openDetachedWindow('/studies/' + encodeURIComponent(name), 1200, 800);
+    if (!w) {
+      console.warn('_popoutInvestigationStudy: popup blocked');
+      alert('Popup blocked. Allow popups from this site to pop out the study view.');
+    }
   }
   window._popoutInvestigationStudy = _popoutInvestigationStudy;
 
-  // Pop-out the investigation itself (opens a fresh window scoped to this
-  // investigation via BOTH a ?investigation=<name> URL param AND a hash
-  // fragment so detection is robust regardless of when the param is read).
+  // Pop-out the investigation itself in a detached window. URL carries
+  // both ?investigation=<name> AND #investigations so detection is robust
+  // regardless of when the param is read on the receiving side.
   function _popoutInvestigation() {
     var name = window._currentIset;
     if (!name) {
@@ -3512,11 +3542,10 @@
     var url = window.location.origin + window.location.pathname +
               '?investigation=' + encodeURIComponent(name) +
               '#investigations';
-    var w = window.open(url, '_blank');
+    var w = _openDetachedWindow(url, 1400, 900);
     if (!w) {
-      // Popup blocked — fall back to navigating in the current tab.
       console.warn('_popoutInvestigation: popup blocked, navigating in-place');
-      window.location.href = url;
+      alert('Popup blocked. Allow popups from this site to pop out the investigation.');
     }
   }
   window._popoutInvestigation = _popoutInvestigation;
