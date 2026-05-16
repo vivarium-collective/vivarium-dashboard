@@ -7900,10 +7900,138 @@
       setText('pr-head-display', branch || '<branch>');
       setText('pr-base-display', base);
       setText('pr-base-display-2', base);
+      var ctx = document.getElementById('pr-suggest-context');
+      if (ctx) {
+        if (window._currentIsetData && window._currentIsetData.name) {
+          var iset = window._currentIsetData;
+          var nf = 0, nr = 0;
+          (iset.studies || []).forEach(function (s) {
+            nf += (s.findings || []).length;
+            nr += (s.n_runs || 0);
+          });
+          ctx.innerHTML = '<em>Suggest</em> will draft from open investigation <code>' +
+            _esc(iset.name) + '</code> (' + (iset.studies || []).length + ' studies · ' +
+            nf + ' findings · ' + nr + ' runs).';
+        } else {
+          ctx.innerHTML = '<em>Suggest</em>: open an investigation first (Investigations tab) and re-open this dialog to draft from its findings.';
+        }
+      }
       openModal('modal-open-pr');
     });
   }
   window._openPRDialog = _openPRDialog;
+
+  // ── Draft PR title / body from the active investigation ──────────────────
+  // Pulls from window._currentIsetData (set by _openInvestigationDetail).
+  // For title: a short kebab-style label derived from the dominant finding
+  // kind or the highest-leverage follow-up. For body: a structured summary
+  // (findings, runs, follow-ups) shaped as a GitHub PR description.
+  function _draftPRFromInvestigation(field, form) {
+    var iset = window._currentIsetData;
+    if (!iset || !iset.name) {
+      alert('No active investigation. Open an investigation in the Investigations tab first.');
+      return;
+    }
+    var studies = iset.studies || [];
+    var allFindings = [];
+    var allFollowups = [];
+    studies.forEach(function (s) {
+      (s.findings || []).forEach(function (f) { allFindings.push({study: s.name, f: f}); });
+      (s.follow_up_studies || []).forEach(function (f) { allFollowups.push({study: s.name, f: f}); });
+    });
+    var bioContradicts = allFindings.filter(function (e) { return e.f.kind === 'biological' && e.f.status === 'contradicts'; });
+    var bioConfirms    = allFindings.filter(function (e) { return e.f.kind === 'biological' && e.f.status === 'confirms'; });
+    var compNovel      = allFindings.filter(function (e) { return e.f.kind === 'computational' && e.f.status === 'novel'; });
+
+    if (field === 'title') {
+      var titleEl = form.querySelector('input[name=title]');
+      if (!titleEl) return;
+      // Heuristic: if any computational/novel findings, title leads with infra;
+      // otherwise lead with the investigation question shortened.
+      var label;
+      if (compNovel.length && compNovel.length >= bioContradicts.length) {
+        label = 'infra: ' + iset.name + ' — ' + compNovel.length + ' computational finding' + (compNovel.length === 1 ? '' : 's');
+      } else if (bioContradicts.length || bioConfirms.length) {
+        label = 'investigation: ' + iset.name + ' — ' +
+                (bioConfirms.length ? bioConfirms.length + ' confirms' : '') +
+                (bioConfirms.length && bioContradicts.length ? ' / ' : '') +
+                (bioContradicts.length ? bioContradicts.length + ' contradicts vs literature' : '');
+      } else {
+        label = 'investigation: ' + iset.name + ' — ' + studies.length + ' studies (in-progress)';
+      }
+      if (label.length > 95) label = label.slice(0, 92) + '…';
+      titleEl.value = label;
+      titleEl.focus();
+      return;
+    }
+
+    if (field === 'body') {
+      var bodyEl = form.querySelector('textarea[name=body]');
+      if (!bodyEl) return;
+      var lines = [];
+      // Header — investigation question + hypothesis when present.
+      lines.push('## Investigation: `' + iset.name + '`');
+      if (iset.question) lines.push('', '> ' + iset.question.replace(/\n+/g, ' ').trim());
+      lines.push('');
+
+      // Findings: the headline section a biologist would read first.
+      if (allFindings.length) {
+        lines.push('## Findings (' + allFindings.length + ')');
+        lines.push('');
+        ['biological', 'computational', 'methodological'].forEach(function (kind) {
+          var kindFindings = allFindings.filter(function (e) { return e.f.kind === kind; });
+          if (!kindFindings.length) return;
+          lines.push('### ' + kind.charAt(0).toUpperCase() + kind.slice(1) + ' (' + kindFindings.length + ')');
+          kindFindings.forEach(function (e) {
+            var f = e.f;
+            var glyph = ({confirms: '✓', contradicts: '✗', partial: '◐', novel: '◆'})[f.status || 'novel'];
+            var stmt = (f.statement || '').split('\n')[0].slice(0, 200);
+            var ref = '';
+            if (f.expected && f.expected.cites && f.expected.cites.length) {
+              ref = ' (cites: ' + f.expected.cites.slice(0, 3).map(function (c) { return '`' + c + '`'; }).join(', ') + ')';
+            } else if (f.expert_reference && f.expert_reference.doc) {
+              ref = ' (expert ref: `' + f.expert_reference.doc + '`)';
+            }
+            lines.push('- **' + glyph + ' ' + (f.id || '') + '** (' + e.study + '): ' + stmt + ref);
+          });
+          lines.push('');
+        });
+      }
+
+      // Per-study summary — phase + status + outcome counts.
+      lines.push('## Studies (' + studies.length + ')');
+      lines.push('');
+      lines.push('| Study | Phase | Status | Findings | Follow-ups |');
+      lines.push('|---|---|---|---|---|');
+      studies.forEach(function (s) {
+        lines.push('| `' + s.name + '` | ' + (s.phase || '—') + ' | ' + (s.status || '—') +
+                   ' | ' + ((s.findings || []).length) + ' | ' + ((s.follow_up_studies || []).length) + ' |');
+      });
+      lines.push('');
+
+      // Test plan — derived from follow-ups marked open + acceptance criteria.
+      var openFollowups = allFollowups.filter(function (e) { return e.f.status !== 'done'; });
+      if (openFollowups.length) {
+        lines.push('## Test plan');
+        lines.push('');
+        openFollowups.slice(0, 10).forEach(function (e) {
+          var t = (e.f.title || '').replace(/\n+/g, ' ').trim();
+          lines.push('- [ ] ' + t + ' _(' + (e.f.kind || 'other') + ', from ' + e.study + ')_');
+        });
+        lines.push('');
+      }
+
+      // Footer
+      lines.push('---');
+      lines.push('_Drafted from the dashboard\'s Investigations view — `' + iset.name + '` (' +
+                 studies.length + ' studies). Edit freely before submitting._');
+
+      bodyEl.value = lines.join('\n');
+      bodyEl.focus();
+      return;
+    }
+  }
+  window._draftPRFromInvestigation = _draftPRFromInvestigation;
 
   function _submitOpenPR(form) {
     var fd = new FormData(form);

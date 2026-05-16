@@ -1301,11 +1301,18 @@ Nothing on <code id="pr-base-display-2">main</code> changes until someone presse
 "Merge" on the GitHub PR page. You can leave a draft PR open indefinitely.</p>
     <form id="form-open-pr" onsubmit="event.preventDefault(); _submitOpenPR(this);">
       <label>Title:
-        <input name="title" required>
+        <div class="input-with-suggest">
+          <input name="title" required>
+          <button type="button" class="btn-suggest" onclick="_draftPRFromInvestigation('title', this.closest('form'))">Suggest from investigation</button>
+        </div>
       </label>
       <label>Body:<br>
-        <textarea name="body" rows="6" placeholder="Summary, what changed, test plan..."></textarea>
+        <div class="input-with-suggest input-with-suggest-textarea">
+          <textarea name="body" rows="14" placeholder="Summary, what changed, test plan..."></textarea>
+          <button type="button" class="btn-suggest" onclick="_draftPRFromInvestigation('body', this.closest('form'))">Suggest from investigation</button>
+        </div>
       </label>
+      <p class="muted" id="pr-suggest-context" style="font-size:0.82em;margin:-4px 0 4px 0"></p>
       <label class="checkbox-row">
         <input type="checkbox" name="draft" id="pr-draft-checkbox" checked>
         Draft PR (recommended — can be marked ready for review later)
