@@ -403,11 +403,21 @@
     fromHash();
 
     // ?investigation=<name> → auto-open that investigation's detail view.
+    // The setTimeout retries to handle the race where the iframe / API
+    // load races with the page swap.
     var qInv = new URLSearchParams(window.location.search).get('investigation');
     if (qInv) {
       _switchPage('investigations');
-      // Give the page-investigations renderer one tick to mount.
-      setTimeout(function() { _openInvestigationDetail(qInv); }, 100);
+      var tries = 0;
+      var attemptOpen = function() {
+        var detailEl = document.getElementById('investigation-detail-view');
+        if (detailEl && typeof _openInvestigationDetail === 'function') {
+          _openInvestigationDetail(qInv);
+        } else if (tries++ < 20) {
+          setTimeout(attemptOpen, 100);
+        }
+      };
+      setTimeout(attemptOpen, 50);
     }
   }
 
@@ -3368,6 +3378,10 @@
     edgesSvg.setAttribute('height', canvasH);
     edgesSvg.style.width = canvasW + 'px';
     edgesSvg.style.height = canvasH + 'px';
+    // Size the shell to fit its content so the OUTER page scrolls instead
+    // of creating a nested scrollbar inside the panel.
+    var shellSize = document.getElementById('investigation-dag-shell');
+    if (shellSize) shellSize.style.height = canvasH + 'px';
 
     // Marker for arrowheads (defined once).
     var svgNS = 'http://www.w3.org/2000/svg';
@@ -3487,12 +3501,23 @@
   window._popoutInvestigationStudy = _popoutInvestigationStudy;
 
   // Pop-out the investigation itself (opens a fresh window scoped to this
-  // investigation via a ?investigation=<name> URL param the page picks up
-  // on load).
+  // investigation via BOTH a ?investigation=<name> URL param AND a hash
+  // fragment so detection is robust regardless of when the param is read).
   function _popoutInvestigation() {
     var name = window._currentIset;
-    if (!name) return;
-    window.open(window.location.origin + '/?investigation=' + encodeURIComponent(name) + '#investigations', '_blank');
+    if (!name) {
+      console.warn('_popoutInvestigation: no current investigation set');
+      return;
+    }
+    var url = window.location.origin + window.location.pathname +
+              '?investigation=' + encodeURIComponent(name) +
+              '#investigations';
+    var w = window.open(url, '_blank');
+    if (!w) {
+      // Popup blocked — fall back to navigating in the current tab.
+      console.warn('_popoutInvestigation: popup blocked, navigating in-place');
+      window.location.href = url;
+    }
   }
   window._popoutInvestigation = _popoutInvestigation;
 
