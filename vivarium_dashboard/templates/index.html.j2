@@ -534,12 +534,55 @@
       <input type="search" id="bib-filter" placeholder="Filter by key, title, author, year…"
              style="flex:1;min-width:240px;max-width:480px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9em"
              oninput="_filterBibEntries(this.value)">
-      <button class="action-btn" id="refs-fetch-all-btn" onclick="_fetchReferencesAll()"
-              title="Look up DOI + open-access PDF link for entries that don't have them yet. Queries crossref.org + unpaywall.org.">
-        ↓ Fetch metadata
-      </button>
       <button class="action-btn" onclick="openModal('modal-reference')">+ Add reference (PDF)</button>
     </div>
+
+    {# Build the list of entries that have neither a committed PDF nor an
+       open-access PDF link nor a publisher URL — i.e. those a Claude Code
+       session needs to research by hand. #}
+    {% set _pdf_keys = (references_pdfs or []) | map(attribute='bib_key') | list %}
+    {% set _need_ai = [] %}
+    {% for e in (bib_entries or []) %}
+      {% if e.key not in _pdf_keys and not e.oa_pdf_url and not e.publisher_url and not (e.enriched_doi or e.doi) %}
+        {% set _ = _need_ai.append(e) %}
+      {% endif %}
+    {% endfor %}
+
+    {% if _need_ai %}
+    <details style="margin-bottom:14px;background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px">
+      <summary style="cursor:pointer;font-weight:600;color:#1e40af">
+        🤖 Hand off {{ _need_ai|length }} unresolved reference{% if _need_ai|length != 1 %}s{% endif %} to a Claude Code session
+      </summary>
+      <p style="margin:10px 0 6px 0;font-size:0.88em;color:#1e3a8a">
+        These entries have no committed PDF, no open-access link, and no DOI/publisher URL. Copy the prompt below into <strong>any Claude Code session running in this workspace</strong>; it will search for each paper, download PDFs where openly available, and add DOI / URL fields to <code>references/papers.bib</code>.
+      </p>
+      <textarea id="refs-ai-prompt" readonly
+                style="width:100%;min-height:200px;padding:10px;border:1px solid #cbd5e1;border-radius:4px;font-family:ui-monospace,monospace;font-size:0.82em;background:#fff;resize:vertical">For each of the bib entries listed below in `references/papers.bib`, do the following — work entry by entry, committing as you go:
+
+1. Search the web for the paper using its title + first author + year. Use WebSearch / WebFetch to find the canonical publisher page.
+2. Note the DOI and the publisher URL.
+3. If an open-access PDF is available (publisher, arXiv, bioRxiv, PubMed Central, author's site, institutional repository, etc.), download it to `references/{bib_key}.pdf` and add the entry to `workspace.yaml.references_pdfs` with the sha256 of the downloaded file.
+4. Edit the entry in `references/papers.bib` to add `doi = {...}` and `url = {...}` fields where missing. Preserve the existing entry structure.
+5. If you cannot find a freely-available PDF but can identify a stable URL (publisher page, paywall landing page, indexed search result), just add the `url` / `doi` and skip the PDF download.
+6. After updating papers.bib + workspace.yaml, run `python scripts/lint-workspace.py` to confirm nothing is broken.
+
+You can also short-circuit DOI + Unpaywall lookup by calling the dashboard's existing endpoint:
+    curl -X POST -H 'Content-Type: application/json' -d '{"key":"<bibkey>"}' http://localhost:8765/api/references-fetch
+
+…but treat that as a fallback — manual search usually finds links Unpaywall misses (paywalled DOIs the publisher hosts a free PDF for, preprint servers, etc.).
+
+Entries to research:
+{% for e in _need_ai %}
+- {{ e.key }} — "{{ e.title }}" ({{ e.author }}, {{ e.year }}{% if e.journal %}, {{ e.journal }}{% endif %})
+{%- endfor %}
+
+When done, summarize which entries got PDFs vs URLs only vs were unresolvable, and commit the workspace changes on the active workstream branch.</textarea>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button class="btn-mini" onclick="_copyRefsAiPrompt(this)" title="Copy prompt to clipboard">📋 Copy prompt</button>
+        <span class="muted" style="font-size:0.78em">Paste into a Claude Code session running in this workspace.</span>
+      </div>
+    </details>
+    {% endif %}
 
     {% if references_pdfs %}
     <details style="margin-bottom:12px">
@@ -613,14 +656,6 @@
           {% if e.enrichment_errors %}
           <p class="muted" style="margin:4px 0;font-size:0.78em">Lookup notes: {{ e.enrichment_errors|join('; ') }}</p>
           {% endif %}
-          {% if e.enrichment_pending or not e.enrichment_fetched_at %}
-          <p style="margin:6px 0">
-            <button class="btn-mini" onclick="_fetchReferencesOne('{{ e.key }}', this)"
-                    title="Look up DOI + open-access PDF link for this entry via crossref.org + unpaywall.org.">
-              ↓ Fetch metadata
-            </button>
-          </p>
-          {% endif %}
         </div>
       </details>
     {% endfor %}
@@ -634,59 +669,29 @@
         });
       }
 
-      // POST /api/references-fetch — fills in missing DOI + open-access PDF
-      // links by querying crossref.org + unpaywall.org. Cached server-side
-      // in references/.cache.json; subsequent renders surface the new data.
-      function _fetchReferencesOne(key, btn) {
-        if (btn) { btn.disabled = true; btn.textContent = '↓ Fetching…'; }
-        return fetch('/api/references-fetch', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', Accept: 'application/json'},
-          body: JSON.stringify({key: key}),
-        }).then(function(r) {
-          return r.json().then(function(j) { return {ok: r.ok, body: j}; });
-        }).then(function(res) {
-          if (!res.ok) {
-            alert('Fetch failed: ' + ((res.body && res.body.error) || 'unknown'));
-            if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
-            return;
-          }
-          // Reload to show the enriched card (server re-renders from cache).
-          window.location.reload();
-        }).catch(function(err) {
-          alert('Network error: ' + String(err));
-          if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
-        });
+      // Copy the "hand off to Claude Code" prompt to the user's clipboard.
+      // The textarea is already on the page (rendered server-side); we just
+      // shovel its value into the clipboard API. Falls back to the
+      // execCommand path for older browsers / non-HTTPS contexts.
+      function _copyRefsAiPrompt(btn) {
+        var ta = document.getElementById('refs-ai-prompt');
+        if (!ta) return;
+        var done = function(ok) {
+          if (!btn) return;
+          var orig = btn.textContent;
+          btn.textContent = ok ? '✓ Copied' : '⚠ Copy failed — select + Cmd+C';
+          btn.disabled = true;
+          setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 1800);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(ta.value).then(function() { done(true); },
+                                                       function() { done(false); });
+        } else {
+          ta.select();
+          try { done(document.execCommand('copy')); } catch (e) { done(false); }
+        }
       }
-      window._fetchReferencesOne = _fetchReferencesOne;
-
-      function _fetchReferencesAll() {
-        var btn = document.getElementById('refs-fetch-all-btn');
-        if (btn) { btn.disabled = true; btn.textContent = '↓ Fetching all…'; }
-        return fetch('/api/references-fetch', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json', Accept: 'application/json'},
-          body: JSON.stringify({}),
-        }).then(function(r) {
-          return r.json().then(function(j) { return {ok: r.ok, body: j}; });
-        }).then(function(res) {
-          if (!res.ok) {
-            alert('Fetch failed: ' + ((res.body && res.body.error) || 'unknown'));
-            if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
-            return;
-          }
-          var n = (res.body.updated || []).length;
-          if (n === 0) {
-            if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata (all up to date)'; }
-            return;
-          }
-          window.location.reload();
-        }).catch(function(err) {
-          alert('Network error: ' + String(err));
-          if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
-        });
-      }
-      window._fetchReferencesAll = _fetchReferencesAll;
+      window._copyRefsAiPrompt = _copyRefsAiPrompt;
     </script>
     {% else %}
     <p style="color:#888;font-style:italic">No bibliography entries yet. Add some to <code>references/papers.bib</code>.</p>
