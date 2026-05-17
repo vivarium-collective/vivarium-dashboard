@@ -534,6 +534,10 @@
       <input type="search" id="bib-filter" placeholder="Filter by key, title, author, year…"
              style="flex:1;min-width:240px;max-width:480px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:4px;font-size:0.9em"
              oninput="_filterBibEntries(this.value)">
+      <button class="action-btn" id="refs-fetch-all-btn" onclick="_fetchReferencesAll()"
+              title="Look up DOI + open-access PDF link for entries that don't have them yet. Queries crossref.org + unpaywall.org.">
+        ↓ Fetch metadata
+      </button>
       <button class="action-btn" onclick="openModal('modal-reference')">+ Add reference (PDF)</button>
     </div>
 
@@ -572,6 +576,16 @@
             <code style="background:#f1f5f9;padding:1px 6px;border-radius:3px;font-size:0.82em">{{ e.key }}</code>
             <span class="muted" style="font-size:0.82em">{{ e.year }}</span>
             <span style="font-size:0.85em">{{ e.journal }}</span>
+            {% if e.oa_pdf_url %}
+            <a href="{{ e.oa_pdf_url }}" target="_blank" onclick="event.stopPropagation()"
+               style="font-size:0.72em;background:#dbeafe;color:#1e40af;padding:1px 8px;border-radius:9999px;text-decoration:none"
+               title="Open-access PDF via Unpaywall ({{ e.oa_status or 'available' }})">PDF (OA) ↗</a>
+            {% endif %}
+            {% if e.publisher_url and not e.oa_pdf_url %}
+            <a href="{{ e.publisher_url }}" target="_blank" onclick="event.stopPropagation()"
+               style="font-size:0.72em;background:#f1f5f9;color:#334155;padding:1px 8px;border-radius:9999px;text-decoration:none"
+               title="Publisher page">Site ↗</a>
+            {% endif %}
             {% if e.has_notes_md %}
             <span style="font-size:0.7em;background:#dcfce7;color:#166534;padding:1px 7px;border-radius:9999px">notes ✎</span>
             {% endif %}
@@ -583,13 +597,28 @@
           {% if e.journal or e.volume or e.pages %}
           <p style="margin:4px 0"><em>{{ e.journal }}</em>{% if e.volume %} {{ e.volume }}{% if e.number %}({{ e.number }}){% endif %}{% endif %}{% if e.pages %}, pp. {{ e.pages }}{% endif %}{% if e.year %} ({{ e.year }}){% endif %}.</p>
           {% endif %}
-          {% if e.doi %}<p style="margin:4px 0"><strong>DOI:</strong> <a href="https://doi.org/{{ e.doi }}" target="_blank">{{ e.doi }}</a></p>{% endif %}
+          {% set _doi = e.enriched_doi or e.doi %}
+          {% if _doi %}<p style="margin:4px 0"><strong>DOI:</strong> <a href="https://doi.org/{{ _doi }}" target="_blank">{{ _doi }}</a>{% if e.enriched_doi and not e.doi %} <span class="muted" style="font-size:0.78em">(fetched)</span>{% endif %}</p>{% endif %}
           {% if e.url %}<p style="margin:4px 0"><strong>URL:</strong> <a href="{{ e.url }}" target="_blank">Open ↗</a></p>{% endif %}
+          {% if e.oa_pdf_url %}
+          <p style="margin:4px 0"><strong>Open access PDF:</strong> <a href="{{ e.oa_pdf_url }}" target="_blank">{{ e.oa_pdf_url[:64] }}{% if e.oa_pdf_url|length > 64 %}…{% endif %}</a> <span class="muted" style="font-size:0.78em">via Unpaywall ({{ e.oa_status }})</span></p>
+          {% endif %}
           {% if e.note %}<p style="margin:6px 0;padding:6px 10px;background:#fef9c3;border-left:3px solid #facc15;border-radius:3px;font-size:0.85em"><strong>Note:</strong> {{ e.note }}</p>{% endif %}
           {% if e.has_notes_md %}
           <p style="margin:4px 0">
             <strong>Reading notes:</strong>
             <a href="/{{ e.notes_md_path }}" target="_blank">{{ e.notes_md_path }}</a>
+          </p>
+          {% endif %}
+          {% if e.enrichment_errors %}
+          <p class="muted" style="margin:4px 0;font-size:0.78em">Lookup notes: {{ e.enrichment_errors|join('; ') }}</p>
+          {% endif %}
+          {% if e.enrichment_pending or not e.enrichment_fetched_at %}
+          <p style="margin:6px 0">
+            <button class="btn-mini" onclick="_fetchReferencesOne('{{ e.key }}', this)"
+                    title="Look up DOI + open-access PDF link for this entry via crossref.org + unpaywall.org.">
+              ↓ Fetch metadata
+            </button>
           </p>
           {% endif %}
         </div>
@@ -604,6 +633,60 @@
           el.style.display = (!q || hay.indexOf(q) >= 0) ? '' : 'none';
         });
       }
+
+      // POST /api/references-fetch — fills in missing DOI + open-access PDF
+      // links by querying crossref.org + unpaywall.org. Cached server-side
+      // in references/.cache.json; subsequent renders surface the new data.
+      function _fetchReferencesOne(key, btn) {
+        if (btn) { btn.disabled = true; btn.textContent = '↓ Fetching…'; }
+        return fetch('/api/references-fetch', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+          body: JSON.stringify({key: key}),
+        }).then(function(r) {
+          return r.json().then(function(j) { return {ok: r.ok, body: j}; });
+        }).then(function(res) {
+          if (!res.ok) {
+            alert('Fetch failed: ' + ((res.body && res.body.error) || 'unknown'));
+            if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
+            return;
+          }
+          // Reload to show the enriched card (server re-renders from cache).
+          window.location.reload();
+        }).catch(function(err) {
+          alert('Network error: ' + String(err));
+          if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
+        });
+      }
+      window._fetchReferencesOne = _fetchReferencesOne;
+
+      function _fetchReferencesAll() {
+        var btn = document.getElementById('refs-fetch-all-btn');
+        if (btn) { btn.disabled = true; btn.textContent = '↓ Fetching all…'; }
+        return fetch('/api/references-fetch', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+          body: JSON.stringify({}),
+        }).then(function(r) {
+          return r.json().then(function(j) { return {ok: r.ok, body: j}; });
+        }).then(function(res) {
+          if (!res.ok) {
+            alert('Fetch failed: ' + ((res.body && res.body.error) || 'unknown'));
+            if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
+            return;
+          }
+          var n = (res.body.updated || []).length;
+          if (n === 0) {
+            if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata (all up to date)'; }
+            return;
+          }
+          window.location.reload();
+        }).catch(function(err) {
+          alert('Network error: ' + String(err));
+          if (btn) { btn.disabled = false; btn.textContent = '↓ Fetch metadata'; }
+        });
+      }
+      window._fetchReferencesAll = _fetchReferencesAll;
     </script>
     {% else %}
     <p style="color:#888;font-style:italic">No bibliography entries yet. Add some to <code>references/papers.bib</code>.</p>

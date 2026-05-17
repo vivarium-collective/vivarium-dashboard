@@ -376,6 +376,16 @@ def render_workspace_report(ws_root: Path | None = None, *, today: str | None = 
 
     references_count = _count_bib_entries(ws_root)
     bib_entries = _parse_bib_entries(ws_root)
+    # Merge cached enrichment data (DOI / publisher URL / OA PDF URL) into
+    # each entry so the rendered cards can surface "Open ↗" + "OA PDF ↗" links.
+    try:
+        from vivarium_dashboard.lib.references_fetch import (
+            load_cache as _load_refs_cache, enrich_entries as _enrich_refs,
+        )
+        bib_entries = _enrich_refs(bib_entries, _load_refs_cache(ws_root))
+    except Exception:
+        # Cache failures must never break the report render.
+        pass
     datasets = _enrich_with_file_info(ws.get("datasets") or [], ws_root)
     expert_docs = _enrich_with_file_info(ws.get("expert_docs") or [], ws_root)
     references_pdfs = _enrich_with_file_info(ws.get("references_pdfs") or [], ws_root)
