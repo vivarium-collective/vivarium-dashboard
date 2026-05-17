@@ -230,6 +230,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/open-window":        "_post_open_window",
     "/api/suggest":            "_post_suggest",
     "/api/composite-test-run": "_post_composite_test_run",
+    "/api/iset-create":         "_post_iset_create",
     "/api/investigation-create":      "_post_investigation_create",
     "/api/investigation-delete":      "_post_investigation_delete",
     "/api/investigation-run":         "_post_investigation_run",
@@ -562,14 +563,17 @@ def _iter_study_dirs():
             yield d
 
 
-def _iter_iset_dirs():
+def _iter_iset_dirs(ws_root: Path | None = None):
     """Yield investigations/<name>/ dirs that contain an investigation.yaml.
 
     'iset' = investigation-set (a named collection of studies with the v3
     'investigations as collections' semantics, distinct from the legacy
     investigations/<name>/spec.yaml study format).
+
+    ``ws_root`` defaults to the module-level WORKSPACE constant; tests can
+    pass an explicit path to walk an isolated tmp workspace.
     """
-    root = WORKSPACE / "investigations"
+    root = (ws_root or WORKSPACE) / "investigations"
     if not root.is_dir():
         return
     for d in sorted(root.iterdir()):
@@ -577,6 +581,217 @@ def _iter_iset_dirs():
             continue
         if (d / "investigation.yaml").is_file():
             yield d
+
+
+# ---------------------------------------------------------------------------
+# Investigation status derivation
+# ---------------------------------------------------------------------------
+
+# Slug pattern used by /api/iset-create — kebab-case only (no underscores).
+# Tighter than _SLUG_RE (which allows underscores for legacy auto-generated
+# study names): investigations are user-named in the dashboard UI and we
+# want them to look like URL-safe slugs.
+_ISET_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+# Sets used by compute_investigation_status. Defined at module scope so the
+# derivation rules are inspectable / overridable from tests.
+_STUDY_STATUS_FAILED = frozenset({"failed", "invalid"})
+_STUDY_STATUS_COMPLETE = frozenset({"complete", "ran"})
+_STUDY_STATUS_RUNNING = frozenset({"running", "implementing", "runnable", "analyzing"})
+_STUDY_STATUS_PLANNED = frozenset({"planned", "planning"})
+
+
+def compute_investigation_status(
+    study_statuses: list[str],
+    has_runs: list[bool] | None = None,
+) -> str:
+    """Derive an investigation's effective status from its member studies.
+
+    Rules, applied in order (first match wins):
+
+    1. Any child in ``{failed, invalid}`` → ``"failed"``.
+    2. All children in ``{complete, ran}`` (non-empty) → ``"complete"``.
+    3. Any child in ``{running, implementing, runnable, analyzing}`` OR with
+       accumulated runs (via ``has_runs[i] == True``) → ``"running"``.
+    4. At least one child in ``{complete, ran}`` but not all → ``"in_progress"``.
+    5. Otherwise (empty, or all planned/planning/unknown) → ``"planning"``.
+
+    ``has_runs`` is an optional parallel list of bools (one per study)
+    indicating whether each study has accumulated at least one run. When
+    omitted, rule 3 considers only the status set.
+    """
+    statuses = list(study_statuses or [])
+    has_runs = list(has_runs or [False] * len(statuses))
+
+    # 1: any failed/invalid child poisons the whole investigation.
+    if any(s in _STUDY_STATUS_FAILED for s in statuses):
+        return "failed"
+
+    # 2: non-empty list, every child complete/ran.
+    if statuses and all(s in _STUDY_STATUS_COMPLETE for s in statuses):
+        return "complete"
+
+    # 3: anything in the "active" set OR runs accumulated → running.
+    if any(s in _STUDY_STATUS_RUNNING for s in statuses):
+        return "running"
+    if any(has_runs):
+        return "running"
+
+    # 4: at least one done but not all → mixed-progress.
+    if any(s in _STUDY_STATUS_COMPLETE for s in statuses):
+        return "in_progress"
+
+    # 5: default.
+    return "planning"
+
+
+def _read_study_status(ws_root: Path, slug: str) -> tuple[str, bool]:
+    """Read (status, has_runs) for a member study referenced by an iset.
+
+    Returns ``("planning", False)`` if the study can't be located or parsed —
+    treat missing-children as benign for status derivation rather than
+    poisoning the entire investigation.
+    """
+    candidates = [
+        ws_root / "studies" / slug / "study.yaml",
+        ws_root / "investigations" / slug / "spec.yaml",
+    ]
+    for sp in candidates:
+        if not sp.is_file():
+            continue
+        try:
+            spec = yaml.safe_load(sp.read_text()) or {}
+        except Exception:
+            return "planning", False
+        status = spec.get("status") or "planning"
+        n_runs = len(spec.get("runs") or [])
+        return status, n_runs > 0
+    return "planning", False
+
+
+def _build_iset_summary_for_test(ws_root: Path) -> list[dict]:
+    """Pure function backing ``GET /api/iset-list`` — emits the same list
+    of summary dicts that the handler returns, but without HTTP plumbing.
+
+    Each entry includes ``effective_status`` derived from the member
+    studies' current statuses.
+    """
+    out: list[dict] = []
+    for d in _iter_iset_dirs(ws_root):
+        try:
+            spec = yaml.safe_load((d / "investigation.yaml").read_text()) or {}
+        except Exception as e:
+            out.append({"name": d.name, "error": f"parse failed: {e}"})
+            continue
+        study_slugs = list(spec.get("studies") or [])
+        statuses_and_runs = [_read_study_status(ws_root, s) for s in study_slugs]
+        statuses = [s for s, _ in statuses_and_runs]
+        has_runs = [r for _, r in statuses_and_runs]
+        author_status = spec.get("status", "planning")
+        effective_status = compute_investigation_status(statuses, has_runs=has_runs)
+        out.append({
+            "name":             spec.get("name", d.name),
+            "title":            spec.get("title", spec.get("name", d.name)),
+            "status":           author_status,
+            "effective_status": effective_status,
+            "description":      spec.get("description", ""),
+            "question":         spec.get("question", ""),
+            "hypothesis":       spec.get("hypothesis", ""),
+            "n_studies":        len(study_slugs),
+            "studies":          study_slugs,
+        })
+    return out
+
+
+def _build_iset_detail_for_test(ws_root: Path, name: str) -> tuple[dict, int]:
+    """Pure function backing ``GET /api/iset/<name>`` — returns
+    (response_dict, status_code). Used by the HTTP handler and unit tests.
+    """
+    if not name:
+        return {"error": "investigation name required"}, 400
+    spec_path = ws_root / "investigations" / name / "investigation.yaml"
+    if not spec_path.is_file():
+        return {"error": f"no investigation.yaml at {spec_path}"}, 404
+    try:
+        spec = yaml.safe_load(spec_path.read_text()) or {}
+    except Exception as e:
+        return {"error": f"parse failed: {e}"}, 500
+
+    # Build a lean studies-out list (slug + status + has_runs) for status
+    # derivation. The full handler does much more work to populate DAG
+    # fields; we keep this helper minimal for testability.
+    studies_out = []
+    statuses = []
+    has_runs = []
+    for slug in (spec.get("studies") or []):
+        status, runs = _read_study_status(ws_root, slug)
+        statuses.append(status)
+        has_runs.append(runs)
+        studies_out.append({"name": slug, "status": status})
+
+    author_status = spec.get("status", "planning")
+    effective_status = compute_investigation_status(statuses, has_runs=has_runs)
+    return {
+        "name":             spec.get("name", name),
+        "title":            spec.get("title", spec.get("name", name)),
+        "description":      spec.get("description", ""),
+        "question":         spec.get("question", ""),
+        "hypothesis":       spec.get("hypothesis", ""),
+        "status":           author_status,
+        "effective_status": effective_status,
+        "expert_docs":      spec.get("expert_docs") or [],
+        "acceptance_criteria": spec.get("acceptance_criteria") or [],
+        "studies":          studies_out,
+    }, 200
+
+
+def _post_iset_create_for_test(ws_root: Path, body: dict) -> tuple[dict, int]:
+    """Create a new investigation.yaml. Returns (response_dict, status_code).
+
+    Body:
+        name:           required, kebab-case slug (^[a-z0-9][a-z0-9-]*$).
+        overview:       optional, becomes the ``description:`` field.
+        parent_studies: optional list of study slugs.
+    """
+    import os
+    name = (body.get("name") or "").strip()
+    overview = body.get("overview") or ""
+    parent_studies = body.get("parent_studies") or []
+
+    if not name:
+        return {"error": "name is required"}, 400
+    if not _ISET_SLUG_RE.match(name):
+        return {"error": "name must be kebab-case (^[a-z0-9][a-z0-9-]*$)"}, 400
+
+    inv_dir = ws_root / "investigations" / name
+    target = inv_dir / "investigation.yaml"
+    if target.exists():
+        return {"error": f"investigation '{name}' already exists"}, 409
+
+    spec: dict = {
+        "schema_version": 1,
+        "name": name,
+        "title": name,
+        "status": "planning",
+        "description": overview,
+        "studies": [],
+    }
+    if parent_studies:
+        spec["parent_studies"] = list(parent_studies)
+
+    inv_dir.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".yaml.tmp")
+    try:
+        tmp.write_text(yaml.safe_dump(spec, sort_keys=False, allow_unicode=True))
+        os.replace(tmp, target)
+    except Exception:
+        if tmp.exists():
+            tmp.unlink()
+        raise
+
+    detail, code = _build_iset_detail_for_test(ws_root, name)
+    return detail, code
 
 
 def _study_name_from_body(body: dict) -> str:
@@ -4708,25 +4923,24 @@ if __name__ == "__main__":
     # distinct and walked separately by _iter_study_dirs.
 
     def _get_iset_list(self):
-        """GET /api/iset-list — return summaries of every investigation."""
-        out = []
-        for d in _iter_iset_dirs():
-            try:
-                spec = yaml.safe_load((d / "investigation.yaml").read_text()) or {}
-            except Exception as e:
-                out.append({"name": d.name, "error": f"parse failed: {e}"})
-                continue
-            out.append({
-                "name":        spec.get("name", d.name),
-                "title":       spec.get("title", spec.get("name", d.name)),
-                "status":      spec.get("status", "planning"),
-                "description": spec.get("description", ""),
-                "question":    spec.get("question", ""),
-                "hypothesis":  spec.get("hypothesis", ""),
-                "n_studies":   len(spec.get("studies") or []),
-                "studies":     list(spec.get("studies") or []),
-            })
+        """GET /api/iset-list — return summaries of every investigation.
+
+        Each item includes ``status`` (author-declared, from YAML) and
+        ``effective_status`` (computed from the member studies). See
+        :func:`compute_investigation_status` for the derivation rules.
+        """
+        out = _build_iset_summary_for_test(WORKSPACE)
         return self._json({"investigations": out}, 200)
+
+    def _post_iset_create(self, body: dict):
+        """POST /api/iset-create — scaffold a new investigation.yaml.
+
+        Body: ``{name: str, overview?: str, parent_studies?: list[str]}``.
+        Slug must match ``^[a-z0-9][a-z0-9-]*$``. Atomic write (tmp+rename).
+        Returns the new investigation in the same shape as GET /api/iset/<name>.
+        """
+        resp, code = _post_iset_create_for_test(WORKSPACE, body)
+        return self._json(resp, code)
 
     def _get_references_bib(self):
         """GET /api/references-bib — parsed contents of references/papers.bib.
@@ -4926,16 +5140,26 @@ if __name__ == "__main__":
                 "findings":        findings,
             })
 
+        # Compute effective_status from the member studies' current statuses.
+        # The author-declared YAML 'status' represents intent; the dashboard
+        # surfaces effective_status as the live signal.
+        member_statuses = [s.get("status", "planning") for s in studies_out]
+        member_has_runs = [(s.get("n_runs") or 0) > 0 for s in studies_out]
+        effective_status = compute_investigation_status(
+            member_statuses, has_runs=member_has_runs,
+        )
+
         return self._json({
-            "name":          spec.get("name", name),
-            "title":         spec.get("title", spec.get("name", name)),
-            "description":   spec.get("description", ""),
-            "question":      spec.get("question", ""),
-            "hypothesis":    spec.get("hypothesis", ""),
-            "status":        spec.get("status", "planning"),
-            "expert_docs":   spec.get("expert_docs") or [],
+            "name":             spec.get("name", name),
+            "title":            spec.get("title", spec.get("name", name)),
+            "description":      spec.get("description", ""),
+            "question":         spec.get("question", ""),
+            "hypothesis":       spec.get("hypothesis", ""),
+            "status":           spec.get("status", "planning"),
+            "effective_status": effective_status,
+            "expert_docs":      spec.get("expert_docs") or [],
             "acceptance_criteria": spec.get("acceptance_criteria") or [],
-            "studies":       studies_out,
+            "studies":          studies_out,
         }, 200)
 
     def _get_study_bigraph_paths(self):
