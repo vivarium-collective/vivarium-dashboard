@@ -7848,13 +7848,22 @@
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function _simRelativeTime(epoch) {
-    if (!epoch) return '—';
-    var d = Math.floor(Date.now() / 1000 - epoch);
-    if (d < 60)        return d + 's ago';
-    if (d < 3600)      return Math.floor(d / 60) + 'm ago';
-    if (d < 86400)     return Math.floor(d / 3600) + 'h ago';
-    return Math.floor(d / 86400) + 'd ago';
+  function _simRelativeTime(startedAt) {
+    // Accepts either a Unix epoch (seconds) or an ISO string ('2026-05-17T05:19:57Z').
+    if (!startedAt) return '—';
+    var epoch;
+    if (typeof startedAt === 'number') {
+      epoch = startedAt;
+    } else {
+      var d = new Date(startedAt);
+      if (isNaN(d)) return '—';
+      epoch = d.getTime() / 1000;
+    }
+    var d2 = Math.floor(Date.now() / 1000 - epoch);
+    if (d2 < 60)        return d2 + 's ago';
+    if (d2 < 3600)      return Math.floor(d2 / 60) + 'm ago';
+    if (d2 < 86400)     return Math.floor(d2 / 3600) + 'h ago';
+    return Math.floor(d2 / 86400) + 'd ago';
   }
 
   function _simStatusChip(status) {
@@ -7917,9 +7926,14 @@
       ? (sim.progress_step || 0) + '/' + (sim.n_steps || '?')
       : (sim.n_steps != null ? String(sim.n_steps) : '—');
     var label = sim.sim_name || sim.label || '';
-    var startedFull = sim.started_at
-      ? new Date(sim.started_at * 1000).toISOString()
-      : '';
+    // started_at can be epoch seconds OR ISO string — handle both
+    var startedFull = '';
+    if (sim.started_at) {
+      var _d = (typeof sim.started_at === 'number')
+        ? new Date(sim.started_at * 1000)
+        : new Date(sim.started_at);
+      if (!isNaN(_d)) startedFull = _d.toISOString();
+    }
     var runTooltip = (sim.run_id || '') + '\n' + (sim.db_path || '');
     var investigation = sim.investigation_slug || '';
     var investigationCell = investigation
