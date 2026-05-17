@@ -10,24 +10,197 @@
 <header class="study-header">
   <h1 class="study-title">
     <span class="study-name" id="study-name">{{ name }}</span>
+    {% if study.phase %}
+    <span class="phase-pill phase-{{ study.phase|lower }}" title="Lifecycle: Design → Build → Simulate → Evaluate → Decide">{{ study.phase }}</span>
+    {% endif %}
     <span class="status-pill status-{{ study.status or 'planned' }}">{{ study.status or 'planned' }}</span>
   </h1>
 </header>
 
+{# v3 detection: any of these fields being present (even as an empty list/dict)
+   means the study was authored against the 8-section / 5-phase schema, and
+   should get the v3 tab set even when the lists haven't been populated yet
+   (e.g. immediately after seeding from a follow-up). #}
+{% set _is_v3 = study.purpose is defined
+                or study.pipeline_gate is defined
+                or study.simulation_set is defined
+                or study.behavior_tests is defined
+                or study.follow_up_studies is defined
+                or study.conclusion_logic is defined %}
 <nav class="study-tabs" aria-label="Study sections">
   <button class="study-tab active" data-kind="overview"      onclick="_setStudyTab('overview')">Overview</button>
+  {% if _is_v3 or study.model_change or study.implementation_requirements %}
+  <button class="study-tab"        data-kind="build"         onclick="_setStudyTab('build')">Build</button>
+  {% endif %}
+  {% if _is_v3 %}
+  <button class="study-tab"        data-kind="simulations"   onclick="_setStudyTab('simulations')">Simulations</button>
+  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">Readouts</button>
+  {% else %}
   <button class="study-tab"        data-kind="baseline"      onclick="_setStudyTab('baseline')">Baseline</button>
   <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">Observables</button>
   <button class="study-tab"        data-kind="variants"      onclick="_setStudyTab('variants')">Variants</button>
   <button class="study-tab"        data-kind="interventions" onclick="_setStudyTab('interventions')">Interventions</button>
+  <button class="study-tab"        data-kind="observables"   onclick="_setStudyTab('observables')">Observables</button>
+  {% endif %}
   <button class="study-tab"        data-kind="runs"          onclick="_setStudyTab('runs')">Runs</button>
-  <button class="study-tab"        data-kind="tests"          onclick="_setStudyTab('tests')">Tests</button>
+  <button class="study-tab"        data-kind="tests"         onclick="_setStudyTab('tests')">Tests</button>
   <button class="study-tab"        data-kind="visualizations" onclick="_setStudyTab('visualizations')">Visualizations</button>
-  <button class="study-tab"        data-kind="conclusions"    onclick="_setStudyTab('conclusions')">Conclusions</button>
+  <button class="study-tab"        data-kind="conclusions"   onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
 </nav>
+<style>
+.phase-pill{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;margin-right:6px;font-weight:500;background:#e0e7ff;color:#3730a3}
+.phase-design   { background:#e0e7ff; color:#3730a3 }
+.phase-build    { background:#fef3c7; color:#92400e }
+.phase-simulate { background:#dbeafe; color:#1e40af }
+.phase-evaluate { background:#fce7f3; color:#9d174d }
+.phase-decide   { background:#d1fae5; color:#065f46 }
+.classification-pill{display:inline-block;font-size:0.7em;padding:1px 8px;border-radius:9999px;margin-right:4px;font-weight:500}
+.classification-primary    { background:#fee2e2; color:#991b1b }
+.classification-supporting { background:#dbeafe; color:#1e40af }
+.classification-diagnostic { background:#fef3c7; color:#92400e }
+.classification-regression { background:#e5e7eb; color:#374151 }
+.sim-status-pill{display:inline-block;font-size:0.72em;padding:1px 8px;border-radius:9999px;margin-left:4px}
+.sim-status-ready  { background:#d1fae5; color:#065f46 }
+.sim-status-gated  { background:#fef3c7; color:#92400e }
+.sim-status-running{ background:#dbeafe; color:#1e40af }
+.sim-status-ran    { background:#d1fae5; color:#065f46 }
+.purpose-callout{margin-bottom:10px;padding:10px 14px;border-radius:4px;line-height:1.55}
+.purpose-callout strong{margin-right:6px}
+.followup-list{display:flex;flex-direction:column;gap:10px}
+.followup-card{padding:10px 14px;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:4px;background:#f8fafc;font-size:0.93em}
+.followup-card.followup-kind-existing{border-left-color:#3b82f6;background:#eff6ff}
+.followup-card.followup-kind-infrastructure_fix{border-left-color:#dc2626;background:#fef2f2}
+.followup-card.followup-kind-calibration_task{border-left-color:#f59e0b;background:#fefce8}
+.followup-card.followup-kind-expert_question{border-left-color:#a855f7;background:#faf5ff}
+.followup-card.followup-kind-new{border-left-color:#10b981;background:#f0fdf4}
+.followup-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.followup-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}
+.followup-effort{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-family:ui-monospace,monospace}
+.followup-status{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}
+.followup-status.status-blocked{background:#fef3c7;color:#92400e}
+.followup-status.status-done{background:#d1fae5;color:#065f46}
+.followup-title{flex:1;font-size:1em}
+.followup-why,.followup-unblocks,.followup-acceptance,.followup-hypothesis{margin:4px 0 0 0;font-size:0.92em;line-height:1.45}
+.followup-hypothesis{padding:6px 10px;background:#fff;border-radius:3px;border:1px dashed #cbd5e1}
+.btn-seed-followup{font-size:0.85em;padding:4px 12px;border:1px solid #3b82f6;background:#fff;color:#3b82f6;border-radius:4px;cursor:pointer}
+.btn-seed-followup:hover{background:#3b82f6;color:#fff}
+.charts-panel{margin-top:18px;display:flex;flex-direction:column;gap:18px}
+.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px 12px 12px}
+.chart-caption{font-size:0.83em;color:#475569;margin-top:4px;line-height:1.4}
+/* findings */
+.findings-section{padding:14px 16px;background:#fafbff;border:1px solid #c7d2fe;border-radius:8px}
+.finding-card{padding:12px 14px;margin:10px 0;border:1px solid #e2e8f0;border-left:5px solid #6366f1;border-radius:6px;background:#fff}
+.finding-card.finding-status-confirms{border-left-color:#10b981}
+.finding-card.finding-status-partial{border-left-color:#f59e0b}
+.finding-card.finding-status-contradicts{border-left-color:#dc2626}
+.finding-card.finding-status-novel{border-left-color:#8b5cf6}
+.finding-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.finding-status-glyph{font-size:1.2em;width:24px;text-align:center}
+.finding-status-confirms .finding-status-glyph{color:#10b981}
+.finding-status-partial .finding-status-glyph{color:#f59e0b}
+.finding-status-contradicts .finding-status-glyph{color:#dc2626}
+.finding-status-novel .finding-status-glyph{color:#8b5cf6}
+.finding-id{font-family:ui-monospace,monospace;font-size:0.78em;color:#475569;background:#f1f5f9;padding:1px 6px;border-radius:3px}
+.finding-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-weight:500}
+.finding-status-text{font-size:0.78em;color:#64748b;margin-left:auto;font-style:italic}
+.finding-statement{font-size:1em;line-height:1.5;font-weight:500;color:#0f172a;margin:4px 0 8px 0}
+.finding-evidence,.finding-expected{font-size:0.86em;color:#475569;padding:6px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:3px;margin:6px 0;line-height:1.5}
+.finding-exp-summary{font-size:0.9em;color:#475569;padding:6px 10px;background:#fafbff;border-left:3px solid #6366f1;border-radius:3px;margin:6px 0;line-height:1.5}
+.finding-explanation{font-size:0.92em;color:#1e293b;margin:6px 0;line-height:1.5}
+.finding-explanation em{color:#475569;font-style:normal;font-weight:600}
+.finding-expert{margin:6px 0;padding:6px 10px;background:#fafafa;border:1px solid #e2e8f0;border-radius:4px}
+.finding-expert summary{cursor:pointer;font-size:0.85em;color:#475569;font-weight:500}
+.finding-expert-quote{border-left:3px solid #6366f1;margin:6px 0 4px 0;padding:6px 10px;background:#fafbff;font-style:italic;color:#1e1b4b;font-size:0.92em;line-height:1.5}
+.finding-expert-note{font-size:0.88em;color:#475569;margin-top:4px;font-style:italic}
+.finding-next{padding:6px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:3px;font-size:0.9em;margin-top:8px;line-height:1.5}
+.finding-next strong{color:#065f46}
+</style>
 
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
   <div class="study-overview">
+
+    {% if study.findings %}
+    <div class="overview-section findings-section">
+      <h2 class="overview-label">🔬 Findings — what this study taught us</h2>
+      <p class="muted" style="margin:0 0 8px 0;font-size:0.85em">
+        Each card states a finding, links the evidence (run + test + value), shows the literature/expert comparison, and marks whether v2ecoli's behavior <em>confirms</em>, <em>contradicts</em>, <em>partially</em> agrees with, or is <em>novel</em> vs the reference.
+      </p>
+      {% for f in study.findings %}
+      {% set _status = f.status or 'novel' %}
+      {% set _glyph = {'confirms': '✓', 'partial': '◐', 'contradicts': '✗', 'novel': '◆'}.get(_status, '◆') %}
+      <div class="finding-card finding-kind-{{ f.kind or 'other' }} finding-status-{{ _status }}">
+        <div class="finding-header">
+          <span class="finding-status-glyph">{{ _glyph }}</span>
+          <span class="finding-id">{{ f.id or '' }}</span>
+          <span class="finding-kind">{{ f.kind or 'other' }}</span>
+          <span class="finding-status-text">{{ _status }} literature</span>
+        </div>
+        <div class="finding-statement">{{ f.statement }}</div>
+        {% if f.evidence %}
+        <div class="finding-evidence">
+          {% if f.evidence.observed is defined %}<strong>observed:</strong> {{ f.evidence.observed }}{% if f.evidence.units %} {{ f.evidence.units }}{% endif %} · {% endif %}
+          {% if f.evidence.from_test %}via test <code>{{ f.evidence.from_test }}</code> · {% endif %}
+          {% if f.evidence.from_run %}in run <code>{{ f.evidence.from_run }}</code>{% endif %}
+          {% if f.evidence.window %} ({{ f.evidence.window }}){% endif %}
+          {% if f.evidence.smoking_gun %}<details style="display:inline-block;margin-left:4px"><summary>smoking gun</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;padding:6px 8px;background:#fff;border-radius:3px;font-size:0.85em;font-family:inherit">{{ f.evidence.smoking_gun }}</pre></details>{% endif %}
+        </div>
+        {% endif %}
+        {% if f.expected %}
+        <div class="finding-expected">
+          {% if f.expected.range %}<strong>expected:</strong> {{ f.expected.range }} · {% endif %}
+          {% if f.expected.threshold is defined %}<strong>threshold:</strong> {{ f.expected.threshold }} · {% endif %}
+          {% if f.expected.cites %}cites: {% for c in f.expected.cites %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+        </div>
+        {% if f.expected.summary %}<div class="finding-exp-summary"><em>Reference says:</em> {{ f.expected.summary }}</div>{% endif %}
+        {% endif %}
+        {% if f.explanation %}<div class="finding-explanation"><em>Why:</em> {{ f.explanation }}</div>{% endif %}
+        {% if f.expert_reference %}
+        <details class="finding-expert">
+          <summary>Expert ref: <code>{{ f.expert_reference.doc }}</code>{% if f.expert_reference.section %} ({{ f.expert_reference.section }}){% endif %}</summary>
+          {% if f.expert_reference.quote %}<blockquote class="finding-expert-quote">{{ f.expert_reference.quote }}</blockquote>{% endif %}
+          {% if f.expert_reference.note %}<div class="finding-expert-note">{{ f.expert_reference.note }}</div>{% endif %}
+        </details>
+        {% endif %}
+        {% if f.next_action %}<div class="finding-next"><strong>→ Next:</strong> {{ f.next_action }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if study.purpose %}
+    <div class="overview-section">
+      <h2 class="overview-label">Purpose</h2>
+      {% if study.purpose.question %}
+      <div class="purpose-callout" style="background:#eff6ff;border-left:4px solid #3b82f6">
+        <strong>Question.</strong> {{ study.purpose.question }}
+      </div>
+      {% endif %}
+      {% if study.purpose.mechanism %}
+      <div class="purpose-callout" style="background:#fefce8;border-left:4px solid #facc15">
+        <strong>Mechanism / Model change.</strong> {{ study.purpose.mechanism }}
+      </div>
+      {% endif %}
+      {% if study.purpose.expected_outcome %}
+      <div class="purpose-callout" style="background:#f0fdf4;border-left:4px solid #10b981">
+        <strong>Expected outcome.</strong> {{ study.purpose.expected_outcome }}
+      </div>
+      {% endif %}
+    </div>
+    {% else %}
+    {# Fallback: old narrative fields #}
+    {% if study.question %}
+    <div class="overview-section">
+      <h2 class="overview-label">Question</h2>
+      <div id="question-text" class="overview-prose" data-editable="true" data-field="question">{{ study.question }}</div>
+    </div>
+    {% endif %}
+    {% if study.hypothesis %}
+    <div class="overview-section">
+      <h2 class="overview-label">Hypothesis</h2>
+      <div id="hypothesis-text" class="overview-prose" data-editable="true" data-field="hypothesis">{{ study.hypothesis }}</div>
+    </div>
+    {% endif %}
+    {% if study.objective %}
     <div class="overview-section">
       <h2 class="overview-label">Question</h2>
       <div id="question-text" class="overview-prose" data-editable="true"
@@ -58,43 +231,270 @@
 
     <div class="overview-section">
       <h2 class="overview-label">Objective</h2>
-      <div id="objective-text" class="overview-prose" data-editable="true"
-           data-field="objective"
-           data-placeholder="(set an objective for this study)">{{ study.objective or '' }}</div>
+      <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective }}</div>
     </div>
+    {% endif %}
+    {% endif %}
 
-    {% if study.expected_behavior %}
+    {% if study.pipeline_gate %}
+    <div class="overview-section">
+      <h2 class="overview-label">Pipeline gate</h2>
+      <p class="muted" style="margin: 0 0 8px 0;font-size:0.88em">
+        Each study is a model-building gate: it answers <em>"Can we safely build the next layer?"</em>
+      </p>
+      {% if study.pipeline_gate.prerequisites %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong>
+        {% for p in study.pipeline_gate.prerequisites %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% else %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong> <em class="muted">none (root study)</em></div>
+      {% endif %}
+      {% if study.pipeline_gate.enables %}
+      <div style="margin-bottom:6px"><strong>Enables:</strong>
+        {% for p in study.pipeline_gate.enables %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if study.pipeline_gate.proceed_condition %}
+      <div><strong>Proceed when:</strong> <span class="muted">{{ study.pipeline_gate.proceed_condition }}</span></div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if study.key_assumptions %}
+    <div class="overview-section">
+      <h2 class="overview-label">Key assumptions</h2>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for a in study.key_assumptions %}<li style="margin:2px 0">{{ a }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if study.behavior_tests or study.expected_behavior %}
     <div class="overview-section">
       <h2 class="overview-label">Behavioral tests</h2>
-      {% set _eb = study.expected_behavior %}
-      {% set _impl = _eb | selectattr('status', 'equalto', 'implemented') | list | length %}
-      {% set _stub = _eb | selectattr('status', 'equalto', 'stub') | list | length %}
-      {% set _gated = _eb | length - _impl - _stub %}
-      <p style="margin: 0;">
-        <strong>{{ _eb | length }}</strong> behavioral test{{ '' if _eb|length == 1 else 's' }} defined
-        ({{ _impl }} implemented{% if _stub %}, {{ _stub }} stub{% endif %}{% if _gated %}, {{ _gated }} gated{% endif %}).
-        <a onclick="_setStudyTab('tests')" style="cursor: pointer; color: #3b82f6; text-decoration: underline; margin-left: 6px;">View on Tests tab →</a>
+      {% set _eb = study.behavior_tests or study.expected_behavior %}
+      {% set _primary = _eb | selectattr('classification', 'equalto', 'primary') | list | length %}
+      {% set _supporting = _eb | selectattr('classification', 'equalto', 'supporting') | list | length %}
+      {% set _diagnostic = _eb | selectattr('classification', 'equalto', 'diagnostic') | list | length %}
+      {% set _regression = _eb | selectattr('classification', 'equalto', 'regression') | list | length %}
+      <p style="margin:0">
+        <strong>{{ _eb|length }}</strong> tests defined{% if _primary %} —
+          <span class="classification-pill classification-primary">{{ _primary }} primary</span>{% endif %}{% if _supporting %}
+          <span class="classification-pill classification-supporting">{{ _supporting }} supporting</span>{% endif %}{% if _diagnostic %}
+          <span class="classification-pill classification-diagnostic">{{ _diagnostic }} diagnostic</span>{% endif %}{% if _regression %}
+          <span class="classification-pill classification-regression">{{ _regression }} regression</span>{% endif %}
+        <a onclick="_setStudyTab('tests')" style="cursor:pointer;color:#3b82f6;text-decoration:underline;margin-left:6px">View on Tests tab →</a>
       </p>
     </div>
     {% endif %}
 
+    {% if study.limitations %}
+    <div class="overview-section">
+      <h2 class="overview-label">Limitations</h2>
+      <p class="muted" style="margin:0 0 6px 0;font-size:0.85em">What this study explicitly does NOT validate (prevents overclaim).</p>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for l in study.limitations %}<li style="margin:2px 0">{{ l }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if study.follow_up_studies %}
+    <div class="overview-section">
+      <h2 class="overview-label">Follow-up studies + decisions</h2>
+      <p class="muted" style="margin:0 0 8px 0;font-size:0.85em">Concrete next steps derived from this study's runs. Click <em>Seed new study</em> to scaffold a child study.yaml from any entry.</p>
+      <div class="followup-list">
+        {% for f in study.follow_up_studies %}
+        <div class="followup-card followup-kind-{{ f.kind or 'other' }}">
+          <div class="followup-header">
+            <span class="followup-kind">{{ f.kind or 'other' }}</span>
+            {% if f.effort %}<span class="followup-effort" title="Effort">{{ f.effort }}</span>{% endif %}
+            {% if f.status %}<span class="followup-status status-{{ f.status }}">{{ f.status }}</span>{% endif %}
+            <strong class="followup-title">{{ f.title }}</strong>
+          </div>
+          {% if f.why %}<div class="followup-why"><em>Why:</em> {{ f.why }}</div>{% endif %}
+          {% if f.unblocks %}
+          <div class="followup-unblocks"><em>Unblocks:</em>
+            <ul style="margin:2px 0 0 18px;padding:0">{% for u in f.unblocks %}<li>{{ u }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if f.acceptance %}
+          <div class="followup-acceptance"><em>Acceptance:</em>
+            <ul style="margin:2px 0 0 18px;padding:0">{% for a in f.acceptance %}<li>{{ a }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if f.hypothesized_mechanism %}
+          <div class="followup-hypothesis"><em>Hypothesized mechanism:</em> {{ f.hypothesized_mechanism }}</div>
+          {% endif %}
+          {% if f.kind not in ('existing',) %}
+          <div class="followup-actions" style="margin-top:8px">
+            <button class="btn-seed-followup" data-followup-idx="{{ loop.index0 }}"
+                    onclick="_seedFollowupStudy('{{ name }}', {{ loop.index0 }})">Seed new study →</button>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="overview-section">
+      <h2 class="overview-label">Status</h2>
+      <select id="status-select" data-field="status" class="overview-status-select">
+        <option value="planned"     {% if study.status == 'planned'     %}selected{% endif %}>planned</option>
+        <option value="running"     {% if study.status == 'running'     %}selected{% endif %}>running</option>
+        <option value="ran"         {% if study.status == 'ran'         %}selected{% endif %}>ran</option>
+        <option value="complete"    {% if study.status == 'complete'    %}selected{% endif %}>complete</option>
+        <option value="failed"      {% if study.status == 'failed'      %}selected{% endif %}>failed</option>
+      </select>
+      {% if study.phase %}
+      <p class="muted" style="margin:6px 0 0 0;font-size:0.85em">Lifecycle phase: <strong>{{ study.phase }}</strong> (Design → Build → Simulate → Evaluate → Decide).</p>
+      {% endif %}
+    </div>
+
     <div class="study-counts-strip">
       <div class="count-cell">
-        <strong>{{ (study.variants or [])|length }}</strong>
-        <span class="count-label">variants</span>
+        <strong>{{ (study.simulation_set or study.variants or [])|length }}</strong>
+        <span class="count-label">{{ "simulations" if study.simulation_set else "variants" }}</span>
+      </div>
+      <div class="count-cell">
+        <strong>{{ (study.readouts or study.observables or [])|length }}</strong>
+        <span class="count-label">readouts</span>
+      </div>
+      <div class="count-cell">
+        <strong>{{ (study.implementation_requirements or study.gaps or [])|length }}</strong>
+        <span class="count-label">requirements</span>
       </div>
       <div class="count-cell">
         <strong>{{ (study.runs or [])|length }}</strong>
         <span class="count-label">runs</span>
       </div>
-      <div class="count-cell">
-        <strong>{{ (study.interventions or [])|length }}</strong>
-        <span class="count-label">interventions</span>
-      </div>
     </div>
 
   </div>
 </section>
+
+
+{# ─── Build tab: model_change + implementation_requirements ─────────── #}
+{% if study.model_change or study.implementation_requirements %}
+<section class="study-tab-panel" data-kind="build" id="panel-build" hidden>
+
+  {% if study.model_change %}
+  <div class="overview-section">
+    <h3>Model change</h3>
+    <p class="muted" style="font-size:0.88em">What code lands in this study. Separated from biology (which lives in Key assumptions on Overview).</p>
+    {% if study.model_change.base_model %}<p><strong>Base model:</strong> <code>{{ study.model_change.base_model }}</code></p>{% endif %}
+    {% if study.model_change.new_processes %}
+    <p><strong>New processes:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for p in study.model_change.new_processes %}<li><code>{{ p.name }}</code> <span class="muted">({{ p.kind or 'Process' }}{% if p.requirement_id %} · req: {{ p.requirement_id }}{% endif %})</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.new_state_variables %}
+    <p><strong>New state variables:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for v in study.model_change.new_state_variables %}<li><code>{{ v.id or v }}</code>{% if v.kind %} <span class="muted">({{ v.kind }}{% if v.units %}, {{ v.units }}{% endif %})</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.new_parameters %}
+    <p><strong>New parameters:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for p in study.model_change.new_parameters %}<li><code>{{ p.name }}</code>{% if p.default is defined %} <span class="muted">= {{ p.default }}</span>{% endif %}{% if p.units %} <span class="muted">({{ p.units }})</span>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.new_listeners %}
+    <p><strong>New listeners:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for l in study.model_change.new_listeners %}<li><code>{{ l.name }}</code>{% if l.emits %} → <code style="font-size:0.85em">{{ l.emits | join(', ') }}</code>{% endif %}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.modified_processes %}
+    <p><strong>Modified processes:</strong></p>
+    <ul style="margin:0 0 8px 18px">
+      {% for m in study.model_change.modified_processes %}<li>{{ m }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if study.model_change.notes %}<p class="muted" style="font-size:0.88em">{{ study.model_change.notes }}</p>{% endif %}
+  </div>
+  {% endif %}
+
+  {% if study.implementation_requirements %}
+  <div class="overview-section">
+    <h3>Implementation requirements <span class="muted" style="font-size:0.85em;font-weight:normal">({{ study.implementation_requirements | length }} items)</span></h3>
+    <p class="muted" style="font-size:0.88em">Concrete pieces of work that gate this study from Design → Build. Each generates a task.</p>
+    {% for r in study.implementation_requirements %}
+    <details style="margin:8px 0;padding:8px 12px;background:#fff;border:1px solid #e5e7eb;border-radius:6px;border-left:3px solid {% if r.effort == 'XS' %}#10b981{% elif r.effort == 'S' %}#3b82f6{% elif r.effort == 'M' %}#f59e0b{% elif r.effort == 'L' %}#dc2626{% else %}#94a3b8{% endif %}">
+      <summary style="cursor:pointer">
+        <strong>{{ r.id }}</strong> — {{ r.title }}
+        {% if r.effort %}<span style="font-size:0.75em;background:#f1f5f9;color:#475569;padding:1px 7px;border-radius:9999px;margin-left:6px">{{ r.effort }}</span>{% endif %}
+        {% if r.kind %}<span class="muted" style="font-size:0.78em;margin-left:4px">[{{ r.kind }}]</span>{% endif %}
+      </summary>
+      {% if r.description %}<p style="margin:8px 0">{{ r.description }}</p>{% endif %}
+      {% if r.steps %}
+      <p style="margin:8px 0 4px 0"><strong>Steps:</strong></p>
+      <ol style="margin:0 0 8px 18px;font-size:0.9em">
+        {% for s in r.steps %}<li style="margin:2px 0">{{ s }}</li>{% endfor %}
+      </ol>
+      {% endif %}
+      {% if r.unblocks %}
+      <p style="margin:8px 0 0 0;font-size:0.88em"><strong>Unblocks:</strong>
+        {% for u in r.unblocks %}<code>{{ u }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </p>
+      {% endif %}
+      {% if r.defer_until %}<p class="muted" style="margin:4px 0 0 0;font-size:0.85em">Deferred until: <code>{{ r.defer_until }}</code></p>{% endif %}
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+
+{# ─── Simulations tab: simulation_set ───────────────────────────────── #}
+{% if study.simulation_set %}
+<section class="study-tab-panel" data-kind="simulations" id="panel-simulations" hidden>
+  <h3>Simulation set <span class="muted" style="font-size:0.85em;font-weight:normal">({{ study.simulation_set | length }} runs planned)</span></h3>
+  <p class="muted" style="font-size:0.88em">Each entry is a concrete run plan: baseline or perturbation, condition, duration, seeds, readouts collected, and tests applied.</p>
+  {% for sim in study.simulation_set %}
+  <div class="panel" style="padding:14px 18px;margin-bottom:12px">
+    <header style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+      <strong style="font-size:1.05em">{{ sim.name }}</strong>
+      <span class="sim-status-pill sim-status-{{ sim.status or 'ready' }}">{{ sim.status or 'ready' }}</span>
+      {% if sim.condition %}<span class="muted" style="font-size:0.85em">condition: {{ sim.condition }}</span>{% endif %}
+    </header>
+    <div style="font-size:0.9em;margin-bottom:6px">
+      <strong>Base model:</strong> <code>{{ sim.base_model }}</code>
+    </div>
+    {% if sim.perturbation %}
+    <details style="margin:4px 0">
+      <summary style="cursor:pointer;font-size:0.9em"><strong>Perturbation</strong></summary>
+      <pre style="background:#f1f5f9;padding:8px 10px;border-radius:4px;font-size:0.85em;overflow-x:auto;margin:6px 0">{{ sim.perturbation | tojson(indent=2) }}</pre>
+    </details>
+    {% else %}
+    <p style="margin:4px 0;font-size:0.9em" class="muted">No perturbation (baseline run)</p>
+    {% endif %}
+    <p style="margin:6px 0;font-size:0.9em">
+      <strong>Duration:</strong> {{ sim.duration_min or '?' }} min · <strong>Seeds:</strong>
+      {% if sim.seeds %}<code>{{ sim.seeds | join(', ') }}</code>{% else %}<em>not set</em>{% endif %}
+    </p>
+    {% if sim.readouts %}
+    <p style="margin:4px 0;font-size:0.88em"><strong>Readouts:</strong>
+      {% for r in sim.readouts %}<code>{{ r }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% if sim.applies_tests %}
+    <p style="margin:4px 0;font-size:0.88em"><strong>Applies tests:</strong>
+      {% for t in sim.applies_tests %}<code>{{ t }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% if sim.blocked_by_requirements %}
+    <p style="margin:4px 0;font-size:0.85em;color:#92400e">🔒 <strong>Blocked by:</strong>
+      {% for r in sim.blocked_by_requirements %}<code>{{ r }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>
+{% endif %}
 
 <section class="study-tab-panel" data-kind="baseline" id="panel-baseline">
   <div class="baseline-list">
@@ -137,9 +537,10 @@
 
 <section class="study-tab-panel" data-kind="observables" id="panel-observables" hidden>
   <div class="observables-section">
-    <h3 class="section-title">Observables</h3>
-    <p class="muted">Experimental measurements selected from the composite's bigraph state. Each observable resolves to a <code>store_path</code> (and optional <code>index_by</code> when the underlying store is indexed by ID).</p>
-    {% if study.observables %}
+    <h3 class="section-title">{{ "Readouts" if study.readouts else "Observables" }}</h3>
+    <p class="muted">{{ "Quantities collected from each simulation run. Each readout resolves to a `store_path` (and optional `index_by` when the underlying store is indexed by ID)." if study.readouts else "Experimental measurements selected from the composite's bigraph state. Each observable resolves to a `store_path` (and optional `index_by` when the underlying store is indexed by ID)." | safe }}</p>
+    {% set _obs = study.readouts or study.observables %}
+    {% if _obs %}
     <table class="observables-table" style="width:100%; border-collapse: collapse;">
       <thead>
         <tr>
@@ -151,7 +552,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for o in study.observables %}
+        {% for o in _obs %}
         <tr style="border-bottom: 1px solid #f1f5f9;">
           <td style="padding:6px; vertical-align: top;"><code>{{ o.name }}</code></td>
           <td style="padding:6px; vertical-align: top;">
@@ -482,6 +883,7 @@
 
 <section class="study-tab-panel" data-kind="runs" id="panel-runs">
   <div class="runs-section">
+    <div id="charts-panel" class="charts-panel"></div>
     <h3 class="section-title">Runs</h3>
     <table id="runs-table">
       <thead>
@@ -540,29 +942,64 @@
     </div>
   </div>
 
-  {% if study.expected_behavior %}
+  {% set _bt = study.behavior_tests or study.expected_behavior %}
+  {# Aggregate the latest test outcomes from study.runs[].outcomes so each
+     row below can show PASS/FAIL/skip instead of a stale "pending" pill. #}
+  {% set _outcomes = {} %}
+  {% for r in (study.runs or []) %}
+    {% if r.outcomes %}
+      {% for tname, outcome in r.outcomes.items() %}
+        {# last wins → most recent run #}
+        {% set _ = _outcomes.update({tname: outcome}) %}
+      {% endfor %}
+    {% endif %}
+  {% endfor %}
+  {% if _bt %}
   <ul class="expected-behavior-list" id="tests-list" style="list-style:none; padding-left:0; margin-top: 12px;">
-    {% for b in study.expected_behavior %}
+    {% for b in _bt %}
+    {% set _cls = b.classification or 'unclassified' %}
+    {% set _border = '#10b981' if _cls == 'primary' else ('#3b82f6' if _cls == 'supporting' else ('#f59e0b' if _cls == 'diagnostic' else ('#94a3b8' if _cls == 'regression' else '#cbd5e1'))) %}
+    {% set _out = _outcomes.get(b.name) %}
+    {% set _res = _out.result if _out else None %}
+    {% set _pill_bg = '#d1fae5' if _res == 'PASS' else ('#fee2e2' if _res == 'FAIL' else ('#fef3c7' if _res == 'SKIP' else '#f1f5f9')) %}
+    {% set _pill_fg = '#065f46' if _res == 'PASS' else ('#991b1b' if _res == 'FAIL' else ('#92400e' if _res == 'SKIP' else '#475569')) %}
+    {% set _pill_text = ('✓ PASS' if _res == 'PASS' else ('✗ FAIL' if _res == 'FAIL' else ('⏭ SKIP' if _res == 'SKIP' else '⏳ pending'))) %}
     <li class="expected-behavior-item" id="bt-{{ b.name or loop.index0 }}"
         data-pytest-node="{{ b.name or '' }}"
-        style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {% if b.status == 'implemented' %}#10b981{% elif b.status == 'stub' %}#f59e0b{% else %}#94a3b8{% endif %}; background: #f8fafc; border-radius: 4px;">
+        data-classification="{{ _cls }}"
+        data-result="{{ _res or 'pending' }}"
+        style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {{ _border }}; background: #f8fafc; border-radius: 4px;">
       <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
-        <span class="bt-result" style="font-size: 0.75em; color: #94a3b8; font-family: monospace; min-width: 60px;">
-          ⏳ pending
-        </span>
-        <span style="font-size: 0.78em; color: #475569; font-family: monospace;">
-          {% if b.status == 'implemented' %}✓ implemented{% elif b.status == 'stub' %}◯ stub{% else %}⏳ {{ b.status or 'gated' }}{% endif %}
-        </span>
+        <span class="bt-result" style="font-size: 0.75em; font-family: monospace; padding: 2px 8px; border-radius: 9999px; background: {{ _pill_bg }}; color: {{ _pill_fg }}">{{ _pill_text }}</span>
+        <span class="classification-pill classification-{{ _cls }}">{{ _cls }}</span>
         <strong style="font-size: 0.9em;">{{ b.name or '(unnamed)' }}</strong>
+        {% if b.requires_simulation %}
+        <span class="muted" style="font-size:0.78em">requires: <code>{{ b.requires_simulation }}</code></span>
+        {% endif %}
       </div>
-      <div style="margin-top: 6px; font-size: 0.95em;">{{ b.en or '' }}</div>
-      {% if b.given or b.measure or b.expect %}
+      <div style="margin-top: 6px; font-size: 0.95em;">{{ b.description or b.en or '' }}</div>
+      {% if _out %}
+      <div style="margin-top:6px;font-size:0.85em;padding:6px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:3px">
+        <strong>Latest result:</strong>
+        {% for k, v in _out.items() if k != 'result' %}
+          <code style="font-family:ui-monospace,monospace;color:#475569;margin-right:8px">{{ k }}: {{ v }}</code>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if b.measure or b.pass_if or b.given or b.expect %}
       <details style="margin-top: 6px; font-size: 0.82em;">
-        <summary class="muted" style="cursor: pointer;">Assertion (given / measure / expect)</summary>
-        <pre style="background:#fff; padding:8px; margin:4px 0 0 0; border:1px solid #e2e8f0; border-radius:3px; overflow-x:auto;">given:   {{ b.given|tojson }}
-measure: {{ b.measure|tojson }}
-expect:  {{ b.expect|tojson }}{% if b.requires %}
-requires: {{ b.requires|tojson }}{% endif %}</pre>
+        <summary class="muted" style="cursor: pointer;">Assertion</summary>
+        <pre style="background:#fff; padding:8px; margin:4px 0 0 0; border:1px solid #e2e8f0; border-radius:3px; overflow-x:auto;">{% if b.given %}given:   {{ b.given|tojson }}
+{% endif %}measure: {{ b.measure|tojson }}
+{% if b.pass_if %}pass_if: {{ b.pass_if|tojson }}{% else %}expect:  {{ b.expect|tojson }}{% endif %}{% if b.requires %}
+requires: {{ b.requires|tojson }}{% endif %}{% if b.cites %}
+cites:   {{ b.cites|tojson }}{% endif %}</pre>
+      </details>
+      {% endif %}
+      {% if b.calibration_anchor %}
+      <details style="margin-top: 6px; font-size: 0.82em">
+        <summary class="muted" style="cursor:pointer; color:#92400e">⚠ Calibration anchor</summary>
+        <pre style="background:#fff7ed; padding:8px; margin:4px 0 0 0; border:1px solid #fdba74; border-radius:3px; overflow-x:auto">{{ b.calibration_anchor | tojson(indent=2) }}</pre>
       </details>
       {% endif %}
       {% if b.notes %}
@@ -583,17 +1020,168 @@ requires: {{ b.requires|tojson }}{% endif %}</pre>
 
 <section class="study-tab-panel" data-kind="visualizations" id="panel-visualizations" hidden>
   <div class="viz-section">
-    <h3 class="section-title">Visualizations</h3>
+    <h3 class="section-title">Latest-run visualizations (auto-generated from <code>runs.db</code>)</h3>
+    <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
+      These charts re-render each time the page loads, against the most recent simulation in the study's <code>runs.db</code>.
+      They are also embedded into the downloadable investigation HTML report.
+    </p>
+    <div id="viz-charts-panel" class="charts-panel"></div>
+    <h3 class="section-title" style="margin-top:24px">Registered visualization modules</h3>
     <div id="viz-list">
       {% for v in (study.visualizations or []) %}
-      <div class="viz-config">{{ v.name }} <code class="muted">{{ v.address or '' }}</code></div>
+      <div class="viz-config">{{ v.name }} <code class="muted">{{ v.address or '' }}</code>
+        {% if v.description %}<div class="muted small" style="margin-top:2px">{{ v.description }}</div>{% endif %}
+      </div>
+      {% else %}
+      <p class="muted" style="margin:0">No registered viz modules. The composite's default workflow + topology visualizations apply automatically when running.</p>
       {% endfor %}
     </div>
-    <button class="btn-add-viz">+ Add visualization</button>
+    <button class="btn-add-viz" style="margin-top:8px">+ Add visualization</button>
   </div>
 </section>
 
 <section class="study-tab-panel" data-kind="conclusions" id="panel-conclusions" hidden>
+
+  {% set _is_v3 = study.conclusion_logic or study.follow_up_studies %}
+  {% if _is_v3 %}
+  <div class="decide-v3">
+    <h2 style="margin:0 0 4px 0">Decide</h2>
+    <p class="muted" style="margin:0 0 16px 0;font-size:0.9em">
+      Synthesises the latest run's outcomes against the pre-stated
+      <code>conclusion_logic</code>, then surfaces concrete follow-up actions
+      you can either review (existing studies) or seed (new ones).
+    </p>
+
+    {# ── Latest run outcomes ────────────────────────────────────────── #}
+    {% set _latest = (study.runs or [])[-1] if study.runs else None %}
+    {% if _latest %}
+    <div class="decide-section">
+      <h3 class="overview-label">Latest run outcomes</h3>
+      <div style="font-size:0.88em;color:#64748b;margin-bottom:8px">
+        {{ _latest.simulation or 'baseline' }} · seed {{ _latest.seed or '?' }} ·
+        {{ _latest.duration_s or '?' }}s simulated ·
+        {{ _latest.rows or '?' }} history rows ·
+        started {{ _latest.started_at or '?' }}
+      </div>
+      {% if _latest.outcomes %}
+      <table style="width:100%;border-collapse:collapse;font-size:0.9em">
+        <thead><tr style="background:#f8fafc">
+          <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e2e8f0">Test</th>
+          <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e2e8f0">Result</th>
+          <th style="text-align:left;padding:6px 10px;border-bottom:1px solid #e2e8f0">Detail</th>
+        </tr></thead>
+        <tbody>
+          {% for tname, out in _latest.outcomes.items() %}
+          {% set _r = out.result %}
+          {% set _pb = '#d1fae5' if _r == 'PASS' else ('#fee2e2' if _r == 'FAIL' else '#fef3c7') %}
+          {% set _pf = '#065f46' if _r == 'PASS' else ('#991b1b' if _r == 'FAIL' else '#92400e') %}
+          <tr>
+            <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-family:ui-monospace,monospace;font-size:0.85em">{{ tname }}</td>
+            <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9">
+              <span style="background:{{ _pb }};color:{{ _pf }};padding:1px 8px;border-radius:9999px;font-size:0.8em;font-family:ui-monospace,monospace">{{ _r }}</span>
+            </td>
+            <td style="padding:6px 10px;border-bottom:1px solid #f1f5f9;font-size:0.85em;color:#475569">
+              {% for k, v in out.items() if k != 'result' %}
+                <code style="margin-right:8px">{{ k }}: {{ v }}</code>
+              {% endfor %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Conclusion logic (gate decision) ───────────────────────────── #}
+    {% if study.conclusion_logic %}
+    {% set _cl = study.conclusion_logic %}
+    <div class="decide-section" style="margin-top:18px">
+      <h3 class="overview-label">Conclusion logic — gate decision</h3>
+      {% if _cl.if_primary_tests_pass %}
+      <div style="padding:10px 14px;background:#f0fdf4;border-left:4px solid #10b981;border-radius:4px;margin-bottom:8px">
+        <strong>✓ If primary tests pass:</strong>
+        {% if _cl.if_primary_tests_pass.implementation_status %}
+        <div style="margin-top:4px"><em>Implementation:</em> {{ _cl.if_primary_tests_pass.implementation_status }}</div>
+        {% endif %}
+        {% if _cl.if_primary_tests_pass.biological_validation %}
+        <div style="margin-top:4px"><em>Biological validation:</em> {{ _cl.if_primary_tests_pass.biological_validation }}</div>
+        {% endif %}
+        {% if _cl.if_primary_tests_pass.pipeline_unblocks %}
+        <div style="margin-top:4px"><em>Pipeline unblocks:</em>
+          <ul style="margin:4px 0 0 18px">{% for u in _cl.if_primary_tests_pass.pipeline_unblocks %}<li>{{ u }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if _cl.if_primary_tests_fail %}
+      <div style="padding:10px 14px;background:#fef2f2;border-left:4px solid #dc2626;border-radius:4px">
+        <strong>✗ If primary tests fail:</strong>
+        {% if _cl.if_primary_tests_fail.diagnose %}
+        <div style="margin-top:4px"><em>Diagnose:</em>
+          <ul style="margin:4px 0 0 18px">{% for d in _cl.if_primary_tests_fail.diagnose %}<li>{{ d }}</li>{% endfor %}</ul>
+        </div>
+        {% endif %}
+        {% if _cl.if_primary_tests_fail.block_downstream %}
+        <div style="margin-top:4px"><em>Block downstream:</em> {{ _cl.if_primary_tests_fail.block_downstream }}</div>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {# ── Conclusion blob (the synthesised narrative) ─────────────────── #}
+    {% if study.conclusion %}
+    <div class="decide-section" style="margin-top:18px">
+      <h3 class="overview-label">Conclusion</h3>
+      <pre style="background:#f8fafc;padding:12px;border-left:3px solid #94a3b8;border-radius:3px;white-space:pre-wrap;font-family:inherit;font-size:0.9em;line-height:1.5;margin:0">{{ study.conclusion }}</pre>
+    </div>
+    {% endif %}
+
+    {# ── Follow-up studies with one-click seed ──────────────────────── #}
+    {% if study.follow_up_studies %}
+    <div class="decide-section" style="margin-top:18px">
+      <h3 class="overview-label">Follow-up studies — pick one to seed</h3>
+      <p class="muted" style="margin:0 0 8px 0;font-size:0.85em">
+        Click <strong>Seed new study →</strong> on any non-existing follow-up to scaffold a child study.yaml.
+        The new study inherits this one as a <code>pipeline_gate</code> prerequisite and starts at phase: Design.
+      </p>
+      <div class="followup-list">
+        {% for f in study.follow_up_studies %}
+        <div class="followup-card followup-kind-{{ f.kind or 'other' }}">
+          <div class="followup-header">
+            <span class="followup-kind">{{ f.kind or 'other' }}</span>
+            {% if f.effort %}<span class="followup-effort">{{ f.effort }}</span>{% endif %}
+            {% if f.status %}<span class="followup-status status-{{ f.status }}">{{ f.status }}</span>{% endif %}
+            <strong class="followup-title">{{ f.title }}</strong>
+          </div>
+          {% if f.why %}<div class="followup-why"><em>Why:</em> {{ f.why }}</div>{% endif %}
+          {% if f.hypothesized_mechanism %}
+          <div class="followup-hypothesis"><em>Hypothesized mechanism:</em> {{ f.hypothesized_mechanism }}</div>
+          {% endif %}
+          {% if f.unblocks %}
+          <div class="followup-unblocks"><em>Unblocks:</em>
+            <ul style="margin:2px 0 0 18px;padding:0">{% for u in f.unblocks %}<li>{{ u }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if f.acceptance %}
+          <div class="followup-acceptance"><em>Acceptance:</em>
+            <ul style="margin:2px 0 0 18px;padding:0">{% for a in f.acceptance %}<li>{{ a }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if f.kind not in ('existing',) %}
+          <div class="followup-actions" style="margin-top:8px">
+            <button class="btn-seed-followup" onclick="_seedFollowupStudy('{{ name }}', {{ loop.index0 }})">Seed new study →</button>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+  {% else %}
+  {# ── Legacy four-field markdown editor (kept for non-v3 studies) ──── #}
   <div class="conclusions-grid">
     <div class="conclusion-field">
       <h3>Claims</h3>
@@ -613,6 +1201,7 @@ requires: {{ b.requires|tojson }}{% endif %}</pre>
     </div>
   </div>
   <p class="muted">Saved as one markdown blob in study.yaml.conclusion with H2 headers.</p>
+  {% endif %}
 </section>
 
 </main>

@@ -219,6 +219,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/render":             "_post_render",
     "/api/work-start":         "_post_work_start",
     "/api/work-push":          "_post_work_push",
+    "/api/work-attach-report": "_post_work_attach_report",
     "/api/work-link-branch":   "_post_work_link_branch",
     "/api/work-create-pr":     "_post_work_create_pr",
     "/api/work-end":           "_post_work_end",
@@ -268,6 +269,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-runs-clear":            "_post_study_runs_clear",
     "/api/study-comparison-add":        "_post_study_comparison_add",
     "/api/study-tests-run":             "_post_study_tests_run",
+    "/api/study-seed-followup":         "_post_study_seed_followup",
     # Workspace-switcher POST endpoints.
     "/api/workspaces/add":           "_post_workspaces_add",
     "/api/workspaces/forget":        "_post_workspaces_forget",
@@ -557,6 +559,23 @@ def _iter_study_dirs():
             if not d.is_dir() or d.name in seen:
                 continue
             seen.add(d.name)
+            yield d
+
+
+def _iter_iset_dirs():
+    """Yield investigations/<name>/ dirs that contain an investigation.yaml.
+
+    'iset' = investigation-set (a named collection of studies with the v3
+    'investigations as collections' semantics, distinct from the legacy
+    investigations/<name>/spec.yaml study format).
+    """
+    root = WORKSPACE / "investigations"
+    if not root.is_dir():
+        return
+    for d in sorted(root.iterdir()):
+        if not d.is_dir():
+            continue
+        if (d / "investigation.yaml").is_file():
             yield d
 
 
@@ -2262,6 +2281,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_investigation_state_tree()
         if self.path.startswith("/api/study-bigraph-paths"):
             return self._get_study_bigraph_paths()
+        if self.path.startswith("/api/iset-list"):
+            return self._get_iset_list()
+        if self.path.startswith("/api/iset/"):
+            return self._get_iset_detail()
+        if self.path.startswith("/api/study-charts/"):
+            return self._get_study_charts()
+        if self.path.startswith("/api/work-composite-diff"):
+            return self._get_work_composite_diff()
+        if self.path.startswith("/api/references-bib"):
+            return self._get_references_bib()
         if self.path.startswith("/api/investigation-composite-doc"):
             return self._get_investigation_composite_doc()
         if self.path.startswith("/api/investigation/"):
@@ -3683,6 +3712,63 @@ if __name__ == "__main__":
         save_state(state)
         return self._json({"ok": True, "branch": branch, "log": r.stdout[-300:]}, 200)
 
+    def _post_work_attach_report(self, body: dict):
+        """POST /api/work-attach-report {filename, html, commit_message?}
+
+        Writes ``html`` to ``reports/<filename>`` and creates a single commit
+        on the current branch. Used by the Open-PR flow so the generated
+        investigation report ships with the PR as a checked-in artifact
+        (reviewers can read it inline on GitHub instead of downloading).
+
+        Idempotent: re-runs with the same filename overwrite + amend nothing
+        — they create a new commit each time (so reviewers see the report
+        evolve alongside the code).
+        """
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.work_state import load_state
+        state = load_state()
+        branch = state.get("active_branch")
+        if not branch:
+            return self._json({"error": "no active investigation branch"}, 409)
+
+        filename = (body.get("filename") or "").strip()
+        html = body.get("html")
+        if not filename or not isinstance(html, str) or not html:
+            return self._json({"error": "filename + html required"}, 400)
+        if "/" in filename or filename.startswith("."):
+            return self._json({"error": "filename must be a bare name (no path / no leading .)"}, 400)
+        commit_message = (body.get("commit_message") or
+                          f"docs(report): attach {filename}").strip()
+
+        reports_dir = WORKSPACE / "reports"
+        reports_dir.mkdir(parents=True, exist_ok=True)
+        out_path = reports_dir / filename
+        out_path.write_text(html)
+
+        # Stage + commit. Allow the commit to fail cleanly when the file
+        # hasn't actually changed (caller still gets a success response with
+        # an `unchanged: true` flag).
+        rel = str(out_path.relative_to(WORKSPACE))
+        add = subprocess.run(["git", "add", "--", rel],
+                             cwd=WORKSPACE, capture_output=True, text=True, timeout=10)
+        if add.returncode != 0:
+            return self._json({"error": f"git add failed: {(add.stderr or add.stdout)[:300]}"}, 500)
+        commit = subprocess.run(
+            ["git", "commit", "-m", commit_message, "--", rel],
+            cwd=WORKSPACE, capture_output=True, text=True, timeout=15,
+        )
+        if commit.returncode != 0:
+            stderr = (commit.stderr or commit.stdout)
+            # git returns non-zero when there's nothing to commit — treat as a soft success.
+            if "nothing to commit" in stderr or "nothing added" in stderr:
+                return self._json({"ok": True, "unchanged": True, "path": rel,
+                                   "branch": branch}, 200)
+            return self._json({"error": f"git commit failed: {stderr[:300]}"}, 500)
+        sha = subprocess.run(["git", "rev-parse", "HEAD"],
+                             cwd=WORKSPACE, capture_output=True, text=True, timeout=5)
+        return self._json({"ok": True, "path": rel, "branch": branch,
+                           "commit_sha": sha.stdout.strip()}, 200)
+
     def _post_work_link_branch(self, body: dict):
         """Link the workspace to an upstream branch.
 
@@ -4613,6 +4699,245 @@ if __name__ == "__main__":
     # entries with type hints.
     _bigraph_path_cache = {}  # {(path, mtime, max_depth): [nodes]}
 
+    # --- /api/iset-list, /api/iset/<name>: investigation-set endpoints ---
+    #
+    # An investigation-set (iset) is a named collection of studies with
+    # explicit ordering + cross-study dependencies. UI surface: the
+    # Investigations tab. Storage: investigations/<name>/investigation.yaml.
+    # The legacy investigations/<name>/spec.yaml (per-study v1/v2 format) is
+    # distinct and walked separately by _iter_study_dirs.
+
+    def _get_iset_list(self):
+        """GET /api/iset-list — return summaries of every investigation."""
+        out = []
+        for d in _iter_iset_dirs():
+            try:
+                spec = yaml.safe_load((d / "investigation.yaml").read_text()) or {}
+            except Exception as e:
+                out.append({"name": d.name, "error": f"parse failed: {e}"})
+                continue
+            out.append({
+                "name":        spec.get("name", d.name),
+                "title":       spec.get("title", spec.get("name", d.name)),
+                "status":      spec.get("status", "planning"),
+                "description": spec.get("description", ""),
+                "question":    spec.get("question", ""),
+                "hypothesis":  spec.get("hypothesis", ""),
+                "n_studies":   len(spec.get("studies") or []),
+                "studies":     list(spec.get("studies") or []),
+            })
+        return self._json({"investigations": out}, 200)
+
+    def _get_references_bib(self):
+        """GET /api/references-bib — parsed contents of references/papers.bib.
+
+        Returns {entries: [{key, type, title, author, journal, year, doi, url, note, ...}]}
+        """
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.report import _parse_bib_entries
+        try:
+            entries = _parse_bib_entries(WORKSPACE)
+        except Exception as e:
+            return self._json({"error": str(e)}, 500)
+        return self._json({"entries": entries}, 200)
+
+    def _get_work_composite_diff(self):
+        """GET /api/work-composite-diff — files changed on the active branch
+        that look like model code (composites + processes + steps + library
+        helpers). Powers a "Model changes" section in the PR body Suggest.
+
+        Returns ``{base, branch, changes: [{path, lines_added, lines_removed,
+        category}, ...]}``. Empty list when the branch is at base, or when
+        the diff is huge (capped at 500 entries).
+        """
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.work_state import load_state
+        state = load_state()
+        branch = state.get("active_branch") or ""
+        if not branch:
+            head = subprocess.run(["git", "branch", "--show-current"],
+                                  cwd=WORKSPACE, capture_output=True, text=True, timeout=5)
+            if head.returncode == 0:
+                branch = head.stdout.strip()
+        base = state.get("base") or "main"
+
+        # Get numstat (per-file lines added/removed) vs the merge-base with base.
+        mb = subprocess.run(
+            ["git", "merge-base", base, "HEAD"],
+            cwd=WORKSPACE, capture_output=True, text=True, timeout=10,
+        )
+        if mb.returncode != 0:
+            return self._json({"base": base, "branch": branch, "changes": [],
+                               "error": f"merge-base failed: {(mb.stderr or mb.stdout)[:200]}"}, 200)
+        ref = mb.stdout.strip() or base
+        diff = subprocess.run(
+            ["git", "diff", "--numstat", f"{ref}...HEAD"],
+            cwd=WORKSPACE, capture_output=True, text=True, timeout=15,
+        )
+        if diff.returncode != 0:
+            return self._json({"base": base, "branch": branch, "changes": [],
+                               "error": f"diff failed: {(diff.stderr or diff.stdout)[:200]}"}, 200)
+
+        # Category mapping: a file is included only if it matches one of these
+        # path patterns (model code in the v2ecoli layout). Other repos can
+        # extend the pattern list; for now we hardcode the canonical roots.
+        CATEGORIES = [
+            ("composites/",      "composite"),
+            ("/composites/",     "composite"),
+            ("processes/",       "process"),
+            ("/processes/",      "process"),
+            ("steps/",           "step"),
+            ("/steps/",          "step"),
+            ("library/",         "library helper"),
+            ("/library/",        "library helper"),
+            ("types/",           "type definition"),
+            ("/types/",          "type definition"),
+        ]
+
+        changes = []
+        for line in diff.stdout.splitlines()[:500]:
+            parts = line.split("\t", 2)
+            if len(parts) != 3:
+                continue
+            added, removed, path = parts
+            try:
+                a = int(added) if added != "-" else 0
+                r = int(removed) if removed != "-" else 0
+            except ValueError:
+                continue
+            cat = None
+            for sub, label in CATEGORIES:
+                if sub in "/" + path:
+                    cat = label
+                    break
+            if cat is None:
+                continue
+            changes.append({
+                "path": path,
+                "lines_added": a,
+                "lines_removed": r,
+                "category": cat,
+            })
+
+        # Sort by largest diff first (lines_added + lines_removed).
+        changes.sort(key=lambda c: -(c["lines_added"] + c["lines_removed"]))
+        return self._json({"base": base, "branch": branch, "changes": changes}, 200)
+
+    def _get_study_charts(self):
+        """GET /api/study-charts/<name> — inline-SVG charts for the latest run.
+
+        Reads ``studies/<name>/runs.db`` (the per-step history emitted by
+        SQLiteEmitter), picks the latest entry from the ``simulations`` table
+        (filtered to ``baseline-steady-state`` when present), and renders a
+        small canonical set of line charts as inline SVG so they can be
+        embedded directly in the offline HTML report.
+        """
+        import urllib.parse
+        from vivarium_dashboard.lib.study_charts import render_study_charts
+        path = urllib.parse.urlparse(self.path).path
+        name = path[len("/api/study-charts/"):].strip("/")
+        if not name:
+            return self._json({"error": "missing study name"}, 400)
+        runs_db = WORKSPACE / "studies" / name / "runs.db"
+        try:
+            charts = render_study_charts(runs_db, run_name="baseline-steady-state")
+            if not charts:
+                charts = render_study_charts(runs_db, run_name=None)
+        except Exception as e:
+            return self._json({"error": str(e), "study": name}, 500)
+        return self._json({"study": name, "charts": charts,
+                           "db_exists": runs_db.exists()}, 200)
+
+    def _get_iset_detail(self):
+        """GET /api/iset/<name> — return one investigation + its resolved studies.
+
+        Each constituent study is returned with its `parent_studies:`
+        normalized (legacy strings become dicts) so the frontend DAG layout
+        has consistent shape.
+        """
+        import urllib.parse
+        path = urllib.parse.urlparse(self.path).path
+        name = path.split("/api/iset/", 1)[-1].strip("/")
+        if not name:
+            return self._json({"error": "investigation name required"}, 400)
+
+        spec_path = WORKSPACE / "investigations" / name / "investigation.yaml"
+        if not spec_path.is_file():
+            return self._json({"error": f"no investigation.yaml at {spec_path}"}, 404)
+        try:
+            spec = yaml.safe_load(spec_path.read_text()) or {}
+        except Exception as e:
+            return self._json({"error": f"parse failed: {e}"}, 500)
+
+        # Resolve constituent studies.
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.investigations import load_spec, InvestigationSpecError
+
+        def _normalize_parents(study_spec: dict) -> list[dict]:
+            ps = study_spec.get("parent_studies") or []
+            out_ = []
+            for entry in ps:
+                if isinstance(entry, str):
+                    out_.append({"study": entry, "condition": "tests-passed"})
+                elif isinstance(entry, dict) and entry.get("study"):
+                    out_.append({"study": entry["study"], "condition": entry.get("condition", "tests-passed")})
+            return out_
+
+        studies_out = []
+        for slug in (spec.get("studies") or []):
+            study_dir = WORKSPACE / "studies" / slug
+            sp = study_dir / "study.yaml"
+            if not sp.is_file():
+                sp = WORKSPACE / "investigations" / slug / "spec.yaml"
+            if not sp.is_file():
+                studies_out.append({"name": slug, "status": "missing", "error": "study.yaml not found"})
+                continue
+            try:
+                study_spec = load_spec(sp)
+            except InvestigationSpecError as e:
+                studies_out.append({"name": slug, "status": "invalid", "error": str(e)})
+                continue
+            # New-template aware: derive counts from new fields when present,
+            # fall back to legacy fields. Purpose.question wins over top-level
+            # question if both exist.
+            sim_set = study_spec.get("simulation_set") or []
+            beh_tests = study_spec.get("behavior_tests") or study_spec.get("expected_behavior") or []
+            readouts = study_spec.get("readouts") or study_spec.get("observables") or []
+            purpose = study_spec.get("purpose") or {}
+            question = (purpose.get("question") if isinstance(purpose, dict) else None) or study_spec.get("question", "")
+            follow_ups = study_spec.get("follow_up_studies") or []
+            findings = study_spec.get("findings") or []
+            studies_out.append({
+                "name":            study_spec["name"],
+                "status":          study_spec.get("status", "planned"),
+                "phase":           study_spec.get("phase"),
+                "question":        question,
+                "n_variants":      len(sim_set) if sim_set else len(study_spec.get("variants") or []),
+                "n_interventions": len(study_spec.get("interventions") or []),
+                "n_runs":          len(study_spec.get("runs") or []),
+                "baseline_source": _format_baseline_source(study_spec),
+                "parent_studies":  _normalize_parents(study_spec),
+                "n_behaviors":     len(beh_tests),
+                "n_readouts":      len(readouts),
+                "n_requirements":  len(study_spec.get("implementation_requirements") or study_spec.get("gaps") or []),
+                "n_followups":     len(follow_ups),
+                "follow_up_studies": follow_ups,
+                "n_findings":      len(findings),
+                "findings":        findings,
+            })
+
+        return self._json({
+            "name":          spec.get("name", name),
+            "title":         spec.get("title", spec.get("name", name)),
+            "description":   spec.get("description", ""),
+            "question":      spec.get("question", ""),
+            "hypothesis":    spec.get("hypothesis", ""),
+            "status":        spec.get("status", "planning"),
+            "expert_docs":   spec.get("expert_docs") or [],
+            "acceptance_criteria": spec.get("acceptance_criteria") or [],
+            "studies":       studies_out,
+        }, 200)
+
     def _get_study_bigraph_paths(self):
         """GET /api/study-bigraph-paths?study=<slug>[&baseline=<name>][&max_depth=<n>]
 
@@ -4720,52 +5045,125 @@ if __name__ == "__main__":
         return self._json({"state": doc}, 200)
 
     def _get_investigations(self):
-        """GET /api/investigations — return summaries of all investigations."""
+        """GET /api/investigations — return summaries of all investigations.
+
+        Includes the study-dependency DAG: each row carries `parent_studies`
+        (normalized to [{study, condition}]) and a computed `blocked` flag
+        plus `blocked_by` list pointing at parents that don't yet satisfy
+        their condition.
+        """
         _ws_add_to_sys_path()
         from vivarium_dashboard.lib.investigations import load_spec, InvestigationSpecError
 
-        out = []
+        # First pass: load every spec so we can resolve cross-study conditions.
+        loaded: list[tuple[Path, dict]] = []   # (dir, spec)
         for d in _iter_study_dirs():
             spec_path = d / "study.yaml" if (d / "study.yaml").is_file() else d / "spec.yaml"
             if not spec_path.is_file():
                 continue
             try:
-                spec = load_spec(spec_path)
-                # Multi-composite (new) vs single-`composite:` (legacy) shape.
-                composites = spec.get("composites") or []
-                if composites:
-                    composite_summary = ", ".join(c.get("name", "") for c in composites)
-                    n_runs = len(spec.get("runs") or [])
-                else:
-                    composite_summary = spec.get("composite", "")
-                    # v3 uses `runs:`; legacy uses `simulations:`.
-                    n_runs = len(spec.get("runs") or spec.get("simulations") or [])
-                row = {
-                    "name":            spec["name"],
-                    "composite":       composite_summary,
-                    "composites":      composites,
-                    "description":     spec.get("description", ""),
-                    "topic":           spec.get("topic", ""),
-                    "tags":            spec.get("tags") or [],
-                    "status":          spec.get("status", "planned"),
-                    "last_run":        spec.get("last_run"),
-                    "n_simulations":   n_runs,
-                    "baseline_names":  [b.get("name", "") for b in (spec.get("baseline") or [])
-                                        if isinstance(b, dict)],
-                    "n_baseline":      len(spec.get("baseline") or []),
-                    "n_variants":      len(spec.get("variants") or []),
-                    "n_groups":        len(spec.get("groups") or []),
-                    "n_interventions": len(spec.get("interventions") or []),
-                    "n_comparisons":   len(spec.get("comparisons") or []),
-                    "n_runs":          n_runs,
-                    "baseline_source": _format_baseline_source(spec),
-                    "conclusions_excerpt": _conclusions_excerpt(spec),
-                }
-                out.append(row)
+                loaded.append((d, load_spec(spec_path)))
             except InvestigationSpecError as e:
-                out.append({
-                    "name": d.name, "status": "invalid", "error": str(e),
-                })
+                loaded.append((d, {"__invalid__": True, "name": d.name, "error": str(e)}))
+
+        by_name: dict[str, dict] = {s["name"]: s for _, s in loaded if not s.get("__invalid__")}
+
+        def _normalize_parents(spec: dict) -> list[dict]:
+            """Accept legacy [str, ...] AND new [{study, condition}, ...]."""
+            ps = spec.get("parent_studies") or []
+            out = []
+            for entry in ps:
+                if isinstance(entry, str):
+                    out.append({"study": entry, "condition": "tests-passed"})
+                elif isinstance(entry, dict) and entry.get("study"):
+                    out.append({
+                        "study":     entry["study"],
+                        "condition": entry.get("condition", "tests-passed"),
+                    })
+            return out
+
+        def _condition_satisfied(parent: dict | None, condition: str) -> bool:
+            """Does this parent currently satisfy `condition`?"""
+            if parent is None:
+                # Parent doesn't exist in workspace — treat as unsatisfiable,
+                # so the child shows up as blocked with a useful diagnostic.
+                return False
+            status = parent.get("status", "planned")
+            if condition == "ran":
+                return status in ("ran", "complete")
+            if condition == "complete":
+                return status == "complete"
+            if condition == "tests-passed":
+                tests = (parent.get("tests") or {}).get("last_results") or {}
+                summary = tests.get("summary") or {}
+                # treat 'no failures + at least one passed' as passed; 'no results yet' as not-passed.
+                passed = summary.get("passed", 0) or 0
+                failed = summary.get("failed", 0) or 0
+                return failed == 0 and passed > 0
+            return False
+
+        out = []
+        for d, spec in loaded:
+            if spec.get("__invalid__"):
+                out.append({"name": spec["name"], "status": "invalid", "error": spec["error"]})
+                continue
+            # Multi-composite (new) vs single-`composite:` (legacy) shape.
+            composites = spec.get("composites") or []
+            if composites:
+                composite_summary = ", ".join(c.get("name", "") for c in composites)
+                n_runs = len(spec.get("runs") or [])
+            else:
+                composite_summary = spec.get("composite", "")
+                n_runs = len(spec.get("runs") or spec.get("simulations") or [])
+
+            parents = _normalize_parents(spec)
+            blocked_by = []
+            for p in parents:
+                parent_spec = by_name.get(p["study"])
+                if not _condition_satisfied(parent_spec, p["condition"]):
+                    blocked_by.append({
+                        "study":     p["study"],
+                        "condition": p["condition"],
+                        "missing":   "parent-not-found" if parent_spec is None else
+                                     f"parent.status={parent_spec.get('status', 'planned')}",
+                    })
+
+            sim_set_top = spec.get("simulation_set") or []
+            beh_tests_top = spec.get("behavior_tests") or spec.get("expected_behavior") or []
+            readouts_top = spec.get("readouts") or spec.get("observables") or []
+            reqs_top = spec.get("implementation_requirements") or spec.get("gaps") or []
+            n_variants_top = (len(sim_set_top) if sim_set_top
+                              else len(spec.get("variants") or []))
+            row = {
+                "name":            spec["name"],
+                "composite":       composite_summary,
+                "composites":      composites,
+                "description":     spec.get("description", ""),
+                "topic":           spec.get("topic", ""),
+                "tags":            spec.get("tags") or [],
+                "status":          spec.get("status", "planned"),
+                "phase":           spec.get("phase"),
+                "last_run":        spec.get("last_run"),
+                "n_simulations":   n_runs,
+                "baseline_names":  [b.get("name", "") for b in (spec.get("baseline") or [])
+                                    if isinstance(b, dict)],
+                "n_baseline":      len(spec.get("baseline") or []),
+                "n_variants":      n_variants_top,
+                "n_groups":        len(spec.get("groups") or []),
+                "n_interventions": len(spec.get("interventions") or []),
+                "n_behaviors":     len(beh_tests_top),
+                "n_readouts":      len(readouts_top),
+                "n_requirements":  len(reqs_top),
+                "n_comparisons":   len(spec.get("comparisons") or []),
+                "n_runs":          n_runs,
+                "baseline_source": _format_baseline_source(spec),
+                "conclusions_excerpt": _conclusions_excerpt(spec),
+                # DAG / dependency fields.
+                "parent_studies":  parents,
+                "blocked":         len(blocked_by) > 0,
+                "blocked_by":      blocked_by,
+            }
+            out.append(row)
         return self._json({"investigations": out}, 200)
 
     def _post_investigation_create(self, body: dict):
@@ -6451,6 +6849,28 @@ if __name__ == "__main__":
         """POST /api/study-set-objective {study, text}"""
         response, code = _post_study_set_objective_for_test(WORKSPACE, body)
         return self._json(response, code)
+
+    def _post_study_seed_followup(self, body: dict):
+        """POST /api/study-seed-followup {parent, followup_idx} → seed child study.
+
+        Reads parent study.yaml, picks ``follow_up_studies[followup_idx]``,
+        and writes a new ``studies/<new-name>/study.yaml`` whose Purpose +
+        Pipeline gate inherit context from the follow-up entry. The new
+        study comes up as ``phase: Design`` / ``status: planned`` and is
+        immediately visible in the dashboard's Investigations tab.
+        """
+        from vivarium_dashboard.lib.study_seed import seed_followup_study
+        try:
+            new_name = seed_followup_study(
+                WORKSPACE, body.get("parent"), int(body.get("followup_idx", -1))
+            )
+        except FileNotFoundError as e:
+            return self._json({"error": str(e)}, 404)
+        except (ValueError, KeyError, IndexError) as e:
+            return self._json({"error": str(e)}, 400)
+        except Exception as e:
+            return self._json({"error": f"seed failed: {e}"}, 500)
+        return self._json({"new_study_name": new_name}, 200)
 
 
     def _post_study_rename(self, body: dict):

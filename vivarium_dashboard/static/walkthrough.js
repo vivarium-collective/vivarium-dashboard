@@ -175,8 +175,7 @@
     var name = window._studyDetailCurrent;
     if (!name) return;
     var url = '/studies/' + encodeURIComponent(name);
-    var w = window.open(url, '_blank',
-      'width=1200,height=800,menubar=no,toolbar=no,location=no,resizable=yes,scrollbars=yes');
+    var w = _openDetachedWindow(url, 1200, 800);
     if (!w) {
       alert('Popup blocked. Allow popups from this site to pop out the study view.');
       return;
@@ -191,6 +190,51 @@
     }, 1000);
   }
   window._popoutStudy = _popoutStudy;
+
+  // Try to open the URL as a true detached browser window (not a tab).
+  // The `popup` keyword + concrete dimensions triggers a popup window in
+  // Chromium / Safari; Firefox honors width/height with the
+  // dom.disable_window_open_feature.* prefs left at defaults. Browsers
+  // that hard-coded tab-only behavior (e.g. user pref) ignore us; that
+  // is the user's setting and can't be overridden by JS.
+  function _openDetachedWindow(url, width, height) {
+    width = width || 1280;
+    height = height || 900;
+    var left = Math.max(0, (window.screen.availWidth  - width)  / 2);
+    var top  = Math.max(0, (window.screen.availHeight - height) / 2);
+    var features = [
+      'popup=yes',
+      'width=' + width,
+      'height=' + height,
+      'left=' + left,
+      'top=' + top,
+      'menubar=no',
+      'toolbar=no',
+      'location=no',
+      'status=no',
+      'resizable=yes',
+      'scrollbars=yes',
+      // NB: `noopener` removed. It was hinting at security hygiene but
+      // some browsers treat noopener popups as fresh navigations that
+      // lose the dashboard's session context, leaving the popup blank.
+      // For a local dashboard this isn't a security risk.
+    ].join(',');
+    // NOTE: dropping `_blank` as the target name and using a unique name
+    // ('detached-' + timestamp) makes Safari less inclined to merge the
+    // popup into the opener tab's window. With a fresh name + popup
+    // features the browser is more likely to honor the request.
+    var target = 'detached-' + Date.now();
+    var w = window.open(url, target, features);
+    if (!w) return w;
+    // Belt-and-suspenders: a few browsers (Chrome with certain prefs,
+    // Firefox on Linux) ignore the popup hint at open() time but still
+    // honor a post-open resizeTo/moveTo. Calling these is harmless when
+    // they don't apply.
+    try { w.resizeTo(width, height); } catch (_) {}
+    try { w.moveTo(left, top);       } catch (_) {}
+    return w;
+  }
+  window._openDetachedWindow = _openDetachedWindow;
 
   function _closeStudyEmbedded() {
     var frame = document.getElementById('study-detail-frame');
@@ -376,28 +420,56 @@
         _loadInvestigations();
       }
     }
+    if (pageId === 'investigations') {
+      _loadInvestigationSets();
+    }
   }
 
   function _initMenuNav() {
     // Focus mode: ?focus=<panel> hides everything except the named panel.
     var params = new URLSearchParams(window.location.search);
     var focus = params.get('focus');
+    var focusedPage = null;
     if (focus) {
-      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'studies', 'simulations', 'composite-explore'];
+      var validPages = ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'studies', 'simulations', 'composite-explore'];
       if (validPages.indexOf(focus) >= 0) {
         document.body.classList.add('focus-mode', 'focus-' + focus);
         _switchPage(focus);
-        return; // skip normal hash-based routing
+        focusedPage = focus;
+        // DO NOT return — fall through so the ?investigation=<name> auto-open
+        // handler below also fires (it was previously skipped by the early
+        // return, leaving popouts blank when the iset auto-open in
+        // _loadInvestigationSets didn't fire in time).
       }
     }
 
-    function fromHash() {
-      var h = (window.location.hash || '').replace(/^#/, '');
-      var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'studies', 'simulations', 'composite-explore'];
-      _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
+    if (!focusedPage) {
+      function fromHash() {
+        var h = (window.location.hash || '').replace(/^#/, '');
+        var validPages = ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'studies', 'simulations', 'composite-explore'];
+        _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
+      }
+      window.addEventListener('hashchange', fromHash);
+      fromHash();
     }
-    window.addEventListener('hashchange', fromHash);
-    fromHash();
+
+    // ?investigation=<name> → auto-open that investigation's detail view.
+    // The setTimeout retries to handle the race where the iframe / API
+    // load races with the page swap.
+    var qInv = new URLSearchParams(window.location.search).get('investigation');
+    if (qInv) {
+      if (!focusedPage) _switchPage('investigations');
+      var tries = 0;
+      var attemptOpen = function() {
+        var detailEl = document.getElementById('investigation-detail-view');
+        if (detailEl && typeof _openInvestigationDetail === 'function') {
+          _openInvestigationDetail(qInv);
+        } else if (tries++ < 20) {
+          setTimeout(attemptOpen, 100);
+        }
+      };
+      setTimeout(attemptOpen, 50);
+    }
   }
 
   window._switchPage = _switchPage;
@@ -1308,7 +1380,7 @@
   window._installFromCatalog = _installFromCatalog;
 
   function _proceedWithCatalogInstall(name, opts) {
-    if (!confirm("Install '" + name + "' as a workstream commit?\n\nThis adds a submodule, pip installs the package, and appends it to pyproject.toml. Requires an active workstream.")) return;
+    if (!confirm("Install '" + name + "' on the active investigation branch?\n\nThis adds a submodule, pip installs the package, and appends it to pyproject.toml. Requires an active investigation branch.")) return;
     var body = {name: name};
     if (opts && opts.skip_system_deps_check) body.skip_system_deps_check = true;
     fetch('/api/catalog-install', {
@@ -1693,7 +1765,7 @@
   window._submitLinkBranch = _submitLinkBranch;
 
   function _startWork() {
-    var name = prompt("Workstream branch name (e.g., feat/baseline-work):");
+    var name = prompt("Investigation branch name (suggested: investigation/<short-slug>):", "investigation/");
     if (!name) return;
     fetch('/api/work-start', {
       method: 'POST',
@@ -1702,7 +1774,7 @@
     })
       .then(function(r){ return r.json().then(function(j){ return [r.ok, j]; }); })
       .then(function(parts){
-        if (!parts[0]) { alert("Could not start workstream:\n" + (parts[1].error || 'unknown')); return; }
+        if (!parts[0]) { alert("Could not start investigation branch:\n" + (parts[1].error || 'unknown')); return; }
         _refreshGitStatus();
         location.reload();
       });
@@ -1808,11 +1880,11 @@
   }
 
   function _endWork() {
-    if (!confirm("End workstream? This switches you back to base. Your branch is preserved.")) return;
+    if (!confirm("End this investigation branch? Switches you back to base; the branch is preserved.")) return;
     fetch('/api/work-end', {method: 'POST'})
       .then(function(r){ return r.json().then(function(j){ return [r.ok, j]; }); })
       .then(function(parts){
-        if (!parts[0]) { alert("Could not end workstream:\n" + (parts[1].error || 'unknown')); return; }
+        if (!parts[0]) { alert("Could not end investigation branch:\n" + (parts[1].error || 'unknown')); return; }
         location.reload();
       });
   }
@@ -2001,17 +2073,25 @@
   function _vivRefreshInvestigationsRail() {
     var host = document.getElementById('viv-rail-investigations');
     if (!host) return;
-    fetch('/api/investigations')
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        _vivRenderInvestigationsRail(data.investigations || []);
-      })
-      .catch(function(err) {
-        host.innerHTML =
-          '<p class="viv-rail-empty" style="font-size:0.85em;color:#c00;padding:4px 12px">' +
-          'Failed to load' +
-          '</p>';
-      });
+    // New flow: fetch both isets (groups) and studies (members), then render
+    // the grouped/collapsible view via _renderRailInvestigationGroups. The
+    // legacy fallback _vivRenderInvestigationsRail() is kept below for
+    // workspaces with no investigation.yaml files.
+    var hasIsetUI = (typeof _renderRailInvestigationGroups === 'function')
+                 && document.getElementById('investigations-list');
+    var p1 = fetch('/api/investigations').then(function(r) { return r.json(); }).catch(function() { return {investigations: []}; });
+    var p2 = hasIsetUI
+      ? fetch('/api/iset-list').then(function(r) { return r.json(); }).catch(function() { return {investigations: []}; })
+      : Promise.resolve({investigations: []});
+    Promise.all([p1, p2]).then(function(arr) {
+      window._investigations = arr[0].investigations || [];
+      window._isetIndex      = arr[1].investigations || [];
+      if (hasIsetUI && window._isetIndex.length) {
+        _renderRailInvestigationGroups();
+      } else {
+        _vivRenderInvestigationsRail(window._investigations);
+      }
+    });
   }
   window._vivRefreshInvestigationsRail = _vivRefreshInvestigationsRail;
 
@@ -3175,6 +3255,2009 @@
   }
   window._loadInvestigations = _loadInvestigations;
 
+  // ─── Investigation-sets (v3 "Investigations" tab) ──────────────────────
+  // An investigation-set (iset) is a named collection of studies with
+  // dependencies — populated from investigations/<name>/investigation.yaml.
+  // Distinct from `window._investigations` which is the FLAT list of every
+  // study in the workspace (legacy naming).
+  window._isetIndex = [];        // [{name, title, status, studies:[slug, ...]}]
+  window._currentIset = null;    // name of the iset currently open in detail view
+
+  function _loadInvestigationSets() {
+    var list = document.getElementById('investigations-list');
+    if (list) list.innerHTML = '<p class="empty-state">Loading…</p>';
+    fetch('/api/iset-list', {headers: {Accept: 'application/json'}})
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(j) {
+        window._isetIndex = j.investigations || [];
+        _renderInvestigationSets();
+        _renderRailInvestigationGroups();
+        // New behavior: skip the list-of-cards UI. Auto-open the active
+        // investigation directly. Pick from (in order): the currently-open
+        // iset (refresh case), the iset matching the current branch when
+        // the branch follows `investigation/<name>`, or just the first iset.
+        if (!window._isetIndex.length) return;
+        var active = window._currentIset;
+        if (!active) {
+          var branch = (window._gitStatus && window._gitStatus.active_branch) || '';
+          var m = /^investigation\/(.+)$/.exec(branch);
+          if (m) {
+            for (var i = 0; i < window._isetIndex.length; i++) {
+              if (window._isetIndex[i].name === m[1]) { active = m[1]; break; }
+            }
+          }
+        }
+        if (!active) active = window._isetIndex[0].name;
+        // Toggle the "switch investigation" button visibility based on count.
+        var switchBtn = document.getElementById('investigation-switch-btn');
+        if (switchBtn) {
+          switchBtn.style.display = window._isetIndex.length > 1 ? '' : 'none';
+        }
+        _openInvestigationDetail(active);
+      })
+      .catch(function(err) {
+        if (list) list.innerHTML = '<p class="empty-state" style="color:#b91c1c">' +
+          'Failed to load investigations: ' + _esc(String(err)) + '</p>';
+      });
+  }
+  window._loadInvestigationSets = _loadInvestigationSets;
+
+  // Exposed by the "Switch investigation ↓" button when more than one iset
+  // exists in the workspace. Shows the list-of-cards UI; clicking a card
+  // opens its detail view (existing _openInvestigationDetail flow).
+  function _showInvestigationList() {
+    var list = document.getElementById('investigations-list');
+    var detail = document.getElementById('investigation-detail-view');
+    if (list) list.style.display = '';
+    if (detail) detail.style.display = 'none';
+    window._currentIset = null;
+    _renderInvestigationSets();
+  }
+  window._showInvestigationList = _showInvestigationList;
+
+  function _renderInvestigationSets() {
+    var list = document.getElementById('investigations-list');
+    if (!list) return;
+    if (!window._isetIndex.length) {
+      list.innerHTML = '<p class="empty-state">No investigations declared. Author one at <code>investigations/&lt;name&gt;/investigation.yaml</code>.</p>';
+      return;
+    }
+    list.innerHTML = window._isetIndex.map(function(iset) {
+      var desc = (iset.description || '').split('\n')[0].slice(0, 240);
+      return '<div class="investigation-set-card" onclick="_openInvestigationDetail(\'' + _esc(iset.name) + '\')" ' +
+             'style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.1s,border-color 0.1s;">' +
+        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">' +
+          '<strong style="font-size:1.05em;flex:1">' + _esc(iset.title || iset.name) + '</strong>' +
+          '<span class="status-pill planned" style="font-size:0.78em">' + _esc(iset.status || 'planning') + '</span>' +
+        '</div>' +
+        '<div class="muted" style="font-size:0.78em;font-family:monospace;margin-bottom:6px">' + _esc(iset.name) + '</div>' +
+        (desc ? '<p style="margin:0 0 8px 0;font-size:0.9em;color:#475569">' + _esc(desc) + (iset.description.length > 240 ? '…' : '') + '</p>' : '') +
+        '<div style="font-size:0.85em;color:#64748b">' +
+          '<strong>' + iset.n_studies + '</strong> stud' + (iset.n_studies === 1 ? 'y' : 'ies') +
+          ' &nbsp;·&nbsp; click to open DAG' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function _openInvestigationDetail(name) {
+    window._currentIset = name;
+    document.getElementById('investigations-list').style.display = 'none';
+    document.getElementById('investigation-detail-view').style.display = '';
+    document.getElementById('investigation-detail-title').textContent = name;
+    document.getElementById('investigation-detail-description').textContent = 'Loading…';
+
+    fetch('/api/iset/' + encodeURIComponent(name), {headers: {Accept: 'application/json'}})
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(d) {
+        window._currentIsetData = d;
+        document.getElementById('investigation-detail-title').textContent = d.title || d.name;
+        var statusEl = document.getElementById('investigation-detail-status');
+        statusEl.textContent = d.status || 'planning';
+        document.getElementById('investigation-detail-description').textContent = d.description || '';
+        _renderInvestigationDag(d.studies || []);
+      })
+      .catch(function(err) {
+        document.getElementById('investigation-detail-description').textContent = 'Failed to load: ' + err;
+      });
+  }
+  window._openInvestigationDetail = _openInvestigationDetail;
+
+  function _closeInvestigationDetail() {
+    window._currentIset = null;
+    document.getElementById('investigations-list').style.display = '';
+    document.getElementById('investigation-detail-view').style.display = 'none';
+  }
+  window._closeInvestigationDetail = _closeInvestigationDetail;
+
+  // Layout + render the DAG of study nodes for the active investigation.
+  // VERTICAL flow: y = topological depth (top = roots), x = within-depth slot.
+  // Cards as absolute-positioned <div>s; edges as SVG cubic-Bezier paths.
+  function _renderInvestigationDag(studies) {
+    var nodesHost = document.getElementById('investigation-dag-nodes');
+    var edgesSvg  = document.getElementById('investigation-dag-edges');
+    nodesHost.innerHTML = '';
+    edgesSvg.innerHTML  = '';
+
+    if (!studies.length) {
+      nodesHost.innerHTML = '<p class="empty-state" style="padding:24px">No studies in this investigation.</p>';
+      return;
+    }
+
+    // Build name->study + child map.
+    var byName = {};
+    var children = {};
+    studies.forEach(function(s) { byName[s.name] = s; children[s.name] = []; });
+    studies.forEach(function(s) {
+      (s.parent_studies || []).forEach(function(p) {
+        var pn = p.study || p;
+        if (children[pn]) children[pn].push(s.name);
+      });
+    });
+
+    // BFS depth from roots.
+    var depth = {};
+    var queue = [];
+    studies.forEach(function(s) {
+      if (!(s.parent_studies || []).length) { depth[s.name] = 0; queue.push(s.name); }
+    });
+    var guard = studies.length * 4;
+    while (queue.length && guard-- > 0) {
+      var n = queue.shift();
+      (children[n] || []).forEach(function(c) {
+        if (depth[c] === undefined || depth[c] < depth[n] + 1) {
+          depth[c] = depth[n] + 1;
+          queue.push(c);
+        }
+      });
+    }
+    studies.forEach(function(s) { if (depth[s.name] === undefined) depth[s.name] = 0; });
+
+    // Bin by depth.
+    var byDepth = {};
+    studies.forEach(function(s) {
+      var d = depth[s.name];
+      (byDepth[d] = byDepth[d] || []).push(s);
+    });
+    Object.keys(byDepth).forEach(function(d) {
+      byDepth[d].sort(function(a, b) { return a.name.localeCompare(b.name); });
+    });
+
+    // Layout constants — vertical orientation.
+    var CARD_W = 320, CARD_H = 120;
+    var X_GAP = 40,   Y_GAP = 60;
+    var PAD_X = 24,   PAD_Y = 16;
+
+    // Compute each card's (x, y): y = depth, x = within-depth slot.
+    var pos = {};
+    var depths = Object.keys(byDepth).map(Number).sort(function(a, b) { return a - b; });
+    var maxSlot = 0;
+    depths.forEach(function(d) {
+      byDepth[d].forEach(function(s, i) {
+        pos[s.name] = {
+          x: PAD_X + i * (CARD_W + X_GAP),
+          y: PAD_Y + d * (CARD_H + Y_GAP),
+          depth: d, slot: i,
+        };
+        if (i > maxSlot) maxSlot = i;
+      });
+    });
+
+    // Center each depth row inside the canvas: compute final canvasW first.
+    var canvasW = Math.max(
+      PAD_X * 2 + (maxSlot + 1) * CARD_W + maxSlot * X_GAP,
+      720
+    );
+    depths.forEach(function(d) {
+      var rowSize = byDepth[d].length;
+      var rowWidth = rowSize * CARD_W + (rowSize - 1) * X_GAP;
+      var rowOffset = Math.max(PAD_X, (canvasW - rowWidth) / 2);
+      byDepth[d].forEach(function(s, i) {
+        pos[s.name].x = rowOffset + i * (CARD_W + X_GAP);
+      });
+    });
+
+    var canvasH = PAD_Y * 2 + (depths.length > 0 ? depths[depths.length - 1] : 0) * (CARD_H + Y_GAP) + CARD_H;
+
+    nodesHost.style.width = canvasW + 'px';
+    nodesHost.style.height = canvasH + 'px';
+    edgesSvg.setAttribute('width', canvasW);
+    edgesSvg.setAttribute('height', canvasH);
+    edgesSvg.style.width = canvasW + 'px';
+    edgesSvg.style.height = canvasH + 'px';
+    // Size the shell to fit its content so the OUTER page scrolls instead
+    // of creating a nested scrollbar inside the panel.
+    var shellSize = document.getElementById('investigation-dag-shell');
+    if (shellSize) shellSize.style.height = canvasH + 'px';
+
+    // Marker for arrowheads (defined once).
+    var svgNS = 'http://www.w3.org/2000/svg';
+    edgesSvg.innerHTML =
+      '<defs><marker id="dag-arrowhead" viewBox="0 0 10 10" refX="9" refY="5" ' +
+      'markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
+      '<path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>';
+
+    // Render edges (behind cards) — top-of-child ← bottom-of-parent.
+    studies.forEach(function(s) {
+      (s.parent_studies || []).forEach(function(p) {
+        var pn = p.study || p;
+        if (!pos[pn] || !pos[s.name]) return;
+        var x1 = pos[pn].x + CARD_W / 2;
+        var y1 = pos[pn].y + CARD_H;
+        var x2 = pos[s.name].x + CARD_W / 2;
+        var y2 = pos[s.name].y;
+        var dy = Math.max(28, (y2 - y1) / 2);
+        var path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', 'M ' + x1 + ' ' + y1 +
+                              ' C ' + x1 + ' ' + (y1 + dy) +
+                              ', ' + x2 + ' ' + (y2 - dy) +
+                              ', ' + x2 + ' ' + y2);
+        path.setAttribute('fill', 'none');
+        path.setAttribute('stroke', '#94a3b8');
+        path.setAttribute('stroke-width', '1.5');
+        path.setAttribute('marker-end', 'url(#dag-arrowhead)');
+        edgesSvg.appendChild(path);
+
+        var cond = (p.condition || 'tests-passed');
+        var midX = (x1 + x2) / 2 + 8;
+        var midY = (y1 + y2) / 2;
+        var label = document.createElementNS(svgNS, 'text');
+        label.setAttribute('x', midX);
+        label.setAttribute('y', midY);
+        label.setAttribute('font-size', '10');
+        label.setAttribute('fill', '#94a3b8');
+        label.textContent = cond;
+        edgesSvg.appendChild(label);
+      });
+    });
+
+    // Render nodes (study cards).
+    studies.forEach(function(s) {
+      var p = pos[s.name];
+      var statusColor = ({
+        planned:    '#94a3b8',
+        running:    '#3b82f6',
+        ran:        '#10b981',
+        complete:   '#059669',
+        failed:     '#dc2626',
+        invalid:    '#dc2626',
+      })[s.status] || '#94a3b8';
+
+      var node = document.createElement('div');
+      node.className = 'iset-dag-node';
+      node.onclick = function() { _openStudyInsideInvestigation(s.name); };
+      node.style.cssText =
+        'position:absolute;left:' + p.x + 'px;top:' + p.y + 'px;' +
+        'width:' + CARD_W + 'px;height:' + CARD_H + 'px;' +
+        'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;' +
+        'cursor:pointer;box-shadow:0 1px 2px rgba(0,0,0,0.04);transition:box-shadow 0.1s,border-color 0.1s;' +
+        'border-left: 4px solid ' + statusColor + ';' +
+        'box-sizing:border-box;overflow:hidden;';
+      // Phase chip color mapping (mirrors study-detail.html .phase-* CSS).
+      var phaseColors = {
+        Design:   {bg: '#e0e7ff', fg: '#3730a3'},
+        Build:    {bg: '#fef3c7', fg: '#92400e'},
+        Simulate: {bg: '#dbeafe', fg: '#1e40af'},
+        Evaluate: {bg: '#fce7f3', fg: '#9d174d'},
+        Decide:   {bg: '#d1fae5', fg: '#065f46'},
+      };
+      var pc = phaseColors[s.phase] || null;
+      var phaseChip = (s.phase && pc)
+        ? '<span class="phase-pill" style="background:' + pc.bg + ';color:' + pc.fg +
+          ';font-size:0.7em;padding:1px 8px;border-radius:9999px;margin-right:4px">' + _esc(s.phase) + '</span>'
+        : '';
+      // Composite counts line — readouts (new) | variants (legacy) + behavior tests + requirements (new).
+      var nReadouts = (s.n_readouts !== undefined) ? s.n_readouts : 0;
+      var nReqs = (s.n_requirements !== undefined) ? s.n_requirements : 0;
+      var followUps = s.follow_up_studies || [];
+      // When phase=Decide AND there are follow-ups, surface a clickable chip
+      // that opens a popover listing them with one-click "Seed →" actions.
+      var followUpsChip = '';
+      if (s.phase === 'Decide' && followUps.length) {
+        followUpsChip =
+          '<button class="dag-followups-btn" ' +
+          'onclick="event.stopPropagation(); _openDagFollowupsPopover(\'' + _esc(s.name) + '\', this)" ' +
+          'style="margin-top:4px;font-size:0.72em;padding:2px 8px;border:1px solid #10b981;background:#d1fae5;color:#065f46;border-radius:9999px;cursor:pointer">' +
+          '▸ ' + followUps.length + ' follow-up' + (followUps.length === 1 ? '' : 's') + ' · click to seed' +
+          '</button>';
+      }
+      node.innerHTML =
+        '<div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:4px">' +
+          '<strong style="font-size:0.95em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + _esc(s.name) + '</strong>' +
+          '<span style="white-space:nowrap">' + phaseChip +
+            '<span class="status-pill" style="background:#f1f5f9;color:#475569;font-size:0.7em;padding:1px 6px;">' + _esc(s.status || 'planned') + '</span>' +
+          '</span>' +
+        '</div>' +
+        '<div style="font-size:0.78em;color:#64748b;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' +
+          _esc(s.baseline_source || '—') + '</div>' +
+        '<div style="font-size:0.78em;color:#64748b;margin-top:6px">' +
+          (s.n_variants || 0) + ' sim · ' +
+          (s.n_behaviors || 0) + ' tests' +
+          (nReadouts ? ' · ' + nReadouts + ' readouts' : '') +
+          (nReqs ? ' · ' + nReqs + ' reqs' : '') +
+        '</div>' +
+        followUpsChip +
+        (followUpsChip
+          ? ''
+          : '<div style="font-size:0.72em;color:#94a3b8;margin-top:4px">Click to open study</div>');
+      // Stash follow-ups on the node for the popover lookup.
+      node._followUps = followUps;
+      nodesHost.appendChild(node);
+    });
+
+    // Auto-scroll the shell so the top of the DAG is in view.
+    var shell = document.getElementById('investigation-dag-shell');
+    if (shell) shell.scrollTop = 0;
+  }
+  window._renderInvestigationDag = _renderInvestigationDag;
+
+  // ── DAG follow-ups popover ───────────────────────────────────────────────
+  // Surfaced when phase=Decide. Lists each follow_up_studies entry with a
+  // "Seed →" button that POSTs to /api/study-seed-followup (existing
+  // endpoint) and navigates to the newly-created child study.
+  function _openDagFollowupsPopover(studyName, anchorBtn) {
+    // Find this study's follow-ups from the most recent iset payload.
+    var isetStudies = (window._currentIsetData && window._currentIsetData.studies) || [];
+    var match = null;
+    for (var i = 0; i < isetStudies.length; i++) {
+      if (isetStudies[i].name === studyName) { match = isetStudies[i]; break; }
+    }
+    var followUps = (match && match.follow_up_studies) || [];
+    if (!followUps.length) {
+      alert('No follow-ups recorded for ' + studyName + '.');
+      return;
+    }
+    // Close any existing popover
+    var prior = document.getElementById('dag-followups-popover');
+    if (prior) prior.remove();
+
+    var pop = document.createElement('div');
+    pop.id = 'dag-followups-popover';
+    var rect = anchorBtn.getBoundingClientRect();
+    pop.style.cssText =
+      'position:fixed;top:' + (rect.bottom + 6) + 'px;left:' + Math.max(8, rect.left - 80) + 'px;' +
+      'width:520px;max-height:60vh;overflow-y:auto;background:#fff;border:1px solid #d1d5db;' +
+      'border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.18);z-index:1000;padding:14px;';
+
+    var header =
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">' +
+        '<strong>' + _esc(studyName) + ' — follow-ups</strong>' +
+        '<button onclick="document.getElementById(\'dag-followups-popover\').remove()" ' +
+        'style="background:transparent;border:0;font-size:1.3em;cursor:pointer;color:#64748b">×</button>' +
+      '</div>' +
+      '<p style="font-size:0.85em;color:#64748b;margin:0 0 10px 0">Click <em>Seed →</em> to spawn a new child study from any entry. The new study inherits this one as a pipeline_gate prerequisite.</p>';
+
+    var rows = followUps.map(function(f, idx) {
+      var kind = f.kind || 'other';
+      var kindColors = {
+        infrastructure_fix: {bg: '#fef2f2', fg: '#991b1b', border: '#dc2626'},
+        calibration_task:   {bg: '#fefce8', fg: '#92400e', border: '#f59e0b'},
+        expert_question:    {bg: '#faf5ff', fg: '#6b21a8', border: '#a855f7'},
+        existing:           {bg: '#eff6ff', fg: '#1e40af', border: '#3b82f6'},
+        new:                {bg: '#f0fdf4', fg: '#065f46', border: '#10b981'},
+        other:              {bg: '#f8fafc', fg: '#475569', border: '#94a3b8'},
+      };
+      var kc = kindColors[kind] || kindColors.other;
+      var canSeed = kind !== 'existing';
+      var seedBtn = canSeed
+        ? '<button onclick="event.stopPropagation(); _seedFollowupAndOpen(\'' + _esc(studyName) + '\', ' + idx + ')" ' +
+          'style="font-size:0.8em;padding:3px 10px;border:1px solid ' + kc.border + ';background:#fff;color:' + kc.fg +
+          ';border-radius:4px;cursor:pointer;white-space:nowrap">Seed →</button>'
+        : '<span style="font-size:0.78em;color:#64748b;font-style:italic">(existing study)</span>';
+      var statusBadge = f.status
+        ? '<span style="font-size:0.7em;padding:1px 6px;border-radius:9999px;background:#fef3c7;color:#92400e;margin-left:6px">' + _esc(f.status) + '</span>'
+        : '';
+      var effortBadge = f.effort
+        ? '<span style="font-size:0.7em;padding:1px 6px;border-radius:9999px;background:#e0e7ff;color:#3730a3;margin-left:6px;font-family:monospace">' + _esc(f.effort) + '</span>'
+        : '';
+      var why = f.why
+        ? '<div style="font-size:0.83em;color:#475569;margin-top:4px;line-height:1.4">' + _esc(f.why.slice(0, 280)) + (f.why.length > 280 ? '…' : '') + '</div>'
+        : '';
+      return '<div style="padding:10px 12px;border:1px solid ' + kc.border + ';border-left:4px solid ' + kc.border +
+             ';border-radius:4px;background:' + kc.bg + ';margin-bottom:8px">' +
+               '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">' +
+                 '<div style="flex:1;min-width:0">' +
+                   '<span style="font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#fff;color:' + kc.fg + '">' + _esc(kind) + '</span>' +
+                   effortBadge + statusBadge +
+                   '<div style="font-weight:600;margin-top:4px;font-size:0.93em">' + _esc(f.title || '(untitled)') + '</div>' +
+                   why +
+                 '</div>' +
+                 seedBtn +
+               '</div>' +
+             '</div>';
+    }).join('');
+
+    pop.innerHTML = header + rows;
+    document.body.appendChild(pop);
+
+    // Click-outside to close
+    setTimeout(function() {
+      document.addEventListener('click', function _closer(e) {
+        if (!pop.contains(e.target)) {
+          pop.remove();
+          document.removeEventListener('click', _closer);
+        }
+      });
+    }, 0);
+  }
+  window._openDagFollowupsPopover = _openDagFollowupsPopover;
+
+  // Seed-then-open helper used by the popover. Shares the POST endpoint with
+  // the study-detail page's _seedFollowupStudy (in study-detail.js) so both
+  // surfaces converge on the same backend.
+  function _seedFollowupAndOpen(parentName, idx) {
+    if (!confirm('Seed a new study from this follow-up?\n\nA new study.yaml will be created under studies/<new-name>/.')) return;
+    fetch('/api/study-seed-followup', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({parent: parentName, followup_idx: idx}),
+    }).then(function(r) { return r.json().then(function(d) { return {status: r.status, body: d}; }); })
+      .then(function(res) {
+        if (res.status !== 200 || res.body.error) {
+          alert('Seed failed: ' + (res.body.error || res.status));
+          return;
+        }
+        var pop = document.getElementById('dag-followups-popover');
+        if (pop) pop.remove();
+        alert('Created: ' + res.body.new_study_name + '\nOpening it now.');
+        window.location.href = '/studies/' + encodeURIComponent(res.body.new_study_name);
+      });
+  }
+  window._seedFollowupAndOpen = _seedFollowupAndOpen;
+
+  // Click a DAG node → load the full study in an in-page iframe BELOW the
+  // DAG (no jump to the legacy Studies tab). The iframe is the same
+  // /studies/<name> route the standalone embed uses.
+  function _openStudyInsideInvestigation(name) {
+    var panel = document.getElementById('investigation-study-embed-panel');
+    var frame = document.getElementById('investigation-study-embed-frame');
+    var nameEl = document.getElementById('investigation-study-embed-name');
+    if (!panel || !frame) return;
+    window._currentInvestigationStudy = name;
+    frame.src = '/studies/' + encodeURIComponent(name);
+    if (nameEl) nameEl.textContent = name;
+    panel.style.display = '';
+    panel.scrollIntoView({behavior: 'smooth', block: 'start'});
+  }
+  window._openStudyInsideInvestigation = _openStudyInsideInvestigation;
+
+  function _closeInvestigationStudyEmbed() {
+    var panel = document.getElementById('investigation-study-embed-panel');
+    var frame = document.getElementById('investigation-study-embed-frame');
+    if (frame) frame.src = '';
+    if (panel) panel.style.display = 'none';
+    window._currentInvestigationStudy = null;
+  }
+  window._closeInvestigationStudyEmbed = _closeInvestigationStudyEmbed;
+
+  function _popoutInvestigationStudy() {
+    var name = window._currentInvestigationStudy;
+    if (!name) return;
+    var w = _openDetachedWindow('/studies/' + encodeURIComponent(name), 1200, 800);
+    if (!w) {
+      console.warn('_popoutInvestigationStudy: popup blocked');
+      alert('Popup blocked. Allow popups from this site to pop out the study view.');
+    }
+  }
+  window._popoutInvestigationStudy = _popoutInvestigationStudy;
+
+  // Build a self-contained HTML report of the current investigation and
+  // trigger a download. The report is for sharing with a domain expert
+  // (over email) BEFORE simulations run — so it surfaces the predictions,
+  // assumptions, and gaps in a form that lets the expert validate the
+  // design without needing the dashboard.
+  function _generateInvestigationReport() {
+    var name = window._currentIset;
+    if (!name) {
+      console.warn('_generateInvestigationReport: no current investigation');
+      return;
+    }
+    var btn = event && event.target;
+    var orig = btn ? btn.textContent : null;
+    if (btn) { btn.textContent = 'Generating…'; btn.disabled = true; }
+    fetch('/api/iset/' + encodeURIComponent(name), {headers: {Accept: 'application/json'}})
+      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(function(iset) {
+        var studyFetches = (iset.studies || []).map(function(s) {
+          return fetch('/api/study/' + encodeURIComponent(s.name))
+            .then(function(r) { return r.ok ? r.json() : {spec: {name: s.name, error: 'load-failed'}}; })
+            .then(function(j) { return j.spec || j; });
+        });
+        var bibFetch = fetch('/api/references-bib')
+          .then(function(r) { return r.ok ? r.json() : {entries: []}; })
+          .then(function(j) { return j.entries || []; })
+          .catch(function() { return []; });
+        var chartFetches = (iset.studies || []).map(function(s) {
+          return fetch('/api/study-charts/' + encodeURIComponent(s.name))
+            .then(function(r) { return r.ok ? r.json() : {charts: []}; })
+            .then(function(j) { return {name: s.name, charts: j.charts || []}; })
+            .catch(function() { return {name: s.name, charts: []}; });
+        });
+        return Promise.all([Promise.all(studyFetches), bibFetch,
+                            Promise.all(chartFetches)]).then(function(arr) {
+          var chartsByStudy = {};
+          arr[2].forEach(function(c) { chartsByStudy[c.name] = c.charts; });
+          return {iset: iset, specs: arr[0], bibEntries: arr[1],
+                  chartsByStudy: chartsByStudy};
+        });
+      })
+      .then(function(bundle) {
+        var html = _buildInvestigationReportHtml(bundle.iset, bundle.specs,
+                                                  bundle.bibEntries, bundle.chartsByStudy);
+        var dateStr = new Date().toISOString().slice(0, 10);
+        var filename = 'investigation-' + name + '-' + dateStr + '.html';
+        _triggerDownload(filename, html, 'text/html');
+      })
+      .catch(function(err) {
+        console.error('report generation failed', err);
+        alert('Report generation failed: ' + err);
+      })
+      .finally(function() {
+        if (btn) { btn.textContent = orig; btn.disabled = false; }
+      });
+  }
+  window._generateInvestigationReport = _generateInvestigationReport;
+
+  function _triggerDownload(filename, content, mime) {
+    var blob = new Blob([content], {type: mime || 'text/plain'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function() {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 0);
+  }
+  window._triggerDownload = _triggerDownload;
+
+  function _h(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+  function _multiline(s) {
+    if (s == null) return '';
+    // YAML | block scalars carry hard newlines. Treat blank-line breaks as
+    // paragraph spacing; single newlines as soft (space) so prose reflows
+    // at the rendered column width instead of stuck at the YAML wrap.
+    return _h(s).replace(/\n\s*\n/g, '<br><br>').replace(/\n/g, ' ');
+  }
+
+  // Construct the report's HTML body from the investigation + per-study specs.
+  function _buildInvestigationReportHtml(iset, specs, bibEntries, chartsByStudy) {
+    bibEntries = bibEntries || [];
+    chartsByStudy = chartsByStudy || {};
+    var bibByKey = {};
+    bibEntries.forEach(function(e) { bibByKey[e.key] = e; });
+    var now = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+
+    // Topological depth ordering of the studies (same as the dashboard DAG).
+    var depthMap = {};
+    var children = {};
+    specs.forEach(function(s) {
+      depthMap[s.name] = 0;
+      children[s.name] = [];
+    });
+    specs.forEach(function(s) {
+      (s.parent_studies || []).forEach(function(p) {
+        var pn = (typeof p === 'string') ? p : p.study;
+        if (children[pn]) children[pn].push(s.name);
+      });
+    });
+    var queue = [];
+    specs.forEach(function(s) {
+      if (!(s.parent_studies || []).length) queue.push(s.name);
+    });
+    var guard = specs.length * 4;
+    while (queue.length && guard-- > 0) {
+      var n = queue.shift();
+      (children[n] || []).forEach(function(c) {
+        if (depthMap[c] < (depthMap[n] || 0) + 1) {
+          depthMap[c] = depthMap[n] + 1;
+          queue.push(c);
+        }
+      });
+    }
+    var ordered = specs.slice().sort(function(a, b) {
+      return (depthMap[a.name] || 0) - (depthMap[b.name] || 0)
+          || a.name.localeCompare(b.name);
+    });
+
+    // --- v3-shape per-study section ----------------------------------
+    // Render a sweep table (e.g. {1x: {dnaA_median: 115}, ...}) as a small
+    // inline-SVG bar chart. Used in finding cards when evidence.sweep or
+    // evidence.sweep_table is present.
+    function _renderSweepChart(sweep) {
+      if (!sweep || typeof sweep !== 'object') return '';
+      var keys = Object.keys(sweep);
+      if (!keys.length) return '';
+      var metrics = {};
+      keys.forEach(function(k) {
+        var v = sweep[k];
+        if (v && typeof v === 'object') {
+          Object.keys(v).forEach(function(m) {
+            var n = v[m];
+            if (typeof n === 'number') {
+              (metrics[m] = metrics[m] || {})[k] = n;
+            }
+          });
+        }
+      });
+      var metricNames = Object.keys(metrics);
+      if (!metricNames.length) return '';
+      // Render the most numeric-rich metric (max count of non-null values).
+      var metric = metricNames.sort(function(a, b) {
+        return Object.keys(metrics[b]).length - Object.keys(metrics[a]).length;
+      })[0];
+      var data = metrics[metric];
+      var entries = keys.map(function(k){return [k, data[k]];}).filter(function(e){return e[1] != null;});
+      if (!entries.length) return '';
+      var maxV = Math.max.apply(null, entries.map(function(e){return Math.abs(e[1]);}));
+      var minV = Math.min.apply(null, entries.map(function(e){return e[1];}));
+      var W = 480, H = 160, barW = Math.max(40, (W - 80) / entries.length - 8);
+      var x0 = 56, baseY = (minV < 0) ? H / 2 : H - 32;
+      var bars = entries.map(function(e, i) {
+        var x = x0 + i * (barW + 8);
+        var pixels = maxV ? Math.abs(e[1]) / maxV * (H - 60) : 0;
+        var y = e[1] >= 0 ? baseY - pixels : baseY;
+        var color = e[1] >= 0 ? '#3b82f6' : '#dc2626';
+        return '<rect x="' + x + '" y="' + y + '" width="' + barW + '" height="' + pixels + '" fill="' + color + '" rx="2"/>'
+             + '<text x="' + (x + barW/2) + '" y="' + (y - 4) + '" font-size="10" text-anchor="middle" fill="#0f172a">' + e[1] + '</text>'
+             + '<text x="' + (x + barW/2) + '" y="' + (H - 10) + '" font-size="10" text-anchor="middle" fill="#475569">' + _h(e[0]) + '</text>';
+      }).join('');
+      return '<div class="sweep-chart"><svg viewBox="0 0 ' + W + ' ' + H + '" style="display:block;width:100%;max-width:' + W + 'px;margin:8px 0">'
+        + '<text x="' + W/2 + '" y="16" font-size="11" font-weight="600" text-anchor="middle" fill="#0f172a">Sweep comparison — ' + _h(metric) + '</text>'
+        + '<line x1="' + x0 + '" y1="' + baseY + '" x2="' + (W - 16) + '" y2="' + baseY + '" stroke="#94a3b8" stroke-width="0.5"/>'
+        + bars
+        + '</svg></div>';
+    }
+
+    // Decision-status helper — returns the data the decision box renders.
+    function _decideDecision(s) {
+      var runs = s.runs || [];
+      var latest = runs.length ? runs[runs.length - 1] : null;
+      var followUps = s.follow_up_studies || [];
+      var openFollowups = followUps.filter(function(f) {
+        return f.status !== 'done' && f.kind !== 'existing';
+      });
+      var phase = s.phase || '';
+      var status = s.status || 'planned';
+
+      // No runs yet
+      if (!latest) {
+        if (phase === 'Design' || status === 'planned') {
+          return {
+            label: 'Not started',
+            cls:   'dec-notstarted',
+            passed: [], failed: [], blocks: [],
+            next: 'Run the baseline simulation to begin evaluation.'
+          };
+        }
+        return {
+          label: 'Ready to run',
+          cls:   'dec-ready',
+          passed: [], failed: [], blocks: [],
+          next: 'Execute the simulation_set to gather evidence.'
+        };
+      }
+
+      var outcomes = latest.outcomes || {};
+      var passed = [], failed = [];
+      Object.keys(outcomes).forEach(function(name) {
+        var res = (outcomes[name] || {}).result;
+        if (res === 'PASS') passed.push(name);
+        if (res === 'FAIL') failed.push(name);
+      });
+      var calibration = openFollowups.filter(function(f){return f.kind === 'calibration_task';});
+      var infra       = openFollowups.filter(function(f){return f.kind === 'infrastructure_fix';});
+      var newWork     = openFollowups.filter(function(f){return f.kind === 'new';});
+
+      if (failed.length === 0 && passed.length > 0) {
+        var enables = (s.pipeline_gate && s.pipeline_gate.enables) || [];
+        return {
+          label: 'Passed',
+          cls:   'dec-passed',
+          passed: passed, failed: [], blocks: [],
+          next: enables.length
+            ? 'Gate cleared. Next: ' + enables.join(', ')
+            : 'Gate cleared. No declared downstream studies — review pipeline_gate.enables.'
+        };
+      }
+      if (failed.length > 0) {
+        var label = calibration.length ? 'Needs calibration' : 'Blocked';
+        var cls   = calibration.length ? 'dec-needscal'      : 'dec-blocked';
+        var nextItem = calibration[0] || infra[0] || newWork[0] || null;
+        var nextStr;
+        if (nextItem) {
+          nextStr = 'Resolve: ' + nextItem.title;
+        } else {
+          nextStr = 'Investigate why ' + failed.length + ' test(s) failed.';
+        }
+        return {
+          label: label, cls: cls,
+          passed: passed, failed: failed,
+          blocks: openFollowups.map(function(f){return f.title;}),
+          next: nextStr
+        };
+      }
+      return {
+        label: 'In progress', cls: 'dec-inprogress',
+        passed: passed, failed: failed, blocks: [],
+        next: 'Continue analysing run outcomes.'
+      };
+    }
+
+    // Plain-English study summary — 2-4 sentences, no code identifiers.
+    function _studySummary(s, dec) {
+      var purpose = s.purpose || {};
+      var question = (purpose.question || '').trim().split('\n')[0];
+      var findings = s.findings || [];
+      var sentences = [];
+
+      if (question) {
+        var q = question.charAt(0).toLowerCase() + question.slice(1);
+        if (q.charAt(q.length - 1) === '.') q = q.slice(0, -1);
+        sentences.push('This study asks whether ' + q + '.');
+      }
+      if (findings.length) {
+        var confirms     = findings.filter(function(f){return f.status === 'confirms';}).length;
+        var contradicts  = findings.filter(function(f){return f.status === 'contradicts';}).length;
+        var novel        = findings.filter(function(f){return f.status === 'novel';}).length;
+        var parts = [];
+        if (confirms)    parts.push(confirms + ' finding' + (confirms === 1 ? '' : 's') + ' confirm the expected biology');
+        if (contradicts) parts.push(contradicts + ' contradict it');
+        if (novel)       parts.push(novel + ' novel computational result' + (novel === 1 ? '' : 's'));
+        if (parts.length) sentences.push('We recorded ' + parts.join(', ') + '.');
+      } else if ((s.runs || []).length === 0) {
+        sentences.push('No simulations have run yet — the study is still in its design phase.');
+      }
+      sentences.push('Gate decision: ' + dec.label + '. ' + dec.next);
+      return sentences.join(' ');
+    }
+
+    function v3StudySection(s, i, statusBadge, phaseBadge, parents, kids) {
+      var slug = _h(s.name);
+      var sid = {
+        summary:   'study-' + slug + '-summary',
+        decision:  'study-' + slug + '-decision',
+        takeaways: 'study-' + slug + '-takeaways',
+        findings:  'study-' + slug + '-findings',
+        sims:      'study-' + slug + '-sims',
+        charts:    'study-' + slug + '-charts',
+        readouts:  'study-' + slug + '-readouts',
+        tests:     'study-' + slug + '-tests',
+        build:     'study-' + slug + '-build',
+        reqs:      'study-' + slug + '-reqs',
+        followups: 'study-' + slug + '-followups',
+        limits:    'study-' + slug + '-limitations',
+        refs:      'study-' + slug + '-refs',
+      };
+
+      var purpose = s.purpose || {};
+      var gate = s.pipeline_gate || {};
+      var sims = s.simulation_set || [];
+      var modelChange = s.model_change;
+      var assumptions = s.key_assumptions || [];
+      var reqs = s.implementation_requirements || [];
+      var readouts = s.readouts || [];
+      var tests = s.behavior_tests || s.expected_behavior || [];
+      var decide = s.conclusion_logic || {};
+      var limitations = s.limitations || [];
+      var followUps = s.follow_up_studies || [];
+      var findings = s.findings || [];
+      var bib = (s.bibliography && s.bibliography.bib_keys) || [];
+      var charts = (chartsByStudy && chartsByStudy[s.name]) || [];
+
+      var hasBuild = !!modelChange || assumptions.length || reqs.length;
+      var ifPass = decide.if_primary_tests_pass || decide.if_pass;
+      var ifFail = decide.if_primary_tests_fail || decide.if_fail;
+      var runs = s.runs || [];
+      var latestRun = runs.length ? runs[runs.length - 1] : null;
+
+      // Derive decision + plain-English summary FIRST so they can be linked
+      // from the sub-nav and rendered at the top of the section.
+      var decision = _decideDecision(s);
+      var summaryText = _studySummary(s, decision);
+      var hasDecide = !!(ifPass || ifFail
+                         || (decide.implementation_validation && decide.implementation_validation.length)
+                         || (decide.biological_validation && decide.biological_validation.length)
+                         || s.conclusion || latestRun);
+
+      // Sub-nav links — new section order, human-readable labels.
+      var links = [];
+      links.push('<a href="#' + sid.summary + '">Summary</a>');
+      links.push('<a href="#' + sid.decision + '">Decision</a>');
+      if (findings.length)    links.push('<a href="#' + sid.takeaways + '">Key takeaways <span class="sn-count">' + findings.length + '</span></a>');
+      if (sims.length)        links.push('<a href="#' + sid.sims + '">What we ran <span class="sn-count">' + sims.length + '</span></a>');
+      if (charts.length)      links.push('<a href="#' + sid.charts + '">Charts <span class="sn-count">' + charts.length + '</span></a>');
+      if (readouts.length)    links.push('<a href="#' + sid.readouts + '">What we measured <span class="sn-count">' + readouts.length + '</span></a>');
+      if (tests.length)       links.push('<a href="#' + sid.tests + '">How we judge it <span class="sn-count">' + tests.length + '</span></a>');
+      if (hasBuild)           links.push('<a href="#' + sid.build + '">Model changes</a>');
+      if (reqs.length)        links.push('<a href="#' + sid.reqs + '">What to build / fix <span class="sn-count">' + reqs.length + '</span></a>');
+      if (followUps.length)   links.push('<a href="#' + sid.followups + '">Next steps <span class="sn-count">' + followUps.length + '</span></a>');
+      if (limitations.length) links.push('<a href="#' + sid.limits + '">Limitations <span class="sn-count">' + limitations.length + '</span></a>');
+      if (bib.length)         links.push('<a href="#' + sid.refs + '">Cited refs <span class="sn-count">' + bib.length + '</span></a>');
+
+      var dependsBrief = parents ? 'Depends on: ' + parents : '<em>Root study (no dependencies)</em>';
+
+      var subNav = ''
+        + '<div class="study-nav">'
+        +   '<div class="study-nav-row1">'
+        +     '<span class="study-nav-num">' + (i + 1) + '.</span>'
+        +     '<strong class="study-nav-name">' + _h(s.name) + '</strong>'
+        +     phaseBadge + statusBadge
+        +     '<span class="study-nav-deps muted small">' + dependsBrief + '</span>'
+        +   '</div>'
+        +   '<nav class="study-nav-row2">' + links.join('') + '</nav>'
+        + '</div>';
+
+      // ── PLAIN-ENGLISH SUMMARY ─────────────────────────────────────────
+      var summaryHtml = '<div id="' + sid.summary + '" class="study-summary">'
+        + '<p class="study-summary-text">' + _h(summaryText) + '</p>'
+        + '<details class="tech-details"><summary>Purpose &amp; background (study design)</summary>'
+        +   (purpose.question         ? '<div class="callout cl-blue"><strong>Question.</strong> ' + _multiline(purpose.question) + '</div>' : '')
+        +   (purpose.mechanism        ? '<div class="callout cl-yellow"><strong>Mechanism / Model change.</strong> ' + _multiline(purpose.mechanism) + '</div>' : '')
+        +   (purpose.expected_outcome ? '<div class="callout cl-green"><strong>Expected outcome.</strong> ' + _multiline(purpose.expected_outcome) + '</div>' : '')
+        + '</details>'
+        + '</div>';
+
+      // ── DECISION BOX ──────────────────────────────────────────────────
+      function _listAsBullets(arr, emptyText) {
+        if (!arr || !arr.length) return '<em class="muted">' + emptyText + '</em>';
+        return '<ul style="margin:4px 0 0 18px;padding:0">' + arr.map(function(x){return '<li>' + _h(x) + '</li>';}).join('') + '</ul>';
+      }
+      var decisionTechnical = '';
+      if (gate.prerequisites || gate.enables || gate.proceed_condition || ifPass || ifFail) {
+        var prereqStr = (gate.prerequisites && gate.prerequisites.length)
+          ? gate.prerequisites.map(function(p){return '<code>' + _h(p) + '</code>';}).join(' · ')
+          : '<em class="muted">none (root study)</em>';
+        var enablesStr = (gate.enables && gate.enables.length)
+          ? gate.enables.map(function(p){return '<code>' + _h(p) + '</code>';}).join(' · ')
+          : '<em class="muted">—</em>';
+        decisionTechnical = '<details class="tech-details"><summary>Pipeline gate &amp; conclusion logic (technical)</summary>'
+          + '<p><strong>Prerequisites:</strong> ' + prereqStr + '</p>'
+          + '<p><strong>Enables:</strong> ' + enablesStr + '</p>'
+          + (gate.proceed_condition ? '<p><strong>Proceed when:</strong> ' + _multiline(gate.proceed_condition) + '</p>' : '')
+          + (ifPass ? '<div class="callout cl-green"><strong>If primary tests pass:</strong> ' + (typeof ifPass === 'string' ? _multiline(ifPass) : _multiline((ifPass.implementation_status || '') + (ifPass.biological_validation ? ' ' + ifPass.biological_validation : ''))) + '</div>' : '')
+          + (ifFail ? '<div class="callout cl-red"><strong>If primary tests fail:</strong> ' + (typeof ifFail === 'string' ? _multiline(ifFail) : _multiline((ifFail.block_downstream || JSON.stringify(ifFail.diagnose || '')))) + '</div>' : '')
+          + '</details>';
+      }
+      var decisionHtml = '<div id="' + sid.decision + '" class="decision-box decision-' + decision.cls + '">'
+        + '<div class="decision-header">'
+        +   '<h3 class="decision-title">Can we move to the next study?</h3>'
+        +   '<span class="decision-status">' + _h(decision.label) + '</span>'
+        + '</div>'
+        + '<div class="decision-grid">'
+        +   '<div class="decision-cell decision-cell-pass"><strong>✓ Passed</strong>' + _listAsBullets(decision.passed, 'nothing yet') + '</div>'
+        +   '<div class="decision-cell decision-cell-fail"><strong>✗ Failed</strong>' + _listAsBullets(decision.failed, 'nothing failing') + '</div>'
+        +   '<div class="decision-cell decision-cell-block"><strong>⛔ Blocks the next study</strong>' + _listAsBullets(decision.blocks, 'nothing blocking') + '</div>'
+        +   '<div class="decision-cell decision-cell-next"><strong>→ Immediate next action</strong><div style="margin-top:4px">' + _h(decision.next) + '</div></div>'
+        + '</div>'
+        + decisionTechnical
+        + '</div>';
+
+      // ── KEY TAKEAWAYS + GROUPED FINDINGS ─────────────────────────────
+      var takeawaysHtml = '';
+      if (findings.length) {
+        var groups = {biological: [], computational: [], methodological: [], other: []};
+        findings.forEach(function(f) {
+          var k = f.kind || 'other';
+          (groups[k] || groups.other).push(f);
+        });
+
+        // 1) Short takeaways list — one bullet per finding (statement first sentence).
+        var takeawayItems = findings.map(function(f) {
+          var status = f.status || 'novel';
+          var glyph = ({confirms:'✓', partial:'◐', contradicts:'✗', novel:'◆'})[status] || '◆';
+          var stmt = (f.statement || '').split('\n')[0].split('.')[0];
+          if (stmt.length > 180) stmt = stmt.slice(0, 177) + '…';
+          return '<li class="takeaway-' + status + '"><span class="takeaway-glyph">' + glyph + '</span> '
+               + '<a href="#finding-' + _h(f.id || '') + '">' + _h(stmt) + '</a></li>';
+        }).join('');
+
+        // 2) Detailed cards grouped by kind, each with a heading.
+        var kindHeader = {
+          biological:     'Biological findings',
+          computational:  'Infrastructure / computational findings',
+          methodological: 'Methodological findings',
+          other:          'Other findings',
+        };
+        function _renderFinding(f) {
+          var status = f.status || 'novel';
+          var glyph = ({confirms:'✓', partial:'◐', contradicts:'✗', novel:'◆'})[status] || '◆';
+          var ev = f.evidence || {};
+          var exp = f.expected || {};
+          var ref = f.expert_reference || {};
+          var techParts = [];
+          if (ev.from_test) techParts.push('test: <code>' + _h(ev.from_test) + '</code>');
+          if (ev.from_run)  techParts.push('run: <code>' + _h(ev.from_run) + '</code>');
+          if (ev.window)    techParts.push('window: ' + _h(ev.window));
+          if (ev.smoking_gun) techParts.push('<details style="margin-top:4px"><summary>Smoking gun</summary><pre style="white-space:pre-wrap;font-size:0.85em;background:#fff;padding:6px;border-radius:3px">' + _h(ev.smoking_gun) + '</pre></details>');
+          if (ev.discovered_during) techParts.push('discovered during: <code>' + _h(ev.discovered_during) + '</code>');
+
+          var techDisclosure = techParts.length
+            ? '<details class="tech-details"><summary>Technical details</summary>' + techParts.join('<br>') + '</details>'
+            : '';
+
+          var evMain = '';
+          if (ev.observed != null) {
+            evMain = '<div class="finding-evidence"><strong>What we saw:</strong> '
+                   + _h(String(ev.observed)) + (ev.units ? ' ' + _h(ev.units) : '') + '</div>';
+          }
+          var expMain = '';
+          if (exp.range != null || exp.threshold != null || exp.summary) {
+            var rngStr = '';
+            if (exp.range != null) {
+              var rng = Array.isArray(exp.range) ? '[' + exp.range.join(', ') + ']' : String(exp.range);
+              rngStr = '<strong>What the literature says:</strong> ' + _h(rng);
+            } else if (exp.threshold != null) {
+              rngStr = '<strong>Target threshold:</strong> ' + _h(String(exp.threshold));
+            }
+            expMain = '<div class="finding-expected">' + rngStr
+                    + (exp.summary ? '<div style="margin-top:4px">' + _multiline(exp.summary) + '</div>' : '')
+                    + (exp.cites && exp.cites.length ? '<div class="muted small" style="margin-top:4px">Cites: ' + exp.cites.map(function(c){return '<code>' + _h(c) + '</code>';}).join(', ') + '</div>' : '')
+                    + '</div>';
+          }
+
+          var refBlock = '';
+          if (ref.doc || ref.quote || ref.note) {
+            var refBody = '';
+            if (ref.quote) refBody += '<blockquote class="finding-expert-quote">' + _multiline(ref.quote) + '</blockquote>';
+            if (ref.note) refBody += '<div class="finding-expert-note">' + _multiline(ref.note) + '</div>';
+            var refLabel = ref.doc ? 'Expert reference: <code>' + _h(ref.doc) + '</code>' : 'Expert reference';
+            if (ref.section) refLabel += ' (' + _h(ref.section) + ')';
+            refBlock = '<details class="finding-expert"><summary>' + refLabel + '</summary>' + refBody + '</details>';
+          }
+
+          // Optional sweep visualisation when evidence carries a sweep table
+          // (e.g. F-08 / F-10 calibration sweeps). Renders an inline SVG
+          // bar chart of the numeric value across multipliers.
+          var sweepChart = '';
+          var sweepData = ev.sweep_table || ev.sweep;
+          if (sweepData && typeof sweepData === 'object') {
+            sweepChart = _renderSweepChart(sweepData);
+          }
+
+          return '<div class="finding-card finding-kind-' + _h(f.kind || 'other') + ' finding-status-' + _h(status) + '" id="finding-' + _h(f.id || '') + '">'
+               +   '<div class="finding-header">'
+               +     '<span class="finding-status-glyph">' + glyph + '</span>'
+               +     '<span class="finding-id">' + _h(f.id || '') + '</span>'
+               +     '<span class="finding-status-text">' + _h(status) + ' literature</span>'
+               +   '</div>'
+               +   '<div class="finding-statement">' + _multiline(f.statement || '(no statement)') + '</div>'
+               +   evMain
+               +   expMain
+               +   (f.explanation ? '<div class="finding-explanation"><em>Why:</em> ' + _multiline(f.explanation) + '</div>' : '')
+               +   sweepChart
+               +   refBlock
+               +   (f.next_action ? '<div class="finding-next"><strong>→ Next:</strong> ' + _multiline(f.next_action) + '</div>' : '')
+               +   techDisclosure
+               + '</div>';
+        }
+
+        takeawaysHtml = '<div id="' + sid.takeaways + '" class="takeaways-section">'
+          + '<h3>Key takeaways</h3>'
+          + '<ul class="takeaway-list">' + takeawayItems + '</ul>'
+          + '</div>'
+          + '<div id="' + sid.findings + '" class="findings-section">'
+          + '<h3>Detailed findings</h3>'
+          + Object.keys(groups).filter(function(k){return groups[k].length;}).map(function(k) {
+              return '<h4 class="findings-group-header">' + kindHeader[k] + ' <span class="muted small">(' + groups[k].length + ')</span></h4>'
+                   + groups[k].map(_renderFinding).join('');
+            }).join('')
+          + '</div>';
+      }
+
+      // ── WHAT DID/WILL WE RUN? (Simulations) ──────────────────────────
+      var simsHtml = '';
+      if (sims.length) {
+        simsHtml = '<div id="' + sid.sims + '"><h3>What did/will we run? <span class="muted small">(' + sims.length + ' simulations)</span></h3>'
+          + '<p class="muted small" style="margin:0 0 8px 0">Each card describes one concrete run: what we change vs the baseline, the environmental condition, how long it runs, which measurements get collected, and which tests it feeds.</p>'
+          + sims.map(function(sim) {
+              var statusClass = sim.status === 'ready' ? 'sim-status-ready'
+                              : sim.status === 'gated' ? 'sim-status-gated'
+                              : sim.status === 'ran' ? 'sim-status-ran' : 'sim-status-unknown';
+              var statusPill = sim.status ? '<span class="sim-status-pill ' + statusClass + '">' + _h(sim.status) + '</span>' : '';
+              var pertHtml = '';
+              if (sim.perturbation && Object.keys(sim.perturbation).length) {
+                var pertLines = Object.entries(sim.perturbation).map(function(kv){return '<li>' + _h(kv[0]) + ' set to ' + _h(JSON.stringify(kv[1])) + '</li>';}).join('');
+                pertHtml = '<div class="sim-pert"><strong>What we change:</strong><ul>' + pertLines + '</ul></div>';
+              } else {
+                pertHtml = '<div class="sim-pert sim-pert-none">Unmodified baseline — no perturbation.</div>';
+              }
+              var metaParts = [];
+              if (sim.condition)  metaParts.push('Condition: ' + _h(sim.condition));
+              if (sim.duration_min != null) metaParts.push(_h(sim.duration_min) + ' min');
+              if (sim.seeds && sim.seeds.length) metaParts.push(sim.seeds.length + ' seed' + (sim.seeds.length === 1 ? '' : 's'));
+              var metaHtml = metaParts.length ? '<div class="sim-meta">' + metaParts.join(' &middot; ') + '</div>' : '';
+              var blockedHtml = '';
+              if (sim.status === 'gated' && sim.blocked_by_requirements && sim.blocked_by_requirements.length) {
+                blockedHtml = '<div class="sim-blocked">⛔ Blocked by ' + sim.blocked_by_requirements.length + ' open requirement(s) — see <em>What to build / fix</em> below.</div>';
+              }
+              var techParts = [];
+              if (sim.base_model) techParts.push('Base model: <code>' + _h(sim.base_model) + '</code>');
+              if (sim.seeds && sim.seeds.length) techParts.push('Seeds: ' + sim.seeds.join(', '));
+              if (sim.readouts && sim.readouts.length) techParts.push('Readouts: ' + sim.readouts.map(function(r){return '<code>' + _h(r) + '</code>';}).join(', '));
+              var appliesTests = sim.applies_tests || sim.tests || [];
+              if (Array.isArray(appliesTests) && appliesTests.length) techParts.push('Feeds tests: ' + appliesTests.map(function(t){return '<code>' + _h(t) + '</code>';}).join(', '));
+              if (sim.blocked_by_requirements && sim.blocked_by_requirements.length) techParts.push('Blocked by: ' + sim.blocked_by_requirements.map(function(b){return '<code>' + _h(b) + '</code>';}).join(', '));
+              var techDisc = techParts.length ? '<details class="tech-details"><summary>Technical details</summary>' + techParts.join('<br>') + '</details>' : '';
+
+              return '<div class="sim-card sim-' + statusClass + '">'
+                   +   '<div class="sim-header"><strong class="sim-name">' + _h(sim.name || '(unnamed)') + '</strong>' + statusPill + '</div>'
+                   +   pertHtml + metaHtml + blockedHtml + techDisc
+                   + '</div>';
+            }).join('')
+          + '</div>';
+      }
+
+      // ── CHARTS (visualisations from runs.db) ─────────────────────────
+      var chartsHtml = charts.length
+        ? '<div id="' + sid.charts + '"><h3>Visualisations from the latest run</h3>'
+          + charts.map(function(c) {
+              return '<div class="chart-card">' + c.svg + '<div class="chart-caption">' + _h(c.caption || '') + '</div></div>';
+            }).join('')
+          + '</div>'
+        : '';
+
+      // ── WHAT DID/WILL WE MEASURE? (Readouts) ─────────────────────────
+      var readoutsHtml = readouts.length
+        ? '<div id="' + sid.readouts + '"><h3>What did/will we measure? <span class="muted small">(' + readouts.length + ' readouts)</span></h3>'
+          + '<p class="muted small" style="margin:0 0 8px 0">Quantities we extract from each simulation run to evaluate the study\'s tests.</p>'
+          + readouts.map(function(r) {
+              var techBits = [];
+              if (r.path || r.identifier) techBits.push('Path: <code>' + _h(r.path || r.identifier) + '</code>');
+              if (r.units) techBits.push('Units: ' + _h(r.units));
+              if (r.blocked_by_requirements && r.blocked_by_requirements.length)
+                techBits.push('Blocked by: ' + r.blocked_by_requirements.map(function(b){return '<code>' + _h(b) + '</code>';}).join(', '));
+              var techDisc = techBits.length ? '<details class="tech-details"><summary>Technical details</summary>' + techBits.join('<br>') + '</details>' : '';
+              return '<div class="readout-card">'
+                   +   '<strong>' + _h(r.name || '') + '</strong>'
+                   +   (r.status ? ' <span class="muted small">(' + _h(r.status) + ')</span>' : '')
+                   +   '<div class="readout-desc">' + _h(r.notes || r.description || '') + '</div>'
+                   +   techDisc
+                   + '</div>';
+            }).join('')
+          + '</div>'
+        : '';
+
+      // ── HOW DO WE JUDGE SUCCESS? (Tests, claim-first) ────────────────
+      var testsHtml = '';
+      if (tests.length) {
+        // Aggregate latest outcomes by test name so we can show PASS/FAIL pills.
+        var outcomeByTest = {};
+        if (latestRun && latestRun.outcomes) {
+          Object.keys(latestRun.outcomes).forEach(function(k) { outcomeByTest[k] = latestRun.outcomes[k]; });
+        }
+        testsHtml = '<div id="' + sid.tests + '"><h3>How do we judge success? <span class="muted small">(' + tests.length + ' tests)</span></h3>'
+          + '<p class="muted small" style="margin:0 0 8px 0">Each test makes a specific scientific claim. The latest result (pass/fail) appears as a pill when we have evidence; the technical assertion is hidden by default.</p>'
+          + tests.map(function(t) {
+              var name = t.name || '(unnamed)';
+              var cls = t.classification || 'unclassified';
+              var out = outcomeByTest[name];
+              var result = out ? out.result : (t.status === 'gated' ? 'GATED' : 'PENDING');
+              var resBg = result === 'PASS' ? '#d1fae5' : (result === 'FAIL' ? '#fee2e2' : (result === 'SKIP' ? '#fef3c7' : '#f1f5f9'));
+              var resFg = result === 'PASS' ? '#065f46' : (result === 'FAIL' ? '#991b1b' : (result === 'SKIP' ? '#92400e' : '#475569'));
+              var resGlyph = result === 'PASS' ? '✓' : (result === 'FAIL' ? '✗' : '⏳');
+              // Claim: the English description, first sentence.
+              var claim = (t.description || t.en || '').split('\n')[0].split('. ')[0];
+              if (claim.length > 220) claim = claim.slice(0, 217) + '…';
+              if (claim && claim.charAt(claim.length - 1) !== '.' && claim.charAt(claim.length - 1) !== '?') claim += '.';
+              // Evidence: extra fields from the outcome (skip 'result' itself).
+              var evidence = '';
+              if (out) {
+                var bits = Object.keys(out).filter(function(k){return k !== 'result';})
+                  .map(function(k){return _h(k) + ': ' + _h(String(out[k]));});
+                if (bits.length) evidence = bits.join(' · ');
+              }
+              var techBits = [];
+              if (t.measure) techBits.push('Measure: <code>' + _h(JSON.stringify(t.measure)) + '</code>');
+              if (t.pass_if) techBits.push('Pass condition: <code>' + _h(JSON.stringify(t.pass_if)) + '</code>');
+              else if (t.expect) techBits.push('Expect: <code>' + _h(JSON.stringify(t.expect)) + '</code>');
+              if (t.requires_simulation) techBits.push('Requires sim: <code>' + _h(t.requires_simulation) + '</code>');
+              if (t.cites && t.cites.length) techBits.push('Cites: ' + t.cites.map(function(c){return '<code>' + _h(c) + '</code>';}).join(', '));
+              if (t.calibration_anchor) techBits.push('Calibration anchor: ⚠️ <code>' + _h(JSON.stringify(t.calibration_anchor)) + '</code>');
+              var techDisc = techBits.length ? '<details class="tech-details"><summary>Technical details</summary>' + techBits.join('<br>') + '</details>' : '';
+
+              return '<div class="test-card test-classification-' + _h(cls) + '">'
+                   +   '<div class="test-header">'
+                   +     '<span style="background:' + resBg + ';color:' + resFg + ';padding:2px 10px;border-radius:9999px;font-size:0.78em;font-weight:600">' + resGlyph + ' ' + _h(result) + '</span>'
+                   +     '<span class="test-classification">' + _h(cls) + '</span>'
+                   +   '</div>'
+                   +   '<div class="test-claim"><strong>Claim:</strong> ' + _h(claim) + '</div>'
+                   +   (evidence ? '<div class="test-evidence"><strong>Evidence:</strong> ' + evidence + '</div>' : '')
+                   +   '<div class="test-id muted small">Test id: <code>' + _h(name) + '</code></div>'
+                   +   techDisc
+                   + '</div>';
+            }).join('')
+          + '</div>';
+      }
+
+      // ── WHAT CHANGES IN THE MODEL? (Build / model_change) ────────────
+      var buildHtml = '';
+      if (modelChange || assumptions.length) {
+        var mcHtml = '';
+        if (modelChange) {
+          if (typeof modelChange === 'string') {
+            mcHtml = '<p>' + _multiline(modelChange) + '</p>';
+          } else {
+            var mcNotes = modelChange.notes || '';
+            var hasNewWork = (modelChange.new_processes || []).length
+                          || (modelChange.new_state_variables || []).length
+                          || (modelChange.new_parameters || []).length
+                          || (modelChange.modified_processes || []).length;
+            mcHtml = mcNotes ? '<p>' + _multiline(mcNotes) + '</p>' : '';
+            if (!hasNewWork && !mcNotes) mcHtml = '<p class="muted">No code-level model changes in this study.</p>';
+            // Technical details with everything (processes, params, listeners).
+            var mcBits = [];
+            Object.keys(modelChange).forEach(function(k) {
+              if (k === 'notes') return;
+              var v = modelChange[k];
+              if (Array.isArray(v) && !v.length) return;
+              if (typeof v === 'string') mcBits.push(_h(k) + ': ' + _multiline(v));
+              else mcBits.push(_h(k) + ': <code>' + _h(JSON.stringify(v)) + '</code>');
+            });
+            if (mcBits.length) mcHtml += '<details class="tech-details"><summary>Technical details</summary>' + mcBits.join('<br>') + '</details>';
+          }
+        }
+        var asmHtml = assumptions.length
+          ? '<h4 style="margin:12px 0 4px 0">Key assumptions</h4>'
+          + '<ul>' + assumptions.map(function(a){return '<li>' + _multiline(typeof a === 'string' ? a : (a.text || JSON.stringify(a))) + '</li>';}).join('') + '</ul>'
+          : '';
+        buildHtml = '<div id="' + sid.build + '"><h3>What changes in the model?</h3>' + mcHtml + asmHtml + '</div>';
+      }
+
+      // ── WHAT NEEDS TO BE BUILT OR FIXED? (Implementation reqs) ───────
+      var reqsHtml = '';
+      if (reqs.length) {
+        reqsHtml = '<div id="' + sid.reqs + '"><h3>What needs to be built or fixed? <span class="muted small">(' + reqs.length + ')</span></h3>'
+          + '<p class="muted small" style="margin:0 0 8px 0">Concrete engineering work to fully exercise this study.</p>'
+          + reqs.map(function(r) {
+              var effortBadge = r.effort ? '<span class="req-effort">' + _h(r.effort) + '</span>' : '';
+              var kindBadge   = r.kind   ? '<span class="req-kind">'   + _h(r.kind)   + '</span>' : '';
+              var statusBadge = '';
+              if (r.defer_until) statusBadge = '<span class="req-status req-status-deferred">deferred</span>';
+              else if (r.status === 'done' || r.status === 'complete') statusBadge = '<span class="req-status req-status-done">done</span>';
+              else statusBadge = '<span class="req-status req-status-open">open</span>';
+              var keyLine = '';
+              if (r.why) {
+                keyLine = '<div class="req-key"><strong>Why it matters:</strong> ' + _multiline(r.why) + '</div>';
+              } else if (r.description) {
+                var teaser = String(r.description).split(/\n\s*\n/)[0].slice(0, 240);
+                keyLine = '<div class="req-key">' + _multiline(teaser) + (r.description.length > 240 ? '…' : '') + '</div>';
+              }
+              var unblocks = '';
+              if (r.unblocks) {
+                var items = Array.isArray(r.unblocks) ? r.unblocks : [r.unblocks];
+                unblocks = '<div class="req-unblocks"><strong>Unblocks:</strong><ul>' + items.map(function(u){return '<li>' + _h(u) + '</li>';}).join('') + '</ul></div>';
+              }
+              var deferredNote = r.defer_until
+                ? '<div class="req-deferred">⏸ Deferred until <code>' + _h(r.defer_until) + '</code>.</div>'
+                : '';
+              var techBits = [];
+              if (r.description && r.description.length > 240) techBits.push(_multiline(r.description));
+              if (r.steps && r.steps.length) techBits.push('<ol>' + r.steps.map(function(st){return '<li>' + _h(st) + '</li>';}).join('') + '</ol>');
+              if (r.files && r.files.length) techBits.push('Files: ' + r.files.map(function(f){return '<code>' + _h(f) + '</code>';}).join(', '));
+              var techDisc = techBits.length ? '<details class="tech-details"><summary>Implementation detail</summary>' + techBits.join('<br>') + '</details>' : '';
+
+              return '<div class="req-card">'
+                   +   '<div class="req-header">'
+                   +     '<code class="req-id">' + _h(r.id || '') + '</code>'
+                   +     '<strong class="req-title">' + _h(r.title || '(untitled)') + '</strong>'
+                   +     '<span class="req-badges">' + kindBadge + effortBadge + statusBadge + '</span>'
+                   +   '</div>'
+                   +   keyLine + deferredNote + unblocks + techDisc
+                   + '</div>';
+            }).join('')
+          + '</div>';
+      }
+
+      // ── WHAT SHOULD HAPPEN NEXT? (Follow-ups) ────────────────────────
+      var followUpsHtml = followUps.length
+        ? '<div id="' + sid.followups + '"><h3>What should happen next? <span class="muted small">(' + followUps.length + ' follow-ups)</span></h3>'
+          + '<p class="muted small">Concrete next steps. <em>Non-existing</em> entries can be seeded into child studies via the dashboard.</p>'
+          + followUps.map(function(f) {
+              var kind = f.kind || 'other';
+              var techBits = [];
+              if (f.hypothesized_mechanism) techBits.push('Hypothesised mechanism: ' + _multiline(f.hypothesized_mechanism));
+              if (f.unblocks && f.unblocks.length) techBits.push('Unblocks: ' + f.unblocks.map(function(x){return '<code>' + _h(x) + '</code>';}).join(', '));
+              if (f.acceptance && f.acceptance.length) techBits.push('Acceptance criteria: <ul>' + f.acceptance.map(function(a){return '<li>' + _h(a) + '</li>';}).join('') + '</ul>');
+              var techDisc = techBits.length ? '<details class="tech-details"><summary>Technical details</summary>' + techBits.join('<br>') + '</details>' : '';
+              var status = f.status ? '<span class="fu-status fu-status-' + _h(f.status) + '">' + _h(f.status) + '</span>' : '';
+              var effort = f.effort ? '<span class="fu-effort">' + _h(f.effort) + '</span>' : '';
+              return '<div class="fu-card fu-kind-' + _h(kind) + '">'
+                   +   '<div class="fu-head"><span class="fu-kind">' + _h(kind) + '</span>' + effort + status + '<strong class="fu-title">' + _h(f.title || '(untitled)') + '</strong></div>'
+                   +   (f.why ? '<div class="fu-why">' + _multiline(f.why) + '</div>' : '')
+                   +   techDisc
+                   + '</div>';
+            }).join('')
+          + '</div>'
+        : '';
+
+      // ── LIMITATIONS ──────────────────────────────────────────────────
+      var limitsHtml = limitations.length
+        ? '<div id="' + sid.limits + '"><h3>Limitations</h3><ul>'
+          + limitations.map(function(l) { return '<li>' + _multiline(typeof l === 'string' ? l : (l.text || JSON.stringify(l))) + '</li>'; }).join('')
+          + '</ul></div>'
+        : '';
+
+      // ── REFERENCES ───────────────────────────────────────────────────
+      var refsHtml = bib.length
+        ? '<div id="' + sid.refs + '"><h3>References cited by this study</h3><p>'
+          + bib.map(function(k) { return '<code>' + _h(k) + '</code>'; }).join(', ')
+          + '</p></div>'
+        : '';
+
+      return ''
+        + '<section class="study" id="study-' + slug + '">'
+        +   subNav
+        +   '<header class="study-header">'
+        +     '<h2><span class="study-num">' + (i + 1) + '.</span> ' + _h(s.name) + ' ' + phaseBadge + statusBadge + '</h2>'
+        +     (parents ? '<p class="muted small">Depends on: ' + parents + '</p>' : '<p class="muted small">Root study (no dependencies).</p>')
+        +     (kids    ? '<p class="muted small">Blocks: '     + kids    + '</p>' : '')
+        +   '</header>'
+        +   summaryHtml         // 1. Plain-English summary (with Purpose disclosure)
+        +   decisionHtml        // 2. Decision box (with Pipeline-gate disclosure)
+        +   takeawaysHtml       // 3 + 4. Key takeaways + detailed findings grouped by kind
+        +   simsHtml            // 5. What did/will we run?
+        +   chartsHtml          //    + Visualisations from runs
+        +   readoutsHtml        // 6. What did/will we measure?
+        +   testsHtml           // 7. How do we judge success?
+        +   buildHtml           // 8. What changes in the model?
+        +   reqsHtml            // 9. What needs to be built or fixed?
+        +   followUpsHtml       // 10. What should happen next?
+        +   limitsHtml          // 11. Limitations
+        +   refsHtml            // 12. References
+        + '</section>';
+    }
+
+    // --- per-study section builder -----------------------------------
+    function studySection(s, i) {
+      var isV3 = !!(s.purpose || s.simulation_set || s.behavior_tests
+                    || s.pipeline_gate || s.readouts || s.implementation_requirements);
+      var statusBadge = '<span class="badge badge-' + _h(s.status || 'planned') + '">'
+                      + _h(s.status || 'planned') + '</span>';
+      var phaseBadge = s.phase
+        ? ' <span class="phase-badge phase-' + _h((s.phase || '').toLowerCase()) + '">' + _h(s.phase) + '</span>'
+        : '';
+
+      // Parent + child chips.
+      var parents = (s.parent_studies || []).map(function(p) {
+        var pn = (typeof p === 'string') ? p : p.study;
+        var cond = (typeof p === 'string') ? 'tests-passed' : (p.condition || 'tests-passed');
+        return '<code>' + _h(pn) + '</code> <span class="muted">(' + _h(cond) + ')</span>';
+      }).join(' · ');
+      var kids = (children[s.name] || []).map(function(c) { return '<code>' + _h(c) + '</code>'; }).join(' · ');
+
+      if (isV3) return v3StudySection(s, i, statusBadge, phaseBadge, parents, kids);
+
+      // Variants list.
+      var variants = (s.variants || []).map(function(v) {
+        var paramRows = v.params ? Object.entries(v.params).map(function(kv) {
+          return '<li><code>' + _h(kv[0]) + ' = ' + _h(JSON.stringify(kv[1])) + '</code></li>';
+        }).join('') : '';
+        return '<details class="variant"><summary><strong>' + _h(v.name) + '</strong>'
+             + (v.status ? ' <span class="muted">[' + _h(v.status) + ']</span>' : '')
+             + '</summary>'
+             + '<p>' + _multiline(v.description || '') + '</p>'
+             + (paramRows ? '<ul class="params">' + paramRows + '</ul>' : '')
+             + '</details>';
+      }).join('');
+
+      // Interventions list.
+      var interventions = (s.interventions || []).map(function(iv) {
+        var tests = (iv.triggers_tests || []).map(function(t) { return '<code>' + _h(t) + '</code>'; }).join(', ');
+        return '<details class="intervention"><summary><strong>' + _h(iv.name) + '</strong></summary>'
+             + '<p>' + _multiline(iv.description || '') + '</p>'
+             + (tests ? '<p class="muted">Triggers tests: ' + tests + '</p>' : '')
+             + '</details>';
+      }).join('');
+
+      // Expected-behavior table (the assumptions / predictions block).
+      var ebRows = (s.expected_behavior || []).map(function(b) {
+        var cites = (b.cites || []).map(function(k) { return '<code>' + _h(k) + '</code>'; }).join(', ');
+        return '<tr class="eb-row eb-' + _h(b.status || 'implemented') + '">'
+             + '<td><code>' + _h(b.name) + '</code></td>'
+             + '<td>' + _h(b.en || '') + '</td>'
+             + '<td>' + _h(b.status || 'implemented') + '</td>'
+             + '<td>' + cites + '</td>'
+             + '</tr>';
+      }).join('');
+
+      // Gaps (assumptions / explicit deferrals).
+      var gaps = (s.gaps || []).map(function(g) {
+        return '<details class="gap"><summary><strong>' + _h(g.id || '') + '</strong> — ' + _h(g.title || '') + '</summary>'
+             + (g.why ? '<p><strong>Why:</strong> ' + _multiline(g.why) + '</p>' : '')
+             + (g.approach ? '<p><strong>Approach:</strong> ' + _multiline(g.approach) + '</p>' : '')
+             + (g.defer_until ? '<p class="muted">Deferred until: <code>' + _h(g.defer_until) + '</code></p>' : '')
+             + '</details>';
+      }).join('');
+
+      // Expert questions (the validate-this block).
+      var expertQs = (s.expert_questions || []).map(function(q) {
+        return '<li>' + _h(q) + '</li>';
+      }).join('');
+
+      // Bibliography keys for this study (so the expert can pull each).
+      var bib = (s.bibliography && s.bibliography.bib_keys) || [];
+      var bibList = bib.map(function(k) { return '<code>' + _h(k) + '</code>'; }).join(', ');
+
+      // Sub-section ids — used by the per-study sticky sub-nav so each
+      // section is clickable to scroll-to.
+      var slug = _h(s.name);
+      var sidQ  = 'study-' + slug + '-qh';
+      var sidBg = 'study-' + slug + '-background';
+      var sidPr = 'study-' + slug + '-predictions';
+      var sidVa = 'study-' + slug + '-variants';
+      var sidIn = 'study-' + slug + '-interventions';
+      var sidGa = 'study-' + slug + '-gaps';
+      var sidQu = 'study-' + slug + '-questions';
+      var sidRe = 'study-' + slug + '-refs';
+
+      // Per-study sub-nav. CSS makes it sticky inside the .study section,
+      // so it sticks at the top of the viewport while you're in the study
+      // and is naturally replaced by the next study's nav as you scroll
+      // past.
+      var subNav = '';
+      var links = [];
+      links.push('<a href="#' + sidQ + '">Question</a>');
+      if (s.description)  links.push('<a href="#' + sidBg + '">Background</a>');
+      if (ebRows)         links.push('<a href="#' + sidPr + '">Predictions <span class="sn-count">' + (s.expected_behavior||[]).length + '</span></a>');
+      if (variants)       links.push('<a href="#' + sidVa + '">Variants <span class="sn-count">' + (s.variants||[]).length + '</span></a>');
+      if (interventions)  links.push('<a href="#' + sidIn + '">Interventions <span class="sn-count">' + (s.interventions||[]).length + '</span></a>');
+      if (gaps)           links.push('<a href="#' + sidGa + '">Gaps <span class="sn-count">' + (s.gaps||[]).length + '</span></a>');
+      if (expertQs)       links.push('<a href="#' + sidQu + '">Expert questions <span class="sn-count">' + (s.expert_questions||[]).length + '</span></a>');
+      if (bibList)        links.push('<a href="#' + sidRe + '">Cited refs <span class="sn-count">' + bib.length + '</span></a>');
+      var dependsBrief = parents ? 'Depends on: ' + parents : '<em>Root study (no dependencies)</em>';
+
+      subNav = ''
+        + '<div class="study-nav">'
+        +   '<div class="study-nav-row1">'
+        +     '<span class="study-nav-num">' + (i + 1) + '.</span>'
+        +     '<strong class="study-nav-name">' + _h(s.name) + '</strong>'
+        +     statusBadge
+        +     '<span class="study-nav-deps muted small">' + dependsBrief + '</span>'
+        +   '</div>'
+        +   '<nav class="study-nav-row2">' + links.join('') + '</nav>'
+        + '</div>';
+
+      return ''
+        + '<section class="study" id="study-' + slug + '">'
+        +   subNav
+        +   '<header class="study-header">'
+        +     '<h2><span class="study-num">' + (i + 1) + '.</span> ' + _h(s.name) + ' ' + statusBadge + '</h2>'
+        +     (parents ? '<p class="muted small">Depends on: ' + parents + '</p>' : '<p class="muted small">Root study (no dependencies).</p>')
+        +     (kids    ? '<p class="muted small">Blocks: '     + kids    + '</p>' : '')
+        +   '</header>'
+
+        +   '<div class="qh" id="' + sidQ + '">'
+        +     (s.question   ? '<p><strong>Question.</strong> '   + _multiline(s.question)   + '</p>' : '')
+        +     (s.hypothesis ? '<p><strong>Hypothesis.</strong> ' + _multiline(s.hypothesis) + '</p>' : '')
+        +     (s.objective  ? '<p><strong>Objective.</strong> '  + _multiline(s.objective)  + '</p>' : '')
+        +   '</div>'
+
+        +   (s.description ? '<div class="description" id="' + sidBg + '"><h3>Background</h3><p>' + _multiline(s.description) + '</p></div>' : '')
+
+        +   (ebRows ? '<div id="' + sidPr + '"><h3>Predicted behavior (assumptions to validate)</h3>'
+                    + '<p class="muted small">Each row is a precise, testable prediction. Status indicates whether the supporting code is in place today (implemented) or gated on upstream work (gated / stub).</p>'
+                    + '<table class="eb"><thead><tr><th>Name</th><th>Prediction</th><th>Status</th><th>Citations</th></tr></thead>'
+                    + '<tbody>' + ebRows + '</tbody></table></div>' : '')
+
+        +   (variants ? '<div id="' + sidVa + '"><h3>Variants (perturbations to be tested)</h3>' + variants + '</div>' : '')
+
+        +   (interventions ? '<div id="' + sidIn + '"><h3>Interventions (simulation plans)</h3>' + interventions + '</div>' : '')
+
+        +   (gaps ? '<div id="' + sidGa + '"><h3>Open gaps / explicit deferrals</h3>'
+                  + '<p class="muted small">Concrete pieces of code that need to land before this study can run end-to-end.</p>'
+                  + gaps + '</div>' : '')
+
+        +   (expertQs ? '<div id="' + sidQu + '"><h3>Questions for domain experts</h3><ul class="expert-qs">' + expertQs + '</ul></div>' : '')
+
+        +   (bibList ? '<div id="' + sidRe + '"><h3>References cited by this study</h3><p>' + bibList + '</p></div>' : '')
+
+        + '</section>';
+    }
+
+    var studiesHtml = ordered.map(studySection).join('\n');
+
+    var acceptance = (iset.acceptance_criteria || []).map(function(c) {
+      return '<li><code>' + _h(c.study) + '</code> · <code>' + _h(c.behavior) + '</code></li>';
+    }).join('');
+
+    // ── Collect the union of bib keys cited across all studies + iset ──
+    var citedKeys = new Set();
+    specs.forEach(function(s) {
+      (s.expected_behavior || []).forEach(function(b) {
+        (b.cites || []).forEach(function(k) { citedKeys.add(k); });
+      });
+      var bib = (s.bibliography && s.bibliography.bib_keys) || [];
+      bib.forEach(function(k) { citedKeys.add(k); });
+    });
+    var orderedCited = Array.from(citedKeys).sort();
+    var referencesHtml = orderedCited.map(function(key) {
+      var e = bibByKey[key];
+      if (!e) {
+        return '<li class="ref-entry"><code>' + _h(key) + '</code> <span class="muted">— (not in papers.bib)</span></li>';
+      }
+      var citation = '';
+      if (e.author)  citation += _h(e.author);
+      if (e.year)    citation += (citation ? ' (' + _h(e.year) + ')' : _h(e.year));
+      if (e.title)   citation += (citation ? '. ' : '') + '<em>' + _h(e.title) + '</em>';
+      if (e.journal) citation += '. ' + _h(e.journal);
+      if (e.volume) {
+        citation += ' ' + _h(e.volume);
+        if (e.number) citation += '(' + _h(e.number) + ')';
+      }
+      if (e.pages)   citation += ', pp. ' + _h(e.pages);
+      var doiLink = e.doi ? ' · <a href="https://doi.org/' + encodeURIComponent(e.doi) + '" target="_blank">doi:' + _h(e.doi) + '</a>' : '';
+      var urlLink = e.url ? ' · <a href="' + _h(e.url) + '" target="_blank">link ↗</a>' : '';
+      return '<li class="ref-entry" id="ref-' + _h(key) + '">'
+           + '<code>' + _h(key) + '</code> &middot; '
+           + citation
+           + doiLink + urlLink
+           + (e.note ? '<div class="muted small">Note: ' + _h(e.note) + '</div>' : '')
+           + '</li>';
+    }).join('');
+
+    // ── Build the TOC (sidebar nav) entries from the ordered studies ────
+    // Display name is human-readable; the kebab-slug appears in small
+    // muted text below as a stable identifier reference. Counts surface
+    // the v3-shape quantities a reader actually cares about.
+    function _humanizeStudyName(slug) {
+      // strip a leading "<prefix>-NN[a-z]?-" so dnaa-01-expression-dynamics
+      // becomes just "expression-dynamics". Keep the numbered prefix for
+      // display as a chip ("dnaa-01").
+      var m = /^([a-z]+-\d+[a-z]*)-(.+)$/.exec(slug);
+      if (!m) return {chip: '', title: slug.replace(/-/g, ' ')};
+      var rest = m[2].replace(/-/g, ' ');
+      // Title-case the first letter of the first word; leave the rest in
+      // lowercase so identifiers (rna_synth_prob etc.) read naturally.
+      rest = rest.charAt(0).toUpperCase() + rest.slice(1);
+      // Truncate aggressively for very long follow-up names.
+      if (rest.length > 60) rest = rest.slice(0, 57) + '…';
+      return {chip: m[1], title: rest};
+    }
+
+    var tocStudies = ordered.map(function(s, i) {
+      var anchor = 'study-' + _h(s.name);
+      var statusClass = 'badge-' + _h(s.status || 'planned');
+      var display = _humanizeStudyName(s.name);
+      var beh = s.behavior_tests || s.expected_behavior || [];
+      var nFindings  = (s.findings || []).length;
+      var nRuns      = (s.runs || []).length;
+      var nTests     = beh.length;
+      var nFollowups = (s.follow_up_studies || []).length;
+      // "Blockers" = open follow-ups that the next study depends on
+      // resolving (the seedable, not-done ones). A coarse but useful
+      // signal that the gate isn't clean yet.
+      var nBlockers = (s.follow_up_studies || []).filter(function(f) {
+        return f.status !== 'done' && f.kind !== 'existing';
+      }).length;
+
+      function _pill(n, label) {
+        if (!n) return '';
+        return '<span class="toc-count-pill">' + n + ' ' + label + '</span>';
+      }
+      var counts = ''
+        + _pill(nFindings,  'findings')
+        + _pill(nRuns,      'runs')
+        + _pill(nTests,     'tests')
+        + _pill(nFollowups, 'follow-ups')
+        + _pill(nBlockers,  'blockers');
+
+      var chipHtml = display.chip
+        ? '<span class="toc-chip">' + _h(display.chip) + '</span> '
+        : '';
+      return '<li><a href="#' + anchor + '">' +
+             '<span class="toc-num">' + (i + 1) + '.</span> ' +
+             chipHtml + '<strong>' + _h(display.title) + '</strong>' +
+             ' <span class="toc-status ' + statusClass + '">' + _h(s.status || 'planned') + '</span>' +
+             (counts ? '<div class="toc-counts">' + counts + '</div>' : '') +
+             '<div class="toc-slug muted">' + _h(s.name) + '</div>' +
+             '</a></li>';
+    }).join('');
+
+    var nameClean = _h(iset.name);
+
+    return ''
+      + '<!doctype html>\n<html><head><meta charset="utf-8">'
+      + '<title>Investigation: ' + _h(iset.title || iset.name) + '</title>'
+      + '<style>'
+      // ── reset + base ──
+      + '*{box-sizing:border-box}'
+      + 'html,body{margin:0;padding:0}'
+      + 'body{font-family:-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;color:#0f172a;line-height:1.55;background:#fff}'
+      // ── layout: sticky TOC sidebar + flex content ──
+      + '.layout{display:flex;align-items:flex-start;min-height:100vh}'
+      + '.toc{position:sticky;top:0;flex:0 0 260px;width:260px;height:100vh;overflow-y:auto;'
+      +     'padding:24px 16px 24px 24px;border-right:1px solid #e2e8f0;background:#f8fafc;font-size:0.9em}'
+      + '.toc h4{margin:0 0 8px 0;font-size:0.78em;text-transform:uppercase;letter-spacing:0.05em;color:#64748b}'
+      + '.toc ul{list-style:none;padding:0;margin:0 0 16px 0}'
+      + '.toc li{margin:0}'
+      + '.toc a{display:block;padding:5px 8px;color:#334155;text-decoration:none;border-radius:4px;font-size:0.93em;'
+      +     'overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      + '.toc a:hover{background:#e2e8f0;color:#0f172a}'
+      + '.toc a.active{background:#dbeafe;color:#1e40af;font-weight:600}'
+      + '.toc ul.studies a{padding-left:18px;font-family:ui-monospace,monospace;font-size:0.85em;white-space:normal}'
+      + '.toc .toc-num{display:inline-block;color:#94a3b8;width:18px;font-family:ui-monospace,monospace}'
+      + '.toc-status{display:inline-block;font-size:0.7em;padding:1px 6px;border-radius:9999px;font-family:-apple-system,sans-serif;background:#e2e8f0;color:#1e293b;margin-left:4px}'
+      + '.toc-status.badge-planned{background:#f1f5f9;color:#475569}'
+      + '.toc-status.badge-running{background:#dbeafe;color:#1e40af}'
+      + '.toc-status.badge-ran{background:#d1fae5;color:#065f46}'
+      + '.toc-status.badge-complete{background:#d1fae5;color:#064e3b}'
+      + '.toc-status.badge-failed{background:#fee2e2;color:#991b1b}'
+      + '.toc-counts{font-size:0.7em;margin-top:4px;font-family:-apple-system,sans-serif;display:flex;flex-wrap:wrap;gap:3px}'
+      + '.toc-count-pill{display:inline-block;background:#eef2ff;color:#3730a3;padding:1px 7px;border-radius:9999px;font-size:0.92em;line-height:1.4}'
+      + '.toc-chip{display:inline-block;font-family:ui-monospace,monospace;font-size:0.78em;background:#f1f5f9;color:#475569;padding:0 5px;border-radius:3px;margin-right:2px}'
+      + '.toc-slug{font-size:0.66em;color:#94a3b8;margin-top:3px;font-family:ui-monospace,monospace;word-break:break-all}'
+      + '.toc-toggle{display:none;position:fixed;top:12px;right:12px;z-index:100;padding:6px 10px;'
+      +    'background:#0f172a;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:0.85em}'
+      + '.content{flex:1;min-width:0;padding:24px 36px}'
+      // Cap prose paragraphs only (≈75 chars) so wide-screen lines stay
+      // readable, but keep tables, code blocks, and callouts full-width.
+      + '.content p, .content li, .content .description p, .qh p{max-width:75ch}'
+      + '.content table, .content .qh, .content details, .content pre{max-width:none}'
+      // ── typography ──
+      + 'h1{margin:0 0 8px 0;font-size:2em;line-height:1.2}'
+      + 'h2{margin:32px 0 12px 0;font-size:1.4em;border-bottom:1px solid #e2e8f0;padding-bottom:6px;scroll-margin-top:16px}'
+      + 'h3{margin:22px 0 8px 0;font-size:1.08em;color:#1e293b}'
+      + 'p{margin:8px 0}'
+      + 'code{background:#f1f5f9;padding:1px 5px;border-radius:3px;font-size:0.88em;font-family:ui-monospace,monospace}'
+      + 'pre{background:#f1f5f9;padding:10px 12px;border-radius:4px;font-size:0.85em;overflow-x:auto;white-space:pre-wrap;word-wrap:break-word}'
+      // ── tables ──
+      + 'table{border-collapse:collapse;width:100%;font-size:0.92em;margin:8px 0}'
+      + 'th,td{border-bottom:1px solid #e2e8f0;padding:7px 10px;text-align:left;vertical-align:top}'
+      + 'th{background:#f8fafc;font-weight:600}'
+      + 'table.eb td{vertical-align:top}'
+      + 'table.eb td:first-child{font-family:ui-monospace,monospace;font-size:0.85em;color:#475569;white-space:nowrap}'
+      // ── badges + status pills ──
+      + '.muted{color:#64748b}'
+      + '.small{font-size:0.85em}'
+      + '.badge{display:inline-block;font-size:0.72em;padding:2px 9px;border-radius:9999px;background:#e2e8f0;color:#1e293b;text-transform:lowercase;vertical-align:middle;margin-left:8px;font-weight:500}'
+      + '.badge-planned{background:#f1f5f9;color:#475569}'
+      + '.badge-running{background:#dbeafe;color:#1e40af}'
+      + '.badge-ran{background:#d1fae5;color:#065f46}'
+      + '.badge-complete{background:#d1fae5;color:#064e3b}'
+      + '.badge-failed{background:#fee2e2;color:#991b1b}'
+      + '.badge-invalid{background:#fee2e2;color:#991b1b}'
+      + '.badge-planning{background:#fef3c7;color:#92400e}'
+      + '.phase-badge{display:inline-block;font-size:0.72em;padding:2px 9px;border-radius:9999px;margin-right:4px;font-weight:500;background:#e0e7ff;color:#3730a3;vertical-align:middle}'
+      + '.phase-design{background:#e0e7ff;color:#3730a3}'
+      + '.phase-build{background:#fef3c7;color:#92400e}'
+      + '.phase-simulate{background:#dbeafe;color:#1e40af}'
+      + '.phase-evaluate{background:#fce7f3;color:#9d174d}'
+      + '.phase-decide{background:#d1fae5;color:#065f46}'
+      + '.callout{margin:8px 0;padding:10px 14px;border-radius:4px;line-height:1.55}'
+      + '.callout.cl-blue{background:#eff6ff;border-left:4px solid #3b82f6}'
+      + '.callout.cl-yellow{background:#fefce8;border-left:4px solid #facc15}'
+      + '.callout.cl-green{background:#f0fdf4;border-left:4px solid #10b981}'
+      + '.callout strong{margin-right:6px}'
+      // follow-up cards
+      + '.fu-card{padding:10px 14px;margin:8px 0;border:1px solid #e2e8f0;border-left:4px solid #94a3b8;border-radius:4px;background:#f8fafc;font-size:0.93em}'
+      + '.fu-kind-existing{border-left-color:#3b82f6;background:#eff6ff}'
+      + '.fu-kind-infrastructure_fix{border-left-color:#dc2626;background:#fef2f2}'
+      + '.fu-kind-calibration_task{border-left-color:#f59e0b;background:#fefce8}'
+      + '.fu-kind-expert_question{border-left-color:#a855f7;background:#faf5ff}'
+      + '.fu-kind-new{border-left-color:#10b981;background:#f0fdf4}'
+      + '.fu-head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}'
+      + '.fu-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}'
+      + '.fu-effort{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-family:ui-monospace,monospace}'
+      + '.fu-status{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}'
+      + '.fu-status-blocked{background:#fef3c7;color:#92400e}'
+      + '.fu-status-done{background:#d1fae5;color:#065f46}'
+      + '.fu-title{flex:1}'
+      + '.fu-why,.fu-unblocks,.fu-acc,.fu-hyp{margin:4px 0 0 0;font-size:0.92em;line-height:1.45}'
+      + '.fu-hyp{padding:6px 10px;background:#fff;border-radius:3px;border:1px dashed #cbd5e1}'
+      + '.fu-acc ul{margin:2px 0 0 18px;padding:0}'
+      // charts
+      + '.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px 12px 12px;margin:10px 0}'
+      + '.chart-caption{font-size:0.83em;color:#475569;margin-top:4px;line-height:1.4}'
+      // implementation-requirement cards (biologist-friendly layout)
+      + '.req-card{padding:12px 14px;margin:10px 0;border:1px solid #e2e8f0;border-radius:6px;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,0.02)}'
+      + '.req-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}'
+      + '.req-id{font-size:0.78em;color:#475569;background:#f1f5f9;padding:1px 6px;border-radius:3px;font-family:ui-monospace,monospace}'
+      + '.req-title{font-size:1.02em;flex:1;line-height:1.3}'
+      + '.req-badges{display:flex;gap:4px;flex-wrap:wrap}'
+      + '.req-kind{font-size:0.7em;text-transform:lowercase;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3}'
+      + '.req-effort{font-size:0.72em;font-family:ui-monospace,monospace;padding:1px 8px;border-radius:9999px;background:#fef3c7;color:#92400e;font-weight:600}'
+      + '.req-status{font-size:0.7em;padding:1px 8px;border-radius:9999px;font-weight:500}'
+      + '.req-status-open{background:#fee2e2;color:#991b1b}'
+      + '.req-status-deferred{background:#fef3c7;color:#92400e}'
+      + '.req-status-done{background:#d1fae5;color:#065f46}'
+      + '.req-key{padding:8px 12px;background:#f8fafc;border-left:3px solid #3b82f6;border-radius:3px;font-size:0.94em;line-height:1.5;margin:6px 0}'
+      + '.req-deferred{padding:6px 10px;background:#fffbeb;border-left:3px solid #f59e0b;border-radius:3px;font-size:0.86em;color:#78350f;margin:6px 0}'
+      + '.req-unblocks{padding:6px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:3px;font-size:0.88em;margin:6px 0}'
+      + '.req-unblocks ul{margin:4px 0 0 20px;padding:0}'
+      + '.req-unblocks li{margin:2px 0}'
+      + '.req-detail{margin-top:8px;padding:6px 10px;background:#fafafa;border:1px solid #e2e8f0;border-radius:4px}'
+      + '.req-detail summary{cursor:pointer;font-size:0.85em;color:#475569;font-weight:500}'
+      + '.req-detail summary:hover{color:#0f172a}'
+      + '.req-detail-section{margin-top:8px}'
+      + '.req-detail-section h5{margin:6px 0 4px 0;font-size:0.85em;color:#475569;text-transform:uppercase;letter-spacing:0.04em}'
+      + '.req-detail-section ol,.req-detail-section ul{margin:4px 0 0 22px;padding:0;font-size:0.93em}'
+      // simulation cards (biologist-friendly layout)
+      + '.sim-card{padding:12px 14px;margin:10px 0;border:1px solid #e2e8f0;border-radius:6px;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,0.02)}'
+      + '.sim-card.sim-sim-status-gated{border-left:4px solid #f59e0b;background:#fffbeb}'
+      + '.sim-card.sim-sim-status-ready{border-left:4px solid #10b981}'
+      + '.sim-card.sim-sim-status-ran{border-left:4px solid #3b82f6;background:#eff6ff}'
+      + '.sim-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}'
+      + '.sim-name{font-size:1.02em;flex:1}'
+      + '.sim-status-pill{font-size:0.7em;text-transform:lowercase;padding:1px 8px;border-radius:9999px;font-weight:500}'
+      + '.sim-status-pill.sim-status-ready{background:#d1fae5;color:#065f46}'
+      + '.sim-status-pill.sim-status-gated{background:#fef3c7;color:#92400e}'
+      + '.sim-status-pill.sim-status-ran{background:#dbeafe;color:#1e40af}'
+      + '.sim-pert{padding:8px 12px;margin:6px 0;background:#f8fafc;border-left:3px solid #3b82f6;border-radius:3px;font-size:0.92em}'
+      + '.sim-pert ul{margin:4px 0 0 20px;padding:0}'
+      + '.sim-pert li{margin:2px 0;line-height:1.4}'
+      + '.sim-pert-none{color:#64748b;font-style:italic;border-left-color:#cbd5e1}'
+      + '.sim-meta{margin:6px 0;font-size:0.85em;color:#475569}'
+      + '.sim-meta span{margin-right:2px}'
+      + '.sim-meta em{font-style:normal;color:#94a3b8;font-size:0.92em}'
+      + '.sim-readouts,.sim-tests{margin:6px 0;font-size:0.88em;line-height:1.5}'
+      + '.sim-blocked{padding:6px 10px;margin:6px 0;background:#fef2f2;border-left:3px solid #dc2626;border-radius:3px;font-size:0.88em;color:#7f1d1d}'
+      + '.sim-blocked code{background:rgba(220,38,38,0.08);padding:1px 4px;border-radius:2px}'
+      + '.sim-detail{margin-top:8px;padding:6px 10px;background:#fafafa;border:1px solid #e2e8f0;border-radius:4px}'
+      + '.sim-detail summary{cursor:pointer;font-size:0.85em;color:#475569;font-weight:500}'
+      + '.sim-detail summary:hover{color:#0f172a}'
+      + '.sim-extra{margin-top:6px;font-size:0.92em;line-height:1.5}'
+      // findings (top-of-section "what we learned" cards)
+      + '.findings-section{margin:0 0 24px 0;padding:14px 16px;background:#fafbff;border:1px solid #c7d2fe;border-radius:8px}'
+      + '.findings-section h3{margin:0 0 6px 0;color:#3730a3}'
+      // study summary (plain-English block at top of each study)
+      + '.study-summary{padding:14px 16px;margin:12px 0 16px 0;background:#f8fafc;border-left:4px solid #6366f1;border-radius:6px}'
+      + '.study-summary-text{margin:0;font-size:1.02em;line-height:1.55;color:#1e293b}'
+      + '.tech-details{margin-top:10px;padding:6px 10px;background:#ffffff;border:1px solid #e2e8f0;border-radius:4px;font-size:0.88em}'
+      + '.tech-details summary{cursor:pointer;color:#475569;font-weight:500}'
+      + '.tech-details summary:hover{color:#0f172a}'
+      // decision box
+      + '.decision-box{margin:0 0 20px 0;padding:14px 16px;border-radius:8px;border:2px solid #cbd5e1;background:#fff}'
+      + '.decision-box.dec-passed{border-color:#10b981;background:#f0fdf4}'
+      + '.decision-box.dec-blocked{border-color:#dc2626;background:#fef2f2}'
+      + '.decision-box.dec-needscal{border-color:#f59e0b;background:#fffbeb}'
+      + '.decision-box.dec-ready{border-color:#3b82f6;background:#eff6ff}'
+      + '.decision-box.dec-notstarted{border-color:#94a3b8;background:#f8fafc}'
+      + '.decision-box.dec-inprogress{border-color:#8b5cf6;background:#faf5ff}'
+      + '.decision-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px}'
+      + '.decision-title{margin:0;font-size:1.1em;color:#0f172a}'
+      + '.decision-status{font-size:0.9em;font-weight:600;padding:4px 12px;border-radius:9999px;background:#fff;border:1px solid currentColor}'
+      + '.dec-passed .decision-status{color:#065f46}'
+      + '.dec-blocked .decision-status{color:#991b1b}'
+      + '.dec-needscal .decision-status{color:#92400e}'
+      + '.dec-ready .decision-status{color:#1e40af}'
+      + '.dec-notstarted .decision-status{color:#475569}'
+      + '.dec-inprogress .decision-status{color:#6b21a8}'
+      + '.decision-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:6px}'
+      + '.decision-cell{padding:8px 10px;background:#fff;border-radius:4px;font-size:0.9em;border:1px solid #e2e8f0}'
+      + '.decision-cell strong{display:block;margin-bottom:4px;font-size:0.88em;color:#475569}'
+      + '.decision-cell-pass{border-left:3px solid #10b981}'
+      + '.decision-cell-fail{border-left:3px solid #dc2626}'
+      + '.decision-cell-block{border-left:3px solid #f59e0b}'
+      + '.decision-cell-next{border-left:3px solid #3b82f6}'
+      // key takeaways list
+      + '.takeaways-section{margin:0 0 20px 0;padding:14px 16px;background:#fafbff;border-left:4px solid #6366f1;border-radius:6px}'
+      + '.takeaways-section h3{margin:0 0 8px 0;color:#3730a3}'
+      + '.takeaway-list{list-style:none;padding:0;margin:0}'
+      + '.takeaway-list li{padding:5px 0;line-height:1.45;font-size:0.95em}'
+      + '.takeaway-list li a{color:#1e293b;text-decoration:none}'
+      + '.takeaway-list li a:hover{text-decoration:underline}'
+      + '.takeaway-glyph{display:inline-block;width:20px;text-align:center;margin-right:4px}'
+      + '.takeaway-confirms .takeaway-glyph{color:#10b981}'
+      + '.takeaway-contradicts .takeaway-glyph{color:#dc2626}'
+      + '.takeaway-partial .takeaway-glyph{color:#f59e0b}'
+      + '.takeaway-novel .takeaway-glyph{color:#8b5cf6}'
+      + '.findings-group-header{margin:14px 0 4px 0;font-size:1em;color:#3730a3}'
+      // test cards (claim-first)
+      + '.test-card{padding:10px 14px;margin:8px 0;background:#fff;border:1px solid #e2e8f0;border-radius:6px}'
+      + '.test-card.test-classification-primary{border-left:4px solid #10b981}'
+      + '.test-card.test-classification-supporting{border-left:4px solid #3b82f6}'
+      + '.test-card.test-classification-diagnostic{border-left:4px solid #f59e0b}'
+      + '.test-card.test-classification-regression{border-left:4px solid #94a3b8}'
+      + '.test-header{display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap}'
+      + '.test-classification{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3}'
+      + '.test-claim{font-size:0.95em;line-height:1.5;margin:4px 0}'
+      + '.test-evidence{font-size:0.86em;color:#475569;padding:6px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:3px;margin:6px 0}'
+      + '.test-id{margin-top:4px;font-family:ui-monospace,monospace}'
+      // readout cards
+      + '.readout-card{padding:8px 12px;margin:6px 0;background:#fff;border:1px solid #e2e8f0;border-radius:4px}'
+      + '.readout-desc{font-size:0.9em;color:#475569;margin-top:4px}'
+      // sweep chart
+      + '.sweep-chart{margin:8px 0;padding:6px;background:#fafbff;border:1px solid #e0e7ff;border-radius:4px}'
+      + '.finding-card{padding:12px 14px;margin:10px 0;border:1px solid #e2e8f0;border-left:5px solid #6366f1;border-radius:6px;background:#fff;box-shadow:0 1px 1px rgba(0,0,0,0.02)}'
+      + '.finding-card.finding-status-confirms{border-left-color:#10b981}'
+      + '.finding-card.finding-status-partial{border-left-color:#f59e0b}'
+      + '.finding-card.finding-status-contradicts{border-left-color:#dc2626}'
+      + '.finding-card.finding-status-novel{border-left-color:#8b5cf6}'
+      + '.finding-header{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}'
+      + '.finding-status-glyph{font-size:1.2em;width:24px;text-align:center}'
+      + '.finding-status-confirms .finding-status-glyph{color:#10b981}'
+      + '.finding-status-partial   .finding-status-glyph{color:#f59e0b}'
+      + '.finding-status-contradicts .finding-status-glyph{color:#dc2626}'
+      + '.finding-status-novel     .finding-status-glyph{color:#8b5cf6}'
+      + '.finding-id{font-family:ui-monospace,monospace;font-size:0.78em;color:#475569;background:#f1f5f9;padding:1px 6px;border-radius:3px}'
+      + '.finding-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-weight:500}'
+      + '.finding-status-text{font-size:0.78em;color:#64748b;margin-left:auto;font-style:italic}'
+      + '.finding-statement{font-size:1.0em;line-height:1.5;font-weight:500;color:#0f172a;margin:4px 0 8px 0}'
+      + '.finding-evidence{font-size:0.86em;color:#475569;padding:6px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:3px;margin:6px 0;line-height:1.5}'
+      + '.finding-expected{font-size:0.86em;color:#475569;padding:6px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:3px;margin:6px 0;line-height:1.5}'
+      + '.finding-exp-summary{font-size:0.9em;color:#475569;padding:6px 10px;background:#fafbff;border-left:3px solid #6366f1;border-radius:3px;margin:6px 0;line-height:1.5}'
+      + '.finding-explanation{font-size:0.92em;color:#1e293b;margin:6px 0;line-height:1.5}'
+      + '.finding-explanation em{color:#475569;font-style:normal;font-weight:600}'
+      + '.finding-expert{margin:6px 0;padding:6px 10px;background:#fafafa;border:1px solid #e2e8f0;border-radius:4px}'
+      + '.finding-expert summary{cursor:pointer;font-size:0.85em;color:#475569;font-weight:500}'
+      + '.finding-expert-quote{border-left:3px solid #6366f1;margin:6px 0 4px 0;padding:6px 10px;background:#fafbff;font-style:italic;color:#1e1b4b;font-size:0.92em;line-height:1.5}'
+      + '.finding-expert-note{font-size:0.88em;color:#475569;margin-top:4px;font-style:italic}'
+      + '.finding-next{padding:6px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:3px;font-size:0.9em;margin-top:8px;line-height:1.5}'
+      + '.finding-next strong{color:#065f46}'
+      // ── eb table row coloring ──
+      + 'tr.eb-stub td{background:#fefce8}'
+      + 'tr.eb-gated td{background:#fff7ed}'
+      + 'tr.eb-implemented td{background:#f0fdf4}'
+      // ── details / collapsibles ──
+      + 'details{margin:8px 0;padding:8px 12px;background:#f8fafc;border-radius:4px;border-left:3px solid #cbd5e1}'
+      + 'details > summary{cursor:pointer;font-size:0.95em}'
+      + 'details[open]{background:#fff;border-left-color:#3b82f6}'
+      + 'details details{margin-left:0;background:#fff}'
+      // ── per-study sections ──
+      // Each .study is a sticky container for its own .study-nav. As the
+      // user scrolls past a study, its .study-nav exits its bounding
+      // .study div and the next study's nav takes over.
+      + '.study{margin-top:40px;padding-top:8px;scroll-margin-top:16px;position:relative}'
+      + '.study-nav{position:sticky;top:0;z-index:20;background:rgba(255,255,255,0.96);backdrop-filter:saturate(120%) blur(2px);'
+      +     '-webkit-backdrop-filter:saturate(120%) blur(2px);'
+      +     'border-bottom:1px solid #e2e8f0;padding:8px 12px 6px 12px;margin:0 -12px 12px -12px;border-radius:4px}'
+      + '.study-nav .study-nav-row1{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px}'
+      + '.study-nav .study-nav-num{color:#94a3b8;font-family:ui-monospace,monospace;font-size:0.85em}'
+      + '.study-nav .study-nav-name{font-size:1.02em}'
+      + '.study-nav .study-nav-deps{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}'
+      + '.study-nav-row2{display:flex;flex-wrap:wrap;gap:4px}'
+      + '.study-nav-row2 a{display:inline-block;padding:2px 10px;border-radius:9999px;font-size:0.83em;color:#3b82f6;text-decoration:none;background:#eff6ff;border:1px solid transparent}'
+      + '.study-nav-row2 a:hover{background:#dbeafe;border-color:#bfdbfe}'
+      + '.sn-count{display:inline-block;margin-left:4px;font-size:0.8em;color:#64748b;background:#fff;padding:0 5px;border-radius:9999px;border:1px solid #e2e8f0}'
+      // Scroll-margin so links to sub-sections don't get hidden under the
+      // sticky study-nav.
+      + '.study [id^="study-"]{scroll-margin-top:96px}'
+      + '.study-header h2{border:0;padding:0;margin:0 0 4px 0}'
+      + '.study-num{color:#94a3b8;font-weight:normal;font-size:0.85em;margin-right:4px}'
+      + '.qh{padding:12px 16px;background:#f8fafc;border-left:4px solid #3b82f6;border-radius:4px;margin:12px 0}'
+      + '.qh p{margin:6px 0}'
+      + '.description p{white-space:pre-wrap}'
+      + 'ul.params{font-size:0.85em;font-family:ui-monospace,monospace;margin:6px 0;padding-left:20px}'
+      // ── footer ──
+      + 'footer{margin-top:56px;padding-top:16px;border-top:1px solid #e2e8f0;font-size:0.82em;color:#64748b}'
+      // ── responsive ──
+      + '@media (max-width:900px){'
+      +   '.layout{flex-direction:column}'
+      +   '.toc{position:relative;width:100%;height:auto;flex:0 0 auto;border-right:0;border-bottom:1px solid #e2e8f0;display:none}'
+      +   '.toc.open{display:block}'
+      +   '.toc-toggle{display:inline-block}'
+      +   '.content{padding:60px 20px 20px 20px;max-width:none}'
+      + '}'
+      // ── print ──
+      + '@media print{'
+      +   '.toc,.toc-toggle{display:none}'
+      +   '.content{padding:0;max-width:none}'
+      +   'details[open]{margin:4px 0}'
+      +   'h1,h2,h3{break-after:avoid}'
+      +   '.study{break-inside:avoid-page}'
+      + '}'
+      + '</style></head><body>'
+
+      + '<button class="toc-toggle" onclick="document.querySelector(\'.toc\').classList.toggle(\'open\')">☰ Contents</button>'
+      + '<div class="layout">'
+
+      // ── TOC sidebar ──
+      + '<aside class="toc">'
+      +   '<h4>' + _h(iset.title || iset.name) + '</h4>'
+      +   '<ul>'
+      +     '<li><a href="#top">Top</a></li>'
+      +     '<li><a href="#overview">Overview</a></li>'
+      +     (acceptance ? '<li><a href="#acceptance">Acceptance criteria</a></li>' : '')
+      +     '<li><a href="#how-to-read">How to read</a></li>'
+      +     '<li><a href="#studies-heading">Studies (dep. order)</a></li>'
+      +   '</ul>'
+      +   '<ul class="studies">' + tocStudies + '</ul>'
+      +   '<ul><li><a href="#references">References (' + orderedCited.length + ')</a></li>'
+      +   '<li><a href="#footer">About</a></li></ul>'
+      + '</aside>'
+
+      // ── Main content ──
+      + '<main class="content" id="top">'
+
+      +   '<h1>' + _h(iset.title || iset.name) + ' <span class="badge badge-' + _h(iset.status || 'planning') + '">' + _h(iset.status || 'planning') + '</span></h1>'
+      +   '<p class="muted small">Investigation report · <code>' + nameClean + '</code> · generated ' + _h(now) + ' · for expert review prior to execution.</p>'
+
+      +   '<h2 id="overview">Overview</h2>'
+      +   (iset.question   ? '<p><strong>Question.</strong> '   + _multiline(iset.question)   + '</p>' : '')
+      +   (iset.hypothesis ? '<p><strong>Hypothesis.</strong> ' + _multiline(iset.hypothesis) + '</p>' : '')
+      +   (iset.description ? '<div class="description"><p>' + _multiline(iset.description) + '</p></div>' : '')
+
+      +   (acceptance ? '<h2 id="acceptance">Acceptance criteria</h2>'
+                      + '<p class="muted small">Behavioral tests across the studies that must pass for this investigation to be considered complete.</p>'
+                      + '<ol>' + acceptance + '</ol>' : '')
+
+      +   '<h2 id="how-to-read">How to read this report</h2>'
+      +   '<p>Each section below is one study, in dependency order (roots first). For each study, read in this order:</p>'
+      +   '<ol>'
+      +     '<li><strong>Plain-English summary</strong> — what the study asked, what we learned, and where the gate decision lands.</li>'
+      +     '<li><strong>Can we move to the next study?</strong> — the gate decision in one box: what passed, what failed, what blocks the next study, and the immediate next action.</li>'
+      +     '<li><strong>Key takeaways</strong> — one-line findings linking back to detailed cards.</li>'
+      +     '<li><strong>Simulations, measurements, and tests</strong> — what we ran, what we measured, how we judge success.</li>'
+      +     '<li><strong>Technical details</strong> — file paths, parameter names, listener paths, CLI flags. These live inside collapsible <em>Technical details</em> blocks; open them only when implementing or debugging.</li>'
+      +   '</ol>'
+      +   '<p class="muted small">Status pills use four glyphs: <strong style="color:#10b981">✓ confirms</strong> literature, <strong style="color:#dc2626">✗ contradicts</strong> literature, <strong style="color:#f59e0b">◐ partial</strong> match, <strong style="color:#8b5cf6">◆ novel</strong> (no literature comparator).</p>'
+
+      +   '<h2 id="studies-heading">Studies (dependency order)</h2>'
+      +   studiesHtml
+
+      +   '<h2 id="references">References <span class="muted small">(' + orderedCited.length + ' cited across this investigation)</span></h2>'
+      +   '<p class="muted small">Union of <code>bibliography.bib_keys</code> and per-behavior <code>cites:</code> across all studies in this investigation. Click DOI or link to open the source.</p>'
+      +   '<ol class="references-list" style="line-height:1.6;font-size:0.93em">'
+      +     referencesHtml
+      +   '</ol>'
+
+      +   '<footer id="footer">'
+      +     '<p>Generated from the v2ecoli vivarium-dashboard. Source of truth: <code>investigations/' + nameClean + '/investigation.yaml</code> and the per-study <code>studies/&lt;name&gt;/study.yaml</code> files.</p>'
+      +     '<p>Open the live DAG: in the dashboard, click <strong>Investigations</strong> → <em>' + _h(iset.title || iset.name) + '</em>.</p>'
+      +   '</footer>'
+
+      + '</main>'
+      + '</div>'
+
+      // ── Active-section tracking for TOC links ──
+      + '<script>'
+      + '(function(){'
+      +   'var links=Array.from(document.querySelectorAll(".toc a"));'
+      +   'var targets=links.map(function(a){return document.getElementById(a.getAttribute("href").slice(1));})'
+      +     '.filter(Boolean);'
+      +   'function onScroll(){'
+      +     'var y=window.scrollY+80;'
+      +     'var current=null;'
+      +     'for(var i=0;i<targets.length;i++){if(targets[i].offsetTop<=y)current=targets[i];}'
+      +     'links.forEach(function(a){a.classList.toggle("active",current&&("#"+current.id)===a.getAttribute("href"));});'
+      +   '}'
+      +   'window.addEventListener("scroll",onScroll,{passive:true});'
+      +   'onScroll();'
+      + '})();'
+      + '</script>'
+
+      + '</body></html>';
+  }
+
+  // Pop-out the investigation itself in a detached window. URL carries
+  // both ?investigation=<name> AND #investigations so detection is robust
+  // regardless of when the param is read on the receiving side.
+  function _popoutInvestigation() {
+    var name = window._currentIset;
+    if (!name) {
+      console.warn('_popoutInvestigation: no current investigation set');
+      return;
+    }
+    // focus=investigations strips the sidebar + topbar (CSS rules in
+    // style.css). investigation=<name> tells _loadInvestigationSets which
+    // iset to auto-open. The hash anchors the right page.
+    var url = window.location.origin + window.location.pathname +
+              '?focus=investigations&investigation=' + encodeURIComponent(name) +
+              '#investigations';
+    var w = _openDetachedWindow(url, 1400, 900);
+    if (!w) {
+      console.warn('_popoutInvestigation: popup blocked, navigating in-place');
+      alert('Popup blocked. Allow popups from this site to pop out the investigation.');
+    }
+  }
+  window._popoutInvestigation = _popoutInvestigation;
+
+  // Back-compat shim for any old callers (sidebar groups still use this).
+  function _openStudyEmbeddedNewTab(name) {
+    // If we're inside the Investigations tab, use the in-place embed.
+    if (window._currentIset) {
+      _openStudyInsideInvestigation(name);
+      return;
+    }
+    _switchPage('studies');
+    setTimeout(function() {
+      if (typeof _openStudyEmbedded === 'function') _openStudyEmbedded(name);
+    }, 80);
+  }
+  window._openStudyEmbeddedNewTab = _openStudyEmbeddedNewTab;
+
+  // Sidebar grouping: studies-by-investigation, collapsible.
+  // Replaces the existing flat-list render in #viv-rail-investigations.
+  function _renderRailInvestigationGroups() {
+    var host = document.getElementById('viv-rail-investigations');
+    if (!host) return;
+    // Need both: window._investigations (all studies) AND window._isetIndex (groups).
+    // If either isn't loaded yet, fall back to a loading message + kick the missing one.
+    if (!Array.isArray(window._isetIndex)) window._isetIndex = [];
+    if (!Array.isArray(window._investigations) || !window._investigations.length) {
+      // No studies in memory yet → fall back to the legacy render until they arrive.
+      if (typeof _renderRailInvestigationsLegacy === 'function') return _renderRailInvestigationsLegacy();
+      host.innerHTML = '<p class="viv-rail-empty" style="font-size:0.85em;color:#9ca3af;padding:4px 12px">Loading…</p>';
+      if (typeof _loadInvestigations === 'function') _loadInvestigations();
+      return;
+    }
+
+    var memberSet = {};         // studySlug -> [isetName, ...]
+    window._isetIndex.forEach(function(iset) {
+      (iset.studies || []).forEach(function(slug) {
+        (memberSet[slug] = memberSet[slug] || []).push(iset.name);
+      });
+    });
+
+    // Group studies: each iset gets its members; leftovers go to "Ungrouped".
+    var groups = [];   // [{name, title, studies: [study, ...]}]
+    var seen = {};
+    window._isetIndex.forEach(function(iset) {
+      var members = (iset.studies || [])
+        .map(function(slug) { return window._investigations.find(function(s) { return s.name === slug; }); })
+        .filter(Boolean);
+      members.forEach(function(s) { seen[s.name] = true; });
+      // Sort within group by topological depth (the same map computed in
+      // _renderInvestigations); if unavailable, fall back to alpha.
+      var depthMap = window._investigationsDepth || {};
+      members.sort(function(a, b) {
+        var da = depthMap[a.name] || 0, db = depthMap[b.name] || 0;
+        return da - db || a.name.localeCompare(b.name);
+      });
+      groups.push({name: iset.name, title: iset.title || iset.name, studies: members});
+    });
+    var ungrouped = window._investigations.filter(function(s) { return !seen[s.name]; });
+    if (ungrouped.length) groups.push({name: '__ungrouped__', title: 'Ungrouped', studies: ungrouped});
+
+    // Flat-list mode: when there's exactly one investigation (no
+    // ungrouped studies), render its studies as a flat list directly
+    // under the "Studies" rail-section label — no redundant group header.
+    if (groups.length === 1 && groups[0].name !== '__ungrouped__') {
+      var g = groups[0];
+      host.innerHTML = g.studies.map(function(s) {
+        var status = s.status || 'planned';
+        return '<a class="viv-rail-sublink" ' +
+               'onclick="event.preventDefault();_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\');return false;" ' +
+               'href="#" ' +
+               'style="display:flex;align-items:baseline;gap:6px;padding:4px 12px;color:#374151;text-decoration:none;font-size:0.86em;">' +
+                 '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _esc(s.name) + '</span>' +
+                 (s.blocked ? '<span title="blocked" style="font-size:0.85em">🔒</span>' : '') +
+                 '<span class="muted" style="font-size:0.72em">' + _esc(status) + '</span>' +
+               '</a>';
+      }).join('');
+      return;
+    }
+
+    var collapsedState = window._isetRailCollapsed || {};
+    host.innerHTML = groups.map(function(g) {
+      var isCollapsed = !!collapsedState[g.name];
+      var children = isCollapsed ? '' : g.studies.map(function(s) {
+        var status = s.status || 'planned';
+        return '<a class="viv-rail-sublink" ' +
+               'onclick="event.preventDefault();_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\');return false;" ' +
+               'href="#" ' +
+               'style="display:flex;align-items:baseline;gap:6px;padding:3px 14px 3px 28px;color:#64748b;text-decoration:none;font-size:0.85em;">' +
+                 '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _esc(s.name) + '</span>' +
+                 (s.blocked ? '<span title="blocked" style="font-size:0.85em">🔒</span>' : '') +
+                 '<span class="muted" style="font-size:0.72em">' + _esc(status) + '</span>' +
+               '</a>';
+      }).join('');
+      var headerClick = "event.preventDefault(); window._isetRailCollapsed = window._isetRailCollapsed || {}; window._isetRailCollapsed['" + _esc(g.name) + "'] = !window._isetRailCollapsed['" + _esc(g.name) + "']; _renderRailInvestigationGroups();";
+      var groupClick = g.name === '__ungrouped__' ? '' :
+        ' <a onclick="event.stopPropagation();event.preventDefault();_switchPage(\'investigations\');_openInvestigationDetail(\'' + _esc(g.name) + '\');return false;" ' +
+        'href="#" style="font-size:0.7em;color:#3b82f6;margin-left:auto;">[DAG]</a>';
+      return '<div class="viv-rail-iset-group" data-iset="' + _esc(g.name) + '">' +
+        '<div onclick="' + headerClick + '" ' +
+             'style="display:flex;align-items:center;gap:4px;padding:4px 12px;cursor:pointer;user-select:none;font-size:0.85em;color:#374151;font-weight:600;">' +
+          '<span style="display:inline-block;width:10px;text-align:center;color:#94a3b8;">' + (isCollapsed ? '▸' : '▾') + '</span>' +
+          '<span style="flex:1">' + _esc(g.title) + '</span>' +
+          '<span class="muted" style="font-size:0.72em;font-weight:normal;">(' + g.studies.length + ')</span>' +
+          groupClick +
+        '</div>' +
+        children +
+      '</div>';
+    }).join('');
+  }
+  window._renderRailInvestigationGroups = _renderRailInvestigationGroups;
+
   function _buildInvestigationTagChips() {
     var container = document.getElementById('investigations-tag-chips');
     if (!container) return;
@@ -3199,11 +5282,53 @@
   }
   window._toggleInvestigationChip = _toggleInvestigationChip;
 
+  // ── DAG helpers ─────────────────────────────────────────────────────
+  // Build a children map (reverse of parent_studies) and a depth map
+  // (BFS from roots) for the topological sort + Depends-on/Blocks chips.
+  function _buildInvestigationDag(all) {
+    var childrenMap = {};
+    all.forEach(function(inv) { childrenMap[inv.name] = []; });
+    function _parentName(p) { return (typeof p === 'string') ? p : (p && p.study); }
+    all.forEach(function(inv) {
+      (inv.parent_studies || []).forEach(function(p) {
+        var pn = _parentName(p);
+        if (pn && childrenMap[pn]) childrenMap[pn].push(inv.name);
+      });
+    });
+    // BFS depth from roots.
+    var depthMap = {};
+    var queue = [];
+    all.forEach(function(inv) {
+      if (!(inv.parent_studies || []).length) {
+        depthMap[inv.name] = 0;
+        queue.push(inv.name);
+      }
+    });
+    var guard = all.length * 4;   // cycle guard
+    while (queue.length && guard-- > 0) {
+      var name = queue.shift();
+      var d = depthMap[name];
+      (childrenMap[name] || []).forEach(function(child) {
+        if (depthMap[child] === undefined || depthMap[child] < d + 1) {
+          depthMap[child] = d + 1;
+          queue.push(child);
+        }
+      });
+    }
+    all.forEach(function(inv) {
+      if (depthMap[inv.name] === undefined) depthMap[inv.name] = 99;
+    });
+    return {children: childrenMap, depth: depthMap};
+  }
+
   function _renderInvestigations() {
     var grid = document.getElementById('investigations-grid');
     if (!grid) return;
     var f = window._investigationsFilter;
     var q = f.search.toLowerCase();
+    var dag = _buildInvestigationDag(window._investigations);
+    window._investigationsChildren = dag.children;
+    window._investigationsDepth = dag.depth;
     var filtered = window._investigations.filter(function(inv) {
       if (q) {
         var hay = (inv.name + ' ' + (inv.description || '') + ' ' +
@@ -3222,21 +5347,35 @@
       grid.classList.remove('list-view');
       return;
     }
-    var sort = window._investigationsSort || 'name';
+    var sort = window._investigationsSort || 'dependencies';   // topology default
     filtered.sort(function(a, b) {
       if (sort === 'last_run') {
-        return (b.last_run || '').localeCompare(a.last_run || '');  // newest first
+        return (b.last_run || '').localeCompare(a.last_run || '');
       }
       if (sort === 'status') {
         return (a.status || '').localeCompare(b.status || '') || a.name.localeCompare(b.name);
+      }
+      if (sort === 'phase') {
+        var phaseOrder = { Design: 0, Build: 1, Simulate: 2, Evaluate: 3, Decide: 4 };
+        var pa = phaseOrder[a.phase];
+        var pb = phaseOrder[b.phase];
+        if (pa == null) pa = 99;
+        if (pb == null) pb = 99;
+        return pa - pb || a.name.localeCompare(b.name);
       }
       if (sort === 'topic') {
         return (a.topic || 'zzz').localeCompare(b.topic || 'zzz') || a.name.localeCompare(b.name);
       }
       if (sort === 'n_runs') {
-        return (b.n_runs || 0) - (a.n_runs || 0);  // most runs first
+        return (b.n_runs || 0) - (a.n_runs || 0);
       }
-      return a.name.localeCompare(b.name);
+      if (sort === 'name') {
+        return a.name.localeCompare(b.name);
+      }
+      // Default: topological depth (roots first), then alphabetical within depth.
+      var depthMap = window._investigationsDepth || {};
+      var da = depthMap[a.name] || 0, db = depthMap[b.name] || 0;
+      return da - db || a.name.localeCompare(b.name);
     });
     grid.classList.toggle('list-view', window._investigationsView === 'list');
     grid.innerHTML = filtered.map(_renderInvestigationCard).join('');
@@ -3282,12 +5421,69 @@
 
     var runLabel = (status === 'planned') ? 'Run' : 'Re-run';
 
+    // ── Dependency chips ──
+    var parents = inv.parent_studies || [];
+    var children = (window._investigationsChildren || {})[inv.name] || [];
+
+    function _depLink(name, suffix, color) {
+      return '<a onclick="event.stopPropagation(); _openStudyEmbedded(\'' + _esc(name) + '\')" ' +
+             'style="color:' + color + ';cursor:pointer;text-decoration:underline;">' +
+             _esc(name) + '</a>' + (suffix ? ' <small class="muted">(' + _esc(suffix) + ')</small>' : '');
+    }
+    var dependsHtml = '';
+    if (parents.length) {
+      dependsHtml = '<div class="ic-deps" style="margin-top:6px;font-size:0.78em;">' +
+        '<span class="muted">Depends on:</span> ' +
+        parents.map(function(p) {
+          var name = (typeof p === 'string') ? p : p.study;
+          var cond = (typeof p === 'string') ? 'tests-passed' : (p.condition || 'tests-passed');
+          return _depLink(name, cond, '#3b82f6');
+        }).join(' · ') +
+      '</div>';
+    }
+    var blocksHtml = '';
+    if (children.length) {
+      blocksHtml = '<div class="ic-deps" style="font-size:0.78em;">' +
+        '<span class="muted">Blocks:</span> ' +
+        children.map(function(name) { return _depLink(name, '', '#94a3b8'); }).join(' · ') +
+      '</div>';
+    }
+
+    // 🔒 Blocked badge (parents haven't satisfied their condition yet).
+    var blockedBadge = '';
+    if (inv.blocked) {
+      var reasons = (inv.blocked_by || []).map(function(b) {
+        return b.study + ' (' + b.condition + (b.missing ? ' — ' + b.missing : '') + ')';
+      }).join('\n');
+      blockedBadge = ' <span class="status-pill" ' +
+                     'style="background:#fef3c7;color:#92400e;font-size:0.7em;padding:1px 6px;" ' +
+                     'title="Blocked by:\n' + _esc(reasons) + '">🔒 blocked</span>';
+    }
+
+    var phaseColors = {
+      Design:   {bg: '#e0e7ff', fg: '#3730a3'},
+      Build:    {bg: '#fef3c7', fg: '#92400e'},
+      Simulate: {bg: '#dbeafe', fg: '#1e40af'},
+      Evaluate: {bg: '#fce7f3', fg: '#9d174d'},
+      Decide:   {bg: '#d1fae5', fg: '#065f46'},
+    };
+    var pc = phaseColors[inv.phase] || null;
+    var phaseChip = (inv.phase && pc)
+      ? ' <span class="status-pill" style="background:' + pc.bg +
+        ';color:' + pc.fg + ';font-size:0.7em;padding:1px 8px;border-radius:9999px;">' +
+        _esc(inv.phase) + '</span>'
+      : '';
+
     return '<div class="investigation-card" onclick="_openStudyEmbedded(\'' + _esc(inv.name) + '\')">' +
       '<div class="ic-header">' +
         '<div class="ic-title">' + _esc(inv.name) + '</div>' +
         '<span class="ic-status status-pill ' + statusClass + '">' + _esc(status) + '</span>' +
+        phaseChip +
+        blockedBadge +
       '</div>' +
       '<div class="ic-baseline"><small>Baseline:</small> <code>' + _esc(baselineDisplay) + '</code></div>' +
+      dependsHtml +
+      blocksHtml +
       conclusionsHtml +
       '<div class="ic-meta">' +
         '<span>' + nVariants + ' variant' + (nVariants === 1 ? '' : 's') + '</span>' +
@@ -5989,7 +8185,12 @@
       var branch = (state && state.active_branch) || '';
       var base = (state && state.base) || 'main';
       var titleField = document.querySelector('#form-open-pr input[name=title]');
-      if (titleField && branch && !titleField.value) titleField.value = 'Workstream: ' + branch;
+      if (titleField && branch && !titleField.value) {
+        // Strip the `investigation/` prefix in the suggested title since the
+        // PR will already announce its head branch in the GitHub UI.
+        var shortBranch = branch.replace(/^investigation\//, '');
+        titleField.value = 'Investigation: ' + shortBranch;
+      }
       var setText = function (id, txt) {
         var el = document.getElementById(id);
         if (el) el.textContent = txt;
@@ -5997,42 +8198,291 @@
       setText('pr-head-display', branch || '<branch>');
       setText('pr-base-display', base);
       setText('pr-base-display-2', base);
+      var ctx = document.getElementById('pr-suggest-context');
+      if (ctx) {
+        if (window._currentIsetData && window._currentIsetData.name) {
+          var iset = window._currentIsetData;
+          var nf = 0, nr = 0;
+          (iset.studies || []).forEach(function (s) {
+            nf += (s.findings || []).length;
+            nr += (s.n_runs || 0);
+          });
+          ctx.innerHTML = '<em>Suggest</em> will draft from open investigation <code>' +
+            _esc(iset.name) + '</code> (' + (iset.studies || []).length + ' studies · ' +
+            nf + ' findings · ' + nr + ' runs).';
+        } else {
+          ctx.innerHTML = '<em>Suggest</em>: open an investigation first (Investigations tab) and re-open this dialog to draft from its findings.';
+        }
+      }
       openModal('modal-open-pr');
     });
   }
   window._openPRDialog = _openPRDialog;
 
+  // ── Draft PR title / body from the active investigation ──────────────────
+  // Pulls from window._currentIsetData (set by _openInvestigationDetail).
+  // For title: a short kebab-style label derived from the dominant finding
+  // kind or the highest-leverage follow-up. For body: a structured summary
+  // (findings, runs, follow-ups) shaped as a GitHub PR description.
+  function _draftPRFromInvestigation(field, form) {
+    var iset = window._currentIsetData;
+    if (!iset || !iset.name) {
+      alert('No active investigation. Open an investigation in the Investigations tab first.');
+      return;
+    }
+    var studies = iset.studies || [];
+    var allFindings = [];
+    var allFollowups = [];
+    studies.forEach(function (s) {
+      (s.findings || []).forEach(function (f) { allFindings.push({study: s.name, f: f}); });
+      (s.follow_up_studies || []).forEach(function (f) { allFollowups.push({study: s.name, f: f}); });
+    });
+    var bioContradicts = allFindings.filter(function (e) { return e.f.kind === 'biological' && e.f.status === 'contradicts'; });
+    var bioConfirms    = allFindings.filter(function (e) { return e.f.kind === 'biological' && e.f.status === 'confirms'; });
+    var compNovel      = allFindings.filter(function (e) { return e.f.kind === 'computational' && e.f.status === 'novel'; });
+
+    if (field === 'title') {
+      var titleEl = form.querySelector('input[name=title]');
+      if (!titleEl) return;
+      // Heuristic: if any computational/novel findings, title leads with infra;
+      // otherwise lead with the investigation question shortened.
+      var label;
+      if (compNovel.length && compNovel.length >= bioContradicts.length) {
+        label = 'infra: ' + iset.name + ' — ' + compNovel.length + ' computational finding' + (compNovel.length === 1 ? '' : 's');
+      } else if (bioContradicts.length || bioConfirms.length) {
+        label = 'investigation: ' + iset.name + ' — ' +
+                (bioConfirms.length ? bioConfirms.length + ' confirms' : '') +
+                (bioConfirms.length && bioContradicts.length ? ' / ' : '') +
+                (bioContradicts.length ? bioContradicts.length + ' contradicts vs literature' : '');
+      } else {
+        label = 'investigation: ' + iset.name + ' — ' + studies.length + ' studies (in-progress)';
+      }
+      if (label.length > 95) label = label.slice(0, 92) + '…';
+      titleEl.value = label;
+      titleEl.focus();
+      return;
+    }
+
+    if (field === 'body') {
+      var bodyEl = form.querySelector('textarea[name=body]');
+      if (!bodyEl) return;
+      var origBtn = (typeof event !== 'undefined') ? event.target : null;
+      if (origBtn) { origBtn.disabled = true; origBtn.textContent = 'Drafting…'; }
+
+      // Fetch composite diff in parallel so the "Model changes" section can
+      // include actual file paths + line counts. Best-effort; renders without
+      // the section if the fetch fails or returns no model-code changes.
+      fetch('/api/work-composite-diff').then(function (r) { return r.ok ? r.json() : {changes: []}; })
+        .catch(function () { return {changes: []}; })
+        .then(function (diff) {
+          var modelChanges = (diff && diff.changes) || [];
+          bodyEl.value = _renderPRBody(iset, studies, allFindings, allFollowups, modelChanges);
+          bodyEl.focus();
+          if (origBtn) { origBtn.disabled = false; origBtn.textContent = 'Suggest from investigation'; }
+        });
+      return;
+    }
+  }
+  window._draftPRFromInvestigation = _draftPRFromInvestigation;
+
+  function _renderPRBody(iset, studies, allFindings, allFollowups, modelChanges) {
+    var lines = [];
+    // Header — investigation question.
+    lines.push('## Investigation: `' + iset.name + '`');
+    if (iset.question) lines.push('', '> ' + iset.question.replace(/\n+/g, ' ').trim());
+    lines.push('');
+
+    // ── Model changes (composite/process/step files) ─────────────────────
+    if (modelChanges && modelChanges.length) {
+      lines.push('## Model changes (' + modelChanges.length + ' file' + (modelChanges.length === 1 ? '' : 's') + ')');
+      lines.push('');
+      // Group by category for skimmability.
+      var byCat = {};
+      modelChanges.forEach(function (c) {
+        (byCat[c.category] = byCat[c.category] || []).push(c);
+      });
+      Object.keys(byCat).sort().forEach(function (cat) {
+        var rows = byCat[cat];
+        var totalLines = rows.reduce(function (acc, c) { return acc + c.lines_added + c.lines_removed; }, 0);
+        lines.push('**' + cat + '** (' + rows.length + ' file' + (rows.length === 1 ? '' : 's') + ', ±' + totalLines + ' lines)');
+        rows.slice(0, 8).forEach(function (c) {
+          lines.push('- `' + c.path + '` (+' + c.lines_added + '/−' + c.lines_removed + ')');
+        });
+        if (rows.length > 8) lines.push('- _…' + (rows.length - 8) + ' more_');
+        lines.push('');
+      });
+    }
+
+    // ── Findings (the biology/computational headline) ────────────────────
+    if (allFindings.length) {
+      lines.push('## Findings (' + allFindings.length + ')');
+      lines.push('');
+      ['biological', 'computational', 'methodological'].forEach(function (kind) {
+        var kf = allFindings.filter(function (e) { return e.f.kind === kind; });
+        if (!kf.length) return;
+        lines.push('### ' + kind.charAt(0).toUpperCase() + kind.slice(1) + ' (' + kf.length + ')');
+        kf.forEach(function (e) {
+          var f = e.f;
+          var glyph = ({confirms: '✓', contradicts: '✗', partial: '◐', novel: '◆'})[f.status || 'novel'];
+          var stmt = (f.statement || '').split('\n')[0].slice(0, 220);
+          var ref = '';
+          if (f.expected && f.expected.cites && f.expected.cites.length) {
+            ref = ' (cites: ' + f.expected.cites.slice(0, 3).map(function (c) { return '`' + c + '`'; }).join(', ') + ')';
+          } else if (f.expert_reference && f.expert_reference.doc) {
+            ref = ' (expert ref: `' + f.expert_reference.doc + '`)';
+          }
+          lines.push('- **' + glyph + ' ' + (f.id || '') + '** (' + e.study + '): ' + stmt + ref);
+        });
+        lines.push('');
+      });
+    }
+
+    // ── Studies summary ──────────────────────────────────────────────────
+    lines.push('## Studies (' + studies.length + ')');
+    lines.push('');
+    lines.push('| Study | Phase | Status | Findings | Follow-ups |');
+    lines.push('|---|---|---|---|---|');
+    studies.forEach(function (s) {
+      lines.push('| `' + s.name + '` | ' + (s.phase || '—') + ' | ' + (s.status || '—') +
+                 ' | ' + ((s.findings || []).length) + ' | ' + ((s.follow_up_studies || []).length) + ' |');
+    });
+    lines.push('');
+
+    // ── Report ───────────────────────────────────────────────────────────
+    // Committed by the Open-PR flow before the PR is created.
+    lines.push('## Generated report');
+    lines.push('');
+    lines.push('Committed alongside this PR as `reports/investigation-' + iset.name + '.html`. ' +
+               'Open it from the GitHub file browser to read the per-study findings inline.');
+    lines.push('');
+
+    // ── Test plan ────────────────────────────────────────────────────────
+    var openF = allFollowups.filter(function (e) { return e.f.status !== 'done'; });
+    if (openF.length) {
+      lines.push('## Test plan');
+      lines.push('');
+      openF.slice(0, 10).forEach(function (e) {
+        var t = (e.f.title || '').replace(/\n+/g, ' ').trim();
+        lines.push('- [ ] ' + t + ' _(' + (e.f.kind || 'other') + ', from ' + e.study + ')_');
+      });
+      lines.push('');
+    }
+
+    lines.push('---');
+    lines.push('_Drafted from the dashboard\'s Investigations view — `' + iset.name + '` (' +
+               studies.length + ' studies). Edit freely before submitting._');
+    return lines.join('\n');
+  }
+
   function _submitOpenPR(form) {
     var fd = new FormData(form);
-    var body = {
+    var prBody = {
       title: (fd.get('title') || '').trim(),
       body: (fd.get('body') || '').trim(),
       draft: !!fd.get('draft'),
     };
     var submit = form.querySelector('button[type=submit]');
-    if (submit) { submit.disabled = true; submit.textContent = 'Creating…'; }
-    fetch('/api/work-create-pr', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(body),
-    }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); })
-      .then(function (pair) {
-        var ok = pair[0], j = pair[1];
+    var origLabel = submit ? submit.textContent : 'Create PR';
+    var setStatus = function(label) {
+      if (submit) { submit.disabled = true; submit.textContent = label; }
+    };
+    var resetStatus = function() {
+      if (submit) { submit.disabled = false; submit.textContent = origLabel; }
+    };
+
+    // Step 1: when an investigation is open, generate + attach its HTML
+    // report so the PR ships with the report under /reports/<name>.html.
+    // The flow is best-effort — if report generation fails we still create
+    // the PR (with a warning).
+    var iset = window._currentIsetData;
+    var attachPromise;
+    if (iset && iset.name) {
+      setStatus('Generating report…');
+      attachPromise = _generateReportHtmlForCurrentIset()
+        .then(function (html) {
+          if (!html) return null;
+          var filename = 'investigation-' + iset.name + '.html';
+          setStatus('Committing report…');
+          return fetch('/api/work-attach-report', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              filename: filename,
+              html: html,
+              commit_message: 'docs(report): refresh investigation report for PR',
+            }),
+          }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); });
+        });
+    } else {
+      attachPromise = Promise.resolve(null);
+    }
+
+    attachPromise.then(function (attachRes) {
+      // Attachment is best-effort. Log + continue; don't block the PR.
+      if (attachRes && Array.isArray(attachRes)) {
+        var ok = attachRes[0], j = attachRes[1];
         if (!ok) {
-          var msg = j.error || 'unknown error';
-          if (j.manual_url) msg += '\n\nManual URL: ' + j.manual_url;
-          alert('PR create failed: ' + msg);
-          return;
+          console.warn('Report attach failed (continuing without):', j);
         }
-        closeModal('modal-open-pr');
-        alert('PR created: ' + (j.pr_url || ''));
-        window.open(j.pr_url, '_blank');
-        _refreshGitStatus();
-      })
-      .finally(function () {
-        if (submit) { submit.disabled = false; submit.textContent = 'Create PR'; }
-      });
+      }
+      setStatus('Creating PR…');
+      return fetch('/api/work-create-pr', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(prBody),
+      }).then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); });
+    })
+    .then(function (pair) {
+      var ok = pair[0], j = pair[1];
+      if (!ok) {
+        var msg = j.error || 'unknown error';
+        if (j.manual_url) msg += '\n\nManual URL: ' + j.manual_url;
+        alert('PR create failed: ' + msg);
+        return;
+      }
+      closeModal('modal-open-pr');
+      alert('PR created: ' + (j.pr_url || ''));
+      window.open(j.pr_url, '_blank');
+      _refreshGitStatus();
+    })
+    .catch(function (e) {
+      console.error('Open-PR flow error:', e);
+      alert('Open-PR flow error: ' + (e && e.message || e));
+    })
+    .finally(resetStatus);
   }
   window._submitOpenPR = _submitOpenPR;
+
+  // Generate the investigation HTML report for the currently-open iset by
+  // re-running the same client-side build path as the "Generate report"
+  // button. Returns a Promise<string|null>.
+  function _generateReportHtmlForCurrentIset() {
+    var name = window._currentIset;
+    if (!name) return Promise.resolve(null);
+    return fetch('/api/iset/' + encodeURIComponent(name)).then(function (r) { return r.json(); })
+      .then(function (iset) {
+        var studyFetches = (iset.studies || []).map(function (s) {
+          return fetch('/api/study/' + encodeURIComponent(s.name))
+            .then(function (r) { return r.ok ? r.json() : {spec: {name: s.name}}; })
+            .then(function (j) { return j.spec || j; });
+        });
+        var bibFetch = fetch('/api/references-bib')
+          .then(function (r) { return r.ok ? r.json() : {entries: []}; })
+          .then(function (j) { return j.entries || []; })
+          .catch(function () { return []; });
+        var chartFetches = (iset.studies || []).map(function (s) {
+          return fetch('/api/study-charts/' + encodeURIComponent(s.name))
+            .then(function (r) { return r.ok ? r.json() : {charts: []}; })
+            .then(function (j) { return {name: s.name, charts: j.charts || []}; })
+            .catch(function () { return {name: s.name, charts: []}; });
+        });
+        return Promise.all([Promise.all(studyFetches), bibFetch, Promise.all(chartFetches)])
+          .then(function (arr) {
+            var chartsByStudy = {};
+            arr[2].forEach(function (c) { chartsByStudy[c.name] = c.charts; });
+            return _buildInvestigationReportHtml(iset, arr[0], arr[1], chartsByStudy);
+          });
+      });
+  }
+  window._generateReportHtmlForCurrentIset = _generateReportHtmlForCurrentIset;
 
 
   // -------------------------------------------------------------------------
