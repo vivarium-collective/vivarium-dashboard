@@ -231,6 +231,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/suggest":            "_post_suggest",
     "/api/composite-test-run": "_post_composite_test_run",
     "/api/iset-create":         "_post_iset_create",
+    "/api/iset-clone":          "_post_iset_clone",
     "/api/investigation-create":      "_post_investigation_create",
     "/api/investigation-delete":      "_post_investigation_delete",
     "/api/investigation-run":         "_post_investigation_run",
@@ -979,6 +980,71 @@ def _post_iset_create_for_test(ws_root: Path, body: dict) -> tuple[dict, int]:
         raise
 
     detail, code = _build_iset_detail_for_test(ws_root, name)
+    return detail, code
+
+
+def _post_iset_clone_for_test(ws_root: Path, body: dict) -> tuple[dict, int]:
+    """Clone an existing investigation into a fresh planning state.
+
+    Shells out to the workspace's ``scripts/clone_investigation.py`` so the
+    dashboard and the standalone CLI share a single source of truth. The
+    script lives in the workspace (not in this package) because clone rules
+    are workspace-specific (which subdirectories to strip, which planning
+    docs to keep, study-name conventions, etc.).
+
+    Body:
+        source:         required, slug of the source investigation.
+        target:         required, slug of the target investigation.
+        source_prefix:  optional, defaults to first dash-segment of source.
+        target_prefix:  optional, defaults to first dash-segment of target.
+    """
+    source = (body.get("source") or "").strip()
+    target = (body.get("target") or "").strip()
+    if not source or not target:
+        return {"error": "source and target are required"}, 400
+    if not _ISET_SLUG_RE.match(source) or not _ISET_SLUG_RE.match(target):
+        return {"error": "source and target must be kebab-case (^[a-z0-9][a-z0-9-]*$)"}, 400
+    if source == target:
+        return {"error": "source and target must differ"}, 400
+
+    src_dir = ws_root / "investigations" / source
+    if not src_dir.is_dir():
+        return {"error": f"source investigation '{source}' not found"}, 404
+    dst_dir = ws_root / "investigations" / target
+    if dst_dir.exists():
+        return {"error": f"target investigation '{target}' already exists"}, 409
+
+    script = ws_root / "scripts" / "clone_investigation.py"
+    if not script.is_file():
+        return {"error": "workspace is missing scripts/clone_investigation.py"}, 501
+
+    argv = [
+        sys.executable, str(script),
+        "--source", source,
+        "--target", target,
+        "--source-root", str(ws_root),
+        "--target-root", str(ws_root),
+        "--json",
+    ]
+    if body.get("source_prefix"):
+        argv += ["--source-prefix", str(body["source_prefix"])]
+    if body.get("target_prefix"):
+        argv += ["--target-prefix", str(body["target_prefix"])]
+
+    proc = subprocess.run(argv, capture_output=True, text=True, timeout=120)
+    if proc.returncode != 0:
+        return {
+            "error": "clone script failed",
+            "stderr": (proc.stderr or proc.stdout)[-2000:],
+        }, 500
+    try:
+        summary = json.loads(proc.stdout.strip().split("\n")[-1])
+    except (json.JSONDecodeError, IndexError):
+        summary = {"stdout_tail": proc.stdout[-500:]}
+
+    detail, code = _build_iset_detail_for_test(ws_root, target)
+    if code == 200:
+        detail["clone_summary"] = summary
     return detail, code
 
 
@@ -5176,6 +5242,17 @@ if __name__ == "__main__":
         Returns the new investigation in the same shape as GET /api/iset/<name>.
         """
         resp, code = _post_iset_create_for_test(WORKSPACE, body)
+        return self._json(resp, code)
+
+    def _post_iset_clone(self, body: dict):
+        """POST /api/iset-clone — clone an investigation into a fresh planning state.
+
+        Body: ``{source, target, source_prefix?, target_prefix?}``.
+        Delegates to the workspace's ``scripts/clone_investigation.py``; returns
+        the new investigation in the same shape as GET /api/iset/<target>,
+        with an extra ``clone_summary`` field describing the study remap.
+        """
+        resp, code = _post_iset_clone_for_test(WORKSPACE, body)
         return self._json(resp, code)
 
     def _get_references_bib(self):

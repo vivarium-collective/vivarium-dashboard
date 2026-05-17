@@ -14,6 +14,7 @@ import yaml
 from vivarium_dashboard.server import (
     compute_investigation_status,
     _post_iset_create_for_test,
+    _post_iset_clone_for_test,
     _build_iset_summary_for_test,
     _build_iset_detail_for_test,
 )
@@ -167,6 +168,107 @@ def test_iset_create_conflict_when_already_exists(_ws):
     resp, code = _post_iset_create_for_test(_ws, body)
     assert code == 409
     assert "exists" in resp["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Part 3: _post_iset_clone_for_test — POST /api/iset-clone handler
+# ---------------------------------------------------------------------------
+
+
+_STUB_CLONE_SCRIPT = """\
+#!/usr/bin/env python3
+'''Minimal stub for tests: copies investigation.yaml + bumps the name.'''
+import argparse, json, sys, yaml
+from pathlib import Path
+
+p = argparse.ArgumentParser()
+p.add_argument('--source', required=True)
+p.add_argument('--target', required=True)
+p.add_argument('--source-root', required=True, type=Path)
+p.add_argument('--target-root', required=True, type=Path)
+p.add_argument('--source-prefix', default=None)
+p.add_argument('--target-prefix', default=None)
+p.add_argument('--json', action='store_true')
+a = p.parse_args()
+src = a.source_root / 'investigations' / a.source / 'investigation.yaml'
+dst_dir = a.target_root / 'investigations' / a.target
+dst_dir.mkdir(parents=True, exist_ok=False)
+spec = yaml.safe_load(src.read_text())
+spec['name'] = a.target
+(dst_dir / 'investigation.yaml').write_text(yaml.safe_dump(spec, sort_keys=False))
+if a.json:
+    print(json.dumps({'source': a.source, 'target': a.target, 'studies_remapped': {}}))
+"""
+
+
+def _seed_clone_script(ws: Path) -> None:
+    """Drop a minimal stub clone script + a source investigation into the workspace fixture."""
+    (ws / "scripts").mkdir(exist_ok=True)
+    (ws / "scripts" / "clone_investigation.py").write_text(_STUB_CLONE_SCRIPT)
+    _post_iset_create_for_test(ws, {"name": "src-inv", "overview": "source"})
+
+
+def test_iset_clone_rejects_missing_source(_ws):
+    resp, code = _post_iset_clone_for_test(_ws, {"target": "x"})
+    assert code == 400
+    assert "source and target are required" in resp["error"]
+
+
+def test_iset_clone_rejects_missing_target(_ws):
+    resp, code = _post_iset_clone_for_test(_ws, {"source": "x"})
+    assert code == 400
+
+
+def test_iset_clone_rejects_bad_slug(_ws):
+    resp, code = _post_iset_clone_for_test(_ws, {"source": "Bad", "target": "ok"})
+    assert code == 400
+    assert "kebab-case" in resp["error"]
+
+
+def test_iset_clone_rejects_same_name(_ws):
+    resp, code = _post_iset_clone_for_test(_ws, {"source": "foo", "target": "foo"})
+    assert code == 400
+    assert "differ" in resp["error"]
+
+
+def test_iset_clone_404_when_source_missing(_ws):
+    resp, code = _post_iset_clone_for_test(_ws, {"source": "nope", "target": "new-one"})
+    assert code == 404
+    assert "nope" in resp["error"]
+
+
+def test_iset_clone_501_when_script_missing(_ws):
+    _post_iset_create_for_test(_ws, {"name": "src-inv"})
+    resp, code = _post_iset_clone_for_test(_ws, {"source": "src-inv", "target": "dst-inv"})
+    assert code == 501
+    assert "clone_investigation.py" in resp["error"]
+
+
+def test_iset_clone_409_when_target_exists(_ws):
+    _seed_clone_script(_ws)
+    _post_iset_create_for_test(_ws, {"name": "dst-inv"})
+    resp, code = _post_iset_clone_for_test(_ws, {"source": "src-inv", "target": "dst-inv"})
+    assert code == 409
+
+
+def test_iset_clone_success_invokes_script(_ws):
+    _seed_clone_script(_ws)
+    resp, code = _post_iset_clone_for_test(_ws, {"source": "src-inv", "target": "dst-inv"})
+    assert code == 200, resp
+    assert (_ws / "investigations" / "dst-inv" / "investigation.yaml").is_file()
+    assert resp["name"] == "dst-inv"
+    assert "clone_summary" in resp
+    assert resp["clone_summary"]["target"] == "dst-inv"
+
+
+def test_iset_clone_passes_target_prefix_to_script(_ws):
+    _seed_clone_script(_ws)
+    resp, code = _post_iset_clone_for_test(
+        _ws,
+        {"source": "src-inv", "target": "dst-inv", "target_prefix": "demo"},
+    )
+    # Stub doesn't act on the prefix but the dashboard must accept + forward it.
+    assert code == 200, resp
 
 
 def test_iset_create_atomic_no_partial_on_error(_ws):
