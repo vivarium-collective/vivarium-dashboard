@@ -232,6 +232,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/composite-test-run": "_post_composite_test_run",
     "/api/iset-create":         "_post_iset_create",
     "/api/iset-clone":          "_post_iset_clone",
+    "/api/references-fetch":    "_post_references_fetch",
     "/api/investigation-create":      "_post_investigation_create",
     "/api/investigation-delete":      "_post_investigation_delete",
     "/api/investigation-run":         "_post_investigation_run",
@@ -5266,15 +5267,67 @@ if __name__ == "__main__":
     def _get_references_bib(self):
         """GET /api/references-bib — parsed contents of references/papers.bib.
 
-        Returns {entries: [{key, type, title, author, journal, year, doi, url, note, ...}]}
+        Returns {entries: [{key, type, title, author, journal, year, doi, url, note, ...}]}.
+        Each entry is enriched in place with cached fetch results from
+        references/.cache.json: ``enriched_doi``, ``publisher_url``,
+        ``oa_pdf_url``, ``oa_status``, ``enrichment_fetched_at``,
+        ``enrichment_pending``.
         """
         _ws_add_to_sys_path()
         from vivarium_dashboard.lib.report import _parse_bib_entries
+        from vivarium_dashboard.lib.references_fetch import load_cache, enrich_entries
         try:
             entries = _parse_bib_entries(WORKSPACE)
         except Exception as e:
             return self._json({"error": str(e)}, 500)
+        try:
+            cache = load_cache(WORKSPACE)
+            entries = enrich_entries(entries, cache)
+        except Exception:
+            # Cache failures must never break the references view.
+            pass
         return self._json({"entries": entries}, 200)
+
+    def _post_references_fetch(self, body: dict):
+        """POST /api/references-fetch — fetch DOI + Unpaywall enrichment.
+
+        Body:
+            key:    optional bib key. If set, fetch only that entry.
+            force:  optional bool, default false. If true, re-fetch entries
+                    that already have a cached record.
+
+        With neither set, fetches all entries that lack a cached record.
+        Returns ``{updated: [<key>, ...], entries: [...refreshed entries...]}``.
+        """
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.report import _parse_bib_entries
+        from vivarium_dashboard.lib.references_fetch import (
+            fetch_missing, load_cache, enrich_entries, resolve_contact_email,
+        )
+        try:
+            entries = _parse_bib_entries(WORKSPACE)
+        except Exception as e:
+            return self._json({"error": str(e)}, 500)
+        key = (body.get("key") or "").strip() or None
+        force = bool(body.get("force"))
+        if key and not any(e.get("key") == key for e in entries):
+            return self._json({"error": f"unknown bib key: {key}"}, 404)
+
+        cache_before = load_cache(WORKSPACE)
+        try:
+            cache_after = fetch_missing(
+                entries, WORKSPACE,
+                only_key=key, email=resolve_contact_email(WORKSPACE), force=force,
+            )
+        except Exception as e:
+            return self._json({"error": f"fetch failed: {e}"}, 500)
+
+        if force:
+            updated = sorted(cache_after)
+        else:
+            updated = sorted(set(cache_after) - set(cache_before))
+        enriched = enrich_entries(entries, cache_after)
+        return self._json({"updated": updated, "entries": enriched}, 200)
 
     def _get_work_composite_diff(self):
         """GET /api/work-composite-diff — files changed on the active branch
