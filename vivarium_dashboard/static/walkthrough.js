@@ -3465,6 +3465,89 @@
   }
   window._submitNewIset = _submitNewIset;
 
+  // ─── "Clone investigation" modal ─────────────────────────────────────
+  function _openCloneIsetModal() {
+    var source = window._currentIset || '';
+    if (!source) {
+      alert('Open an investigation first, then click Clone.');
+      return;
+    }
+    var srcEl = document.getElementById('clone-iset-source');
+    var tgtEl = document.getElementById('clone-iset-target');
+    var prefEl = document.getElementById('clone-iset-target-prefix');
+    var errEl = document.getElementById('clone-iset-error');
+    if (srcEl) srcEl.value = source;
+    if (tgtEl) tgtEl.value = source + '-fresh';
+    if (prefEl) prefEl.value = '';
+    if (errEl) errEl.style.display = 'none';
+    _updateCloneIsetSlugPreview();
+    var modal = document.getElementById('clone-iset-modal');
+    if (modal) modal.style.display = 'flex';
+  }
+  window._openCloneIsetModal = _openCloneIsetModal;
+
+  function _closeCloneIsetModal() {
+    var modal = document.getElementById('clone-iset-modal');
+    if (modal) modal.style.display = 'none';
+  }
+  window._closeCloneIsetModal = _closeCloneIsetModal;
+
+  function _updateCloneIsetSlugPreview() {
+    var raw = (document.getElementById('clone-iset-target') || {}).value || '';
+    var slug = _slugifyIsetName(raw);
+    var preview = document.getElementById('clone-iset-slug-preview');
+    if (preview) preview.textContent = slug || '—';
+  }
+  window._updateCloneIsetSlugPreview = _updateCloneIsetSlugPreview;
+
+  function _submitCloneIset() {
+    var source = (document.getElementById('clone-iset-source') || {}).value || '';
+    var rawTarget = (document.getElementById('clone-iset-target') || {}).value || '';
+    var target = _slugifyIsetName(rawTarget);
+    var targetPrefix = ((document.getElementById('clone-iset-target-prefix') || {}).value || '').trim();
+    var errEl = document.getElementById('clone-iset-error');
+    var btn = document.getElementById('clone-iset-submit-btn');
+
+    if (!source) { errEl.textContent = 'No source investigation.'; errEl.style.display = ''; return; }
+    if (!target) { errEl.textContent = 'Target name is required.'; errEl.style.display = ''; return; }
+    if (target === source) { errEl.textContent = 'Target must differ from source.'; errEl.style.display = ''; return; }
+
+    var body = {source: source, target: target};
+    if (targetPrefix) body.target_prefix = targetPrefix;
+
+    btn.disabled = true;
+    btn.textContent = 'Cloning…';
+    errEl.style.display = 'none';
+
+    fetch('/api/iset-clone', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', Accept: 'application/json'},
+      body: JSON.stringify(body),
+    }).then(function(r) {
+      return r.json().then(function(j) { return {ok: r.ok, status: r.status, body: j}; });
+    }).then(function(res) {
+      if (!res.ok) {
+        var msg = (res.body && res.body.error) ? res.body.error : ('HTTP ' + res.status);
+        if (res.body && res.body.stderr) msg += '\n' + res.body.stderr;
+        errEl.textContent = msg;
+        errEl.style.display = '';
+        return;
+      }
+      _closeCloneIsetModal();
+      if (typeof _loadInvestigationSets === 'function') {
+        window._currentIset = target;
+        _loadInvestigationSets();
+      }
+    }).catch(function(err) {
+      errEl.textContent = 'Network error: ' + String(err);
+      errEl.style.display = '';
+    }).then(function() {
+      btn.disabled = false;
+      btn.textContent = 'Clone';
+    });
+  }
+  window._submitCloneIset = _submitCloneIset;
+
   function _openInvestigationDetail(name) {
     window._currentIset = name;
     document.getElementById('investigations-list').style.display = 'none';

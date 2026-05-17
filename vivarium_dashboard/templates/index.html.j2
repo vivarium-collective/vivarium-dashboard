@@ -830,12 +830,53 @@
     </div>
   </div>
 
+  <!-- "Clone investigation" modal. Hidden by default. -->
+  <div id="clone-iset-modal" style="display:none; position:fixed; inset:0; background:rgba(15,23,42,0.4); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:#fff; border-radius:8px; padding:20px 22px; width:min(540px, 92vw); max-height:90vh; overflow:auto; box-shadow:0 20px 60px rgba(0,0,0,0.2);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <h3 style="margin:0">Clone investigation</h3>
+        <button class="btn-mini" onclick="_closeCloneIsetModal()">×</button>
+      </div>
+      <div id="clone-iset-error" style="display:none; background:#fee2e2; color:#991b1b; padding:8px 12px; border-radius:6px; margin-bottom:10px; font-size:0.9em;"></div>
+      <p class="muted" style="font-size:0.85em; margin:0 0 12px 0;">
+        Copies the investigation + its studies, strips simulation results, resets statuses to <code>planning</code>.
+        Useful for a fresh attempt at the same plan or a demo fixture.
+      </p>
+      <label style="display:block; margin-bottom:10px;">
+        <div style="font-weight:600; font-size:0.9em; margin-bottom:4px;">Source <span class="muted" style="font-weight:normal;">(this investigation)</span></div>
+        <input type="text" id="clone-iset-source" readonly
+               style="width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em; background:#f9fafb; color:#475569;">
+      </label>
+      <label style="display:block; margin-bottom:10px;">
+        <div style="font-weight:600; font-size:0.9em; margin-bottom:4px;">Target name <span style="color:#dc2626">*</span></div>
+        <input type="text" id="clone-iset-target" oninput="_updateCloneIsetSlugPreview()" placeholder="e.g. dnaa-replication-fresh"
+               style="width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em;">
+        <div class="muted" style="font-size:0.8em; margin-top:4px;">
+          Slug: <code id="clone-iset-slug-preview" style="background:#f3f4f6; padding:1px 4px; border-radius:3px;">—</code>
+        </div>
+      </label>
+      <label style="display:block; margin-bottom:14px;">
+        <div style="font-weight:600; font-size:0.9em; margin-bottom:4px;">Target study prefix <span class="muted" style="font-weight:normal;">(optional)</span></div>
+        <input type="text" id="clone-iset-target-prefix" placeholder="defaults to first dash-segment of target name"
+               style="width:100%; padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:0.95em;">
+        <div class="muted" style="font-size:0.8em; margin-top:4px;">
+          Studies like <code>dnaa-02-atp-hydrolysis</code> become <code>&lt;prefix&gt;-02-atp-hydrolysis</code>.
+        </div>
+      </label>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn-mini" onclick="_closeCloneIsetModal()">Cancel</button>
+        <button class="action-btn" id="clone-iset-submit-btn" onclick="_submitCloneIset()">Clone</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Detail view: one investigation's DAG. Toggled on click. -->
   <div id="investigation-detail-view" style="display:none; margin-top:8px">
     <div style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
       <h3 id="investigation-detail-title" style="margin:0; flex:1"></h3>
       <span id="investigation-detail-status" class="status-pill planned" style="font-size:0.85em"></span>
       <button class="btn-mini" onclick="_generateInvestigationReport()" title="Generate a shareable HTML report (self-contained, attach to email)">Generate report 📄</button>
+      <button class="btn-mini" onclick="_openCloneIsetModal()" title="Clone this investigation into a fresh planning state (no run results). Useful for a parallel attempt or a demo fixture.">Clone ⎘</button>
       <button class="btn-mini" onclick="_popoutInvestigation()" title="Open in a separate window (investigation-only, no sidebar). If it opens as a tab, your browser's 'open new pages as tabs' preference is overriding the popup hint (Safari → Tabs → 'Open pages in tabs instead of windows' → set to 'Manually').">Pop out ↗</button>
     </div>
     <p id="investigation-detail-description" class="muted" style="white-space:pre-wrap; margin: 0 0 12px 0;"></p>
