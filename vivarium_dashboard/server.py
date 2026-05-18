@@ -2235,8 +2235,13 @@ def _enrich_runs_with_meta(study_dir: Path, runs: list[dict]) -> list[dict]:
 def _render_study_detail_html(name: str, spec: dict) -> str:
     """Render study-detail.html via Jinja2."""
     import jinja2
+    from vivarium_dashboard.lib.investigations import effective_status
     spec = dict(spec)
     spec["runs"] = _enrich_runs_with_meta(_study_dir(name), spec.get("runs") or [])
+    # F1: compute a single headline status from the multi-axis fields (with
+    # legacy `status` as fallback) so the template doesn't have to encode
+    # the precedence rules itself.
+    spec["_effective_status"] = effective_status(spec)
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(TEMPLATES_DIR)),
         autoescape=True,

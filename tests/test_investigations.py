@@ -807,3 +807,92 @@ def test_normalize_dag_edges_no_warning_when_using_canonical():
         _warnings.simplefilter("always")
         normalize_dag_edges(spec)
     assert not [w for w in captured if issubclass(w.category, DeprecationWarning)]
+
+
+# ----------------------------------------------------------------------------
+# F1 — effective_status (multi-axis canonical; legacy `status` fallback)
+# ----------------------------------------------------------------------------
+
+
+from vivarium_dashboard.lib.investigations import effective_status
+
+
+def test_effective_status_returns_none_when_nothing_set():
+    """A spec with no status fields returns None — the caller decides whether
+    to render that as 'planned', 'unknown', or empty."""
+    assert effective_status({"name": "blank"}) is None
+
+
+def test_effective_status_prefers_multi_axis_over_legacy():
+    """When ANY multi-axis axis is set, the legacy `status` is ignored AND
+    the DeprecationWarning does not fire — the workspace has already
+    migrated."""
+    spec = {
+        "name": "modern",
+        "status": "in-progress",
+        "design_status": "approved",
+    }
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        result = effective_status(spec)
+    assert result == "approved"
+    assert not [w for w in captured if issubclass(w.category, DeprecationWarning)]
+
+
+def test_effective_status_precedence_gate_wins_over_others():
+    """The headline pill should reflect the most-downstream verdict —
+    gate > evaluation > simulation > implementation > design."""
+    spec = {
+        "name": "all-axes",
+        "design_status":          "approved",
+        "implementation_status":  "complete",
+        "simulation_status":      "ran",
+        "evaluation_status":      "evaluated",
+        "gate_status":            "passed",
+        "expert_review_status":   "approved",
+    }
+    assert effective_status(spec) == "passed"
+
+
+def test_effective_status_precedence_evaluation_wins_when_no_gate():
+    spec = {
+        "name": "no-gate",
+        "design_status":         "approved",
+        "implementation_status": "complete",
+        "simulation_status":     "ran",
+        "evaluation_status":     "evaluated",
+    }
+    assert effective_status(spec) == "evaluated"
+
+
+def test_effective_status_falls_back_to_legacy_with_warning():
+    """No multi-axis fields → legacy `status` wins, and a DeprecationWarning
+    fires naming the study so the workspace knows to migrate."""
+    spec = {"name": "legacy-only", "status": "in-progress"}
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        result = effective_status(spec)
+    assert result == "in-progress"
+    msgs = [str(w.message) for w in captured if issubclass(w.category, DeprecationWarning)]
+    assert msgs, "expected DeprecationWarning for legacy-only status"
+    assert "legacy-only" in msgs[0]
+    assert "in-progress" in msgs[0]
+    # The remediation hint should name the multi-axis fields by name.
+    assert "design_status" in msgs[0] or "multi-axis" in msgs[0]
+
+
+def test_effective_status_ignores_null_multi_axis_fields():
+    """A spec with `gate_status: null` (the JSON-schema permitted form for
+    'unset') must not be picked as the effective status. Treats null/empty
+    as 'not set'."""
+    spec = {
+        "name": "explicit-null",
+        "gate_status": None,
+        "evaluation_status": "",
+        "status": "draft",
+    }
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        result = effective_status(spec)
+    assert result == "draft"
+    assert [w for w in captured if issubclass(w.category, DeprecationWarning)]

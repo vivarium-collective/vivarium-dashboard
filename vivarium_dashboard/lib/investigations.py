@@ -1023,6 +1023,58 @@ def load_overlays(spec: dict, viz_config: dict, ws_root: Path,
 
 
 # ----------------------------------------------------------------------------
+# Effective-status derivation (F1 of the framework cleanup)
+# ----------------------------------------------------------------------------
+
+
+# Multi-axis precedence: when computing a single "headline" status string,
+# the most-downstream axis wins. A study with gate_status: passed should be
+# shown as "passed" even if its simulation_status is also set to "ran".
+_MULTI_AXIS_PRECEDENCE = (
+    "gate_status",
+    "evaluation_status",
+    "simulation_status",
+    "implementation_status",
+    "design_status",
+    "expert_review_status",
+)
+
+
+def effective_status(spec: dict) -> str | None:
+    """Return the single headline status string for a study.
+
+    Multi-axis precedence (most-downstream wins): gate > evaluation >
+    simulation > implementation > design > expert_review. Falls back to
+    the legacy `status` field when no multi-axis axis is set, emitting a
+    DeprecationWarning naming the study.
+
+    Returns None when no status of any flavour is set — callers can
+    decide whether to render that as "planned", "unknown", or empty.
+    """
+    for axis in _MULTI_AXIS_PRECEDENCE:
+        val = spec.get(axis)
+        if val:
+            return val
+
+    legacy = spec.get("status")
+    if legacy:
+        import warnings
+        warnings.warn(
+            f"Study {spec.get('name', '<unnamed>')!r}: legacy `status` "
+            f"field ({legacy!r}) is the only status source. The canonical "
+            "fields are the Pass A multi-axis status flags "
+            "(design_status, implementation_status, simulation_status, "
+            "evaluation_status, gate_status, expert_review_status). "
+            "Set the appropriate axis to drop this warning.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return legacy
+
+    return None
+
+
+# ----------------------------------------------------------------------------
 # DAG-edge normalization (F3 of the framework cleanup)
 # ----------------------------------------------------------------------------
 
