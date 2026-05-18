@@ -13,11 +13,15 @@
     {% if study.phase %}
     <span class="phase-pill phase-{{ study.phase|lower }}" title="Lifecycle: Design → Build → Simulate → Evaluate → Decide">{{ study.phase }}</span>
     {% endif %}
-    {# Pass A: headline pill priority — gate_status (Pass A multi-axis) > legacy status > 'planned' fallback. #}
+    {# F1: headline pill driven by effective_status() — picks the most-downstream
+       multi-axis field set (gate > evaluation > simulation > implementation > design
+       > expert_review), with legacy `status` as fallback. gate_status keeps its
+       special "gate: X" prefix because it carries the pipeline-gate verdict
+       semantics. #}
     {% if study.gate_status %}
     <span class="status-pill gate-status gate-status-{{ study.gate_status }}" title="Pipeline gate verdict (Pass A multi-axis status). Drives downstream unblocking.">gate: {{ study.gate_status }}</span>
-    {% elif study.status %}
-    <span class="status-pill status-{{ study.status }}">{{ study.status }}</span>
+    {% elif study._effective_status %}
+    <span class="status-pill status-{{ study._effective_status }}" title="Headline status derived from the highest-precedence multi-axis field (or legacy `status` as fallback).">{{ study._effective_status }}</span>
     {% else %}
     <span class="status-pill status-planned">planned</span>
     {% endif %}
