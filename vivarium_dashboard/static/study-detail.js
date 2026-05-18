@@ -24,9 +24,6 @@
     if (kind === 'conclusions') {
       _loadConclusionsTab(window._study);
     }
-    if (kind === 'runs') {
-      _loadCharts('charts-panel');
-    }
     if (kind === 'visualizations') {
       _loadCharts('viz-charts-panel');
     }

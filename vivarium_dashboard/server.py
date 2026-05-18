@@ -539,12 +539,150 @@ def _study_detail_spec(name: str):
     _study_spec_path), then runs it through load_spec so legacy v2 specs are
     migrated to the v3 shape the detail template expects. Returns None when no
     spec file exists for the name.
+
+    Merges runs from ``studies/<name>/runs.db`` (canonical source of truth
+    for CLI- and dashboard-launched runs) on top of any ``spec.runs`` already
+    persisted in study.yaml. Without this merge, programmatic runs via
+    ``pbg_runner`` populate the db but never appear on the Runs tab.
     """
     from vivarium_dashboard.lib.investigations import load_spec
     spec_path = _study_spec_path(name)
     if not spec_path.is_file():
         return None
-    return load_spec(spec_path)
+    spec = load_spec(spec_path)
+    if isinstance(spec, dict):
+        try:
+            db_runs = _read_runs_db_for_study(name)
+        except Exception:
+            db_runs = []
+        if db_runs:
+            existing_ids = {(r or {}).get("run_id") for r in (spec.get("runs") or [])}
+            merged = list(spec.get("runs") or [])
+            for r in db_runs:
+                if r.get("run_id") not in existing_ids:
+                    merged.append(r)
+            spec["runs"] = merged
+    return spec
+
+
+def _read_runs_db_for_study(name: str) -> list[dict]:
+    """Read all runs from ``studies/<name>/runs.db`` for the Runs tab.
+
+    Merges the ``runs_meta`` and ``simulations`` tables on ``run_id`` /
+    ``simulation_id`` (same string by convention). Returns one dict per
+    run with the fields the template needs: run_id, sim_name, label,
+    variant, composite, params (decoded), n_steps, status, started_at_iso.
+    Sorted newest-first.
+
+    Returns ``[]`` if the db doesn't exist or has neither table.
+    """
+    import sqlite3, json as _json, datetime as _dt
+    runs_db = WORKSPACE / "studies" / name / "runs.db"
+    if not runs_db.is_file():
+        return []
+    conn = sqlite3.connect(str(runs_db))
+    conn.row_factory = sqlite3.Row
+    try:
+        # Discover available tables; both should exist for pbg_runner-wrapped
+        # runs, but older backfilled DBs may only have runs_meta.
+        tables = {row[0] for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        rows_by_id: dict[str, dict] = {}
+        if "runs_meta" in tables:
+            for r in conn.execute(
+                "SELECT run_id, spec_id, label, params_json, started_at, "
+                "completed_at, n_steps, status, sim_name "
+                "FROM runs_meta ORDER BY started_at DESC"
+            ):
+                try:
+                    params = _json.loads(r["params_json"] or "{}")
+                except Exception:
+                    params = {}
+                rows_by_id[r["run_id"]] = {
+                    "run_id":       r["run_id"],
+                    "spec_id":      r["spec_id"],
+                    "label":        r["label"] or r["sim_name"] or "",
+                    "sim_name":     r["sim_name"] or r["label"] or "",
+                    "variant":      params.get("variant"),
+                    "composite":    params.get("composite") or r["spec_id"],
+                    "params":       params,
+                    "n_steps":      r["n_steps"],
+                    "status":       r["status"],
+                    "started_at":   r["started_at"],
+                    "completed_at": r["completed_at"],
+                    "source":       "runs_meta",
+                }
+        if "simulations" in tables:
+            for r in conn.execute(
+                "SELECT simulation_id, name, started_at, completed_at "
+                "FROM simulations ORDER BY started_at DESC"
+            ):
+                sid = r["simulation_id"]
+                existing = rows_by_id.get(sid)
+                if existing:
+                    # Fall back to SQLiteEmitter values when runs_meta lacks
+                    # a name / timestamp.
+                    if not existing.get("sim_name"):
+                        existing["sim_name"] = r["name"] or ""
+                else:
+                    rows_by_id[sid] = {
+                        "run_id":       sid,
+                        "spec_id":      name,
+                        "label":        r["name"] or "",
+                        "sim_name":     r["name"] or "",
+                        "variant":      None,
+                        "composite":    None,
+                        "params":       {},
+                        "n_steps":      None,
+                        "status":       "ran",
+                        "started_at":   r["started_at"],
+                        "completed_at": r["completed_at"],
+                        "source":       "simulations",
+                    }
+    finally:
+        conn.close()
+
+    def _iso(v):
+        if v is None:
+            return ""
+        if isinstance(v, (int, float)):
+            try:
+                return _dt.datetime.fromtimestamp(
+                    float(v), tz=_dt.timezone.utc
+                ).strftime("%Y-%m-%dT%H:%M:%SZ")
+            except Exception:
+                return str(v)
+        return str(v)
+
+    out = []
+    for r in rows_by_id.values():
+        r["started_at_iso"] = _iso(r.get("started_at"))
+        # Compact params summary for the table cell (e.g., "seed=0, rida_rate=4.6").
+        params = r.get("params") or {}
+        if params:
+            shown = {k: v for k, v in params.items() if not k.startswith("_")}
+            r["params_summary"] = ", ".join(
+                f"{k}={v}" for k, v in sorted(shown.items())
+            )[:80]
+        else:
+            r["params_summary"] = ""
+        out.append(r)
+
+    def _sort_key(r):
+        v = r.get("started_at")
+        if v is None:
+            return 0.0
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            try:
+                return _dt.datetime.fromisoformat(
+                    v.replace("Z", "+00:00")).timestamp()
+            except Exception:
+                return 0.0
+        return 0.0
+    out.sort(key=_sort_key, reverse=True)
+    return out
 
 
 def _iter_study_dirs():
@@ -926,6 +1064,7 @@ def _build_iset_detail_for_test(ws_root: Path, name: str) -> tuple[dict, int]:
         "name":             spec.get("name", name),
         "title":            spec.get("title", spec.get("name", name)),
         "description":      spec.get("description", ""),
+        "biological_story": spec.get("biological_story", ""),
         "question":         spec.get("question", ""),
         "hypothesis":       spec.get("hypothesis", ""),
         "status":           author_status,
@@ -5555,6 +5694,7 @@ if __name__ == "__main__":
             "name":             spec.get("name", name),
             "title":            spec.get("title", spec.get("name", name)),
             "description":      spec.get("description", ""),
+            "biological_story": spec.get("biological_story", ""),
             "question":         spec.get("question", ""),
             "hypothesis":       spec.get("hypothesis", ""),
             "status":           spec.get("status", "planning"),
