@@ -5245,6 +5245,40 @@ if __name__ == "__main__":
         except InvestigationSpecError as e:
             return self._json({"error": str(e), "name": name, "status": "invalid"}, 200)
 
+        # Merge auto-discovered viz/*.html into spec.embed_visualizations so
+        # the downloadable investigation report (walkthrough.js'
+        # _buildInvestigationReportHtml) — which iterates spec.embed_visualizations
+        # to inline iframes — picks up CLI-rendered Plotly charts without a
+        # manual study.yaml edit. Mirror logic of _study_detail_spec.
+        if isinstance(spec, dict):
+            try:
+                auto_embeds = _discover_viz_html_files(name)
+            except Exception:
+                auto_embeds = []
+            if auto_embeds:
+                existing_urls = {
+                    (e or {}).get("url")
+                    for e in (spec.get("embed_visualizations") or [])
+                }
+                merged_embeds = list(spec.get("embed_visualizations") or [])
+                for e in auto_embeds:
+                    if e.get("url") not in existing_urls:
+                        merged_embeds.append(e)
+                spec["embed_visualizations"] = merged_embeds
+            # Also merge runs.db rows so spec.runs reflects all CLI-launched
+            # runs (same logic as _study_detail_spec).
+            try:
+                db_runs = _read_runs_db_for_study(name)
+            except Exception:
+                db_runs = []
+            if db_runs:
+                existing_ids = {(r or {}).get("run_id") for r in (spec.get("runs") or [])}
+                merged_runs = list(spec.get("runs") or [])
+                for r in db_runs:
+                    if r.get("run_id") not in existing_ids:
+                        merged_runs.append(r)
+                spec["runs"] = merged_runs
+
         viz_dir = inv_dir / "viz"
         viz_files = []
         if viz_dir.is_dir():
