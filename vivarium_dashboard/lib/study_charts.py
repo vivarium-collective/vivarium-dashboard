@@ -120,12 +120,15 @@ def _extract(state: dict, extractor: str) -> float | None:
 def _render_svg(title: str, y_label: str, xs: list[float], ys: list[float],
                 width: int = 720, height: int = 220,
                 ys2: list[float] | None = None, y2_label: str | None = None,
-                target_band: tuple[float, float] | None = None) -> str:
+                target_band: tuple[float, float] | None = None,
+                hline: float | None = None) -> str:
     """Render a single line chart as an inline SVG string. Pure-stdlib.
 
     If ys2 is provided, plots a second series alongside ys (used for
     free/ATP-pool comparison). target_band shades a horizontal range
-    (used for the literature-target band on DnaA count).
+    (used for the literature-target band on DnaA count). hline draws a
+    horizontal dashed line at a specific y (used for at_most / at_least /
+    equals pass criteria — the v4 tests style).
     """
     pad_l, pad_r, pad_t, pad_b = 56, 12, 28, 36
     plot_w = width - pad_l - pad_r
@@ -136,8 +139,13 @@ def _render_svg(title: str, y_label: str, xs: list[float], ys: list[float],
                 f'font-style:italic">No data for "{escape(title)}".</div>')
 
     all_ys = list(ys) + (list(ys2) if ys2 else [])
-    y_min = min(all_ys + ([target_band[0]] if target_band else []))
-    y_max = max(all_ys + ([target_band[1]] if target_band else []))
+    y_extras = []
+    if target_band:
+        y_extras.extend(target_band)
+    if hline is not None:
+        y_extras.append(hline)
+    y_min = min(all_ys + y_extras)
+    y_max = max(all_ys + y_extras)
     if y_min == y_max:
         y_min -= 1
         y_max += 1
@@ -160,7 +168,17 @@ def _render_svg(title: str, y_label: str, xs: list[float], ys: list[float],
             f'fill="#dcfce7" fill-opacity="0.55"/>'
             f'<text x="{pad_l + plot_w - 4:.1f}" y="{sy(hi) + 12:.1f}" '
             f'font-size="10" fill="#16a34a" text-anchor="end">'
-            f'literature target {int(lo)}–{int(hi)}</text>'
+            f'pass band {_fmt(lo)}–{_fmt(hi)}</text>'
+        )
+    hline_svg = ""
+    if hline is not None:
+        hline_svg = (
+            f'<line x1="{pad_l:.1f}" y1="{sy(hline):.1f}" '
+            f'x2="{pad_l+plot_w:.1f}" y2="{sy(hline):.1f}" '
+            f'stroke="#16a34a" stroke-width="1.5" stroke-dasharray="4,4"/>'
+            f'<text x="{pad_l + plot_w - 4:.1f}" y="{sy(hline) - 4:.1f}" '
+            f'font-size="10" fill="#16a34a" text-anchor="end">'
+            f'pass threshold {_fmt(hline)}</text>'
         )
 
     series_paths = (
@@ -207,6 +225,7 @@ def _render_svg(title: str, y_label: str, xs: list[float], ys: list[float],
   <text x="{width/2:.1f}" y="16" font-size="12" font-weight="600" fill="#0f172a"
         text-anchor="middle">{escape(title)}</text>
   {band_rect}
+  {hline_svg}
   {ytick_text}
   {xtick_text}
   <line x1="{pad_l:.1f}" y1="{pad_t:.1f}" x2="{pad_l:.1f}" y2="{pad_t+plot_h:.1f}" stroke="#94a3b8"/>
@@ -283,6 +302,281 @@ def discover_static_study_charts(charts_dir: Path) -> list[dict]:
             "source": "static",
         })
     return out
+
+
+def render_v4_test_charts(spec: dict,
+                          runs_db: Path,
+                          fallback_db: Path | None = None) -> list[dict]:
+    """Render one inline-SVG chart per test in a v4 study yaml.
+
+    For each entry in ``spec.tests``:
+      - Extract the observable trajectory specified by ``test.measure.path``
+        (+ optional ``index``) from runs_db's history. If runs_db has no
+        runs OR the path isn't found, fall back to ``fallback_db`` (the
+        workspace default-baseline).
+      - Render a time-series SVG with the test's ``pass_if`` criterion
+        overlaid (shaded band for in_range, dashed line for at_most /
+        at_least).
+      - Caption = test.question + the pass_if criterion as plain text.
+      - Source = 'study' if drawn from runs_db, 'default-baseline' if
+        from fallback_db.
+
+    Returns [] if neither db has runs or all tests' paths are unresolvable.
+    """
+    tests = spec.get("tests") or []
+    if not tests:
+        return []
+
+    # Collect every test's measure path up front, so a single JSON parse
+    # per history row can extract ALL needed values. Avoids the N-tests ×
+    # N-rows × O(state-size) cost of the naive per-test approach.
+    path_specs: list[tuple[str, int | None]] = []
+    seen_paths: set[tuple[str, int | None]] = set()
+    for t in tests:
+        measure = t.get("measure") or {}
+        path = measure.get("path")
+        if not path:
+            continue
+        key = (path, measure.get("index"))
+        if key in seen_paths:
+            continue
+        seen_paths.add(key)
+        path_specs.append(key)
+    if not path_specs:
+        return []
+
+    db_candidates = [(p, lbl) for p, lbl in
+                     ((runs_db, "study"), (fallback_db, "default-baseline"))
+                     if p is not None and p.is_file()]
+    if not db_candidates:
+        return []
+
+    # For each db, extract all paths in ONE pass over the latest run's
+    # history. Subsample every Nth row when a run is long, so we keep
+    # ~200 points per chart regardless of original sample density.
+    by_db: dict[str, dict[tuple[str, int | None], tuple[list, list]]] = {}
+    for db_path, label in db_candidates:
+        by_db[label] = _extract_paths_from_db(db_path, path_specs)
+
+    charts: list[dict] = []
+    for t in tests:
+        measure = t.get("measure") or {}
+        path = measure.get("path")
+        if not path:
+            continue
+        idx = measure.get("index")
+        key = (path, idx)
+
+        # Per-test fallback: prefer the study db; fall back to default-
+        # baseline if the study db doesn't carry this observable.
+        xs, ys, used_source = [], [], None
+        for _, label in db_candidates:
+            cand_xs, cand_ys = by_db.get(label, {}).get(key, ([], []))
+            if cand_xs:
+                xs, ys, used_source = cand_xs, cand_ys, label
+                break
+        if not xs:
+            continue
+
+        band, hline = _pass_if_to_overlay(t.get("pass_if") or {})
+        title = f"{t.get('name','(unnamed)')}  ({t.get('classification','test')})"
+        caption_bits = []
+        if t.get("question"):
+            caption_bits.append(t["question"])
+        crit_text = _pass_if_to_text(t.get("pass_if") or {})
+        if crit_text:
+            caption_bits.append(f"Pass: {crit_text}")
+        if t.get("status"):
+            caption_bits.append(f"Current verdict: {t['status']}")
+        if used_source == "default-baseline":
+            caption_bits.append("⚠ Drawn from workspace default-baseline (study has no runs for this observable yet).")
+        charts.append({
+            "key": f"v4-{t.get('name','test')}",
+            "title": title,
+            "caption": "  ·  ".join(caption_bits),
+            "svg": _render_svg(title, _y_label_from_path(path, idx),
+                                xs, ys, target_band=band, hline=hline),
+            "source": "live",
+            "data_source": used_source,
+        })
+    return charts
+
+
+def _extract_paths_from_db(
+    db_path: Path,
+    path_specs: list[tuple[str, int | None]],
+    max_points: int = 200,
+) -> dict[tuple[str, int | None], tuple[list[float], list[float]]]:
+    """Single-pass extraction of N observable paths from the latest run.
+
+    Uses SQLite's ``json_extract`` to read ONLY the requested paths from
+    each row's state blob. This avoids transferring the full state JSON
+    (which can be hundreds of KB per row) from disk to Python — orders of
+    magnitude faster than ``SELECT state`` + ``json.loads`` for large
+    states. Subsamples to ~max_points per chart so the SVG renderer
+    stays cheap.
+
+    Returns ``{(path, index): (times, values)}``.
+    """
+    out: dict[tuple[str, int | None], tuple[list[float], list[float]]] = {
+        key: ([], []) for key in path_specs
+    }
+    if not path_specs:
+        return out
+    try:
+        conn = sqlite3.connect(str(db_path))
+    except sqlite3.OperationalError:
+        return out
+    try:
+        if not _table_exists(conn, "simulations") or not _table_exists(conn, "history"):
+            return out
+        row = conn.execute(
+            "SELECT simulation_id FROM simulations ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return out
+        sim_id = row[0]
+        n_rows = conn.execute(
+            "SELECT COUNT(*) FROM history WHERE simulation_id=?", (sim_id,)
+        ).fetchone()[0] or 0
+        stride = max(1, n_rows // max_points) if n_rows > 0 else 1
+
+        # Build a json_extract column per (path, idx). Each pathspec maps
+        # to one SQL expression that returns the scalar value (or NULL).
+        # SQLite's path syntax: $.foo.bar (dotted, $-rooted) + array index
+        # appended as [N].
+        sql_path_for = {}
+        for path, idx in path_specs:
+            sql_path = "$." + path
+            if idx is not None and isinstance(idx, int):
+                sql_path += f"[{int(idx)}]"
+            sql_path_for[(path, idx)] = sql_path
+
+        select_cols = ["global_time"] + [
+            f"json_extract(state, ?)" for _ in path_specs
+        ]
+        sql = (
+            f"SELECT {', '.join(select_cols)} FROM history "
+            f"WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC"
+        )
+        params = list(sql_path_for[key] for key in path_specs) + [sim_id, stride]
+        cursor = conn.execute(sql, params)
+
+        n_paths = len(path_specs)
+        for row_tuple in cursor:
+            tm = row_tuple[0]
+            for i, key in enumerate(path_specs):
+                v = row_tuple[1 + i]
+                if v is None:
+                    continue
+                try:
+                    out[key][1].append(float(v))
+                    out[key][0].append(tm)
+                except (TypeError, ValueError):
+                    continue
+        return out
+    finally:
+        conn.close()
+
+
+def _pick_first_nonempty_db(primary: Path,
+                             fallback: Path | None) -> tuple[Path | None, str]:
+    """Return (db_path, source_label) for the first db with ≥1 history row."""
+    for cand, label in ((primary, "study"), (fallback, "default-baseline")):
+        if cand is None or not cand.is_file():
+            continue
+        try:
+            conn = sqlite3.connect(str(cand))
+            try:
+                if not _table_exists(conn, "history"):
+                    continue
+                n = conn.execute("SELECT COUNT(*) FROM history").fetchone()[0]
+                if n > 0:
+                    return (cand, label)
+            finally:
+                conn.close()
+        except sqlite3.OperationalError:
+            continue
+    return (None, "none")
+
+
+def _load_latest_run(db_path: Path) -> tuple[list[dict], list[float], str | None]:
+    """Return (parsed_states, times, simulation_id) for the latest run in db_path."""
+    conn = sqlite3.connect(str(db_path))
+    try:
+        if not _table_exists(conn, "simulations") or not _table_exists(conn, "history"):
+            return [], [], None
+        row = conn.execute(
+            "SELECT simulation_id FROM simulations ORDER BY started_at DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return [], [], None
+        sim_id = row[0]
+        rows = conn.execute(
+            "SELECT step, global_time, state FROM history "
+            "WHERE simulation_id=? ORDER BY step ASC",
+            (sim_id,),
+        ).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        return [], [], sim_id
+    times = [r[1] for r in rows]
+    parsed = [json.loads(r[2]) for r in rows]
+    return parsed, times, sim_id
+
+
+def _resolve_path(state: dict, path: str, index=None):
+    """Walk a dotted path through state; index into the leaf array if given."""
+    node = state
+    for seg in path.split("."):
+        if isinstance(node, dict) and seg in node:
+            node = node[seg]
+        else:
+            return None
+    if index is None:
+        return node
+    if isinstance(node, list) and isinstance(index, int) and 0 <= index < len(node):
+        return node[index]
+    return None
+
+
+def _pass_if_to_overlay(pass_if: dict):
+    """Translate pass_if to (target_band, hline) for _render_svg."""
+    op = pass_if.get("op")
+    if op == "in_range":
+        lo = pass_if.get("low")
+        hi = pass_if.get("high")
+        if lo is not None and hi is not None:
+            return (float(lo), float(hi)), None
+    if op in ("at_most", "at_least", "equals"):
+        v = pass_if.get("value")
+        if v is not None:
+            return None, float(v)
+    return None, None
+
+
+def _pass_if_to_text(pass_if: dict) -> str:
+    op = pass_if.get("op")
+    if op == "in_range":
+        return f"in [{pass_if.get('low')}, {pass_if.get('high')}]"
+    if op == "at_most":
+        return f"≤ {pass_if.get('value')}"
+    if op == "at_least":
+        return f"≥ {pass_if.get('value')}"
+    if op == "equals":
+        return f"= {pass_if.get('value')}"
+    if op == "at_most_abs":
+        return f"|·| ≤ {pass_if.get('value')}"
+    return ""
+
+
+def _y_label_from_path(path: str, index=None) -> str:
+    """Best-effort axis label from a dotted observable path."""
+    tail = path.split(".")[-1]
+    if index is not None:
+        return f"{tail}[{index}]"
+    return tail
 
 
 def render_study_charts(runs_db: Path,
