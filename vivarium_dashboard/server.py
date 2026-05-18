@@ -5359,6 +5359,40 @@ if __name__ == "__main__":
         except InvestigationSpecError as e:
             return self._json({"error": str(e), "name": name, "status": "invalid"}, 200)
 
+        # Merge auto-discovered viz/*.html into spec.embed_visualizations so
+        # the downloadable investigation report (walkthrough.js'
+        # _buildInvestigationReportHtml) — which iterates spec.embed_visualizations
+        # to inline iframes — picks up CLI-rendered Plotly charts without a
+        # manual study.yaml edit. Mirror logic of _study_detail_spec.
+        if isinstance(spec, dict):
+            try:
+                auto_embeds = _discover_viz_html_files(name)
+            except Exception:
+                auto_embeds = []
+            if auto_embeds:
+                existing_urls = {
+                    (e or {}).get("url")
+                    for e in (spec.get("embed_visualizations") or [])
+                }
+                merged_embeds = list(spec.get("embed_visualizations") or [])
+                for e in auto_embeds:
+                    if e.get("url") not in existing_urls:
+                        merged_embeds.append(e)
+                spec["embed_visualizations"] = merged_embeds
+            # Also merge runs.db rows so spec.runs reflects all CLI-launched
+            # runs (same logic as _study_detail_spec).
+            try:
+                db_runs = _read_runs_db_for_study(name)
+            except Exception:
+                db_runs = []
+            if db_runs:
+                existing_ids = {(r or {}).get("run_id") for r in (spec.get("runs") or [])}
+                merged_runs = list(spec.get("runs") or [])
+                for r in db_runs:
+                    if r.get("run_id") not in existing_ids:
+                        merged_runs.append(r)
+                spec["runs"] = merged_runs
+
         viz_dir = inv_dir / "viz"
         viz_files = []
         if viz_dir.is_dir():
@@ -5736,8 +5770,13 @@ if __name__ == "__main__":
                     directly (e.g. chromosome maps, DnaA-box positions).
         """
         import urllib.parse
+        import yaml as _yaml
         from vivarium_dashboard.lib.study_charts import (
-            render_study_charts, discover_static_study_charts,
+            render_study_charts, render_v4_test_charts,
+            discover_static_study_charts,
+        )
+        from vivarium_dashboard.lib.simulations_index import (
+            discover_default_baseline_db,
         )
         path = urllib.parse.urlparse(self.path).path
         name = path[len("/api/study-charts/"):].strip("/")
@@ -5745,12 +5784,30 @@ if __name__ == "__main__":
             return self._json({"error": "missing study name"}, 400)
         runs_db = WORKSPACE / "studies" / name / "runs.db"
         charts_dir = WORKSPACE / "studies" / name / "charts"
+        spec_path = WORKSPACE / "studies" / name / "study.yaml"
         try:
-            live_charts = render_study_charts(
-                runs_db, run_name="baseline-steady-state",
-            )
-            if not live_charts:
-                live_charts = render_study_charts(runs_db, run_name=None)
+            # Detect v4: study.yaml with schema_version: 4 → render charts
+            # per-test from tests[].measure.path, with default-baseline
+            # fallback when the per-study runs.db is empty.
+            spec = None
+            if spec_path.is_file():
+                try:
+                    spec = _yaml.safe_load(spec_path.read_text())
+                except Exception:
+                    spec = None
+            is_v4 = isinstance(spec, dict) and spec.get("schema_version") == 4
+
+            if is_v4:
+                fallback_db = discover_default_baseline_db(WORKSPACE)
+                live_charts = render_v4_test_charts(
+                    spec, runs_db, fallback_db=fallback_db,
+                )
+            else:
+                live_charts = render_study_charts(
+                    runs_db, run_name="baseline-steady-state",
+                )
+                if not live_charts:
+                    live_charts = render_study_charts(runs_db, run_name=None)
             for c in live_charts:
                 c.setdefault("source", "live")
             static_charts = discover_static_study_charts(charts_dir)
@@ -5758,6 +5815,7 @@ if __name__ == "__main__":
             return self._json({"error": str(e), "study": name}, 500)
         return self._json({
             "study": name,
+            "schema_version": (spec or {}).get("schema_version"),
             "charts": live_charts + static_charts,
             "db_exists": runs_db.exists(),
             "static_count": len(static_charts),
