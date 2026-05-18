@@ -100,20 +100,99 @@
     if (isOpen) close(); else open();
   });
 
+  // 10-second timeout — if the server is wedged we don't want the menu to
+  // hang on "Loading…" forever. Browsers don't give fetch() a default timeout.
+  const REFRESH_TIMEOUT_MS = 10000;
+
   async function refresh() {
     const list = menu.querySelector('.viv-iset-menu-list');
     list.innerHTML = '<li class="viv-iset-menu-loading">Loading…</li>';
+
+    // AbortController fires the abort signal after REFRESH_TIMEOUT_MS; the
+    // pending fetch rejects with AbortError, which renderError classifies
+    // as a timeout.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), REFRESH_TIMEOUT_MS);
+
+    let resp;
     try {
-      const resp = await fetch('/api/investigation-registry', {
+      resp = await fetch('/api/investigation-registry', {
         headers: { Accept: 'application/json' },
+        signal: ctrl.signal,
       });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const data = await resp.json();
-      render(data.current || null, data.running_others || []);
     } catch (err) {
-      list.innerHTML = '<li class="viv-iset-menu-error">Failed to load: '
-        + escapeHtml(String(err)) + '</li>';
+      clearTimeout(timer);
+      // Two distinct cases land here:
+      //   AbortError  → our own timeout
+      //   TypeError   → network unreachable (server down, DNS, etc.)
+      // Browsers don't expose a more specific code for the latter; the
+      // best we can do is rely on the constructor name.
+      const kind = (err && err.name === 'AbortError') ? 'timeout' : 'network';
+      console.error('[investigation-switcher] fetch failed', err);
+      return renderError(kind, err);
     }
+    clearTimeout(timer);
+
+    if (!resp.ok) {
+      const body = await resp.text().catch(() => '');
+      console.error('[investigation-switcher] HTTP', resp.status, body);
+      return renderError('http', new Error('HTTP ' + resp.status));
+    }
+
+    let data;
+    try {
+      data = await resp.json();
+    } catch (err) {
+      console.error('[investigation-switcher] malformed JSON', err);
+      return renderError('parse', err);
+    }
+    render(data.current || null, data.running_others || []);
+  }
+
+  // Render an actionable error block with a Retry button, instead of a raw
+  // exception string. `kind` selects the user-facing message; the original
+  // error is always available in devtools via the console.error above.
+  function renderError(kind, err) {
+    const list = menu.querySelector('.viv-iset-menu-list');
+    list.innerHTML = '';
+
+    const messages = {
+      network: {
+        headline: 'Dashboard server unreachable',
+        hint: 'The local server may have stopped. Run <code>pbg-server status</code> to check, or restart it.',
+      },
+      timeout: {
+        headline: 'Dashboard didn’t respond in time',
+        hint: 'The server is busy or wedged. Wait a few seconds and retry.',
+      },
+      http: {
+        headline: 'Dashboard returned an error',
+        hint: 'Server is up but rejected the request. Check the server log for the stack trace.',
+      },
+      parse: {
+        headline: 'Malformed response from server',
+        hint: 'The server returned something that isn’t JSON. Likely a crash mid-response — check the server log.',
+      },
+    };
+    const m = messages[kind] || {
+      headline: 'Failed to load investigations',
+      hint: 'See devtools console for the underlying error.',
+    };
+
+    const li = document.createElement('li');
+    li.className = 'viv-iset-menu-error';
+    li.innerHTML = `
+      <div class="viv-iset-menu-error-headline">${escapeHtml(m.headline)}</div>
+      <div class="viv-iset-menu-error-hint">${m.hint}</div>
+      <div class="viv-iset-menu-error-detail" title="${escapeHtml(String(err && err.message ? err.message : err))}">${escapeHtml(String(err && err.message ? err.message : err))}</div>
+      <button type="button" class="viv-iset-menu-error-retry">Retry</button>
+    `;
+    list.appendChild(li);
+
+    li.querySelector('.viv-iset-menu-error-retry').addEventListener('click', (e) => {
+      e.stopPropagation();
+      refresh();
+    });
   }
 
   function render(current, others) {

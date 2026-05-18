@@ -262,7 +262,24 @@
 .viv-iset-menu-loading, .viv-iset-menu-empty, .viv-iset-menu-error {
   padding: 10px 12px; color: #6b7280; font-size: 12px;
 }
-.viv-iset-menu-error { color: #b91c1c; }
+.viv-iset-menu-error { color: #b91c1c; display: block; }
+.viv-iset-menu-error-headline { font-weight: 600; margin-bottom: 4px; }
+.viv-iset-menu-error-hint { color: #4b5563; font-size: 11px; margin-bottom: 6px; }
+.viv-iset-menu-error-hint code {
+  background: #f3f4f6; padding: 1px 4px; border-radius: 3px;
+  font-size: 10.5px; color: #111827;
+}
+.viv-iset-menu-error-detail {
+  color: #9ca3af; font-size: 10.5px; font-family: ui-monospace, monospace;
+  margin-bottom: 8px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.viv-iset-menu-error-retry {
+  display: inline-block; border: 1px solid #d1d5db; background: #fff;
+  color: #111827; font-size: 11px; padding: 4px 10px; border-radius: 4px;
+  cursor: pointer;
+}
+.viv-iset-menu-error-retry:hover { background: #f3f4f6; }
 .viv-iset-menu-divider { border-top: 1px solid #e5e7eb; }
 .viv-iset-menu-new {
   display: block; width: 100%; text-align: left;
