@@ -545,9 +545,110 @@
 </section>
 
 
-{# ─── Build tab: model_change + implementation_requirements ─────────── #}
-{% if study.model_change or study.implementation_requirements %}
+{# ─── Build tab: conditions + model_change + implementation_requirements ── #}
+{% if study.model_change or study.implementation_requirements or study.conditions %}
 <section class="study-tab-panel" data-kind="build" id="panel-build" hidden>
+
+  {# Conditions (v4): baseline + variants + expert_inputs. Edit a value in
+     the Current column and the next pbg_runner invocation picks it up. #}
+  {% if study.conditions %}
+  <div class="overview-section" id="conditions-section">
+    <h3>Conditions <span class="muted" style="font-size:0.85em;font-weight:normal">— what we set up to test it</span></h3>
+    <p class="muted" style="font-size:0.88em">The experimental knobs: which composite forms the baseline, how variants perturb it, and which parameters await expert input.</p>
+
+    {% set _cond = study.conditions %}
+    {% if _cond.baseline %}
+    <div class="cond-block">
+      <div class="cond-block-title">Baseline</div>
+      <div style="font-size:0.92em;margin-bottom:4px">Composite: <code>{{ _cond.baseline.composite or '?' }}</code></div>
+      {% if _cond.baseline.params %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for k, v in _cond.baseline.params.items() %}
+        <span class="cond-pill"><span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code></span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if _cond.variants %}
+    <div class="cond-block">
+      <div class="cond-block-title">Variants <span class="muted" style="font-weight:normal;font-size:0.85em">({{ _cond.variants | length }})</span></div>
+      <table class="cond-table">
+        <thead><tr><th>Variant</th><th>Composite / base</th><th>Parameter overrides</th><th>Notes</th></tr></thead>
+        <tbody>
+          {% for v in _cond.variants %}
+          <tr>
+            <td><code>{{ v.name or '?' }}</code></td>
+            <td>
+              {% if v.composite %}<code>{{ v.composite }}</code>
+              {% elif v.base_composite %}<code>{{ v.base_composite }}</code>
+              {% else %}<em class="muted">(inherits baseline)</em>{% endif %}
+            </td>
+            <td>
+              {% set _ovr = v.parameter_overrides or v.params or {} %}
+              {% if _ovr %}
+                {% for k, val in _ovr.items() %}
+                <div><span class="cond-pill-k">{{ k }}</span>=<code>{{ val }}</code></div>
+                {% endfor %}
+              {% else %}
+                <em class="muted">(no overrides)</em>
+              {% endif %}
+            </td>
+            <td>{{ v.description or v.notes or '' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    {% if _cond.expert_inputs %}
+    <div class="cond-block">
+      {% set _n_required = _cond.expert_inputs | selectattr('gate','equalto','required-before-run') | list | length %}
+      <div class="cond-block-title">
+        Expert inputs <span class="muted" style="font-weight:normal;font-size:0.85em">({{ _cond.expert_inputs | length }})</span>
+        {% if _n_required %}<span class="cond-ei-required-badge" title="{{ _n_required }} required-before-run">{{ _n_required }} required</span>{% endif %}
+      </div>
+      <p class="muted" style="font-size:0.85em;margin:0 0 6px 0">Edit a value in the Current column and click <strong>Save</strong>. The next <code>pbg_runner</code> invocation for this study reads the updated value from <code>study.yaml</code>.</p>
+      <table class="cond-table cond-expert-table" data-study="{{ study.name }}">
+        <thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Current</th><th>Range</th><th>Gate</th><th></th></tr></thead>
+        <tbody>
+          {% for e in _cond.expert_inputs %}
+          <tr data-ei-name="{{ e.name }}">
+            <td title="{{ e.description or '' }}"><code>{{ e.name }}</code></td>
+            <td>{{ e.type or '' }}</td>
+            <td><code>{{ e.default }}</code></td>
+            <td>
+              <input class="cond-ei-input"
+                     type="{% if e.type == 'number' or e.type == 'integer' %}number{% else %}text{% endif %}"
+                     value="{% if e.current is none %}{% else %}{{ e.current }}{% endif %}"
+                     placeholder="(awaiting expert)"
+                     {% if e.range and e.range[0] is defined %}min="{{ e.range[0] }}" max="{{ e.range[1] }}"{% endif %}
+                     style="width:100%;padding:3px 6px;border:1px solid #cbd5e1;border-radius:3px;font:inherit">
+            </td>
+            <td>
+              {% if e.range %}<code>[{{ e.range[0] }}, {{ e.range[1] }}]</code>
+              {% elif e.options %}<code>{{ e.options | join(' | ') }}</code>
+              {% else %}<em class="muted">—</em>{% endif %}
+            </td>
+            <td>
+              {% if e.gate == 'required-before-run' %}<span class="cond-ei-gate-req">required</span>
+              {% else %}<span class="cond-ei-gate-opt">optional</span>{% endif %}
+            </td>
+            <td>
+              <button class="action-btn cond-ei-save" type="button"
+                      onclick="_saveExpertInput('{{ study.name }}', '{{ e.name }}', this)">Save</button>
+              <span class="cond-ei-flash" style="display:none;margin-left:6px;font-size:0.85em"></span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
 
   {% if study.model_change %}
   <div class="overview-section">
@@ -1594,6 +1695,51 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
 <script>
 window._study = {{ study|tojson }};
 window._studyName = "{{ name }}";
+
+// Save handler for the Conditions → Expert inputs editable rows.
+// POSTs to /api/study-expert-input-set which patches study.yaml in place.
+// On success: flashes "saved" + updates the row's data-current attribute.
+// On failure: flashes the error (HTTP body) for ~5s.
+function _saveExpertInput(studyName, eiName, btn) {
+  var row = btn.closest('tr');
+  var input = row && row.querySelector('.cond-ei-input');
+  var flash = row && row.querySelector('.cond-ei-flash');
+  if (!input || !flash) return;
+  var raw = (input.value || '').trim();
+  // Coerce numeric inputs so yaml carries the right type
+  var val = raw;
+  if (input.type === 'number' && raw !== '') {
+    var n = Number(raw);
+    if (!isNaN(n)) val = n;
+  } else if (raw === '') {
+    val = null;
+  }
+  btn.disabled = true;
+  flash.className = 'cond-ei-flash';
+  flash.style.display = '';
+  flash.textContent = 'saving…';
+  fetch('/api/study-expert-input-set', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({study: studyName, name: eiName, current: val}),
+  }).then(function(r) {
+    return r.text().then(function(t) { return {ok: r.ok, status: r.status, body: t}; });
+  }).then(function(res) {
+    if (res.ok) {
+      flash.className = 'cond-ei-flash saved';
+      flash.textContent = '✓ saved';
+      setTimeout(function() { flash.style.display = 'none'; }, 2500);
+    } else {
+      flash.className = 'cond-ei-flash error';
+      flash.textContent = '✗ ' + (res.body || ('HTTP ' + res.status));
+    }
+  }).catch(function(err) {
+    flash.className = 'cond-ei-flash error';
+    flash.textContent = '✗ ' + String(err);
+  }).finally(function() {
+    btn.disabled = false;
+  });
+}
 </script>
 <script src="/study-detail.js"></script>
 </body>

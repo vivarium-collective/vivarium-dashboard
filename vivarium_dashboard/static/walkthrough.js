@@ -3548,6 +3548,129 @@
   }
   window._submitCloneIset = _submitCloneIset;
 
+  // ─── Investigation intro renderers (textbook-style) ────────────────
+  function _escInv(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Light Markdown subset for the lead paragraph. Supports:
+  //   blank-line paragraph breaks · bulleted lists ("- " or "* ") ·
+  //   numbered lists ("N. ") · **bold** · `inline code`.
+  // Anything else is rendered as plain text, HTML-escaped. Deliberately
+  // small so the intro stays readable as plain yaml too.
+  function _renderInvLeadMarkdown(text) {
+    var lines = text.split('\n');
+    var html = '', i = 0;
+    function inline(s) {
+      s = _escInv(s);
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      return s;
+    }
+    while (i < lines.length) {
+      var line = lines[i];
+      if (/^\s*$/.test(line)) { i++; continue; }
+      // Bulleted list (-, *, or • prefix)
+      if (/^\s*[-*•]\s+/.test(line)) {
+        html += '<ul>';
+        while (i < lines.length && /^\s*[-*•]\s+/.test(lines[i])) {
+          html += '<li>' + inline(lines[i].replace(/^\s*[-*•]\s+/, '')) + '</li>';
+          i++;
+        }
+        html += '</ul>';
+        continue;
+      }
+      // Numbered list
+      if (/^\s*\d+\.\s+/.test(line)) {
+        html += '<ol>';
+        while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) {
+          html += '<li>' + inline(lines[i].replace(/^\s*\d+\.\s+/, '')) + '</li>';
+          i++;
+        }
+        html += '</ol>';
+        continue;
+      }
+      // Paragraph: keep gluing until blank line or list start
+      var para = [line];
+      i++;
+      while (i < lines.length && !/^\s*$/.test(lines[i])
+             && !/^\s*[-*•]\s+/.test(lines[i])
+             && !/^\s*\d+\.\s+/.test(lines[i])) {
+        para.push(lines[i]); i++;
+      }
+      html += '<p>' + inline(para.join(' ')) + '</p>';
+    }
+    return html;
+  }
+
+  function _renderInvAtAGlance(d) {
+    var host = document.getElementById('investigation-at-a-glance');
+    if (!host) return;
+    host.innerHTML = '';
+    // Prefer authored at_a_glance; fall back to studies' one-line role
+    // derived from study.question (first sentence) when available.
+    var tiles = [];
+    var authored = Array.isArray(d.at_a_glance) ? d.at_a_glance : [];
+    if (authored.length) {
+      tiles = authored.map(function(t, i) {
+        return { num: i + 1, slug: t.study || '', role: t.role || '' };
+      });
+    } else {
+      var studies = d.studies || [];
+      tiles = studies.map(function(s, i) {
+        var role = '';
+        var q = (s.question || (s.purpose && s.purpose.question) || '').trim();
+        if (q) {
+          role = q.split(/[.!?]\s/)[0]; // first sentence
+          if (role.length > 140) role = role.slice(0, 137) + '…';
+        }
+        return { num: i + 1, slug: s.name, role: role };
+      });
+    }
+    if (!tiles.length) { host.style.display = 'none'; return; }
+    host.innerHTML = tiles.map(function(t) {
+      return '<div class="inv-aag-tile">'
+        + '<span class="inv-aag-num">' + t.num + '</span>'
+        + '<span class="inv-aag-slug">' + _escInv(t.slug) + '</span>'
+        + (t.role ? '<span class="inv-aag-role">' + _escInv(t.role) + '</span>' : '')
+        + '</div>';
+    }).join('');
+    host.style.display = '';
+  }
+
+  function _renderInvHowToRead(items) {
+    var host = document.getElementById('investigation-how-to-read');
+    if (!host) return;
+    var ol = host.querySelector('ol');
+    if (!Array.isArray(items) || !items.length) {
+      host.style.display = 'none';
+      if (ol) ol.innerHTML = '';
+      return;
+    }
+    ol.innerHTML = items.map(function(s) {
+      return '<li>' + _renderInvLeadMarkdown(String(s)).replace(/^<p>|<\/p>$/g, '') + '</li>';
+    }).join('');
+    host.style.display = '';
+  }
+
+  function _renderInvGlossary(items) {
+    var host = document.getElementById('investigation-glossary');
+    if (!host) return;
+    var dl = host.querySelector('dl');
+    if (!Array.isArray(items) || !items.length) {
+      host.style.display = 'none';
+      if (dl) dl.innerHTML = '';
+      return;
+    }
+    dl.innerHTML = items.map(function(g) {
+      var term = _escInv(g.term || g.name || '');
+      var def  = _escInv(g.definition || g.def || '');
+      return '<dt>' + term + '</dt><dd>' + def + '</dd>';
+    }).join('');
+    host.style.display = '';
+  }
+
   function _openInvestigationDetail(name) {
     window._currentIset = name;
     document.getElementById('investigations-list').style.display = 'none';
@@ -3569,7 +3692,23 @@
         statusEl.title = (authStatus && authStatus !== effStatus)
           ? 'effective: ' + effStatus + '  (intent: ' + authStatus + ')'
           : 'status: ' + effStatus;
-        document.getElementById('investigation-detail-description').textContent = d.description || '';
+        // Lead paragraph: render lead (preferred) or fall back to description.
+        // Light markdown: paragraph splits, * bullets, `code`, **bold**.
+        var leadEl = document.getElementById('investigation-detail-description');
+        var leadText = (d.lead || d.description || '').trim();
+        leadEl.innerHTML = leadText ? _renderInvLeadMarkdown(leadText) : '';
+
+        // At-a-glance grid: one tile per study with a one-line role.
+        // Sources: investigation.yaml#at_a_glance (preferred) → derive from
+        // each study's purpose.question first sentence as fallback.
+        _renderInvAtAGlance(d);
+
+        // How to read: yaml-driven list of evaluator tips. Hidden if absent.
+        _renderInvHowToRead(d.how_to_read);
+
+        // Glossary: yaml-driven list of {term, definition}. Hidden if absent.
+        _renderInvGlossary(d.glossary);
+
         // Biology-story banner: populated only when investigation.yaml
         // declares `biological_story:`. Hidden otherwise.
         var storyBox = document.getElementById('investigation-biology-story');
@@ -4305,19 +4444,20 @@
     function v3StudySection(s, i, statusBadge, phaseBadge, parents, kids) {
       var slug = _h(s.name);
       var sid = {
-        summary:   'study-' + slug + '-summary',
-        decision:  'study-' + slug + '-decision',
-        takeaways: 'study-' + slug + '-takeaways',
-        findings:  'study-' + slug + '-findings',
-        sims:      'study-' + slug + '-sims',
-        charts:    'study-' + slug + '-charts',
-        readouts:  'study-' + slug + '-readouts',
-        tests:     'study-' + slug + '-tests',
-        build:     'study-' + slug + '-build',
-        reqs:      'study-' + slug + '-reqs',
-        followups: 'study-' + slug + '-followups',
-        limits:    'study-' + slug + '-limitations',
-        refs:      'study-' + slug + '-refs',
+        summary:    'study-' + slug + '-summary',
+        decision:   'study-' + slug + '-decision',
+        takeaways:  'study-' + slug + '-takeaways',
+        findings:   'study-' + slug + '-findings',
+        sims:       'study-' + slug + '-sims',
+        charts:     'study-' + slug + '-charts',
+        readouts:   'study-' + slug + '-readouts',
+        tests:      'study-' + slug + '-tests',
+        conditions: 'study-' + slug + '-conditions',
+        build:      'study-' + slug + '-build',
+        reqs:       'study-' + slug + '-reqs',
+        followups:  'study-' + slug + '-followups',
+        limits:     'study-' + slug + '-limitations',
+        refs:       'study-' + slug + '-refs',
       };
 
       var purpose = s.purpose || {};
@@ -4362,6 +4502,15 @@
       if (charts.length)      links.push('<a href="#' + sid.charts + '">Charts <span class="sn-count">' + charts.length + '</span></a>');
       if (readouts.length)    links.push('<a href="#' + sid.readouts + '">What we measured <span class="sn-count">' + readouts.length + '</span></a>');
       if (tests.length)       links.push('<a href="#' + sid.tests + '">How we judge it <span class="sn-count">' + tests.length + '</span></a>');
+      // Conditions sub-nav link: rendered when v4 ``conditions:`` exists.
+      var _cond = (s.conditions && typeof s.conditions === 'object') ? s.conditions : null;
+      var _nVar = (_cond && _cond.variants || []).length;
+      var _nEI  = (_cond && _cond.expert_inputs || []).length;
+      if (_cond) {
+        var _condCount = _nVar + _nEI;
+        links.push('<a href="#' + sid.conditions + '">Conditions ' +
+                   (_condCount ? '<span class="sn-count">' + _condCount + '</span>' : '') + '</a>');
+      }
       if (hasBuild)           links.push('<a href="#' + sid.build + '">Model changes</a>');
       if (reqs.length)        links.push('<a href="#' + sid.reqs + '">What to build / fix <span class="sn-count">' + reqs.length + '</span></a>');
       if (followUps.length)   links.push('<a href="#' + sid.followups + '">Next steps <span class="sn-count">' + followUps.length + '</span></a>');
@@ -4920,6 +5069,11 @@
           + '</div>';
       }
 
+      // ── CONDITIONS (v4: baseline + variants + expert_inputs) ─────────
+      // Renders the actual parameter table the evaluator wants: each
+      // variant's overrides + every expert_input's current/default/range.
+      var conditionsHtml = _renderConditionsBlock(s, sid.conditions);
+
       return ''
         + '<section class="study" id="study-' + slug + '">'
         +   subNav
@@ -4938,12 +5092,138 @@
         +   chartsHtml          //    + Visualisations from runs
         +   readoutsHtml        // 6. What did/will we measure?
         +   testsHtml           // 7. How do we judge success?
+        +   conditionsHtml      // 7b. Conditions: baseline + variants + expert inputs (v4)
         +   buildHtml           // 8. What changes in the model?
         +   reqsHtml            // 9. What needs to be built or fixed?
         +   followUpsHtml       // 10. What should happen next?
         +   limitsHtml          // 11. Limitations
         +   refsHtml            // 12. References
         + '</section>';
+    }
+
+    // Render the per-study Conditions block (v4). Returns empty string for
+    // studies without a ``conditions:`` mapping.
+    //
+    // Layout:
+    //   - Baseline composite + params
+    //   - Variants table (name, base_composite, parameter overrides)
+    //   - Expert inputs table (name, type, default, current, range, gate)
+    //
+    // Why this lives next to Tests instead of inside Build: variants and
+    // expert_inputs are the *experimental conditions* — what you change to
+    // run the tests — distinct from the *code* changes captured in Build.
+    function _renderConditionsBlock(s, anchorId) {
+      var cond = (s.conditions && typeof s.conditions === 'object') ? s.conditions : null;
+      if (!cond) return '';
+      var baseline = cond.baseline || {};
+      var variants = cond.variants || [];
+      var expertInputs = cond.expert_inputs || [];
+      if (!baseline.composite && !variants.length && !expertInputs.length) return '';
+
+      function _fmtVal(v) {
+        if (v === null || v === undefined) return '<em class="muted">—</em>';
+        if (typeof v === 'object') return '<code>' + _h(JSON.stringify(v)) + '</code>';
+        return '<code>' + _h(String(v)) + '</code>';
+      }
+      function _kvList(obj) {
+        var keys = Object.keys(obj || {});
+        if (!keys.length) return '<em class="muted">(no overrides)</em>';
+        return keys.map(function(k) {
+          return '<div class="cond-kv"><span class="cond-kv-k">' + _h(k) + '</span>' +
+                 '<span class="cond-kv-v">' + _fmtVal(obj[k]) + '</span></div>';
+        }).join('');
+      }
+
+      // Baseline row
+      var baselineHtml = '';
+      if (baseline.composite || baseline.params) {
+        baselineHtml =
+            '<div class="cond-baseline">' +
+              '<h4>Baseline</h4>' +
+              '<div class="cond-baseline-composite">' +
+                'Composite: <code>' + _h(baseline.composite || '?') + '</code>' +
+              '</div>' +
+              '<div class="cond-baseline-params">' +
+                _kvList(baseline.params || {}) +
+              '</div>' +
+            '</div>';
+      }
+
+      // Variants table
+      var variantsHtml = '';
+      if (variants.length) {
+        variantsHtml =
+            '<div class="cond-variants">' +
+              '<h4>Variants <span class="muted small">(' + variants.length + ')</span></h4>' +
+              '<p class="muted small" style="margin:0 0 6px 0">Each variant is a perturbation of the baseline — typically a parameter override or a swapped composite. These define the runs that test the assumption.</p>' +
+              '<table class="cond-table">' +
+                '<thead><tr><th>Variant</th><th>Composite / base</th><th>Parameter overrides</th><th>Notes</th></tr></thead>' +
+                '<tbody>' +
+                  variants.map(function(v) {
+                    var ovr = v.parameter_overrides || v.params || {};
+                    var base = v.composite || v.base_composite || '<em class="muted">(inherits baseline)</em>';
+                    var name = v.name || '?';
+                    var notes = v.description || v.notes || '';
+                    return '<tr>' +
+                      '<td><code>' + _h(name) + '</code></td>' +
+                      '<td>' + (typeof base === 'string' && base.indexOf('<em') === 0 ? base : '<code>' + _h(base) + '</code>') + '</td>' +
+                      '<td>' + _kvList(ovr) + '</td>' +
+                      '<td>' + (notes ? _multiline(notes) : '<em class="muted">—</em>') + '</td>' +
+                    '</tr>';
+                  }).join('') +
+                '</tbody>' +
+              '</table>' +
+            '</div>';
+      }
+
+      // Expert inputs table
+      var expertHtml = '';
+      if (expertInputs.length) {
+        var nRequired = expertInputs.filter(function(e){return e.gate === 'required-before-run';}).length;
+        var requiredBadge = nRequired
+          ? '<span class="cond-ei-required-badge" title="' + nRequired + ' input(s) must be set before this study can run">' + nRequired + ' required</span>'
+          : '';
+        expertHtml =
+            '<div class="cond-expert-inputs">' +
+              '<h4>Expert inputs <span class="muted small">(' + expertInputs.length + ')</span> ' + requiredBadge + '</h4>' +
+              '<p class="muted small" style="margin:0 0 6px 0">Parameters that need human input before the study runs. Edit a value on the dashboard\'s study-detail page (Build tab) and the next <code>pbg_runner</code> invocation will pick it up.</p>' +
+              '<table class="cond-table">' +
+                '<thead><tr><th>Name</th><th>Type</th><th>Default</th><th>Current</th><th>Range</th><th>Gate</th><th>Description</th></tr></thead>' +
+                '<tbody>' +
+                  expertInputs.map(function(e) {
+                    var name = e.name || '?';
+                    var type = e.type || '';
+                    var def  = e.default;
+                    var cur  = (e.current === null || e.current === undefined) ? null : e.current;
+                    var range = '';
+                    if (Array.isArray(e.range) && e.range.length === 2)
+                      range = '[' + e.range[0] + ', ' + e.range[1] + ']';
+                    else if (Array.isArray(e.options))
+                      range = e.options.join(' | ');
+                    var gate = e.gate || 'optional';
+                    var gateBadge = gate === 'required-before-run'
+                      ? '<span class="cond-ei-gate-req">required</span>'
+                      : '<span class="cond-ei-gate-opt">optional</span>';
+                    var awaiting = (cur === null) ? '<em class="muted">awaiting expert</em>' : _fmtVal(cur);
+                    return '<tr>' +
+                      '<td><code>' + _h(name) + '</code></td>' +
+                      '<td>' + _h(type) + '</td>' +
+                      '<td>' + _fmtVal(def) + '</td>' +
+                      '<td>' + awaiting + '</td>' +
+                      '<td>' + (range ? '<code>' + _h(range) + '</code>' : '<em class="muted">—</em>') + '</td>' +
+                      '<td>' + gateBadge + '</td>' +
+                      '<td>' + (e.description ? _multiline(e.description) : '<em class="muted">—</em>') + '</td>' +
+                    '</tr>';
+                  }).join('') +
+                '</tbody>' +
+              '</table>' +
+            '</div>';
+      }
+
+      return '<div id="' + anchorId + '" class="study-conditions">' +
+               '<h3>Conditions <span class="muted small">— what we set up to test it</span></h3>' +
+               baselineHtml + variantsHtml + expertHtml +
+             '</div>';
     }
 
     // --- per-study section builder -----------------------------------
@@ -5427,6 +5707,24 @@
       + '.finding-next{padding:6px 10px;background:#f0fdf4;border-left:3px solid #10b981;border-radius:3px;font-size:0.9em;margin-top:8px;line-height:1.5}'
       + '.finding-next strong{color:#065f46}'
       // ── eb table row coloring ──
+      // ── Conditions block (Variants + Expert inputs) ──
+      + '.study-conditions{margin:18px 0 10px 0;padding:12px 14px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px}'
+      + '.study-conditions h3{margin:0 0 8px 0;font-size:1.05em;color:#0f172a}'
+      + '.study-conditions h4{margin:14px 0 6px 0;font-size:0.95em;color:#334155;text-transform:uppercase;letter-spacing:0.04em}'
+      + '.cond-baseline{background:#fff;border:1px solid #e2e8f0;border-radius:4px;padding:8px 10px;margin:0 0 12px 0}'
+      + '.cond-baseline-composite{font-size:0.92em;color:#334155;margin-bottom:6px}'
+      + '.cond-baseline-params{display:flex;flex-wrap:wrap;gap:6px}'
+      + '.cond-kv{display:inline-flex;align-items:center;gap:6px;background:#eef2ff;border-radius:3px;padding:2px 6px;font-size:0.85em}'
+      + '.cond-kv-k{color:#3730a3;font-weight:600;font-family:ui-monospace,monospace}'
+      + '.cond-kv-v code{background:transparent;padding:0;color:#1f2937}'
+      + '.cond-table{width:100%;border-collapse:collapse;font-size:0.9em;margin:6px 0}'
+      + '.cond-table th{text-align:left;padding:6px 8px;border-bottom:1px solid #cbd5e1;color:#334155;font-weight:600;background:#fff}'
+      + '.cond-table td{padding:6px 8px;border-bottom:1px solid #e5e7eb;vertical-align:top}'
+      + '.cond-table tr:last-child td{border-bottom:none}'
+      + '.cond-table td .cond-kv{display:block;margin:2px 0;background:#f3f4f6}'
+      + '.cond-ei-required-badge{display:inline-block;background:#fde68a;color:#78350f;font-size:0.75em;padding:1px 8px;border-radius:9px;margin-left:6px;font-weight:600}'
+      + '.cond-ei-gate-req{display:inline-block;background:#fde68a;color:#78350f;font-size:0.78em;padding:1px 6px;border-radius:3px;font-weight:600}'
+      + '.cond-ei-gate-opt{display:inline-block;background:#e0e7ff;color:#3730a3;font-size:0.78em;padding:1px 6px;border-radius:3px}'
       + 'tr.eb-stub td{background:#fefce8}'
       + 'tr.eb-gated td{background:#fff7ed}'
       + 'tr.eb-implemented td{background:#f0fdf4}'
@@ -5564,15 +5862,17 @@
                       + '<ol>' + acceptance + '</ol>' : '')
 
       +   '<h2 id="how-to-read">How to read this report</h2>'
-      +   '<p>Each section below is one study, in dependency order (roots first). For each study, read in this order:</p>'
+      +   '<p>Each section below is one study, in dependency order (roots first). A downstream study assumes everything above it has passed, so reading top-down keeps the calibration context intact. Every study uses the same five-section header:</p>'
       +   '<ol>'
-      +     '<li><strong>Plain-English summary</strong> — what the study asked, what we learned, and where the gate decision lands.</li>'
-      +     '<li><strong>Can we move to the next study?</strong> — the gate decision in one box: what passed, what failed, what blocks the next study, and the immediate next action.</li>'
-      +     '<li><strong>Key takeaways</strong> — one-line findings linking back to detailed cards.</li>'
-      +     '<li><strong>Simulations, measurements, and tests</strong> — what we ran, what we measured, how we judge success.</li>'
-      +     '<li><strong>Technical details</strong> — file paths, parameter names, listener paths, CLI flags. These live inside collapsible <em>Technical details</em> blocks; open them only when implementing or debugging.</li>'
+      +     '<li><strong>Question</strong> — what this study is asking, in one paragraph. The "why" lives here.</li>'
+      +     '<li><strong>Assumptions</strong> — what we take as given (cited to literature where applicable) and whether we have verified each one in v2ecoli yet.</li>'
+      +     '<li><strong>Conditions</strong> — what we set up to test the question. Three sub-fields: <em>baseline</em> (the reference composite), <em>variants</em> (perturbations), and <em>expert inputs</em> (parameters that need human input before the study can run).</li>'
+      +     '<li><strong>Tests</strong> — pass/fail criteria with a measure path + a comparison op. Each test owns one row in the gate decision; charts inline below show the observable over time with the criterion overlaid.</li>'
+      +     '<li><strong>Status</strong> — a single keyword summarising where the study currently stands (e.g. <code>evaluate-with-calibration-todo</code>, <code>done-tests-passing</code>, <code>blocked</code>).</li>'
       +   '</ol>'
-      +   '<p class="muted small">Status pills use four glyphs: <strong style="color:#10b981">✓ confirms</strong> literature, <strong style="color:#dc2626">✗ contradicts</strong> literature, <strong style="color:#f59e0b">◐ partial</strong> match, <strong style="color:#8b5cf6">◆ novel</strong> (no literature comparator).</p>'
+      +   '<p>Auxiliary blocks — <em>Model change</em>, <em>Implementation requirements</em>, <em>Follow-up studies</em>, <em>Limitations</em>, <em>Bibliography</em> — sit below the five-section header. They live inside collapsible <em>Technical details</em> blocks; open them only when you need the file paths, parameter names, or CLI flags.</p>'
+      +   '<p class="muted small">Chart sourcing: live charts are rendered from the latest study <code>runs.db</code>; charts captioned <strong>"Drawn from workspace default-baseline"</strong> mean the study hasn\'t run yet and we\'re showing the pre-execution baseline as a "before" reference.</p>'
+      +   '<p class="muted small">Want to leave inline feedback? Click the <strong>💬</strong> icon next to any section. "Generate feedback report" (bottom-right) packages every annotation into a single yaml file that comes back via <code>pbg-feedback-import</code>.</p>'
 
       +   '<h2 id="studies-heading">Studies (dependency order)</h2>'
       +   studiesHtml

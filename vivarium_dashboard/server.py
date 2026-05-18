@@ -255,6 +255,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/investigation-group-update":       "_post_investigation_group_update",
     # Study-specific POST endpoints (no investigation alias).
     "/api/study-set-objective":         "_post_study_set_objective",
+    "/api/study-expert-input-set":      "_post_study_expert_input_set",
     "/api/study-rename":                "_post_study_rename",
     "/api/study-create-from-run":       "_post_study_create_from_run",
     "/api/study-run-baseline":          "_post_study_run_baseline",
@@ -5918,6 +5919,10 @@ if __name__ == "__main__":
             "name":             spec.get("name", name),
             "title":            spec.get("title", spec.get("name", name)),
             "description":      spec.get("description", ""),
+            "lead":             spec.get("lead", ""),
+            "at_a_glance":      spec.get("at_a_glance") or [],
+            "how_to_read":      spec.get("how_to_read") or [],
+            "glossary":         spec.get("glossary") or [],
             "biological_story": spec.get("biological_story", ""),
             "question":         spec.get("question", ""),
             "hypothesis":       spec.get("hypothesis", ""),
@@ -7847,6 +7852,89 @@ if __name__ == "__main__":
         """POST /api/study-set-objective {study, text}"""
         response, code = _post_study_set_objective_for_test(WORKSPACE, body)
         return self._json(response, code)
+
+    def _post_study_expert_input_set(self, body: dict):
+        """POST /api/study-expert-input-set {study, name, current}
+
+        Patches one ``conditions.expert_inputs[i].current`` value in the
+        target study's yaml. The next ``pbg_runner`` invocation reads the
+        updated value. Round-trip preserves yaml comments via the standard
+        yaml.safe_dump output (comments not preserved by design — the file
+        is canonical, not a hand-edited doc).
+
+        Body: ``{"study": "<slug>", "name": "<expert-input-name>", "current": <value>}``
+        Where ``current`` can be a number, string, bool, or null (to reset
+        to "awaiting expert input").
+        """
+        import yaml as _yaml
+        slug = (body or {}).get("study", "").strip()
+        name = (body or {}).get("name", "").strip()
+        if not slug or not name:
+            return self._json({"error": "study and name are required"}, 400)
+        if "current" not in (body or {}):
+            return self._json({"error": "current is required (may be null)"}, 400)
+        new_current = body["current"]
+
+        spec_path = _study_spec_path(slug)
+        if not spec_path or not spec_path.is_file():
+            return self._json({"error": f"study not found: {slug}"}, 404)
+        try:
+            spec = _yaml.safe_load(spec_path.read_text()) or {}
+        except _yaml.YAMLError as e:
+            return self._json({"error": f"yaml parse failed: {e}"}, 500)
+
+        cond = spec.get("conditions")
+        if not isinstance(cond, dict):
+            return self._json(
+                {"error": "study has no v4 conditions block; cannot set expert input"},
+                400,
+            )
+        eis = cond.get("expert_inputs")
+        if not isinstance(eis, list):
+            return self._json(
+                {"error": "conditions.expert_inputs is missing or not a list"},
+                400,
+            )
+
+        target = None
+        for ei in eis:
+            if isinstance(ei, dict) and ei.get("name") == name:
+                target = ei
+                break
+        if target is None:
+            return self._json(
+                {"error": f"expert input not found: {name}"},
+                404,
+            )
+
+        # Optional bounds check when range is declared.
+        rng = target.get("range")
+        if (
+            isinstance(rng, list) and len(rng) == 2
+            and isinstance(new_current, (int, float))
+            and not isinstance(new_current, bool)
+        ):
+            lo, hi = rng[0], rng[1]
+            if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+                if new_current < lo or new_current > hi:
+                    return self._json(
+                        {"error": f"value {new_current} is outside declared range [{lo}, {hi}]"},
+                        400,
+                    )
+
+        target["current"] = new_current
+        try:
+            spec_path.write_text(
+                _yaml.safe_dump(spec, sort_keys=False, allow_unicode=True, width=100)
+            )
+        except OSError as e:
+            return self._json({"error": f"write failed: {e}"}, 500)
+
+        return self._json({
+            "study": slug,
+            "name": name,
+            "current": new_current,
+        }, 200)
 
     def _post_study_seed_followup(self, body: dict):
         """POST /api/study-seed-followup {parent, followup_idx} → seed child study.

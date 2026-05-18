@@ -979,7 +979,27 @@ When done, summarize which entries got PDFs vs URLs only vs were unresolvable, a
       <button class="btn-mini" onclick="_openCloneIsetModal()" title="Clone this investigation into a fresh planning state (no run results). Useful for a parallel attempt or a demo fixture.">Clone ⎘</button>
       <button class="btn-mini" onclick="_popoutInvestigation()" title="Open in a separate window (investigation-only, no sidebar). If it opens as a tab, your browser's 'open new pages as tabs' preference is overriding the popup hint (Safari → Tabs → 'Open pages in tabs instead of windows' → set to 'Manually').">Pop out ↗</button>
     </div>
-    <p id="investigation-detail-description" class="muted" style="white-space:pre-wrap; margin: 0 0 12px 0;"></p>
+    <div id="investigation-intro" class="inv-intro" style="margin: 0 0 16px 0;">
+      <!-- Lead paragraph (the abstract). Auto-styled as serif body type for readability. -->
+      <div id="investigation-detail-description" class="inv-lead"></div>
+      <!-- At-a-glance grid: one tile per study with a one-line role. Populated by JS. -->
+      <div id="investigation-at-a-glance" class="inv-at-a-glance" style="display:none"></div>
+      <!-- How to read this: ordered list of usage tips for the evaluator. -->
+      <div id="investigation-how-to-read" class="inv-how-to-read" style="display:none">
+        <strong>How to read this</strong>
+        <ol></ol>
+      </div>
+      <!-- Glossary: collapsible. -->
+      <details id="investigation-glossary" class="inv-glossary" style="display:none">
+        <summary>Glossary</summary>
+        <dl></dl>
+      </details>
+      <!-- Biology story (free-form prose). Hidden if the yaml omits it. -->
+      <div id="investigation-biology-story" class="inv-bio-story" style="display:none">
+        <strong class="inv-bio-story-label">Biology story</strong>
+        <div id="investigation-biology-story-text" class="inv-bio-story-text"></div>
+      </div>
+    </div>
     <div id="investigation-dag-shell"
          style="position: relative; border: 1px solid #e2e8f0; border-radius: 6px; background: #fafafa;
                 overflow-x: auto; overflow-y: hidden;">
