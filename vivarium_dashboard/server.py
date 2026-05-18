@@ -562,7 +562,54 @@ def _study_detail_spec(name: str):
                 if r.get("run_id") not in existing_ids:
                     merged.append(r)
             spec["runs"] = merged
+
+        # Auto-discover any pre-rendered Plotly HTML files at
+        # studies/<name>/viz/*.html (produced by render_visualizations
+        # after a CLI- or dashboard-launched run). They get surfaced on
+        # the Visualizations tab as embed_visualizations entries — no
+        # manual study.yaml edit required.
+        try:
+            auto_embeds = _discover_viz_html_files(name)
+        except Exception:
+            auto_embeds = []
+        if auto_embeds:
+            existing_urls = {
+                (e or {}).get("url")
+                for e in (spec.get("embed_visualizations") or [])
+            }
+            merged_embeds = list(spec.get("embed_visualizations") or [])
+            for e in auto_embeds:
+                if e.get("url") not in existing_urls:
+                    merged_embeds.append(e)
+            spec["embed_visualizations"] = merged_embeds
     return spec
+
+
+def _discover_viz_html_files(name: str) -> list[dict]:
+    """Walk ``studies/<name>/viz/*.html`` and return embed_visualizations entries.
+
+    Returns one dict per HTML file, with the shape the study-detail template
+    expects: ``{name, url, description}``. The URL is workspace-relative so
+    the dashboard's static-file fallback serves it.
+    """
+    viz_dir = WORKSPACE / "studies" / name / "viz"
+    if not viz_dir.is_dir():
+        return []
+    out = []
+    for html_file in sorted(viz_dir.glob("*.html")):
+        size_kb = max(1, html_file.stat().st_size // 1024)
+        rel = html_file.relative_to(WORKSPACE).as_posix()
+        out.append({
+            "name": f"{html_file.stem} (auto)",
+            "url": f"/{rel}",
+            "description": (
+                f"Auto-discovered Plotly viz rendered at "
+                f"{html_file.stat().st_mtime:.0f}s epoch "
+                f"({size_kb} KB). Source: render_visualizations against the "
+                f"latest runs.db history."
+            ),
+        })
+    return out
 
 
 def _read_runs_db_for_study(name: str) -> list[dict]:
@@ -2846,9 +2893,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.path = old_prefix + tail
                 break
 
-        # Study Detail page: /studies/<name> → render study-detail.html
+        # Study Detail page: /studies/<name> → render study-detail.html.
+        # Only intercept the EXACT /studies/<slug> path (with optional query
+        # string). Deeper paths like /studies/<slug>/viz/foo.html fall
+        # through to the static-file handler below so workspace artefacts
+        # under studies/<slug>/{viz,charts,...} are reachable. Closes
+        # friction-log #16 (URL routing intercepts before static serving).
         if self.path.startswith("/studies/"):
-            return self._get_study_detail_page()
+            _path_only = self.path.split("?", 1)[0]
+            _segs = _path_only.strip("/").split("/")
+            if len(_segs) == 2:
+                return self._get_study_detail_page()
 
         # Strip query string for route matching (self.path includes ?focus=...).
         path_only = self.path.split("?", 1)[0]
@@ -7771,7 +7826,12 @@ if __name__ == "__main__":
 
     def _get_study_detail_page(self):
         """GET /studies/<name> — render the Study Detail page."""
-        parts = self.path.strip("/").split("/")
+        # Strip query-string before slicing the slug — otherwise a URL like
+        # /studies/<slug>?focus=tests trips the SLUG regex on the trailing
+        # "?focus=...". Defense-in-depth alongside the do_GET dispatcher's
+        # exact-segment-count check.
+        _path_only = self.path.split("?", 1)[0]
+        parts = _path_only.strip("/").split("/")
         if len(parts) < 2 or parts[0] != "studies":
             return self._send_html("<h1>Not found</h1>", code=404)
         name = parts[1]
