@@ -203,7 +203,29 @@ def list_simulations(workspace: Path) -> list[dict]:
     Each dict contains: run_id, spec_id, sim_name, label, status, n_steps,
     progress_step, started_at, completed_at, db_path (workspace-relative),
     studies (list of study names that reference this run_id).
+
+    When the same ``run_id`` is present in both the ``runs_meta`` and the
+    SQLiteEmitter ``simulations`` table (the common case for runs created
+    via ``pbg_runner``), the rows are MERGED into one entry — runs_meta
+    fields (spec_id, status, n_steps) take priority over the emitter's,
+    and the started_at is normalised to a float (unix epoch). Without
+    this merge the dashboard's frontend JS sees mixed ISO-string /
+    float started_at values and trips ``new Date(string * 1000)``,
+    halting the table render.
     """
+    def _to_float_ts(v):
+        if v is None:
+            return None
+        if isinstance(v, (int, float)):
+            return float(v)
+        if isinstance(v, str):
+            try:
+                return _dt.datetime.fromisoformat(
+                    v.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return None
+        return None
+
     workspace = Path(workspace)
     rows: list[dict] = []
     for db_path, db_rel in _discover_dbs(workspace):
@@ -212,24 +234,44 @@ def list_simulations(workspace: Path) -> list[dict]:
         rows.extend(_read_runs_meta(db_path, db_rel))
         rows.extend(_read_sqlite_emitter(db_path, db_rel))
 
+    # Deduplicate by run_id, preferring runs_meta over sqlite_emitter (so
+    # spec_id / status / n_steps come from the canonical bookkeeping table).
+    # Normalise started_at + completed_at to floats while we're here.
+    merged: dict[str, dict] = {}
+    for r in rows:
+        rid = r.get("run_id")
+        if not rid:
+            continue
+        r = dict(r)  # don't mutate the source
+        r["started_at"]   = _to_float_ts(r.get("started_at"))
+        r["completed_at"] = _to_float_ts(r.get("completed_at"))
+        existing = merged.get(rid)
+        if existing is None:
+            merged[rid] = r
+            continue
+        # Prefer runs_meta on collision (it has spec_id and authoritative status).
+        if existing.get("source") == "runs_meta":
+            # Keep existing; fill in any None fields from the new row.
+            for k, v in r.items():
+                if existing.get(k) in (None, "", []) and v not in (None, "", []):
+                    existing[k] = v
+        else:
+            # Existing was sqlite_emitter; r is preferred if it's runs_meta.
+            if r.get("source") == "runs_meta":
+                for k, v in existing.items():
+                    if r.get(k) in (None, "", []) and v not in (None, "", []):
+                        r[k] = v
+                merged[rid] = r
+            else:
+                # Both sqlite_emitter — just fill in missing fields.
+                for k, v in r.items():
+                    if existing.get(k) in (None, "", []) and v not in (None, "", []):
+                        existing[k] = v
+    rows = list(merged.values())
+
     def _ts(r):
-        # runs_meta stores started_at as REAL (unix epoch); SQLiteEmitter's
-        # simulations table stores it as TEXT (ISO 8601). Normalise to float
-        # so list_simulations() can merge both sources in a single sort —
-        # otherwise Python 3 raises 'str < float' the first time both DBs
-        # contribute rows to the same workspace.
         v = r.get("started_at")
-        if v is None:
-            return 0.0
-        if isinstance(v, (int, float)):
-            return float(v)
-        if isinstance(v, str):
-            try:
-                return _dt.datetime.fromisoformat(
-                    v.replace("Z", "+00:00")).timestamp()
-            except ValueError:
-                return 0.0
-        return 0.0
+        return float(v) if isinstance(v, (int, float)) else 0.0
     rows.sort(key=_ts, reverse=True)
 
     run_to_studies = _build_run_to_studies_map(workspace)
