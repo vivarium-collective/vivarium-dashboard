@@ -699,3 +699,200 @@ def test_load_spec_accepts_groups_list(tmp_path):
 # Both tests exercised v2 _validate_variants_list groups-validation.  The redesign
 # drops groups from the UI; _validate_study_v3 (v3) does not validate groups at
 # all, so these rejection rules no longer fire.
+
+
+# ----------------------------------------------------------------------------
+# F3 — normalize_dag_edges (pipeline_gate.prerequisites is canonical;
+# parent_studies stays as a back-compat fallback with a DeprecationWarning).
+# ----------------------------------------------------------------------------
+
+
+import warnings as _warnings
+
+from vivarium_dashboard.lib.investigations import normalize_dag_edges
+
+
+def test_normalize_dag_edges_reads_pipeline_gate_first():
+    """When pipeline_gate.prerequisites is set, it wins — parent_studies
+    is ignored entirely (so a half-migrated spec doesn't get DOUBLE-counted
+    parents)."""
+    spec = {
+        "name": "child",
+        "pipeline_gate": {
+            "prerequisites": [
+                {"study": "parent-A", "condition": "ran"},
+                "parent-B",
+            ],
+        },
+        "parent_studies": ["should-be-ignored"],
+    }
+    edges = normalize_dag_edges(spec)
+    slugs = [e["study"] for e in edges]
+    assert slugs == ["parent-A", "parent-B"]
+    # Bare-string entry got the default condition
+    assert next(e for e in edges if e["study"] == "parent-B")["condition"] == "tests-passed"
+    # Explicit condition is preserved
+    assert next(e for e in edges if e["study"] == "parent-A")["condition"] == "ran"
+
+
+def test_normalize_dag_edges_preserves_pass_a_extras():
+    """Pass A added extension fields (required_gate_status, outputs_used,
+    artifact_hashes). The normalizer passes them through verbatim so
+    downstream code can use them without re-reading the raw spec."""
+    spec = {
+        "name": "child",
+        "pipeline_gate": {
+            "prerequisites": [{
+                "study":                "parent-A",
+                "condition":            "tests-passed",
+                "required_gate_status": "passed",
+                "outputs_used":         ["dnaA_count"],
+            }],
+        },
+    }
+    edge = normalize_dag_edges(spec)[0]
+    assert edge["required_gate_status"] == "passed"
+    assert edge["outputs_used"] == ["dnaA_count"]
+
+
+def test_normalize_dag_edges_falls_back_to_parent_studies_with_warning():
+    """Legacy specs that only set parent_studies still work, but emit a
+    DeprecationWarning naming the study so the workspace knows to migrate."""
+    spec = {
+        "name": "legacy-child",
+        "parent_studies": ["legacy-parent"],
+    }
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        edges = normalize_dag_edges(spec)
+    assert edges == [{"study": "legacy-parent", "condition": "tests-passed"}]
+    msgs = [str(w.message) for w in captured if issubclass(w.category, DeprecationWarning)]
+    assert msgs, "expected a DeprecationWarning when only parent_studies is set"
+    assert "legacy-child" in msgs[0]
+    assert "pipeline_gate.prerequisites" in msgs[0]
+
+
+def test_normalize_dag_edges_empty_spec_returns_empty_list():
+    """A spec with neither field returns []."""
+    assert normalize_dag_edges({"name": "lonely"}) == []
+
+
+def test_normalize_dag_edges_empty_prerequisites_falls_back():
+    """pipeline_gate.prerequisites: [] is treated as 'not set' so the
+    fallback to parent_studies kicks in. (Otherwise migration would
+    require deleting parent_studies in the same edit as adding the new
+    empty list — which is the wrong order if a workspace wants to do a
+    'remove all dependencies' migration in two steps.)"""
+    spec = {
+        "name": "child",
+        "pipeline_gate": {"prerequisites": []},
+        "parent_studies": ["fallback-parent"],
+    }
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        edges = normalize_dag_edges(spec)
+    assert edges == [{"study": "fallback-parent", "condition": "tests-passed"}]
+    # Still warns because we ended up using the legacy field
+    assert any(issubclass(w.category, DeprecationWarning) for w in captured)
+
+
+def test_normalize_dag_edges_no_warning_when_using_canonical():
+    """The canonical-only case must be silent — no nagging the user when
+    they've already done the right thing."""
+    spec = {
+        "name": "modern-child",
+        "pipeline_gate": {"prerequisites": ["parent-A"]},
+    }
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        normalize_dag_edges(spec)
+    assert not [w for w in captured if issubclass(w.category, DeprecationWarning)]
+
+
+# ----------------------------------------------------------------------------
+# F1 — effective_status (multi-axis canonical; legacy `status` fallback)
+# ----------------------------------------------------------------------------
+
+
+from vivarium_dashboard.lib.investigations import effective_status
+
+
+def test_effective_status_returns_none_when_nothing_set():
+    """A spec with no status fields returns None — the caller decides whether
+    to render that as 'planned', 'unknown', or empty."""
+    assert effective_status({"name": "blank"}) is None
+
+
+def test_effective_status_prefers_multi_axis_over_legacy():
+    """When ANY multi-axis axis is set, the legacy `status` is ignored AND
+    the DeprecationWarning does not fire — the workspace has already
+    migrated."""
+    spec = {
+        "name": "modern",
+        "status": "in-progress",
+        "design_status": "approved",
+    }
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        result = effective_status(spec)
+    assert result == "approved"
+    assert not [w for w in captured if issubclass(w.category, DeprecationWarning)]
+
+
+def test_effective_status_precedence_gate_wins_over_others():
+    """The headline pill should reflect the most-downstream verdict —
+    gate > evaluation > simulation > implementation > design."""
+    spec = {
+        "name": "all-axes",
+        "design_status":          "approved",
+        "implementation_status":  "complete",
+        "simulation_status":      "ran",
+        "evaluation_status":      "evaluated",
+        "gate_status":            "passed",
+        "expert_review_status":   "approved",
+    }
+    assert effective_status(spec) == "passed"
+
+
+def test_effective_status_precedence_evaluation_wins_when_no_gate():
+    spec = {
+        "name": "no-gate",
+        "design_status":         "approved",
+        "implementation_status": "complete",
+        "simulation_status":     "ran",
+        "evaluation_status":     "evaluated",
+    }
+    assert effective_status(spec) == "evaluated"
+
+
+def test_effective_status_falls_back_to_legacy_with_warning():
+    """No multi-axis fields → legacy `status` wins, and a DeprecationWarning
+    fires naming the study so the workspace knows to migrate."""
+    spec = {"name": "legacy-only", "status": "in-progress"}
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        result = effective_status(spec)
+    assert result == "in-progress"
+    msgs = [str(w.message) for w in captured if issubclass(w.category, DeprecationWarning)]
+    assert msgs, "expected DeprecationWarning for legacy-only status"
+    assert "legacy-only" in msgs[0]
+    assert "in-progress" in msgs[0]
+    # The remediation hint should name the multi-axis fields by name.
+    assert "design_status" in msgs[0] or "multi-axis" in msgs[0]
+
+
+def test_effective_status_ignores_null_multi_axis_fields():
+    """A spec with `gate_status: null` (the JSON-schema permitted form for
+    'unset') must not be picked as the effective status. Treats null/empty
+    as 'not set'."""
+    spec = {
+        "name": "explicit-null",
+        "gate_status": None,
+        "evaluation_status": "",
+        "status": "draft",
+    }
+    with _warnings.catch_warnings(record=True) as captured:
+        _warnings.simplefilter("always")
+        result = effective_status(spec)
+    assert result == "draft"
+    assert [w for w in captured if issubclass(w.category, DeprecationWarning)]
