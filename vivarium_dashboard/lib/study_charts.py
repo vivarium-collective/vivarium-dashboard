@@ -13,6 +13,7 @@ this into a per-study chart-spec block (likely `readouts:` driven).
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from pathlib import Path
 from xml.sax.saxutils import escape
@@ -443,29 +444,40 @@ def _extract_paths_from_db(
 
         # Build a json_extract column per (path, idx). Each pathspec maps
         # to one SQL expression that returns the scalar value (or NULL).
-        # SQLite's path syntax: $.foo.bar (dotted, $-rooted) + array index
-        # appended as [N].
-        sql_path_for = {}
+        # SQLite's path syntax accepts $.foo.bar (dotted, $-rooted) with
+        # optional [N] array indices. Keys containing characters outside
+        # the alnum / underscore set (e.g. ``bulk[MONOMER0-160]``-style
+        # bulk lookups) aren't supported by json_extract — we skip those
+        # paths entirely rather than raising, so one bad measure path
+        # never kills the whole chart-render pass.
+        supported = []
         for path, idx in path_specs:
+            if not re.match(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$", path):
+                continue
+            supported.append((path, idx))
+        if not supported:
+            return out
+
+        sql_path_for = {}
+        for path, idx in supported:
             sql_path = "$." + path
             if idx is not None and isinstance(idx, int):
                 sql_path += f"[{int(idx)}]"
             sql_path_for[(path, idx)] = sql_path
 
         select_cols = ["global_time"] + [
-            f"json_extract(state, ?)" for _ in path_specs
+            "json_extract(state, ?)" for _ in supported
         ]
         sql = (
             f"SELECT {', '.join(select_cols)} FROM history "
             f"WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC"
         )
-        params = list(sql_path_for[key] for key in path_specs) + [sim_id, stride]
+        params = [sql_path_for[key] for key in supported] + [sim_id, stride]
         cursor = conn.execute(sql, params)
 
-        n_paths = len(path_specs)
         for row_tuple in cursor:
             tm = row_tuple[0]
-            for i, key in enumerate(path_specs):
+            for i, key in enumerate(supported):
                 v = row_tuple[1 + i]
                 if v is None:
                     continue
