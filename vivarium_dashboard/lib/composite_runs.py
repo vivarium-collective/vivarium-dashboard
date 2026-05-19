@@ -303,7 +303,13 @@ def inject_sqlite_emitter(state: dict, *, run_id: str,
         if node.get("_type") != "step":
             continue
         addr = node.get("address", "")
-        if not addr.endswith("Emitter"):
+        # Match case-insensitively so kebab-case addresses register too —
+        # `local:ram-emitter` should be picked up the same as
+        # `local:RAMEmitter` (mem3dg-readdy friction #24). Case-sensitive
+        # `endswith("Emitter")` silently skipped the workspace's RAM
+        # emitter, the SQLiteEmitter then installed with empty emit:/inputs:,
+        # and runs.db filled up with state={} rows that broke every viz.
+        if not addr.lower().endswith("emitter"):
             continue
         emit_schema = dict((node.get("config") or {}).get("emit") or {})
         inputs = dict(node.get("inputs") or {})
