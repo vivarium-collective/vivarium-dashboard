@@ -293,6 +293,35 @@ def execute(request_path: Path) -> int:
 
         core = core_mod.build_core()
         core.register_link("SQLiteEmitter", SQLiteEmitter)
+
+        # Heuristic register-extension: import the spec's top-level package
+        # and call any `register_*(core)` callable it exposes. Captures the
+        # pattern used by viva_munk (register_pymunk_types +
+        # register_processes), spatio_flux, and any other package that needs
+        # custom types/processes wired into a fresh core. Without this the
+        # subprocess core has only SQLiteEmitter linked, and composite-build
+        # crashes at type-resolution with 'unable to parse type "<custom>"'.
+        # Failures are caught + logged so register_*() functions with
+        # non-matching signatures (e.g. callables that take no `core` arg)
+        # don't abort the run — the other registrations still land. See
+        # docs/superpowers/notes/2026-05-19-dashboard-runner-friction.md
+        # item #16. Canonical follow-up: composite_generator entries carry
+        # explicit register callbacks so behavior is declared, not discovered.
+        _spec_pkg = (req.spec_id or "").split(".", 1)[0]
+        if _spec_pkg:
+            try:
+                _pkg_mod = __import__(_spec_pkg)
+            except Exception as _e:
+                print(f'register-ext: skipping {_spec_pkg!r}: {_e}', flush=True)
+                _pkg_mod = None
+            if _pkg_mod is not None:
+                for _attr in dir(_pkg_mod):
+                    if _attr.startswith("register_") and callable(getattr(_pkg_mod, _attr, None)):
+                        try:
+                            getattr(_pkg_mod, _attr)(core)
+                        except Exception as _e:
+                            print(f'register-ext: {_spec_pkg}.{_attr}(core) failed: {_e}', flush=True)
+
         composite = Composite({"state": state}, core=core)
 
         started = time.monotonic()
