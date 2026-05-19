@@ -403,19 +403,23 @@
     </div>
 
     <!-- Footer: user identity + collapse toggle.
-         Workspace owner resolved from `gh api user` (preferred) or
-         `git config user.{name,email}` (fallback). When a GitHub login
-         is present the whole footer becomes a link to the profile;
-         otherwise it stays inert. -->
-    {% set _owner_label = owner_name or owner_login or 'Workspace owner' %}
-    {% set _owner_sub = owner_login and ('@' + owner_login) or owner_email or '' %}
+         Workspace owner is resolved from `gh api user` (which requires
+         the user to have authenticated `gh auth login`). When that
+         succeeds, `owner_login` is the GitHub username and we link to
+         their profile. When it doesn't, we fall back to a GENERIC
+         "Connect GitHub" prompt — never to git-config name/email —
+         so a workspace shown on screen / shared in a screenshot
+         doesn't leak the local user's personal git identity. -->
+    {% if owner_login %}
+    {% set _owner_label = owner_name or owner_login %}
+    {% set _owner_sub = '@' + owner_login %}
     {% if owner_html_url %}
-    <a class="viv-rail-footer viv-rail-footer-link" href="{{ owner_html_url }}" target="_blank" rel="noopener" title="Open {{ owner_login or owner_name }} on GitHub ↗">
+    <a class="viv-rail-footer viv-rail-footer-link" href="{{ owner_html_url }}" target="_blank" rel="noopener" title="Open {{ owner_login }} on GitHub ↗">
     {% else %}
     <div class="viv-rail-footer">
     {% endif %}
       {% if owner_avatar_url %}
-        <img class="viv-avatar viv-avatar-rail viv-avatar-img" src="{{ owner_avatar_url }}" alt="{{ owner_login or owner_name or 'owner' }}" loading="lazy" referrerpolicy="no-referrer">
+        <img class="viv-avatar viv-avatar-rail viv-avatar-img" src="{{ owner_avatar_url }}" alt="{{ owner_login }}" loading="lazy" referrerpolicy="no-referrer">
       {% else %}
         <div class="viv-avatar viv-avatar-rail">{{ owner_initials or '—' }}</div>
       {% endif %}
@@ -427,6 +431,19 @@
     </a>
     {% else %}
     </div>
+    {% endif %}
+    {% else %}
+    {# No GitHub identity → generic prompt linking to gh-cli setup. #}
+    <a class="viv-rail-footer viv-rail-footer-link viv-rail-footer-no-github"
+       href="https://cli.github.com/manual/gh_auth_login"
+       target="_blank" rel="noopener"
+       title="Connect this workspace to GitHub — run `gh auth login`">
+      <div class="viv-avatar viv-avatar-rail" aria-hidden="true">+</div>
+      <div class="viv-rail-footer-text">
+        <strong>Connect GitHub</strong>
+        <small>run <code>gh auth login</code></small>
+      </div>
+    </a>
     {% endif %}
 
     <button class="viv-rail-toggle" id="viv-rail-toggle" type="button" aria-label="Collapse rail" onclick="_vivToggleRail()">
@@ -454,7 +471,21 @@
         </div>
         <span class="viv-btn viv-tooltip" data-tooltip="Coming soon — share workspace link">Share</span>
         <span class="viv-kebab viv-tooltip" data-tooltip="Workspace settings — coming soon">⋯</span>
-        <span class="viv-avatar viv-avatar-topbar" title="{{ owner_email or '' }}">{{ owner_initials or '—' }}</span>
+        {# Mirrors the rail-footer logic — show GitHub initials/email only
+           when `gh auth login` succeeded; otherwise a generic prompt that
+           opens the gh-cli setup docs, so screenshots of this workspace
+           don't leak the local git config identity. #}
+        {% if owner_login %}
+        <a class="viv-avatar viv-avatar-topbar viv-avatar-link"
+           href="{{ owner_html_url or '#' }}"
+           target="_blank" rel="noopener"
+           title="{{ owner_login }}{% if owner_email %} · {{ owner_email }}{% endif %}">{{ owner_initials or '—' }}</a>
+        {% else %}
+        <a class="viv-avatar viv-avatar-topbar viv-avatar-link viv-avatar-no-github"
+           href="https://cli.github.com/manual/gh_auth_login"
+           target="_blank" rel="noopener"
+           title="Connect this workspace to GitHub — run `gh auth login`">+</a>
+        {% endif %}
       </div>
     </header>
 
