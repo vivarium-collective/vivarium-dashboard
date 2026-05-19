@@ -1576,10 +1576,14 @@ def _post_study_run_baseline_for_test(ws_root, body):
     db_file = str(study_dir / "runs.db")
     run_id = cr.generate_run_id(spec_id, full_params)
     label = entry.get("name") or "baseline"
+    # v2ecoli friction #6: subprocess timeout from study yaml so a 3600-step
+    # baseline isn't killed by the 120s default. Per-study override.
+    runtime_cfg = (spec.get("runtime") or {}) if isinstance(spec.get("runtime"), dict) else {}
+    timeout_s = int(runtime_cfg.get("subprocess_timeout_s") or 1800)
     response, code = _run_composite_subprocess(
         pkg=pkg, state=state, steps=steps, db_file=db_file,
         run_id=run_id, spec_id=spec_id, label=label, sim_name=label,
-        overrides=generator_overrides,
+        overrides=generator_overrides, timeout=timeout_s,
     )
     if code == 200:
         # F2: do NOT append to study.yaml.runs[] — the runs_meta row
@@ -1896,10 +1900,14 @@ def _post_study_run_variant_for_test(ws_root, body):
 
     db_file = str(study_dir / "runs.db")
     run_id = cr.generate_run_id(spec_id, full_params)
+    # v2ecoli friction #6: per-study subprocess timeout.
+    runtime_cfg = (spec.get("runtime") or {}) if isinstance(spec.get("runtime"), dict) else {}
+    timeout_s = int(runtime_cfg.get("subprocess_timeout_s") or 1800)
     response, code = _run_composite_subprocess(
         pkg=pkg, state=state, steps=steps, db_file=db_file,
         run_id=run_id, spec_id=spec_id, label=variant_name,
         sim_name=variant_name, overrides=generator_overrides,
+        timeout=timeout_s,
     )
     # F2: no _append_study_run — the runs_meta row is the canonical record;
     # see the matching note in run-baseline above.
@@ -2447,7 +2455,7 @@ def _diagnose_push_error(err: str) -> dict | None:
 
 
 def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
-                              label, overrides=None, sim_name=None, timeout=120):
+                              label, overrides=None, sim_name=None, timeout=1800):
     """Run a resolved composite ``state`` for ``steps`` steps in a subprocess,
     persisting runs_meta + history (via an injected SQLiteEmitter) to
     ``db_file``.
@@ -2583,6 +2591,18 @@ def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
         except sqlite3.IntegrityError:
             return ({"simulation_id": run_id,
                      "error": "duplicate run_id (rare timing collision) — retry"}, 500)
+
+        # v2ecoli friction #10: persist the rendered script alongside runs.db
+        # so "what did the dashboard actually run for this run_id?" is one cat.
+        # Best-effort; never fail a run because the sidecar couldn't be written.
+        try:
+            _db_dir = os.path.dirname(os.path.abspath(db_file))
+            _sims_dir = os.path.join(_db_dir, "sims")
+            os.makedirs(_sims_dir, exist_ok=True)
+            with open(os.path.join(_sims_dir, f"{run_id}.subprocess.py"), "w") as _f:
+                _f.write(script)
+        except OSError:
+            pass
 
         try:
             try:
