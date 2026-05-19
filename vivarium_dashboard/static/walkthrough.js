@@ -3759,6 +3759,95 @@
   }
   window._openInvestigationDetail = _openInvestigationDetail;
 
+  // "Run unblocked" — kick off every variant in the current investigation
+  // whose required-before-run gates are satisfied. POSTs to start a
+  // background job, then polls /api/investigation-run-unblocked-status
+  // every 2 s and re-renders the progress panel. Once all items finish,
+  // re-loads the investigation so charts pick up the fresh runs.db data.
+  var _vivRunUnblockedTimer = null;
+  function _runUnblockedSimulations() {
+    var name = window._currentIset;
+    if (!name) return;
+    var btn = document.getElementById('investigation-run-unblocked');
+    var panel = document.getElementById('investigation-run-progress');
+    if (btn) { btn.disabled = true; btn.textContent = '… queuing'; }
+    if (panel) { panel.style.display = ''; panel.innerHTML = '<div class="inv-run-progress-banner">Queuing run-unblocked job…</div>'; }
+    fetch('/api/investigation-run-unblocked', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({investigation: name}),
+    }).then(function(r) {
+      return r.json().then(function(j) { return {ok: r.ok, body: j, status: r.status}; });
+    }).then(function(res) {
+      if (!res.ok) {
+        var msg = (res.body && res.body.error) || ('HTTP ' + res.status);
+        if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">Failed to queue: ' + _h(msg) + '</div>';
+        if (btn) { btn.disabled = false; btn.textContent = '▶ Run unblocked'; }
+        return;
+      }
+      var jobId = res.body.job_id;
+      _vivRenderRunProgress(res.body);
+      _vivPollRunProgress(jobId);
+    }).catch(function(err) {
+      if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">Network error: ' + _h(String(err)) + '</div>';
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Run unblocked'; }
+    });
+  }
+  window._runUnblockedSimulations = _runUnblockedSimulations;
+
+  function _vivPollRunProgress(jobId) {
+    if (_vivRunUnblockedTimer) clearTimeout(_vivRunUnblockedTimer);
+    function tick() {
+      fetch('/api/investigation-run-unblocked-status?job_id=' + encodeURIComponent(jobId))
+        .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, body: j}; }); })
+        .then(function(res) {
+          if (!res.ok) return;
+          _vivRenderRunProgress(res.body);
+          if (res.body.status === 'done' || res.body.status === 'failed') {
+            var btn = document.getElementById('investigation-run-unblocked');
+            if (btn) { btn.disabled = false; btn.textContent = '▶ Run unblocked'; }
+            // Refresh the investigation so new runs surface in charts.
+            if (typeof _refreshInvestigationDetail === 'function') {
+              setTimeout(_refreshInvestigationDetail, 500);
+            }
+            return;
+          }
+          _vivRunUnblockedTimer = setTimeout(tick, 2000);
+        });
+    }
+    tick();
+  }
+
+  function _vivRenderRunProgress(job) {
+    var panel = document.getElementById('investigation-run-progress');
+    if (!panel) return;
+    var items = (job.items || []).map(function(it) {
+      var statusCls = 'inv-run-item inv-run-' + (it.status || 'queued');
+      var icon = ({queued: '⋯', running: '▶', done: '✓', failed: '✗',
+                   blocked: '⛔', skipped: '—'})[it.status] || '?';
+      var err = it.error ? ' <span class="inv-run-err">' + _h(it.error) + '</span>' : '';
+      return '<div class="' + statusCls + '">'
+        + '<span class="inv-run-icon">' + icon + '</span>'
+        + '<code>' + _h(it.study) + '</code>'
+        + ' <span class="inv-run-arrow">›</span> '
+        + '<code>' + _h(it.variant) + '</code>'
+        + err
+        + '</div>';
+    }).join('');
+    var prog = job.progress || {total: 0, done: 0, running: 0};
+    var headline;
+    if (job.status === 'done') {
+      headline = '<strong>✓ All done.</strong> ' + prog.done + ' / ' + prog.total + ' runs completed.';
+    } else if (job.status === 'failed') {
+      headline = '<strong>✗ Job failed.</strong> ' + prog.done + ' / ' + prog.total + ' attempted.';
+    } else {
+      headline = '<strong>Running…</strong> ' + prog.done + ' / ' + prog.total + ' complete' +
+                 (prog.running ? ' · ' + prog.running + ' in flight' : '');
+    }
+    panel.innerHTML = '<div class="inv-run-progress-banner">' + headline + '</div>'
+                    + '<div class="inv-run-list">' + items + '</div>';
+  }
+
   // Manual refresh: re-fetch /api/iset/<current> + re-render. Use after editing
   // investigation.yaml / study.yaml files directly on disk (which the dashboard
   // has no other way to learn about — there's no file watcher or auto-poll).

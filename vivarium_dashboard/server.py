@@ -257,6 +257,7 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/study-set-objective":         "_post_study_set_objective",
     "/api/study-expert-input-set":      "_post_study_expert_input_set",
     "/api/study-rename":                "_post_study_rename",
+    "/api/investigation-run-unblocked": "_post_investigation_run_unblocked",
     "/api/study-create-from-run":       "_post_study_create_from_run",
     "/api/study-run-baseline":          "_post_study_run_baseline",
     "/api/study-run-all-baselines":     "_post_study_run_all_baselines",
@@ -1492,6 +1493,12 @@ def _post_study_run_baseline_for_test(ws_root, body):
     # the file. Keeps legacy investigations/spec.yaml usable.
     from vivarium_dashboard.lib.spec_migration import migrate_v2_to_v3
     spec = migrate_v2_to_v3(spec)
+    # v4-redesign projection: synthesises legacy fields (baseline list,
+    # variants list, behavior_tests, simulation_set) from a v4 conditions
+    # block. Idempotent on v3 (no-op when conditions is absent).
+    if spec.get("schema_version") == 4 and isinstance(spec.get("conditions"), dict):
+        from vivarium_dashboard.lib.investigations import _project_v4_redesign_to_legacy_view
+        spec = _project_v4_redesign_to_legacy_view(spec)
     baseline = spec.get("baseline") or []
     if not isinstance(baseline, list) or not baseline:
         return {"error": "study has no baseline composites"}, 400
@@ -1713,6 +1720,12 @@ def _post_study_run_all_baselines_for_test(ws_root, body):
     spec = yaml.safe_load(sf.read_text()) or {}
     from vivarium_dashboard.lib.spec_migration import migrate_v2_to_v3
     spec = migrate_v2_to_v3(spec)
+    # v4-redesign projection: synthesises legacy fields (baseline list,
+    # variants list, behavior_tests, simulation_set) from a v4 conditions
+    # block. Idempotent on v3 (no-op when conditions is absent).
+    if spec.get("schema_version") == 4 and isinstance(spec.get("conditions"), dict):
+        from vivarium_dashboard.lib.investigations import _project_v4_redesign_to_legacy_view
+        spec = _project_v4_redesign_to_legacy_view(spec)
     baseline = spec.get("baseline") or []
     if not isinstance(baseline, list) or not baseline:
         return {"error": "study has no baseline composites"}, 400
@@ -1773,6 +1786,12 @@ def _post_study_run_variant_for_test(ws_root, body):
     # Auto-migrate legacy v2-shape specs to v3 list shape (see run-baseline).
     from vivarium_dashboard.lib.spec_migration import migrate_v2_to_v3
     spec = migrate_v2_to_v3(spec)
+    # v4-redesign projection: synthesises legacy fields (baseline list,
+    # variants list, behavior_tests, simulation_set) from a v4 conditions
+    # block. Idempotent on v3 (no-op when conditions is absent).
+    if spec.get("schema_version") == 4 and isinstance(spec.get("conditions"), dict):
+        from vivarium_dashboard.lib.investigations import _project_v4_redesign_to_legacy_view
+        spec = _project_v4_redesign_to_legacy_view(spec)
     baseline = spec.get("baseline") or []
     if not isinstance(baseline, list) or not baseline:
         return {"error": "study has no baseline composites"}, 400
@@ -3066,6 +3085,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_iset_list()
         if self.path.startswith("/api/iset/"):
             return self._get_iset_detail()
+        if self.path.startswith("/api/investigation-run-unblocked-status"):
+            return self._get_investigation_run_unblocked_status()
         if self.path.startswith("/api/investigation-registry"):
             return self._get_investigation_registry()
         if self.path.startswith("/api/study-charts/"):
@@ -7995,6 +8016,198 @@ if __name__ == "__main__":
         """POST /api/study-run-variant {study, variant, steps?}"""
         response, code = _post_study_run_variant_for_test(WORKSPACE, body)
         return self._json(response, code)
+
+    def _post_investigation_run_unblocked(self, body: dict):
+        """POST /api/investigation-run-unblocked {investigation}
+
+        Enumerates every study in the investigation, finds variants whose
+        ``conditions.model_settings`` don't have any unset
+        ``required-before-run`` gates, and runs them sequentially on a
+        background thread. Returns a ``job_id`` immediately; the client
+        polls ``/api/investigation-run-unblocked-status?job_id=...``.
+
+        Each variant's run delegates to the existing
+        ``_post_study_run_baseline_for_test`` / ``_post_study_run_variant_for_test``
+        handlers — same composite resolution, same emit pipeline, same
+        viz-rendering side effect.
+
+        After the last variant lands, the worker also fires comparative
+        visualisations declared under the investigation yaml's
+        ``comparative_visualizations:`` block (if present).
+        """
+        import threading
+        import yaml as _yaml
+        from vivarium_dashboard.lib.run_jobs import (
+            manager, enumerate_unblocked,
+        )
+
+        inv_slug = ((body or {}).get("investigation") or "").strip()
+        if not inv_slug:
+            return self._json({"error": "investigation is required"}, 400)
+        inv_yaml = WORKSPACE / "investigations" / inv_slug / "investigation.yaml"
+        if not inv_yaml.is_file():
+            return self._json({"error": f"investigation not found: {inv_slug}"}, 404)
+        try:
+            iset = _yaml.safe_load(inv_yaml.read_text()) or {}
+        except _yaml.YAMLError as e:
+            return self._json({"error": f"yaml parse failed: {e}"}, 500)
+
+        # Optional studies filter: ``{"investigation": "...", "studies":
+        # ["dnaa-05-itv2-comparison", ...]}`` runs only those member
+        # studies. Default (no filter) is "all studies in the investigation".
+        studies_filter_raw = (body or {}).get("studies")
+        studies_filter: set[str] | None = None
+        if studies_filter_raw:
+            if isinstance(studies_filter_raw, str):
+                studies_filter = {studies_filter_raw}
+            elif isinstance(studies_filter_raw, list):
+                studies_filter = {str(s) for s in studies_filter_raw if s}
+
+        # Collect runnable items across every member study (or just the
+        # requested subset).
+        items: list[dict] = []
+        skipped: list[dict] = []
+        for member in (iset.get("studies") or []):
+            member_name = member if isinstance(member, str) else member.get("study")
+            if not member_name:
+                continue
+            if studies_filter and member_name not in studies_filter:
+                continue
+            spec_path = WORKSPACE / "studies" / member_name / "study.yaml"
+            if not spec_path.is_file():
+                # legacy: investigations/<name>/spec.yaml
+                spec_path = WORKSPACE / "investigations" / member_name / "spec.yaml"
+            if not spec_path.is_file():
+                skipped.append({"study": member_name, "variant": "?",
+                                "status": "skipped",
+                                "error": "study.yaml not found"})
+                continue
+            try:
+                spec = _yaml.safe_load(spec_path.read_text()) or {}
+            except _yaml.YAMLError as e:
+                skipped.append({"study": member_name, "variant": "?",
+                                "status": "skipped", "error": f"yaml: {e}"})
+                continue
+            runnable, blocked = enumerate_unblocked(spec)
+            items.extend(runnable)
+            items.extend(blocked)
+        items.extend(skipped)
+
+        if not any(it.get("status") == "queued" for it in items):
+            return self._json({
+                "error": "no unblocked variants to run",
+                "items": items,
+            }, 400)
+
+        # Worker: walk through queued items in order, fire each via the
+        # existing run-variant / run-baseline path.
+        def _worker(job):
+            for idx, item in enumerate(list(job.items)):
+                if item.get("status") != "queued":
+                    continue
+                job.update_item(idx, status="running")
+                study_slug = item["study"]
+                variant_name = item["variant"]
+                try:
+                    if item["kind"] == "baseline":
+                        resp, code = _post_study_run_baseline_for_test(
+                            WORKSPACE, {"study": study_slug}
+                        )
+                    else:
+                        resp, code = _post_study_run_variant_for_test(
+                            WORKSPACE, {"study": study_slug, "variant": variant_name}
+                        )
+                    if code == 200:
+                        job.update_item(idx, status="done",
+                                        run_id=resp.get("run_id", ""))
+                    else:
+                        job.update_item(idx, status="failed",
+                                        error=resp.get("error", f"HTTP {code}"))
+                except BaseException as e:  # noqa: BLE001
+                    job.update_item(idx, status="failed", error=str(e))
+            # Optional: render investigation-level comparative visualisations.
+            self._render_investigation_comparative_visualisations(
+                inv_slug, iset, job,
+            )
+
+        job = manager.submit(inv_slug, items, _worker)
+        return self._json({"job_id": job.job_id, "items": items}, 202)
+
+    def _get_investigation_run_unblocked_status(self):
+        """GET /api/investigation-run-unblocked-status?job_id=<id>"""
+        import urllib.parse
+        from vivarium_dashboard.lib.run_jobs import manager
+        q = urllib.parse.parse_qs(self.path.split("?", 1)[-1] if "?" in self.path else "")
+        job_id = (q.get("job_id") or [""])[0]
+        if not job_id:
+            return self._json({"jobs": manager.list_recent(10)}, 200)
+        job = manager.get(job_id)
+        if job is None:
+            return self._json({"error": "job not found"}, 404)
+        return self._json(job.to_dict(), 200)
+
+    def _render_investigation_comparative_visualisations(
+        self, inv_slug: str, iset: dict, job
+    ) -> None:
+        """Run the investigation yaml's ``comparative_visualizations`` block.
+
+        Schema (optional):
+
+            comparative_visualizations:
+              - name: dnaa-atp-count-vs-time
+                title: DnaA-ATP count over time (3-way comparison)
+                observable_path: listeners.itv2.dnaa_atp_count
+                y_label: DnaA-ATP count
+                runs:
+                  - {study: dnaa-05-itv2-comparison, variant: itv2-standalone-wt}
+                  - {study: dnaa-05-itv2-comparison, variant: v2ecoli-baseline-default}
+                  - {study: dnaa-05-itv2-comparison, variant: v2ecoli-with-fxj-params}
+
+        Each ``runs[]`` entry resolves to ``studies/<study>/runs.db`` —
+        the dashboard's standard per-study db. Output is written to
+        ``investigations/<inv>/viz/<name>.html`` where the auto-discovery
+        pipeline picks it up.
+        """
+        from vivarium_dashboard.lib.comparative_viz import (
+            render_comparative_time_series,
+        )
+        specs = iset.get("comparative_visualizations") or []
+        if not specs:
+            return
+        viz_dir = WORKSPACE / "investigations" / inv_slug / "viz"
+        viz_dir.mkdir(parents=True, exist_ok=True)
+        for spec in specs:
+            if not isinstance(spec, dict) or not spec.get("name"):
+                continue
+            runs = []
+            for r in spec.get("runs") or []:
+                if not isinstance(r, dict):
+                    continue
+                study = r.get("study", "")
+                label = r.get("label") or f"{study} / {r.get('variant', 'baseline')}"
+                db = WORKSPACE / "studies" / study / "runs.db"
+                runs.append({"label": label, "db_path": db})
+            if not runs:
+                continue
+            out_path = viz_dir / f"{spec['name']}.html"
+            try:
+                render_comparative_time_series(
+                    runs=runs,
+                    observable_path=spec.get("observable_path", ""),
+                    title=spec.get("title", spec["name"]),
+                    y_label=spec.get("y_label", ""),
+                    output_path=out_path,
+                    observable_index=spec.get("observable_index"),
+                    target_band=spec.get("target_band"),
+                    target_band_label=spec.get("target_band_label"),
+                )
+            except Exception as e:  # noqa: BLE001
+                # Surface the error in the job items so the UI sees it,
+                # but don't fail the whole job over one viz.
+                job.update_item(
+                    len(job.items) - 1,
+                    comparative_viz_warning=f"{spec['name']}: {e}",
+                )
 
     def _post_study_variant_add(self, body: dict):
         """POST /api/study-variant-add {study, name, description?,
