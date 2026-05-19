@@ -383,6 +383,57 @@ def inject_emitter_for_paths(state: dict, explicit_paths: list[str]) -> dict:
     return new_state
 
 
+def collect_emit_paths_from_spec(spec: dict) -> list[str]:
+    """Collect observable paths declared by a v4 study yaml, for emitter setup.
+
+    The study-run code path uses this to thread emit_paths through to
+    ``inject_emitter_for_paths(state, paths)`` BEFORE
+    ``inject_sqlite_emitter()``. Without it, the injected SQLiteEmitter
+    has an empty emit schema → history rows capture only the synthetic
+    ``_tick`` port → viz HTMLs render as "No <obs> in history" stubs.
+
+    Sources:
+      - ``tests[].measure.path``           — per-test pass/fail observables
+      - ``visualizations[].inputs_map.*``  — explicit viz observable wiring
+      - ``behavior_tests[].measure.path``  — legacy v3 projection fallback
+
+    Dotted paths (``listeners.dnaA_cycle.atp_fraction``) are normalised to
+    slash form (``listeners/dnaA_cycle/atp_fraction``) — the shape
+    :func:`inject_emitter_for_paths` consumes. Returns a sorted, deduped
+    list.
+    """
+    def _norm(p):
+        if isinstance(p, str):
+            return p.replace(".", "/") if p else None
+        if isinstance(p, (list, tuple)):
+            joined = "/".join(str(x) for x in p if x is not None)
+            return joined or None
+        return None
+
+    paths: set[str] = set()
+    for t in (spec.get("tests") or []) + (spec.get("behavior_tests") or []):
+        if not isinstance(t, dict):
+            continue
+        m = t.get("measure") or {}
+        p = _norm(m.get("path"))
+        if p:
+            paths.add(p)
+    for v in (spec.get("visualizations") or []):
+        if not isinstance(v, dict):
+            continue
+        # inputs_map may be at v.inputs_map (legacy) or v.config.inputs_map
+        # (canonical — what the dashboard's Visualization Step classes
+        # consume). Read both shapes.
+        for im_loc in (v.get("inputs_map"),
+                        (v.get("config") or {}).get("inputs_map")):
+            if isinstance(im_loc, dict):
+                for val in im_loc.values():
+                    p = _norm(val)
+                    if p:
+                        paths.add(p)
+    return sorted(paths)
+
+
 def all_store_paths(state: dict) -> list[str]:
     """Return every top-level store key in ``state``, skipping step/process
     nodes.

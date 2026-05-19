@@ -1563,10 +1563,14 @@ def _post_study_run_baseline_for_test(ws_root, body):
     db_file = str(study_dir / "runs.db")
     run_id = cr.generate_run_id(spec_id, full_params)
     label = entry.get("name") or "baseline"
+    # Collect observable paths from tests + viz inputs_map so the
+    # subprocess can wire a user_emitter feeding the SQLiteEmitter — see
+    # collect_emit_paths_from_spec docstring + friction-log item #14.
+    emit_paths = cr.collect_emit_paths_from_spec(spec)
     response, code = _run_composite_subprocess(
         pkg=pkg, state=state, steps=steps, db_file=db_file,
         run_id=run_id, spec_id=spec_id, label=label, sim_name=label,
-        overrides=generator_overrides,
+        overrides=generator_overrides, emit_paths=emit_paths,
     )
     if code == 200:
         # F2: do NOT append to study.yaml.runs[] — the runs_meta row
@@ -1874,10 +1878,15 @@ def _post_study_run_variant_for_test(ws_root, body):
 
     db_file = str(study_dir / "runs.db")
     run_id = cr.generate_run_id(spec_id, full_params)
+    # See _post_study_run_baseline_for_test: thread the study-declared
+    # observable paths into the subprocess so the SQLiteEmitter captures
+    # them. Friction-log item #14.
+    emit_paths = cr.collect_emit_paths_from_spec(spec)
     response, code = _run_composite_subprocess(
         pkg=pkg, state=state, steps=steps, db_file=db_file,
         run_id=run_id, spec_id=spec_id, label=variant_name,
         sim_name=variant_name, overrides=generator_overrides,
+        emit_paths=emit_paths,
     )
     # F2: no _append_study_run — the runs_meta row is the canonical record;
     # see the matching note in run-baseline above.
@@ -2441,7 +2450,8 @@ def _diagnose_push_error(err: str) -> dict | None:
 
 
 def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
-                              label, overrides=None, sim_name=None, timeout=1800):
+                              label, overrides=None, sim_name=None, timeout=1800,
+                              emit_paths=None):
     """Run a resolved composite ``state`` for ``steps`` steps in a subprocess,
     persisting runs_meta + history (via an injected SQLiteEmitter) to
     ``db_file``.
@@ -2485,6 +2495,7 @@ def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
             "run_id": run_id,
             "db_file": db_file,
             "steps": steps,
+            "emit_paths": list(emit_paths or []),
         }
         script = textwrap.dedent(f"""
             import json, sys, traceback
@@ -2533,6 +2544,18 @@ def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
 
                 doc = build_generator(entry, overrides=_payload['overrides'])
                 state = doc.get('state', doc) if isinstance(doc, dict) else doc
+                # Wire the study yaml's declared test/viz observable paths
+                # into a user_emitter BEFORE inject_sqlite_emitter, so the
+                # SQLiteEmitter inherits a populated emit schema. Without
+                # this the SQLiteEmitter captures only the synthetic _tick
+                # port from inject_sqlite_emitter's fallback wire, and the
+                # viz pipeline renders "No <obs> in history" stubs even
+                # though the simulation actually computed those listeners.
+                # See docs/superpowers/notes/2026-05-19-dashboard-runner-friction.md
+                # item #14.
+                _emit_paths = _payload.get('emit_paths') or []
+                if _emit_paths:
+                    state = cr.inject_emitter_for_paths(state, _emit_paths)
                 state = cr.inject_sqlite_emitter(
                     state, run_id=_payload['run_id'], db_file=_payload['db_file'])
                 composite = Composite({{'state': state}}, core=core)
