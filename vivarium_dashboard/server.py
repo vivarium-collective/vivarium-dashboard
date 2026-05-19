@@ -2361,12 +2361,28 @@ def _jinja_fmt_duration(seconds) -> str:
 # ---------------------------------------------------------------------------
 
 def _is_generated_path(path: str) -> bool:
-    """True if `path` is a generated report file (the dashboard rebuilds these
-    on every page load, so they're chronically dirty and shouldn't block actions)
-    or a large untracked artifact directory (out/ — the ~175 MB ParCa cache —
-    which must never block actions and must never be committed).
+    """True if `path` is generated/runtime state that the dashboard rebuilds
+    or manages itself, and so should never block authored actions like Install,
+    Workstream Commit, or Push. Includes:
+
+      - reports/ — regenerated on every page load
+      - out/ — the ~175 MB ParCa cache; must never be committed
+      - .pbg/ — the dashboard's own runtime state (composite-runs.db,
+        dashboard pid/info, runs/ logs). Chronically dirty during any
+        dashboard session because the dashboard itself is creating these
+        files; blocking dashboard actions on the dashboard's own writes is
+        a recurring papercut.
+
+    See docs/superpowers/notes/2026-05-19-dashboard-runner-friction.md
+    item #15 for the structural argument and the longer-term fix
+    (delegating to `git check-ignore` so .gitignore is the single source
+    of truth).
     """
-    return path.startswith("reports/") or path.startswith("out/") or path == "out/"
+    return (
+        path.startswith("reports/")
+        or path.startswith("out/") or path == "out/"
+        or path.startswith(".pbg/") or path == ".pbg/"
+    )
 
 
 def _submodule_paths() -> set[str]:
