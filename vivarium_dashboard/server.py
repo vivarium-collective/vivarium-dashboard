@@ -2425,7 +2425,7 @@ def _diagnose_push_error(err: str) -> dict | None:
 
 
 def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
-                              label, overrides=None, sim_name=None, timeout=120):
+                              label, overrides=None, sim_name=None, timeout=1800):
     """Run a resolved composite ``state`` for ``steps`` steps in a subprocess,
     persisting runs_meta + history (via an injected SQLiteEmitter) to
     ``db_file``.
@@ -2491,7 +2491,26 @@ def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
                 state = cr.inject_sqlite_emitter(
                     state, run_id=_payload['run_id'], db_file=_payload['db_file'])
                 composite = Composite({{'state': state}}, core=core)
-                composite.run(_payload['steps'])
+                # Chunk the run so the injected SQLiteEmitter fires
+                # periodically instead of just at the start and end. A
+                # single composite.run(N) for large N advances every
+                # process by N in one shot (one emit). Chunk at 60-second
+                # granularity so a 3600s run produces ~60 history rows
+                # of listener state — enough for the dashboard's chart
+                # pipeline + comparative visualisations to plot.
+                _total = float(_payload['steps'])
+                _chunk = 60.0 if _total > 60.0 else _total
+                _done = 0.0
+                while _done < _total:
+                    _step = min(_chunk, _total - _done)
+                    try:
+                        composite.run(_step)
+                    except Exception:
+                        # Cell-division event in v2ecoli typically raises;
+                        # treat that as a clean stop and keep whatever
+                        # history was emitted up to the divide.
+                        break
+                    _done += _step
                 results = gather_emitter_results(composite)
         """).lstrip("\n")
     else:
@@ -8161,10 +8180,26 @@ if __name__ == "__main__":
                         job.update_item(idx, status="done",
                                         run_id=resp.get("run_id", ""))
                     else:
-                        job.update_item(idx, status="failed",
-                                        error=resp.get("error", f"HTTP {code}"))
+                        # Surface every diagnostic field the handler returns
+                        # so the failed-run inspection in the UI has enough
+                        # context. Stringify the error so a numeric 0/None
+                        # doesn't render as the literal word "0".
+                        err_val = resp.get("error", f"HTTP {code}")
+                        if err_val in (None, 0, "0"):
+                            err_val = f"empty error (HTTP {code}) — see traceback / stderr"
+                        job.update_item(
+                            idx, status="failed",
+                            error=str(err_val),
+                            http_code=code,
+                            traceback=(resp.get("traceback") or "")[-3000:],
+                            stderr=(resp.get("stderr") or "")[-3000:],
+                            stdout_tail=(resp.get("stdout") or "")[-1500:],
+                        )
                 except BaseException as e:  # noqa: BLE001
-                    job.update_item(idx, status="failed", error=str(e))
+                    import traceback as _tb
+                    job.update_item(idx, status="failed",
+                                    error=str(e),
+                                    traceback=_tb.format_exc()[-3000:])
             # Optional: render investigation-level comparative visualisations.
             self._render_investigation_comparative_visualisations(
                 inv_slug, iset, job,

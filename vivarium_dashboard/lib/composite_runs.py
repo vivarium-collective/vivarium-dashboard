@@ -309,6 +309,18 @@ def inject_sqlite_emitter(state: dict, *, run_id: str,
         inputs = dict(node.get("inputs") or {})
         break
 
+    # When the candidate-scan above leaves inputs empty (no top-level emitter
+    # in the spec — common for ITv2 standalone and v2ecoli baselines whose
+    # emitter lives nested under agents/0/emitter), wire a synthetic "_tick"
+    # input to global_time so the Step is actually triggered every composite
+    # apply. Without this, find_step_triggers registers no triggers for an
+    # empty-inputs Step → it fires once at composite init via
+    # build_step_network and never again → runs.db gets 1-2 history rows
+    # regardless of how long the sim runs. See docs/superpowers/notes/
+    # 2026-05-19-dashboard-runner-friction.md items #1, #13.
+    if not inputs:
+        inputs = {"_tick": ("global_time",)}
+
     # SQLiteEmitter joins file_path (directory) + db_file (filename) via
     # os.path.join, so we must split the absolute path accordingly.
     # (db_file is already a Path from the top of this function.)
