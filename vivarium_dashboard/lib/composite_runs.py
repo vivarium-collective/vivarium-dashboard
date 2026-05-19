@@ -268,14 +268,34 @@ def auto_label(overrides: dict) -> str:
 
 
 def inject_sqlite_emitter(state: dict, *, run_id: str,
-                          db_file: str | Path) -> dict:
-    """Return a copy of `state` with a SQLiteEmitter step appended.
+                          db_file: str | Path,
+                          interval_seconds: float = 60.0) -> dict:
+    """Return a copy of `state` with a SQLiteEmitter process appended.
 
-    The injected step consumes the same input ports declared by the first
-    `_type='step'` entry whose `address` ends with `Emitter` — so the
-    SQLiteEmitter captures the same observables the spec's primary emitter
-    already declared. When no such step exists, the SQLiteEmitter is added
-    with an empty `emit` schema and no inputs (step counts persist anyway).
+    The injected process consumes the same input ports declared by the first
+    ``_type='step'`` entry whose ``address`` ends with ``Emitter`` (case-
+    insensitive) — so the SQLiteEmitter captures the same observables the
+    spec's primary emitter already declared. When no such step exists, the
+    SQLiteEmitter is added with an empty ``emit`` schema and no inputs
+    (step counts persist anyway).
+
+    **2026-05-19: switched from ``_type: "step"`` to ``_type: "process"``
+    with a configurable ``interval``** (v2ecoli friction #1). Steps in
+    process_bigraph only fire when an upstream input mutates at the scope
+    they're wired into. The injection always lands at the top of the
+    state tree, but real composites often wire their primary emitter
+    deeper (e.g. ``agents/0/emitter``) — the top-level step never saw
+    those mutations and ``runs.db`` ended up with exactly 2 history rows
+    per run regardless of sim length, breaking every comparative
+    visualization downstream. Making the injected emitter a Process on
+    a fixed interval guarantees periodic writes regardless of where the
+    spec wires its own emitter.
+
+    ``interval_seconds`` default 60.0 is sane for the typical 1-hour
+    workspace baseline. Callers driving longer sims should pass a larger
+    value; callers wanting sub-second resolution can pass a smaller one.
+    A future iteration may walk the composite recursively and inject at
+    every level a spec emitter lives — the proper but heavier fix.
 
     Idempotent: a second call with the same run_id is a no-op.
     """
@@ -320,7 +340,9 @@ def inject_sqlite_emitter(state: dict, *, run_id: str,
     # (db_file is already a Path from the top of this function.)
     new_state = dict(state)
     new_state["sqlite_emitter"] = {
-        "_type": "step",
+        # _type: "process" with `interval` — see docstring + v2ecoli
+        # friction #1 for why this isn't a step.
+        "_type": "process",
         "address": "local:SQLiteEmitter",
         "config": {
             "emit": emit_schema,
@@ -328,6 +350,7 @@ def inject_sqlite_emitter(state: dict, *, run_id: str,
             "db_file": db_file.name,
             "simulation_id": run_id,
         },
+        "interval": float(interval_seconds),
         "inputs": inputs,
     }
     return new_state
