@@ -9599,36 +9599,99 @@ if __name__ == "__main__":
         Each installed module is additionally checked for venv-vs-workspace.yaml
         drift: if the declared Python package is not importable in the workspace
         venv, the module is flagged ``out_of_sync: true`` with a short reason.
+
+        The workspace's own first-party package (workspace.yaml.package_path) is
+        prepended to the list with ``kind: "workspace"`` so the Installed
+        Modules panel can show it. The UI filters it out of Available Modules.
         """
         catalog_path = WORKSPACE / "scripts" / "_catalog" / "modules.json"
-        if not catalog_path.exists():
-            return self._json({"modules": [], "error": "catalog not found"}, 200)
         try:
-            modules = json.loads(catalog_path.read_text())
-            # Annotate with installed status from workspace.yaml imports.
             ws_data = yaml.safe_load((WORKSPACE / "workspace.yaml").read_text())
-            imports = ws_data.get("imports", {}) or {}
-            for m in modules:
-                m["installed"] = m["name"] in imports
-                if m["installed"]:
-                    # Merge live workspace.yaml entry fields (source/ref/path/install_path/package)
-                    # into the catalog item so the UI has authoritative install metadata.
-                    imp = imports.get(m["name"], {}) or {}
-                    for k in ("source", "ref", "path", "install_path", "package"):
-                        v = imp.get(k)
-                        if v is not None:
-                            m[k] = v
-                    # Sync check: is the Python package actually importable?
-                    pkg_name = m.get("package") or m["name"].replace("-", "_")
-                    sync_reason = _check_installed_module_sync(
-                        pkg_name, m.get("install_path")
-                    )
-                    if sync_reason:
-                        m["out_of_sync"] = True
-                        m["out_of_sync_reason"] = sync_reason
-            return self._json({"modules": modules}, 200)
         except Exception as e:
-            return self._json({"modules": [], "error": str(e)}, 500)
+            return self._json({"modules": [], "error": f"workspace.yaml: {e}"}, 500)
+
+        if catalog_path.exists():
+            try:
+                modules = json.loads(catalog_path.read_text())
+            except Exception as e:
+                return self._json({"modules": [], "error": str(e)}, 500)
+        else:
+            modules = []  # catalog is optional; the workspace-self entry still applies
+
+        imports = (ws_data or {}).get("imports", {}) or {}
+        for m in modules:
+            m["installed"] = m["name"] in imports
+            if m["installed"]:
+                # Merge live workspace.yaml entry fields (source/ref/path/install_path/package)
+                # into the catalog item so the UI has authoritative install metadata.
+                imp = imports.get(m["name"], {}) or {}
+                for k in ("source", "ref", "path", "install_path", "package"):
+                    v = imp.get(k)
+                    if v is not None:
+                        m[k] = v
+                # Sync check: is the Python package actually importable?
+                pkg_name = m.get("package") or m["name"].replace("-", "_")
+                sync_reason = _check_installed_module_sync(
+                    pkg_name, m.get("install_path")
+                )
+                if sync_reason:
+                    m["out_of_sync"] = True
+                    m["out_of_sync_reason"] = sync_reason
+
+        ws_self = self._workspace_self_module(ws_data)
+        if ws_self is not None:
+            modules = [ws_self] + modules
+
+        return self._json({"modules": modules}, 200)
+
+    def _workspace_self_module(self, ws_data: dict) -> dict | None:
+        """Synthesize a catalog-style entry for the workspace's own package.
+
+        ``workspace.yaml.package_path`` is the first-party Python package that
+        ``build_core()`` imports — its Processes/Steps/Composites/Types are
+        what the workspace actually runs with. Treating it as just-another
+        installed module in the Installed Modules panel makes that visible.
+
+        Returns None when no package_path is declared OR when the directory
+        doesn't exist on disk (degenerate workspace; nothing to show).
+        """
+        slug = (ws_data or {}).get("name", "") or ""
+        pkg = (ws_data or {}).get("package_path")
+        if not pkg:
+            # Fall back to the same heuristic used elsewhere in the server.
+            pkg = "pbg_" + slug.replace("-", "_") if slug else None
+        if not pkg:
+            return None
+        pkg_dir = WORKSPACE / pkg
+        if not pkg_dir.is_dir():
+            return None
+
+        sync_reason = _check_installed_module_sync(pkg, pkg)
+        # Best-effort current branch — purely cosmetic for the Source column.
+        try:
+            ref = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=WORKSPACE, capture_output=True, text=True, timeout=2,
+            ).stdout.strip() or "—"
+        except (subprocess.TimeoutExpired, OSError):
+            ref = "—"
+        entry: dict = {
+            "kind": "workspace",
+            "name": slug or pkg,
+            "package": pkg,
+            "install_path": pkg,
+            "description": "Workspace's own first-party package — provides the "
+                           "Processes, Steps, Composites, and Types that "
+                           "build_core() registers for this workspace.",
+            "source": "workspace",
+            "ref": ref,
+            "tags": ["workspace"],
+            "installed": True,
+        }
+        if sync_reason:
+            entry["out_of_sync"] = True
+            entry["out_of_sync_reason"] = sync_reason
+        return entry
 
     def _post_catalog_install(self, body: dict):
         """POST /api/catalog-install — install a catalog module.

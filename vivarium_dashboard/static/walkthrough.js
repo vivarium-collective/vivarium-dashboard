@@ -1145,6 +1145,9 @@
     var search = f.search.toLowerCase();
     var activeTags = f.tags;
     var modules = window._catalogModules.filter(function(m) {
+      // The workspace's own first-party package is surfaced in
+      // Installed modules only — it's not an installable catalog item.
+      if (m.kind === 'workspace') return false;
       // Search filter
       if (search) {
         var haystack = (m.name + ' ' + (m.description || '') + ' ' + (m.tags || []).join(' ')).toLowerCase();
@@ -1227,12 +1230,33 @@
       return;
     }
 
+    // Pin the workspace's own first-party package row at the top.
+    installed.sort(function(a, b) {
+      var aw = a.kind === 'workspace' ? 0 : 1;
+      var bw = b.kind === 'workspace' ? 0 : 1;
+      if (aw !== bw) return aw - bw;
+      return (a.name || '').localeCompare(b.name || '');
+    });
+
     var rows = installed.map(function(m) {
       var name = _esc(m.name);
       var source = _esc(m.source || '');
       var ref = _esc(m.ref || 'main');
       var path = _esc(m.install_path || m.path || '—');
       var pkg = _esc(m.package || m.name);
+
+      // The workspace's own package isn't uninstallable — it's the workspace.
+      // Render with a "first-party" pill and no Uninstall button.
+      if (m.kind === 'workspace') {
+        return '<tr style="background:#f8fafc">' +
+          '<td><code>' + name + '</code><br><small style="color:#6b7280">' + pkg + '</small></td>' +
+          '<td><code>' + source + '</code> @ <code>' + ref + '</code></td>' +
+          '<td><code>' + path + '</code></td>' +
+          '<td><span class="status-pill installed" title="The workspace\'s own first-party package. Always present; cannot be uninstalled.">first-party</span></td>' +
+          '<td><span style="color:#6b7280;font-size:0.85em">workspace package</span></td>' +
+          '</tr>';
+      }
+
       var sysDepsBtn = '';
       // Only surface a "Run system-deps check" button when the module is
       // installed AND the catalog flagged drift OR the entry declares
