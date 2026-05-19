@@ -228,7 +228,8 @@ def _validate_study_v4_redesign(spec: dict) -> None:
         conditions:
           baseline: {composite: <dotted.path>, params: {...}}
           variants: [ {name, ...}, ... ]            # may be empty
-          expert_inputs: [ {name, gate, ...}, ... ] # may be empty
+          model_settings: [ {name, gate, ...}, ... ] # may be empty
+          # (accepts the legacy `expert_inputs` alias)
         tests: [ {name, measure, pass_if, ...}, ... ]
         status: <str>                                # free-form gate keyword
 
@@ -259,22 +260,31 @@ def _validate_study_v4_redesign(spec: dict) -> None:
                 f"v4 study: conditions.variants[{i}] must be a mapping with a 'name'"
             )
 
-    expert_inputs = cond.get("expert_inputs", [])
-    if not isinstance(expert_inputs, list):
+    # ``model_settings`` is the canonical name; ``expert_inputs`` is
+    # accepted as a deprecated alias so older study yamls keep working
+    # without a forced migration.
+    model_settings = cond.get("model_settings")
+    if model_settings is None:
+        model_settings = cond.get("expert_inputs", [])
+    if not isinstance(model_settings, list):
         raise InvestigationSpecError(
-            "v4 study: conditions.expert_inputs must be a list"
+            "v4 study: conditions.model_settings must be a list"
         )
-    for i, ei in enumerate(expert_inputs):
-        if not isinstance(ei, dict) or not ei.get("name"):
+    for i, ms in enumerate(model_settings):
+        if not isinstance(ms, dict) or not ms.get("name"):
             raise InvestigationSpecError(
-                f"v4 study: conditions.expert_inputs[{i}] must be a mapping with a 'name'"
+                f"v4 study: conditions.model_settings[{i}] must be a mapping with a 'name'"
             )
-        gate = ei.get("gate", "optional")
+        gate = ms.get("gate", "optional")
         if gate not in ("optional", "required-before-run"):
             raise InvestigationSpecError(
-                f"v4 study: conditions.expert_inputs[{i}].gate must be one of "
+                f"v4 study: conditions.model_settings[{i}].gate must be one of "
                 f"'optional' or 'required-before-run' (got {gate!r})"
             )
+    # Promote the legacy alias to the canonical key so downstream code
+    # only needs to read one field.
+    if "model_settings" not in cond and "expert_inputs" in cond:
+        cond["model_settings"] = cond.pop("expert_inputs")
 
     assumptions = spec.get("assumptions", [])
     if not isinstance(assumptions, list):
@@ -351,14 +361,45 @@ def _project_v4_redesign_to_legacy_view(spec: dict) -> dict:
 
     # variants — re-shape new variants list onto the legacy projection
     new_variants = cond.get("variants") or []
+    baseline_name = out.get("name") or "baseline"
+    baseline_composite = bl.get("composite")
     if new_variants and not out.get("variants"):
-        baseline_name = out.get("name") or "baseline"
         out["variants"] = [{
             "name": v.get("name"),
             "base_composite": v.get("base_composite", baseline_name),
             "parameter_overrides": dict(v.get("parameter_overrides") or v.get("params") or {}),
             "description": v.get("description", ""),
         } for v in new_variants if isinstance(v, dict)]
+
+    # simulation_set — synthesise the v3 planned-simulations list so the
+    # study-detail Simulations tab + the report's "What we ran" section
+    # render content for v4 studies. Each variant maps to one planned sim.
+    # The baseline itself appears as a leading "baseline" entry so the
+    # tab isn't empty when there are no variants.
+    if "simulation_set" not in out:
+        sim_set = []
+        if baseline_composite:
+            sim_set.append({
+                "name":        baseline_name + "-baseline",
+                "kind":        "single",
+                "base_model":  baseline_composite,
+                "is_baseline": True,
+                "description": "Reference run for the study — variants below perturb this.",
+                "params":      dict(bl.get("params") or {}),
+            })
+        for v in new_variants:
+            if not isinstance(v, dict):
+                continue
+            sim_set.append({
+                "name":        v.get("name"),
+                "kind":        v.get("kind", "single"),
+                "base_model":  v.get("composite") or v.get("base_composite") or baseline_composite,
+                "description": v.get("description", ""),
+                "params":      dict(v.get("parameter_overrides") or v.get("params") or {}),
+                "status":      v.get("status", "ready"),
+            })
+        if sim_set:
+            out["simulation_set"] = sim_set
 
     # behavior_tests — keep ``tests`` as-is for v4-aware code; expose a
     # legacy projection so the v3 detail page has something to enumerate.
