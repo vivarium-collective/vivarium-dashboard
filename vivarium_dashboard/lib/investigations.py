@@ -1053,26 +1053,59 @@ def _resolve_observable(observables: dict, path: str) -> list | None:
     dict at each index. Returns a list with one element per tick (None if
     the segment is missing at that tick) or None if the top-level key
     doesn't exist at all.
+
+    Per-agent scope fallback: if the literal path returns all-None values
+    (because the v2ecoli single-cell composite scopes everything under
+    ``agents.0.*``), retry with the path prefixed by ``agents.0.``. Study
+    yamls can then keep declaring biology paths
+    (``listeners.dnaA_cycle.atp_fraction``) without spelling out the
+    per-agent prefix; the resolver finds the data wherever it lives.
     """
-    if not path:
-        return None
-    parts = path.split(".")
-    top = parts[0]
-    series = observables.get(top)
-    if series is None:
-        return None
-    if len(parts) == 1:
-        return series
-    out = []
-    for tick_val in series:
-        v = tick_val
-        for seg in parts[1:]:
-            if isinstance(v, dict) and seg in v:
-                v = v[seg]
-            else:
-                v = None
-                break
-        out.append(v)
+    def _walk(p: str) -> list | None:
+        if not p:
+            return None
+        parts = p.split(".")
+        top = parts[0]
+        series = observables.get(top)
+        if series is None:
+            return None
+        if len(parts) == 1:
+            return series
+        out: list = []
+        for tick_val in series:
+            v = tick_val
+            for seg in parts[1:]:
+                if isinstance(v, dict) and seg in v:
+                    v = v[seg]
+                else:
+                    v = None
+                    break
+            out.append(v)
+        return out
+
+    def _has_meaningful_value(series) -> bool:
+        """A series carries real data when at least one tick is non-None
+        and isn't an empty container. Empty dicts ``{}`` show up at every
+        tick for top-level paths that were declared in the emit schema
+        but whose data actually lives at ``agents.0.<path>`` — the
+        agent-scoped fallback below picks those up."""
+        if not series:
+            return False
+        for v in series:
+            if v is None:
+                continue
+            if isinstance(v, dict) and not v:
+                continue
+            if isinstance(v, (list, tuple)) and not v:
+                continue
+            return True
+        return False
+
+    out = _walk(path)
+    if not _has_meaningful_value(out) and not path.startswith("agents."):
+        agent_scoped = _walk(f"agents.0.{path}")
+        if _has_meaningful_value(agent_scoped):
+            return agent_scoped
     return out
 
 

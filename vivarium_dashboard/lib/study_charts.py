@@ -504,22 +504,33 @@ def _extract_paths_from_db(
         params = param_order + [sim_id, stride]
         cursor = conn.execute(sql, params)
 
+        def _to_float(v):
+            """Try to coerce to float. Returns None on failure, including
+            for JSON-object/array strings like '{}' / '[]' that json_extract
+            returns when the path resolves to an empty container. The
+            agent-scoped fallback below kicks in for those."""
+            if v is None:
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
         n_supp = len(supported)
         for row_tuple in cursor:
             tm = row_tuple[0]
             for i, key in enumerate(supported):
-                v_literal = row_tuple[1 + i]
-                v_agent = row_tuple[1 + n_supp + i]
+                v_literal = _to_float(row_tuple[1 + i])
+                v_agent = _to_float(row_tuple[1 + n_supp + i])
                 # Prefer the literal form (matches study-author intent);
-                # fall through to the agent-scoped form if literal is NULL.
+                # fall through to the agent-scoped form when literal is
+                # NULL or non-numeric (e.g. an empty '{}' container at
+                # the top-level wire created by emit_paths duplication).
                 v = v_literal if v_literal is not None else v_agent
                 if v is None:
                     continue
-                try:
-                    out[key][1].append(float(v))
-                    out[key][0].append(tm)
-                except (TypeError, ValueError):
-                    continue
+                out[key][1].append(v)
+                out[key][0].append(tm)
         return out
     finally:
         conn.close()
