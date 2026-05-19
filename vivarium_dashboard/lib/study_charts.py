@@ -475,27 +475,44 @@ def _extract_paths_from_db(
         if not supported:
             return out
 
-        sql_path_for = {}
+        # Build TWO sql_paths per declared path: the literal form and a
+        # per-agent-scoped variant ($.agents.0.<path>). v2ecoli per-agent
+        # composites put listener stores under agents.0.* even though
+        # study yamls declare the biology path. Each row tries the
+        # literal first; if that's NULL, falls through to the agent-
+        # scoped variant. See friction-log item #14 + #19.
+        sql_path_for_literal = {}
+        sql_path_for_agent = {}
         for path, idx in supported:
-            sql_path = "$." + path
-            if idx is not None and isinstance(idx, int):
-                sql_path += f"[{int(idx)}]"
-            sql_path_for[(path, idx)] = sql_path
+            suffix = f"[{int(idx)}]" if (idx is not None
+                                          and isinstance(idx, int)) else ""
+            sql_path_for_literal[(path, idx)] = "$." + path + suffix
+            sql_path_for_agent[(path, idx)] = "$.agents.0." + path + suffix
 
-        select_cols = ["global_time"] + [
-            "json_extract(state, ?)" for _ in supported
-        ]
+        select_cols = ["global_time"]
+        param_order: list[str] = []
+        for key in supported:
+            select_cols.append("json_extract(state, ?)")
+            param_order.append(sql_path_for_literal[key])
+        for key in supported:
+            select_cols.append("json_extract(state, ?)")
+            param_order.append(sql_path_for_agent[key])
         sql = (
             f"SELECT {', '.join(select_cols)} FROM history "
             f"WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC"
         )
-        params = [sql_path_for[key] for key in supported] + [sim_id, stride]
+        params = param_order + [sim_id, stride]
         cursor = conn.execute(sql, params)
 
+        n_supp = len(supported)
         for row_tuple in cursor:
             tm = row_tuple[0]
             for i, key in enumerate(supported):
-                v = row_tuple[1 + i]
+                v_literal = row_tuple[1 + i]
+                v_agent = row_tuple[1 + n_supp + i]
+                # Prefer the literal form (matches study-author intent);
+                # fall through to the agent-scoped form if literal is NULL.
+                v = v_literal if v_literal is not None else v_agent
                 if v is None:
                     continue
                 try:

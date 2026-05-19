@@ -2555,7 +2555,14 @@ def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
                 # item #14.
                 _emit_paths = _payload.get('emit_paths') or []
                 if _emit_paths:
-                    state = cr.inject_emitter_for_paths(state, _emit_paths)
+                    # inject_emitter_for_declared_paths (vs the older
+                    # inject_emitter_for_paths) trusts the declared paths
+                    # instead of pre-validating against the spec state.
+                    # v2ecoli listener stores are created at composite-build
+                    # time by process outputs wires (`outputs.listeners:
+                    # [listeners]`) and so don't exist when this injection
+                    # runs — the validating variant silently drops them.
+                    state = cr.inject_emitter_for_declared_paths(state, _emit_paths)
                 state = cr.inject_sqlite_emitter(
                     state, run_id=_payload['run_id'], db_file=_payload['db_file'])
                 composite = Composite({{'state': state}}, core=core)

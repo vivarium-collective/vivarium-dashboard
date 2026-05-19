@@ -431,7 +431,104 @@ def collect_emit_paths_from_spec(spec: dict) -> list[str]:
                     p = _norm(val)
                     if p:
                         paths.add(p)
-    return sorted(paths)
+
+    # Per-agent scope expansion. v2ecoli single-cell composites put all
+    # processes (and therefore listener stores) UNDER ``agents.0.`` rather
+    # than at the top level. Study yamls typically declare paths in their
+    # canonical biology form (``listeners.dnaA_cycle.atp_fraction``) without
+    # the agent prefix; if we don't expand to the per-agent variant, the
+    # emit_paths setup silently drops them (inject_emitter_for_paths skips
+    # paths that don't resolve against the initial state). Adding the
+    # variant is cheap — inject_emitter_for_paths still skips whichever of
+    # the two doesn't resolve, so we capture the path wherever it actually
+    # lives.
+    expanded = set(paths)
+    for p in list(paths):
+        if not p.startswith("agents/"):
+            expanded.add(f"agents/0/{p}")
+    return sorted(expanded)
+
+
+def inject_emitter_for_declared_paths(state: dict,
+                                       declared_paths: list[str]) -> dict:
+    """Like :func:`inject_emitter_for_paths` but DOESN'T pre-validate the
+    paths against the initial state tree, and writes the captured state as
+    a NESTED tree (mirroring the wire structure) rather than flat top-level
+    keys.
+
+    Why bypass validation:
+      Paths often refer to stores created at composite-build time by
+      process ``outputs`` wires (not visible at spec-build time). For
+      example, v2ecoli's ``dnaa-cycle-listener`` Step declares
+      ``outputs.listeners: [listeners]``; the listener stores live at
+      ``agents/0/listeners/dnaA_cycle/<observable>`` only AFTER the
+      composite materialises — so ``inject_emitter_for_paths`` (which
+      validates against the spec state via ``_collect_emit_leaves``)
+      would skip every listener path. This variant trusts the declared
+      paths and lets composite construction resolve them.
+
+    Why nested vs flat:
+      The flat ``inject_emitter_for_paths`` form uses ``"_".join(path)``
+      port names (``"agents_0_listeners_dnaA_cycle_atp_fraction"``) so
+      the captured state JSON is flat. Downstream consumers
+      (``study_charts._extract_paths_from_db``) query with
+      ``json_extract(state, '$.<dotted>.<path>')`` — flat keys don't
+      match. The nested form here produces emit_schema +
+      inputs structures that mirror the path hierarchy, so process-bigraph
+      writes a tree-shaped state that ``json_extract`` can navigate.
+
+    Idempotent on re-call: a second call with the same declared paths is a no-op.
+    """
+    if not declared_paths:
+        return state
+
+    # Build a nested wires tree from declared paths. For path
+    # 'agents/0/listeners/dnaA_cycle/atp_fraction', set
+    #   wires['agents']['0']['listeners']['dnaA_cycle']['atp_fraction']
+    #     = ['agents','0','listeners','dnaA_cycle','atp_fraction']
+    wires: dict = {}
+    for raw in declared_paths:
+        parts = [p for p in raw.split("/") if p]
+        if not parts:
+            continue
+        node = wires
+        for p in parts[:-1]:
+            existing = node.get(p)
+            if not isinstance(existing, dict):
+                existing = {}
+                node[p] = existing
+            node = existing
+        # Wire leaf: list-of-parts is the store path the emitter reads.
+        node[parts[-1]] = list(parts)
+
+    if not wires:
+        return state
+
+    # Build the matching emit_schema: 'node' at every wire leaf, nested
+    # dict wherever wires is nested. Mirrors process_bigraph.emitter.
+    # anyize_paths semantics — re-implemented inline to avoid the
+    # cross-package import dependency.
+    def _to_schema(node):
+        if isinstance(node, list):
+            return "node"
+        if isinstance(node, dict):
+            return {k: _to_schema(v) for k, v in node.items()}
+        return "node"
+    emit_schema = _to_schema(wires)
+
+    new_state = dict(state)
+    existing = state.get("user_emitter")
+    if (isinstance(existing, dict)
+            and (existing.get("config") or {}).get("emit") == emit_schema
+            and existing.get("inputs") == wires):
+        return new_state
+    new_state["user_emitter"] = {
+        "_type": "step",
+        "address": "local:RAMEmitter",
+        "config": {"emit": emit_schema},
+        "inputs": wires,
+    }
+    return new_state
 
 
 def all_store_paths(state: dict) -> list[str]:
