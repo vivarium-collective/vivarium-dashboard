@@ -3811,7 +3811,26 @@
     }).then(function(res) {
       if (!res.ok) {
         var msg = (res.body && res.body.error) || ('HTTP ' + res.status);
-        if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">Failed to queue: ' + _h(msg) + '</div>';
+        var itemsHtml = '';
+        // mem3dg-readdy friction #34: when the server returns the per-item
+        // breakdown, render each item's reason so the user has an
+        // actionable next step instead of an opaque "no variants to queue".
+        var items = res.body && Array.isArray(res.body.items) ? res.body.items : [];
+        if (items.length) {
+          itemsHtml = '<details class="inv-run-error-detail" style="margin-top:8px"><summary style="cursor:pointer;font-size:0.85em">Per-item reasons (' + items.length + ')</summary>'
+            + '<table style="width:100%;font-size:0.83em;margin-top:6px;border-collapse:collapse">'
+            + '<thead><tr><th style="text-align:left;padding:4px 8px;background:#f3f4f6">Study</th><th style="text-align:left;padding:4px 8px;background:#f3f4f6">Variant</th><th style="text-align:left;padding:4px 8px;background:#f3f4f6">Status</th><th style="text-align:left;padding:4px 8px;background:#f3f4f6">Reason</th></tr></thead><tbody>'
+            + items.map(function(it) {
+                return '<tr>'
+                  + '<td style="padding:4px 8px;border-bottom:1px solid #e5e7eb">' + _h(it.study || '?') + '</td>'
+                  + '<td style="padding:4px 8px;border-bottom:1px solid #e5e7eb">' + _h(it.variant || '?') + '</td>'
+                  + '<td style="padding:4px 8px;border-bottom:1px solid #e5e7eb"><span class="status-pill ' + _h(it.status || '?') + '" style="font-size:0.78em">' + _h(it.status || '?') + '</span></td>'
+                  + '<td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280">' + _h(it.error || '—') + '</td>'
+                  + '</tr>';
+              }).join('')
+            + '</tbody></table></details>';
+        }
+        if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">Failed to queue: ' + _h(msg) + itemsHtml + '</div>';
         if (btn) { btn.disabled = false; btn.textContent = '▶ Run unblocked'; }
         return;
       }

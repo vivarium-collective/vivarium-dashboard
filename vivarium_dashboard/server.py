@@ -4838,7 +4838,23 @@ if __name__ == "__main__":
                     state["pushed"] = True
                     save_state(state)
         if not state.get("pushed"):
-            return self._json({"error": "push to origin first (Push button)"}, 409)
+            # mem3dg-readdy friction #35: the old error said "click the Push
+            # button" but that button only renders when the branch has an
+            # upstream AND is ahead of it. For a never-pushed branch the
+            # workstream strip shows "Link branch to upstream" instead, and
+            # the user ended up stuck. Spell out BOTH UI paths plus the
+            # terminal fallback so the user has an actionable next step
+            # regardless of branch state.
+            return self._json({
+                "error": (
+                    "branch not yet pushed. Use the workstream strip at "
+                    "the top of the dashboard — click `Link branch to "
+                    "upstream` (if shown) to create the remote and push, "
+                    "or `Push` (if the branch already has an upstream). "
+                    "Terminal fallback: `git push -u origin <branch>`; "
+                    "the dashboard picks it up on the next refresh."
+                ),
+            }, 409)
         if state.get("pr_url"):
             return self._json({"error": f"PR already exists: {state['pr_url']}", "pr_url": state["pr_url"]}, 409)
 
@@ -8156,8 +8172,26 @@ if __name__ == "__main__":
         items.extend(skipped)
 
         if not any(it.get("status") == "queued" for it in items):
+            # mem3dg-readdy friction #34: a bare "no unblocked variants"
+            # error was unactionable. Compute a per-status breakdown
+            # *and* surface the items[] in the response body so the UI
+            # can render per-item reasons.
+            from collections import Counter as _Counter
+            status_counts = _Counter(it.get("status") or "?" for it in items)
+            parts = []
+            for label, key in (
+                ("blocked",   "blocked"),
+                ("skipped",   "skipped"),
+                ("completed", "done"),
+            ):
+                if status_counts.get(key):
+                    parts.append(f"{status_counts[key]} {label}")
+            breakdown = ", ".join(parts) if parts else "no items enumerated"
             return self._json({
-                "error": "no unblocked variants to run",
+                "error": (
+                    f"no variants to queue ({breakdown}). Each item's reason "
+                    "is in `items[].error` — see the per-item panel."
+                ),
                 "items": items,
             }, 400)
 
