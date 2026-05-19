@@ -3630,14 +3630,42 @@
     }
     if (!tiles.length) { host.style.display = 'none'; return; }
     host.innerHTML = tiles.map(function(t) {
-      return '<div class="inv-aag-tile">'
+      // Linkable tile: clicking opens the study INLINE (same iframe
+      // panel a DAG-node click uses). Plain-text href is kept so
+      // middle-click / cmd-click still opens the standalone study
+      // detail page in a new tab.
+      var href = t.slug ? '/studies/' + encodeURIComponent(t.slug) : '#';
+      var slugAttr = _escInv(t.slug || '');
+      return '<a class="inv-aag-tile" href="' + href + '" '
+        +    'data-study-slug="' + slugAttr + '" '
+        +    'title="Open ' + slugAttr + ' in this view (Cmd-click for new tab)" '
+        +    'onclick="return _vivOpenAagTile(event, \'' + slugAttr.replace(/&amp;/g, '&').replace(/\x27/g, '\\x27') + '\')">'
         + '<span class="inv-aag-num">' + t.num + '</span>'
-        + '<span class="inv-aag-slug">' + _escInv(t.slug) + '</span>'
+        + '<span class="inv-aag-slug">' + slugAttr + '</span>'
         + (t.role ? '<span class="inv-aag-role">' + _escInv(t.role) + '</span>' : '')
-        + '</div>';
+        + '</a>';
     }).join('');
     host.style.display = '';
   }
+
+  // Click handler for at-a-glance tiles. Behaves like a DAG-node click
+  // (inline iframe embed) for plain clicks; passes through to default
+  // navigation when the user holds a modifier (Cmd/Ctrl/Shift/middle).
+  function _vivOpenAagTile(ev, slug) {
+    if (!slug) return true;
+    if (ev && (ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button === 1)) {
+      return true;  // let the browser open in a new tab / window
+    }
+    ev.preventDefault();
+    if (typeof _openStudyInsideInvestigation === 'function') {
+      _openStudyInsideInvestigation(slug);
+    } else {
+      // Fallback: navigate to the detail page.
+      window.location.href = '/studies/' + encodeURIComponent(slug);
+    }
+    return false;
+  }
+  window._vivOpenAagTile = _vivOpenAagTile;
 
   function _renderInvHowToRead(items) {
     var host = document.getElementById('investigation-how-to-read');

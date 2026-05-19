@@ -1404,13 +1404,27 @@ body.focus-mode::before{
   margin: 0 0 16px 0;
 }
 .inv-aag-tile {
+  display: block;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-left: 3px solid #6366f1;
   border-radius: 6px;
   padding: 10px 12px;
   font-family: -apple-system, "Segoe UI", sans-serif;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.12s, transform 0.05s, border-left-color 0.12s;
+  cursor: pointer;
 }
+.inv-aag-tile:hover {
+  box-shadow: 0 2px 8px rgba(99, 102, 241, 0.18);
+  border-left-color: #4338ca;
+  transform: translateY(-1px);
+}
+.inv-aag-tile:active {
+  transform: translateY(0);
+}
+.inv-aag-tile:visited { color: inherit; }
 .inv-aag-tile .inv-aag-num {
   display: inline-block;
   background: #eef2ff;
