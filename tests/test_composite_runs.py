@@ -125,6 +125,37 @@ def test_inject_sqlite_emitter_copies_existing_emitter_inputs():
     assert out["sqlite_emitter"]["config"]["emit"] == {"level": "float"}
 
 
+def test_inject_sqlite_emitter_matches_lowercase_emitter_address():
+    """mem3dg-readdy friction #24: a workspace registering its emitter as
+    `local:ram-emitter` (kebab-case) used to silently fall through the
+    `addr.endswith("Emitter")` check; the SQLiteEmitter then got an empty
+    emit:/inputs: map and runs.db filled up with state={} rows. Fix is to
+    match case-insensitively so kebab-case addresses register too."""
+    state = {
+        "increase": {
+            "_type": "process",
+            "address": "local:IncreaseProcess",
+            "config": {"rate": 2.0},
+            "inputs": {"level": ["stores", "level"]},
+            "outputs": {"level": ["stores", "level"]},
+            "interval": 1.0,
+        },
+        "stores": {"level": 1.0},
+        # lowercase + hyphenated — historically would have been skipped
+        "emitter": {
+            "_type": "step",
+            "address": "local:ram-emitter",
+            "config": {"emit": {"level": "float"}},
+            "inputs": {"level": ["stores", "level"]},
+        },
+    }
+    out = inject_sqlite_emitter(state, run_id="r1", db_file="/tmp/x.db")
+    # The SQLite emitter must have picked up the schema + inputs from the
+    # kebab-case emitter, NOT defaulted to empty.
+    assert out["sqlite_emitter"]["config"]["emit"] == {"level": "float"}
+    assert out["sqlite_emitter"]["inputs"] == {"level": ["stores", "level"]}
+
+
 def test_inject_sqlite_emitter_no_emitter_in_spec():
     """When the spec has no emitter, inject a SQLite emitter with an empty
     schema — the run still persists step counts even without observables."""
