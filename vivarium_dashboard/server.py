@@ -587,28 +587,55 @@ def _study_detail_spec(name: str):
     return spec
 
 
+def _latest_run_timestamp(runs_db: Path) -> float | None:
+    """Return the most recent run's wall-clock time from ``runs_meta``.
+
+    Prefers ``completed_at`` (when the run finished, hence when its viz
+    could have been rendered), falling back to ``started_at``. Returns
+    ``None`` if the table is unreadable or empty.
+
+    Why not ``runs.db`` file mtime: the db is opened in WAL mode, and any
+    *read* connection (including the one render_visualizations uses to draw
+    the charts) can trigger a checkpoint that bumps the file mtime AFTER the
+    viz HTML was written. That made freshly-rendered viz look "older" than
+    the db and get silently dropped. The recorded run timestamps are real
+    data and immune to that race.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{runs_db}?mode=ro", uri=True, timeout=1.0)
+        try:
+            row = conn.execute(
+                "SELECT MAX(COALESCE(completed_at, started_at)) FROM runs_meta"
+            ).fetchone()
+        finally:
+            conn.close()
+        return float(row[0]) if row and row[0] is not None else None
+    except Exception:  # noqa: BLE001 — best-effort freshness probe
+        return None
+
+
 def _discover_viz_html_files(name: str) -> list[dict]:
     """Walk ``studies/<name>/viz/*.html`` and return embed_visualizations entries.
 
     Returns one dict per HTML file, with the shape the study-detail template
-    expects: ``{name, url, description}``. The URL is workspace-relative so
-    the dashboard's static-file fallback serves it.
+    expects: ``{name, url, description, stale}``. The URL is workspace-relative
+    so the dashboard's static-file fallback serves it.
 
-    v2ecoli friction #17 (2026-05-19): the previous unconditional glob
-    surfaced `topology.html` / `workflow.html` rendered eagerly against an
-    empty composite as "(auto)" tabs that persisted forever. Eran flagged
-    them as "way too detailed" and "excessive". Two-pronged gate:
+    v2ecoli friction #17 (2026-05-19): the original unconditional glob
+    surfaced eagerly-rendered ``topology.html`` / ``workflow.html`` as
+    "(auto)" tabs that persisted forever on un-run studies. The first fix
+    added an mtime gate that *silently dropped* any viz older than
+    ``runs.db``. mem3dg-readdy (2026-05-20): that gate dropped legitimate,
+    freshly-rendered charts because a WAL checkpoint on the render's own
+    read connection bumped ``runs.db`` mtime a few seconds *after* the HTML
+    was written — every chart vanished with no error anywhere.
 
-      1. If no `runs.db` exists, no real sims have run → any HTML on disk
-         predates real data and should not be surfaced.
-      2. If `runs.db` exists, only surface viz whose mtime is at least as
-         fresh as `runs.db` mtime. Stale renders (from before the most
-         recent run) drop off automatically without a spec migration.
-
-    This is the "mtime gate" half of friction-log Option A — robust enough
-    without requiring a yaml-schema migration (Option B). Composites that
-    re-render their viz after each run continue to work; composites that
-    rendered once and never again age out naturally.
+    Robustness rule (no silent drops): surface every viz file once a study
+    has actually run. The single hard guard remains "no ``runs.db`` → nothing"
+    (genuine pre-data junk). Past-run staleness is *surfaced*, not swallowed:
+    a viz whose mtime predates the latest recorded run is flagged
+    ``stale: True`` with a note, so the reader sees it and knows to re-run,
+    rather than the chart silently disappearing.
     """
     viz_dir = WORKSPACE / "studies" / name / "viz"
     if not viz_dir.is_dir():
@@ -616,22 +643,31 @@ def _discover_viz_html_files(name: str) -> list[dict]:
     runs_db = WORKSPACE / "studies" / name / "runs.db"
     if not runs_db.is_file():
         return []
-    runs_db_mtime = runs_db.stat().st_mtime
+    # Freshness reference: the latest recorded run time (WAL-immune), not the
+    # db file mtime. A small grace absorbs sub-second render/commit ordering.
+    fresh_ref = _latest_run_timestamp(runs_db)
+    grace_s = 5.0
     out = []
     for html_file in sorted(viz_dir.glob("*.html")):
-        if html_file.stat().st_mtime < runs_db_mtime:
-            continue
+        mtime = html_file.stat().st_mtime
         size_kb = max(1, html_file.stat().st_size // 1024)
         rel = html_file.relative_to(WORKSPACE).as_posix()
+        stale = fresh_ref is not None and mtime + grace_s < fresh_ref
+        desc = (
+            f"Auto-discovered Plotly viz ({size_kb} KB) rendered by "
+            f"render_visualizations against the study's runs.db history."
+        )
+        if stale:
+            desc = (
+                "⚠ May predate the latest run — this chart was "
+                "rendered before the most recent simulation completed; re-run "
+                "the study to refresh it. " + desc
+            )
         out.append({
             "name": f"{html_file.stem} (auto)",
             "url": f"/{rel}",
-            "description": (
-                f"Auto-discovered Plotly viz rendered at "
-                f"{html_file.stat().st_mtime:.0f}s epoch "
-                f"({size_kb} KB). Source: render_visualizations against the "
-                f"latest runs.db history."
-            ),
+            "description": desc,
+            "stale": stale,
         })
     return out
 
