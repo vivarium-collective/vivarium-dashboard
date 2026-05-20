@@ -143,7 +143,13 @@ def extract_series(
         params += [sim_id, stride]
 
         for row in conn.execute(sql, params):
-            tm = row[0]
+            tm = _num(row[0])
+            if tm is None:
+                # global_time column is NULL for some emit pipelines
+                # (e.g. v2ecoli baselines where global_time isn't wired
+                # into the captured state). Without an x-coordinate the
+                # point can't be plotted; skip the row rather than crash.
+                continue
             for i, key in enumerate(supported):
                 cell = row[1 + i]
                 if cell is None:
@@ -158,7 +164,7 @@ def extract_series(
                 if v is None:
                     continue
                 out[key][1].append(v)
-                out[key][0].append(float(tm))
+                out[key][0].append(tm)
         return out
     finally:
         conn.close()

@@ -494,12 +494,26 @@ def inject_emitter_for_declared_paths(state: dict,
     if not declared_paths:
         return state
 
+    # Always also wire global_time. Two reasons:
+    #   1. Firing cadence: global_time advances on every composite apply, so
+    #      wiring it guarantees the Step is triggered every tick — without it
+    #      an emitter wired only to listener paths that mutate rarely (or not
+    #      at all for a given composite) fires just once at init, producing a
+    #      single-row history. (This subsumes the inject_sqlite_emitter
+    #      _tick fallback for the study-run path.)
+    #   2. X-axis: SQLiteEmitter writes its history.global_time column from
+    #      state['global_time'], so the captured state must carry it or every
+    #      row's time is NULL and time-series can't be plotted.
+    paths = list(declared_paths)
+    if "global_time" not in paths:
+        paths.append("global_time")
+
     # Build a nested wires tree from declared paths. For path
     # 'agents/0/listeners/dnaA_cycle/atp_fraction', set
     #   wires['agents']['0']['listeners']['dnaA_cycle']['atp_fraction']
     #     = ['agents','0','listeners','dnaA_cycle','atp_fraction']
     wires: dict = {}
-    for raw in declared_paths:
+    for raw in paths:
         parts = [p for p in raw.split("/") if p]
         if not parts:
             continue
