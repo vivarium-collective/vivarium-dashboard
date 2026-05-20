@@ -2695,6 +2695,7 @@ def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
                 from process_bigraph.emitter import SQLiteEmitter
                 from pbg_superpowers.composite_generator import (
                     _REGISTRY, build_generator, discover_generators,
+                    apply_core_extensions,
                 )
                 from vivarium_dashboard.lib import composite_runs as cr
                 from bigraph_schema.json_codec import BigraphJSONEncoder as _BJE
@@ -2703,6 +2704,10 @@ def _run_composite_subprocess(*, pkg, state, steps, db_file, run_id, spec_id,
                 entry = _REGISTRY[_payload['spec_id']]
                 core = build_core()
                 core.register_link('SQLiteEmitter', SQLiteEmitter)
+                # v2ecoli friction #16: register types/processes the composite
+                # needs from packages build_core() doesn't know about (declared
+                # via @composite_generator(core_extensions=[...])).
+                core = apply_core_extensions(entry, core)
                 doc = build_generator(entry, overrides=_payload['overrides'])
                 state = doc.get('state', doc) if isinstance(doc, dict) else doc
                 if _payload.get('emit_paths'):
