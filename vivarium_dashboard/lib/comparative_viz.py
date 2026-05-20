@@ -52,107 +52,19 @@ def _extract_trace(db_path: Path,
                    sim_name: str | None = None) -> tuple[list[float], list[float]]:
     """Pull (times, values) for one observable from one run db.
 
-    Uses SQLite's json_extract to avoid the cost of materialising every
-    state blob. Returns ([], []) on any error so a missing path doesn't
-    sink the whole multi-run chart.
-
-    When ``sim_name`` is given, selects the latest simulation_id whose
-    ``simulations.name == sim_name``. This is the per-study comparative
-    pattern — multiple variants share one ``studies/<slug>/runs.db``
-    and are disambiguated by their sim name. When ``sim_name`` is None
-    falls back to the most-recently-started simulation in the db.
+    Thin wrapper over the shared :func:`series_extract.extract_trace`
+    (Step 1 of the viz-decoupling refactor). ``subsample`` is the target
+    point budget — the shared extractor strides to ~that many points.
+    Returns ([], []) on any error so a missing path doesn't sink the
+    whole multi-run chart.
     """
     if not db_path.exists():
         return [], []
-    # Validate path: dotted alphanumeric + underscore only. Bracket-style
-    # bulk-id paths aren't supported here (see study_charts._extract_paths_from_db).
-    if not re.match(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$", observable_path):
-        return [], []
-    try:
-        conn = sqlite3.connect(str(db_path))
-    except sqlite3.OperationalError:
-        return [], []
-    try:
-        tables = {r[0] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall()}
-        if "simulations" not in tables or "history" not in tables:
-            return [], []
-        if sim_name:
-            # ``simulations.name`` is written by the SQLiteEmitter but is
-            # typically empty for runs produced by the dashboard's
-            # _post_study_run_variant path — the sim's label lives in
-            # ``runs_meta.sim_name`` instead. Try simulations.name first
-            # (in case future emit pipelines set it), then fall back to
-            # runs_meta which is what the dashboard's run-variant path
-            # populates. simulation_id in history == run_id in runs_meta.
-            row = conn.execute(
-                "SELECT simulation_id FROM simulations WHERE name=? "
-                "ORDER BY started_at DESC LIMIT 1", (sim_name,)
-            ).fetchone()
-            if row is None and "runs_meta" in tables:
-                row = conn.execute(
-                    "SELECT run_id FROM runs_meta WHERE sim_name=? "
-                    "ORDER BY started_at DESC LIMIT 1", (sim_name,)
-                ).fetchone()
-        else:
-            row = conn.execute(
-                "SELECT simulation_id FROM simulations ORDER BY started_at DESC LIMIT 1"
-            ).fetchone()
-        if row is None:
-            return [], []
-        sim_id = row[0]
-        n_rows = conn.execute(
-            "SELECT COUNT(*) FROM history WHERE simulation_id=?", (sim_id,)
-        ).fetchone()[0] or 0
-        if n_rows == 0:
-            return [], []
-        stride = max(1, n_rows // subsample) if n_rows > 0 else 1
-        suffix = (f"[{int(observable_index)}]"
-                  if observable_index is not None
-                  and isinstance(observable_index, int) else "")
-        # Single-call multi-path json_extract: literal + per-agent-scoped
-        # ($.agents.0.<path>). v2ecoli per-agent composites scope listener
-        # stores under agents.0.* even though study/investigation yamls
-        # declare the biology path; returns '[v_lit, v_agent]' from one
-        # parse. Prefer the numeric literal, fall through to the numeric
-        # agent-scoped value (covers empty-'{}'-container literals). Same
-        # fix as study_charts._extract_paths_from_db. See friction-log #19.
-        sql_lit = "$." + observable_path + suffix
-        sql_agent = "$.agents.0." + observable_path + suffix
-        cursor = conn.execute(
-            "SELECT global_time, json_extract(state, ?, ?) FROM history "
-            "WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC",
-            (sql_lit, sql_agent, sim_id, stride),
-        )
-
-        def _num(v):
-            if v is None or isinstance(v, (dict, list)):
-                return None
-            try:
-                return float(v)
-            except (TypeError, ValueError):
-                return None
-
-        times: list[float] = []
-        values: list[float] = []
-        for tm, cell in cursor:
-            if cell is None:
-                continue
-            try:
-                pair = json.loads(cell)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                continue
-            v_lit = _num(pair[0]) if len(pair) > 0 else None
-            v_agent = _num(pair[1]) if len(pair) > 1 else None
-            v = v_lit if v_lit is not None else v_agent
-            if v is None:
-                continue
-            values.append(v)
-            times.append(float(tm))
-        return times, values
-    finally:
-        conn.close()
+    from vivarium_dashboard.lib.series_extract import extract_trace
+    return extract_trace(
+        db_path, observable_path, observable_index,
+        max_points=subsample, sim_name=sim_name,
+    )
 
 
 def render_comparative_time_series(

@@ -425,114 +425,15 @@ def _extract_paths_from_db(
     path_specs: list[tuple[str, int | None]],
     max_points: int = 200,
 ) -> dict[tuple[str, int | None], tuple[list[float], list[float]]]:
-    """Single-pass extraction of N observable paths from the latest run.
+    """Extract ``{(path, index): (times, values)}`` from the latest run.
 
-    Uses SQLite's ``json_extract`` to read ONLY the requested paths from
-    each row's state blob. This avoids transferring the full state JSON
-    (which can be hundreds of KB per row) from disk to Python — orders of
-    magnitude faster than ``SELECT state`` + ``json.loads`` for large
-    states. Subsamples to ~max_points per chart so the SVG renderer
-    stays cheap.
-
-    Returns ``{(path, index): (times, values)}``.
+    Thin wrapper over the shared :func:`series_extract.extract_series`
+    (Step 1 of the viz-decoupling refactor — all SQL-based viz pipelines
+    route through one extractor so the json_extract / per-agent-scope /
+    empty-container / subsample logic lives in exactly one place).
     """
-    out: dict[tuple[str, int | None], tuple[list[float], list[float]]] = {
-        key: ([], []) for key in path_specs
-    }
-    if not path_specs:
-        return out
-    try:
-        conn = sqlite3.connect(str(db_path))
-    except sqlite3.OperationalError:
-        return out
-    try:
-        if not _table_exists(conn, "simulations") or not _table_exists(conn, "history"):
-            return out
-        row = conn.execute(
-            "SELECT simulation_id FROM simulations ORDER BY started_at DESC LIMIT 1"
-        ).fetchone()
-        if row is None:
-            return out
-        sim_id = row[0]
-        n_rows = conn.execute(
-            "SELECT COUNT(*) FROM history WHERE simulation_id=?", (sim_id,)
-        ).fetchone()[0] or 0
-        stride = max(1, n_rows // max_points) if n_rows > 0 else 1
-
-        # Build a json_extract column per (path, idx). Each pathspec maps
-        # to one SQL expression that returns the scalar value (or NULL).
-        # SQLite's path syntax accepts $.foo.bar (dotted, $-rooted) with
-        # optional [N] array indices. Keys containing characters outside
-        # the alnum / underscore set (e.g. ``bulk[MONOMER0-160]``-style
-        # bulk lookups) aren't supported by json_extract — we skip those
-        # paths entirely rather than raising, so one bad measure path
-        # never kills the whole chart-render pass.
-        supported = []
-        for path, idx in path_specs:
-            if not re.match(r"^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$", path):
-                continue
-            supported.append((path, idx))
-        if not supported:
-            return out
-
-        # ONE json_extract per declared path, passing BOTH the literal
-        # path and a per-agent-scoped variant ($.agents.0.<path>). SQLite's
-        # multi-path json_extract(state, '$.a', '$.b') returns a 2-element
-        # JSON array '[v_a, v_b]' from a SINGLE parse of the state blob —
-        # critical for the giant default-baseline db (multi-MB rows), where
-        # a second json_extract column would double the parse cost and tip
-        # the endpoint past the browser's timeout (blank study pages).
-        # v2ecoli per-agent composites scope listener stores under
-        # agents.0.* even though study yamls declare the biology path; we
-        # prefer the literal value per row and fall through to the agent-
-        # scoped value when literal is NULL or a non-numeric container.
-        # See friction-log items #14 + #19.
-        select_cols = ["global_time"]
-        params: list = []
-        for path, idx in supported:
-            suffix = f"[{int(idx)}]" if (idx is not None
-                                          and isinstance(idx, int)) else ""
-            select_cols.append("json_extract(state, ?, ?)")
-            params.append("$." + path + suffix)
-            params.append("$.agents.0." + path + suffix)
-        sql = (
-            f"SELECT {', '.join(select_cols)} FROM history "
-            f"WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC"
-        )
-        params += [sim_id, stride]
-        cursor = conn.execute(sql, params)
-
-        def _num(v):
-            """Coerce to float, or None for null / non-numeric (incl. the
-            dict/list a path resolves to when it points at an empty
-            container)."""
-            if v is None or isinstance(v, (dict, list)):
-                return None
-            try:
-                return float(v)
-            except (TypeError, ValueError):
-                return None
-
-        for row_tuple in cursor:
-            tm = row_tuple[0]
-            for i, key in enumerate(supported):
-                cell = row_tuple[1 + i]
-                if cell is None:
-                    continue
-                try:
-                    pair = json.loads(cell)
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    continue
-                v_literal = _num(pair[0]) if len(pair) > 0 else None
-                v_agent = _num(pair[1]) if len(pair) > 1 else None
-                v = v_literal if v_literal is not None else v_agent
-                if v is None:
-                    continue
-                out[key][1].append(v)
-                out[key][0].append(tm)
-        return out
-    finally:
-        conn.close()
+    from vivarium_dashboard.lib.series_extract import extract_series
+    return extract_series(db_path, path_specs, max_points=max_points)
 
 
 def _pick_first_nonempty_db(primary: Path,
