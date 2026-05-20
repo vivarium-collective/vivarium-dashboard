@@ -6078,6 +6078,7 @@ if __name__ == "__main__":
             "at_a_glance":      spec.get("at_a_glance") or [],
             "how_to_read":      spec.get("how_to_read") or [],
             "glossary":         spec.get("glossary") or [],
+            "guidelines":       spec.get("guidelines") or [],
             "biological_story": spec.get("biological_story", ""),
             "question":         spec.get("question", ""),
             "hypothesis":       spec.get("hypothesis", ""),

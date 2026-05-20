@@ -3699,6 +3699,61 @@
     host.style.display = '';
   }
 
+  function _renderInvGuidelines(items) {
+    var host = document.getElementById('investigation-guidelines');
+    if (!host) return;
+    if (!Array.isArray(items) || !items.length) {
+      host.style.display = 'none';
+      host.innerHTML = '';
+      return;
+    }
+    host.innerHTML = items.map(function(g) {
+      var title   = _escInv(g.title || g.name || 'Guideline');
+      var summary = _escInv(g.summary || g.description || '');
+      var srcBits = [];
+      if (g.source)    srcBits.push('expert doc: <code>' + _escInv(g.source) + '</code>');
+      if (g.data_file) srcBits.push('data: <code>' + _escInv(g.data_file) + '</code>');
+      var srcLine = srcBits.length
+        ? '<div class="inv-guideline-src" style="color:#6b7280;font-size:0.85em;margin:4px 0 8px">'
+          + srcBits.join(' &middot; ') + '</div>'
+        : '';
+      var table = '';
+      var rows = Array.isArray(g.parameters) ? g.parameters : [];
+      if (rows.length) {
+        var cols = Array.isArray(g.columns) && g.columns.length
+          ? g.columns : ['parameter', 'value', 'v2ecoli_param', 'status'];
+        var head = '<tr>' + cols.map(function(c) {
+          return '<th style="text-align:left;padding:3px 10px 3px 0;border-bottom:1px solid #e5e7eb;'
+            + 'font-size:0.8em;color:#374151;text-transform:capitalize">'
+            + _escInv(c.replace(/_/g, ' ')) + '</th>';
+        }).join('') + '</tr>';
+        var body = rows.map(function(r) {
+          return '<tr>' + cols.map(function(c) {
+            var v = r[c];
+            var cell = (v === undefined || v === null) ? '' : String(v);
+            var isStatus = (c === 'status');
+            var color = '';
+            if (isStatus) {
+              if (/^wired/.test(cell))        color = 'color:#166534;';
+              else if (/^TODO/.test(cell))    color = 'color:#b45309;';
+              else if (/^partial/.test(cell)) color = 'color:#92740c;';
+            }
+            return '<td style="padding:2px 10px 2px 0;font-size:0.85em;' + color + '">'
+              + _escInv(cell) + '</td>';
+          }).join('') + '</tr>';
+        }).join('');
+        table = '<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%">'
+          + '<thead>' + head + '</thead><tbody>' + body + '</tbody></table></div>';
+      }
+      return '<details class="inv-guideline" style="margin:8px 0">'
+        + '<summary style="font-weight:600;cursor:pointer">' + title + '</summary>'
+        + (summary ? '<p style="margin:6px 0;color:#374151">' + summary + '</p>' : '')
+        + srcLine + table
+        + '</details>';
+    }).join('');
+    host.style.display = '';
+  }
+
   function _openInvestigationDetail(name) {
     window._currentIset = name;
     document.getElementById('investigations-list').style.display = 'none';
@@ -3736,6 +3791,10 @@
 
         // Glossary: yaml-driven list of {term, definition}. Hidden if absent.
         _renderInvGlossary(d.glossary);
+
+        // Guidelines: yaml-driven investigation-wide reference values
+        // (e.g. the Stage-1 parameter table). Hidden if absent.
+        _renderInvGuidelines(d.guidelines);
 
         // Biology-story banner: populated only when investigation.yaml
         // declares `biological_story:`. Hidden otherwise.
