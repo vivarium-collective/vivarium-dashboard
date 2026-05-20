@@ -1443,3 +1443,122 @@ body.focus-mode::before{
 [data-theme="dark"] .ce-state-tree{background:#1e293b;color:#e2e8f0;border-color:var(--border)}
 [data-theme="dark"] .jsontree-key{color:#a78bfa}
 [data-theme="dark"] .stage-label{background:#7c7c7c}
+
+/* ===========================================================================
+ * Workspace switcher modal (lifted from index.html.j2 so the workspaceless
+ * landing page can share the same styling — todo #8 Phase A/B).
+ * =========================================================================== */
+.viv-ws-modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.32);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 2000;
+  opacity: 0;
+  transition: opacity 0.14s ease-out;
+}
+.viv-ws-modal.open {
+  display: flex;
+  opacity: 1;
+}
+.viv-ws-modal-card {
+  width: min(720px, 90vw);
+  max-height: 80vh;
+  background: var(--panel, #fff);
+  border-radius: 8px;
+  box-shadow: 0 16px 48px rgba(0,0,0,0.18);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.viv-ws-modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border, #eee);
+}
+.viv-ws-modal-header h2 {
+  margin: 0; font-size: 15px; font-weight: 600; color: var(--text, #333);
+}
+.viv-ws-modal-close {
+  background: none; border: none; cursor: pointer;
+  font-size: 18px; color: var(--muted, #666); padding: 0 4px;
+}
+.viv-ws-modal-close:hover { color: var(--text, #000); }
+.viv-ws-modal-list {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto; flex: 1;
+}
+.viv-ws-modal-footer {
+  padding: 10px 18px; border-top: 1px solid var(--border, #eee);
+  display: flex; flex-direction: column; gap: 6px;
+}
+.viv-ws-modal-add,
+.viv-ws-modal-new {
+  background: none; border: none; color: var(--accent-blue, #0366d6);
+  cursor: pointer; font-size: 13px; padding: 0; text-align: left;
+}
+.viv-ws-modal-add:hover,
+.viv-ws-modal-new:hover { text-decoration: underline; }
+.viv-ws-modal-new-primary { font-weight: 600; }
+
+/* New Workspace form (todo #8 Phase B) */
+.viv-ws-modal-create .viv-ws-modal-card {
+  width: min(520px, 90vw);
+  max-height: 88vh;
+}
+.viv-ws-create-form {
+  padding: 18px 20px 16px;
+  display: flex; flex-direction: column; gap: 6px;
+  overflow-y: auto;
+}
+.viv-ws-create-form label {
+  font-size: 12px; font-weight: 600; color: var(--text, #333);
+  margin-top: 8px;
+}
+.viv-ws-create-form label:first-child { margin-top: 0; }
+.viv-ws-create-form .viv-ws-req { color: #cf222e; font-weight: 700; }
+.viv-ws-create-form .viv-ws-optional { color: var(--muted, #888); font-weight: 400; }
+.viv-ws-create-form input[type="text"],
+.viv-ws-create-form select {
+  font: inherit;
+  padding: 7px 9px;
+  border: 1px solid var(--border, #d0d7de);
+  border-radius: 5px;
+  background: var(--panel, #fff);
+  color: var(--text, #1f2937);
+}
+.viv-ws-create-form input[type="text"]:focus,
+.viv-ws-create-form select:focus {
+  outline: none;
+  border-color: var(--accent-blue, #0366d6);
+  box-shadow: 0 0 0 3px rgba(3,102,214,0.18);
+}
+.viv-ws-field-hint {
+  font-size: 11px; color: var(--muted, #6b7280); line-height: 1.4;
+  margin-bottom: 2px;
+}
+.viv-ws-create-error {
+  min-height: 18px;
+  color: #cf222e;
+  font-size: 12px;
+  margin-top: 6px;
+  line-height: 1.4;
+}
+.viv-ws-create-error:empty { display: none; }
+.viv-ws-create-actions {
+  display: flex; gap: 10px; justify-content: flex-end;
+  margin-top: 10px;
+}
+.viv-ws-create-cancel,
+.viv-ws-create-submit {
+  font: inherit;
+  padding: 7px 14px; border-radius: 5px;
+  cursor: pointer;
+  border: 1px solid var(--border, #d0d7de);
+}
+.viv-ws-create-cancel { background: var(--panel, #fff); color: var(--text, #1f2937); }
+.viv-ws-create-cancel:hover { background: var(--hover, #f6f8fa); }
+.viv-ws-create-submit {
+  background: var(--accent-blue, #0366d6); color: #fff;
+  border-color: var(--accent-blue, #0366d6);
+}
+.viv-ws-create-submit:hover { filter: brightness(0.95); }
+.viv-ws-create-submit:disabled { opacity: 0.7; cursor: progress; }
