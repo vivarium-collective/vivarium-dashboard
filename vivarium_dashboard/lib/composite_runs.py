@@ -393,9 +393,11 @@ def collect_emit_paths_from_spec(spec: dict) -> list[str]:
     ``_tick`` port → viz HTMLs render as "No <obs> in history" stubs.
 
     Sources:
-      - ``tests[].measure.path``           — per-test pass/fail observables
-      - ``visualizations[].inputs_map.*``  — explicit viz observable wiring
-      - ``behavior_tests[].measure.path``  — legacy v3 projection fallback
+      - ``tests[].measure.path``                       — per-test observables
+      - ``behavior_tests[].measure.path``              — legacy v3 fallback
+      - ``visualizations[].inputs_map.*``              — viz observable wiring
+      - ``visualizations[].config.inputs_map.*``       — canonical viz wiring
+      - ``comparative_visualizations[].observable_path`` — multi-run overlays
 
     Dotted paths (``listeners.dnaA_cycle.atp_fraction``) are normalised to
     slash form (``listeners/dnaA_cycle/atp_fraction``) — the shape
@@ -431,6 +433,16 @@ def collect_emit_paths_from_spec(spec: dict) -> list[str]:
                     p = _norm(val)
                     if p:
                         paths.add(p)
+    # Comparative (multi-run overlay) visualizations declare a single
+    # observable_path each. The index (observable_index) selects a scalar
+    # from an array AT RENDER TIME — we still need to capture the whole
+    # array store here, so emit the base path without the index.
+    for cv in (spec.get("comparative_visualizations") or []):
+        if not isinstance(cv, dict):
+            continue
+        p = _norm(cv.get("observable_path") or cv.get("path"))
+        if p:
+            paths.add(p)
 
     # Per-agent scope expansion. v2ecoli single-cell composites put all
     # processes (and therefore listener stores) UNDER ``agents.0.`` rather
