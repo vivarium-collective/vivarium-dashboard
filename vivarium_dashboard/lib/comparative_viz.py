@@ -108,24 +108,48 @@ def _extract_trace(db_path: Path,
         if n_rows == 0:
             return [], []
         stride = max(1, n_rows // subsample) if n_rows > 0 else 1
-        sql_path = "$." + observable_path
-        if observable_index is not None and isinstance(observable_index, int):
-            sql_path += f"[{int(observable_index)}]"
+        suffix = (f"[{int(observable_index)}]"
+                  if observable_index is not None
+                  and isinstance(observable_index, int) else "")
+        # Single-call multi-path json_extract: literal + per-agent-scoped
+        # ($.agents.0.<path>). v2ecoli per-agent composites scope listener
+        # stores under agents.0.* even though study/investigation yamls
+        # declare the biology path; returns '[v_lit, v_agent]' from one
+        # parse. Prefer the numeric literal, fall through to the numeric
+        # agent-scoped value (covers empty-'{}'-container literals). Same
+        # fix as study_charts._extract_paths_from_db. See friction-log #19.
+        sql_lit = "$." + observable_path + suffix
+        sql_agent = "$.agents.0." + observable_path + suffix
         cursor = conn.execute(
-            "SELECT global_time, json_extract(state, ?) FROM history "
+            "SELECT global_time, json_extract(state, ?, ?) FROM history "
             "WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC",
-            (sql_path, sim_id, stride),
+            (sql_lit, sql_agent, sim_id, stride),
         )
+
+        def _num(v):
+            if v is None or isinstance(v, (dict, list)):
+                return None
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+
         times: list[float] = []
         values: list[float] = []
-        for tm, v in cursor:
-            if v is None:
+        for tm, cell in cursor:
+            if cell is None:
                 continue
             try:
-                values.append(float(v))
-                times.append(float(tm))
-            except (TypeError, ValueError):
+                pair = json.loads(cell)
+            except (json.JSONDecodeError, TypeError, ValueError):
                 continue
+            v_lit = _num(pair[0]) if len(pair) > 0 else None
+            v_agent = _num(pair[1]) if len(pair) > 1 else None
+            v = v_lit if v_lit is not None else v_agent
+            if v is None:
+                continue
+            values.append(v)
+            times.append(float(tm))
         return times, values
     finally:
         conn.close()
