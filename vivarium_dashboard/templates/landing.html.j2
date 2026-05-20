@@ -85,6 +85,12 @@
 </head>
 <body class="viv-landing">
   <div class="viv-gh-header">
+    <span class="viv-theme-toggle" id="viv-theme-toggle" role="button" tabindex="0" aria-label="Toggle dark mode" title="Toggle dark/light mode">
+      <span class="viv-theme-toggle-icon" id="viv-theme-toggle-icon">☀</span>
+      <span class="viv-theme-toggle-track">
+        <span class="viv-theme-toggle-thumb" id="viv-theme-toggle-thumb"></span>
+      </span>
+    </span>
     <button id="viv-gh-chip" type="button" class="viv-gh-chip" data-state="loading">
       Loading…
     </button>
@@ -115,6 +121,26 @@
       const trigger = document.getElementById('viv-workspace-switcher-trigger');
       if (trigger) trigger.click();
     });
+
+    // Theme toggle (dark/light mode)
+    function _setTheme(theme) {
+      document.documentElement.setAttribute("data-theme", theme);
+      try { localStorage.setItem("viv-theme", theme); } catch(e) {}
+      var icon = document.getElementById("viv-theme-toggle-icon");
+      if (icon) icon.textContent = theme === "dark" ? "☾" : "☀";
+    }
+    function _toggleTheme() {
+      var theme = document.documentElement.getAttribute("data-theme");
+      _setTheme(theme === "dark" ? "light" : "dark");
+    }
+    (function(){
+      var saved = null;
+      try { saved = localStorage.getItem("viv-theme"); } catch(e) {}
+      var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+      _setTheme(theme);
+      var btn = document.getElementById("viv-theme-toggle");
+      if (btn) btn.addEventListener("click", _toggleTheme);
+    })();
   </script>
 </body>
 </html>

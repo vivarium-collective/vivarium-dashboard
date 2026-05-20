@@ -473,6 +473,12 @@
         </div>
         <span class="viv-btn viv-tooltip" data-tooltip="Coming soon — share workspace link">Share</span>
         <span class="viv-kebab viv-tooltip" data-tooltip="Workspace settings — coming soon">⋯</span>
+        <span class="viv-theme-toggle" id="viv-theme-toggle" role="button" tabindex="0" aria-label="Toggle dark mode" title="Toggle dark/light mode">
+          <span class="viv-theme-toggle-icon" id="viv-theme-toggle-icon">☀</span>
+          <span class="viv-theme-toggle-track">
+            <span class="viv-theme-toggle-thumb" id="viv-theme-toggle-thumb"></span>
+          </span>
+        </span>
         {# Mirrors the rail-footer logic — show GitHub initials/email only
            when `gh auth login` succeeded; otherwise a generic prompt that
            opens the gh-cli setup docs, so screenshots of this workspace
@@ -1902,20 +1908,24 @@ function runTests() {
       if (output) { output.style.display = "block"; output.textContent = "Network error: " + err; }
     });
 }
-// Theme toggle
+// Theme toggle (dark/light mode)
+function _setTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  try { localStorage.setItem("viv-theme", theme); } catch(e) {}
+  var icon = document.getElementById("viv-theme-toggle-icon");
+  if (icon) icon.textContent = theme === "dark" ? "☾" : "☀";
+}
 function _toggleTheme() {
   var theme = document.documentElement.getAttribute("data-theme");
-  var next = theme === "dark" ? "light" : "dark";
-  document.documentElement.setAttribute("data-theme", next);
-  try { localStorage.setItem("viv-theme", next); } catch(e) {}
-  document.getElementById("viv-theme-toggle").textContent = next === "dark" ? "☀️" : "🌙";
+  _setTheme(theme === "dark" ? "light" : "dark");
 }
 (function(){
+  var saved = null;
+  try { saved = localStorage.getItem("viv-theme"); } catch(e) {}
+  var theme = saved || (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+  _setTheme(theme);
   var btn = document.getElementById("viv-theme-toggle");
-  if (btn) {
-    var t = document.documentElement.getAttribute("data-theme");
-    btn.textContent = t === "dark" ? "☀️" : "🌙";
-  }
+  if (btn) btn.addEventListener("click", _toggleTheme);
 })();
 </script>
 </body></html>
