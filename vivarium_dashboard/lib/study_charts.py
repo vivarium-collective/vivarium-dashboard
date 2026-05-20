@@ -475,57 +475,56 @@ def _extract_paths_from_db(
         if not supported:
             return out
 
-        # Build TWO sql_paths per declared path: the literal form and a
-        # per-agent-scoped variant ($.agents.0.<path>). v2ecoli per-agent
-        # composites put listener stores under agents.0.* even though
-        # study yamls declare the biology path. Each row tries the
-        # literal first; if that's NULL, falls through to the agent-
-        # scoped variant. See friction-log item #14 + #19.
-        sql_path_for_literal = {}
-        sql_path_for_agent = {}
+        # ONE json_extract per declared path, passing BOTH the literal
+        # path and a per-agent-scoped variant ($.agents.0.<path>). SQLite's
+        # multi-path json_extract(state, '$.a', '$.b') returns a 2-element
+        # JSON array '[v_a, v_b]' from a SINGLE parse of the state blob —
+        # critical for the giant default-baseline db (multi-MB rows), where
+        # a second json_extract column would double the parse cost and tip
+        # the endpoint past the browser's timeout (blank study pages).
+        # v2ecoli per-agent composites scope listener stores under
+        # agents.0.* even though study yamls declare the biology path; we
+        # prefer the literal value per row and fall through to the agent-
+        # scoped value when literal is NULL or a non-numeric container.
+        # See friction-log items #14 + #19.
+        select_cols = ["global_time"]
+        params: list = []
         for path, idx in supported:
             suffix = f"[{int(idx)}]" if (idx is not None
                                           and isinstance(idx, int)) else ""
-            sql_path_for_literal[(path, idx)] = "$." + path + suffix
-            sql_path_for_agent[(path, idx)] = "$.agents.0." + path + suffix
-
-        select_cols = ["global_time"]
-        param_order: list[str] = []
-        for key in supported:
-            select_cols.append("json_extract(state, ?)")
-            param_order.append(sql_path_for_literal[key])
-        for key in supported:
-            select_cols.append("json_extract(state, ?)")
-            param_order.append(sql_path_for_agent[key])
+            select_cols.append("json_extract(state, ?, ?)")
+            params.append("$." + path + suffix)
+            params.append("$.agents.0." + path + suffix)
         sql = (
             f"SELECT {', '.join(select_cols)} FROM history "
             f"WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC"
         )
-        params = param_order + [sim_id, stride]
+        params += [sim_id, stride]
         cursor = conn.execute(sql, params)
 
-        def _to_float(v):
-            """Try to coerce to float. Returns None on failure, including
-            for JSON-object/array strings like '{}' / '[]' that json_extract
-            returns when the path resolves to an empty container. The
-            agent-scoped fallback below kicks in for those."""
-            if v is None:
+        def _num(v):
+            """Coerce to float, or None for null / non-numeric (incl. the
+            dict/list a path resolves to when it points at an empty
+            container)."""
+            if v is None or isinstance(v, (dict, list)):
                 return None
             try:
                 return float(v)
             except (TypeError, ValueError):
                 return None
 
-        n_supp = len(supported)
         for row_tuple in cursor:
             tm = row_tuple[0]
             for i, key in enumerate(supported):
-                v_literal = _to_float(row_tuple[1 + i])
-                v_agent = _to_float(row_tuple[1 + n_supp + i])
-                # Prefer the literal form (matches study-author intent);
-                # fall through to the agent-scoped form when literal is
-                # NULL or non-numeric (e.g. an empty '{}' container at
-                # the top-level wire created by emit_paths duplication).
+                cell = row_tuple[1 + i]
+                if cell is None:
+                    continue
+                try:
+                    pair = json.loads(cell)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    continue
+                v_literal = _num(pair[0]) if len(pair) > 0 else None
+                v_agent = _num(pair[1]) if len(pair) > 1 else None
                 v = v_literal if v_literal is not None else v_agent
                 if v is None:
                     continue
