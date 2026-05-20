@@ -764,8 +764,11 @@ When done, summarize which entries got PDFs vs URLs only vs were unresolvable, a
 
   <!-- Available Composites (workspace-local discovery) -->
   <div class="panel">
-    <h3>Available Composites <span id="composite-count" class="count-badge"></span></h3>
-    <p class="panel-lead">Discoverable composite documents from <code>pbg_&lt;slug&gt;/composites/*.composite.{yaml,json}</code>. Each one packages a runnable simulation state with parameters you can configure. Click <strong>Explore</strong> to open it in Composite Explorer.</p>
+    <h3>
+      Available Composites <span id="composite-count" class="count-badge"></span>
+      <a href="/composites/new" class="primary-btn" style="margin-left: 12px; font-size: 13px; text-decoration: none;" title="Author a new composite in the visual builder">+ Create</a>
+    </h3>
+    <p class="panel-lead">Discoverable composite documents from <code>pbg_&lt;slug&gt;/composites/*.composite.{yaml,json}</code>. Each one packages a runnable simulation state with parameters you can configure. Click <strong>Explore</strong> to open it in Composite Explorer, or <strong>+ Create</strong> above to build a new one visually.</p>
     <div class="card-browse-toolbar" id="composite-toolbar">
       <input type="search" class="card-browse-search" id="composite-search" placeholder="Filter composites…">
       <div class="card-browse-chips" id="composite-tag-chips"></div>

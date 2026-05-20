@@ -231,6 +231,10 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/open-window":        "_post_open_window",
     "/api/suggest":            "_post_suggest",
     "/api/composite-test-run": "_post_composite_test_run",
+    # UI-authored composites (todo #11). The /draft/<id>/promote variant is
+    # dispatched by prefix in do_POST since the path carries a segment.
+    "/api/composite/create":   "_post_composite_create",
+    "/api/composite/commit":   "_post_composite_commit",
     "/api/iset-create":         "_post_iset_create",
     "/api/iset-clone":          "_post_iset_clone",
     "/api/references-fetch":    "_post_references_fetch",
@@ -3333,6 +3337,12 @@ class Handler(BaseHTTPRequestHandler):
             if len(_segs) == 2:
                 return self._get_study_detail_page()
 
+        # Composite Builder page: /composites/new (todo #11). Optional draft
+        # id query string (?draft=<id>) reopens an in-progress draft.
+        _path_only_cb = self.path.split("?", 1)[0]
+        if _path_only_cb == "/composites/new":
+            return self._get_composite_builder_page()
+
         # Strip query string for route matching (self.path includes ?focus=...).
         path_only = self.path.split("?", 1)[0]
 
@@ -3395,6 +3405,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_composite_state()
         if self.path.startswith("/api/composite-resolve"):
             return self._get_composite_resolve()
+        # UI-authored composites (todo #11). Order matters: the specific
+        # /api/composite/draft/... prefix must be tested before the generic
+        # /api/composites prefix lower in this chain.
+        if self.path.startswith("/api/composite/draft/"):
+            return self._get_composite_draft()
+        # Process introspection (Phase B). Dynamic segment is the process
+        # address; tail is /schema.
+        if self.path.startswith("/api/process/") and self.path.split("?", 1)[0].endswith("/schema"):
+            return self._get_process_schema()
         if self.path.startswith("/api/investigation-viz-html"):
             return self._get_investigation_viz_html()
         if self.path.startswith("/api/investigation-composites"):
@@ -3502,6 +3521,16 @@ class Handler(BaseHTTPRequestHandler):
         if WORKSPACE is None and self.path not in _WORKSPACELESS_POST_ALLOW:
             return self._json({"error": "no workspace bound"}, 409)
 
+        # Dynamic-segment POST routes (composite drafts, todo #11). Matched
+        # before the exact-path route map so /api/composite/draft/<id>/promote
+        # resolves without an entry per draft.
+        if self.path.startswith("/api/composite/draft/"):
+            tail = self.path[len("/api/composite/draft/"):]
+            if tail.endswith("/promote"):
+                draft_id = tail[: -len("/promote")]
+                return self._post_composite_promote(draft_id, body)
+            return self._json({"error": "not found"}, 404)
+
         method_name = _POST_ROUTE_MAP.get(self.path)
         if method_name is None:
             return self._json({"error": "not found"}, 404)
@@ -3513,6 +3542,11 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length).decode()) if length else {}
         except json.JSONDecodeError as e:
             return self._json({"error": f"invalid JSON: {e}"}, 400)
+
+        # Dynamic-segment DELETE: /api/composite/draft/<id> (todo #11).
+        if self.path.startswith("/api/composite/draft/"):
+            draft_id = self.path[len("/api/composite/draft/"):]
+            return self._delete_composite_draft(draft_id)
 
         route_map = {
             "/api/simulation":    self._delete_simulation,
@@ -8054,6 +8088,485 @@ if __name__ == "__main__":
             resp["path"] = rel_path
             return self._json(resp, 200)
         return self._json(resp, code)
+
+    # ------------------------------------------------------------------
+    # UI-authored composites (todo #11) -- create / draft / promote / commit
+    # ------------------------------------------------------------------
+
+    def _resolve_workspace_pkg(self) -> tuple[str | None, dict | None]:
+        """Resolve the workspace's Python package name from ``workspace.yaml``.
+
+        Mirrors the inline pattern repeated across this file. Returns
+        ``(pkg_name, error_response_dict)`` — the second element is non-None
+        when resolution fails, so the caller can early-return it.
+        """
+        try:
+            ws_data = yaml.safe_load((WORKSPACE / "workspace.yaml").read_text()) or {}
+        except Exception as e:
+            return None, {"error": f"failed to read workspace.yaml: {e}"}
+        pkg = ws_data.get("package_path") or (
+            "pbg_" + (ws_data.get("name") or "").replace("-", "_")
+        )
+        if not pkg:
+            return None, {"error": "workspace.yaml has no package_path / name"}
+        return pkg, None
+
+    def _post_composite_create(self, body: dict):
+        """POST /api/composite/create — serialize a draft, write it, validate.
+
+        Body shape::
+
+            {
+              "draft_id": "<optional; reuse existing slot>",
+              "draft":    {name, description?, requires?, parameters?, state},
+              "skip_validation": false  # default false — set true for the
+                                        # debounced autosave loop where the
+                                        # cost of build_core() isn't worth it
+            }
+
+        Returns ``{draft_id, path, validation, soft_issues}``. **No git
+        operations** — drafts live under ``.pbg/composite-drafts/`` and are
+        git-ignored.
+        """
+        try:
+            _ws_add_to_sys_path()
+            from vivarium_dashboard.lib.composite_author import (
+                CompositeAuthorError, serialize_composite, soft_check,
+                validate_composite, write_draft,
+            )
+        except ImportError as e:
+            return self._json({"error": f"composite_author unavailable: {e}"}, 500)
+
+        draft = body.get("draft")
+        if not isinstance(draft, dict):
+            return self._json({"error": "'draft' must be a dict"}, 400)
+
+        soft_issues = soft_check(draft)
+
+        try:
+            yaml_text = serialize_composite(draft)
+        except CompositeAuthorError as e:
+            return self._json({"error": str(e), "soft_issues": soft_issues}, 400)
+
+        draft_id_in = body.get("draft_id")
+        try:
+            draft_id, path = write_draft(WORKSPACE, yaml_text, draft_id=draft_id_in)
+        except CompositeAuthorError as e:
+            return self._json({"error": str(e)}, 400)
+        except OSError as e:
+            return self._json({"error": f"could not write draft: {e}"}, 500)
+
+        validation: dict = {"ok": True, "errors": [], "warnings": [], "skipped": True}
+        if not body.get("skip_validation"):
+            report = validate_composite(WORKSPACE, path)
+            validation = {
+                "ok": report.ok,
+                "errors": report.errors,
+                "warnings": report.warnings,
+                "stderr": report.stderr if not report.ok else "",
+                "skipped": False,
+            }
+
+        return self._json({
+            "draft_id": draft_id,
+            "path": str(path.relative_to(WORKSPACE)),
+            "validation": validation,
+            "soft_issues": soft_issues,
+        }, 200)
+
+    def _get_composite_draft(self):
+        """GET /api/composite/draft/<id> — return draft yaml + parsed shape."""
+        try:
+            _ws_add_to_sys_path()
+            from vivarium_dashboard.lib.composite_author import (
+                CompositeAuthorError, read_draft,
+            )
+        except ImportError as e:
+            return self._json({"error": f"composite_author unavailable: {e}"}, 500)
+        path_only = self.path.split("?", 1)[0]
+        draft_id = path_only[len("/api/composite/draft/"):]
+        if not draft_id or "/" in draft_id:
+            return self._json({"error": "invalid draft id"}, 400)
+        try:
+            text, parsed = read_draft(WORKSPACE, draft_id)
+        except CompositeAuthorError as e:
+            return self._json({"error": str(e)}, 404)
+        return self._json({
+            "draft_id": draft_id,
+            "yaml": text,
+            "parsed": parsed,
+        }, 200)
+
+    def _post_composite_promote(self, draft_id: str, body: dict):
+        """POST /api/composite/draft/<id>/promote — move draft → published path.
+
+        Body: ``{name?, overwrite?}``. If ``name`` omitted, the draft's own
+        ``name`` field is used. **Does not commit** — caller commits via
+        :py:meth:`_post_composite_commit`.
+        """
+        try:
+            _ws_add_to_sys_path()
+            from vivarium_dashboard.lib.composite_author import (
+                CompositeAuthorError, promote_draft, validate_composite,
+            )
+        except ImportError as e:
+            return self._json({"error": f"composite_author unavailable: {e}"}, 500)
+
+        pkg, err = self._resolve_workspace_pkg()
+        if err is not None:
+            return self._json(err, 500)
+
+        name = body.get("name")
+        overwrite = bool(body.get("overwrite"))
+        try:
+            target = promote_draft(WORKSPACE, pkg, draft_id,
+                                   name=name, overwrite=overwrite)
+        except CompositeAuthorError as e:
+            return self._json({"error": str(e)}, 400)
+        except OSError as e:
+            return self._json({"error": f"could not promote draft: {e}"}, 500)
+
+        report = validate_composite(WORKSPACE, target)
+        return self._json({
+            "path": str(target.relative_to(WORKSPACE)),
+            "validation": {
+                "ok": report.ok,
+                "errors": report.errors,
+                "warnings": report.warnings,
+                "stderr": report.stderr if not report.ok else "",
+                "skipped": False,
+            },
+        }, 200)
+
+    def _delete_composite_draft(self, draft_id: str):
+        """DELETE /api/composite/draft/<id> — discard a draft."""
+        try:
+            _ws_add_to_sys_path()
+            from vivarium_dashboard.lib.composite_author import (
+                CompositeAuthorError, delete_draft,
+            )
+        except ImportError as e:
+            return self._json({"error": f"composite_author unavailable: {e}"}, 500)
+        try:
+            removed = delete_draft(WORKSPACE, draft_id)
+        except CompositeAuthorError as e:
+            return self._json({"error": str(e)}, 400)
+        return self._json({"removed": removed}, 200)
+
+    def _post_composite_commit(self, body: dict):
+        """POST /api/composite/commit — stage + commit a composite on the
+        active workstream branch.
+
+        Body: ``{path}`` — workspace-relative path to a composite YAML
+        previously written via ``promote``. Re-runs validation; refuses to
+        commit if validation fails (so dashboard never lands a broken file
+        on the workstream branch).
+
+        The commit pre-stages ``path`` explicitly inside the action closure,
+        because ``<pkg>/composites/`` isn't in :func:`_active_branch_action`'s
+        hardcoded allowlist. Pre-staged paths persist through the trailing
+        ``git add --update`` and into the final commit.
+        """
+        try:
+            _ws_add_to_sys_path()
+            from vivarium_dashboard.lib.composite_author import validate_composite
+        except ImportError as e:
+            return self._json({"error": f"composite_author unavailable: {e}"}, 500)
+
+        rel_path = (body.get("path") or "").strip().lstrip("/")
+        if not rel_path:
+            return self._json({"error": "'path' is required"}, 400)
+        # Defensive path containment — reject anything that escapes WORKSPACE.
+        abs_path = (WORKSPACE / rel_path).resolve()
+        try:
+            abs_path.relative_to(WORKSPACE.resolve())
+        except ValueError:
+            return self._json({"error": "path escapes workspace"}, 400)
+        if not abs_path.is_file():
+            return self._json({"error": f"file not found: {rel_path}"}, 404)
+        if not rel_path.endswith(".composite.yaml") and not rel_path.endswith(".composite.yml"):
+            return self._json({"error": "path must point at a .composite.yaml file"}, 400)
+
+        # Defensive re-validation — catches the case where a process was
+        # uninstalled between save and commit.
+        report = validate_composite(WORKSPACE, abs_path)
+        if not report.ok:
+            return self._json({
+                "error": "composite failed validation; refusing to commit",
+                "validation": {
+                    "ok": False,
+                    "errors": report.errors,
+                    "warnings": report.warnings,
+                    "stderr": report.stderr,
+                    "skipped": False,
+                },
+            }, 409)
+
+        composite_name = abs_path.name[: -len(".composite.yaml")] \
+            if rel_path.endswith(".composite.yaml") else abs_path.stem
+        commit_msg = f"feat(composites): add {composite_name!r} via UI builder"
+
+        # We can't go through _active_branch_action because it gates on
+        # `_dirty_workspace()` — and the promoted composite file IS the
+        # working-tree dirt we'd be trying to commit. Inline the
+        # branch-aware commit logic instead, scoped tightly to the one file.
+        _ws_add_to_sys_path()
+        from vivarium_dashboard.lib.work_state import (
+            load_state_or_adopt_current,
+        )
+        state = load_state_or_adopt_current()
+        branch = state.get("active_branch")
+        if not branch:
+            return self._json({
+                "error": "no active workstream — click Start workstream at "
+                         "the top of the dashboard, or check out a feature "
+                         "branch first",
+            }, 409)
+
+        try:
+            current = subprocess.run(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                cwd=WORKSPACE, capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if current != branch:
+                r = subprocess.run(["git", "checkout", branch], cwd=WORKSPACE,
+                                   capture_output=True, text=True)
+                if r.returncode != 0:
+                    return self._json({
+                        "error": f"could not check out '{branch}': {r.stderr[:200]}"
+                    }, 500)
+
+            rel = str(abs_path.relative_to(WORKSPACE))
+            subprocess.run(
+                ["git", "add", "--", rel],
+                cwd=WORKSPACE, check=True, capture_output=True,
+            )
+            diff = subprocess.run(
+                ["git", "diff", "--cached", "--stat", "--", rel],
+                cwd=WORKSPACE, capture_output=True, text=True, check=True,
+            ).stdout
+            if not diff.strip():
+                return self._json({
+                    "error": "composite file has no changes to commit "
+                             "(already up to date on this branch?)"
+                }, 409)
+            subprocess.run([
+                "git",
+                "-c", "user.email=pbg-template@local",
+                "-c", "user.name=pbg-template",
+                "commit", "-m", commit_msg, "--", rel,
+            ], cwd=WORKSPACE, check=True, capture_output=True)
+            commit_sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=WORKSPACE, capture_output=True, text=True, check=True,
+            ).stdout.strip()
+        except subprocess.CalledProcessError as e:
+            stderr = e.stderr.decode() if isinstance(e.stderr, bytes) else (e.stderr or "")
+            return self._json({"error": f"git operation failed: {stderr[:300]}"}, 500)
+
+        return self._json({
+            "branch": branch,
+            "commit": commit_sha[:7],
+            "message": commit_msg,
+            "path": str(abs_path.relative_to(WORKSPACE)),
+        }, 200)
+
+    def _get_composite_builder_page(self):
+        """GET /composites/new — render the composite-builder page.
+
+        The page is a thin Jinja template (``composite_builder.html.j2``) that
+        loads the vendored Cytoscape build and ``composite-builder.js``. All
+        state lives client-side until the user clicks Save / Commit.
+        """
+        try:
+            tpl_dir = Path(__file__).parent / "templates"
+            tpl_path = tpl_dir / "composite_builder.html.j2"
+            if not tpl_path.is_file():
+                return self._send_html(
+                    "<h1>Composite builder template missing</h1>"
+                    f"<p>Expected at <code>{tpl_path}</code>.</p>",
+                    code=500,
+                )
+            # Reuse the existing tiny-Jinja-substitute helper if present;
+            # otherwise raw read is fine — the template has no variables yet.
+            html = tpl_path.read_text()
+            return self._send_html(html, code=200)
+        except Exception as e:
+            return self._send_html(f"<h1>error rendering builder</h1><pre>{e}</pre>",
+                                   code=500)
+
+    # ------------------------------------------------------------------
+    # Process introspection (Phase B, todo #11)
+    # ------------------------------------------------------------------
+
+    _PROCESS_SCHEMA_CACHE: dict = {}
+    _PROCESS_SCHEMA_TTL: float = 30.0  # seconds; matches _REGISTRY_TTL
+
+    def _get_process_schema(self):
+        """GET /api/process/<address>/schema — introspect a process class's
+        port + config schemas.
+
+        ``<address>`` is the value of the catalog entry's ``address`` field
+        as surfaced by ``/api/registry`` (e.g. ``pbg_increase_demo.processes.IncreaseProcess``
+        or a short name like ``IncreaseProcess``). Caches by address for
+        ``_PROCESS_SCHEMA_TTL`` seconds — palette drags often hit the same
+        address multiple times during a session.
+        """
+        import urllib.parse
+
+        path_only = self.path.split("?", 1)[0]
+        # Strip the /api/process/ prefix and the /schema suffix.
+        body = path_only[len("/api/process/"):]
+        if not body.endswith("/schema"):
+            return self._json({"error": "missing /schema suffix"}, 400)
+        address_raw = body[: -len("/schema")]
+        address = urllib.parse.unquote(address_raw).strip()
+        if not address:
+            return self._json({"error": "address required"}, 400)
+        if any(ch in address for ch in ("'", '"', "\n", "\r")):
+            return self._json({"error": "address contains invalid chars"}, 400)
+
+        # Cache lookup.
+        cache_key = address
+        now = time.time()
+        cached = self._PROCESS_SCHEMA_CACHE.get(cache_key)
+        if cached and (now - cached["ts"]) < self._PROCESS_SCHEMA_TTL:
+            return self._json(cached["data"], 200)
+
+        # Resolve workspace package so the subprocess can build_core().
+        pkg, err = self._resolve_workspace_pkg()
+        if err is not None:
+            return self._json(err, 500)
+
+        venv_py = WORKSPACE / ".venv" / "bin" / "python3"
+        py = str(venv_py) if venv_py.exists() else sys.executable
+
+        # Subprocess script — locate the class in core.link_registry, read
+        # inputs_schema / outputs_schema / config_schema, emit JSON.
+        # ``address`` is interpolated as a Python literal via repr() so any
+        # weird-but-valid chars survive.
+        script = textwrap.dedent(f"""
+            import json, sys, traceback
+            try:
+                from {pkg}.core import build_core
+                core = build_core()
+            except Exception as e:
+                print(json.dumps({{
+                    "error": f"could not build core: {{type(e).__name__}}: {{e}}",
+                    "traceback": traceback.format_exc(limit=5),
+                }}))
+                sys.exit(0)
+
+            address = {address!r}
+            link_reg = getattr(core, 'link_registry', {{}}) or {{}}
+            # Try direct lookup first, then short-name fallback.
+            cls = link_reg.get(address)
+            if cls is None and "." in address:
+                cls = link_reg.get(address.rsplit(".", 1)[-1])
+            if cls is None and ":" in address:
+                cls = link_reg.get(address.split(":", 1)[-1])
+            if cls is None:
+                # Try matching by fully-qualified module.qualname.
+                for name, candidate in link_reg.items():
+                    try:
+                        fq = f"{{candidate.__module__}}.{{candidate.__qualname__}}"
+                    except Exception:
+                        continue
+                    if fq == address:
+                        cls = candidate
+                        break
+            if cls is None:
+                print(json.dumps({{
+                    "error": f"address {{address!r}} not in core.link_registry",
+                    "available_count": len(link_reg),
+                }}))
+                sys.exit(0)
+
+            def _read_schema(attr):
+                val = getattr(cls, attr, None)
+                if callable(val):
+                    try:
+                        val = val(cls)
+                    except TypeError:
+                        try:
+                            val = val()
+                        except Exception:
+                            val = None
+                    except Exception:
+                        val = None
+                return val
+
+            def _ports_from_schema(schema):
+                # Schema can be a dict {{"port_name": "type"|dict}} or a
+                # string like "port:type|other:type" (loom-style). Normalise
+                # to [{{name, type, multiple?}}].
+                out = []
+                if isinstance(schema, dict):
+                    for name, spec in schema.items():
+                        if isinstance(spec, dict):
+                            t = spec.get("_type") or spec.get("type") or ""
+                            multiple = bool(spec.get("_apply") == "set" if isinstance(spec, dict) else False)
+                        else:
+                            t = str(spec) if spec is not None else ""
+                            multiple = False
+                        out.append({{"name": name, "type": t, "multiple": multiple}})
+                elif isinstance(schema, str):
+                    for chunk in schema.split("|"):
+                        chunk = chunk.strip()
+                        if not chunk:
+                            continue
+                        if ":" in chunk:
+                            name, _, t = chunk.partition(":")
+                            out.append({{"name": name.strip(), "type": t.strip(), "multiple": False}})
+                        else:
+                            out.append({{"name": chunk, "type": "", "multiple": False}})
+                return out
+
+            inputs = _ports_from_schema(_read_schema("inputs_schema"))
+            outputs = _ports_from_schema(_read_schema("outputs_schema"))
+            config_schema = _read_schema("config_schema")
+            try:
+                config_schema = json.loads(json.dumps(config_schema, default=str))
+            except Exception:
+                config_schema = None
+
+            try:
+                module = cls.__module__
+                qualname = cls.__qualname__
+            except Exception:
+                module, qualname = "", str(cls)
+
+            print(json.dumps({{
+                "address": address,
+                "resolved": {{"module": module, "qualname": qualname}},
+                "inputs": inputs,
+                "outputs": outputs,
+                "config_schema": config_schema,
+            }}))
+        """)
+
+        try:
+            result = subprocess.run(
+                [py, "-c", script],
+                cwd=WORKSPACE, capture_output=True, text=True, timeout=15,
+            )
+        except subprocess.TimeoutExpired:
+            return self._json({"error": "introspection timed out (15s)"}, 504)
+        if result.returncode != 0:
+            return self._json({
+                "error": f"introspection subprocess failed: {(result.stderr or '').strip()[:300]}",
+            }, 500)
+        try:
+            line = result.stdout.strip().split("\n")[-1]
+            data = json.loads(line)
+        except (json.JSONDecodeError, IndexError):
+            return self._json({
+                "error": f"invalid introspection output: {result.stdout[:300]}",
+            }, 500)
+
+        if "error" not in data:
+            self._PROCESS_SCHEMA_CACHE[cache_key] = {"data": data, "ts": now}
+        return self._json(data, 200)
 
     def _post_investigation_composite_rebuild(self, body: dict):
         """POST /api/investigation-composite-rebuild {investigation, name}
