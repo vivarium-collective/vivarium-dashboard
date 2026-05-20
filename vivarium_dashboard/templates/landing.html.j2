@@ -63,9 +63,33 @@
     /* The switcher modal includes workstream actions in its footer; those are
        meaningless before any workspace is bound, so hide them in landing mode. */
     body.viv-landing .viv-workspace-switcher-actions { display: none; }
+
+    /* GitHub auth header (top-right). The chip swaps content based on
+       /api/auth/github/status — managed by github-login.js. */
+    body.viv-landing .viv-gh-header {
+      position: fixed; top: 16px; right: 20px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    body.viv-landing .viv-gh-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border-radius: 16px;
+      border: 1px solid var(--border, #d0d0d4);
+      background: var(--panel, #fff); color: var(--text, #1a1a1a);
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      appearance: none;
+    }
+    body.viv-landing .viv-gh-chip:hover { filter: brightness(0.97); }
+    body.viv-landing .viv-gh-chip[data-state="loading"] { opacity: 0.6; cursor: default; }
+    body.viv-landing .viv-gh-source { font-size: 11px; font-weight: 400; color: var(--muted, #666); }
   </style>
 </head>
 <body class="viv-landing">
+  <div class="viv-gh-header">
+    <button id="viv-gh-chip" type="button" class="viv-gh-chip" data-state="loading">
+      Loading…
+    </button>
+  </div>
+
   <img class="viv-landing-logo" src="assets/vivarium-logo.png" alt="vivarium">
   <h1>No workspace bound</h1>
   <p class="viv-landing-sub">
@@ -81,6 +105,7 @@
   </div>
 
   <script src="assets/workspace-switcher.js{% if asset_version %}?v={{ asset_version }}{% endif %}"></script>
+  <script src="assets/github-login.js{% if asset_version %}?v={{ asset_version }}{% endif %}"></script>
   <script>
     // Auto-open the switcher modal on first load so the user sees their
     // options immediately. The trigger click is the same path the user

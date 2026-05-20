@@ -17,6 +17,7 @@ dependencies = [
     "process-bigraph",
     "bigraph-schema",
     "pbg-superpowers",
+    "keyring>=24",  # secure token storage for the GitHub OAuth Device Flow
 ]
 
 [project.optional-dependencies]

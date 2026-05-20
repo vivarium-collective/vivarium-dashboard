@@ -281,6 +281,9 @@ _POST_ROUTE_MAP: dict[str, str] = {
     "/api/workspaces/cleanup-stale": "_post_workspaces_cleanup_stale",
     "/api/workspaces/start":         "_post_workspaces_start",
     "/api/workspaces/stop":          "_post_workspaces_stop",
+    # GitHub OAuth (todo #8 Phase B-bis).
+    "/api/auth/github/start":  "_post_auth_github_start",
+    "/api/auth/github/logout": "_post_auth_github_logout",
 }
 # Inject study-alias routes into the POST route map (same method name as old).
 for _old, _new in _POST_STUDY_ALIASES.items():
@@ -3352,6 +3355,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._serve_file(WORKSPACE / "reports" / "index.html", "text/html")
         if self.path.startswith("/api/workspaces"):
             return self._get_workspaces()
+        # GitHub OAuth (todo #8 Phase B-bis).
+        if self.path.startswith("/api/auth/github/status"):
+            return self._get_auth_github_status()
+        if self.path.startswith("/api/auth/github/poll"):
+            return self._get_auth_github_poll()
         if self.path.startswith("/api/state"):
             return self._serve_state()
         if self.path.startswith("/api/events"):
@@ -10387,6 +10395,57 @@ if __name__ == "__main__":
             "error": "stop_timeout",
             "hint": f"PID {pid} still alive; SIGKILL it manually if stuck",
         }, 504)
+
+    # ------------------------------------------------------------------
+    # GitHub OAuth (todo #8 Phase B-bis)
+    # ------------------------------------------------------------------
+
+    def _post_auth_github_start(self, body: dict):
+        """POST /api/auth/github/start — initiate the Device Flow.
+
+        Returns the user_code + verification_uri the client must display, plus
+        a server-issued flow_id the client passes to ``/poll``. Never returns
+        the device_code (held server-side).
+        """
+        from vivarium_dashboard.lib.github_auth import start_device_flow
+        result = start_device_flow()
+        if "error" in result:
+            # 503 for missing client_id (deployment not configured); 502 for
+            # GitHub-side failures.
+            code = 503 if result["error"] == "no_client_id" else 502
+            return self._json(result, code)
+        return self._json(result, 200)
+
+    def _get_auth_github_poll(self):
+        """GET /api/auth/github/poll?flow_id=<uuid> — poll the token endpoint."""
+        from urllib.parse import parse_qs, urlparse
+        qs = parse_qs(urlparse(self.path).query)
+        flow_id = (qs.get("flow_id") or [""])[0].strip()
+        if not flow_id:
+            return self._json({"status": "error", "detail": "missing_flow_id"}, 400)
+
+        from vivarium_dashboard.lib.github_auth import poll_device_flow
+        result = poll_device_flow(flow_id)
+        # Map outcomes to HTTP codes the client can use without parsing JSON:
+        #   pending → 202, ok → 200, expired → 410, denied → 403, error → 400.
+        status = result.get("status")
+        code = {
+            "ok": 200, "pending": 202, "expired": 410, "denied": 403,
+        }.get(status, 400)
+        return self._json(result, code)
+
+    def _get_auth_github_status(self):
+        """GET /api/auth/github/status — current session, or {authenticated:false}.
+
+        Never includes the token itself."""
+        from vivarium_dashboard.lib.github_auth import status_payload
+        return self._json(status_payload(), 200)
+
+    def _post_auth_github_logout(self, body: dict):
+        """POST /api/auth/github/logout — clear in-memory session + keyring entry."""
+        from vivarium_dashboard.lib.github_auth import logout
+        logout()
+        return self._json({"ok": True}, 200)
 
     def _read_workspace_name(self, root: Path) -> str:
         """Read `name` from <root>/workspace.yaml; fall back to dir basename."""
