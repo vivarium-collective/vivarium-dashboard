@@ -4351,10 +4351,17 @@
             .then(function(j) { return {name: s.name, charts: j.charts || []}; })
             .catch(function() { return {name: s.name, charts: []}; });
         });
+        // Current coordinated generation — stamps the report's provenance
+        // banner (expert-feedback A.3). Best-effort: null when none active.
+        var genFetch = fetch('/api/generation')
+          .then(function(r) { return r.ok ? r.json() : {generation: null}; })
+          .then(function(j) { return (j && j.generation) || null; })
+          .catch(function() { return null; });
         return Promise.all([Promise.all(studyFetches), bibFetch,
-                            Promise.all(chartFetches)]).then(function(arr) {
+                            Promise.all(chartFetches), genFetch]).then(function(arr) {
           var chartsByStudy = {};
           arr[2].forEach(function(c) { chartsByStudy[c.name] = c.charts; });
+          var generation = arr[3];
           // Second pass: now that we have the specs, fetch each study's
           // embed_visualizations URLs so the downloaded report can inline
           // them as <iframe srcdoc="...">. This makes the file truly
@@ -4388,14 +4395,15 @@
               if (e && e.name) embedsByStudy[e.name] = e.embeds;
             });
             return {iset: iset, specs: specs, bibEntries: arr[1],
-                    chartsByStudy: chartsByStudy, embedsByStudy: embedsByStudy};
+                    chartsByStudy: chartsByStudy, embedsByStudy: embedsByStudy,
+                    generation: generation};
           });
         });
       })
       .then(function(bundle) {
         var html = _buildInvestigationReportHtml(bundle.iset, bundle.specs,
                                                   bundle.bibEntries, bundle.chartsByStudy,
-                                                  bundle.embedsByStudy);
+                                                  bundle.embedsByStudy, bundle.generation);
         var dateStr = new Date().toISOString().slice(0, 10);
         var filename = 'investigation-' + name + '-' + dateStr + '.html';
         _triggerDownload(filename, html, 'text/html');
@@ -4440,13 +4448,66 @@
   }
 
   // Construct the report's HTML body from the investigation + per-study specs.
-  function _buildInvestigationReportHtml(iset, specs, bibEntries, chartsByStudy, embedsByStudy) {
+  function _buildInvestigationReportHtml(iset, specs, bibEntries, chartsByStudy, embedsByStudy, generation) {
     bibEntries = bibEntries || [];
     chartsByStudy = chartsByStudy || {};
     embedsByStudy = embedsByStudy || {};
+    generation = generation || null;
     var bibByKey = {};
     bibEntries.forEach(function(e) { bibByKey[e.key] = e; });
     var now = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+
+    // ── Coordinated-generation banner (expert-feedback A.3) ──────────────
+    // One prominent provenance stamp so the reviewer knows every panel below
+    // reflects a single (git_sha, params) state — and a loud warning when
+    // displayed runs span more than one generation (the "results are mixed,
+    // some 5/17 some 5/19" complaint). Built once, here, so live + exported
+    // reports stamp identically.
+    function _genBannerHtml() {
+      // Gather the distinct generation ids actually present in displayed runs.
+      var seen = {};
+      specs.forEach(function(s) {
+        (s.runs || []).forEach(function(r) {
+          var g = r && r.generation_id;
+          if (g) seen[g] = true;
+        });
+      });
+      var distinct = Object.keys(seen);
+      var curId = generation && generation.generation_id;
+      var bits = [];
+      if (curId) bits.push('<code>' + _h(curId) + '</code>');
+      if (generation && generation.git_sha) bits.push('git <code>' + _h(generation.git_sha) + '</code>');
+      if (generation && generation.param_set_hash) bits.push('params <code>' + _h(generation.param_set_hash) + '</code>');
+      if (generation && generation.created_at) bits.push(_h(String(generation.created_at).replace('T', ' ').slice(0, 16)));
+      // A report mixes generations if displayed runs carry >1 distinct id, or
+      // any displayed run's generation differs from the current one.
+      var mixes = distinct.length > 1
+        || (curId && distinct.some(function(g) { return g !== curId; }));
+      var head, body, bg, border, fg;
+      if (!curId && !distinct.length) {
+        return '';  // no generation model in play — say nothing
+      }
+      if (mixes) {
+        bg = '#fffbeb'; border = '#f59e0b'; fg = '#92400e';
+        head = '⚠ This report mixes results from more than one generation';
+        body = 'Panels below do not all reflect the same code + parameter state. '
+             + 'Re-run the whole investigation as one generation, then re-export, '
+             + 'so every result is coordinated.'
+             + (distinct.length ? ' Generations present: '
+                 + distinct.map(function(g){return '<code>'+_h(g)+'</code>';}).join(', ') + '.' : '');
+      } else {
+        bg = '#f0fdf4'; border = '#16a34a'; fg = '#166534';
+        head = 'Coordinated generation';
+        body = 'Every result below reflects one snapshot: ' + bits.join(' · ') + '.';
+      }
+      return '<div class="generation-banner" id="generation-banner" '
+        + 'style="margin:16px 0;padding:12px 16px;background:' + bg + ';border:1px solid '
+        + border + ';border-left-width:5px;border-radius:6px;color:' + fg + '">'
+        + '<strong>' + head + '</strong>'
+        + '<div class="small" style="margin-top:4px">' + body + '</div>'
+        + '</div>';
+    }
+    var generationBannerHtml = _genBannerHtml();
 
     // Topological depth ordering of the studies (same as the dashboard DAG).
     var depthMap = {};
@@ -6142,6 +6203,9 @@
 
       +   '<h1>' + _h(iset.title || iset.name) + ' <span class="badge badge-' + _h(iset.status || 'planning') + '">' + _h(iset.status || 'planning') + '</span></h1>'
       +   '<p class="muted small">Investigation report · <code>' + nameClean + '</code> · generated ' + _h(now) + ' · for expert review prior to execution.</p>'
+
+      // Coordinated-generation provenance banner (expert-feedback A.3).
+      +   generationBannerHtml
 
       // Planning-phase banner: any study that has not yet produced runs
       // is treated as planning, and the whole report leads with a notice
