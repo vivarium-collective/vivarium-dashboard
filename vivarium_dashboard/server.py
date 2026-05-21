@@ -3412,6 +3412,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._get_work_composite_diff()
         if self.path.startswith("/api/references-bib"):
             return self._get_references_bib()
+        if self.path.startswith("/api/generation"):
+            return self._get_generation()
         if self.path.startswith("/api/investigation-composite-doc"):
             return self._get_investigation_composite_doc()
         if self.path.startswith("/api/investigation/"):
@@ -5960,6 +5962,32 @@ if __name__ == "__main__":
         """
         resp, code = _post_iset_clone_for_test(WORKSPACE, body)
         return self._json(resp, code)
+
+    def _get_generation(self):
+        """GET /api/generation — the workspace's current coordinated generation.
+
+        Returns ``{generation: {generation_id, git_sha, param_set_hash,
+        created_at, label, n_runs}}`` or ``{generation: null}`` when no
+        generation is active. Backs the report's generation banner so the
+        live dashboard and the exported HTML stamp the same provenance
+        (expert-feedback A.3). Best-effort: any error reports null rather
+        than 500, so a missing generation never breaks the report.
+        """
+        try:
+            from pbg_superpowers import generation as _gen
+            g = _gen.current_generation(WORKSPACE)
+        except Exception:  # noqa: BLE001
+            g = None
+        if g is None:
+            return self._json({"generation": None}, 200)
+        return self._json({"generation": {
+            "generation_id": g.generation_id,
+            "git_sha": g.git_sha,
+            "param_set_hash": g.param_set_hash,
+            "created_at": g.created_at,
+            "label": g.label,
+            "n_runs": len(g.runs),
+        }}, 200)
 
     def _get_references_bib(self):
         """GET /api/references-bib — parsed contents of references/papers.bib.
