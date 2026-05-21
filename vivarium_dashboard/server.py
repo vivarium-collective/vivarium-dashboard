@@ -763,6 +763,38 @@ def _read_runs_db_for_study(name: str) -> list[dict]:
     return out
 
 
+def _current_generation() -> dict | None:
+    """Read the current coordinated-generation manifest, or None.
+
+    Written by scripts/prepare_investigation.py: a *generation* is one
+    coordinated prep run (every study's baseline + comparison variants run
+    and every comparative rendered) under one id + one git sha. Surfacing
+    it lets the report show "results coordinated as of <generation>" and
+    flag studies whose latest run isn't in the generation — fixing the
+    "results mixed across dates" problem. See the 2026-05-21 feedback PLAN.
+    """
+    import json as _json
+    p = WORKSPACE / ".pbg" / "generations" / "current.json"
+    if not p.is_file():
+        return None
+    try:
+        m = _json.loads(p.read_text())
+    except Exception:
+        return None
+    # Index run_ids per study for staleness checks.
+    by_study: dict[str, set] = {}
+    for s in (m.get("studies") or []):
+        ids = {r.get("run_id") for r in (s.get("runs") or []) if r.get("run_id")}
+        by_study[s.get("study")] = ids
+    return {
+        "generation_id": m.get("generation_id"),
+        "created_at": m.get("created_at"),
+        "git_sha": m.get("git_sha"),
+        "investigation": m.get("investigation"),
+        "_run_ids_by_study": by_study,
+    }
+
+
 def _iter_study_dirs():
     """Yield every study directory across both studies/ and investigations/.
 
@@ -6010,6 +6042,8 @@ if __name__ == "__main__":
         def _normalize_parents(study_spec: dict) -> list[dict]:
             return normalize_dag_edges(study_spec)
 
+        generation = _current_generation()
+        gen_run_ids = (generation or {}).get("_run_ids_by_study", {})
         studies_out = []
         for slug in (spec.get("studies") or []):
             study_dir = WORKSPACE / "studies" / slug
@@ -6034,8 +6068,19 @@ if __name__ == "__main__":
             question = (purpose.get("question") if isinstance(purpose, dict) else None) or study_spec.get("question", "")
             follow_ups = study_spec.get("follow_up_studies") or []
             findings = study_spec.get("findings") or []
+            # Coordination: is this study's latest run part of the current
+            # generation? None = no generation recorded or study has no runs;
+            # True/False = latest run is / isn't in the coordinated generation.
+            coordinated = None
+            if generation is not None:
+                runs = _read_runs_db_for_study(study_spec["name"])
+                latest_run_id = runs[0].get("run_id") if runs else None
+                if latest_run_id is not None:
+                    coordinated = latest_run_id in gen_run_ids.get(
+                        study_spec["name"], set())
             studies_out.append({
                 "name":            study_spec["name"],
+                "coordinated":     coordinated,
                 "status":          study_spec.get("status", "planned"),
                 "phase":           study_spec.get("phase"),
                 "question":        question,
@@ -6079,6 +6124,9 @@ if __name__ == "__main__":
             "how_to_read":      spec.get("how_to_read") or [],
             "glossary":         spec.get("glossary") or [],
             "guidelines":       spec.get("guidelines") or [],
+            "generation":       ({k: v for k, v in generation.items()
+                                  if not k.startswith("_")}
+                                 if generation else None),
             "biological_story": spec.get("biological_story", ""),
             "question":         spec.get("question", ""),
             "hypothesis":       spec.get("hypothesis", ""),

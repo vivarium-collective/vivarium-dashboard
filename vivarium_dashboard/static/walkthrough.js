@@ -3699,6 +3699,36 @@
     host.style.display = '';
   }
 
+  function _renderInvGeneration(gen, studies) {
+    var host = document.getElementById('investigation-generation');
+    if (!host) return;
+    if (!gen || !gen.generation_id) {
+      // No coordinated generation recorded. Surface that explicitly — an
+      // un-coordinated investigation is exactly the "mixed results" risk.
+      host.innerHTML = '<div style="padding:8px 12px;border-radius:6px;'
+        + 'background:#fef3c7;color:#92400e;font-size:0.88em">'
+        + '⚠ No coordinated result generation recorded. Run '
+        + '<code>scripts/prepare_investigation.py</code> to generate all '
+        + 'studies’ results together.</div>';
+      host.style.display = '';
+      return;
+    }
+    var stale = (studies || []).filter(function (s) { return s.coordinated === false; });
+    var staleLine = stale.length
+      ? '<span style="color:#b45309"> · ⚠ ' + stale.length
+        + ' study(ies) NOT in this generation: '
+        + stale.map(function (s) { return _escInv(s.name); }).join(', ') + '</span>'
+      : '<span style="color:#166534"> · ✓ all studies coordinated</span>';
+    var when = gen.created_at ? new Date(gen.created_at).toLocaleString() : '';
+    host.innerHTML = '<div style="padding:8px 12px;border-radius:6px;'
+      + 'background:#eff6ff;color:#1e3a8a;font-size:0.88em">'
+      + 'Results coordinated as of <strong>' + _escInv(gen.generation_id)
+      + '</strong> · ' + _escInv(when)
+      + ' · git <code>' + _escInv(gen.git_sha || '?') + '</code>'
+      + staleLine + '</div>';
+    host.style.display = '';
+  }
+
   function _renderInvGuidelines(items) {
     var host = document.getElementById('investigation-guidelines');
     if (!host) return;
@@ -3791,6 +3821,10 @@
 
         // Glossary: yaml-driven list of {term, definition}. Hidden if absent.
         _renderInvGlossary(d.glossary);
+
+        // Coordination banner: "results coordinated as of <generation>" +
+        // stale-study flags. Hidden when no generation recorded.
+        _renderInvGeneration(d.generation, d.studies);
 
         // Guidelines: yaml-driven investigation-wide reference values
         // (e.g. the Stage-1 parameter table). Hidden if absent.
