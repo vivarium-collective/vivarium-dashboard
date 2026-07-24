@@ -399,9 +399,13 @@
     var an = slug
       ? '<a class="action-btn" download href="/api/study-analysis-zip?study=' + encodeURIComponent(slug) + '">⬇ Analysis (figures / cards)</a>'
       : '';
-    var explore = (runId && row.spec_id)
-      ? '<a class="action-btn" href="/?id=' + encodeURIComponent(row.spec_id) + '&run_id=' + encodeURIComponent(runId) + '#composite-explore">↗ Open run in Composite Explorer</a>'
-      : '';
+    // Enforcement: the run opens in the Composite Explorer only when its
+    // composite is a registered composite; otherwise we surface the gap.
+    var explore = (runId && row.spec_id && row.composite_registered)
+      ? '<a class="action-btn" href="/?focus=composite-explore&id=' + encodeURIComponent(row.spec_id) + '&run_id=' + encodeURIComponent(runId) + '#composite-explore">↗ Open run in Composite Explorer</a>'
+      : '<span style="color:#b91c1c;font-size:0.85em">⚠ ' + (row.spec_id
+          ? 'composite <code>' + e(row.spec_id) + '</code> is not registered — cannot open in the Explorer'
+          : 'no composite associated with this run') + '</span>';
     var kv = function (k, v) {
       return '<div style="display:flex;gap:8px"><span class="muted" style="min-width:90px">' + e(k) + '</span><span>' + v + '</span></div>';
     };
@@ -414,6 +418,7 @@
         '</div>' +
         '<div style="display:grid;gap:4px;font-size:0.88em;margin-bottom:10px">' +
           kv('Run ID', '<code>' + e(runId) + '</code>') +
+          kv('Composite', S.composite(row)) +
           kv('Location', S.location(row)) +
           kv('Time', e(S.fmtTime(row.completed_at || row.started_at))) +
           (row.n_steps != null ? kv('Steps', e(row.n_steps)) : '') +

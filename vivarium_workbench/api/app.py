@@ -648,12 +648,22 @@ def create_app() -> FastAPI:
         the same Sim-DB table filtered to the study, instead of a bespoke one.
         """
         from vivarium_workbench.lib.simulations_index import build_simulations_data
+        from vivarium_workbench.lib.composite_lookup import known_composite_ids
         data = build_simulations_data(ws)
         sims = data.get("simulations", [])
         if study:
             sims = [s for s in sims
                     if s.get("study_slug") == study
                     or study in (s.get("studies") or [])]
+        # Enforcement: annotate whether each run maps to exactly one registered
+        # composite (its ``spec_id`` must be an exact registered composite id).
+        try:
+            _known = known_composite_ids(ws)
+        except Exception:  # noqa: BLE001
+            _known = set()
+        for s in sims:
+            _cid = s.get("spec_id")
+            s["composite_registered"] = bool(_cid and _cid in _known)
         rows = [SimRow.model_validate(r) for r in sims]
         return SimulationsPayload(simulations=rows, current=data.get("current"))
 

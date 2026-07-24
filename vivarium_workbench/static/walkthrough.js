@@ -14872,6 +14872,7 @@
     if (key === 'study') return String(_simStudy(row) || '').toLowerCase();
     if (key === 'investigation') return String(_simInvestigation(row) || '').toLowerCase();
     if (key === 'run') return String(row.sim_name || row.label || row.run_id || '').toLowerCase();
+    if (key === 'composite') return String(row.spec_id || '').toLowerCase();
     if (key === 'status') return String(row.status || '').toLowerCase();
     return '';
   }

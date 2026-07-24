@@ -66,6 +66,25 @@
       'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(loc) + '">' + esc(tail) + "</code>";
   }
 
+  // Composite cell — enforcement: every simulation must map to exactly one
+  // REGISTERED composite. Registered → a link that opens it in the Composite
+  // Explorer; missing/unregistered → a red flag (title explains the rule).
+  function composite(row) {
+    var cid = row && row.spec_id ? String(row.spec_id) : "";
+    if (!cid) {
+      return '<span title="No composite associated — every simulation must map to one registered composite." ' +
+        'style="color:#b91c1c;font-size:12px;white-space:nowrap;">⚠ none</span>';
+    }
+    var short = cid.split(".").pop();
+    if (row.composite_registered) {
+      var href = "/?focus=composite-explore&id=" + encodeURIComponent(cid) + "#composite-explore";
+      return '<a href="' + href + '" title="' + esc(cid) + ' — open in the Composite Explorer" ' +
+        'style="text-decoration:none;white-space:nowrap;"><code style="font-size:11px;">' + esc(short) + "</code> ↗</a>";
+    }
+    return '<span title="' + esc(cid) + ' — not a registered composite. Every simulation must map to one registered composite." ' +
+      'style="color:#b91c1c;font-size:12px;white-space:nowrap;">⚠ <code style="font-size:11px;color:inherit;">' + esc(short) + "</code></span>";
+  }
+
   function _actions(row) {
     var runIdEnc = encodeURIComponent(row.run_id || "");
     var studySlug = study(row);
@@ -94,6 +113,7 @@
     cells += td('<code style="font-size:11px;color:#6b7280;display:block;overflow:hidden;' +
       'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(runId + (row.db_path ? "\n" + row.db_path : "")) +
       '">' + esc(runLabel) + "</code>", "overflow:hidden;");
+    cells += td(composite(row), "overflow:hidden;");
     cells += td(location(row), "overflow:hidden;");
     cells += td(originPill(row));
     cells += td(emitterPill(row.emitter_type));
@@ -105,13 +125,15 @@
   }
 
   var STUDY_COLS = [
-    { label: "Run", key: "run" }, { label: "Location", key: "location" },
+    { label: "Run", key: "run" }, { label: "Composite", key: "composite" },
+    { label: "Location", key: "location" },
     { label: "Origin", key: "origin" }, { label: "Emitter", key: "emitter" },
     { label: "Time", key: "time" }, { label: "Status", key: "status" }, { label: "", key: null },
   ];
 
   function sortValue(row, key) {
     if (key === "time") return row.completed_at || row.started_at || 0;
+    if (key === "composite") return String(row.spec_id || "").toLowerCase();
     if (key === "emitter") return String(row.emitter_type || "").toLowerCase();
     if (key === "origin") return originLabel(row).toLowerCase();
     if (key === "status") return String(row.status || "").toLowerCase();
@@ -172,6 +194,7 @@
   window.SimTable = {
     esc: esc, statusChip: statusChip, emitterPill: emitterPill, originPill: originPill,
     originLabel: originLabel, fmtTime: fmtTime, location: location, study: study,
-    investigation: investigation, renderRow: renderRow, renderTable: renderTable,
+    investigation: investigation, composite: composite,
+    renderRow: renderRow, renderTable: renderTable,
   };
 })();

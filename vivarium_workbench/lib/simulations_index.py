@@ -1072,9 +1072,18 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
         prev = folded.get(rid)
         has_store = bool(row.get("store_path") or row.get("db_path"))
         prev_has_store = bool(prev and (prev.get("store_path") or prev.get("db_path")))
+        # Enforcement (every simulation must map to one registered composite):
+        # self-heal the composite too. A run migrated before its study declared
+        # a composite has ``spec_id=None`` in the log; once the study.yaml/DB
+        # supplies one, re-backfill so the log record carries it.
+        has_composite = bool(row.get("spec_id"))
+        prev_has_composite = bool(prev and prev.get("spec_id"))
         # Skip when already represented AND its store location is known (or the
-        # legacy store has none to add) — keeps this idempotent across builds.
-        if prev is not None and (prev_has_store or not has_store):
+        # legacy store has none to add) AND its composite is known (or the legacy
+        # store has none to add) — keeps this idempotent across builds.
+        if (prev is not None
+                and (prev_has_store or not has_store)
+                and (prev_has_composite or not has_composite)):
             continue
         ev = {"run_id": rid, "event": "backfill"}
         for k in ("spec_id", "sim_name", "label", "status", "n_steps",
