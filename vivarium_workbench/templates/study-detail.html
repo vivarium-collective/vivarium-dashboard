@@ -257,20 +257,12 @@
   <div class="study-overview">
 
     {# ─── Group 1: Summary ─────────────────────────────────────────────── #}
-    <h2 class="overview-label">Summary</h2>
-
     {# v4 narrative-spine: executive `report` card + always-rendered
-       biological_summary. The report card is the at-a-glance
-       verdict panel the dnaa investigation evolved (verdict, confidence,
-       evidence_quality, main_insight, caveat). Each field is editable
-       in-place via /api/study-narrative-set. Empty-state placeholders
-       guide a new user to fill them in. #}
+       biological_summary. Each field is editable in-place via
+       /api/study-narrative-set; Verdict + main insight are computed. #}
     {% set _report = study.report or {} %}
     <div class="overview-section narrative-card" data-narrative-card="report">
-      <h2 class="overview-label">📋 Report — executive summary
-        <span class="narrative-card-hint">(top-of-page panel for reviewers)</span>
-      </h2>
-      <p class="muted" style="margin:0 0 10px 0;font-size:0.85em">Author the reviewer-facing notes below; Verdict and main insight are computed from the gate evaluator and findings.</p>
+      <h2 class="overview-label">📋 Summary</h2>
       <div class="narrative-grid">
         {% set _f0 = (study.findings or [])[0] if study.findings else None %}
         <label class="narrative-row">
@@ -318,9 +310,7 @@
     {# Always-render biological_summary: empty-state textarea encourages
        the user to start writing immediately. #}
     <div class="overview-section biology-summary-callout">
-      <h2 class="biology-glance-label">Biology — what this study is about
-        <span class="narrative-card-hint">(optional override — derived from findings when blank)</span>
-      </h2>
+      <h2 class="biology-glance-label">Biology — what this study is about</h2>
       <textarea class="biology-prose narrative-input narrative-textarea" rows="4"
                 data-narrative-path="biological_summary"
                 placeholder="Multi-paragraph plain-English mechanism narrative — the 'textbook write-up' a non-modeler would read.">{{ study.biological_summary or '' }}</textarea>
@@ -372,14 +362,9 @@
     {% endif %}
 
     {# ─── Group 3: Findings & open debts ─────────────────────────────── #}
-    <h2 class="overview-label">Findings &amp; open debts</h2>
-
     {% if study.findings %}
     <div class="overview-section findings-section">
       <h2 class="overview-label">🔬 Findings — what this study taught us</h2>
-      <p class="muted" style="margin:0 0 8px 0;font-size:0.85em">
-        Each card states a finding, links the evidence (run + test + value), shows the literature/expert comparison, and marks whether v2ecoli's behavior <em>confirms</em>, <em>contradicts</em>, <em>partially</em> agrees with, or is <em>novel</em> vs the reference.
-      </p>
       {% for f in study.findings %}
       {% set _status = f.status or 'novel' %}
       {% set _glyph = {'confirms': '✓', 'partial': '◐', 'contradicts': '✗', 'novel': '◆'}.get(_status, '◆') %}
@@ -447,13 +432,8 @@
     {% if epistemic_debts %}
     <div class="overview-section" id="epistemic-debts-panel">
       <h2 class="overview-label">🧾 Open epistemic debts
-        <span class="narrative-card-hint">(negative knowledge — what this study has not yet established)</span>
+        <span class="narrative-card-hint">(what this study has not yet established)</span>
       </h2>
-      <p class="muted" style="margin:0 0 8px 0;font-size:0.85em">
-        Untested claims, absent controls, uncalibrated metrics, un-excluded
-        alternatives, unexplored regions, and stale visuals — harvested from the
-        rigor scorecard + freshness signals.
-      </p>
       <div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
         {% for d in epistemic_debts %}
         {% set _sev = (d.severity or 'low')|string %}
