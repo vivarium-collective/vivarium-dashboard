@@ -393,19 +393,34 @@ body {
 .port-out-label {
   position: absolute;
   transform: translateY(-50%);
-  display: flex; flex-direction: column;
-  pointer-events: none;
-  line-height: 1.15;
+  display: flex; align-items: center; gap: 6px;
   white-space: nowrap;          /* keep each port name on ONE line */
 }
-.port-out-label.is-in  { right: calc(100% + 14px); text-align: right; align-items: flex-end; }
-.port-out-label.is-out { left:  calc(100% + 14px); text-align: left;  align-items: flex-start; }
+/* Anchored at the card border; the row lays [dot | text], with the text toward
+   the card and the dot at the OUTER end of the name (wires attach at the dot). */
+.port-out-label.is-in  { right: 100%; }
+.port-out-label.is-out { left:  100%; }
+.port-out-text { display: flex; flex-direction: column; line-height: 1.12; }
+.port-out-label.is-in  .port-out-text { align-items: flex-end;  text-align: right; margin-right: 8px; }
+.port-out-label.is-out .port-out-text { align-items: flex-start; text-align: left;  margin-left: 8px; }
 .port-out-name { font-size: 13px; font-weight: 650; color: #334155; }
 .port-out-label.is-out .port-out-name { color: #0f766e; }
 .port-out-type {
   font-family: ui-monospace, monospace; font-size: 10.5px; color: #94a3b8;
   max-width: 240px; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* The connection dot (RF Handle) flows INLINE at the outer end of the name —
+   override React Flow's absolute positioning so it sits in the label row. */
+.port-dot.react-flow__handle {
+  position: relative;
+  top: auto; left: auto; right: auto; bottom: auto;
+  transform: none;
+  width: 9px; height: 9px; min-width: 9px;
+  border-radius: 50%; background: #fff;
+}
+.port-dot.is-in  { border: 1.6px solid #64748b; }
+.port-dot.is-out { border: 1.6px solid #0d9488; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */

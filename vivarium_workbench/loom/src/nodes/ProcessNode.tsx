@@ -123,10 +123,12 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const configEntries = Object.entries(data.config ?? {});
 
   // Port labels live OUTSIDE the card border — inputs to the left, outputs to
-  // the right — aligned to their handle's vertical position. The name shows at
-  // the `ports` tier; the abbreviated type appears beneath it at `types`+. Full
-  // per-port detail (store, full type, contract meaning) is revealed on click
-  // via the popover (see 1b), not crammed inline here.
+  // the right — aligned to their vertical position. The connection dot (the RF
+  // Handle) sits at the OUTER END of the name, so wires leave from the tip of
+  // the label instead of crossing it. The name shows at `ports`; the abbreviated
+  // type beneath at `types`+. Full per-port detail is revealed on click (1b).
+  // Rendered at EVERY tier (the dot must exist at glyph for wires to attach);
+  // only the text is tier-gated.
   const outsideLabel = (
     port: string, types: Record<string, unknown>, isOut: boolean, i: number, n: number,
   ) => {
@@ -135,17 +137,30 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
       portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
       portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
     });
+    const dot = (
+      <Handle
+        type={isOut ? 'source' : 'target'}
+        position={isOut ? Position.Right : Position.Left}
+        id={port}
+        className={`port-dot ${isOut ? 'is-out' : 'is-in'}`}
+        title={handleTitle(port, isOut, types)}
+      />
+    );
+    const text = show.ports ? (
+      <span className="port-out-text">
+        <span className="port-out-name">{port}</span>
+        {show.types && info.type && (
+          <span className="port-out-type" title={info.fullType}>{info.type}</span>
+        )}
+      </span>
+    ) : null;
     return (
       <div
         key={`${isOut ? 'o' : 'i'}lbl-${port}`}
         className={`port-out-label ${isOut ? 'is-out' : 'is-in'}`}
         style={{ top: `${((i + 1) / (n + 1)) * 100}%` }}
-        title={handleTitle(port, isOut, types)}
       >
-        <span className="port-out-name">{port}</span>
-        {show.types && info.type && (
-          <span className="port-out-type" title={info.fullType}>{info.type}</span>
-        )}
+        {isOut ? <>{text}{dot}</> : <>{dot}{text}</>}
       </div>
     );
   };
@@ -169,37 +184,12 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   return (
     <div className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}>
-      {/* Handles anchor the wires at EVERY tier — they stay present even at the
-          glyph tier where no port labels are drawn, so focused-process wiring
-          (Task 6) keeps attaching by port id. A native `title` gives the raw
-          connector its own hover detail (direction + wired store). */}
-      {inputPorts.map((port, i) => (
-        <Handle
-          key={`h-in-${port}`}
-          type="target"
-          position={Position.Left}
-          id={port}
-          className="port-handle port-handle-input"
-          title={handleTitle(port, false, inTypes)}
-          style={{ top: `${((i + 1) / (inputPorts.length + 1)) * 100}%` }}
-        />
-      ))}
-      {outputPorts.map((port, i) => (
-        <Handle
-          key={`h-out-${port}`}
-          type="source"
-          position={Position.Right}
-          id={port}
-          className="port-handle port-handle-output"
-          title={handleTitle(port, true, outTypes)}
-          style={{ top: `${((i + 1) / (outputPorts.length + 1)) * 100}%` }}
-        />
-      ))}
-
       {/* Port names OUTSIDE the card — inputs flow in from the left, outputs
-          leave to the right (the parameterized-function reading). */}
-      {show.ports && inputPorts.map((p, i) => outsideLabel(p, inTypes, false, i, inputPorts.length))}
-      {show.ports && outputPorts.map((p, i) => outsideLabel(p, outTypes, true, i, outputPorts.length))}
+          leave to the right — with the connection dot at the name's outer end so
+          wires attach past the text, not through it. Rendered at every tier
+          (the dot must exist at glyph so focused wiring can attach by port id). */}
+      {inputPorts.map((p, i) => outsideLabel(p, inTypes, false, i, inputPorts.length))}
+      {outputPorts.map((p, i) => outsideLabel(p, outTypes, true, i, outputPorts.length))}
 
       {/* Config enters from ABOVE the process — the knobs that parameterize the
           input→output translation. Keys at `types`, key=value at `contract`+. */}
@@ -232,7 +222,6 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           parameterized by config) over a justified recital (the summary). */}
       {show.contract && (
         <div className="process-contract">
-          <div className="contract-heading">Process Contract</div>
           <div className="contract-signature">
             <span className="sig-fn">ƒ</span>
             <span className="sig-punct">(</span>

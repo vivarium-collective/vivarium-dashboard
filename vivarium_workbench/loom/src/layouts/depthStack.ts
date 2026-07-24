@@ -1,11 +1,11 @@
-// src/layouts/depthStack.ts — "stack stores by depth" global arrangement.
+// src/layouts/depthStack.ts — "stack stores by depth" as a tidy TREE.
 //
-// A structural alternative to the force overview: stores are banded by their
-// nesting depth (top-level stores in the top band, their children below, and
-// so on), and each process is seeded beneath the stores it wires, then the
-// shared overlap-removal pass guarantees nothing collides. This makes the
-// store HIERARCHY legible — "outers above, inners below" — where the force
-// layout optimizes for wire length instead.
+// A structural alternative to the force overview: stores are arranged as a
+// nesting tree — top-level (root) stores side-by-side across the top, and each
+// store's children clustered directly beneath IT (recursively), so a store and
+// its whole subtree read as one tight cluster. Processes are seeded in a band
+// below the tree, near the stores they wire, and de-overlapped among themselves
+// (the tree itself is overlap-free by construction and left untouched).
 //
 // Pure: no React, no DOM. Returns React-Flow node TOP-LEFT positions.
 
@@ -13,50 +13,87 @@ import type { Node, Edge } from '@xyflow/react';
 import { fullFootprint, removeOverlaps, type Box } from './clusterGrid';
 import type { LayoutResult } from './types';
 
-/** Horizontal gap between cards within a band. */
-const H_GAP = 40;
-/** Vertical gap between successive depth bands. */
-const BAND_V_GAP = 90;
-/** Gap between the deepest store band and the process band below it. */
-const PROC_GAP = 120;
-/** Clearance enforced by the overlap-removal pass. */
-const MARGIN = 36;
+/** Gap between sibling subtrees. */
+const SIB_GAP = 26;
+/** Gap between separate root trees across the top. */
+const ROOT_GAP = 64;
+/** Vertical gap between tree levels. */
+const LEVEL_GAP = 66;
+/** Gap below the deepest store level to the process band. */
+const PROC_GAP = 130;
+/** Overlap clearance enforced among processes. */
+const PROC_MARGIN = 34;
 
-/** Depth of a node from its bigraph path length (root = 1). Missing path → 1. */
-function depthOf(n: Node): number {
-  const path = (n.data as { path?: unknown[] } | undefined)?.path;
-  return Array.isArray(path) && path.length > 0 ? path.length : 1;
-}
+const byId = (a: Node, b: Node) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+const pathKey = (p: unknown[]) => p.join('');
 
 export function depthStackLayout(nodes: Node[], edges: Edge[]): LayoutResult {
   const stores = nodes.filter((n) => n.type === 'store');
   const procs = nodes.filter((n) => n.type === 'process');
+  const storeH = stores.length ? fullFootprint(stores[0]).h : 150;
 
-  // Band stores by depth. Depths sorted ascending → band 0 is the outermost.
-  const byDepth = new Map<number, Node[]>();
+  // Build the store tree from bigraph paths: a store's parent is the store whose
+  // path is this store's path minus its last segment.
+  const byPath = new Map<string, Node>();
   for (const s of stores) {
-    const d = depthOf(s);
-    (byDepth.get(d) ?? byDepth.set(d, []).get(d)!).push(s);
+    const p = (s.data as { path?: unknown[] } | undefined)?.path;
+    if (Array.isArray(p) && p.length) byPath.set(pathKey(p), s);
   }
-  const depths = [...byDepth.keys()].sort((a, b) => a - b);
+  const kids = new Map<string, Node[]>();
+  const roots: Node[] = [];
+  for (const s of stores) {
+    const p = (s.data as { path?: unknown[] } | undefined)?.path;
+    const parent = Array.isArray(p) && p.length > 1 ? byPath.get(pathKey(p.slice(0, -1))) : undefined;
+    if (parent) {
+      const arr = kids.get(parent.id) ?? [];
+      arr.push(s);
+      kids.set(parent.id, arr);
+    } else {
+      roots.push(s);
+    }
+  }
+  for (const arr of kids.values()) arr.sort(byId);
+  roots.sort(byId);
+
+  // Tidy-tree subtree widths (post-order): a subtree is as wide as the wider of
+  // the node itself and the packed row of its children's subtrees.
+  const subW = new Map<string, number>();
+  const widthOf = (s: Node): number => {
+    const cached = subW.get(s.id);
+    if (cached != null) return cached;
+    const f = fullFootprint(s);
+    const ch = kids.get(s.id) ?? [];
+    let w = f.w;
+    if (ch.length) {
+      const row = ch.reduce((sum, k) => sum + widthOf(k), 0) + SIB_GAP * (ch.length - 1);
+      w = Math.max(f.w, row);
+    }
+    subW.set(s.id, w);
+    return w;
+  };
 
   const boxes = new Map<string, Box>();
-  const centerX = new Map<string, number>();  // store id → center x (for process seeding)
-  let bandTop = 0;
-  for (const d of depths) {
-    const band = byDepth.get(d)!.sort((a, b) => (a.id < b.id ? -1 : 1));
-    const bandH = band.reduce((m, s) => Math.max(m, fullFootprint(s).h), 0);
-    let x = 0;
-    for (const s of band) {
-      const f = fullFootprint(s);
-      boxes.set(s.id, { id: s.id, x, y: bandTop, w: f.w, h: f.h });
-      centerX.set(s.id, x + f.w / 2);
-      x += f.w + H_GAP;
+  const place = (s: Node, left: number, depth: number) => {
+    const f = fullFootprint(s);
+    const w = widthOf(s);
+    // Center the node over its own subtree; children packed centered below.
+    boxes.set(s.id, { id: s.id, x: left + (w - f.w) / 2, y: depth * (storeH + LEVEL_GAP), w: f.w, h: f.h });
+    const ch = kids.get(s.id) ?? [];
+    if (ch.length) {
+      const rowW = ch.reduce((sum, k) => sum + widthOf(k), 0) + SIB_GAP * (ch.length - 1);
+      let cl = left + (w - rowW) / 2;
+      for (const k of ch) { place(k, cl, depth + 1); cl += widthOf(k) + SIB_GAP; }
     }
-    bandTop += bandH + BAND_V_GAP;
-  }
+  };
+  let rootLeft = 0;
+  for (const r of roots) { place(r, rootLeft, 0); rootLeft += widthOf(r) + ROOT_GAP; }
 
-  // Which stores each process wires to (either wire direction).
+  // Processes seeded in a band below the whole tree, under the mean x of the
+  // stores they wire; de-overlapped among themselves only (tree stays put).
+  const centerX = new Map<string, number>();
+  let treeBottom = 0;
+  for (const [id, b] of boxes) { centerX.set(id, b.x + b.w / 2); treeBottom = Math.max(treeBottom, b.y + b.h); }
+
   const procStores = new Map<string, string[]>();
   for (const e of edges) {
     const kind = (e.data as { edgeType?: string } | undefined)?.edgeType;
@@ -64,27 +101,26 @@ export function depthStackLayout(nodes: Node[], edges: Edge[]): LayoutResult {
     const proc = kind === 'input' ? e.target : e.source;
     const store = kind === 'input' ? e.source : e.target;
     if (!centerX.has(store)) continue;
-    (procStores.get(proc) ?? procStores.set(proc, []).get(proc)!).push(store);
+    const arr = procStores.get(proc) ?? [];
+    arr.push(store);
+    procStores.set(proc, arr);
   }
 
-  // Seed each process below the store bands, under the mean x of its stores.
-  const procTop = bandTop + PROC_GAP;
-  for (const p of procs.slice().sort((a, b) => (a.id < b.id ? -1 : 1))) {
+  const procTop = treeBottom + PROC_GAP;
+  for (const p of procs.slice().sort(byId)) {
     const f = fullFootprint(p);
     const cs = procStores.get(p.id) ?? [];
-    const meanCx = cs.length
-      ? cs.reduce((s, id) => s + (centerX.get(id) ?? 0), 0) / cs.length
-      : 0;
-    boxes.set(p.id, { id: p.id, x: meanCx - f.w / 2, y: procTop, w: f.w, h: f.h });
+    const cx = cs.length ? cs.reduce((s, id) => s + (centerX.get(id) ?? 0), 0) / cs.length : 0;
+    boxes.set(p.id, { id: p.id, x: cx - f.w / 2, y: procTop, w: f.w, h: f.h });
   }
+  const procBoxes = procs.map((p) => boxes.get(p.id)!).filter(Boolean);
+  removeOverlaps(procBoxes, PROC_MARGIN, 400);
 
-  // Guarantee no overlaps, then normalize to a positive origin.
+  // Normalize to a positive origin.
   const items = [...boxes.values()];
-  removeOverlaps(items, MARGIN, 400);
   let minX = Infinity, minY = Infinity;
   for (const b of items) { if (b.x < minX) minX = b.x; if (b.y < minY) minY = b.y; }
   if (!Number.isFinite(minX)) { minX = 0; minY = 0; }
-
   const posById = new Map(items.map((b) => [b.id, { x: b.x - minX, y: b.y - minY }]));
   const laidOut = nodes.map((n) => {
     const p = posById.get(n.id);
