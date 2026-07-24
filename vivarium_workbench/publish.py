@@ -353,6 +353,32 @@ def _stage_report_cards(spec, ws_root: Path, out_dir: Path,
             card["url"] = base_path + url
 
 
+def _stage_comparison_plotly(spec, ws_root: Path, out_dir: Path,
+                             base_path: str) -> None:
+    """Copy a study's ``comparison_plotly_url`` file into the bundle + base-path it.
+
+    ``study_spec`` surfaces a single ``viz/comparison_plotly.html`` as the
+    "Interactive comparison" panel ABOVE the scorecards, via the scalar
+    ``comparison_plotly_url`` field (NOT ``embed_visualizations``). Like the
+    embeds and report cards it's an ``<iframe src=URL>`` the browser fetches at
+    runtime, so the file must exist in the bundle and carry the hosting base path
+    — otherwise the panel 404s in the read-only dashboard. Mirrors
+    ``_stage_embed_visualizations`` for that one field.
+    """
+    url = spec.get("comparison_plotly_url")
+    if not isinstance(url, str) or not url.startswith("/") or url.startswith(("/api/", "//")):
+        return
+    rel = url.lstrip("/")
+    src = ws_root / rel
+    if not src.is_file():
+        return
+    dst = out_dir / rel
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    if base_path:
+        spec["comparison_plotly_url"] = base_path + url
+
+
 def _stage_gif_visualizations(spec: dict, ws_root: Path, out_dir: Path, slug: str) -> None:
     """Stage a study's ``gif:`` visualization artifacts into the bundle.
 
@@ -951,6 +977,7 @@ def _do_build(
         if data is not None:
             _stage_embed_visualizations(data, ws_root, out_dir, base_path)
             _stage_report_cards(data, ws_root, out_dir, base_path)
+            _stage_comparison_plotly(data, ws_root, out_dir, base_path)
             _stage_gif_visualizations(data, ws_root, out_dir, slug)
             _write_json(api_dir / "study" / f"{slug}.json", data)
 
@@ -1051,6 +1078,7 @@ def _do_build(
         try:
             _stage_embed_visualizations(spec, ws_root, out_dir, base_path)
             _stage_report_cards(spec, ws_root, out_dir, base_path)
+            _stage_comparison_plotly(spec, ws_root, out_dir, base_path)
             study_html = render_study_detail_html(ws_root, slug, spec)
             study_html = _normalize_asset_urls(study_html)
             study_html = _apply_base_path(study_html, base_path)
