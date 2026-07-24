@@ -139,6 +139,30 @@ export interface RunTrajectory {
   trajectory: Array<{ step: number; time?: number; state: Record<string, unknown> }>;
 }
 
+/** Resolved composite config — the parameter form the Setup & Run tab renders.
+ *  /api/composite-state carries the wiring but NOT the config, so the Explorer
+ *  fetches this separately so EVERY composite shows the same Setup & Run form. */
+export interface ResolveResponse {
+  parameters?: Record<string, ParameterDecl>;
+  overrides?: Record<string, unknown>;
+  default_n_steps?: number;
+  name?: string;
+  library?: string;
+  id?: string;
+  error?: string;
+}
+
+export async function resolveComposite(
+  id: string,
+  overrides?: Record<string, unknown>,
+): Promise<ResolveResponse> {
+  const q = new URLSearchParams({ id, overrides: JSON.stringify(overrides ?? {}) });
+  const r = await fetch('/api/composite-resolve?' + q.toString());
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+  return body as ResolveResponse;
+}
+
 /** Start a detached composite run. Resolves with {run_id}; rejects on non-2xx
  *  (notably 429 when the concurrency cap is hit) with the server's error text. */
 export async function startRun(args: StartRunArgs): Promise<StartRunResponse> {
