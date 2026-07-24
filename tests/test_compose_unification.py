@@ -27,12 +27,14 @@ def _panel_compose():
 
 def test_inner_hooks_preserved_in_compose():
     p = _panel_compose()
-    assert "baseline-entry" in p and "btn-run-baseline" in p          # baseline Run/Remove
-    assert "data-editable-intervention" in p                          # interventions editor
-    assert "data-baseline-name" in p
-    # Build block guard + not-v3 guard both present inside the merged panel
+    # The legacy v2 baseline/variants/interventions CRUD was retired; the Model
+    # (compose) panel now surfaces the composite + its resolved config + the v3
+    # conditions editor.
+    assert "data-model-composite" in p and "model-config-mount" in p  # composite + resolved config
+    assert "_openCompositeLoom" in p                                  # open in the Composite Explorer
+    assert "cond-block" in p                                          # v3 conditions editor
+    # Build block guard still present inside the merged panel.
     assert "study.model_change or study.implementation_requirements" in p
-    assert "not _is_v3" in p
 
 
 def test_other_panels_untouched():

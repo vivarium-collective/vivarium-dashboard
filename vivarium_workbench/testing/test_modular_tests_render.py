@@ -14,12 +14,13 @@ def _render_tests_fragment(tests):
            " data-test-kind=\"{{ b.kind or 'behavioral' }}\""
            "{% if (b.kind or 'behavioral') == 'report_card' %} data-card=\"{{ b.card }}\"{% endif %}>"
            "{% if (b.kind or 'behavioral') == 'report_card' %}"
-           "<div class=\"report-card-mount\"></div>"
+           "<span class=\"report-card-verdict\" data-card=\"{{ b.card }}\">report card</span>"
+           "<a onclick=\"_setStudyPillar('report-cards')\">View on Report Cards</a>"
            "{% else %}<span class=\"bt-result\">{{ b.name }}</span>{% endif %}</li>{% endfor %}")
     return env.from_string(src).render(study={"tests": tests})
 
 
-def test_behavioral_renders_pill_report_card_renders_mount():
+def test_behavioral_renders_pill_report_card_links_to_report_cards_tab():
     html = _render_tests_fragment([
         {"name": "beh"},
         {"name": "card1", "kind": "report_card", "card": "standard"},
@@ -27,4 +28,6 @@ def test_behavioral_renders_pill_report_card_renders_mount():
     assert 'id="bt-beh" data-test-kind="behavioral"' in html
     assert '<span class="bt-result">beh</span>' in html      # behavioral unchanged
     assert 'data-test-kind="report_card" data-card="standard"' in html
-    assert '<div class="report-card-mount"></div>' in html
+    # De-duplicated: a verdict pill + a link to the Report Cards tab, not a mount.
+    assert 'class="report-card-verdict" data-card="standard"' in html
+    assert "_setStudyPillar('report-cards')" in html

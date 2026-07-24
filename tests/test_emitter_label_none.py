@@ -62,7 +62,9 @@ def test_simulations_data_labels_dict_declared_emitters(tmp_path, monkeypatch):
 
 
 def test_pill_js_conveys_summary_only_tooltip():
-    js = (_PKG / "static" / "walkthrough.js").read_text(encoding="utf-8")
+    # The emitter-pill renderer now lives in the shared SimTable component
+    # (walkthrough.js delegates to it).
+    js = (_PKG / "static" / "sim-table.js").read_text(encoding="utf-8")
     assert "no emitter (summary-only run)" in js
     assert "emitter-none" in js
 

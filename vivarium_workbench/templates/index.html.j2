@@ -1170,6 +1170,7 @@ window.addEventListener('pageshow', function (e) {
         <th data-sort-key="investigation" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Investigation</th>
         <th data-sort-key="study" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Study</th>
         <th data-sort-key="run" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; cursor:pointer;">Run</th>
+        <th data-sort-key="composite" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:150px; cursor:pointer;">Composite</th>
         <th style="text-align:left; padding:6px 8px; width:150px;">Location</th>
         <th data-sort-key="origin" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:90px; cursor:pointer;">Origin</th>
         <th data-sort-key="emitter_type" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:80px; cursor:pointer;">Emitter</th>
@@ -1640,6 +1641,7 @@ Nothing on <code id="pr-base-display-2">main</code> changes until someone presse
 <script src="assets/render-helpers.js"></script>
 <script src="assets/client.js" onerror="/* live mode unavailable */"></script>
 <script src="assets/aig-graph.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* aig-graph unavailable */"></script>
+<script src="assets/sim-table.js{% if asset_version %}?v={{ asset_version }}{% endif %}"></script>
 <script src="assets/walkthrough.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* walkthrough unavailable */"></script>
 <script src="assets/explorer.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* explorer unavailable */"></script>
 <script src="assets/explorer-views.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* explorer views unavailable */"></script>

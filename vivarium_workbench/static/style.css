@@ -1293,9 +1293,24 @@ body.focus-mode.focus-composite-explore .page.active{
 .study-title { display: flex; align-items: center; gap: 12px; margin: 0; font-size: 1.6em; }
 .study-title .study-name { font-weight: 600; }
 
-/* Overview tab — notebook layout */
-.study-overview { max-width: 760px; }
-.overview-section { margin-bottom: 24px; }
+/* Overview tab — full-width, streamlined layout */
+.study-overview { max-width: none; }
+/* Keep long free-text readable even at full width (comfortable measure). */
+.study-overview .overview-prose,
+.study-overview .narrative-textarea,
+.study-overview .biology-derived-preview,
+.study-overview .purpose-callout { max-width: 90ch; }
+.overview-section { margin-bottom: 20px; }
+/* Report-summary card: tile fields across the full width (label above input)
+   instead of one tall skinny column. Scoped to the Overview so the Decide tab's
+   narrative-grid is unaffected. */
+.study-overview .narrative-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px 22px;
+}
+.study-overview .narrative-row { display: flex; flex-direction: column; gap: 4px; }
+.study-overview .narrative-label { padding-top: 0; }
+.study-overview .narrative-row-wide { grid-column: 1 / -1; }
 .overview-label { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray); margin: 0 0 6px; }
 .overview-prose {
   background: var(--panel);

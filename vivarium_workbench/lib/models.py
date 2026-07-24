@@ -67,7 +67,11 @@ class SimRow(BaseModel):
     # started_at/completed_at are REAL epoch seconds; sim_name/label/n_steps/
     # progress_step are nullable (some are ALTER-added columns).
     run_id: str
-    spec_id: Optional[str] = None   # None for spec/study-synthesised rows
+    spec_id: Optional[str] = None   # the run's composite id; None for rows lacking one
+    # Enforcement (every simulation must map to one registered composite): True
+    # when ``spec_id`` is an exact registered composite in this workspace, False
+    # when it is missing or unregistered. Annotated by GET /api/simulations.
+    composite_registered: Optional[bool] = None
     sim_name: Optional[str] = None
     label: Optional[str] = None
     status: str                # "completed" | "running" | "failed" | ...

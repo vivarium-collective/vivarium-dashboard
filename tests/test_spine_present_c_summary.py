@@ -121,4 +121,5 @@ def test_study_detail_js_renders_spine_summary():
     assert "next_action" in js
     # Each row links to its detail tab/section (re-presentation, not a rewrite).
     assert "_setStudyTab(" in js
-    assert "#readiness-panel" in js
+    # The Readiness row scrolls to the readiness panel (referenced by element id).
+    assert "readiness-panel" in js

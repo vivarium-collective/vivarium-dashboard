@@ -27,11 +27,14 @@ def _panel(idattr):
 
 
 def test_inner_hooks_preserved():
+    # Readouts split out to their own tab; charts stay on Visualizations.
+    readouts = _panel('id="panel-readouts"')
+    assert 'readouts-table' in readouts
     viz = _panel('id="panel-visualize"')
-    assert 'readouts-table' in viz and 'viz-charts-panel' in viz
+    assert 'viz-charts-panel' in viz
     sim = _panel('id="panel-simulate"')
-    assert 'panel-runs' not in HTML  # wrapper gone, but runs content present:
-    assert 'id="run-' in sim or 'runs-table' in sim or 'No runs yet' in sim
+    assert 'panel-runs' not in HTML  # wrapper gone; runs render via the Sim-DB table:
+    assert 'study-sim-table' in sim
 
 
 def test_other_panels_untouched():
@@ -39,11 +42,12 @@ def test_other_panels_untouched():
         assert f'id="panel-{k}"' in HTML
 
 
-def test_visualize_loads_both_readouts_and_charts():
+def test_readouts_and_visualize_load_their_own_content():
+    # Readouts tab loads the readouts table; Visualizations loads the charts.
     i = JS.index("function _setStudyTab")
-    block = JS[i:i + 600]
-    assert "kind === 'visualize'" in block
-    assert "_loadReadouts()" in block and "_loadCharts('viz-charts-panel')" in block
+    block = JS[i:i + 800]
+    assert "kind === 'readouts'" in block and "_loadReadouts()" in block
+    assert "kind === 'visualize'" in block and "_loadCharts('viz-charts-panel')" in block
     # old single-kind loaders gone
     assert "kind === 'visualizations'" not in JS
     assert "kind === 'observables'" not in JS

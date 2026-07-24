@@ -14,8 +14,10 @@ def test_study_card_cut():
     assert 'data-narrative-path="study_card.' not in TPL
 
 
-def test_status_select_exactly_once():
-    assert TPL.count('id="status-select"') == 1
+def test_status_select_retired():
+    # The legacy single-axis status <select> was retired; the header status pill
+    # (derived from the multi-axis fields) is canonical.
+    assert TPL.count('id="status-select"') == 0
 
 
 def test_question_text_exactly_once():

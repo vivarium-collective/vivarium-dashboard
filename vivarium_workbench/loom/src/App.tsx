@@ -42,6 +42,7 @@ import { DocumentPanel } from './panels/DocumentPanel';
 import { EmitContext } from './EmitContext';
 import {
   postReady, postInspect, postEmitChanged, onCompositeLoad, decodeUrlComposite,
+  resolveComposite,
 } from './api';
 import type { ExploreInspectMsg, ParameterDecl } from './api';
 
@@ -288,6 +289,25 @@ export default function App() {
       .catch(() => { /* fall through to postMessage path */ });
     return () => { cancelled = true; };
   }, [compositeId, state]);
+
+  // Standardize Setup & Run: /api/composite-state carries the wiring but NOT the
+  // config, so when a composite is opened by id (live mode) and no parameters
+  // arrived (state fetch above, or a postMessage), fetch /api/composite-resolve
+  // so EVERY composite shows the same parameter form — not just Steps + Run.
+  useEffect(() => {
+    if (STATIC || !compositeId) return;
+    if (Object.keys(parameters).length > 0) return;   // already have config
+    let cancelled = false;
+    resolveComposite(compositeId)
+      .then((res) => {
+        if (cancelled || !res || res.error) return;
+        if (res.parameters) setParameters(res.parameters);
+        if (res.overrides) setOverrides(res.overrides);
+        if (res.default_n_steps != null) setDefaultSteps(res.default_n_steps);
+      })
+      .catch(() => { /* leave Setup & Run with Steps + Run only */ });
+    return () => { cancelled = true; };
+  }, [STATIC, compositeId, parameters]);
 
   // Debounced save of current node positions to localStorage. Built once;
   // stable across re-renders. The callback closes over `compositeId` via the
