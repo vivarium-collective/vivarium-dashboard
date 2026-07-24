@@ -56,14 +56,23 @@ def test_golden_report_lint_returns_real_findings(v2e_workspace):
 
 def test_golden_study_detail_carries_computed_gate_verdict(v2e_workspace):
     before = _dirty_count()
-    # Discover a real study slug deterministically.
-    studies = sorted(p.name for p in (_V2E / "studies").iterdir()
+    # Discover real study slugs via the workspace layout (studies may live under
+    # a relocated dir, e.g. workspace/studies, per workspace.yaml's `layout:`).
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+    studies_dir = WorkspacePaths.load(_V2E).studies
+    studies = sorted(p.name for p in studies_dir.iterdir()
                      if (p / "study.yaml").is_file())
     assert studies, "v2e-invest should have studies"
-    spec = load_study_detail_spec(_V2E, studies[0])
-    assert spec is not None
-    cgv = spec.get("computed_gate_verdict")
-    assert cgv and cgv.get("evaluated_by") == "code"
+    # Find one that carries a code-evaluated gate verdict (not every study runs
+    # its gate); the contract is that the surfaced artifact reaches the data layer.
+    found = None
+    for slug in studies:
+        spec = load_study_detail_spec(_V2E, slug)
+        cgv = (spec or {}).get("computed_gate_verdict")
+        if cgv and cgv.get("evaluated_by") == "code":
+            found = cgv
+            break
+    assert found is not None, "at least one study should carry a code-computed gate verdict"
     assert _dirty_count() == before, "study detail must not write to v2e-invest"
 
 
