@@ -122,14 +122,28 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const outTypes = ((data as any).outputSchema ?? {}) as Record<string, unknown>;
   const configEntries = Object.entries(data.config ?? {});
 
-  // Port labels live OUTSIDE the card border — inputs to the left, outputs to
-  // the right — aligned to their vertical position. The connection dot (the RF
-  // Handle) sits at the OUTER END of the name, so wires leave from the tip of
-  // the label instead of crossing it. The name shows at `ports`; the abbreviated
-  // type beneath at `types`+. Full per-port detail is revealed on click (1b).
-  // Rendered at EVERY tier (the dot must exist at glyph for wires to attach);
-  // only the text is tier-gated.
-  const outsideLabel = (
+  const topFor = (i: number, n: number) => `${((i + 1) / (n + 1)) * 100}%`;
+
+  // Connection dots sit ON the card border (inputs left, outputs right) at each
+  // port's vertical fraction — that's where wires attach, at every tier.
+  const borderHandle = (
+    port: string, isOut: boolean, i: number, n: number, types: Record<string, unknown>,
+  ) => (
+    <Handle
+      key={`h-${isOut ? 'o' : 'i'}-${port}`}
+      type={isOut ? 'source' : 'target'}
+      position={isOut ? Position.Right : Position.Left}
+      id={port}
+      className={`port-handle ${isOut ? 'port-handle-output' : 'port-handle-input'}`}
+      title={handleTitle(port, isOut, types)}
+      style={{ top: topFor(i, n) }}
+    />
+  );
+
+  // Port names live INSIDE the card in a left column (inputs) and a right column
+  // (outputs), each aligned to its dot. The center content is margined clear of
+  // these columns, so the card reads inputs → contract → outputs spatially.
+  const insideLabel = (
     port: string, types: Record<string, unknown>, isOut: boolean, i: number, n: number,
   ) => {
     const info = portInfo(port, isOut, {
@@ -137,30 +151,17 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
       portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
       portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
     });
-    const dot = (
-      <Handle
-        type={isOut ? 'source' : 'target'}
-        position={isOut ? Position.Right : Position.Left}
-        id={port}
-        className={`port-dot ${isOut ? 'is-out' : 'is-in'}`}
-        title={handleTitle(port, isOut, types)}
-      />
-    );
-    const text = show.ports ? (
-      <span className="port-out-text">
-        <span className="port-out-name">{port}</span>
-        {show.types && info.type && (
-          <span className="port-out-type" title={info.fullType}>{info.type}</span>
-        )}
-      </span>
-    ) : null;
     return (
       <div
         key={`${isOut ? 'o' : 'i'}lbl-${port}`}
-        className={`port-out-label ${isOut ? 'is-out' : 'is-in'}`}
-        style={{ top: `${((i + 1) / (n + 1)) * 100}%` }}
+        className={`port-in-label ${isOut ? 'is-out' : 'is-in'}`}
+        style={{ top: topFor(i, n) }}
+        title={handleTitle(port, isOut, types)}
       >
-        {isOut ? <>{text}{dot}</> : <>{dot}{text}</>}
+        <span className="port-in-name">{port}</span>
+        {show.types && info.type && (
+          <span className="port-in-type" title={info.fullType}>{info.type}</span>
+        )}
       </div>
     );
   };
@@ -184,88 +185,82 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   return (
     <div className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}>
-      {/* Port names OUTSIDE the card — inputs flow in from the left, outputs
-          leave to the right — with the connection dot at the name's outer end so
-          wires attach past the text, not through it. Rendered at every tier
-          (the dot must exist at glyph so focused wiring can attach by port id). */}
-      {inputPorts.map((p, i) => outsideLabel(p, inTypes, false, i, inputPorts.length))}
-      {outputPorts.map((p, i) => outsideLabel(p, outTypes, true, i, outputPorts.length))}
+      {/* Connection dots on the border (all tiers, so focused wiring attaches). */}
+      {inputPorts.map((p, i) => borderHandle(p, false, i, inputPorts.length, inTypes))}
+      {outputPorts.map((p, i) => borderHandle(p, true, i, outputPorts.length, outTypes))}
 
-      {/* Config enters from ABOVE the process — the knobs that parameterize the
-          input→output translation. Keys at `types`, key=value at `contract`+. */}
-      {show.types && configEntries.length > 0 && (
-        <div className="process-node-config-band" title="config parameters">
-          <span className="config-band-caret">▼ config</span>
-          {configEntries.map(([k, v]) => (
-            <span key={k} className="config-chip">
-              <span className="config-key">{k}</span>
-              {show.contract && <span className="config-val">{String(v).slice(0, 24)}</span>}
-            </span>
-          ))}
-        </div>
-      )}
+      {/* Port-name columns INSIDE the card: inputs left, outputs right. */}
+      {show.ports && inputPorts.map((p, i) => insideLabel(p, inTypes, false, i, inputPorts.length))}
+      {show.ports && outputPorts.map((p, i) => insideLabel(p, outTypes, true, i, outputPorts.length))}
 
-      <div className="process-node-title">
-        {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
-        {data.label}
-      </div>
-
-      {show.ports && (
-        <div className="process-node-meta">
-          {data.processType} · {inputPorts.length} in / {outputPorts.length} out
-          {data.interval != null && <span> · every {data.interval}</span>}
-        </div>
-      )}
-
-      {/* The contract, presented as a formal document: a mathematical function
-          signature ƒ(inputs; config) ⟶ outputs (inputs transformed to outputs,
-          parameterized by config) over a justified recital (the summary). */}
-      {show.contract && (
-        <div className="process-contract">
-          <div className="contract-signature">
-            <span className="sig-fn">ƒ</span>
-            <span className="sig-punct">(</span>
-            <span className="sig-in">inputs</span>
-            <span className="sig-sep">;</span>
-            <span className="sig-config">config</span>
-            <span className="sig-punct">)</span>
-            <span className="sig-maps">⟶</span>
-            <span className="sig-out">outputs</span>
+      {/* Center channel — margined clear of the port columns. Reads top-down:
+          config (from above) → title → the contract (what inputs become). The
+          left/right port columns supply the inputs→outputs framing spatially,
+          so no abstract ƒ(inputs; config)→outputs line is needed. */}
+      <div className="process-node-center">
+        {show.types && configEntries.length > 0 && (
+          <div className="process-node-config-band" title="config parameters">
+            <span className="config-band-caret">▼ config</span>
+            {configEntries.map(([k, v]) => (
+              <span key={k} className="config-chip">
+                <span className="config-key">{k}</span>
+                {show.contract && <span className="config-val">{String(v).slice(0, 24)}</span>}
+              </span>
+            ))}
           </div>
-          {contract?.summary && <p className="contract-recital">{contract.summary}</p>}
+        )}
+
+        <div className="process-node-title">
+          {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
+          {data.label}
         </div>
-      )}
 
-      {show.contract && contract && contract.math.length > 0 && (
-        <div className="process-node-math">
-          {contract.math.map((m, i) => <div key={i}>{m}</div>)}
-        </div>
-      )}
+        {show.ports && (
+          <div className="process-node-meta">
+            {data.processType} · {inputPorts.length} in / {outputPorts.length} out
+            {data.interval != null && <span> · every {data.interval}</span>}
+          </div>
+        )}
 
-      {show.full && contract && Object.keys(contract.symbols).length > 0 && (
-        <div className="process-node-symbols">
-          {Object.entries(contract.symbols).map(([s, meaning]) => (
-            <div key={s}><em>{s}</em> — {meaning}</div>
-          ))}
-        </div>
-      )}
+        {/* The contract: a justified recital of what the process does, over its
+            governing equations. Only shown when actually documented. */}
+        {show.contract && contract?.summary && (
+          <div className="process-contract">
+            <p className="contract-recital">{contract.summary}</p>
+          </div>
+        )}
 
-      {show.full && contract?.description && (
-        <div className="process-node-description">{contract.description}</div>
-      )}
+        {show.contract && contract && contract.math.length > 0 && (
+          <div className="process-node-math">
+            {contract.math.map((m, i) => <div key={i}>{m}</div>)}
+          </div>
+        )}
 
-      {show.types && (data as any).address && (
-        <div className="process-node-address">{(data as any).address}</div>
-      )}
+        {show.full && contract && Object.keys(contract.symbols).length > 0 && (
+          <div className="process-node-symbols">
+            {Object.entries(contract.symbols).map(([s, meaning]) => (
+              <div key={s}><em>{s}</em> — {meaning}</div>
+            ))}
+          </div>
+        )}
 
-      {show.full && completeness && completeness.total > 0 && (
-        <div className="process-node-completeness">
-          {completeness.documented}/{completeness.total} ports documented
-          {completeness.unknownPorts.length > 0 && (
-            <span className="is-warn"> · unknown: {completeness.unknownPorts.join(', ')}</span>
-          )}
-        </div>
-      )}
+        {show.full && contract?.description && (
+          <div className="process-node-description">{contract.description}</div>
+        )}
+
+        {show.types && (data as any).address && (
+          <div className="process-node-address">{(data as any).address}</div>
+        )}
+
+        {show.full && completeness && completeness.total > 0 && (
+          <div className="process-node-completeness">
+            {completeness.documented}/{completeness.total} ports documented
+            {completeness.unknownPorts.length > 0 && (
+              <span className="is-warn"> · unknown: {completeness.unknownPorts.join(', ')}</span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

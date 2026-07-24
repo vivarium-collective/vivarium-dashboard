@@ -384,43 +384,36 @@ body {
   text-align: left;
   min-width: 0;
 }
-/* Port names render OUTSIDE the card border, so the card must not clip them. */
-.process-node.has-outside-ports { overflow: visible; }
+/* Border dots sit half-outside the card edge — don't clip them. */
+.process-node { overflow: visible; }
 
-/* ---- Ports outside the card: inputs left, outputs right --------------------
-   Positioned at the handle's vertical fraction (inline `top`), pulled just past
-   the border. Name on top; abbreviated type beneath at `types`+. */
-.port-out-label {
-  position: absolute;
-  transform: translateY(-50%);
-  display: flex; align-items: center; gap: 6px;
-  white-space: nowrap;          /* keep each port name on ONE line */
+/* ---- Ports INSIDE the card: input names in a left column, outputs in a right
+   column, each aligned to its border dot. The center content (below) is
+   margined clear of these columns, so the card reads inputs → contract →
+   outputs. Names truncate to their column width. */
+.port-in-label {
+  position: absolute; transform: translateY(-50%);
+  display: flex; flex-direction: column; line-height: 1.12;
+  max-width: 106px; white-space: nowrap; pointer-events: none;
 }
-/* Anchored at the card border; the row lays [dot | text], with the text toward
-   the card and the dot at the OUTER end of the name (wires attach at the dot). */
-.port-out-label.is-in  { right: 100%; }
-.port-out-label.is-out { left:  100%; }
-.port-out-text { display: flex; flex-direction: column; line-height: 1.12; }
-.port-out-label.is-in  .port-out-text { align-items: flex-end;  text-align: right; margin-right: 8px; }
-.port-out-label.is-out .port-out-text { align-items: flex-start; text-align: left;  margin-left: 8px; }
-.port-out-name { font-size: 13px; font-weight: 650; color: #334155; }
-.port-out-label.is-out .port-out-name { color: #0f766e; }
-.port-out-type {
-  font-family: ui-monospace, monospace; font-size: 10.5px; color: #94a3b8;
-  max-width: 240px; overflow: hidden; text-overflow: ellipsis;
+.port-in-label.is-in  { left: 13px;  align-items: flex-start; text-align: left; }
+.port-in-label.is-out { right: 13px; align-items: flex-end;   text-align: right; }
+.port-in-name {
+  font-size: 13px; font-weight: 650; color: #334155;
+  max-width: 106px; overflow: hidden; text-overflow: ellipsis;
+}
+.port-in-label.is-out .port-in-name { color: #0f766e; }
+.port-in-type {
+  font-family: ui-monospace, monospace; font-size: 10px; color: #94a3b8;
+  max-width: 106px; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* The connection dot (RF Handle) flows INLINE at the outer end of the name —
-   override React Flow's absolute positioning so it sits in the label row. */
-.port-dot.react-flow__handle {
-  position: relative;
-  top: auto; left: auto; right: auto; bottom: auto;
-  transform: none;
-  width: 9px; height: 9px; min-width: 9px;
-  border-radius: 50%; background: #fff;
-}
-.port-dot.is-in  { border: 1.6px solid #64748b; }
-.port-dot.is-out { border: 1.6px solid #0d9488; }
+/* Center channel — margined clear of the two port columns (glyph keeps the full
+   box for its big centered name). */
+.process-node-ports    .process-node-center,
+.process-node-types    .process-node-center,
+.process-node-contract .process-node-center,
+.process-node-full     .process-node-center { margin: 0 122px; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */
@@ -438,30 +431,16 @@ body {
 .config-chip .config-key { color: #7e22ce; font-weight: 600; }
 .config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
 
-/* ---- Contract as a formal document ----------------------------------------
-   Parchment card, serif type, small-caps heading, a centered mathematical
-   function signature, and a justified first-line-indented recital. */
+/* ---- Contract: a justified recital of what the process does ----------------
+   Parchment card, serif type. The card's left→center→right layout (input
+   columns → this → output columns) supplies the inputs→outputs framing, so no
+   abstract signature line is drawn. */
 .process-contract {
-  margin-top: 10px; padding: 11px 14px 13px;
+  margin-top: 8px; padding: 10px 13px 12px;
   background: #fbfaf6; border: 1px solid #ddd8ce; border-radius: 3px;
   box-shadow: inset 0 0 0 1px #fff;
   font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
 }
-.contract-heading {
-  text-align: center; font-variant: small-caps; letter-spacing: 0.16em;
-  font-size: 11px; font-weight: 700; color: #57534e;
-  padding-bottom: 7px; margin-bottom: 9px; border-bottom: 1px solid #e7e2d8;
-}
-.contract-signature {
-  text-align: center; font-size: 16px; color: #1c1917; margin: 0 0 9px;
-}
-.contract-signature .sig-fn     { font-style: italic; font-weight: 700; margin-right: 1px; }
-.contract-signature .sig-punct  { color: #78716c; }
-.contract-signature .sig-in     { color: #334155; font-style: italic; }
-.contract-signature .sig-config { color: #7e22ce; font-style: italic; }
-.contract-signature .sig-out    { color: #0f766e; font-style: italic; }
-.contract-signature .sig-sep    { color: #a8a29e; margin: 0 5px 0 3px; }
-.contract-signature .sig-maps   { margin: 0 10px; color: #57534e; }
 .contract-recital {
   font-size: 13px; line-height: 1.55; color: #292524;
   text-align: justify; text-indent: 1.3em; margin: 0;
