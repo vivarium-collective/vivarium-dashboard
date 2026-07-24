@@ -47,6 +47,34 @@ def rewrite_local_addresses(document: dict, core) -> dict:
     return doc
 
 
+# Runtime-only fields that ``to_document`` leaves on a REALIZED edge node. They
+# are rebuilt from ``address`` + ``config`` (and the process/step class) when the
+# document is re-instantiated, so a portable ``.pbg`` spec must not carry them:
+#   - ``instance``  — the live Process/Step object (serializes to its repr under
+#                     ``json.dumps(default=str)``; on reload it's a str and
+#                     ``realize_link`` calls ``.interface()`` on it -> AttributeError)
+#   - ``_inputs`` / ``_outputs`` — the realized port schema objects (serialize to a
+#                     type repr like ``"InPlaceDict(_default=None, ...)"`` that the
+#                     bigraph-schema parser can't reparse -> IncompleteParseError)
+# Stripping them yields a clean, reparseable spec that ``Composite(document)``
+# rebuilds identically. Only these three reserved keys are removed; wiring
+# (``inputs``/``outputs``), ``_type``, ``address`` and ``config`` are preserved.
+_REALIZED_EDGE_FIELDS = ("instance", "_inputs", "_outputs")
+
+
+def strip_realized_edge_fields(node: object) -> object:
+    """Recursively drop realized-edge runtime fields so the document is a portable spec."""
+    if isinstance(node, dict):
+        for field in _REALIZED_EDGE_FIELDS:
+            node.pop(field, None)
+        for value in node.values():
+            strip_realized_edge_fields(value)
+    elif isinstance(node, list):
+        for value in node:
+            strip_realized_edge_fields(value)
+    return node
+
+
 def _walk(node: object, core, errors: list[str]) -> None:
     """Recursively walk *node*; rewrite any ``address`` key in-place."""
     if not isinstance(node, dict):
@@ -166,6 +194,9 @@ def export_composite_pbg(
 
     document = spec.to_document(core=core)
     document = rewrite_local_addresses(document, core)
+    # Drop realized-edge runtime fields (instance / _inputs / _outputs) so the
+    # .pbg is a portable spec the remote runner can rebuild — see the helper.
+    document = strip_realized_edge_fields(document)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(document, default=str), encoding="utf-8")
