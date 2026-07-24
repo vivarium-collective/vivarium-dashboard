@@ -86,8 +86,8 @@ def test_study_detail_page_has_eight_tabs(_ws):
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
     # Eight required pillar buttons
-    for kind in ("overview", "tests", "compose", "simulate", "visualize",
-                 "report-cards", "conclusions", "data"):
+    for kind in ("overview", "tests", "compose", "simulate", "readouts",
+                 "visualize", "report-cards", "conclusions", "data"):
         assert f'class="study-tab' in html
         assert f'data-kind="{kind}"' in html
     # At least eight panels
@@ -263,8 +263,8 @@ def test_full_study_renders_all_tabs(_rich_ws):
     html = _render_study_detail_html(_rich_ws, "rich", spec)
 
     # 8 pillar tabs scaffolded
-    for kind in ("overview", "tests", "compose", "simulate", "visualize",
-                 "report-cards", "conclusions", "data"):
+    for kind in ("overview", "tests", "compose", "simulate", "readouts",
+                 "visualize", "report-cards", "conclusions", "data"):
         assert f'data-kind="{kind}"' in html
 
     # Overview: objective text renders.

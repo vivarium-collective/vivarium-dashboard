@@ -142,7 +142,8 @@
     <button class="study-pillar"        data-pillar="inquire"    onclick="_setStudyPillar('inquire')">Hypotheses</button>
     <button class="study-pillar"        data-pillar="compose"    onclick="_setStudyPillar('compose')">Model</button>
     <button class="study-pillar"        data-pillar="simulate"   onclick="_setStudyPillar('simulate')">Simulations</button>
-    <button class="study-pillar"        data-pillar="visualize"  onclick="_setStudyPillar('visualize')">Results</button>
+    <button class="study-pillar"        data-pillar="readouts"   onclick="_setStudyPillar('readouts')">Readouts</button>
+    <button class="study-pillar"        data-pillar="visualize"  onclick="_setStudyPillar('visualize')">Visualizations</button>
     <button class="study-pillar"        data-pillar="report-cards" onclick="_setStudyPillar('report-cards')">Report Cards</button>
     <button class="study-pillar"        data-pillar="data"       onclick="_setStudyPillar('data')">Exports</button>
   </div>
@@ -152,7 +153,8 @@
     <button class="study-tab"        data-kind="conclusions"  data-pillar="inquire"  onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
     <button class="study-tab" data-kind="compose" data-pillar="compose" onclick="_setStudyTab('compose')">Model</button>
     <button class="study-tab" data-kind="simulate" data-pillar="simulate" onclick="_setStudyTab('simulate')">Simulations</button>
-    <button class="study-tab" data-kind="visualize" data-pillar="visualize" onclick="_setStudyTab('visualize')">Results</button>
+    <button class="study-tab" data-kind="readouts" data-pillar="readouts" onclick="_setStudyTab('readouts')">Readouts</button>
+    <button class="study-tab" data-kind="visualize" data-pillar="visualize" onclick="_setStudyTab('visualize')">Visualizations</button>
     <button class="study-tab" data-kind="report-cards" data-pillar="report-cards" onclick="_setStudyTab('report-cards')">Report Cards</button>
     <button class="study-tab" data-kind="data" data-pillar="data" onclick="_setStudyTab('data')">Exports</button>
   </div>
@@ -931,10 +933,17 @@
 
 </section>
 
-<section class="study-tab-panel" data-kind="visualize" id="panel-visualize" hidden>
+<section class="study-tab-panel" data-kind="readouts" id="panel-readouts" hidden>
   <div class="observables-section">
-    <h3 class="section-title">Readouts</h3>
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+      <h3 class="section-title" style="margin-right:auto">Readouts</h3>
+    </div>
     <p class="muted">Quantities collected from each simulation run. Each row is an emitter <code>store_path</code> the composite will save; authored entries in <code>study.yaml</code> add names, descriptions, and units on top.</p>
+
+    {# Download the raw simulation data that holds these readouts (one store per
+       run). Populated by _loadReadoutsDownload from /api/simulations. #}
+    <div id="readouts-download" style="margin:0 0 16px 0"></div>
+
     <div id="readouts-table" data-study="{{ name }}">
       <p class="empty-message">Loading readouts from the composite emit plan…</p>
     </div>
@@ -950,6 +959,9 @@
     </details>
     {% endif %}
   </div>
+</section>
+
+<section class="study-tab-panel" data-kind="visualize" id="panel-visualize" hidden>
 
   <div class="viz-section">
 
