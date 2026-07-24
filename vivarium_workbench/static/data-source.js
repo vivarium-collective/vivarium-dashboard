@@ -175,6 +175,12 @@
       : "/api/saved-visualizations";
   }
 
+  function _analysisViewersUrl() {
+    return cfg().mode === "snapshot"
+      ? _base() + "/api/analysis-viewers.json"
+      : "/api/analysis-viewers";
+  }
+
   function _referencesBibUrl() {
     return cfg().mode === "snapshot"
       ? _base() + "/api/references-bib.json"
@@ -197,6 +203,13 @@
      * Snapshot mode: <base>/api/saved-visualizations.json from the static bundle
      */
     savedVisualizationsUrl: _savedVisualizationsUrl,
+
+    /**
+     * Return the URL for the analysis-viewers payload (Analyses page tools).
+     * Local mode:    /api/analysis-viewers
+     * Snapshot mode: <base>/api/analysis-viewers.json from the static bundle
+     */
+    analysisViewersUrl: _analysisViewersUrl,
 
     /**
      * Return the URL for the parsed papers.bib payload (References cards).

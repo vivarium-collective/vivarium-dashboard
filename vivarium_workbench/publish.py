@@ -500,6 +500,28 @@ def _export_saved_visualizations(ws_root: Path, out_dir: Path,
             shutil.copytree(str(src_meshes), str(dst_meshes))
 
 
+def _export_analysis_viewers(ws_root: Path, out_dir: Path) -> None:
+    """Snapshot the Analyses-page analysis viewers into the static bundle.
+
+    Mirrors the live ``/api/analysis-viewers`` endpoint (repo-contributed
+    ``workbench_viewers`` modules) so the read-only dashboard ADVERTISES which
+    viewers exist instead of fetching a missing endpoint and throwing a JSON
+    SyntaxError. The payload is the public, launch-callable-free viewer shape;
+    viewers whose targets carry an external ``href`` (e.g. a publicly hosted 3D
+    viewer) stay clickable in the snapshot, while launch-only viewers (PTools)
+    render as "available in the live workbench". Best-effort: an unavailable
+    worker yields an empty list, never a crash.
+    """
+    try:
+        from vivarium_workbench.lib import analysis_viewers as _av
+        viewers = _av.viewers_public(ws_root)
+    except Exception:
+        viewers = []
+    api_dir = out_dir / "api"
+    api_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(api_dir / "analysis-viewers.json", {"viewers": viewers})
+
+
 def _set_snapshot_config(
     html: str,
     interactive_url: str = "",
@@ -958,6 +980,15 @@ def _do_build(
         _export_saved_visualizations(ws_root, out_dir, base_path)
     except Exception as exc:  # noqa: BLE001 — never abort a publish on the gallery
         print(f"  warn: saved-visualizations export failed: {exc}")
+
+    # api/analysis-viewers.json — the Analyses-page viewer tools (PTools, 3d-ecoli,
+    # …). Snapshotting this is what stops the read-only dashboard from throwing
+    # "Error loading analysis viewers: SyntaxError" (a missing endpoint returned
+    # SPA HTML that JSON.parse rejected).
+    try:
+        _export_analysis_viewers(ws_root, out_dir)
+    except Exception as exc:  # noqa: BLE001 — never abort a publish on the viewers
+        print(f"  warn: analysis-viewers export failed: {exc}")
 
     # ------------------------------------------------------------------
     # 3. Copy bundled static assets → bundle/assets/
