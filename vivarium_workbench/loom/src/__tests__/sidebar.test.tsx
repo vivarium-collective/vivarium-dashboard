@@ -2,7 +2,8 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { filterHidden, clampSidebarWidth, isHiddenByAncestor, hiddenNodeIds } from '../panels/filterHidden';
-import { Sidebar, buildNodeTree } from '../panels/Sidebar';
+import { buildNodeTree } from '../panels/NodesPanel';
+import { InspectorPanel } from '../panels/InspectorPanel';
 import type { ExploreInspectMsg } from '../api';
 
 describe('filterHidden', () => {
@@ -140,20 +141,8 @@ describe('clampSidebarWidth', () => {
   });
 });
 
-describe('Sidebar Description block', () => {
+describe('InspectorPanel Description block', () => {
   afterEach(() => cleanup());
-
-  // With localStorage unavailable/empty in the test env, the Sidebar falls back
-  // to its defaults: the 'inspector' tab and an expanded (non-collapsed) panel,
-  // which is exactly what these assertions need.
-  const baseProps = {
-    nodes: [],
-    hidden: new Set<string>(),
-    onToggleHidden: () => {},
-    onShowAll: () => {},
-    emitSet: new Set<string>(),
-    onEmitToggle: () => {},
-  };
 
   function selection(details: Record<string, unknown>): Omit<ExploreInspectMsg, 'type'> {
     return { path: ['proc'], kind: 'process', details };
@@ -161,7 +150,7 @@ describe('Sidebar Description block', () => {
 
   it('renders a Description block when description is present', () => {
     const { container, getByText } = render(
-      <Sidebar {...baseProps} selection={selection({ description: 'Hydrolyzes ATP.' })} />,
+      <InspectorPanel selection={selection({ description: 'Hydrolyzes ATP.' })} />,
     );
     expect(getByText('Description')).toBeTruthy();
     expect(container.textContent).toContain('Hydrolyzes ATP.');
@@ -169,14 +158,14 @@ describe('Sidebar Description block', () => {
 
   it('omits the Description block when description is absent', () => {
     const { queryByText } = render(
-      <Sidebar {...baseProps} selection={selection({ label: 'proc' })} />,
+      <InspectorPanel selection={selection({ label: 'proc' })} />,
     );
     expect(queryByText('Description')).toBeNull();
   });
 
   it('omits the Description block when description is blank', () => {
     const { queryByText } = render(
-      <Sidebar {...baseProps} selection={selection({ description: '   ' })} />,
+      <InspectorPanel selection={selection({ description: '   ' })} />,
     );
     expect(queryByText('Description')).toBeNull();
   });

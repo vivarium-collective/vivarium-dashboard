@@ -10,14 +10,18 @@ import { toPng, toSvg } from 'html-to-image';
 import ProcessNode from './nodes/ProcessNode';
 import StoreNode from './nodes/StoreNode';
 import FloatingStoreEdge from './edges/FloatingStoreEdge';
+import LightWireEdge from './edges/LightWireEdge';
+import BoundaryLabels from './edges/BoundaryLabels';
 import { useLayoutMode } from './hooks/useLayoutMode';
 import { useFocus } from './hooks/useFocus';
-import { LAYOUT_MODES, getMode } from './layouts/registry';
+import { getMode } from './layouts/registry';
+import { egoLayout } from './layouts/egoLayout';
+import { depthStackLayout } from './layouts/depthStack';
 import { pickDrawnEdges } from './layouts/pickDrawnEdges';
 import { tierForZoom } from './layouts/processColumn';
 import type { ZoomTierId } from './layouts/types';
 import type { ProcessNodeData } from './types';
-import { readersAndWriters } from './storeFacts';
+import { readersAndWriters, hubStoreIds } from './storeFacts';
 import { deriveContract } from './contract';
 import {
   loadLayout, saveLayout, clearLayout,
@@ -27,8 +31,10 @@ import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
 import { getDefaultView, decodeView, fetchView, type View } from './viewStore';
-import { Sidebar } from './panels/Sidebar';
-import { ProcessRail } from './panels/ProcessRail';
+import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
+import { ProcessPanel } from './panels/ProcessPanel';
+import { NodesPanel } from './panels/NodesPanel';
+import { InspectorPanel } from './panels/InspectorPanel';
 import { SetupRunPanel } from './panels/SetupRunPanel';
 import { ResultsPanel } from './panels/ResultsPanel';
 import { VisualizationsPanel } from './panels/VisualizationsPanel';
@@ -41,28 +47,22 @@ import type { ExploreInspectMsg, ParameterDecl } from './api';
 
 // Layout runs go through the mode registry (see hooks/useLayoutMode): a mode's
 // run() returns { nodes, bands? }, so call sites destructure `nodes`.
+//
+// PERSISTENT PLACEMENT: the layout is ALWAYS computed at the largest (`full`)
+// tier's card footprint, regardless of the live zoom tier. Bigger cards → there
+// is always room, so smaller tiers render smaller cards in the SAME positions.
+// Node POSITIONS therefore never depend on `tier` (the layout effect no longer
+// lists `tier` as a dep, and does not clear the saved layout on a tier change),
+// so zooming reveals card content but does NOT move nodes.
+const LAYOUT_TIER: ZoomTierId = 'full';
 const NODE_TYPES = { process: ProcessNode, store: StoreNode };
-const EDGE_TYPES = { floating: FloatingStoreEdge };
+// `light` is the cheap default wire (straight, no floating anchors / labels);
+// `floating` is the rich labelled edge, used only for FOCUSED wires. Non-wire
+// place edges keep React Flow's default renderer.
+const EDGE_TYPES = { floating: FloatingStoreEdge, light: LightWireEdge };
 
 /** Bounding rect of laid-out nodes, using known node sizes (process 140×60,
  *  store 80×80) so we can frame the graph without waiting for DOM measurement. */
-function boundsOf(nodes: any[]): { x: number; y: number; width: number; height: number } | null {
-  if (!nodes.length) return null;
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const n of nodes) {
-    const x = n.position?.x ?? 0;
-    const y = n.position?.y ?? 0;
-    const w = n.type === 'process' ? 140 : 80;
-    const h = n.type === 'process' ? 60 : 80;
-    if (x < minX) minX = x;
-    if (y < minY) minY = y;
-    if (x + w > maxX) maxX = x + w;
-    if (y + h > maxY) maxY = y + h;
-  }
-  if (!isFinite(minX)) return null;
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
-}
-
 type TabId = 'setup' | 'results' | 'visualizations' | 'wiring' | 'document';
 
 type TrajectoryRow = { step: number; time?: number; state: Record<string, unknown> };
@@ -70,6 +70,10 @@ type TrajectoryRow = { step: number; time?: number; state: Record<string, unknow
 export default function App() {
   const [state, setState] = useState<any | null>(decodeUrlComposite());
   const [selection, setSelection] = useState<Omit<ExploreInspectMsg, 'type'> | null>(null);
+  // Bumped on every plain node click so the Inspector dock panel un-collapses
+  // (a locked process must have a visible detail panel). See DockContainer's
+  // expandRequest.
+  const [inspectorReveal, setInspectorReveal] = useState(0);
   // Collapsed group-node ids — children of these nodes are filtered out of the graph.
   const [collapsed, setCollapsed] = useState<Set<string>>(
     () => defaultCollapsedIds(decodeUrlComposite()),
@@ -102,12 +106,27 @@ export default function App() {
   // implement `edgeVisibility` use this to cull wires; modes that don't
   // (hierarchy) ignore it entirely and keep drawing every edge.
   const focus = useFocus();
-  // Whether the ACTIVE mode culls edges by focus. `layoutMode.mode` is a
-  // module-level singleton from the registry, so this is stable between
-  // renders that don't switch modes. In hierarchy mode (no edgeVisibility)
-  // focus is entirely inert, so hover tracking + pin pruning are gated on
-  // this to keep hierarchy mode paying nothing for a feature it never uses.
-  const culls = !!layoutMode.mode.edgeVisibility;
+  // Whether the ACTIVE mode reveals edges in response to FOCUS (hover /
+  // selection / pins). `layoutMode.mode` is a module-level singleton from the
+  // registry, so this is stable between renders that don't switch modes.
+  // Process-column mode is focus-driven; hierarchy mode culls hub wires
+  // STRUCTURALLY via a toggle (its `edgeVisibility` is defined but ignores
+  // focus), so its focus is inert — hover tracking, the focus hint, and pin
+  // pruning stay gated off, exactly as before hierarchy gained hub-hiding.
+  const culls = !!layoutMode.mode.focusReveals;
+  // Hierarchy's "Show hub wires" toggle (default OFF): hub-store wires are
+  // hidden unless this is on. Threaded into the drawn-edge seam via the focus
+  // context (see drawFocus below). Process-column ignores it.
+  const [showHubWires, setShowHubWires] = useState(false);
+  // Global "stack stores by depth" toggle: swaps the force overview for the
+  // structural depth-banded arrangement (depthStack.ts). A transient VIEW —
+  // it is never persisted (see suppressPersistRef) so the saved force layout
+  // survives the excursion and "Re-layout" restores it.
+  const [stackStores, setStackStores] = useState(false);
+  // While a transient view is active (depth-stack, or a "center on this"
+  // ego arrangement), skip persisting positions so the baseline force layout
+  // in localStorage is never clobbered by the excursion.
+  const suppressPersistRef = useRef(false);
   const [tab, setTab] = useState<TabId>('setup');
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
@@ -149,6 +168,20 @@ export default function App() {
   // re-renders. Without these, every parent re-render would reset positions
   // to the auto-layout output.
   const [nodes, setNodes, onNodesChange] = useNodesState<any>([]);
+
+  // Auto-frame the graph whenever the Explore tab is active and there are nodes.
+  // The canvas is display:none on other tabs (zero size → fitView can't measure),
+  // and the default-collapse + node mount settle a beat after the composite
+  // loads, so fire fitView across a short window; the last one lands over the
+  // settled (collapsed) bounds. Simpler + more reliable than gating on refs.
+  const fitTab = tab === 'wiring';
+  const haveNodes = nodes.length > 0;
+  useEffect(() => {
+    if (!fitTab || !haveNodes) return;
+    const fit = () => rfRef.current?.fitView?.({ padding: 0.2, duration: 300 });
+    const timers = [120, 500, 1200, 2400, 4000].map((d) => window.setTimeout(fit, d));
+    return () => timers.forEach(clearTimeout);
+  }, [fitTab, haveNodes, compositeId]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   // Mirror `nodes` for the edge-visibility seam below (same reason hiddenRef
   // exists): dragging a node rewrites `nodes` on every animation frame, and a
@@ -162,19 +195,18 @@ export default function App() {
   // tall it is, so the column must re-flow when it changes. `tierForZoom`'s
   // hysteresis keeps cards from flickering when the user scrolls back and forth
   // across a tier boundary.
+  // The live semantic-zoom tier drives only CARD CONTENT (how much detail each
+  // card reveals), NOT node positions — the layout is always computed at the
+  // `full` tier (LAYOUT_TIER), so a tier change re-renders cards in place and
+  // never re-runs the layout. `tieredNodes` stamps `_tier` from this for card
+  // rendering; the layout effect deliberately does not depend on it.
   const [tier, setTier] = useState<ZoomTierId>('ports');
   const onMove = useCallback((_: unknown, vp: { zoom: number }) => {
-    // Only process-column mode has tiers; leaving hierarchy's tier untouched
-    // keeps its layout effect from re-running ELK on every zoom step.
-    if (layoutMode.modeId !== 'process-column') return;
+    // Only tiered modes react to zoom. Modes without a tier ladder leave their
+    // tier untouched so nothing re-runs their layout on a zoom step.
+    if (!layoutMode.mode.tiers) return;
     setTier((cur) => tierForZoom(vp.zoom, cur));
-  }, [layoutMode.modeId]);
-  // Last tier the column was laid out at. A tier change re-stacks the column
-  // (card heights changed); the persisted per-node positions would otherwise
-  // pin the old spacing and cards would overlap — so the layout effect wipes
-  // this mode's saved layout on a genuine tier change, mirroring the
-  // granularity handler. Seeded to the initial tier so mount does not clear.
-  const prevTierRef = useRef<ZoomTierId>(tier);
+  }, [layoutMode.mode]);
 
   // Wire postMessage protocol. Use a ref guard so StrictMode's double-effect
   // doesn't fire `explore:ready` twice during dev.
@@ -317,22 +349,23 @@ export default function App() {
     // (so a process still shows a wire to the branch it connects into).
     const visibleEdges = retargetEdgesToVisible(raw.edges as any[], visibleIds);
 
-    // A genuine tier change re-stacks the process column for the new card
-    // heights; wipe this mode's persisted spacing first so applySavedPositions
-    // below cannot pin the old, now-overlapping layout (same tactic as the
-    // granularity handler). Guarded so ordinary re-runs (collapse, hide, state)
-    // keep the user's drags.
-    if (layoutMode.modeId === 'process-column' && prevTierRef.current !== tier) {
-      clearLayout(compositeId, layoutMode.modeId);
-    }
-    prevTierRef.current = tier;
-
     (async () => {
-      const saved = loadLayout(compositeId, layoutMode.modeId);
-      const { nodes: laidOut } = await layoutMode.runLayout(
-        visibleNodes as any, visibleEdges as any, compositeId, tier,
-      );
-      const withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      let withSaved: any[];
+      if (stackStores) {
+        // Transient depth-stack VIEW: always fresh (ignores saved positions),
+        // and flagged so the persist effect leaves the force layout untouched.
+        suppressPersistRef.current = true;
+        withSaved = depthStackLayout(visibleNodes as any, visibleEdges as any).nodes as any[];
+      } else {
+        suppressPersistRef.current = false;
+        const saved = loadLayout(compositeId, layoutMode.modeId);
+        // Always lay out at the LARGEST (full) tier so cards never overlap at any
+        // zoom and positions are stable across tier changes (persistent placement).
+        const { nodes: laidOut } = await layoutMode.runLayout(
+          visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
+        );
+        withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      }
       if (cancelled) return;
       // Apply the CURRENT hidden set to the freshly-rebuilt nodes + edges (read
       // via ref, not a dep). Without this, rebuilding edges here would drop the
@@ -362,10 +395,12 @@ export default function App() {
 
     return () => { cancelled = true; };
     // layoutMode.modeId / runLayout: switching layout mode re-runs the layout.
-    // `tier`: a zoom-tier change re-flows the column (card heights change).
+    // `tier` is deliberately NOT a dep: the layout is computed at LAYOUT_TIER
+    // (full) regardless of the live tier, so zooming reveals card content but
+    // does not move nodes (persistent placement).
     // `hidden` is deliberately NOT a dep — see hiddenRef above.
-  }, [state, raw, collapsed, compositeId, setNodes, setEdges,
-      layoutMode.modeId, layoutMode.runLayout, tier]);
+  }, [state, raw, collapsed, compositeId, setNodes, setEdges, stackStores,
+      layoutMode.modeId, layoutMode.runLayout]);
 
   // Toggle the `hidden` CSS flag on existing nodes/edges WITHOUT relayout or
   // remount. O(changed nodes): only nodes/edges whose hidden state actually
@@ -410,10 +445,17 @@ export default function App() {
   // passed through for the seam's signature but the shipped modes don't read
   // it, so it is deliberately NOT a dependency — including it would re-filter
   // on every frame of a node drag for no change in output.
+  // Focus context handed to the drawn-edge seam, augmented with the hierarchy
+  // "Show hub wires" toggle. Identity-stable between real changes so the memo
+  // below (and hierarchy's identity-preserving edgeVisibility) don't churn.
+  const drawFocus = useMemo(
+    () => ({ ...focus.ctx, showHubWires }),
+    [focus.ctx, showHubWires],
+  );
   const drawnEdges = useMemo(
-    () => pickDrawnEdges(layoutMode.mode, edges as any[], focus.ctx, nodesRef.current as any[]),
+    () => pickDrawnEdges(layoutMode.mode, edges as any[], drawFocus, nodesRef.current as any[]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [edges, focus.ctx, layoutMode.mode],
+    [edges, drawFocus, layoutMode.mode],
   );
 
   /** Distinct nodes whose wiring is currently drawn (hover/selection ∪ pins). */
@@ -423,33 +465,55 @@ export default function App() {
   );
 
   // Stamp the current semantic-zoom tier (and pinned-open flag) onto each
-  // process node's data so ProcessNode can gate its rows. Only in process-column
-  // mode — hierarchy nodes are left un-stamped, so ProcessNode renders its
-  // legacy fixed card and that mode is entirely unaffected. New data objects are
-  // minted only when `nodes`, `tier`, or the pin set changes (useMemo), so a
-  // plain re-render or a pan within a tier does not defeat the identity guarantee
-  // the layout effect's setNodes reducers rely on to avoid remounting the graph.
+  // process node's data so ProcessNode can gate its rows. Applies to any mode
+  // with a tier ladder (process-column and hierarchy); a mode without `.tiers`
+  // leaves its nodes un-stamped, so ProcessNode renders its legacy fixed card
+  // and that mode is entirely unaffected. New data objects are minted only when
+  // `nodes`, `tier`, or the pin set changes (useMemo), so a plain re-render or a
+  // pan within a tier does not defeat the identity guarantee the layout effect's
+  // setNodes reducers rely on to avoid remounting the graph.
+  // Hub stores whose wire fan hierarchy mode is currently hiding. Their
+  // reader/writer counts must be surfaced on the card at EVERY tier (not just
+  // contract+ like ordinary stores) so the hidden fan reads as "41 read · 12
+  // write" instead of vanishing. Only meaningful in hierarchy mode with the
+  // toggle off; empty otherwise so process-column is untouched.
+  const hubIds = useMemo(
+    () => (layoutMode.modeId === 'hierarchy' && !showHubWires
+      ? hubStoreIds(edges as any[])
+      : new Set<string>()),
+    [layoutMode.modeId, showHubWires, edges],
+  );
+
   const tieredNodes = useMemo(() => {
-    if (layoutMode.modeId !== 'process-column') return nodes;
+    if (!layoutMode.mode.tiers) return nodes;
     // Reader/writer facts are only surfaced from the 'contract' tier up;
-    // computing them for every store at every tier would be wasted work.
+    // computing them for every store at every tier would be wasted work — EXCEPT
+    // for hub stores, whose hidden fan must show its count at any tier.
     const wiringTier = tier === 'contract' || tier === 'full';
     return (nodes as any[]).map((n) => {
       if (n.type === 'process') {
         return {
           ...n,
-          data: { ...n.data, _tier: tier, _pinnedOpen: focus.ctx.pinned.has(n.id) },
+          data: {
+            ...n.data, _tier: tier,
+            _pinnedOpen: focus.ctx.pinned.has(n.id),
+            _locked: focus.locked === n.id,
+          },
         };
       }
-      const wiring = wiringTier
+      const isHub = hubIds.has(n.id);
+      const wiring = (wiringTier || isHub)
         ? readersAndWriters(n.id, edges as any[])
         : { readers: [], writers: [] };
       return {
         ...n,
-        data: { ...n.data, _tier: tier, _readers: wiring.readers, _writers: wiring.writers },
+        data: {
+          ...n.data, _tier: tier, _isHub: isHub,
+          _readers: wiring.readers, _writers: wiring.writers,
+        },
       };
     });
-  }, [nodes, edges, tier, focus.ctx.pinned, layoutMode.modeId]);
+  }, [nodes, edges, tier, focus.ctx.pinned, focus.locked, layoutMode.modeId, hubIds]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -459,18 +523,28 @@ export default function App() {
     [nodes],
   );
 
-  // Stamp the tier (and the derived port type + contract semantic) onto each
-  // DRAWN edge so FloatingStoreEdge can label the wire in step with the cards.
-  // At `glyph` (and in hierarchy mode) edges are left un-stamped, so the edge
-  // renderer draws no label at all — no EdgeLabelRenderer node, no text layout
-  // for the ~400 wires exactly when the canvas is most crowded. Place edges are
-  // never labelled. New objects are minted only when the drawn set, node map, or
-  // tier changes.
+  // Assign each DRAWN wire its renderer + (for focused wires) its label.
+  //
+  // PERF: the default (non-focused) fan renders through the cheap `light` edge
+  // (straight, no floating-anchor recompute, no label layout) — ~110 wires that
+  // used to each recompute a floating circle anchor + a label per render. Only
+  // FOCUSED wires (a handful) keep the rich `floating` renderer, and only those
+  // carry the tier/port/type/semantic label stamp (skipped at `glyph`). Place
+  // edges keep React Flow's default renderer untouched.
+  //
+  // New objects are minted only when the drawn set, node map, or tier changes —
+  // so a plain pan/hover-within-a-tier does not churn the edge array.
   const tieredEdges = useMemo(() => {
-    if (layoutMode.modeId !== 'process-column' || tier === 'glyph') return drawnEdges;
     return (drawnEdges as any[]).map((e) => {
       const kind = (e.data as any)?.edgeType;
-      if (kind !== 'input' && kind !== 'output') return e;  // place edges: no label
+      if (kind !== 'input' && kind !== 'output') return e;  // place edge: default renderer
+      const focused = (e.data as any)?._focused === true;
+      // Non-focused wire → lightweight straight edge (no label).
+      if (!focused) return { ...e, type: 'light' };
+      // Focused wire → rich floating edge; label it in step with the cards
+      // (except at glyph / non-tiered modes, where no label is drawn).
+      const base = { ...e, type: 'floating' };
+      if (!layoutMode.mode.tiers || tier === 'glyph') return base;
       const isOut = kind === 'output';
       const pdata = nodeById.get(isOut ? e.source : e.target)?.data as
         ProcessNodeData | undefined;
@@ -478,7 +552,7 @@ export default function App() {
       const types = ((pdata as any)?.[isOut ? 'outputSchema' : 'inputSchema']) ?? {};
       const contract = pdata ? deriveContract(pdata) : null;
       return {
-        ...e,
+        ...base,
         data: {
           ...e.data, _tier: tier, port,
           _portType: typeof types[port] === 'string' ? types[port] : undefined,
@@ -493,11 +567,53 @@ export default function App() {
   // time a composite renders. Subsequent drags update the same store.
   useEffect(() => {
     if (!compositeId || nodes.length === 0) return;
+    // A transient view (depth-stack / ego "center on this") must not overwrite
+    // the persisted force layout — leave localStorage as-is while it's active.
+    if (suppressPersistRef.current) return;
     debouncedPersistRef.current?.(compositeId, positionsFromNodes(nodes as any), layoutMode.modeId);
   }, [nodes, compositeId, layoutMode.modeId]);
 
+  // The depth-stack view has a very different bbox from the force overview;
+  // re-fit whenever the toggle flips (once nodes have re-laid out).
+  useEffect(() => {
+    if (tab !== 'wiring' || nodes.length === 0) return;
+    const t = window.setTimeout(
+      () => rfRef.current?.fitView?.({ padding: 0.2, duration: 400 }), 180,
+    );
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stackStores]);
+
+  // Center the whole view on one process: its read-only stores to the left,
+  // write-only to the right, read+write below, everything else parked out of
+  // frame — then fit to just that ego set. A transient arrangement (not
+  // persisted); "Re-layout" restores the force overview.
+  const handleCenterOnProcess = useCallback((procId: string) => {
+    let egoIds: string[] = [];
+    suppressPersistRef.current = true;
+    setNodes((ns: any[]) => {
+      const { positions, egoIds: ids } = egoLayout(ns as any, edges as any, procId);
+      egoIds = ids;
+      if (!positions.size) return ns;
+      return ns.map((n) =>
+        positions.has(n.id) ? { ...n, position: positions.get(n.id)! } : n,
+      );
+    });
+    if (egoIds.length) {
+      window.setTimeout(
+        () => rfRef.current?.fitView?.({
+          nodes: egoIds.map((id) => ({ id })), padding: 0.25, duration: 500,
+        }),
+        80,
+      );
+    }
+  }, [edges, setNodes]);
+
   const handleResetLayout = useCallback(() => {
     if (!compositeId) return;
+    // Leave any transient view (depth-stack / ego) and restore the force layout.
+    suppressPersistRef.current = false;
+    setStackStores(false);
     clearLayout(compositeId, layoutMode.modeId);
     // Force a re-layout by bumping a dependency. Simplest: clear nodes so the
     // layout effect sees `!state` is false but `nodes.length === 0`, then on
@@ -521,7 +637,7 @@ export default function App() {
       const visibleIds = new Set(visibleNodes.map((n) => n.id));
       const visibleEdges = retargetEdgesToVisible(raw.edges as any[], visibleIds);
       const { nodes: laidOut } = await layoutMode.runLayout(
-        visibleNodes as any, visibleEdges as any, compositeId, tier,
+        visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
       );
       const laid = laidOut as any[];
       // Reuse unchanged node objects so consolidating the layout doesn't remount
@@ -540,32 +656,12 @@ export default function App() {
         });
       });
       setEdges(visibleEdges as any);
-      // Frame the freshly-consolidated set DETERMINISTICALLY: compute the layout
-      // bounds + the viewport pixel size ourselves, derive zoom, and setCenter().
-      // This depends on NOTHING that React Flow measures asynchronously — earlier
-      // fitView()/fitBounds() ran before DOM measurement and panned to empty space.
-      const b = boundsOf(laid as any);
-      setTimeout(() => {
-        const inst = rfRef.current;
-        if (!inst || !b) return;
-        const el = canvasWrapRef.current;
-        const vw = el?.clientWidth || 900;
-        const vh = el?.clientHeight || 650;
-        const PAD = 1.18; // ~9% margin each side
-        const zoom = Math.max(0.05, Math.min(1.5,
-          vw / (b.width * PAD || 1), vh / (b.height * PAD || 1)));
-        const cx = b.x + b.width / 2;
-        const cy = b.y + b.height / 2;
-        if (typeof inst.setCenter === 'function') {
-          inst.setCenter(cx, cy, { zoom, duration: 400 });
-        } else {
-          inst.setViewport?.({ x: vw / 2 - cx * zoom, y: vh / 2 - cy * zoom, zoom },
-            { duration: 400 });
-        }
-      }, 60);
+      window.setTimeout(
+        () => rfRef.current?.fitView?.({ padding: 0.2, duration: 400 }), 120,
+      );
     })();
   }, [compositeId, state, raw, collapsed, hidden, setNodes, setEdges,
-      layoutMode.modeId, layoutMode.runLayout, tier]);
+      layoutMode.modeId, layoutMode.runLayout]);
 
   // ---- Saved views ---------------------------------------------------------
   // A "view" snapshots the current arrangement + visibility. Capturing reads the
@@ -684,32 +780,27 @@ export default function App() {
     };
     setSelection(payload);
     postInspect(payload);
-    // Shift/⌘-click PINS, so two processes' wiring can be held on screen and
-    // compared; a plain click selects, which keeps one process's wires up after
-    // the pointer leaves it.
-    if (ev?.shiftKey || ev?.metaKey) focus.togglePin(node.id);
-    else focus.select(node.id);
-  }, [focus.select, focus.togglePin]);
+    // Shift/⌘-click PINS (accumulates), so two processes' wiring can be held on
+    // screen and compared. A plain click LOCKS: it selects (drives the Inspector),
+    // persistently highlights the node's wiring at any zoom, and — via the reveal
+    // nonce below — ensures the Inspector panel is visible. Clicking another node
+    // switches the lock; clicking empty canvas unlocks (see handlePaneClick).
+    if (ev?.shiftKey || ev?.metaKey) {
+      focus.togglePin(node.id);
+    } else {
+      focus.lock(node.id);
+      setInspectorReveal((n) => n + 1);
+    }
+  }, [focus.lock, focus.togglePin]);
 
   // Hovering reveals a node's wiring in modes that cull edges; leaving hides it
   // again unless the node is also selected or pinned.
   const handleNodeMouseEnter = useCallback(
     (_: any, node: any) => focus.hover(node.id), [focus.hover]);
   const handleNodeMouseLeave = useCallback(() => focus.hover(null), [focus.hover]);
-  // Clicking empty canvas drops the selection (pins survive) — the way back to
-  // the clean, structure-only view.
-  const handlePaneClick = useCallback(() => focus.select(null), [focus.select]);
-
-  // Changing granularity re-clusters, but the layout effect's
-  // applySavedPositions would immediately overwrite the recomputed positions
-  // with the persisted ones (App saves positions after every layout), so the
-  // slider would recompute clusters WITHOUT moving anything until "Re-layout".
-  // Clear this mode's saved positions first, so the fresh layout — re-run
-  // because `runLayout`'s identity changes with granularity — actually lands.
-  const handleGranularityChange = useCallback((g: number) => {
-    if (compositeId) clearLayout(compositeId, layoutMode.modeId);
-    layoutMode.setGranularity(g);
-  }, [compositeId, layoutMode.modeId, layoutMode.setGranularity]);
+  // Clicking empty canvas UNLOCKS: drops the lock + selection (comparison pins
+  // survive) — the way back to the clean, structure-only view.
+  const handlePaneClick = useCallback(() => focus.lock(null), [focus.lock]);
 
   // Jump the canvas to a process picked in the rail, matching handleResetLayout's
   // deterministic setCenter (with a clamped zoom). setCenter frames the node so
@@ -765,18 +856,53 @@ export default function App() {
     });
   }, [allNodes]);
 
-  const handleEmitToggle = useCallback((path: string[], on: boolean) => {
-    setEmitSet((prev) => {
-      const next = new Set(prev);
-      const key = path.join('/');
-      if (on) next.add(key);
-      else next.delete(key);
-      // Notify the embedding dashboard. Send a sorted list for deterministic
-      // ordering on the receiving side.
-      postEmitChanged(Array.from(next).sort());
-      return next;
-    });
-  }, []);
+  // The three dockable panels around the canvas. Process starts LEFT; Inspector
+  // and Nodes stack on the RIGHT. `render` closes over the latest props so each
+  // panel always sees current selection / hidden / focus. Rebuilt when any of
+  // those inputs change identity — the DockContainer just calls render().
+  const dockPanels: DockPanelSpec[] = useMemo(() => [
+    {
+      id: 'process',
+      title: 'Processes',
+      defaultSide: 'left',
+      render: () => (
+        <ProcessPanel
+          nodes={allNodes}
+          focus={focus}
+          onNavigate={handleRailNavigate}
+          hidden={hidden}
+          onToggleHidden={toggleHidden}
+          onShowAll={showAll}
+        />
+      ),
+    },
+    {
+      id: 'inspector',
+      title: 'Inspector',
+      defaultSide: 'right',
+      render: () => (
+        <InspectorPanel
+          selection={selection}
+          // The selected node is "locked" when it is the focus lock target
+          // (node id = dotted path). Drives the lock chip in the header.
+          locked={!!focus.locked && focus.locked === (selection?.path.join('.') ?? null)}
+        />
+      ),
+    },
+    {
+      id: 'nodes',
+      title: 'Nodes',
+      defaultSide: 'right',
+      render: () => (
+        <NodesPanel
+          nodes={allNodes}
+          hidden={hidden}
+          onToggleHidden={toggleHidden}
+          onShowAll={showAll}
+        />
+      ),
+    },
+  ], [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection]);
 
   if (!state) {
     return (
@@ -808,7 +934,7 @@ export default function App() {
 
   // Display label map: ids that need a human-readable label different from the
   // capitalized id. E.g. 'setup' → 'Setup & Run'.
-  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Setup & Run' };
+  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Setup & Run', wiring: 'Explore' };
 
   return (
     <ReactFlowProvider>
@@ -869,22 +995,15 @@ export default function App() {
             flexDirection: 'row',
           }}>
             <EmitContext.Provider value={emitSet}>
-              {/* Cluster rail — only in process-column mode, left of the canvas.
-                  Names the bands the canvas draws as bare clusters and drives the
-                  same focus state, so selecting here reveals wiring on the canvas.
-                  Absent in hierarchy mode, which is left entirely untouched. */}
-              {layoutMode.modeId === 'process-column' && (
-                <ProcessRail
-                  bands={layoutMode.bands}
-                  nodes={allNodes}
-                  focus={focus}
-                  granularity={layoutMode.granularity}
-                  onGranularityChange={handleGranularityChange}
-                  onNavigate={handleRailNavigate}
-                  hiddenIds={hidden}
-                />
-              )}
-              {/* Canvas column — flex:1. Holds the Re-layout button + ReactFlow. */}
+              {/* Three dockable panels (Process / Inspector / Nodes) flank the
+                  canvas — each collapsible + dockable left/right. The canvas
+                  fills the center. */}
+              <DockContainer
+                panels={dockPanels}
+                expandRequest={{ id: 'inspector', nonce: inspectorReveal }}
+              >
+              {/* Canvas column — fills the dock center. Holds the Re-layout
+                  button + ReactFlow. */}
               <div
                 ref={canvasWrapRef}
                 className={`loom-canvas loom-mode-${layoutMode.modeId}`}
@@ -896,10 +1015,10 @@ export default function App() {
                 {culls && (
                   <div className="loom-focus-hint">
                     {activeFocusCount
-                      ? `showing wiring for ${activeFocusCount} node`
+                      ? `highlighting wiring for ${activeFocusCount} node`
                         + `${activeFocusCount === 1 ? '' : 's'}`
                         + (focus.ctx.pinned.size ? ` (${focus.ctx.pinned.size} pinned)` : '')
-                      : 'hover to reveal wiring · click to keep · shift-click to pin'}
+                      : 'hover or click a process to highlight its wiring · shift-click to pin'}
                   </div>
                 )}
                 {/* Top-right toolbar: Re-layout + Download (current layout, white bg). */}
@@ -912,21 +1031,62 @@ export default function App() {
                     captureCurrentView={captureCurrentView}
                     applyView={applyView}
                   />
-                  <select
-                    className="loom-mode-select"
-                    value={layoutMode.modeId}
-                    onChange={(e) => layoutMode.setModeId(e.target.value)}
-                    title="Layout mode"
+                  {/* The hierarchy graph hides hub-store wires (bulk/listeners/…)
+                      by default; this reveals the full fan. */}
+                  <label
+                    title="Show wires to hub stores (bulk, listeners, timestep …) that are hidden by default"
                     style={{
-                      padding: '4px 6px', fontSize: 12,
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      padding: '4px 8px', fontSize: 12,
                       background: '#fff', border: '1px solid #d1d5db',
                       borderRadius: 4, cursor: 'pointer', color: '#374151',
+                      userSelect: 'none',
                     }}
                   >
-                    {LAYOUT_MODES.map((m) => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
-                    ))}
-                  </select>
+                    <input
+                      type="checkbox"
+                      checked={showHubWires}
+                      onChange={(e) => setShowHubWires(e.target.checked)}
+                      style={{ cursor: 'pointer', margin: 0 }}
+                    />
+                    Show hub wires
+                  </label>
+                  {/* Structural alternative to the force overview: band stores
+                      by nesting depth (outers above, inners below). */}
+                  <label
+                    title="Arrange stores in a depth hierarchy (top-level stores on top, nested below) instead of the force layout"
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 4,
+                      padding: '4px 8px', fontSize: 12,
+                      background: '#fff', border: '1px solid #d1d5db',
+                      borderRadius: 4, cursor: 'pointer', color: '#374151',
+                      userSelect: 'none',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={stackStores}
+                      onChange={(e) => setStackStores(e.target.checked)}
+                      style={{ cursor: 'pointer', margin: 0 }}
+                    />
+                    Stack stores by depth
+                  </label>
+                  {/* Enabled once a process is locked (click a process). Rebuilds
+                      the view as an ego graph centered on it. */}
+                  {focus.locked && (
+                    <button
+                      onClick={() => handleCenterOnProcess(focus.locked!)}
+                      title="Center the view on the locked process: inputs left, outputs right, shared stores below"
+                      style={{
+                        padding: '4px 10px', fontSize: 12,
+                        background: '#eef2ff', border: '1px solid #c7d2fe',
+                        borderRadius: 4, cursor: 'pointer', color: '#3730a3',
+                        fontWeight: 600,
+                      }}
+                    >
+                      ⊹ Center on this
+                    </button>
+                  )}
                   <button
                     onClick={handleResetLayout}
                     title="Re-run auto-layout on the currently visible nodes and fit the view"
@@ -994,8 +1154,10 @@ export default function App() {
                   onNodeMouseEnter={culls ? handleNodeMouseEnter : undefined}
                   onNodeMouseLeave={culls ? handleNodeMouseLeave : undefined}
                   onPaneClick={handlePaneClick}
-                  fitView
-                  fitViewOptions={{ padding: 0.2 }}
+                  /* Framing is driven imperatively by fitGraph (which waits for
+                     the default-collapse + node mount to settle). The `fitView`
+                     prop fought that — it fit once on mount over the pre-collapse
+                     bounds and clamped to minZoom. */
                   /* Big composites have hundreds of nodes + custom floating edges;
                      only render what's in the viewport so pan/zoom stays smooth. */
                   onlyRenderVisibleElements={!exporting && !STATIC}
@@ -1011,17 +1173,13 @@ export default function App() {
                 >
                   <Background />
                   <Controls />
+                  {/* Off-screen store labels for focused wires. Only reads edges
+                      stamped `_focused`, so it is inert until a process is
+                      focused; re-renders live on pan/zoom via the RF store. */}
+                  {culls && <BoundaryLabels edges={tieredEdges as any[]} />}
                 </ReactFlow>
               </div>
-              <Sidebar
-                selection={selection}
-                nodes={allNodes}
-                hidden={hidden}
-                onToggleHidden={toggleHidden}
-                onShowAll={showAll}
-                emitSet={emitSet}
-                onEmitToggle={handleEmitToggle}
-              />
+              </DockContainer>
             </EmitContext.Provider>
           </div>
           {tab === 'setup' && (

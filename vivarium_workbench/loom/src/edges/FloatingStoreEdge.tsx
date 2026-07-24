@@ -50,12 +50,23 @@ function nodeCenter(n: RFInternalNode): Point {
   };
 }
 
-/** Absolute position of a node's handle by id; falls back to the node center. */
-function handlePoint(n: RFInternalNode, handleId: string | null | undefined): Point {
-  const bounds = [
-    ...(n.internals.handleBounds?.source ?? []),
-    ...(n.internals.handleBounds?.target ?? []),
-  ];
+/**
+ * Absolute position of a node's handle by id; falls back to the node center.
+ *
+ * `prefer` disambiguates when the SAME port name exists as both an input
+ * (target handle, left) and an output (source handle, right) on one process —
+ * the common case (e.g. equilibrium reads AND writes `bulk`). Without it, an
+ * input wire for `bulk` would match the right-side output handle first and
+ * every input wire would pile onto the process's right edge. We search the
+ * preferred handle type first, then fall back to the other type, then center.
+ */
+function handlePoint(
+  n: RFInternalNode, handleId: string | null | undefined,
+  prefer: 'source' | 'target',
+): Point {
+  const preferred = n.internals.handleBounds?.[prefer] ?? [];
+  const other = n.internals.handleBounds?.[prefer === 'source' ? 'target' : 'source'] ?? [];
+  const bounds = [...preferred, ...other];
   const h = handleId ? bounds.find((b) => b.id === handleId) : undefined;
   if (!h) return nodeCenter(n);
   const p = n.internals.positionAbsolute;
@@ -76,8 +87,11 @@ function FloatingStoreEdge({
   const procNode = storeIsSource ? targetNode : sourceNode;
   const procHandleId = storeIsSource ? targetHandleId : sourceHandleId;
 
-  // Process end: the exact port handle position (fixed).
-  const procPoint = handlePoint(procNode, procHandleId);
+  // Process end: the exact port handle position (fixed). Inputs live on the
+  // process's TARGET (left) handles, outputs on its SOURCE (right) handles —
+  // resolve against the matching type so a port name shared by both doesn't
+  // snap the input wire to the output handle.
+  const procPoint = handlePoint(procNode, procHandleId, storeIsSource ? 'target' : 'source');
 
   // Store end: nearest point on the store circle to that port.
   const center = nodeCenter(storeNode);
@@ -111,9 +125,22 @@ function FloatingStoreEdge({
       })
     : '';
 
+  // Focus highlighting: the drawn-edge seam (clusterGridEdgeVisibility) stamps
+  // `_focused` on the focused process's wires and `_dim` on the rest while a
+  // focus is active. Emphasize the focused set (thicker + highlight color) and
+  // fade the others so the focused neighbourhood reads clearly at any zoom.
+  const focused = (data as { _focused?: boolean } | undefined)?._focused === true;
+  const dim = (data as { _dim?: boolean } | undefined)?._dim === true;
+  const edgeClass = focused ? 'loom-edge-focused' : dim ? 'loom-edge-dim' : undefined;
+  const edgeStyle = {
+    ...(style as Record<string, unknown>),
+    ...(focused ? { stroke: '#2563eb', strokeWidth: 2.4 } : {}),
+    ...(dim ? { opacity: 0.12 } : {}),
+  };
+
   return (
     <>
-      <BaseEdge path={path} markerEnd={markerEnd} style={style} />
+      <BaseEdge path={path} markerEnd={markerEnd} style={edgeStyle} className={edgeClass} />
       {label && (
         <EdgeLabelRenderer>
           <div

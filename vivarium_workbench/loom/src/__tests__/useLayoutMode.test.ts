@@ -33,9 +33,11 @@ describe('mode-scoped layout persistence', () => {
     expect(loadLayout('c1', 'hierarchy')).toEqual({ a: { x: 5, y: 5 } });
   });
 
-  it('keeps hierarchy on the original un-suffixed key so saved drags survive', () => {
-    // Pre-existing (pre-mode) saved positions live under the bare key.
-    window.localStorage.setItem('bigraph-loom:layout:c1', JSON.stringify({ a: { x: 7, y: 8 } }));
+  it('keeps hierarchy on the un-suffixed key within the v2 namespace', () => {
+    // The v2 namespace was bumped when the auto-layout algorithm changed to the
+    // cluster-grid, so stale ELK positions saved under the old key don't override
+    // the fresh layout. Within v2, hierarchy still uses the un-suffixed form.
+    window.localStorage.setItem('bigraph-loom:layout:v2:c1', JSON.stringify({ a: { x: 7, y: 8 } }));
     expect(loadLayout('c1', 'hierarchy')).toEqual({ a: { x: 7, y: 8 } });
     expect(loadLayout('c1')).toEqual({ a: { x: 7, y: 8 } });
   });
