@@ -691,25 +691,31 @@
      with a one-click pop-out to the bigraph-loom STATIC (read-only) view. #}
   {% if study.baseline %}
   <div class="overview-section" id="model-section">
-    <h3>Model <span class="muted" style="font-size:0.85em;font-weight:normal">— the composite(s) this study runs</span></h3>
-    <p class="muted" style="font-size:0.88em">Every study runs at least one composite. Click a composite to open it in the bigraph-loom explorer — live: configure &amp; run; published bundle: read-only wiring view.</p>
+    <h3>Model <span class="muted" style="font-size:0.85em;font-weight:normal">— the composite(s) this study simulates</span></h3>
+    <p class="muted" style="font-size:0.88em">Each row runs one composite. Below it: the composite address (open it in the bigraph-loom explorer), the resolved configuration that actually executes, and the run settings.</p>
     {% for b in study.baseline %}
-    <div class="cond-block">
-      <div class="cond-block-title">
-        {{ b.name or 'baseline' }}
+    <div class="cond-block" data-model-composite="{{ b.composite or '' }}" data-model-overrides='{{ (b.params or {}) | tojson }}'>
+      <div class="cond-block-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong>{{ b.name or 'baseline' }}</strong>
         {% if b.composite %}
-        <button type="button" class="action-btn" style="margin-left:8px;font-size:0.82em"
-                onclick="_openCompositeLoom('{{ b.composite }}')">🧬 {{ b.composite.split('.composites.')[-1] if '.composites.' in b.composite else b.composite }} — configure & run ↗</button>
-        {% endif %}
+        <code style="font-size:0.82em;color:#374151;background:#f1f5f9;padding:1px 6px;border-radius:3px">{{ b.composite }}</code>
+        <button type="button" class="action-btn" style="font-size:0.8em"
+                onclick="_openCompositeLoom('{{ b.composite }}')">🧬 explore &amp; run ↗</button>
+        {% else %}<span class="muted">no composite declared</span>{% endif %}
       </div>
-      {% if b.params %}
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">
-        {% for k, v in b.params.items() %}
-        <span class="cond-pill"><span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code></span>
-        {% endfor %}
+      {# Config that runs — resolved params (composite defaults ⊕ this study's
+         overrides), fetched on demand from /api/composite-resolve. #}
+      <div class="model-config-mount" style="margin-top:8px">
+        <p class="muted" style="font-size:0.85em;margin:0">Loading configuration…</p></div>
+      {# Run settings — replication + the latest run's steps/emitter/status. #}
+      {% set _r = (study.runs[0] if study.runs else None) %}
+      {% if study.robustness or _r %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:0.8em">
+        {% if study.robustness %}<span class="cond-pill"><span class="cond-pill-k">seeds</span>={{ study.robustness.seeds|length if study.robustness.seeds else (study.robustness.n_replicates or 1) }}{{ ' (sweep)' if study.robustness.parameter_sweep else '' }}</span>{% endif %}
+        {% if _r and _r.n_steps %}<span class="cond-pill"><span class="cond-pill-k">steps</span>={{ _r.n_steps }}</span>{% endif %}
+        {% if _r and _r.emitter %}<span class="cond-pill"><span class="cond-pill-k">emitter</span>={{ _r.emitter }}</span>{% endif %}
+        {% if _r and _r.status %}<span class="cond-pill"><span class="cond-pill-k">status</span>={{ _r.status }}</span>{% endif %}
       </div>
-      {% else %}
-      <div class="muted" style="font-size:0.88em;margin-top:2px">default parameters</div>
       {% endif %}
     </div>
     {% endfor %}

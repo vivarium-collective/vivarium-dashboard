@@ -49,6 +49,7 @@
     if (kind === 'visualize') { _loadReadouts(); _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
     if (kind === 'report-cards') { _fillReportCardsTab(window._study); }
     if (kind === 'data') { _loadAnalysisOutputs(); }
+    if (kind === 'compose') { _loadModelConfig(); }
     if (kind === 'simulate') { _renderReproduceCard(); _loadStudySims(); }
   }
   window._setStudyTab = _setStudyTab;
@@ -264,6 +265,66 @@
         host.innerHTML = '<p class="muted" style="padding:8px">Failed to load baseline figures.</p>';
         _nativeGalleryLoaded = false;
       });
+  }
+
+  // Model tab: for each baseline composite, fetch /api/composite-resolve and
+  // render the RESOLVED config that actually runs (composite defaults overlaid
+  // with this study's authored overrides). Loaded on demand when the tab opens.
+  function _loadModelConfig(force) {
+    var panel = document.getElementById('panel-compose');
+    if (!panel) return;
+    var esc = window.SimTable ? window.SimTable.esc : function (s) { return String(s == null ? '' : s); };
+    panel.querySelectorAll('.cond-block[data-model-composite]').forEach(function (block) {
+      var mount = block.querySelector('.model-config-mount');
+      if (!mount || (mount._loaded && !force)) return;
+      mount._loaded = true;
+      var composite = block.getAttribute('data-model-composite');
+      var overridesJson = block.getAttribute('data-model-overrides') || '{}';
+      if (!composite) { mount.innerHTML = ''; return; }
+      fetch('/api/composite-resolve?id=' + encodeURIComponent(composite) + '&overrides=' + encodeURIComponent(overridesJson))
+        .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+        .then(function (res) {
+          if (res.status !== 200 || !res.body || !res.body.parameters) {
+            mount.innerHTML = '<p class="muted" style="font-size:0.85em;margin:0">No resolvable configuration for this composite.</p>';
+            return;
+          }
+          var overrides = {}; try { overrides = JSON.parse(overridesJson); } catch (e) {}
+          _renderModelConfig(mount, res.body.parameters, overrides, esc);
+        }).catch(function () { mount.innerHTML = ''; });
+    });
+  }
+  window._loadModelConfig = _loadModelConfig;
+
+  function _renderModelConfig(mount, params, overrides, esc) {
+    var keys = Object.keys(params);
+    if (!keys.length) {
+      mount.innerHTML = '<p class="muted" style="font-size:0.85em;margin:0">This composite takes no configurable parameters.</p>';
+      return;
+    }
+    var effective = {};
+    var rows = keys.map(function (k) {
+      var def = params[k] || {};
+      var overridden = overrides && (k in overrides);
+      var val = overridden ? overrides[k] : def.default;
+      effective[k] = val;
+      var shown = (val === undefined || val === null) ? '—' : val;
+      return '<tr' + (overridden ? ' style="background:#eff6ff"' : '') + '>' +
+        '<td style="padding:3px 8px"><code>' + esc(k) + '</code></td>' +
+        '<td style="padding:3px 8px;color:#6b7280">' + esc(def.type || '') + '</td>' +
+        '<td style="padding:3px 8px"><code>' + esc(shown) + '</code>' +
+        (overridden ? ' <span style="color:#2563eb;font-size:0.72em;font-weight:600">override</span>' : '') + '</td>' +
+        '<td style="padding:3px 8px;color:#6b7280">' + esc(def.description || '') + '</td></tr>';
+    }).join('');
+    mount.innerHTML =
+      '<div style="font-size:0.85em;color:#374151;margin-bottom:4px"><strong>Config that runs</strong> ' +
+      '<span class="muted">— resolved parameters (composite defaults ⊕ this study\'s overrides)</span></div>' +
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85em">' +
+      '<thead><tr>' + ['Parameter', 'Type', 'Value', 'Description'].map(function (h) {
+        return '<th style="text-align:left;padding:3px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280;">' + h + '</th>';
+      }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:0.82em">Full resolved config (JSON)</summary>' +
+      '<pre style="font-size:0.78em;background:#f8fafc;padding:8px;border-radius:4px;overflow-x:auto;margin:4px 0 0">' +
+      esc(JSON.stringify(effective, null, 2)) + '</pre></details>';
   }
 
   // Simulations tab: the study's runs rendered with the SHARED Simulations-DB
