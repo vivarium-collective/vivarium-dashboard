@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo, useState } from "react";
+import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
 import { portInfo } from "../portInfo";
@@ -183,8 +183,24 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   const locked = (data as any)._locked === true;
 
+  // Manual resize: drag a corner to pull the card bigger (handy when the center
+  // contract is dense). Local, inline override of the default tier width/height;
+  // in-session only. Handles show once ports are visible (not at the glyph tier).
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+
   return (
-    <div className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}>
+    <div
+      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}
+      style={dims ? { width: dims.width, height: dims.height, overflow: 'auto' } : undefined}
+    >
+      <NodeResizer
+        isVisible={show.ports}
+        minWidth={360}
+        minHeight={200}
+        onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
+        handleStyle={{ width: 9, height: 9, borderRadius: 2, background: '#fff', borderColor: '#6366f1' }}
+        lineStyle={{ borderColor: 'transparent' }}
+      />
       {/* Connection dots on the border (all tiers, so focused wiring attaches). */}
       {inputPorts.map((p, i) => borderHandle(p, false, i, inputPorts.length, inTypes))}
       {outputPorts.map((p, i) => borderHandle(p, true, i, outputPorts.length, outTypes))}

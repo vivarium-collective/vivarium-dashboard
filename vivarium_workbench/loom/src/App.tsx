@@ -119,15 +119,6 @@ export default function App() {
   // drawn-edge seam (drawFocus / culls) still reads it; focusing a process still
   // reveals its hub wires on demand.
   const showHubWires = false;
-  // Global "stack stores by depth" toggle: swaps the force overview for the
-  // structural depth-banded arrangement (depthStack.ts). A transient VIEW —
-  // it is never persisted (see suppressPersistRef) so the saved force layout
-  // survives the excursion and "Re-layout" restores it.
-  const [stackStores, setStackStores] = useState(false);
-  // While a transient view is active (depth-stack, or a "center on this"
-  // ego arrangement), skip persisting positions so the baseline force layout
-  // in localStorage is never clobbered by the excursion.
-  const suppressPersistRef = useRef(false);
   const [tab, setTab] = useState<TabId>('setup');
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
@@ -351,22 +342,13 @@ export default function App() {
     const visibleEdges = retargetEdgesToVisible(raw.edges as any[], visibleIds);
 
     (async () => {
-      let withSaved: any[];
-      if (stackStores) {
-        // Transient depth-stack VIEW: always fresh (ignores saved positions),
-        // and flagged so the persist effect leaves the force layout untouched.
-        suppressPersistRef.current = true;
-        withSaved = depthStackLayout(visibleNodes as any, visibleEdges as any).nodes as any[];
-      } else {
-        suppressPersistRef.current = false;
-        const saved = loadLayout(compositeId, layoutMode.modeId);
-        // Always lay out at the LARGEST (full) tier so cards never overlap at any
-        // zoom and positions are stable across tier changes (persistent placement).
-        const { nodes: laidOut } = await layoutMode.runLayout(
-          visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
-        );
-        withSaved = applySavedPositions(laidOut as any, saved) as any[];
-      }
+      const saved = loadLayout(compositeId, layoutMode.modeId);
+      // Always lay out at the LARGEST (full) tier so cards never overlap at any
+      // zoom and positions are stable across tier changes (persistent placement).
+      const { nodes: laidOut } = await layoutMode.runLayout(
+        visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
+      );
+      const withSaved = applySavedPositions(laidOut as any, saved) as any[];
       if (cancelled) return;
       // Apply the CURRENT hidden set to the freshly-rebuilt nodes + edges (read
       // via ref, not a dep). Without this, rebuilding edges here would drop the
@@ -400,7 +382,7 @@ export default function App() {
     // (full) regardless of the live tier, so zooming reveals card content but
     // does not move nodes (persistent placement).
     // `hidden` is deliberately NOT a dep — see hiddenRef above.
-  }, [state, raw, collapsed, compositeId, setNodes, setEdges, stackStores,
+  }, [state, raw, collapsed, compositeId, setNodes, setEdges,
       layoutMode.modeId, layoutMode.runLayout]);
 
   // Toggle the `hidden` CSS flag on existing nodes/edges WITHOUT relayout or
@@ -568,30 +550,28 @@ export default function App() {
   // time a composite renders. Subsequent drags update the same store.
   useEffect(() => {
     if (!compositeId || nodes.length === 0) return;
-    // A transient view (depth-stack / ego "center on this") must not overwrite
-    // the persisted force layout — leave localStorage as-is while it's active.
-    if (suppressPersistRef.current) return;
     debouncedPersistRef.current?.(compositeId, positionsFromNodes(nodes as any), layoutMode.modeId);
   }, [nodes, compositeId, layoutMode.modeId]);
 
-  // The depth-stack view has a very different bbox from the force overview;
-  // re-fit whenever the toggle flips (once nodes have re-laid out).
-  useEffect(() => {
-    if (tab !== 'wiring' || nodes.length === 0) return;
-    const t = window.setTimeout(
-      () => rfRef.current?.fitView?.({ padding: 0.2, duration: 400 }), 180,
+  // "Adjust ▸ Stack stores by depth": a one-shot arrangement — lay the stores
+  // out as a nesting tree with processes packed below, move the nodes there, and
+  // leave them (the change persists via the effect above). Not a mode/toggle.
+  const handleStackByDepth = useCallback(() => {
+    setNodes((ns: any[]) => {
+      const laid = depthStackLayout(ns as any, edges as any).nodes as any[];
+      const posById = new Map(laid.map((n) => [n.id, n.position]));
+      return ns.map((n) => (posById.has(n.id) ? { ...n, position: posById.get(n.id) } : n));
+    });
+    window.setTimeout(
+      () => rfRef.current?.fitView?.({ padding: 0.2, duration: 400 }), 120,
     );
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stackStores]);
+  }, [edges, setNodes]);
 
-  // Center the whole view on one process: its read-only stores to the left,
-  // write-only to the right, read+write below, everything else parked out of
-  // frame — then fit to just that ego set. A transient arrangement (not
-  // persisted); "Re-layout" restores the force overview.
+  // "Adjust ▸ Center on this process": one-shot — its read-only stores to the
+  // left, write-only to the right, read+write below, everything else parked out
+  // of frame — then fit to that ego set. The nodes stay where they land.
   const handleCenterOnProcess = useCallback((procId: string) => {
     let egoIds: string[] = [];
-    suppressPersistRef.current = true;
     setNodes((ns: any[]) => {
       const { positions, egoIds: ids } = egoLayout(ns as any, edges as any, procId);
       egoIds = ids;
@@ -612,9 +592,6 @@ export default function App() {
 
   const handleResetLayout = useCallback(() => {
     if (!compositeId) return;
-    // Leave any transient view (depth-stack / ego) and restore the force layout.
-    suppressPersistRef.current = false;
-    setStackStores(false);
     clearLayout(compositeId, layoutMode.modeId);
     // Force a re-layout by bumping a dependency. Simplest: clear nodes so the
     // layout effect sees `!state` is false but `nodes.length === 0`, then on
@@ -721,6 +698,7 @@ export default function App() {
   // WHITE background. Captures the React Flow viewport element via html-to-image,
   // framed to the full nodes bounds (not just the on-screen viewport).
   const [showExport, setShowExport] = useState(false);
+  const [showAdjust, setShowAdjust] = useState(false);
   // While true, onlyRenderVisibleElements is disabled so the WHOLE graph (all
   // nodes AND edges) is in the DOM for html-to-image to capture. Otherwise the
   // off-viewport edges are culled and the export comes out wireless.
@@ -1032,42 +1010,61 @@ export default function App() {
                     captureCurrentView={captureCurrentView}
                     applyView={applyView}
                   />
-                  {/* Structural alternative to the force overview: band stores
-                      by nesting depth (outers above, inners below). */}
-                  <label
-                    title="Arrange stores in a depth hierarchy (top-level stores on top, nested below) instead of the force layout"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      padding: '4px 8px', fontSize: 12,
-                      background: '#fff', border: '1px solid #d1d5db',
-                      borderRadius: 4, cursor: 'pointer', color: '#374151',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={stackStores}
-                      onChange={(e) => setStackStores(e.target.checked)}
-                      style={{ cursor: 'pointer', margin: 0 }}
-                    />
-                    Stack stores by depth
-                  </label>
-                  {/* Enabled once a process is locked (click a process). Rebuilds
-                      the view as an ego graph centered on it. */}
-                  {focus.locked && (
+                  {/* "Adjust" — one-shot rearrangements. Each moves the nodes and
+                      leaves them there (persisted); not a mode/toggle. */}
+                  <div style={{ position: 'relative' }}>
                     <button
-                      onClick={() => handleCenterOnProcess(focus.locked!)}
-                      title="Center the view on the locked process: inputs left, outputs right, shared stores below"
+                      onClick={() => setShowAdjust((v) => !v)}
+                      title="Rearrange the layout (moves the nodes and leaves them there)"
                       style={{
                         padding: '4px 10px', fontSize: 12,
-                        background: '#eef2ff', border: '1px solid #c7d2fe',
-                        borderRadius: 4, cursor: 'pointer', color: '#3730a3',
-                        fontWeight: 600,
+                        background: '#fff', border: '1px solid #d1d5db',
+                        borderRadius: 4, cursor: 'pointer', color: '#374151',
                       }}
                     >
-                      ⊹ Center on this
+                      Adjust ▾
                     </button>
-                  )}
+                    {showAdjust && (
+                      <div style={{
+                        position: 'absolute', top: '100%', right: 0, marginTop: 4,
+                        background: '#fff', border: '1px solid #d1d5db', borderRadius: 4,
+                        boxShadow: '0 2px 8px rgba(0,0,0,0.12)', overflow: 'hidden',
+                        minWidth: 230, zIndex: 20,
+                      }}>
+                        {[
+                          {
+                            label: '⤵ Stack stores by depth',
+                            hint: 'Arrange stores as a nesting tree; processes packed below',
+                            enabled: true,
+                            on: () => handleStackByDepth(),
+                          },
+                          {
+                            label: focus.locked ? '⊹ Center on locked process' : '⊹ Center on this (lock a process first)',
+                            hint: 'Inputs left, outputs right, shared stores below',
+                            enabled: !!focus.locked,
+                            on: () => { if (focus.locked) handleCenterOnProcess(focus.locked); },
+                          },
+                        ].map((it) => (
+                          <button
+                            key={it.label}
+                            disabled={!it.enabled}
+                            onClick={() => { if (it.enabled) { it.on(); setShowAdjust(false); } }}
+                            title={it.hint}
+                            style={{
+                              display: 'block', width: '100%', textAlign: 'left',
+                              padding: '7px 12px', fontSize: 12, border: 0,
+                              background: '#fff', cursor: it.enabled ? 'pointer' : 'default',
+                              color: it.enabled ? '#374151' : '#b8bec9',
+                            }}
+                            onMouseEnter={(e) => { if (it.enabled) e.currentTarget.style.background = '#f3f4f6'; }}
+                            onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
+                          >
+                            {it.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                   <button
                     onClick={handleResetLayout}
                     title="Re-run auto-layout on the currently visible nodes and fit the view"

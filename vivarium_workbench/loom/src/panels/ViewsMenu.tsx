@@ -91,6 +91,22 @@ export default function ViewsMenu(props: {
     setOpen(false);
   }, [captureCurrentView, compositeId]);
 
+  // Save the current arrangement as THE default (a reserved "Default" view that
+  // opens automatically and that "Go to default" restores).
+  const onSaveDefault = useCallback(() => {
+    if (!compositeId) return;
+    saveView(compositeId, 'Default', captureCurrentView());
+    setDefault(compositeId, 'Default');
+    refresh();
+    flash('Saved as default');
+  }, [compositeId, captureCurrentView]);
+
+  const onGoToDefault = () => {
+    if (!compositeId || !defaultName) return;
+    const v = getView(compositeId, defaultName);
+    if (v) { applyView(v); setOpen(false); flash('Default view'); }
+  };
+
   const onLoadFile = (file: File) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -181,10 +197,16 @@ export default function ViewsMenu(props: {
           ))}
 
           <div style={{ height: 1, background: '#e5e7eb' }} />
-          <button onClick={onSave} style={itemBtn} {...hover}>＋ Save current view…</button>
+          {defaultName && (
+            <button onClick={onGoToDefault} style={{ ...itemBtn, color: '#b45309' }} {...hover}>↺ Go to default</button>
+          )}
+          <button onClick={onSaveDefault} style={itemBtn} {...hover}>★ Save current as default</button>
+          <div style={{ height: 1, background: '#e5e7eb' }} />
+          <button onClick={onExportFile} style={itemBtn} {...hover}>⭳ Save current view (file)</button>
+          <button onClick={() => fileRef.current?.click()} style={itemBtn} {...hover}>⭱ Load view (file)</button>
+          <div style={{ height: 1, background: '#e5e7eb' }} />
+          <button onClick={onSave} style={itemBtn} {...hover}>＋ Save named view…</button>
           <button onClick={onCopyLink} style={itemBtn} {...hover}>🔗 Copy shareable link</button>
-          <button onClick={onExportFile} style={itemBtn} {...hover}>⭳ Export view file…</button>
-          <button onClick={() => fileRef.current?.click()} style={itemBtn} {...hover}>⭱ Load view file…</button>
           <input
             ref={fileRef} type="file" accept="application/json,.json"
             style={{ display: 'none' }}
