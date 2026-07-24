@@ -135,6 +135,7 @@ def export_composite_pbg(
     composite_id: str,
     out_path: "Path | str",
     core=None,
+    overrides: "dict | None" = None,
 ) -> Path:
     """Build a named composite, rewrite its process addresses, and write JSON.
 
@@ -192,7 +193,11 @@ def export_composite_pbg(
             raise ValueError(f"Composite {composite_id!r} not found in workspace {ws_root}")
         spec = CompositeSpec.from_file(path)
 
-    document = spec.to_document(core=core)
+    # Apply the run's parameter overrides (e.g. the Composites-tab run form's
+    # n_seeds / duration) so a REMOTE run honors them just like the local path
+    # (run_runner build_generator(overrides=…)). CompositeSpec.to_document merges
+    # them over the generator's parameter defaults and validates unknown keys.
+    document = spec.to_document(overrides=overrides, core=core)
     document = rewrite_local_addresses(document, core)
     # Drop realized-edge runtime fields (instance / _inputs / _outputs) so the
     # .pbg is a portable spec the remote runner can rebuild — see the helper.
