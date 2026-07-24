@@ -29,6 +29,11 @@ export interface ProcessNodeData {
    *  This is the unambiguous form; use it for any path reasoning. */
   inputPortsTarget?: Record<string, string>;
   outputPortsTarget?: Record<string, string>;
+  /** port -> TYPE string, from the process spec's `_inputs`/`_outputs` schema.
+   *  Distinct from the *PortsSchema fields (which record WHERE a port wires, not
+   *  its type). Consumed by the card port rows, tooltips, and the Inspector. */
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
   /** Structured contract, serialized as `_contract`. Absent means derive
    *  it from `description` (the process docstring). */
   contract?: Record<string, unknown>;

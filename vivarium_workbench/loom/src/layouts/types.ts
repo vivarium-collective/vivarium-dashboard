@@ -50,6 +50,13 @@ export interface FocusContext {
   focused: Set<string>;
   /** Explicitly pinned process node ids. */
   pinned: Set<string>;
+  /**
+   * Hierarchy mode's "Show hub wires" toggle. When true, `edgeVisibility`
+   * stops hiding hub-store wires and returns every edge. Carried on the focus
+   * context because it is the one input, besides focus, that the drawn-edge
+   * seam depends on. Undefined/false means hub wires stay hidden (the default).
+   */
+  showHubWires?: boolean;
 }
 
 export interface LayoutMode {
@@ -58,6 +65,16 @@ export interface LayoutMode {
   run(nodes: Node[], edges: Edge[], ctx: LayoutContext): Promise<LayoutResult>;
   /** Cull/annotate edges for this mode. Omitted means "draw them all". */
   edgeVisibility?(edges: Edge[], focus: FocusContext, nodes: Node[]): Edge[];
+  /**
+   * Whether this mode reveals edges in response to FOCUS (hover / selection /
+   * pins). Drives App's hover handlers, focus hint, and pin-pruning. Process-
+   * column mode is focus-driven; hierarchy mode is NOT — it culls hub wires
+   * structurally via a toggle, so its focus is inert and these behaviors stay
+   * off (no hover re-render, no "hover to reveal" hint). Distinct from
+   * `edgeVisibility` being defined: a mode can cull edges without reacting to
+   * focus. Omitted means false.
+   */
+  focusReveals?: boolean;
   /** Semantic-zoom tiers, ordered low to high. Omitted means fixed cards. */
   tiers?: ZoomTier[];
 }

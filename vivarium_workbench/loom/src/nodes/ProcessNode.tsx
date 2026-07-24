@@ -1,7 +1,8 @@
 import { memo } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
-import { deriveContract, abbreviateType, contractCompleteness } from "../contract";
+import { deriveContract, contractCompleteness } from "../contract";
+import { portInfo } from "../portInfo";
 
 function _classifyStep(address: string | undefined, label: string | undefined): 'process' | 'emitter' | 'visualization' {
   const addr = address || '';
@@ -122,27 +123,69 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const configEntries = Object.entries(data.config ?? {});
 
   const portRow = (port: string, types: Record<string, unknown>, isOut: boolean) => {
-    const raw = typeof types[port] === 'string' ? (types[port] as string) : '';
+    const info = portInfo(port, isOut, {
+      typeSchema: types,
+      portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
+      portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
+    });
     const semantic = isOut ? contract?.outputs?.[port] : contract?.inputs?.[port];
     return (
       <div key={`${isOut ? 'o' : 'i'}-${port}`}
            className={`process-node-port-row${isOut ? ' is-out' : ''}`}>
         <span className="process-node-port-name">{port}</span>
-        {show.types && raw && (
-          <span className="process-node-port-type" title={raw}>{abbreviateType(raw)}</span>
+        {show.types && info.type && (
+          <span className="process-node-port-type" title={info.fullType}>{info.type}</span>
         )}
         {show.contract && semantic && (
           <span className="process-node-port-semantic">{semantic}</span>
         )}
+        {/* Hover detail — CSS-driven (reveals on row :hover); computed at render
+            from node data, so hovering never re-mints the node. Shows direction,
+            the wired store, the full type, and (if known) the contract meaning. */}
+        <div className="port-row-tooltip" role="tooltip">
+          <div className="port-row-tooltip-head">
+            <span className={`port-row-tooltip-dir ${info.direction}`}>{info.direction}</span>
+            {info.connectsTo && (
+              <>
+                <span className="port-row-tooltip-arrow">→</span>
+                <span className="port-row-tooltip-target">{info.connectsTo}</span>
+              </>
+            )}
+          </div>
+          {info.fullType && (
+            <div className="port-row-tooltip-type">{info.fullType}</div>
+          )}
+          {semantic && (
+            <div className="port-row-tooltip-sem">{semantic}</div>
+          )}
+        </div>
       </div>
     );
   };
 
+  // A terse native tooltip for the raw handle (present at every tier, incl.
+  // glyph where no port rows are drawn) so hovering the connector itself still
+  // reveals direction + target.
+  const handleTitle = (port: string, isOut: boolean, types: Record<string, unknown>) => {
+    const info = portInfo(port, isOut, {
+      typeSchema: types,
+      portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
+      portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
+    });
+    const parts = [`${port} · ${info.direction}`];
+    if (info.connectsTo) parts.push(`→ ${info.connectsTo}`);
+    if (info.type) parts.push(`(${info.type})`);
+    return parts.join(' ');
+  };
+
+  const locked = (data as any)._locked === true;
+
   return (
-    <div className={`process-node process-node-${stepKind} process-node-${t}`}>
+    <div className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}>
       {/* Handles anchor the wires at EVERY tier — they stay present even at the
           glyph tier where no port labels are drawn, so focused-process wiring
-          (Task 6) keeps attaching by port id. */}
+          (Task 6) keeps attaching by port id. A native `title` gives the raw
+          connector its own hover detail (direction + wired store). */}
       {inputPorts.map((port, i) => (
         <Handle
           key={`h-in-${port}`}
@@ -150,6 +193,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           position={Position.Left}
           id={port}
           className="port-handle port-handle-input"
+          title={handleTitle(port, false, inTypes)}
           style={{ top: `${((i + 1) / (inputPorts.length + 1)) * 100}%` }}
         />
       ))}
@@ -160,11 +204,15 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           position={Position.Right}
           id={port}
           className="port-handle port-handle-output"
+          title={handleTitle(port, true, outTypes)}
           style={{ top: `${((i + 1) / (outputPorts.length + 1)) * 100}%` }}
         />
       ))}
 
-      <div className="process-node-title">{data.label}</div>
+      <div className="process-node-title">
+        {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
+        {data.label}
+      </div>
 
       {show.ports && (
         <>

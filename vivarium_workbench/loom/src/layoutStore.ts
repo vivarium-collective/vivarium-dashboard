@@ -14,14 +14,21 @@
 
 import type { Node } from '@xyflow/react';
 
-const KEY_PREFIX = 'bigraph-loom:layout:';
+// Bumped to :v2 when the auto-layout algorithm changed from ELK-layered to the
+// cluster-grid. The old builds auto-SAVED ELK positions under the un-suffixed
+// key on every render, so without a namespace change every previously-opened
+// composite would keep its stale ELK sprawl (applySavedPositions overrides the
+// fresh grid) until the user hit Reset-layout. The version bump makes the new
+// algorithm start from a clean slate; genuine manual drags under the new layout
+// persist under :v2.
+const KEY_PREFIX = 'bigraph-loom:layout:v2:';
 
 export type LayoutPositions = Record<string, { x: number; y: number }>;
 
 function keyFor(compositeId: string | null | undefined, modeId = 'hierarchy'): string | null {
   if (!compositeId) return null;
-  // 'hierarchy' keeps the original un-suffixed key so previously saved
-  // positions survive this change.
+  // 'hierarchy' (the sole mode) keeps the un-suffixed form within the v2
+  // namespace; other modes get a :<modeId> suffix.
   return modeId === 'hierarchy'
     ? KEY_PREFIX + compositeId
     : `${KEY_PREFIX}${compositeId}:${modeId}`;
