@@ -170,75 +170,28 @@ def test_overview_panel_has_counts_strip(_ws):
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
     assert 'study-counts-strip' in html or 'class="counts-strip"' in html
-    # Each label appears
-    for label in ('variants', 'runs', 'interventions'):
+    # Each label appears. ('interventions' dropped — the legacy interventions
+    # CRUD panel was retired in the study-tabs de-slop.)
+    for label in ('variants', 'runs'):
         assert label in html.lower()
 
 
-def test_baseline_panel_lists_entries(_ws):
-    """Baseline panel renders one .baseline-entry per baseline[] entry."""
+def test_legacy_v2_crud_panels_retired(_ws):
+    """The legacy v2-only baseline/variants/interventions CRUD forms are retired.
+
+    These `{% if not _is_v3 %}` forms duplicated the v3 conditions editor (the
+    Model tab now shows the composite + its resolved config + run settings). They
+    are removed as part of the study-tabs de-slop; this test pins that they no
+    longer render (replacing the prior tests that asserted their presence).
+    """
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    # The legacy fixture has one variants-as-composites that migrates to one baseline entry
-    # named "monod_kinetics" (per Plan 1 migration rules).
-    assert 'class="baseline-entry"' in html
-    assert 'data-baseline-name="monod_kinetics"' in html
-
-
-def test_baseline_panel_has_add_button(_ws):
-    """Baseline panel has a '+ Add composite' button."""
-    from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
-    from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
-    spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
-    html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'btn-baseline-add' in html
-
-
-def test_baseline_panel_per_entry_buttons(_ws):
-    """Each baseline entry has Run + Remove buttons carrying its name."""
-    from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
-    from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
-    spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
-    html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'btn-run-baseline' in html
-    assert 'btn-baseline-remove' in html
-
-
-def test_variants_panel_lists_entries(_ws):
-    """Variants panel renders one .variant-row per variants[] entry, with name + base_composite + params count."""
-    from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
-    from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
-    spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
-    html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    # The legacy fixture has no variants[] (the only variant has `source:` so it migrated
-    # to baseline). So expect the empty-message instead of a row.
-    assert 'variant-row' in html or 'No variants yet' in html
-
-
-def test_variants_panel_has_new_variant_button(_ws):
-    from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
-    from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
-    spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
-    html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'btn-variant-new' in html
-
-
-def test_interventions_panel_lists_entries(_ws):
-    from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
-    from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
-    spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
-    html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'intervention-row' in html or 'No interventions yet' in html
-
-
-def test_interventions_panel_has_new_button(_ws):
-    from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
-    from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
-    spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
-    html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'btn-intervention-new' in html
+    for gone in ('class="baseline-entry"', 'btn-baseline-add', 'btn-run-baseline',
+                 'btn-baseline-remove', 'variant-row', 'btn-variant-new',
+                 'intervention-row', 'btn-intervention-new'):
+        assert gone not in html, f"legacy v2 CRUD markup {gone!r} should be retired"
 
 
 def test_runs_panel_has_runs_table(_ws):

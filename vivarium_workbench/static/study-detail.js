@@ -48,7 +48,7 @@
     if (kind === 'tests') { loadTestsTab(window._study); }
     if (kind === 'visualize') { _loadReadouts(); _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
     if (kind === 'report-cards') { _fillReportCardsTab(window._study); }
-    if (kind === 'data') { _loadAnalysisOutputs(); }
+    if (kind === 'data') { _loadAnalysisOutputs(); _loadRawData(); }
     if (kind === 'compose') { _loadModelConfig(); }
     if (kind === 'simulate') { _renderReproduceCard(); _loadStudySims(); }
   }
@@ -266,6 +266,37 @@
         _nativeGalleryLoaded = false;
       });
   }
+
+  // Exports tab: per-run raw emitter store downloads, folded in from the
+  // Simulations DB so Exports is the single "get the data" tab.
+  var _rawDataLoaded = false;
+  function _loadRawData(force) {
+    var mount = document.getElementById('raw-data-list');
+    if (!mount) return;
+    if (_rawDataLoaded && !force) return;
+    _rawDataLoaded = true;
+    var slug = studyName(), esc = window.SimTable ? window.SimTable.esc : function (x) { return String(x == null ? '' : x); };
+    var path = '/api/simulations?study=' + encodeURIComponent(slug);
+    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+      var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) {}
+      var rows = d.simulations || [];
+      if (!rows.length) { mount.innerHTML = '<p class="empty-message">No runs with persisted data yet.</p>'; return; }
+      mount.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.88em">' +
+        rows.map(function (row) {
+          var runId = row.run_id || '', hasData = !!(row.store_path || row.db_path);
+          var label = row.sim_name || row.label || runId;
+          var loc = window.SimTable ? window.SimTable.location(row) : esc(row.store_path || row.db_path || '');
+          var dl = hasData
+            ? '<a class="action-btn" download href="/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data</a>'
+            : '<span class="muted" style="font-size:0.82em">no store</span>';
+          return '<tr style="border-bottom:1px solid #f3f4f6"><td style="padding:5px 8px"><code style="font-size:0.85em">' + esc(label) + '</code></td>' +
+            '<td style="padding:5px 8px">' + loc + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + dl + '</td></tr>';
+        }).join('') + '</table>';
+    }).catch(function () { mount.innerHTML = '<p class="empty-message">Could not load runs.</p>'; });
+  }
+  window._loadRawData = _loadRawData;
 
   // Model tab: for each baseline composite, fetch /api/composite-resolve and
   // render the RESOLVED config that actually runs (composite defaults overlaid
@@ -994,29 +1025,26 @@
   };
 
   // Fill each `kind: report_card` test's mount with the embedded card + verdict.
+  // Tests tab: report_card-kind rows no longer re-mount the full card (that lives
+  // on the Report Cards tab). We only recolour each row's verdict pill from the
+  // card's verdict, so the Tests row shows PASS/FAIL at a glance + links across.
   function _fillReportCardModules(spec) {
     var urls = (spec && spec.report_card_urls) || {};
-    var mounts = document.querySelectorAll('.report-card-mount');
-    Array.prototype.forEach.call(mounts, function(mount) {
-      if (mount.dataset.filled) return;          // idempotent
-      var card = mount.getAttribute('data-card');
+    var pills = document.querySelectorAll('.report-card-verdict[data-card]');
+    Array.prototype.forEach.call(pills, function(pill) {
+      if (pill.dataset.filled) return;           // idempotent
+      var card = pill.getAttribute('data-card');
       var rc = urls[card];
       if (!rc || !rc.url) {
-        mount.innerHTML = '<div class="muted" style="padding:8px">report card '
-          + escapeHtmlForTests(String(card)) + ' not generated yet — run the comparison.</div>';
-        mount.dataset.filled = '1';
+        pill.title = 'report card ' + String(card) + ' not generated yet — run the comparison';
+        pill.dataset.filled = '1';
         return;
       }
-      mount.innerHTML =
-        '<iframe class="viz-embed" src="' + escapeHtmlForTests(rc.url) + '" loading="lazy" '
-        + 'style="width:100%;height:520px;border:1px solid #2a313c;border-radius:8px"></iframe>';
-      // recolour this test's verdict pill
-      var li = mount.closest('.expected-behavior-item');
-      var pill = li && li.querySelector('.report-card-verdict');
       var v = (rc.verdict || 'ungraded');
       var p = _RC_PILL[v] || _RC_PILL.ungraded;
-      if (pill) { pill.style.background = p[0]; pill.style.color = p[1]; pill.textContent = p[2]; }
-      mount.dataset.filled = '1';
+      pill.style.background = p[0]; pill.style.color = p[1]; pill.textContent = p[2];
+      pill.title = 'report card verdict: ' + p[2] + ' — view the full card on the Report Cards tab';
+      pill.dataset.filled = '1';
     });
   }
 
@@ -1166,19 +1194,26 @@
     var summary = document.getElementById('tests-summary');
     if (!summary) return;
 
-    // Prefer aggregated outcomes from runs[].outcomes (the v3-shape result
-    // recording), falling back to legacy tests.last_results.
+    // Single-sourced rollup from study_spec._latest_outcomes (spec.outcome_rollup)
+    // so this header can't drift from the row pills / Conclusions rollup. Older
+    // specs without it fall back to re-deriving from runs[].outcomes here.
+    var roll = spec && spec.outcome_rollup;
     var passed = 0, failed = 0, skipped = 0, runRefs = 0;
-    (spec && spec.runs || []).forEach(function(r) {
-      if (!r.outcomes) return;
-      runRefs++;
-      Object.keys(r.outcomes).forEach(function(tname) {
-        var res = (r.outcomes[tname] || {}).result;
-        if (res === 'PASS') passed++;
-        else if (res === 'FAIL') failed++;
-        else if (res === 'SKIP') skipped++;
+    if (roll && typeof roll === 'object') {
+      passed = roll.PASS || 0; failed = roll.FAIL || 0; skipped = roll.SKIP || 0;
+      runRefs = roll.runs || 0;
+    } else {
+      (spec && spec.runs || []).forEach(function(r) {
+        if (!r.outcomes) return;
+        runRefs++;
+        Object.keys(r.outcomes).forEach(function(tname) {
+          var res = (r.outcomes[tname] || {}).result;
+          if (res === 'PASS') passed++;
+          else if (res === 'FAIL') failed++;
+          else if (res === 'SKIP') skipped++;
+        });
       });
-    });
+    }
 
     if (passed + failed + skipped > 0) {
       var lastRun = (spec.runs || [])[spec.runs.length - 1] || {};

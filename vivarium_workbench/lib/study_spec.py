@@ -719,7 +719,42 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         _plotly = study_dir(ws_root, name) / "viz" / "comparison_plotly.html"
         if _plotly.is_file():
             spec["comparison_plotly_url"] = "/" + _plotly.relative_to(ws_root).as_posix()
+    if isinstance(spec, dict):
+        # Single source of truth for per-test outcomes. The template (per-row
+        # pills), the Tests-tab JS summary, and the Conclusions rollup all used to
+        # re-derive "latest outcome per test" from runs[].outcomes independently;
+        # compute it once here so they can't drift.
+        latest, rollup = _latest_outcomes(spec)
+        spec["latest_outcomes"] = latest
+        spec["outcome_rollup"] = rollup
     from vivarium_workbench.lib.run_commands import study_run_commands
     spec["run_commands"] = study_run_commands(spec, name)
     spec["derived"] = _study_derivations.derived_block(spec)
     return spec
+
+
+def _latest_outcomes(spec: dict) -> tuple[dict, dict]:
+    """Aggregate the latest authored outcome per test from ``runs[].outcomes``.
+
+    Last run wins (runs are in chronological order). Returns
+    ``(latest_by_test, rollup)`` where ``latest_by_test`` maps test name ->
+    the outcome dict and ``rollup`` counts PASS/FAIL/SKIP/PARTIAL/pending plus a
+    ``total`` and how many runs contributed outcomes (``runs``).
+    """
+    latest: dict = {}
+    runs_with_outcomes = 0
+    for r in spec.get("runs", []) or []:
+        outcomes = (r or {}).get("outcomes")
+        if not isinstance(outcomes, dict) or not outcomes:
+            continue
+        runs_with_outcomes += 1
+        for tname, outcome in outcomes.items():
+            latest[tname] = outcome  # last wins → most recent run
+    rollup = {"PASS": 0, "FAIL": 0, "SKIP": 0, "PARTIAL": 0, "pending": 0,
+              "total": 0, "runs": runs_with_outcomes}
+    for outcome in latest.values():
+        res = (outcome or {}).get("result") if isinstance(outcome, dict) else None
+        key = res if res in ("PASS", "FAIL", "SKIP", "PARTIAL") else "pending"
+        rollup[key] += 1
+        rollup["total"] += 1
+    return latest, rollup

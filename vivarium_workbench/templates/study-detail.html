@@ -635,16 +635,9 @@
 
       <div class="overview-section">
         <h3 class="overview-label">Status</h3>
-        <select id="status-select" data-field="status" class="overview-status-select">
-          <option value="planned"     {% if study.status == 'planned'     %}selected{% endif %}>planned</option>
-          <option value="draft"       {% if study.status == 'draft'       %}selected{% endif %}>draft</option>
-          <option value="in-progress" {% if study.status == 'in-progress' %}selected{% endif %}>in-progress</option>
-          <option value="running"     {% if study.status == 'running'     %}selected{% endif %}>running</option>
-          <option value="ran"         {% if study.status == 'ran'         %}selected{% endif %}>ran</option>
-          <option value="completed"   {% if study.status == 'completed'   %}selected{% endif %}>completed</option>
-          <option value="complete"    {% if study.status == 'complete'    %}selected{% endif %}>complete</option>
-          <option value="archived"    {% if study.status == 'archived'    %}selected{% endif %}>archived</option>
-        </select>
+        
+        {# legacy single-axis status select retired — the header status pill (derived from the multi-axis fields) is canonical. #}
+
         {% if study.phase %}
         <p class="muted" style="margin:6px 0 0 0;font-size:0.85em">Lifecycle phase: <strong>{{ study.phase }}</strong> (Design → Build → Simulate → Evaluate → Decide).</p>
         {% endif %}
@@ -910,132 +903,8 @@
   </div>
   {% endif %}
   {% endif %}
-  {% if not _is_v3 %}
-  <div class="baseline-list">
-    {% for b in (study.baseline or []) %}
-    <article class="baseline-entry" data-baseline-name="{{ b.name }}">
-      <header class="baseline-entry-header">
-        <h3 class="baseline-entry-name">{{ b.name }}</h3>
-        <code class="baseline-entry-fqn">{{ b.composite }}</code>
-      </header>
-      {% if b.params %}
-      <table class="baseline-params">
-        <thead><tr><th>Parameter</th><th>Value</th></tr></thead>
-        <tbody>
-          {% for k, v in b.params.items() %}
-          <tr><td><code>{{ k }}</code></td><td><code>{{ v }}</code></td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% endif %}
-      <div class="baseline-entry-actions">
-        <button class="btn-run-baseline" data-baseline-name="{{ b.name }}">Run</button>
-        <button class="btn-baseline-remove" data-baseline-name="{{ b.name }}">Remove</button>
-      </div>
-    </article>
-    {% else %}
-    <p class="empty-message">No baseline composites yet. Add one to begin.</p>
-    {% endfor %}
-  </div>
-
-  <details class="baseline-add-form">
-    <summary class="btn-baseline-add">+ Add composite</summary>
-    <form id="baseline-add-form" onsubmit="return _submitBaselineAdd(event)">
-      <label>Name (short, unique): <input name="name" required pattern="[a-zA-Z0-9_-]+"></label>
-      <label>Composite ID: <input name="composite" required placeholder="pkg.composites.foo"></label>
-      <label>Params (JSON, optional): <textarea name="params" placeholder="{}"></textarea></label>
-      <button type="submit">Add</button>
-    </form>
-  </details>
-  <div class="variants-list">
-    {% for v in (study.variants or []) %}
-    <article class="variant-row" data-variant-name="{{ v.name }}"
-             data-base-composite="{{ v.base_composite or '' }}">
-      <header class="variant-row-header">
-        <h3 class="variant-name">{{ v.name }}</h3>
-        <span class="variant-base">based on <code>{{ v.base_composite or '(none)' }}</code></span>
-        <span class="variant-overrides-count muted">{{ (v.parameter_overrides or {})|length }} override(s)</span>
-      </header>
-      {% if v.parameter_overrides %}
-      <details class="variant-overrides-detail">
-        <summary>Parameter overrides</summary>
-        <table class="variant-overrides-table">
-          <tbody>
-          {% for k, val in v.parameter_overrides.items() %}
-          <tr><td><code>{{ k }}</code></td><td><code>{{ val }}</code></td></tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </details>
-      {% endif %}
-      <div class="variant-row-actions">
-        <button class="btn-variant-edit" data-variant-name="{{ v.name }}">Edit params</button>
-        <button class="btn-variant-delete" data-variant-name="{{ v.name }}">Delete</button>
-        <button class="btn-variant-run" data-variant-name="{{ v.name }}">Run</button>
-      </div>
-    </article>
-    {% else %}
-    <p class="empty-message">No variants yet. Add one to perturb a baseline composite's parameters.</p>
-    {% endfor %}
-  </div>
-
-  <details class="variant-add-form-wrapper">
-    <summary class="btn-variant-new">+ New variant</summary>
-    <form id="variant-new-form" onsubmit="return _submitVariantAdd(event)">
-      <label>Name: <input name="name" required pattern="[a-zA-Z0-9_-]+"></label>
-      <label>Base composite:
-        <select name="base_composite" required onchange="_onBaseCompositeChange(this)">
-          <option value="">— pick a baseline composite —</option>
-          {% for b in (study.baseline or []) %}
-          <option value="{{ b.name }}" data-composite-id="{{ b.composite }}">{{ b.name }} ({{ b.composite }})</option>
-          {% endfor %}
-        </select>
-      </label>
-      <div id="variant-new-params" class="param-form">
-        <p class="muted">Pick a base composite to see its parameters.</p>
-      </div>
-      <button type="submit">Save variant</button>
-    </form>
-  </details>
-
-  <!-- Hidden edit form, populated dynamically when "Edit params" is clicked -->
-  <dialog id="variant-edit-dialog">
-    <form id="variant-edit-form" onsubmit="return _submitVariantEdit(event)" method="dialog">
-      <h3>Edit parameter overrides for <code id="variant-edit-name"></code></h3>
-      <div id="variant-edit-params" class="param-form"></div>
-      <menu>
-        <button type="button" onclick="document.getElementById('variant-edit-dialog').close()">Cancel</button>
-        <button type="submit">Save</button>
-      </menu>
-    </form>
-  </dialog>
-  <div class="interventions-list">
-    {% for i in (study.interventions or []) %}
-    <article class="intervention-row" data-intervention-name="{{ i.name }}">
-      <header class="intervention-row-header">
-        <h3 class="intervention-name">{{ i.name }}</h3>
-      </header>
-      <p class="intervention-description"
-         id="intervention-description-{{ i.name }}"
-         data-editable-intervention="{{ i.name }}">{{ i.description or '' }}</p>
-      <div class="intervention-row-actions">
-        <button class="btn-intervention-delete" data-intervention-name="{{ i.name }}">Delete</button>
-      </div>
-    </article>
-    {% else %}
-    <p class="empty-message">No interventions yet. Add one to record an experimental condition.</p>
-    {% endfor %}
-  </div>
-
-  <details class="intervention-add-form-wrapper">
-    <summary class="btn-intervention-new">+ New intervention</summary>
-    <form id="intervention-new-form" onsubmit="return _submitInterventionAdd(event)">
-      <label>Name: <input name="name" required pattern="[a-zA-Z0-9_-]+"></label>
-      <label>Description: <textarea name="description" placeholder="Describe the experimental condition"></textarea></label>
-      <button type="submit">Add</button>
-    </form>
-  </details>
-  {% endif %}
+  {# legacy non-v3 baseline/variants/interventions CRUD forms removed —
+     the v4 Conditions editor above is the single composite-and-overrides surface. #}
   {% if not _has_build and _is_v3 %}
   <p class="empty-message">Nothing to compose yet.</p>
   {% endif %}
@@ -1104,18 +973,10 @@
 
   <div class="viz-section">
 
-    {# ─── Baseline native-analysis gallery: the same live figures the Composite
-         Explorer renders (mass fractions, cell mass, replication, ribosome
-         usage, …), pulled from the study's most recent completed run's
-         viz.json via /api/study-native-gallery/<slug>. Each panel is a
-         self-contained Altair/Plotly doc, so it renders in its own srcdoc
-         iframe (the charts embed CDN vega/plotly and need script execution). #}
-    <div class="native-gallery-section" style="margin-bottom:26px">
-      <h3 class="section-title">Baseline analysis gallery</h3>
-      <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-        Native v2ecoli analyses rendered from this study's most recent completed
-        run — the same gallery the Composite Explorer shows.
-      </p>
+    <h3 class="section-title">Visualizations</h3>
+    <p class="muted" style="margin:0 0 12px 0;font-size:0.88em">Figures for this study: the native analysis gallery from its latest run, any embedded HTML artefacts, and charts auto-rendered from <code>runs.db</code>.</p>
+    <div class="native-gallery-section" style="margin-bottom:22px">
+      <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Baseline analysis gallery <span style="font-weight:normal">— latest completed run</span></h4>
       <div id="native-gallery-panel"><p class="empty-message">Loading baseline figures…</p></div>
     </div>
 
@@ -1126,12 +987,8 @@
          payoff without waiting for runs.db / Visualization-class plumbing.
     #}
     {% if study.embed_visualizations %}
-    <div class="embed-viz-section" style="margin-bottom:24px">
-      <h3 class="section-title">Embedded visualizations</h3>
-      <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-        Self-contained HTML pages produced by the study's runner. Each iframe
-        below is a standalone artefact you can also open in a separate tab.
-      </p>
+    <div class="embed-viz-section" style="margin-bottom:22px">
+      <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Embedded visualizations <span style="font-weight:normal">— self-contained HTML</span></h4>
       {% for v in study.embed_visualizations %}
       <div class="embed-viz-card" style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:14px;background:#fff">
         <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid #e5e7eb;background:#f9fafb">
@@ -1151,11 +1008,7 @@
     </div>
     {% endif %}
 
-    <h3 class="section-title">Latest-run visualizations (auto-generated from <code>runs.db</code>)</h3>
-    <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-      These charts re-render each time the page loads, against the most recent simulation in the study's <code>runs.db</code>.
-      They are also embedded into the downloadable investigation HTML report.
-    </p>
+    <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Latest-run charts <span style="font-weight:normal">— re-rendered from <code>runs.db</code></span></h4>
     <div id="viz-charts-panel" class="charts-panel"></div>
   </div>
 </section>
@@ -1188,6 +1041,16 @@
     <div id="data-files" data-study="{{ name }}">
       <p class="empty-message">Loading result files…</p>
     </div>
+
+    {# Raw simulation data — the per-run emitter stores (zarr/parquet/runs.db),
+       folded in here so Exports is the single "get the data" tab. Same ⬇ Data
+       links as the Simulations tab, resolved server-side from run_id. #}
+    <h3 class="section-title" style="margin-top:22px">Raw simulation data</h3>
+    <p class="muted" style="margin:0 0 10px 0;font-size:0.88em">
+      Each run's raw emitter store (zarr / parquet / <code>runs.db</code>) — the full
+      per-step trajectory. Analysis outputs above are derived from these.
+    </p>
+    <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
   </div>
 </section>
 
@@ -1212,17 +1075,10 @@
   </div>
 
   {% set _bt = study.behavior_tests or study.expected_behavior or study.tests %}
-  {# Aggregate the latest test outcomes from study.runs[].outcomes so each
-     row below can show PASS/FAIL/skip instead of a stale "pending" pill. #}
-  {% set _outcomes = {} %}
-  {% for r in (study.runs or []) %}
-    {% if r.outcomes %}
-      {% for tname, outcome in r.outcomes.items() %}
-        {# last wins → most recent run #}
-        {% set _ = _outcomes.update({tname: outcome}) %}
-      {% endfor %}
-    {% endif %}
-  {% endfor %}
+  {# Latest test outcomes per test — single-sourced from study_spec._latest_outcomes
+     (spec.latest_outcomes) so the row pills, the Tests-tab JS summary, and the
+     Conclusions rollup can't drift. Falls back to an empty map for older specs. #}
+  {% set _outcomes = study.latest_outcomes or {} %}
   {% if _bt %}
   <ul class="expected-behavior-list" id="tests-list" style="list-style:none; padding-left:0; margin-top: 12px;">
     {% for b in _bt %}
@@ -1241,10 +1097,13 @@
         data-result="{{ _res or 'pending' }}"
         style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {{ _border }}; background: #f8fafc; border-radius: 4px;">
       {% if (b.kind or 'behavioral') == 'report_card' %}
-        <div class="bt-head"><code>{{ b.name }}</code>
-          <span class="bt-result report-card-verdict" style="font-size:0.75em;font-family:monospace;padding:2px 8px;border-radius:9999px;background:#e2e8f0;color:#334155">report card</span>
+        {# De-duplicated: the full card lives on the Report Cards tab; here we show
+           the name + its verdict pill (set by _fillReportCardModules) + a link. #}
+        <div class="bt-head" style="display:flex;align-items:center;gap:8px">
+          <code>{{ b.name }}</code>
+          <span class="report-card-verdict" data-card="{{ b.card }}" style="font-size:0.75em;font-family:monospace;padding:2px 8px;border-radius:9999px;background:#e2e8f0;color:#334155">report card</span>
+          <a href="#" onclick="_setStudyPillar('report-cards');return false" class="btn-mini" style="margin-left:auto;font-size:0.78em">View on Report Cards ↗</a>
         </div>
-        <div class="report-card-mount" data-card="{{ b.card }}"></div>
       {% else %}
         {# --- existing behavioral rendering, UNCHANGED, kept verbatim below --- #}
       <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
@@ -1445,13 +1304,12 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
       {# Spine C1b: outcomes are CANONICAL on the Tests tab (thread B — per-test
          measured value · evaluator · band). Defer to it instead of re-dumping a
          second, cruder raw k:v table here. #}
-      {% if _latest.outcomes %}
-      {% set _npass = _latest.outcomes.values() | selectattr('result', 'equalto', 'PASS') | list | length %}
-      {% set _nfail = _latest.outcomes.values() | selectattr('result', 'equalto', 'FAIL') | list | length %}
+      {% set _roll = study.outcome_rollup or {} %}
+      {% if _roll.total %}
       <p class="muted" style="margin:0;font-size:0.9em">
-        <strong>{{ _latest.outcomes | length }}</strong> test outcome{{ '' if _latest.outcomes|length == 1 else 's' }}
-        — <span style="color:#065f46;font-weight:600">{{ _npass }} PASS</span> ·
-        <span style="color:#991b1b;font-weight:600">{{ _nfail }} FAIL</span>.
+        <strong>{{ _roll.total }}</strong> test outcome{{ '' if _roll.total == 1 else 's' }}
+        — <span style="color:#065f46;font-weight:600">{{ _roll.PASS }} PASS</span> ·
+        <span style="color:#991b1b;font-weight:600">{{ _roll.FAIL }} FAIL</span>{% if _roll.PARTIAL %} · <span style="color:#92400e;font-weight:600">{{ _roll.PARTIAL }} partial</span>{% endif %}.
         Per-test outcomes (measured value · evaluator · band) are canonical on the
         <a onclick="_setStudyTab('tests')" style="cursor:pointer;color:#3b82f6;text-decoration:underline">Tests tab →</a>.
       </p>
