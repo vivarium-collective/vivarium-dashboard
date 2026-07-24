@@ -1,20 +1,19 @@
 // @vitest-environment jsdom
 //
-// App-level regression tests for the two review fixes on top of Task 6:
-//   1. onNodeMouseEnter/onNodeMouseLeave are only wired up in modes that cull
-//      edges by focus, so hierarchy mode pays nothing for hover tracking it
-//      never uses (Finding 1).
-//   2. `focus.clear()` runs on every composite:load, and a pinned node that
-//      gets explicitly hidden is pruned from the pin set (Finding 2).
-import { Profiler } from 'react';
+// App-level tests for the cluster-grid graph's focus handling. The sole canvas
+// layout is now FOCUS-DRIVEN (clusterGridMode.focusReveals === true): the
+// default view keeps the hub-hidden declutter, and focusing a process — by
+// hover OR by click — reveals + highlights ALL its wires (hub wires included).
+// So App wires up onNodeMouseEnter/Leave, renders the focus hint, and prunes
+// pins. `focus.clear()` still runs on every composite:load.
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { render, screen, fireEvent, cleanup, act, within } from '@testing-library/react';
 import App from '../App';
 
-// In process-column mode the ProcessRail lists each process by the same label
-// the canvas node shows, so a bare screen.getByText('p1') is ambiguous. These
-// tests are about the CANVAS node's focus behavior, so scope the query to the
-// canvas column (the rail is a sibling, outside .loom-canvas).
+// The Process panel lists each process by the same label the canvas node shows,
+// so a bare screen.getByText('p1') is ambiguous. These tests are about the
+// CANVAS node's focus behavior, so scope the query to the canvas column (the
+// panels are siblings, outside .loom-canvas).
 const canvas = () => within(document.querySelector('.loom-canvas') as HTMLElement);
 
 beforeAll(() => {
@@ -55,96 +54,38 @@ async function loadOntoWiringTab(metadata: Record<string, unknown>) {
   window.history.pushState({}, '', '?static=1');
   render(<App />);
   postCompositeLoad(ONE_PROCESS_STATE, metadata);
-  fireEvent.click(screen.getByRole('button', { name: /^Wiring$/i }));
-  const label = await screen.findByText('p1');
+  fireEvent.click(screen.getByRole('button', { name: /^Explore$/i }));
+  // Scope the wait to the canvas so this doesn't throw on the Process panel's
+  // matching 'p1' row.
+  const label = await canvas().findByText('p1');
   return label;
 }
 
-describe('focus-driven edge culling — App wiring', () => {
-  it('hierarchy mode (default) does not re-render on node hover', async () => {
-    let renders = 0;
-    render(
-      <Profiler id="root" onRender={() => { renders += 1; }}>
-        <App />
-      </Profiler>,
-    );
+describe('cluster-grid graph — App focus wiring', () => {
+  it('is focus-driven: shows the focus hint and highlights on click', async () => {
+    render(<App />);
     window.history.pushState({}, '', '?static=1');
     postCompositeLoad(ONE_PROCESS_STATE, { id: 'test.composites.hover-a', name: 'hover-a' });
-    fireEvent.click(screen.getByRole('button', { name: /^Wiring$/i }));
-    await screen.findByText('p1');
-
-    // Default mode is hierarchy — no focus hint should even be present.
-    expect(document.querySelector('.loom-focus-hint')).toBeNull();
-
-    const before = renders;
-    fireEvent.mouseEnter(screen.getByText('p1'));
-    fireEvent.mouseLeave(screen.getByText('p1'));
-    // Nothing wired up onNodeMouseEnter/Leave in hierarchy mode — no re-render.
-    expect(renders).toBe(before);
-  });
-
-  it('process-column mode reveals wiring on hover (handlers ARE wired)', async () => {
-    const label = await loadOntoWiringTab({ id: 'test.composites.hover-b', name: 'hover-b' });
-    const select = screen.getByTitle('Layout mode') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: 'process-column' } });
+    fireEvent.click(screen.getByRole('button', { name: /^Explore$/i }));
     await canvas().findByText('p1');
 
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/hover to reveal wiring/i);
+    // Focus-driven mode → the focus hint is present, prompting interaction.
+    const hint = document.querySelector('.loom-focus-hint');
+    expect(hint).not.toBeNull();
+    expect(hint?.textContent).toMatch(/highlight its wiring/i);
 
-    fireEvent.mouseEnter(canvas().getByText('p1'));
+    // Clicking a canvas process focuses it → the hint reports it as highlighted.
+    fireEvent.click(canvas().getByText('p1'));
     expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/showing wiring for 1 node/i);
-
-    fireEvent.mouseLeave(canvas().getByText('p1'));
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/hover to reveal wiring/i);
-    void label;
+      .toMatch(/highlighting wiring for 1 node/i);
   });
 
-  it('pinning then loading a NEW composite clears the pin (Finding 2a)', async () => {
-    await loadOntoWiringTab({ id: 'test.composites.pin-a', name: 'pin-a' });
-    const select = screen.getByTitle('Layout mode') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: 'process-column' } });
-    await canvas().findByText('p1');
-
-    fireEvent.click(canvas().getByText('p1'), { shiftKey: true });
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/1 pinned/);
-
-    // A new composite loads (id and node ids may collide across composites —
-    // this must not leave the pin dangling from the previous one). Flush the
-    // async layout re-run rather than re-querying for 'p1' by text: React
-    // Flow transiently re-keys nodes across the reload, so a text query can
-    // catch it mid-transition — the hint text is what this behavior is about.
-    postCompositeLoad(ONE_PROCESS_STATE, { id: 'test.composites.pin-a-v2', name: 'pin-a-v2' });
-    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
-
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .not.toMatch(/pinned/);
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/hover to reveal wiring/i);
-  });
-
-  it('hiding a pinned node prunes the pin instead of stranding it (Finding 2b)', async () => {
-    await loadOntoWiringTab({ id: 'test.composites.pin-b', name: 'pin-b' });
-    const select = screen.getByTitle('Layout mode') as HTMLSelectElement;
-    fireEvent.change(select, { target: { value: 'process-column' } });
-    await canvas().findByText('p1');
-
-    fireEvent.click(canvas().getByText('p1'), { shiftKey: true });
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/1 pinned/);
-
-    // Un-check p1 in the sidebar's Processes tab — the ONLY other way to hide
-    // a node besides the (now unreachable) canvas.
-    fireEvent.click(screen.getByRole('button', { name: /^processes$/i }));
-    const checkbox = await screen.findByRole('checkbox', { name: /p1/i });
-    fireEvent.click(checkbox);
-
-    // The pin must not survive hiding its own node — else the hint keeps
-    // claiming "(1 pinned)" over a canvas with nothing left to un-pin it from.
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .not.toMatch(/pinned/);
+  it('stamps the semantic-zoom tier onto its cards', async () => {
+    await loadOntoWiringTab({ id: 'test.composites.tier-h', name: 'tier-h' });
+    // A stamped tier makes ProcessNode render its tiered body (class
+    // `process-node-<tier>`); the initial tier is 'ports'. The legacy untiered
+    // card has only `.process-node` with no tier suffix — so this class existing
+    // is proof tieredNodes stamps `_tier` in hierarchy mode.
+    expect(document.querySelector('.process-node-ports')).not.toBeNull();
   });
 });

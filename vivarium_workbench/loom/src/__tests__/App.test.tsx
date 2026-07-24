@@ -41,7 +41,7 @@ describe('App static mode initial tab', () => {
     expect(screen.getByRole('button', { name: /Setup & Run/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Results$/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Visualizations$/i })).toBeTruthy();
-    expect(screen.getByRole('button', { name: /^Wiring$/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /^Explore$/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /^Document$/i })).toBeTruthy();
     // Default tab is Setup & Run → its read-only note renders.
     expect(screen.getByText(/read-only preview|live dashboard/i)).toBeTruthy();
@@ -85,26 +85,27 @@ function installStorage(): Map<string, string> {
   return m;
 }
 
-describe('App layout-mode switcher', () => {
+describe('App single-layout (no mode dropdown)', () => {
   afterEach(() => {
     cleanup();
     window.history.pushState({}, '', '/');
   });
 
-  it('renders one option per registered layout mode, defaulting to hierarchy', () => {
+  it('renders no layout-mode <select> — the hierarchy graph is the sole layout', () => {
     render(<App />);
     postCompositeLoad({ id: 'test.composites.demo', name: 'demo' });
-    const select = screen.getByTitle('Layout mode') as HTMLSelectElement;
-    expect(select.value).toBe(DEFAULT_MODE_ID);
-    expect([...select.options].map((o) => o.value)).toEqual(LAYOUT_MODES.map((m) => m.id));
+    // The mode switcher was retired; there is no "Layout mode" control at all.
+    expect(screen.queryByTitle('Layout mode')).toBeNull();
+    // And exactly one canvas layout is registered.
+    expect(LAYOUT_MODES).toHaveLength(1);
+    expect(DEFAULT_MODE_ID).toBe('hierarchy');
   });
 
   it('a view naming an unregistered mode falls back to the default', async () => {
     // A ?view= link or .view.json from a build that had a mode this one does
     // not. `normalizeView` only checks the field is a string, so the id reaches
     // `applyView` unvalidated; the registry is what must reject it. Otherwise
-    // state holds a phantom id, the <select> silently shows something else,
-    // and positions persist under a localStorage key nothing ever reads back.
+    // positions persist under a localStorage key nothing ever reads back.
     const stored = installStorage();
     const encoded = encodeView({
       v: 1, positions: { x: { x: 1, y: 2 } }, collapsed: [], hidden: [],
@@ -116,19 +117,14 @@ describe('App layout-mode switcher', () => {
     await act(async () => { await Promise.resolve(); });
 
     // The layout key is the observable proof of which mode state settled on:
-    // the view's positions must land under the DEFAULT mode's (un-suffixed)
-    // key, and no key may name the phantom mode. Asserting the whole set at
-    // once also shows the view really WAS applied, so this can't pass vacuously.
+    // the view's positions must land under the DEFAULT mode's key, and no key
+    // may name the phantom mode. The default is now 'hierarchy', whose key is
+    // un-suffixed (see layoutStore.keyFor). Asserting the whole set at once also
+    // shows the view really WAS applied, so this can't pass vacuously.
+    const defaultKey = 'bigraph-loom:layout:v2:test.composites.demo';
     expect([...stored.keys()].filter((k) => k.startsWith('bigraph-loom:layout:')))
-      .toEqual(['bigraph-loom:layout:test.composites.demo']);
-    expect(stored.get('bigraph-loom:layout:test.composites.demo')).toContain('"x"');
-
-    // The <select> agrees with state. On its own this assertion could NOT
-    // catch the bug: React's controlled-select update leaves the previously
-    // selected option selected when no option matches the value, so a phantom
-    // modeId reads back as 'hierarchy' here while state holds the phantom.
-    const select = screen.getByTitle('Layout mode') as HTMLSelectElement;
-    expect(select.value).toBe(DEFAULT_MODE_ID);
+      .toEqual([defaultKey]);
+    expect(stored.get(defaultKey)).toContain('"x"');
   });
 });
 

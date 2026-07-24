@@ -60,17 +60,21 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
   const tier = tierRaw;
   const readers: string[] = (data as any)._readers ?? [];
   const writers: string[] = (data as any)._writers ?? [];
+  // A hub store's wire fan is hidden in hierarchy mode; App flags it so the
+  // reader/writer count can stand in for the wires at EVERY tier, not just
+  // contract+ (where ordinary stores surface their wiring).
+  const isHub: boolean = (data as any)._isHub === true;
   const rawType = typeof (data as any).valueType === "string" ? (data as any).valueType : "";
 
   const show = {
     value: tier !== "glyph",
     type: tier === "types" || tier === "contract" || tier === "full",
-    wiring: tier === "contract" || tier === "full",
+    wiring: tier === "contract" || tier === "full" || isHub,
     full: tier === "full",
   };
 
   return (
-    <div className={`store-node store-node-${tier} ${isCollapsed ? "store-node-collapsed" : ""}`}>
+    <div className={`store-node store-node-${tier} ${isCollapsed ? "store-node-collapsed" : ""} ${isHub ? "store-node-hub" : ""}`}>
       <StoreHandles />
       <div className="store-label">{data.label}</div>
       {show.value && data.value != null && (

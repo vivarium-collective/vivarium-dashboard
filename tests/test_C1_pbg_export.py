@@ -2,7 +2,7 @@
 from __future__ import annotations
 import collections
 import pytest
-from vivarium_workbench.lib.pbg_export import rewrite_local_addresses
+from vivarium_workbench.lib.pbg_export import rewrite_local_addresses, strip_realized_edge_fields
 
 
 class _FakeRegistry(dict):
@@ -103,3 +103,44 @@ def test_rewrites_multiple_addresses_in_document():
     out = rewrite_local_addresses(doc, core)
     assert out["state"]["a"]["address"] == "local:!collections.OrderedDict"
     assert out["state"]["b"]["address"] == "local:!collections.OrderedDict"
+
+
+# --- strip_realized_edge_fields: portable-spec sanitizer --------------------
+
+def test_strip_removes_realized_edge_fields_but_keeps_spec():
+    """instance / _inputs / _outputs are dropped; wiring + address + config kept."""
+    doc = {
+        "state": {
+            "batch": {},
+            "runner": {
+                "_type": "step",
+                "address": "local:!pkg.mod.Runner",
+                "config": {"n": 1},
+                "inputs": {"batch": ["batch"]},
+                "outputs": {"batch": ["batch"]},
+                # realized runtime fields that must NOT survive into a portable .pbg
+                "instance": object(),
+                "_inputs": {"batch": "InPlaceDict(_default=None, _value=Node(_default=None))"},
+                "_outputs": {"batch": "InPlaceDict(_default=None, _value=Node(_default=None))"},
+            },
+        }
+    }
+    out = strip_realized_edge_fields(doc)
+    node = out["state"]["runner"]
+    assert "instance" not in node
+    assert "_inputs" not in node
+    assert "_outputs" not in node
+    assert node["_type"] == "step"
+    assert node["address"] == "local:!pkg.mod.Runner"
+    assert node["config"] == {"n": 1}
+    assert node["inputs"] == {"batch": ["batch"]}
+    assert node["outputs"] == {"batch": ["batch"]}
+
+
+def test_strip_recurses_into_nested_composites():
+    doc = {"state": {"outer": {"_type": "composite", "instance": object(),
+                               "state": {"inner": {"address": "local:!m.P", "_inputs": {}}}}}}
+    out = strip_realized_edge_fields(doc)
+    assert "instance" not in out["state"]["outer"]
+    assert "_inputs" not in out["state"]["outer"]["state"]["inner"]
+    assert out["state"]["outer"]["state"]["inner"]["address"] == "local:!m.P"

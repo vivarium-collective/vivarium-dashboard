@@ -1279,34 +1279,29 @@ window.addEventListener('pageshow', function (e) {
 
 <!-- ===== PAGE: COMPOSITE EXPLORER ===== -->
 <section id="page-composite-explore" class="page" data-page="composite-explore">
-  <h2 class="page-title">Composite Explorer</h2>
-
   <div id="ce-loading" class="empty-state">Loading composite&hellip;</div>
 
   <div id="ce-main" style="display:none">
 
-    <!-- Metadata header — compact single card so the loom iframe below fills the
-         viewport (was ~4 lines tall). ce-module kept (JS sets it) but folded into
-         the id line's title; ce-description trimmed to one muted line. -->
-    <div class="panel" id="ce-meta" style="flex:none;padding:9px 14px">
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
-        <h3 id="ce-name" style="margin:0;font-size:1.1em"></h3>
-        <span id="ce-kind" class="kind-badge"></span>
-        <code id="ce-id" style="font-size:0.82em;color:#64748b"></code>
-        <span id="ce-description" class="muted" style="font-size:0.86em;flex:1;min-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-      </div>
-      <code id="ce-module" style="display:none"></code>
-    </div>
-
-    <!-- Loom explorer: bigraph-loom iframe (Setup & Run tab lives inside) -->
+    <!-- Loom explorer: bigraph-loom iframe (Setup & Run tab lives inside).
+         The page title and the separate metadata card were removed to reclaim
+         vertical space — the iframe carries its own name·id header. The still-
+         useful bits (generator badge + one-line description) sit on the same
+         row as Pop out; ce-name/ce-id/ce-module stay in the DOM but hidden so
+         the JS setters that populate them don't null-error. -->
     <div class="panel">
-      <div class="loom-frame-toolbar" style="display:flex;justify-content:flex-end;margin-bottom:6px">
+      <div class="loom-frame-toolbar" style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px">
+        <span id="ce-kind" class="kind-badge"></span>
+        <span id="ce-description" class="muted" style="font-size:0.86em;flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <h3 id="ce-name" hidden></h3>
+        <code id="ce-id" hidden></code>
+        <code id="ce-module" hidden></code>
         <button class="btn-mini" onclick="_popoutLoom('composite-explore-frame')" title="Open in a separate window. If it opens as a tab, your browser's 'open new pages as tabs' preference is overriding the popup hint (Safari → Tabs → 'Open pages in tabs instead of windows' → set to 'Manually').">Pop out &#8599;</button>
       </div>
       <iframe id="composite-explore-frame"
               src="/bigraph-loom/index.html"
               title="Composite Explorer"
-              style="width:100%;height:calc(100vh - 120px);min-height:520px;border:1px solid #ddd;background:#fff"></iframe>
+              style="width:100%;height:calc(100vh - 84px);min-height:520px;border:1px solid #ddd;background:#fff"></iframe>
     </div>
 
   </div>

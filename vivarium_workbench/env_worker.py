@@ -386,21 +386,141 @@ def _pd_describe_class(cls) -> str:
     return doc.strip() if isinstance(doc, str) else ""
 
 
-def _pd_doc_for_address(address: str) -> str:
-    """Formal description for a ``local:<dotted.path>`` address, or ''."""
+def _pd_class_for_address(address: str):
+    """Import the class a ``local:<dotted.path>`` address names, or ``None``.
+
+    The single address→class resolver reused for both docstrings and contracts.
+    All failures (bad address, unimportable module, missing attribute) swallowed
+    → ``None``.
+    """
     import importlib
     if not isinstance(address, str) or not address:
-        return ""
+        return None
     addr = address.split(":", 1)[1] if ":" in address else address
     if "." not in addr:
-        return ""  # bare registry name — can't import a dotted path
+        return None  # bare registry name — can't import a dotted path
     module_path, _, cls_name = addr.rpartition(".")
     try:
         mod = importlib.import_module(module_path)
-        cls = getattr(mod, cls_name, None)
-        return _pd_describe_class(cls) if cls is not None else ""
+        return getattr(mod, cls_name, None)
     except Exception:  # noqa: BLE001
-        return ""
+        return None
+
+
+def _pd_doc_for_address(address: str) -> str:
+    """Formal description for a ``local:<dotted.path>`` address, or ''."""
+    cls = _pd_class_for_address(address)
+    return _pd_describe_class(cls) if cls is not None else ""
+
+
+def _pd_json_sanitize(obj):
+    """Stdlib-only JSON-safety pass for the small structures we attach here
+    (``config_schema``): drop non-finite floats, stringify anything not
+    JSON-native. The env worker must not import ``vivarium_workbench.lib``, so
+    this mirrors ``lib.json_serialize._json_sanitize`` in miniature."""
+    import math as _math
+    if obj is None or isinstance(obj, (bool, int, str)):
+        return obj
+    if isinstance(obj, float):
+        return obj if _math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {str(k): _pd_json_sanitize(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_pd_json_sanitize(v) for v in obj]
+    return str(obj)
+
+
+import re as _re
+
+# ``repr`` of a live process instance once the state has been JSON-serialized:
+# ``<v2ecoli.processes.rna_degradation.RnaDegradation object at 0x…>`` — the
+# dotted class path is recoverable from it.
+_OBJ_REPR_RE = _re.compile(r"^<([A-Za-z_][\w.]*)\s+object at 0x[0-9A-Fa-f]+>$")
+
+
+def _pd_resolve_contract_from_value(value):
+    """Resolve a contract from a wrapped-process VALUE, which may be a live
+    instance, an ``address`` string, a serialized ``repr`` string, or a 1-tuple
+    quoting any of those. Returns a ``ProcessContract`` or ``None``."""
+    try:
+        from bigraph_schema.contract import resolve_contract
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(value, (list, tuple)):  # quoted process port → (instance,)
+        value = value[0] if value else None
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str):
+            m = _OBJ_REPR_RE.match(value.strip())
+            dotted = m.group(1) if m else value  # repr → path; else an address
+            cls = _pd_class_for_address(dotted)
+            return resolve_contract(cls) if cls is not None else None
+        return resolve_contract(value)  # a live instance
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _pd_contract_for_node(node, parent=None, key=None) -> "dict | None":
+    """Resolve the JSON-safe ``_contract`` dict for a process/step ``node``, or
+    ``None``. Handles the ``Requester``/``Evolver`` partition wrappers: their
+    contract belongs to the WRAPPED ``PartitionedProcess``, which is carried
+    either in ``config['process']`` (the live-build shape) or — once the state
+    has been serialized — in the sibling ``process`` store keyed by the wrapper
+    node's ``<base_name>`` (its own key minus ``_requester``/``_evolver``). The
+    result is tagged with ``role: "request"|"execute"``. Never raises — any
+    failure (old bigraph-schema, unresolvable wrapped class, …) → ``None``
+    rather than a partial document.
+    """
+    try:
+        from bigraph_schema.contract import resolve_contract  # noqa: F401
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(node, dict):
+        return None
+    addr = node.get("address", "")
+    cls = _pd_class_for_address(addr)
+    cfg = node.get("config")
+    cfg = cfg if isinstance(cfg, dict) else {}
+    cls_name = getattr(cls, "__name__", "")
+
+    is_wrapper = cls_name in ("Requester", "Evolver") or ("process" in cfg)
+    if is_wrapper:
+        role = {"Requester": "request", "Evolver": "execute"}.get(cls_name)
+        # Source order: declared config['process'], then the sibling `process`
+        # store (the serialized shape) looked up by the node's base name.
+        contract = None
+        if cfg.get("process") is not None:
+            contract = _pd_resolve_contract_from_value(cfg.get("process"))
+        if contract is None and isinstance(parent, dict) and isinstance(key, str):
+            base = key
+            for suf in ("_requester", "_evolver"):
+                if base.endswith(suf):
+                    base = base[: -len(suf)]
+                    break
+            store = parent.get("process")
+            if isinstance(store, dict) and base in store:
+                contract = _pd_resolve_contract_from_value(store.get(base))
+        if contract is None:
+            return None  # wrapper but wrapped process unresolvable → no contract
+    else:
+        role = None
+        if cls is None:
+            return None
+        try:
+            contract = resolve_contract(cls)
+        except Exception:  # noqa: BLE001
+            return None
+        if contract is None:
+            return None
+
+    try:
+        d = contract.to_dict()
+    except Exception:  # noqa: BLE001
+        return None
+    if not isinstance(d, dict):
+        return None
+    return {**d, "role": role} if role else d
 
 
 def _summarize_large_values(node, max_list: int = 40, max_str: int = 2000):
@@ -429,20 +549,40 @@ def _attach_process_docs(doc):
     process/step from its address's class description. All failures swallowed."""
     _cache: dict = {}
 
-    def walk(node):
+    def walk(node, parent=None, key=None):
         if isinstance(node, dict):
-            if node.get("_type") in ("process", "step") and "doc" not in node:
+            if node.get("_type") in ("process", "step"):
                 addr = node.get("address", "")
-                if addr not in _cache:
-                    _cache[addr] = _pd_doc_for_address(addr)
-                d = _cache[addr]
-                if d:
-                    node["doc"] = d
-            for v in node.values():
-                walk(v)
+                if "doc" not in node:
+                    if addr not in _cache:
+                        _cache[addr] = _pd_doc_for_address(addr)
+                    d = _cache[addr]
+                    if d:
+                        node["doc"] = d
+                # Additive: config_schema (from the address class) + _contract
+                # (contract-aware, wrapper-aware). Each guarded independently so
+                # an older bigraph-schema, or an unresolvable address, still
+                # yields a valid document (no crash, no partial keys).
+                if "config_schema" not in node:
+                    try:
+                        cls = _pd_class_for_address(addr)
+                        schema = getattr(cls, "config_schema", None) if cls is not None else None
+                        if schema:
+                            node["config_schema"] = _pd_json_sanitize(schema)
+                    except Exception:  # noqa: BLE001
+                        pass
+                if "_contract" not in node:
+                    try:
+                        contract = _pd_contract_for_node(node, parent, key)
+                        if contract:
+                            node["_contract"] = contract
+                    except Exception:  # noqa: BLE001
+                        pass
+            for k, v in node.items():
+                walk(v, node, k)
         elif isinstance(node, list):
             for v in node:
-                walk(v)
+                walk(v, parent, key)
 
     try:
         walk(doc)

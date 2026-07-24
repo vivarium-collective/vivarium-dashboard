@@ -34,12 +34,23 @@ export interface ProcessRailProps {
    * "nothing hidden" when omitted.
    */
   hiddenIds?: Set<string>;
+  /**
+   * When provided, each row carries a show/hide checkbox that toggles that
+   * process's canvas visibility (subsuming the old sidebar "Processes" tab).
+   * Omitted → no checkboxes (the rail is list-only), preserving the original
+   * process-column rail behavior.
+   */
+  onToggleHidden?: (id: string) => void;
+  /** When provided (with onToggleHidden), a "Show all" affordance un-hides every
+   *  process at once. */
+  onShowAll?: () => void;
 }
 
 const EMPTY: Set<string> = new Set();
 
 export function ProcessRail({
   bands, nodes, focus, granularity, onGranularityChange, onNavigate, hiddenIds = EMPTY,
+  onToggleHidden, onShowAll,
 }: ProcessRailProps) {
   const [query, setQuery] = useState('');
   // Per-band manual expand/collapse overrides, keyed by band.key. Absent = use
@@ -102,6 +113,12 @@ export function ProcessRail({
         />
       </label>
 
+      {onShowAll && onToggleHidden && (
+        <button type="button" className="loom-rail-showall" onClick={onShowAll}>
+          Show all
+        </button>
+      )}
+
       <div className="loom-rail-list">
         {filtered.map(({ band, ids }) => {
           // Searching always reveals matches, even inside a collapsed bucket.
@@ -136,6 +153,17 @@ export function ProcessRail({
                       onMouseLeave={() => focus.hover(null)}
                       onClick={() => { focus.select(id); onNavigate(id); }}
                     >
+                      {onToggleHidden && (
+                        <input
+                          type="checkbox"
+                          className="loom-rail-visible"
+                          checked={!hidden}
+                          title={hidden ? 'Show on canvas' : 'Hide from canvas'}
+                          aria-label={`Toggle ${labelById.get(id) ?? id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={() => onToggleHidden(id)}
+                        />
+                      )}
                       <span className="loom-rail-row-label">{labelById.get(id) ?? id}</span>
                       <button
                         type="button"
