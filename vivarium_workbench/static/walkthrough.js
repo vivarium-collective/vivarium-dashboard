@@ -1472,19 +1472,27 @@
       // service, so surface an honest note instead of a button that would 404.
       var _isSnapshot = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
       html += '<div class="viewer-target-list">' + targets.map(function(t) {
-        var action = _isSnapshot
+        // A target may carry a self-contained external URL (e.g. a publicly
+        // hosted 3D viewer) — it opens directly in BOTH live and read-only,
+        // since it needs no local launch backend. Otherwise fall back to the
+        // live Launch button / the read-only "local workbench" note.
+        var action = t.href
+          ? '<a class="btn-mini" href="' + _esc(t.href) + '" target="_blank" rel="noopener">Open</a>'
+          : (_isSnapshot
           ? '<span class="muted" style="font-size:0.8em">Launch from the local workbench</span>'
-          : '<button class="btn-mini" onclick="_launchViewer(\'' + _esc(v.uid) + '\',\'' + _esc(t.study) + '\')">Launch</button>';
+          : '<button class="btn-mini" onclick="_launchViewer(\'' + _esc(v.uid) + '\',\'' + _esc(t.study) + '\')">Launch</button>');
         return '<div class="picker-row">' +
           '<div class="picker-row-main"><strong>' + _esc(t.label || t.study) + '</strong>' +
             (t.detail ? ' <span class="muted" style="font-size:0.82em">' + _esc(t.detail) + '</span>' : '') + '</div>' +
           '<div class="picker-row-actions">' + action + '</div>' +
         '</div>';
       }).join('') + '</div>';
-      if (_isSnapshot) {
+      var _needsLaunch = targets.some(function(t) { return !t.href; });
+      if (_isSnapshot && _needsLaunch) {
         html += '<p class="muted" style="font-size:0.8em;margin:8px 0 0">' +
-          'This viewer launches against a local service and is only available when running ' +
-          'the workbench locally; this read-only view shows which studies have exports.</p>';
+          'Available in the live workbench: this viewer launches against a local ' +
+          'service, so this read-only view lists which studies have exports rather ' +
+          'than opening it.</p>';
       }
     }
     html += '</div>';
@@ -1538,11 +1546,20 @@
     // v2ecoli) — it doesn't apply to e.g. agent-based colony workspaces.
     // NOTE: per-study comparison "report cards" are intentionally NOT shown
     // here — they live on each study's detail page.
-    var _viewersUrl = (window.DataSource && window.DataSource.basePath)
-      ? (window.DataSource.basePath() + '/api/analysis-viewers')
+    // Snapshot mode reads the static api/analysis-viewers.json bundle file; live
+    // mode hits the /api/analysis-viewers endpoint. Parse defensively via text()
+    // so a missing/HTML response degrades to "no viewers" instead of throwing a
+    // JSON SyntaxError into the page ("did not match the expected pattern").
+    var _viewersUrl = (window.DataSource && window.DataSource.analysisViewersUrl)
+      ? window.DataSource.analysisViewersUrl()
       : '/api/analysis-viewers';
     fetch(_viewersUrl)
-      .then(function(r) { return r.json(); })
+      .then(function(r) { return r.text(); })
+      .then(function(t) {
+        var data = {};
+        try { data = t ? JSON.parse(t) : {}; } catch (e) { data = {}; }
+        return data;
+      })
       .then(function(data) {
         data = data || {};
         var viewers = data.viewers || [];
