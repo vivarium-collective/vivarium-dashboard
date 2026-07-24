@@ -127,7 +127,7 @@ def test_run_remote_calls_compose_submit(tmp_path):
     mock_client.download_compose_results.return_value = results_zip
 
     # Mock export_composite_pbg to write a fake .pbg file
-    def fake_export(ws_root, composite_id, out_path, core=None):
+    def fake_export(ws_root, composite_id, out_path, core=None, overrides=None):
         Path(out_path).write_text('{"state": {}, "schema": {}}')
         return Path(out_path)
 
@@ -156,7 +156,7 @@ def test_run_remote_passes_git_url_as_extra_dep(tmp_path):
 
     git_url = "git+file:///some/path@deadbeef"
 
-    def fake_export(ws_root, composite_id, out_path, core=None):
+    def fake_export(ws_root, composite_id, out_path, core=None, overrides=None):
         Path(out_path).write_text('{"state": {}, "schema": {}}')
         return Path(out_path)
 
@@ -185,7 +185,7 @@ def test_run_remote_returns_results_path(tmp_path):
     expected_path.write_bytes(b"PK")
     mock_client.download_compose_results.return_value = expected_path
 
-    def fake_export(ws_root, composite_id, out_path, core=None):
+    def fake_export(ws_root, composite_id, out_path, core=None, overrides=None):
         Path(out_path).write_text('{"state": {}, "schema": {}}')
         return Path(out_path)
 
