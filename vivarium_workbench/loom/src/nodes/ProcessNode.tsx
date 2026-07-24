@@ -122,43 +122,30 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const outTypes = ((data as any).outputSchema ?? {}) as Record<string, unknown>;
   const configEntries = Object.entries(data.config ?? {});
 
-  const portRow = (port: string, types: Record<string, unknown>, isOut: boolean) => {
+  // Port labels live OUTSIDE the card border — inputs to the left, outputs to
+  // the right — aligned to their handle's vertical position. The name shows at
+  // the `ports` tier; the abbreviated type appears beneath it at `types`+. Full
+  // per-port detail (store, full type, contract meaning) is revealed on click
+  // via the popover (see 1b), not crammed inline here.
+  const outsideLabel = (
+    port: string, types: Record<string, unknown>, isOut: boolean, i: number, n: number,
+  ) => {
     const info = portInfo(port, isOut, {
       typeSchema: types,
       portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
       portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
     });
-    const semantic = isOut ? contract?.outputs?.[port] : contract?.inputs?.[port];
     return (
-      <div key={`${isOut ? 'o' : 'i'}-${port}`}
-           className={`process-node-port-row${isOut ? ' is-out' : ''}`}>
-        <span className="process-node-port-name">{port}</span>
+      <div
+        key={`${isOut ? 'o' : 'i'}lbl-${port}`}
+        className={`port-out-label ${isOut ? 'is-out' : 'is-in'}`}
+        style={{ top: `${((i + 1) / (n + 1)) * 100}%` }}
+        title={handleTitle(port, isOut, types)}
+      >
+        <span className="port-out-name">{port}</span>
         {show.types && info.type && (
-          <span className="process-node-port-type" title={info.fullType}>{info.type}</span>
+          <span className="port-out-type" title={info.fullType}>{info.type}</span>
         )}
-        {show.contract && semantic && (
-          <span className="process-node-port-semantic">{semantic}</span>
-        )}
-        {/* Hover detail — CSS-driven (reveals on row :hover); computed at render
-            from node data, so hovering never re-mints the node. Shows direction,
-            the wired store, the full type, and (if known) the contract meaning. */}
-        <div className="port-row-tooltip" role="tooltip">
-          <div className="port-row-tooltip-head">
-            <span className={`port-row-tooltip-dir ${info.direction}`}>{info.direction}</span>
-            {info.connectsTo && (
-              <>
-                <span className="port-row-tooltip-arrow">→</span>
-                <span className="port-row-tooltip-target">{info.connectsTo}</span>
-              </>
-            )}
-          </div>
-          {info.fullType && (
-            <div className="port-row-tooltip-type">{info.fullType}</div>
-          )}
-          {semantic && (
-            <div className="port-row-tooltip-sem">{semantic}</div>
-          )}
-        </div>
       </div>
     );
   };
@@ -209,41 +196,50 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         />
       ))}
 
+      {/* Port names OUTSIDE the card — inputs flow in from the left, outputs
+          leave to the right (the parameterized-function reading). */}
+      {show.ports && inputPorts.map((p, i) => outsideLabel(p, inTypes, false, i, inputPorts.length))}
+      {show.ports && outputPorts.map((p, i) => outsideLabel(p, outTypes, true, i, outputPorts.length))}
+
+      {/* Config enters from ABOVE the process — the knobs that parameterize the
+          input→output translation. Keys at `types`, key=value at `contract`+. */}
+      {show.types && configEntries.length > 0 && (
+        <div className="process-node-config-band" title="config parameters">
+          <span className="config-band-caret">▼ config</span>
+          {configEntries.map(([k, v]) => (
+            <span key={k} className="config-chip">
+              <span className="config-key">{k}</span>
+              {show.contract && <span className="config-val">{String(v).slice(0, 24)}</span>}
+            </span>
+          ))}
+        </div>
+      )}
+
       <div className="process-node-title">
         {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
         {data.label}
       </div>
 
       {show.ports && (
-        <>
-          <div className="process-node-meta">
-            {data.processType} · {inputPorts.length} in / {outputPorts.length} out
-            {data.interval != null && <span> · every {data.interval}</span>}
-          </div>
-          <div className="process-node-portlist">
-            {inputPorts.map((p) => portRow(p, inTypes, false))}
-            {outputPorts.map((p) => portRow(p, outTypes, true))}
-          </div>
-        </>
-      )}
-
-      {show.types && (data as any).address && (
-        <div className="process-node-address">{(data as any).address}</div>
-      )}
-
-      {show.types && configEntries.length > 0 && (
-        <div className="process-node-config">
-          {configEntries.map(([k, v]) => (
-            <div key={k} className="process-node-config-row">
-              <span>{k}</span>
-              {show.contract && <span>{String(v).slice(0, 40)}</span>}
-            </div>
-          ))}
+        <div className="process-node-meta">
+          {data.processType} · {inputPorts.length} in / {outputPorts.length} out
+          {data.interval != null && <span> · every {data.interval}</span>}
         </div>
       )}
 
-      {show.contract && contract?.summary && (
-        <div className="process-node-summary">{contract.summary}</div>
+      {/* The contract as a parameterized function: inputs —[config]→ outputs.
+          The signature reads left-to-right, matching the port flow. */}
+      {show.contract && (
+        <div className="process-node-function">
+          <div className="fn-signature">
+            <span className="fn-in">inputs</span>
+            <span className="fn-arrow">—[</span>
+            <span className="fn-config">config</span>
+            <span className="fn-arrow">]→</span>
+            <span className="fn-out">outputs</span>
+          </div>
+          {contract?.summary && <div className="fn-summary">{contract.summary}</div>}
+        </div>
       )}
 
       {show.contract && contract && contract.math.length > 0 && (
@@ -262,6 +258,10 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
       {show.full && contract?.description && (
         <div className="process-node-description">{contract.description}</div>
+      )}
+
+      {show.types && (data as any).address && (
+        <div className="process-node-address">{(data as any).address}</div>
       )}
 
       {show.full && completeness && completeness.total > 0 && (

@@ -114,10 +114,11 @@ export default function App() {
   // focus), so its focus is inert — hover tracking, the focus hint, and pin
   // pruning stay gated off, exactly as before hierarchy gained hub-hiding.
   const culls = !!layoutMode.mode.focusReveals;
-  // Hierarchy's "Show hub wires" toggle (default OFF): hub-store wires are
-  // hidden unless this is on. Threaded into the drawn-edge seam via the focus
-  // context (see drawFocus below). Process-column ignores it.
-  const [showHubWires, setShowHubWires] = useState(false);
+  // Hub-store wires (bulk/listeners/…) are always hidden in the overview — the
+  // former "Show hub wires" toggle was removed as noise. Kept as a const so the
+  // drawn-edge seam (drawFocus / culls) still reads it; focusing a process still
+  // reveals its hub wires on demand.
+  const showHubWires = false;
   // Global "stack stores by depth" toggle: swaps the force overview for the
   // structural depth-banded arrangement (depthStack.ts). A transient VIEW —
   // it is never persisted (see suppressPersistRef) so the saved force layout
@@ -1031,26 +1032,6 @@ export default function App() {
                     captureCurrentView={captureCurrentView}
                     applyView={applyView}
                   />
-                  {/* The hierarchy graph hides hub-store wires (bulk/listeners/…)
-                      by default; this reveals the full fan. */}
-                  <label
-                    title="Show wires to hub stores (bulk, listeners, timestep …) that are hidden by default"
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      padding: '4px 8px', fontSize: 12,
-                      background: '#fff', border: '1px solid #d1d5db',
-                      borderRadius: 4, cursor: 'pointer', color: '#374151',
-                      userSelect: 'none',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={showHubWires}
-                      onChange={(e) => setShowHubWires(e.target.checked)}
-                      style={{ cursor: 'pointer', margin: 0 }}
-                    />
-                    Show hub wires
-                  </label>
                   {/* Structural alternative to the force overview: band stores
                       by nesting depth (outers above, inners below). */}
                   <label

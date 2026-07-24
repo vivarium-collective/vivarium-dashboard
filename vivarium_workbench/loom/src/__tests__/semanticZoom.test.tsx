@@ -126,12 +126,12 @@ describe('ProcessNode tiers', () => {
     // old queryByText(/config/) check passed vacuously. Assert the container
     // element itself is absent (the `.length > 0` guard in ProcessNode).
     const { container } = renderAt('full');
-    expect(container.querySelector('.process-node-config')).toBeNull();
+    expect(container.querySelector('.process-node-config-band')).toBeNull();
   });
 
-  it('renders the config row when config is present', () => {
+  it('renders the config band (from the top) when config is present', () => {
     const { container } = renderAt('full', { config: { width_um: 1.1 } });
-    expect(container.querySelector('.process-node-config')).not.toBeNull();
+    expect(container.querySelector('.process-node-config-band')).not.toBeNull();
     expect(screen.getByText('width_um')).toBeTruthy();
   });
 

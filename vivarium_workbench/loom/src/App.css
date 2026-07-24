@@ -384,6 +384,58 @@ body {
   text-align: left;
   min-width: 0;
 }
+/* Port names render OUTSIDE the card border, so the card must not clip them. */
+.process-node.has-outside-ports { overflow: visible; }
+
+/* ---- Ports outside the card: inputs left, outputs right --------------------
+   Positioned at the handle's vertical fraction (inline `top`), pulled just past
+   the border. Name on top; abbreviated type beneath at `types`+. */
+.port-out-label {
+  position: absolute;
+  transform: translateY(-50%);
+  display: flex; flex-direction: column;
+  max-width: 190px; pointer-events: none;
+  line-height: 1.1;
+}
+.port-out-label.is-in  { right: calc(100% + 14px); text-align: right; align-items: flex-end; }
+.port-out-label.is-out { left:  calc(100% + 14px); text-align: left;  align-items: flex-start; }
+.port-out-name { font-size: 13px; font-weight: 650; color: #334155; overflow-wrap: anywhere; }
+.port-out-label.is-out .port-out-name { color: #0f766e; }
+.port-out-type {
+  font-family: ui-monospace, monospace; font-size: 11px; color: #94a3b8;
+  overflow-wrap: anywhere;
+}
+
+/* ---- Config enters from the TOP --------------------------------------------
+   A band above the title holding the parameters that tune the translation. */
+.process-node-config-band {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  margin: -2px 0 8px; padding-bottom: 7px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.config-band-caret { font-size: 10px; color: #a855f7; font-weight: 700; letter-spacing: 0.02em; }
+.config-chip {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 5px;
+  padding: 1px 7px; font-size: 11px;
+}
+.config-chip .config-key { color: #7e22ce; font-weight: 600; }
+.config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
+
+/* ---- Contract as a parameterized function: inputs —[config]→ outputs -------- */
+.process-node-function {
+  margin-top: 8px; padding: 8px 10px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px;
+}
+.fn-signature {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  font-family: ui-monospace, monospace; font-size: 13px; font-weight: 650;
+}
+.fn-signature .fn-in    { color: #334155; }
+.fn-signature .fn-out   { color: #0f766e; }
+.fn-signature .fn-config{ color: #7e22ce; }
+.fn-signature .fn-arrow { color: #94a3b8; }
+.fn-summary { font-size: 11px; color: #334155; margin-top: 6px; line-height: 1.4; }
 /* Overview tiers (glyph / ports): render the process NAME large + centered,
    filling the box so it is legible when the whole graph is fit to the viewport.
    Zooming in reveals the detail rows within the SAME box. */
