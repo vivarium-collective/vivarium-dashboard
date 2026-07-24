@@ -143,14 +143,11 @@ describe('ProcessPanel', () => {
     expect(onShowAll).toHaveBeenCalledWith('process');
   });
 
-  it('re-groups the list when granularity changes (no external handler)', () => {
-    // Moving the slider is self-contained: the panel recomputes clusters. Proof
-    // that it is driven by the slider is that the search/cluster list still
-    // renders every process after the change (the panel did not crash or clear).
+  it('groups automatically (by connections) with no granularity slider', () => {
     setup();
-    const slider = screen.getByLabelText(/granularity/i) as HTMLInputElement;
-    fireEvent.change(slider, { target: { value: '0.9' } });
-    expect(slider.value).toBe('0.9');
+    // Grouping is automatic — there is no granularity control — and every
+    // process still renders under its auto-derived cluster.
+    expect(screen.queryByLabelText(/granularity/i)).toBeNull();
     expect(screen.getByText('alpha')).toBeTruthy();
     expect(screen.getByText('beta')).toBeTruthy();
   });
