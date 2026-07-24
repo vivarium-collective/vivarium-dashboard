@@ -1004,6 +1004,11 @@ export default function App() {
                 <div style={{
                   position: 'absolute', top: 8, right: 8, zIndex: 10,
                   display: 'flex', gap: 6,
+                  // Stay WITHIN the canvas and wrap when narrow, rather than
+                  // overflowing left onto the docked side panels (which would
+                  // cover their collapse/dock buttons).
+                  flexWrap: 'wrap', justifyContent: 'flex-end',
+                  maxWidth: 'calc(100% - 16px)',
                 }}>
                   <ViewsMenu
                     compositeId={compositeId}
