@@ -49,7 +49,7 @@
     if (kind === 'visualize') { _loadReadouts(); _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
     if (kind === 'report-cards') { _fillReportCardsTab(window._study); }
     if (kind === 'data') { _loadAnalysisOutputs(); }
-    if (kind === 'simulate') { _renderReproduceCard(); }
+    if (kind === 'simulate') { _renderReproduceCard(); _loadStudySims(); }
   }
   window._setStudyTab = _setStudyTab;
 
@@ -265,6 +265,30 @@
         _nativeGalleryLoaded = false;
       });
   }
+
+  // Simulations tab: the study's runs rendered with the SHARED Simulations-DB
+  // table component (sim-table.js), filtered to this study via
+  // /api/simulations?study=<slug>. One clean table (Run · Location · Origin ·
+  // Emitter · Time · Status · ⬇Data/⬇Analysis) replacing the old bespoke
+  // runs-table + baseline + simulation_set representations.
+  var _studySimsLoaded = false;
+  function _loadStudySims(force) {
+    var mount = document.getElementById('study-sim-table');
+    if (!mount || !window.SimTable) return;
+    if (_studySimsLoaded && !force) return;
+    _studySimsLoaded = true;
+    var slug = studyName();
+    mount.innerHTML = '<p class="muted" style="margin:0">Loading simulations…</p>';
+    var path = '/api/simulations?study=' + encodeURIComponent(slug);
+    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+      var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) { d = {}; }
+      window.SimTable.renderTable(mount, d.simulations || [], { scope: 'study' });
+    }).catch(function () {
+      window.SimTable.renderTable(mount, [], { scope: 'study' });
+    });
+  }
+  window._loadStudySims = _loadStudySims;
 
   function _loadCharts(panelId) {
     if (_chartsLoadedFor[panelId]) return;

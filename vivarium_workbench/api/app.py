@@ -634,16 +634,27 @@ def create_app() -> FastAPI:
         tags=["Runs"],
         summary="Workspace-wide simulations index (all runs)",
     )
-    def simulations(ws: Path = Depends(get_workspace)) -> SimulationsPayload:
+    def simulations(ws: Path = Depends(get_workspace),
+                    study: str | None = None) -> SimulationsPayload:
         """Workspace-wide simulations index (mirrors the stdlib /api/simulations).
 
         Fully library-backed via ``lib.simulations_index.build_simulations_data``,
         which enriches ``list_simulations`` rows with emitter_type labels + the
         active-workspace remote runs and reports the current branch slug.
+
+        ``?study=<slug>`` scopes the index to one study's runs (a row belongs to
+        the study when its ``study_slug`` equals the slug or the slug is among
+        its ``studies``). The study-detail Simulations tab uses this to render
+        the same Sim-DB table filtered to the study, instead of a bespoke one.
         """
         from vivarium_workbench.lib.simulations_index import build_simulations_data
         data = build_simulations_data(ws)
-        rows = [SimRow.model_validate(r) for r in data.get("simulations", [])]
+        sims = data.get("simulations", [])
+        if study:
+            sims = [s for s in sims
+                    if s.get("study_slug") == study
+                    or study in (s.get("studies") or [])]
+        rows = [SimRow.model_validate(r) for r in sims]
         return SimulationsPayload(simulations=rows, current=data.get("current"))
 
     @app.get(
