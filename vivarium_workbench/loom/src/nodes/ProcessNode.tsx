@@ -227,18 +227,23 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         </div>
       )}
 
-      {/* The contract as a parameterized function: inputs —[config]→ outputs.
-          The signature reads left-to-right, matching the port flow. */}
+      {/* The contract, presented as a formal document: a mathematical function
+          signature ƒ(inputs; config) ⟶ outputs (inputs transformed to outputs,
+          parameterized by config) over a justified recital (the summary). */}
       {show.contract && (
-        <div className="process-node-function">
-          <div className="fn-signature">
-            <span className="fn-in">inputs</span>
-            <span className="fn-arrow">—[</span>
-            <span className="fn-config">config</span>
-            <span className="fn-arrow">]→</span>
-            <span className="fn-out">outputs</span>
+        <div className="process-contract">
+          <div className="contract-heading">Process Contract</div>
+          <div className="contract-signature">
+            <span className="sig-fn">ƒ</span>
+            <span className="sig-punct">(</span>
+            <span className="sig-in">inputs</span>
+            <span className="sig-sep">;</span>
+            <span className="sig-config">config</span>
+            <span className="sig-punct">)</span>
+            <span className="sig-maps">⟶</span>
+            <span className="sig-out">outputs</span>
           </div>
-          {contract?.summary && <div className="fn-summary">{contract.summary}</div>}
+          {contract?.summary && <p className="contract-recital">{contract.summary}</p>}
         </div>
       )}
 
