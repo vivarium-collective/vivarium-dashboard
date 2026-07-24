@@ -104,9 +104,25 @@
       'title="Click to open this run — its study, or the Composite Explorer">' + cells + "</tr>";
   }
 
-  var STUDY_COLS = ["Run", "Location", "Origin", "Emitter", "Time", "Status", ""];
+  var STUDY_COLS = [
+    { label: "Run", key: "run" }, { label: "Location", key: "location" },
+    { label: "Origin", key: "origin" }, { label: "Emitter", key: "emitter" },
+    { label: "Time", key: "time" }, { label: "Status", key: "status" }, { label: "", key: null },
+  ];
 
-  // Render a full <table> of rows into `mount`. Used by the study Simulations tab.
+  function sortValue(row, key) {
+    if (key === "time") return row.completed_at || row.started_at || 0;
+    if (key === "emitter") return String(row.emitter_type || "").toLowerCase();
+    if (key === "origin") return originLabel(row).toLowerCase();
+    if (key === "status") return String(row.status || "").toLowerCase();
+    if (key === "location") return String(row.store_path || row.db_path || "").toLowerCase();
+    if (key === "run") return String(row.sim_name || row.label || row.run_id || "").toLowerCase();
+    return "";
+  }
+
+  // Render a sortable, clickable <table> of rows into `mount` (study Simulations
+  // tab). Clicking a header toggles asc/desc; clicking a row opens the run. State
+  // is stashed on the mount so re-sorts don't re-fetch.
   function renderTable(mount, rows, opts) {
     opts = opts || { scope: "study" };
     if (!mount) return;
@@ -114,14 +130,31 @@
       mount.innerHTML = '<p class="empty-state muted" style="margin:0">No simulations recorded for this study yet. Launch one from Configure &amp; Run below.</p>';
       return;
     }
-    var cols = opts.scope === "study" ? STUDY_COLS : null;
-    var head = "<thead><tr>" + (cols || []).map(function (c) {
-      return '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #e5e7eb;font-size:12px;color:#6b7280;">' + esc(c) + "</th>";
+    mount._simRows = rows;
+    var sort = mount._simSort || { key: "time", dir: "desc" };
+    mount._simSort = sort;
+    var sorted = rows.slice().sort(function (a, b) {
+      var av = sortValue(a, sort.key), bv = sortValue(b, sort.key);
+      var c = av < bv ? -1 : av > bv ? 1 : 0;
+      return sort.dir === "asc" ? c : -c;
+    });
+    var head = "<thead><tr>" + STUDY_COLS.map(function (c) {
+      var arrow = (c.key && c.key === sort.key) ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
+      var cursor = c.key ? "cursor:pointer;" : "";
+      return '<th data-sort-key="' + (c.key || "") + '" style="text-align:left;padding:6px 8px;' +
+        "border-bottom:2px solid #e5e7eb;font-size:12px;color:#6b7280;user-select:none;" + cursor +
+        '">' + esc(c.label) + arrow + "</th>";
     }).join("") + "</tr></thead>";
     mount.innerHTML = '<table style="width:100%;border-collapse:collapse;">' + head +
-      "<tbody>" + rows.map(function (r) { return renderRow(r, opts); }).join("") + "</tbody></table>";
-    // Row click → open the run (study page or Composite Explorer), matching the
-    // global Sim-DB behavior when that handler is present.
+      "<tbody>" + sorted.map(function (r) { return renderRow(r, opts); }).join("") + "</tbody></table>";
+    mount.querySelectorAll("th[data-sort-key]").forEach(function (th) {
+      var key = th.getAttribute("data-sort-key");
+      if (!key) return;
+      th.addEventListener("click", function () {
+        mount._simSort = { key: key, dir: (sort.key === key && sort.dir === "desc") ? "asc" : "desc" };
+        renderTable(mount, mount._simRows, opts);
+      });
+    });
     mount.querySelectorAll("tr[data-run-id]").forEach(function (tr) {
       tr.addEventListener("click", function (e) {
         if (e.target.closest("a")) return;  // let ⬇ links work
