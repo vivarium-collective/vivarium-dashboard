@@ -10,7 +10,7 @@
 // Pure: no React, no DOM. Returns React-Flow node TOP-LEFT positions.
 
 import type { Node, Edge } from '@xyflow/react';
-import { fullFootprint, removeOverlaps, type Box } from './clusterGrid';
+import { fullFootprint, type Box } from './clusterGrid';
 import type { LayoutResult } from './types';
 
 /** Gap between sibling subtrees. */
@@ -88,11 +88,19 @@ export function depthStackLayout(nodes: Node[], edges: Edge[]): LayoutResult {
   let rootLeft = 0;
   for (const r of roots) { place(r, rootLeft, 0); rootLeft += widthOf(r) + ROOT_GAP; }
 
-  // Processes seeded in a band below the whole tree, under the mean x of the
-  // stores they wire; de-overlapped among themselves only (tree stays put).
+  // Processes go in a GRID strictly BELOW the whole store tree, so they never
+  // overlap the stores (a hard guarantee — packed, not force-relaxed, so nothing
+  // can drift up into a store row). Ordered by the mean x of the stores they
+  // wire, so each roughly sits under the stores it touches.
   const centerX = new Map<string, number>();
-  let treeBottom = 0;
-  for (const [id, b] of boxes) { centerX.set(id, b.x + b.w / 2); treeBottom = Math.max(treeBottom, b.y + b.h); }
+  let treeBottom = 0, treeLeft = Infinity, treeRight = -Infinity;
+  for (const [id, b] of boxes) {
+    centerX.set(id, b.x + b.w / 2);
+    treeBottom = Math.max(treeBottom, b.y + b.h);
+    treeLeft = Math.min(treeLeft, b.x);
+    treeRight = Math.max(treeRight, b.x + b.w);
+  }
+  if (!Number.isFinite(treeLeft)) { treeLeft = 0; treeRight = 0; }
 
   const procStores = new Map<string, string[]>();
   for (const e of edges) {
@@ -105,16 +113,22 @@ export function depthStackLayout(nodes: Node[], edges: Edge[]): LayoutResult {
     arr.push(store);
     procStores.set(proc, arr);
   }
-
-  const procTop = treeBottom + PROC_GAP;
-  for (const p of procs.slice().sort(byId)) {
-    const f = fullFootprint(p);
+  const meanX = (p: Node) => {
     const cs = procStores.get(p.id) ?? [];
-    const cx = cs.length ? cs.reduce((s, id) => s + (centerX.get(id) ?? 0), 0) / cs.length : 0;
-    boxes.set(p.id, { id: p.id, x: cx - f.w / 2, y: procTop, w: f.w, h: f.h });
+    return cs.length ? cs.reduce((s, id) => s + (centerX.get(id) ?? 0), 0) / cs.length : 0;
+  };
+  const procSorted = procs.slice().sort((a, b) => (meanX(a) - meanX(b)) || byId(a, b));
+
+  // Pack left→right into rows whose width tracks the tree's, wrapping downward.
+  const rowMax = Math.max(treeRight - treeLeft, 900);
+  let px = treeLeft, py = treeBottom + PROC_GAP, rowH = 0;
+  for (const p of procSorted) {
+    const f = fullFootprint(p);
+    if (px > treeLeft && px + f.w - treeLeft > rowMax) { px = treeLeft; py += rowH + PROC_MARGIN; rowH = 0; }
+    boxes.set(p.id, { id: p.id, x: px, y: py, w: f.w, h: f.h });
+    px += f.w + PROC_MARGIN;
+    rowH = Math.max(rowH, f.h);
   }
-  const procBoxes = procs.map((p) => boxes.get(p.id)!).filter(Boolean);
-  removeOverlaps(procBoxes, PROC_MARGIN, 400);
 
   // Normalize to a positive origin.
   const items = [...boxes.values()];
