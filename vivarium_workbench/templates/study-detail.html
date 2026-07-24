@@ -1048,9 +1048,14 @@
    Populated by _loadStudySims(); replaces the old What-we-ran + simulation_set +
    bespoke runs-table representations. #}
 <div class="overview-section" id="simulations-section">
-  <h3>Simulations <span class="muted" style="font-size:0.85em;font-weight:normal">— this study's runs</span></h3>
-  <p class="muted" style="font-size:0.88em">Every run recorded for this study (the same view as the Simulations DB, scoped here) — data location, origin, emitter, time, status, and downloads. Launch new runs below.</p>
+  <h3 style="display:flex;align-items:center;gap:8px">Simulations
+    <span class="muted" style="font-size:0.85em;font-weight:normal">— this study's runs</span>
+    <button type="button" class="btn-mini" title="Reload this study's runs"
+            onclick="_loadStudySims(true)" style="margin-left:auto;font-size:0.8em">↻ Refresh</button>
+  </h3>
+  <p class="muted" style="font-size:0.88em">Every run recorded for this study (the same view as the Simulations DB, scoped here) — data location, origin, emitter, time, status, and downloads. Click a run to open its results; launch new runs below.</p>
   <div id="study-sim-table" style="overflow-x:auto"><p class="muted" style="margin:0">Loading simulations…</p></div>
+  <div id="study-run-detail" style="margin-top:14px"></div>
 </div>
   <!-- Configure & Run widget (SP-C) — native run launcher for this study -->
   <div id="study-configure-run" style="margin-bottom:18px"></div>

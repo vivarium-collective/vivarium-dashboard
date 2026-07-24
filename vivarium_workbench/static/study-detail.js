@@ -283,12 +283,54 @@
     var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
     fetch(url).then(function (r) { return r.text(); }).then(function (t) {
       var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) { d = {}; }
-      window.SimTable.renderTable(mount, d.simulations || [], { scope: 'study' });
+      window.SimTable.renderTable(mount, d.simulations || [], { scope: 'study', onRowClick: _showRunDetail });
     }).catch(function () {
       window.SimTable.renderTable(mount, [], { scope: 'study' });
     });
   }
   window._loadStudySims = _loadStudySims;
+
+  // Per-run detail panel (opened by clicking a row in the study Simulations
+  // table): metadata + robust downloads + open-in-Composite-Explorer, which
+  // renders that run's results/state. No new backend — reuses the run's
+  // store_path/db_path/spec_id already on the row and existing endpoints.
+  function _showRunDetail(row) {
+    var host = document.getElementById('study-run-detail');
+    if (!host || !row) return;
+    var S = window.SimTable, e = S.esc;
+    var runId = row.run_id || '';
+    var hasData = !!(row.store_path || row.db_path);
+    var slug = studyName();
+    var dl = hasData
+      ? '<a class="action-btn" download href="/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data (raw emitter)</a>'
+      : '<span class="muted" style="font-size:0.85em">no persisted store</span>';
+    var an = slug
+      ? '<a class="action-btn" download href="/api/study-analysis-zip?study=' + encodeURIComponent(slug) + '">⬇ Analysis (figures / cards)</a>'
+      : '';
+    var explore = (runId && row.spec_id)
+      ? '<a class="action-btn" href="/?id=' + encodeURIComponent(row.spec_id) + '&run_id=' + encodeURIComponent(runId) + '#composite-explore">↗ Open run in Composite Explorer</a>'
+      : '';
+    var kv = function (k, v) {
+      return '<div style="display:flex;gap:8px"><span class="muted" style="min-width:90px">' + e(k) + '</span><span>' + v + '</span></div>';
+    };
+    host.innerHTML =
+      '<div class="panel" style="padding:12px 14px">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+          '<strong>' + e(row.sim_name || row.label || runId) + '</strong>' +
+          S.statusChip(row.status) + S.emitterPill(row.emitter_type) + S.originPill(row) +
+          '<button type="button" class="btn-mini" style="margin-left:auto" onclick="document.getElementById(\'study-run-detail\').innerHTML=\'\'">✕</button>' +
+        '</div>' +
+        '<div style="display:grid;gap:4px;font-size:0.88em;margin-bottom:10px">' +
+          kv('Run ID', '<code>' + e(runId) + '</code>') +
+          kv('Location', S.location(row)) +
+          kv('Time', e(S.fmtTime(row.completed_at || row.started_at))) +
+          (row.n_steps != null ? kv('Steps', e(row.n_steps)) : '') +
+        '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px">' + dl + ' ' + an + ' ' + explore + '</div>' +
+      '</div>';
+    host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  window._showRunDetail = _showRunDetail;
 
   function _loadCharts(panelId) {
     if (_chartsLoadedFor[panelId]) return;

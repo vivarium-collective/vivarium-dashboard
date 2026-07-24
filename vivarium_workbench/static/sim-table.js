@@ -160,7 +160,11 @@
         if (e.target.closest("a")) return;  // let ⬇ links work
         var id = tr.getAttribute("data-run-id");
         var row = rows.find(function (r) { return (r.run_id || "") === id; });
-        if (row && window._openSimulation) window._openSimulation(row);
+        if (!row) return;
+        // Custom handler (study tab → per-run detail panel) wins; else the global
+        // Sim-DB behavior (navigate to the run's study / Composite Explorer).
+        if (typeof opts.onRowClick === "function") opts.onRowClick(row, tr);
+        else if (window._openSimulation) window._openSimulation(row);
       });
     });
   }
