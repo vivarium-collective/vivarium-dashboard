@@ -38,6 +38,7 @@ export interface SimRow {
   study_slug: string | null;
   investigation_slug: string | null;
   remote_origin: RemoteOrigin | null;
+  capabilities: string[];
 }
 
 export interface SimulationsPayload {
@@ -158,6 +159,10 @@ export interface SavedVisualizationsPayload {
   parsimony_available: boolean;
   saved: SavedViz[];
   report_cards: ReportCard[];
+}
+
+export interface AnalysisToolsPayload {
+  tools: Record<string, any>[];
 }
 
 export interface GitStatus {

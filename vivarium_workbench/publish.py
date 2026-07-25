@@ -548,6 +548,25 @@ def _export_analysis_viewers(ws_root: Path, out_dir: Path) -> None:
     _write_json(api_dir / "analysis-viewers.json", {"viewers": viewers})
 
 
+def _export_analysis_tools(ws_root: Path, out_dir: Path) -> None:
+    """Snapshot the tools-first Analysis Tools tab into the static bundle.
+
+    Mirrors the live ``/api/analysis-tools`` endpoint (built-in tools +
+    external viewers, each capability-matched to runs/studies) so the
+    read-only dashboard advertises the same tools instead of fetching a
+    missing endpoint. Best-effort: an unavailable worker yields an empty
+    list, never a crash.
+    """
+    try:
+        from vivarium_workbench.lib.analysis_tools import build_analysis_tools
+        tools = build_analysis_tools(ws_root)
+    except Exception:
+        tools = []
+    api_dir = out_dir / "api"
+    api_dir.mkdir(parents=True, exist_ok=True)
+    _write_json(api_dir / "analysis-tools.json", {"tools": tools})
+
+
 def _set_snapshot_config(
     html: str,
     interactive_url: str = "",
@@ -1016,6 +1035,13 @@ def _do_build(
         _export_analysis_viewers(ws_root, out_dir)
     except Exception as exc:  # noqa: BLE001 — never abort a publish on the viewers
         print(f"  warn: analysis-viewers export failed: {exc}")
+
+    # api/analysis-tools.json — the tools-first Analysis Tools tab (built-in
+    # tools + external viewers, capability-matched to runs/studies).
+    try:
+        _export_analysis_tools(ws_root, out_dir)
+    except Exception as exc:  # noqa: BLE001 — never abort a publish on the tools
+        print(f"  warn: analysis-tools export failed: {exc}")
 
     # ------------------------------------------------------------------
     # 3. Copy bundled static assets → bundle/assets/

@@ -53,6 +53,7 @@ _MODELS: list[type[BaseModel]] = [
     _models.SavedViz,
     _models.ReportCard,
     _models.SavedVisualizationsPayload,
+    _models.AnalysisToolsPayload,
     # Git & branch models
     _models.GitStatus,
     _models.WorkStatusInactive,
@@ -211,6 +212,14 @@ def _ts_type(tp: object) -> str:
         return "boolean"
     if tp is typing.Any:
         return "any"
+
+    # dict / dict[K, V] -> "Record<string, V>" (K is always str in practice;
+    # bare `dict` -> "Record<string, any>"). Used by loosely-typed pass-through
+    # payloads (e.g. AnalysisToolsPayload.tools: list[dict]).
+    if tp is dict or origin in (dict, typing.Dict):
+        args = typing.get_args(tp)
+        value_ts = _ts_type(args[1]) if len(args) == 2 else "any"
+        return f"Record<string, {value_ts}>"
 
     # Nested model -> reference by name.
     if isinstance(tp, type) and issubclass(tp, BaseModel):

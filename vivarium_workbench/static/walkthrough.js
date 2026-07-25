@@ -1538,25 +1538,124 @@
   }
   window._launchViewer = _launchViewer;
 
+  // Snapshot-safe base-path resolution shared by the tool cards (mirrors
+  // _render3dVizCard): "" in local mode; the hosted bundle's base path in a
+  // read-only snapshot so both viewer assets and study JSON resolve.
+  function _analysesBase() {
+    return (window.DataSource && window.DataSource.basePath)
+      ? window.DataSource.basePath()
+      : ((window.__DASH_CONFIG__ && window.__DASH_CONFIG__.basePath) || "");
+  }
+
+  function _analysesSnapshot() {
+    return (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
+  }
+
+  // Build the parsimony-viewer src for a matched 3D study. Prefer a hosted
+  // viewer_url (assets on R2, dodging Pages rate-limits); else the bundled
+  // viewer pointed at the study's 3D models manifest.
+  function _build3dSrc(m) {
+    var base = _analysesBase();
+    var ref = m.ref || m.study || '';
+    return m.viewer_url
+      ? m.viewer_url
+      : base + '/parsimony-viewer/index.html?models=' +
+          encodeURIComponent(base + '/api/study/' + encodeURIComponent(ref) + '/3d/models.json');
+  }
+
+  // Human-readable label for a matched run/study in a card's result dropdown.
+  function _toolItemLabel(m) {
+    m = m || {};
+    var label = m.label || m.study || m.ref || m.run_id || '(result)';
+    return m.detail ? label + ' — ' + m.detail : label;
+  }
+
+  function _toolItems(t) {
+    return (t && t.matched && t.matched.length)
+      ? t.matched
+      : ((t && t.targets && t.targets.length) ? t.targets : []);
+  }
+
+  // id -> tool descriptor, populated by _loadAnalysesPage; read by _openTool to
+  // build the right full-window URL for the card's currently-selected result.
+  var _TOOLS_BY_ID = {};
+
+  // One compact tool card: title, a small description, a result selector
+  // (dropdown when several results match, a static line for one), and an Open
+  // button that launches the viewer FULL-WINDOW in a new tab for the selected
+  // result. No inline embeds — the tab stays a lightweight launcher that scales
+  // as viewers are added.
+  function _renderToolCard(t) {
+    t = t || {};
+    var items = _toolItems(t);
+    var head = '<div class="tool-head"><strong>' + _esc(t.title || t.id || 'Tool') + '</strong>' +
+      ((t.requires && t.requires.length)
+        ? '<span class="tool-need muted">needs ' + _esc(t.requires.join(', ')) + '</span>' : '') +
+      '</div>';
+    var desc = t.description
+      ? '<p class="tool-desc muted">' + _esc(t.description) + '</p>' : '';
+    var id = _esc(String(t.id || ''));
+    var body;
+    if (!items.length) {
+      body = '<div class="tool-foot"><span class="muted tool-empty">' +
+        _esc(t.unmatched_reason || 'No compatible results.') + '</span></div>';
+    } else {
+      var control;
+      if (items.length > 1) {
+        control = '<select class="tool-select" id="tool-sel-' + id + '">' +
+          items.map(function(m, i) {
+            return '<option value="' + i + '">' + _esc(_toolItemLabel(m)) + '</option>';
+          }).join('') + '</select>';
+      } else {
+        control = '<span class="tool-one muted">' + _esc(_toolItemLabel(items[0])) + '</span>';
+      }
+      body = '<div class="tool-foot">' + control +
+        '<button class="btn-mini tool-open" onclick="_openTool(\'' + id + '\', this)">' +
+        'Open &#8599;</button></div>';
+    }
+    return '<div class="analyses-card tool-card" data-tool="' + id + '">' +
+      head + desc + body + '</div>';
+  }
+
+  // Open a tool's selected result full-window in a new tab. Per kind:
+  //   embed-explorer -> the standalone Data Explorer page for the run
+  //   embed-3d       -> the (hosted or bundled) parsimony viewer for the study
+  //   launcher       -> the target's external href, else the live launch endpoint
+  function _openTool(toolId, btn) {
+    var t = _TOOLS_BY_ID[toolId]; if (!t) return;
+    var items = _toolItems(t);
+    var card = (btn && btn.closest) ? btn.closest('.tool-card') : null;
+    var sel = card ? card.querySelector('.tool-select') : null;
+    var idx = sel ? (parseInt(sel.value, 10) || 0) : 0;
+    var m = items[idx] || items[0]; if (!m) return;
+    if (t.kind === 'embed-explorer') {
+      window.open(_analysesBase() + '/assets/explorer.html?run=' +
+        encodeURIComponent(m.ref || m.run_id || ''), '_blank', 'noopener');
+    } else if (t.kind === 'embed-3d') {
+      window.open(_build3dSrc(m), '_blank', 'noopener');
+    } else if (m.href) {
+      window.open(m.href, '_blank', 'noopener');
+    } else {
+      _launchViewer(t.id, m.study || m.ref || '');  // resolves via endpoint / snapshot note
+    }
+  }
+  window._openTool = _openTool;
+
   function _loadAnalysesPage() {
     var container = document.getElementById('analyses-gallery');
     var countEl   = document.getElementById('viz-count');
     if (!container) return;
-    // Repo-contributed analysis viewers (name-agnostic): a package's
-    // workbench_viewers module supplies these; the workbench itself hardcodes
-    // nothing repo-specific. The Data Explorer is shown alongside them when a
-    // workspace contributes any viewer (metabolic-model workspaces like
-    // v2ecoli) — it doesn't apply to e.g. agent-based colony workspaces.
-    // NOTE: per-study comparison "report cards" are intentionally NOT shown
-    // here — they live on each study's detail page.
-    // Snapshot mode reads the static api/analysis-viewers.json bundle file; live
-    // mode hits the /api/analysis-viewers endpoint. Parse defensively via text()
-    // so a missing/HTML response degrades to "no viewers" instead of throwing a
-    // JSON SyntaxError into the page ("did not match the expected pattern").
-    var _viewersUrl = (window.DataSource && window.DataSource.analysisViewersUrl)
-      ? window.DataSource.analysisViewersUrl()
-      : '/api/analysis-viewers';
-    fetch(_viewersUrl)
+    // Tools-first Analysis Tools tab, backed by GET /api/analysis-tools: built-in
+    // tools (Data Explorer, Parsimony Viewer) + external contributed viewers, each
+    // capability-matched to the runs/studies that satisfy its `requires`. Snapshot
+    // mode reads the static api/analysis-tools.json bundle file; live mode hits the
+    // endpoint. Parse defensively via text() so a missing/HTML response degrades to
+    // an empty tools list instead of throwing a JSON SyntaxError into the page.
+    var _base = _analysesBase();
+    var _toolsUrl = _analysesSnapshot()
+      ? _base + '/api/analysis-tools.json'
+      : '/api/analysis-tools';
+    fetch(_toolsUrl)
       .then(function(r) { return r.text(); })
       .then(function(t) {
         var data = {};
@@ -1565,32 +1664,19 @@
       })
       .then(function(data) {
         data = data || {};
-        var viewers = data.viewers || [];
-        var cards = [];
-        viewers.forEach(function(v) {
-          if (v && v.kind === 'launcher') cards.push(_renderViewerCard(v));
-        });
-        var _hasViewers = viewers.length > 0;
-        if (_hasViewers) {
-          cards.push(_renderExplorerCard());
+        var tools = data.tools || [];
+        if (!tools.length) {
+          container.innerHTML = '<p class="empty-state">No analysis tools for this workspace. Tools are built-in (Data Explorer, Parsimony Viewer) or contributed by the repo (a package\'s <code>workbench_viewers</code> module).</p>';
+          if (countEl) countEl.textContent = '';
+          return;
         }
-        if (!cards.length) {
-          container.innerHTML = '<p class="empty-state">No analysis viewers for this workspace. Analyses are contributed by the repo (a package\'s <code>workbench_viewers</code> module).</p>';
-        } else {
-          container.innerHTML = cards.join('');
-        }
-        if (_hasViewers && window.Explorer) {
-          var _em = document.getElementById('explorer-mount');
-          if (_em) window.Explorer.mount(_em, {
-            basePath: (window.DataSource && window.DataSource.basePath) ? window.DataSource.basePath() : '',
-            snapshot: (window.__DASH_CONFIG__ || {}).mode === 'snapshot'
-          });
-        }
-        var _n = cards.length;
-        if (countEl) countEl.textContent = _n ? '(' + _n + ')' : '';
+        _TOOLS_BY_ID = {};
+        tools.forEach(function(t) { if (t && t.id != null) _TOOLS_BY_ID[t.id] = t; });
+        container.innerHTML = tools.map(_renderToolCard).join('');
+        if (countEl) countEl.textContent = '(' + tools.length + ')';
       })
       .catch(function(err) {
-        container.innerHTML = '<p class="empty-state" style="color:#991b1b">Error loading analysis viewers: ' + _esc(String(err)) + '</p>';
+        container.innerHTML = '<p class="empty-state" style="color:#991b1b">Error loading analysis tools: ' + _esc(String(err)) + '</p>';
       });
   }
   window._loadAnalysesPage = _loadAnalysesPage;

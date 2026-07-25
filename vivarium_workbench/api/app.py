@@ -121,6 +121,7 @@ from vivarium_workbench.lib import composite_runs as _composite_runs
 from vivarium_workbench.lib.composite_resolve import resolve_composite_for_request, _degraded_result
 from vivarium_workbench.lib.composites_query import composites_via_subprocess
 from vivarium_workbench.lib.models import (
+    AnalysisToolsPayload,
     BibEntry,
     CatalogModule,
     CatalogPayload,
@@ -891,6 +892,24 @@ def create_app() -> FastAPI:
         return JSONResponse(content={"viewers": _analysis_viewers.viewers_public(ws)})
 
     @app.get(
+        "/api/analysis-tools",
+        tags=["Analyses"],
+        summary="Capability-matched analysis tools for this workspace",
+    )
+    def analysis_tools(ws: Path = Depends(get_workspace)) -> JSONResponse:
+        """Tools-first Analysis Tools tab: external viewers + built-in tools
+        (data-explorer, parsimony-viewer), each matched to the runs/studies
+        whose capabilities satisfy the tool's ``requires``.
+
+        Library-backed via ``lib.analysis_tools.build_analysis_tools``.
+        """
+        from vivarium_workbench.lib.analysis_tools import build_analysis_tools
+        try:
+            return JSONResponse(content={"tools": build_analysis_tools(ws)})
+        except Exception:  # noqa: BLE001 — never 500 the Analyses tab
+            return JSONResponse(content={"tools": []})
+
+    @app.get(
         "/api/analysis-viewer/{uid}/launch",
         tags=["Analyses"],
         summary="Resolve a contributed launcher viewer to its URL",
@@ -913,6 +932,20 @@ def create_app() -> FastAPI:
         result = _analysis_viewers.resolve_launch(ws, uid, study=study, run=run, ctx=ctx)
         status = int(result.pop("status", 200)) if "error" in result else 200
         return JSONResponse(status_code=status, content=result)
+
+    @app.get(
+        "/api/study/{study}/3d/models.json",
+        tags=["Analyses"],
+        summary="3D-pack model gallery manifest for a study",
+    )
+    def study_3d_models(study: str, ws: Path = Depends(get_workspace)) -> JSONResponse:
+        """Saved-view 3D-pack manifest for one study (``[{name, file}, ...]``),
+        ``initial``/``birth``/early-snapshot packs ordered first.
+
+        Library-backed via ``lib.analysis_tools_3d.study_models_manifest``.
+        """
+        from vivarium_workbench.lib.analysis_tools_3d import study_models_manifest
+        return JSONResponse(content=study_models_manifest(ws, study))
 
     @app.get(
         "/api/registry",

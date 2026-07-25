@@ -24,6 +24,8 @@ from pydantic import ValidationError
 
 from vivarium_workbench.lib import composite_runs as cr
 from vivarium_workbench.lib import emitters
+from vivarium_workbench.lib import run_capabilities
+from vivarium_workbench.lib import _root
 from vivarium_workbench.lib import run_log
 from vivarium_workbench.lib import run_store
 from vivarium_workbench.lib.models import SimRow
@@ -144,6 +146,49 @@ def discover_default_baseline_db(workspace: Path) -> Path | None:
     """
     p = WorkspacePaths.load(workspace).pbg / "default-baseline" / "runs.db"
     return p if p.is_file() else None
+
+
+def _capabilities_for_row(row: dict, conn=None) -> list[str]:
+    """Capabilities for one runs_meta row: cached value, else derive.
+
+    A completed run's NON-EMPTY tag set is cached back; empties are NOT cached
+    (and a cached empty re-derives), so a run whose store was transiently
+    unreadable — or derived before the workspace root was resolvable — is never
+    permanently frozen at ``[]``. In-progress runs derive fresh every call and
+    are never cached (a still-emitting run's tag set isn't final)."""
+    cached = row.get("capabilities_json")
+    if cached:
+        try:
+            parsed = list(json.loads(cached))
+            if parsed:  # only trust a non-empty cache; re-derive an empty one
+                return parsed
+        except Exception:  # noqa: BLE001
+            pass
+    # `row` may carry any of these three; store_path/emitter_path are absent
+    # on plain runs_meta dicts unless the caller added them. `store_path` is
+    # not an actual runs_meta column (it's a value some callers synthesize
+    # from provenance JSON) — emitter_path is the real DB column for
+    # parquet/zarr runs; db_path is the runs.db itself (used by SQLite
+    # emitters, and as the last-resort fallback).
+    store = row.get("store_path") or row.get("emitter_path") or row.get("db_path")
+    if not store:
+        return []
+    # Store paths in runs_meta are workspace-RELATIVE (e.g. ``.pbg/runs/<id>``),
+    # so the reader needs the workspace root to resolve them — without it every
+    # run derives ``[]``. Use the effective (per-request or process-default)
+    # root; best-effort so tests/contexts without one still work.
+    try:
+        ws = _root.workspace_root()
+    except Exception:  # noqa: BLE001 — no root set (e.g. unit test) -> None
+        ws = None
+    tags = run_capabilities.derive_capabilities(store, row.get("run_id"), ws)
+    if tags and row.get("status") == "completed" and conn is not None:
+        try:
+            from vivarium_workbench.lib.composite_runs import write_run_capabilities
+            write_run_capabilities(conn, row["run_id"], tags)
+        except Exception:  # noqa: BLE001 — caching is best-effort
+            pass
+    return tags
 
 
 def _row_to_dict(row, db_path_str: str) -> dict:
@@ -297,15 +342,27 @@ def _read_runs_meta(db_path: Path, db_path_str: str) -> list[dict]:
             return []
         rows = conn.execute(
             "SELECT run_id, spec_id, sim_name, label, status, n_steps, "
-            "progress_step, started_at, completed_at, params_json "
+            "progress_step, started_at, completed_at, params_json, "
+            "emitter_path, capabilities_json "
             "FROM runs_meta ORDER BY started_at DESC"
         ).fetchall()
+        # Attach capabilities WHILE conn is still open, so a completed run
+        # missing a cached value can be backfilled + written back in the same
+        # pass (see _capabilities_for_row). Rows are already materialized
+        # (.fetchall() above), so committing mid-loop is safe.
+        out = []
+        for r in rows:
+            d = _row_to_dict(r, db_path_str)
+            rd = dict(r)  # sqlite3.Row -> dict (row_factory is sqlite3.Row)
+            rd["db_path"] = db_path_str
+            d["capabilities"] = _capabilities_for_row(rd, conn=conn)
+            out.append(d)
+        return out
     except sqlite3.OperationalError as e:
         warnings.warn(f"simulations_index: skipping {db_path_str}: {e}")
         return []
     finally:
         conn.close()
-    return [_row_to_dict(r, db_path_str) for r in rows]
 
 
 def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
@@ -1223,24 +1280,56 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
         # supplies one, re-backfill so the log record carries it.
         has_composite = bool(row.get("spec_id"))
         prev_has_composite = bool(prev and prev.get("spec_id"))
+        # Same self-heal for capability tags: a run logged before capabilities
+        # existed (or before its lazy backfill ran) has none in the fold; once
+        # list_simulations resolves them (cached or freshly derived), re-backfill
+        # so /api/simulations rows carry them without waiting on a fresh run.
+        #
+        # Unlike store_path/spec_id, capabilities are NOT invariant once any
+        # value is folded: a running run's tag set is a live, uncached,
+        # possibly-partial preview (_capabilities_for_row derives it fresh
+        # every call and never writes it to runs_meta), and only becomes the
+        # authoritative, finalized value once the run completes (cached into
+        # runs_meta.capabilities_json). A presence-only check (as store_path/
+        # spec_id use) would let a partial mid-run snapshot, once folded,
+        # permanently shadow the final tag set after completion — status
+        # alone can't gate this either, since `complete_metadata` folds its
+        # own "completed" status event independently of (and before) this
+        # backfill pass, so `prev["status"]` is already "completed" by the
+        # time a LATER call finally resolves+caches the final capabilities.
+        # So compare VALUES: only treat capabilities as "already known" when
+        # the prior fold's value equals what `row` carries right now (which,
+        # for a completed run, is the authoritative cached-or-just-derived
+        # final answer — see _capabilities_for_row). This also correctly
+        # resyncs when the final set is `[]` (a real, complete answer, not
+        # "nothing to add").
+        capabilities = row.get("capabilities")
+        has_capabilities = capabilities is not None
+        prev_has_capabilities = (
+            prev is not None
+            and prev.get("capabilities") is not None
+            and prev.get("capabilities") == capabilities
+        )
         # Same self-heal for the reproduction config: a run migrated before its
         # config was derivable has none in the log; once study.yaml/params_json
         # supplies it, re-backfill so the log record carries it.
         has_config = bool(row.get("config"))
         prev_has_config = bool(prev and prev.get("config"))
         # Skip when already represented AND its store location is known (or the
-        # legacy store has none to add) AND its composite is known AND its config
-        # is known (or the legacy store has none to add) — idempotent across builds.
+        # legacy store has none to add) AND its composite is known AND its
+        # capabilities are known AND its config is known (or the legacy store has
+        # none to add) — keeps this idempotent across builds.
         if (prev is not None
                 and (prev_has_store or not has_store)
                 and (prev_has_composite or not has_composite)
+                and (prev_has_capabilities or not has_capabilities)
                 and (prev_has_config or not has_config)):
             continue
         ev = {"run_id": rid, "event": "backfill"}
         for k in ("spec_id", "sim_name", "label", "status", "n_steps",
                   "progress_step", "started_at", "completed_at", "db_path",
                   "store_path", "emitter", "study_slug", "investigation_slug",
-                  "remote_origin", "config"):
+                  "remote_origin", "capabilities", "config"):
             v = row.get(k)
             if v is not None:
                 ev[k] = v
@@ -1262,7 +1351,7 @@ def _rec_to_simrow(run_id: str, rec: dict) -> dict:
     row: dict = {"run_id": run_id}
     for k in ("spec_id", "sim_name", "label", "status", "n_steps",
               "progress_step", "started_at", "completed_at", "db_path",
-              "store_path", "study_slug", "investigation_slug"):
+              "store_path", "study_slug", "investigation_slug", "capabilities"):
         if rec.get(k) is not None:
             row[k] = rec[k]
 

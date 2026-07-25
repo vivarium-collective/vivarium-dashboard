@@ -18,6 +18,10 @@ Each viewer dict:
       "title":       str,
       "description": str,                # optional
       "kind":        "launcher"|"embed", # default "launcher"
+      "requires":    list[str],          # optional; capability tags a run/study
+                                         #   must advertise to match this tool.
+                                         #   Absent/empty -> not run-matched;
+                                         #   the viewer's own "targets" are used.
       "applies":     callable|bool,      # optional; (ws_root)->bool, default True
       # launcher-only:
       "launch":      callable,           # (ws_root, study, run, ctx)->{"url":..}
