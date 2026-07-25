@@ -251,6 +251,36 @@ export async function applyLayout(
   }
   walk({ id: ROOT, children: result.children });
 
+  // Soft depth alignment (app/tiered path only — the untiered default path stays
+  // byte-identical for layout.test.ts): nudge each store's Y toward the mean Y of
+  // all stores at its bigraph depth, so same-depth stores gain SOME horizontal
+  // alignment ACROSS clusters without snapping to strict rows. X (the cluster)
+  // and the ELK-placed processes are untouched — only store Y is softly pulled.
+  if (layoutProcesses) {
+    const depthOf = (n: Node) => {
+      const p = (n.data as { path?: unknown })?.path;
+      return Array.isArray(p) ? p.length : 1;
+    };
+    const ysByDepth = new Map<number, number[]>();
+    for (const n of nodes) {
+      if (n.type !== "store") continue;
+      const p = positions.get(n.id);
+      if (!p) continue;
+      const d = depthOf(n);
+      if (!ysByDepth.has(d)) ysByDepth.set(d, []);
+      ysByDepth.get(d)!.push(p.y);
+    }
+    const bandY = new Map<number, number>();
+    for (const [d, ys] of ysByDepth) bandY.set(d, ys.reduce((a, b) => a + b, 0) / ys.length);
+    const ALPHA = 0.4;  // 0 = pure clustering, 1 = strict depth rows
+    for (const n of nodes) {
+      if (n.type !== "store") continue;
+      const p = positions.get(n.id);
+      const by = bandY.get(depthOf(n));
+      if (p && by != null) positions.set(n.id, { x: p.x, y: p.y + (by - p.y) * ALPHA });
+    }
+  }
+
   // Place leftover process nodes in a GRID of vertical columns to the right of
   // everything already laid out, evenly spaced. A single column of N processes
   // is ~N*110px tall; for big composites that's thousands of px and frames as an

@@ -1100,6 +1100,43 @@ def create_app() -> FastAPI:
         return _composite_state_response(ref, fresh, ws)
 
     @app.get(
+        "/api/composite-inner-state",
+        response_model=CompositeState,
+        tags=["Composites"],
+        summary="Drill into a Composite Process's inner composite (loom)",
+    )
+    def composite_inner_state(
+        ref: Optional[str] = None,
+        hops: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[CompositeState, JSONResponse]:
+        """Inner composite state for a Composite Process, for the loom's
+        drill-down. ``ref`` is the ROOT generator id; ``hops`` is a JSON array
+        of node paths (each an array of key segments), one per drill level —
+        e.g. ``[["cells","a_1","ecoli"]]``. Instantiates the generator, walks
+        into successive inner composites, and returns the innermost composite's
+        state (same ``{state}`` shape as ``/api/composite-state``, plus
+        ``crumbs``). Error status codes mirror the state route (400/404/503).
+
+        Library-backed via ``lib.composite_state_views.build_inner_composite_state``.
+        """
+        ref = (ref or "").strip()
+        if not ref:
+            return JSONResponse(status_code=400, content={"error": "ref required"})
+        try:
+            parsed = json.loads(hops) if hops else []
+        except Exception:  # noqa: BLE001
+            return JSONResponse(status_code=400, content={"error": "hops must be JSON"})
+        if not isinstance(parsed, list):
+            return JSONResponse(status_code=400, content={"error": "hops must be a list"})
+        body, status = _composite_state_views.build_inner_composite_state(
+            ws, ref, parsed
+        )
+        if status == 200:
+            return CompositeState.model_validate(body)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
         "/api/investigations",
         response_model=InvestigationsPayload,
         tags=["Investigations"],
