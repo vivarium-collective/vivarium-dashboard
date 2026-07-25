@@ -67,7 +67,11 @@ def test_study_tabs_manager():
 
 def test_router_uses_workspace_not_legacy():
     assert "function _showInvestigationWorkspace" in JS
-    r = JS[JS.index("function _openStudyEmbeddedNewTab"): JS.index("function _openStudyEmbeddedNewTab") + 1200]
+    # Extract exactly the function body (from its definition to its window.*
+    # export), so this stays correct as the router grows and never spills into
+    # the next function (which would break the window.location negative below).
+    _start = JS.index("function _openStudyEmbeddedNewTab")
+    r = JS[_start: JS.index("window._openStudyEmbeddedNewTab =", _start)]
     assert "_showInvestigationWorkspace" in r        # loads the study's own investigation
     assert "_wsOpenStudyTab" in r                    # opens/focuses the tab
     assert "_selectStudyInRail" in r                 # reflects selection in the rail
