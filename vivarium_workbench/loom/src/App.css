@@ -434,6 +434,38 @@ body {
 .port-popover .mono { font-family: ui-monospace, monospace; }
 .port-popover-sem { margin-top: 6px; color: #cbd5e1; font-style: italic; }
 
+/* Middle "boxes" (config / contract) are interactive: hover shows a native
+   hint (title) explaining what the section is; a subtle affordance signals the
+   box is clickable for more detail. */
+.section-box { position: relative; cursor: pointer; border-radius: 6px; transition: background 0.12s; }
+.section-box:hover { background: rgba(99,102,241,0.06); }
+.section-box.is-open { background: rgba(99,102,241,0.10); }
+
+/* Section detail popover (e.g. config values + types). Light, to sit over the
+   card body; violet accents to match the config theme. */
+.section-popover {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 320;
+  min-width: 240px; max-width: 420px; white-space: normal; cursor: default;
+  background: #ffffff; color: #1e293b;
+  border: 1px solid #e9d5ff; border-radius: 8px; padding: 8px 10px;
+  box-shadow: 0 10px 30px rgba(76,29,149,0.18);
+  font-size: 11px; line-height: 1.45;
+}
+.section-popover-head {
+  font-weight: 700; color: #6b21a8; margin-bottom: 5px;
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+}
+.section-popover-sub { font-weight: 500; color: #a78bfa; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.04em; }
+.section-popover-row {
+  display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.3fr) auto;
+  gap: 8px; align-items: baseline; padding: 2px 0; border-top: 1px solid #f3e8ff;
+}
+.section-popover-row:first-of-type { border-top: none; }
+.section-popover-key { color: #7e22ce; font-weight: 600; overflow-wrap: anywhere; }
+.section-popover-val { color: #334155; overflow-wrap: anywhere; }
+.section-popover-type { color: #94a3b8; justify-self: end; white-space: nowrap; }
+.section-popover .mono { font-family: ui-monospace, monospace; }
+
 /* Resize handles: hidden by default, revealed only on card hover (the
    functionality is always there, just not cluttering every card). */
 .loom-resize-line { border-color: transparent !important; }
