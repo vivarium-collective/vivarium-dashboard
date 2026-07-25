@@ -4747,7 +4747,7 @@
           window.location.hash = '#studies';
           _switchPage('studies');
           _loadInvestigations();
-          _openStudyEmbedded(name);
+          _openStudyEmbeddedNewTab(name);
         } else {
           if (errEl) {
             errEl.textContent = res.body.error || 'Unknown error';
@@ -12993,7 +12993,7 @@
     var children = (window._investigationsChildren || {})[inv.name] || [];
 
     function _depLink(name, suffix, color) {
-      return '<a onclick="event.stopPropagation(); _openStudyEmbedded(\'' + _esc(name) + '\')" ' +
+      return '<a onclick="event.stopPropagation(); _openStudyEmbeddedNewTab(\'' + _esc(name) + '\')" ' +
              'style="color:' + color + ';cursor:pointer;text-decoration:underline;">' +
              _esc(name) + '</a>' + (suffix ? ' <small class="muted">(' + _esc(suffix) + ')</small>' : '');
     }
@@ -13041,7 +13041,7 @@
         _esc(inv.phase) + '</span>'
       : '';
 
-    return '<div class="investigation-card" onclick="_openStudyEmbedded(\'' + _esc(inv.name) + '\')">' +
+    return '<div class="investigation-card" onclick="_openStudyEmbeddedNewTab(\'' + _esc(inv.name) + '\')">' +
       '<div class="ic-header">' +
         '<div class="ic-title">' + _esc(inv.name) + '</div>' +
         '<span class="ic-status status-pill ' + statusClass + '">' + _esc(status) + '</span>' +
