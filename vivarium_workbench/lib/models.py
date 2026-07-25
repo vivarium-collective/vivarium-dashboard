@@ -93,6 +93,7 @@ class SimRow(BaseModel):
     study_slug: Optional[str] = None
     investigation_slug: Optional[str] = None
     remote_origin: Optional[RemoteOrigin] = None
+    capabilities: list[str] = []  # capability tags advertised by this run
 
 
 class SimulationsPayload(BaseModel):

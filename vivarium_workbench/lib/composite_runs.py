@@ -55,6 +55,12 @@ _NEW_COLUMNS = {
     # (see lib/run_capabilities.derive_capabilities). Written best-effort on
     # finalize; a lazy backfill recovers any run that missed it. JSON list.
     "capabilities_json": "TEXT",
+    # Native store location for parquet/zarr runs (mirrors the vendored
+    # RUNS_META_DDL in run_registry.py, which has carried this column since
+    # the dashboard phase). connect()'s migration hadn't been ALTERing it in,
+    # so complete_metadata()'s `SELECT emitter_path` silently no-op'd via its
+    # broad except — closing that gap here.
+    "emitter_path": "TEXT",
 }
 
 

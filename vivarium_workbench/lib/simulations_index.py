@@ -24,6 +24,7 @@ from pydantic import ValidationError
 
 from vivarium_workbench.lib import composite_runs as cr
 from vivarium_workbench.lib import emitters
+from vivarium_workbench.lib import run_capabilities
 from vivarium_workbench.lib import run_log
 from vivarium_workbench.lib import run_store
 from vivarium_workbench.lib.models import SimRow
@@ -144,6 +145,36 @@ def discover_default_baseline_db(workspace: Path) -> Path | None:
     """
     p = WorkspacePaths.load(workspace).pbg / "default-baseline" / "runs.db"
     return p if p.is_file() else None
+
+
+def _capabilities_for_row(row: dict, conn=None) -> list[str]:
+    """Capabilities for one runs_meta row: cached value, else derive.
+
+    Completed runs are cached back (including []); in-progress runs derive on
+    the fly and are NOT cached (so a still-emitting run isn't frozen empty)."""
+    cached = row.get("capabilities_json")
+    if cached:
+        try:
+            return list(json.loads(cached))
+        except Exception:  # noqa: BLE001
+            pass
+    # `row` may carry any of these three; store_path/emitter_path are absent
+    # on plain runs_meta dicts unless the caller added them. `store_path` is
+    # not an actual runs_meta column (it's a value some callers synthesize
+    # from provenance JSON) — emitter_path is the real DB column for
+    # parquet/zarr runs; db_path is the runs.db itself (used by SQLite
+    # emitters, and as the last-resort fallback).
+    store = row.get("store_path") or row.get("emitter_path") or row.get("db_path")
+    if not store:
+        return []
+    tags = run_capabilities.derive_capabilities(store, row.get("run_id"))
+    if row.get("status") == "completed" and conn is not None:
+        try:
+            from vivarium_workbench.lib.composite_runs import write_run_capabilities
+            write_run_capabilities(conn, row["run_id"], tags)
+        except Exception:  # noqa: BLE001 — caching is best-effort
+            pass
+    return tags
 
 
 def _row_to_dict(row, db_path_str: str) -> dict:
@@ -292,15 +323,27 @@ def _read_runs_meta(db_path: Path, db_path_str: str) -> list[dict]:
             return []
         rows = conn.execute(
             "SELECT run_id, spec_id, sim_name, label, status, n_steps, "
-            "progress_step, started_at, completed_at, params_json "
+            "progress_step, started_at, completed_at, params_json, "
+            "emitter_path, capabilities_json "
             "FROM runs_meta ORDER BY started_at DESC"
         ).fetchall()
+        # Attach capabilities WHILE conn is still open, so a completed run
+        # missing a cached value can be backfilled + written back in the same
+        # pass (see _capabilities_for_row). Rows are already materialized
+        # (.fetchall() above), so committing mid-loop is safe.
+        out = []
+        for r in rows:
+            d = _row_to_dict(r, db_path_str)
+            rd = dict(r)  # sqlite3.Row -> dict (row_factory is sqlite3.Row)
+            rd["db_path"] = db_path_str
+            d["capabilities"] = _capabilities_for_row(rd, conn=conn)
+            out.append(d)
+        return out
     except sqlite3.OperationalError as e:
         warnings.warn(f"simulations_index: skipping {db_path_str}: {e}")
         return []
     finally:
         conn.close()
-    return [_row_to_dict(r, db_path_str) for r in rows]
 
 
 def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
@@ -1078,18 +1121,26 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
         # supplies one, re-backfill so the log record carries it.
         has_composite = bool(row.get("spec_id"))
         prev_has_composite = bool(prev and prev.get("spec_id"))
+        # Same self-heal for capability tags: a run logged before capabilities
+        # existed (or before its lazy backfill ran) has none in the fold; once
+        # list_simulations resolves them (cached or freshly derived), re-backfill
+        # so /api/simulations rows carry them without waiting on a fresh run.
+        has_capabilities = bool(row.get("capabilities"))
+        prev_has_capabilities = bool(prev and prev.get("capabilities"))
         # Skip when already represented AND its store location is known (or the
         # legacy store has none to add) AND its composite is known (or the legacy
+        # store has none to add) AND its capabilities are known (or the legacy
         # store has none to add) — keeps this idempotent across builds.
         if (prev is not None
                 and (prev_has_store or not has_store)
-                and (prev_has_composite or not has_composite)):
+                and (prev_has_composite or not has_composite)
+                and (prev_has_capabilities or not has_capabilities)):
             continue
         ev = {"run_id": rid, "event": "backfill"}
         for k in ("spec_id", "sim_name", "label", "status", "n_steps",
                   "progress_step", "started_at", "completed_at", "db_path",
                   "store_path", "emitter", "study_slug", "investigation_slug",
-                  "remote_origin"):
+                  "remote_origin", "capabilities"):
             v = row.get(k)
             if v is not None:
                 ev[k] = v
@@ -1111,7 +1162,7 @@ def _rec_to_simrow(run_id: str, rec: dict) -> dict:
     row: dict = {"run_id": run_id}
     for k in ("spec_id", "sim_name", "label", "status", "n_steps",
               "progress_step", "started_at", "completed_at", "db_path",
-              "store_path", "study_slug", "investigation_slug"):
+              "store_path", "study_slug", "investigation_slug", "capabilities"):
         if rec.get(k) is not None:
             row[k] = rec[k]
 
