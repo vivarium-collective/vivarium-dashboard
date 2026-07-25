@@ -2600,3 +2600,100 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .aig-status-badge:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
 /* Far (overview) band: tighter cards so the whole DAG reads at a glance. */
 #investigation-dag-shell.aig-zoom-far .iset-dag-node { padding: 6px 8px; }
+
+/* ── Composites page: compact, informative cards ──────────────────────────── */
+.ccard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.ccard {
+  display: flex; flex-direction: column; gap: 7px;
+  border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;
+  padding: 11px 13px; min-height: 0;
+  transition: box-shadow .12s ease, border-color .12s ease;
+}
+.ccard:hover { box-shadow: 0 3px 12px rgba(15,23,42,.07); border-color: #cbd5e1; }
+.ccard-ws-card { border-left: 3px solid #22c55e; }
+/* Name takes the FULL card width (no badge squeeze); badges wrap to the row
+   below it so the composite name is never folded into a narrow column. */
+.ccard-top { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.ccard-name { font-weight: 700; font-size: 14px; color: #0f172a; line-height: 1.3; overflow-wrap: anywhere; flex: 1 1 100%; }
+.ccard-badges { display: flex; gap: 5px; flex-wrap: wrap; }
+.ccard-kind, .ccard-src {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 7px; border-radius: 10px; white-space: nowrap;
+}
+.ccard-kind-generator { color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; }
+.ccard-kind-spec { color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.ccard-src { color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.ccard-src-ws { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.ccard-id {
+  font-size: 10.5px; color: #94a3b8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -2px;
+}
+.ccard-desc {
+  font-size: 12px; color: #475569; line-height: 1.45; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ccard-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: #64748b; align-items: center; }
+.ccard-meta i { color: #cbd5e1; font-style: normal; }
+.ccard-params { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ccard-param {
+  font-size: 10px; color: #475569; background: #f1f5f9; border-radius: 4px;
+  padding: 1px 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ccard-more { font-size: 10px; color: #94a3b8; font-weight: 600; }
+.ccard-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ccard-tag {
+  font-size: 10px; color: #7c3aed; background: #f5f3ff; border: 1px solid #ede9fe;
+  border-radius: 10px; padding: 0 7px; line-height: 1.6;
+}
+.ccard-foot { margin-top: auto; padding-top: 5px; }
+.ccard-explore {
+  font-size: 12px; color: #2563eb; background: #fff; border: 1px solid #bfdbfe;
+  border-radius: 5px; padding: 3px 12px; cursor: pointer; transition: background .12s;
+}
+.ccard-explore:hover { background: #eff6ff; }
+/* Composite card — expandable config (param · type · default · description). */
+.ccard-cfg { font-size: 11px; }
+.ccard-cfg > summary {
+  cursor: pointer; color: #2563eb; font-weight: 600; list-style: none;
+  padding: 2px 0; user-select: none;
+}
+.ccard-cfg > summary::-webkit-details-marker { display: none; }
+.ccard-cfg > summary::before { content: '▸ '; color: #94a3b8; }
+.ccard-cfg[open] > summary::before { content: '▾ '; }
+.ccard-cfg-body {
+  margin-top: 4px; border-top: 1px solid #f1f5f9; padding-top: 5px;
+  display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto;
+}
+.ccard-cfg-row { display: flex; flex-direction: column; gap: 1px; }
+.ccard-cfg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.ccard-cfg-name { font-size: 11px; color: #1e293b; font-weight: 600; font-family: ui-monospace, monospace; }
+.ccard-cfg-type { font-size: 10px; color: #7c3aed; font-family: ui-monospace, monospace; }
+.ccard-cfg-def { font-size: 10px; color: #64748b; font-family: ui-monospace, monospace; }
+.ccard-cfg-desc { font-size: 10.5px; color: #64748b; line-height: 1.4; padding-left: 2px; }
+/* Composite card — cross-study track record (usage + pass/inconclusive/fail). */
+.ccard-track { display: flex; flex-direction: column; gap: 3px; }
+.ccard-track-top { font-size: 11px; color: #475569; }
+.ccard-track-top strong { color: #0f172a; }
+.ccard-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #f1f5f9; }
+.ccard-bar .seg { height: 100%; }
+.ccard-bar .seg.pass { background: #22c55e; }
+.ccard-bar .seg.inc  { background: #f59e0b; }
+.ccard-bar .seg.fail { background: #ef4444; }
+.ccard-track-counts { display: flex; gap: 8px; font-size: 10.5px; font-weight: 600; }
+.ccard-track-counts .pass { color: #15803d; }
+.ccard-track-counts .inc  { color: #b45309; }
+.ccard-track-counts .fail { color: #b91c1c; }
+/* Composite card — lazy structure (process/store counts). */
+.ccard-struct { font-size: 11px; }
+.ccard-struct > summary {
+  cursor: pointer; color: #2563eb; font-weight: 600; list-style: none; padding: 2px 0; user-select: none;
+}
+.ccard-struct > summary::-webkit-details-marker { display: none; }
+.ccard-struct > summary::before { content: '▸ '; color: #94a3b8; }
+.ccard-struct[open] > summary::before { content: '▾ '; }
+.ccard-struct-body { font-size: 11px; color: #475569; padding: 3px 0 1px 2px; }

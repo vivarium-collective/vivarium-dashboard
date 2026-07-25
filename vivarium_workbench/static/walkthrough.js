@@ -2218,6 +2218,14 @@
         return (a.kind || '').localeCompare(b.kind || '')
           || (a.name || '').localeCompare(b.name || '');
       });
+    } else if (window._compositesSort === 'passrate') {
+      // Highest report-card pass-rate first; ties → more studies → name.
+      sorted.sort(function(a, b) {
+        function rate(c) { var s = c.studies; return (s && s.total) ? s.pass / s.total : -1; }
+        function used(c) { var s = c.studies; return (s && s.studies) ? s.studies : 0; }
+        return (rate(b) - rate(a)) || (used(b) - used(a))
+          || (a.name || '').localeCompare(b.name || '');
+      });
     } else if (window._compositesSort === 'workspace-first') {
       sorted.sort(function(a, b) {
         var aw = a.workspace_local ? 0 : 1;
@@ -2294,52 +2302,147 @@
       });
       container.innerHTML = rows.join('');
     } else {
-      container.className = 'module-grid';
+      container.className = 'ccard-grid';
       var prevG = null;
       var cards = composites.map(function(c) {
-        var paramSummary = '';
+        var kind = c.kind || 'spec';
+        // Marker 1 — KIND: generator (builds state from params) vs spec (static
+        // document). One clean pill instead of the old "Module: … generator" line.
+        var kindPill = '<span class="ccard-kind ccard-kind-' + kind + '" title="'
+          + (kind === 'generator'
+              ? 'Generator — builds its state from parameters'
+              : 'Spec — a static composite document') + '">' + kind + '</span>';
+        // Marker 2 — SOURCE: the workspace's own package (green) vs which
+        // installed package it came from (so imported composites name their origin).
+        var srcBadge;
+        if (c.workspace_local) {
+          srcBadge = '<span class="ccard-src ccard-src-ws" title="Defined in this workspace">workspace</span>';
+        } else {
+          var pkg = (c.module || '').split('.')[0].replace(/_/g, '-');
+          srcBadge = pkg
+            ? '<span class="ccard-src" title="From the ' + _esc(pkg) + ' package">' + _esc(pkg) + '</span>'
+            : '';
+        }
+        // Meta row — at-a-glance counts (params / tags / default steps).
         var paramKeys = Object.keys(c.parameters || {});
+        var meta = [];
+        if (paramKeys.length) meta.push('<span title="configurable parameters">' + paramKeys.length + ' param' + (paramKeys.length === 1 ? '' : 's') + '</span>');
+        if (c.tags && c.tags.length) meta.push('<span title="topic tags">' + c.tags.length + ' tag' + (c.tags.length === 1 ? '' : 's') + '</span>');
+        if (c.default_n_steps) meta.push('<span title="default run length">' + c.default_n_steps + ' steps</span>');
+        var ep = (c.parameters || {}).emitter;
+        if (ep && ep.default) meta.push('<span title="observation sink (emitter)">emitter: ' + _esc(String(ep.default)) + '</span>');
+        var metaRow = meta.length ? '<div class="ccard-meta">' + meta.join('<i>·</i>') + '</div>' : '';
+        // Cross-study track record: usage count + pass/inconclusive/fail bar.
+        var trackRow = '';
+        var st = c.studies;
+        if (st && st.studies) {
+          var tot = st.total || (st.pass + st.inconclusive + st.fail);
+          var pw = tot ? Math.round(100 * st.pass / tot) : 0;
+          var iw = tot ? Math.round(100 * st.inconclusive / tot) : 0;
+          var fw = tot ? (100 - pw - iw) : 0;
+          trackRow = '<div class="ccard-track">' +
+            '<div class="ccard-track-top">used in <strong>' + st.studies + '</strong> stud' + (st.studies === 1 ? 'y' : 'ies') +
+              (tot ? '' : ' <span class="muted">· no report cards yet</span>') + '</div>' +
+            (tot ? '<div class="ccard-bar" title="' + st.pass + ' pass · ' + st.inconclusive + ' inconclusive · ' + st.fail + ' fail">' +
+              '<span class="seg pass" style="width:' + pw + '%"></span>' +
+              '<span class="seg inc" style="width:' + iw + '%"></span>' +
+              '<span class="seg fail" style="width:' + fw + '%"></span></div>' +
+              '<div class="ccard-track-counts">' +
+                '<span class="pass">' + st.pass + ' ✓</span>' +
+                (st.inconclusive ? '<span class="inc">' + st.inconclusive + ' ~</span>' : '') +
+                (st.fail ? '<span class="fail">' + st.fail + ' ✗</span>' : '') +
+              '</div>' : '') +
+          '</div>';
+        }
+        // Lazy structure (process / store counts) — fetched on first expand only.
+        var structRow = '<details class="ccard-struct" ontoggle="_loadCompositeStructure(this,\'' + _esc(c.id) + '\')">' +
+          '<summary>structure</summary>' +
+          '<div class="ccard-struct-body" data-loaded="0"></div></details>';
+        // Config — a collapsed <details> that expands to a per-parameter table
+        // (name · type · default · description). Collapsed keeps the card compact;
+        // expanded gives the full config surface with descriptions.
+        var paramPreview = '';
         if (paramKeys.length) {
-          paramSummary = '<div class="param-block">' +
-            '<div class="param-label">Parameters <span class="param-count">' + paramKeys.length + '</span></div>' +
-            '<div class="param-list">' +
-            paramKeys.map(function(k) {
-              return '<code class="param-pill">' + _esc(k) + '</code>';
-            }).join('') + '</div></div>';
+          var cfgRows = paramKeys.map(function(k) {
+            var p = (c.parameters || {})[k] || {};
+            var t = p.type || '';
+            var dv = (p.default === undefined || p.default === null) ? ''
+              : (typeof p.default === 'object' ? JSON.stringify(p.default) : String(p.default));
+            var desc = p.description || '';
+            return '<div class="ccard-cfg-row">' +
+              '<div class="ccard-cfg-head">' +
+                '<code class="ccard-cfg-name">' + _esc(k) + '</code>' +
+                (t ? '<span class="ccard-cfg-type">' + _esc(t) + '</span>' : '') +
+                (dv !== '' ? '<span class="ccard-cfg-def" title="default">= ' + _esc(dv.length > 44 ? dv.slice(0, 44) + '…' : dv) + '</span>' : '') +
+              '</div>' +
+              (desc ? '<div class="ccard-cfg-desc">' + _esc(desc) + '</div>' : '') +
+            '</div>';
+          }).join('');
+          paramPreview = '<details class="ccard-cfg">' +
+            '<summary>' + paramKeys.length + ' config parameter' + (paramKeys.length === 1 ? '' : 's') + '</summary>' +
+            '<div class="ccard-cfg-body">' + cfgRows + '</div>' +
+          '</details>';
         }
-        var requires = '';
-        if (c.requires && c.requires.processes && c.requires.processes.length) {
-          requires = '<small class="muted">Requires: ' +
-            c.requires.processes.map(_esc).join(', ') + '</small><br>';
-        }
-        var tagSummary = '';
+        var tagRow = '';
         if (c.tags && c.tags.length) {
-          tagSummary = '<div class="module-tags topic-list">' +
-            c.tags.map(function(t) {
-              return '<span class="topic-pill">' + _esc(t) + '</span>';
-            }).join('') + '</div>';
+          tagRow = '<div class="ccard-tags">' + c.tags.slice(0, 5).map(function(t) {
+            return '<span class="ccard-tag">' + _esc(t) + '</span>';
+          }).join('') + (c.tags.length > 5 ? '<span class="ccard-more">+' + (c.tags.length - 5) + '</span>' : '') + '</div>';
         }
         var divider = _maybeDivider(prevG, c);
         prevG = c;
         var exploreBtn = (_isSnapshot && !c.has_wiring)
           ? ''
-          : '<button class="action-btn" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore</button>';
-        return divider + '<div class="module-card' + (c.workspace_local ? ' module-card-workspace' : '') + '">' +
-          '<div class="module-card-header"><strong>' + _esc(c.name) + '</strong> ' + _wsTag(c) + '</div>' +
-          '<p class="module-desc">' + _esc(c.description || '(no description)') + '</p>' +
-          _moduleLine(c) +
-          requires +
-          tagSummary +
-          paramSummary +
-          '<div class="module-action">' +
-            exploreBtn +
+          : '<button class="ccard-explore" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore &rarr;</button>';
+        return divider + '<div class="ccard' + (c.workspace_local ? ' ccard-ws-card' : '') + '">' +
+          '<div class="ccard-top">' +
+            '<span class="ccard-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span>' +
+            '<span class="ccard-badges">' + kindPill + srcBadge + '</span>' +
           '</div>' +
+          '<div class="ccard-id mono" title="' + _esc(c.id) + '">' + _esc(c.id) + '</div>' +
+          '<p class="ccard-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</p>' +
+          metaRow +
+          trackRow +
+          paramPreview +
+          structRow +
+          tagRow +
+          '<div class="ccard-foot">' + exploreBtn + '</div>' +
         '</div>';
       });
       container.innerHTML = cards.join('');
     }
   }
   window._renderComposites = _renderComposites;
+
+  // Lazily fetch a composite's process/store counts when its "structure"
+  // <details> is first opened (building a composite can be ParCa-heavy, so this
+  // is never done on the list load — only on demand, once, per card).
+  window._loadCompositeStructure = function(det, id) {
+    if (!det || !det.open) return;
+    var body = det.querySelector('.ccard-struct-body');
+    if (!body || body.getAttribute('data-loaded') === '1') return;
+    body.setAttribute('data-loaded', '1');
+    body.textContent = 'building…';
+    fetch('/api/composite-state?ref=' + encodeURIComponent(id))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var root = (d && d.state) ? (d.state.state || d.state) : null;
+        if (!root) { body.textContent = 'unavailable'; return; }
+        var np = 0, ns = 0;
+        (function walk(n) {
+          if (!n || typeof n !== 'object') return;
+          if (Array.isArray(n)) { n.forEach(walk); return; }
+          var t = n._type;
+          if (t === 'process' || t === 'step') { np++; return; }
+          if (t) { ns++; return; }
+          Object.keys(n).forEach(function(k) {
+            if (k !== '_declared_emit_paths') walk(n[k]);
+          });
+        })(root);
+        body.innerHTML = '<strong>' + np + '</strong> processes · <strong>' + ns + '</strong> stores';
+      })
+      .catch(function() { body.textContent = 'unavailable'; });
+  };
 
   function _loadComposites() {
     var _p = window.DataSource
