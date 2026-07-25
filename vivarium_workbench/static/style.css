@@ -2370,6 +2370,9 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   margin-bottom: 2px;
 }
 .analyses-card .viz-embed { display: block; }
+.tool-requires { color: var(--gray); font-size: 0.82em; }
+.tool-matches { display: flex; flex-direction: column; gap: 4px; }
+.tool-row + .tool-row { margin-top: 8px; }
 .viewer-target-list { display: flex; flex-direction: column; gap: 4px; }
 .explorer { display:flex; flex-direction:column; gap:10px; }
 /* top bar: run picker · view tabs · pop-out */
