@@ -238,20 +238,54 @@ img{max-width:100%}
   gap:14px; margin:8px 0;
 }
 .module-card{
-  background:#fff; border:1px solid #e5e7eb; border-radius:8px;
-  padding:14px 16px; display:flex; flex-direction:column; gap:8px;
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  padding:14px 16px; display:flex; flex-direction:column; gap:9px;
+  transition:box-shadow .16s ease, border-color .16s ease, transform .16s ease;
+}
+.module-card:hover{
+  border-color:#c7d2fe;
+  box-shadow:0 6px 20px -6px rgba(30,41,59,.16);
+  transform:translateY(-1px);
 }
 .module-card-header{
-  display:flex; justify-content:space-between; align-items:center;
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
 }
-.module-card-header strong{ font-size:1.05em }
+.module-card-header strong{ font-size:1.06em; letter-spacing:-0.01em; color:#0f172a }
 .module-link{
   font-size:0.85em; color:#1e40af; text-decoration:none;
 }
 .module-link:hover{ text-decoration:underline }
-.module-desc{ color:#4b5563; font-size:0.9em; margin:0; line-height:1.4 }
-.module-tags{ display:flex; gap:4px; flex-wrap:wrap }
-.tag-pill{
+.module-desc{ color:#475569; font-size:0.88em; margin:0; line-height:1.45 }
+.module-tags{ display:flex; gap:5px; flex-wrap:wrap }
+
+/* Config-parameter chips — these are code identifiers, so a crisp monospace
+   "code chip" reads far better than a washed-out pill. */
+.param-block{ margin-top:2px }
+.param-label{
+  font-size:0.68em; text-transform:uppercase; letter-spacing:.06em;
+  color:#94a3b8; font-weight:600; margin-bottom:5px;
+  display:flex; align-items:center; gap:6px;
+}
+.param-count{
+  background:#eef2f7; color:#64748b; border-radius:999px;
+  padding:0 6px; font-size:0.95em; font-weight:600; letter-spacing:0;
+}
+.param-list{ display:flex; gap:5px; flex-wrap:wrap }
+.param-pill{
+  font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background:#f1f5f9; border:1px solid #e2e8f0; color:#475569;
+  padding:2px 7px; border-radius:6px; font-size:0.75em; line-height:1.5;
+}
+.param-pill:hover{ background:#e8eef6; border-color:#cbd5e1 }
+
+/* Topic tags — colored rounded pills, distinct from the code-chip params. */
+.topic-list{ margin-top:1px }
+.topic-pill{
+  background:#eef2ff; color:#4338ca; border:1px solid #e0e7ff;
+  padding:2px 9px; border-radius:999px; font-size:0.74em; font-weight:500;
+}
+
+.tag-pill{  /* legacy — retained for any other consumers */
   background:#eff6ff; color:#1e40af; padding:2px 8px;
   border-radius:999px; font-size:0.78em;
 }
@@ -511,16 +545,18 @@ body.focus-mode.focus-composite-explore .page.active{
 /* Module-source line + kind badge for composite cards/rows (Sim Setup) */
 .composite-list-row .composite-module,
 .module-card .composite-module{
-  font-size:0.84em; color:#4b5563;
-  margin-top:4px;
+  font-size:0.8em; color:#94a3b8;
+  margin-top:2px; display:flex; align-items:center; flex-wrap:wrap; gap:6px;
 }
+.composite-module small{ text-transform:uppercase; letter-spacing:.05em; font-size:0.92em; }
 .composite-module code{
-  background:#f3f4f6; padding:1px 6px; border-radius:4px; font-size:0.95em;
+  background:#f8fafc; border:1px solid #eef2f7; color:#475569;
+  padding:1px 6px; border-radius:5px; font-size:0.92em;
 }
 .kind-badge{
-  background:#dbeafe; color:#1e40af;
-  padding:1px 6px; border-radius:4px;
-  font-size:0.78em; font-weight:600;
+  background:#eef2ff; color:#4338ca; text-transform:uppercase; letter-spacing:.03em;
+  padding:1px 7px; border-radius:999px;
+  font-size:0.72em; font-weight:600;
   margin-left:6px;
 }
 .composites-sort-select{
