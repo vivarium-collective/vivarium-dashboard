@@ -73,11 +73,11 @@ def resolve_study_baseline_state(ws_root, pkg, spec_id, params):
     import sys as _sys
 
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, build_generator, discover_generators,
         )
     except ImportError:
-        return None, {"error": "pbg_superpowers not importable"}
+        return None, {"error": "viva_superpowers not importable"}
     if not _REGISTRY:
         discover_generators()
     entry = _REGISTRY.get(spec_id)
@@ -108,13 +108,13 @@ def resolve_study_baseline_state(ws_root, pkg, spec_id, params):
         entry = _REGISTRY.get(spec_id)
     if entry is None:
         # mem3dg-readdy friction #21: fall back to file-discovered composites
-        # (the OTHER registry — pbg_superpowers.composite_discovery walks
+        # (the OTHER registry — viva_superpowers.composite_discovery walks
         # *.composite.{yaml,json} on disk). A workspace that ships YAML
         # specs without @composite_generator decorators is still runnable
         # via this path, removing the "Composites tab lists it but Run
         # rejects it" foot-gun.
         try:
-            from pbg_superpowers.composite_discovery import discover_composites
+            from viva_superpowers.composite_discovery import discover_composites
             specs = discover_composites()
         except Exception:  # noqa: BLE001
             specs = {}

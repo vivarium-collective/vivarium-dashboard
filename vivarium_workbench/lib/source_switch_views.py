@@ -10,7 +10,7 @@ lib caches — the lib-shareable half of the switch).
 The stdlib handler additionally updates its own ``WORKSPACE`` global +
 server-local caches; that part stays in ``server`` (this builder is pure and
 never imports ``server``).  ``workspace_catalog`` is imported lazily, mirroring
-the handler, so importing this module never pulls in pbg_superpowers.
+the handler, so importing this module never pulls in viva_superpowers.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ def source_switch(body: dict, *, switch_active: bool = True) -> tuple[dict, int]
     ``docs/session-registry.md`` §8): validate + resolve the source, but leave the
     global root and other sessions untouched.
     """
-    from pbg_superpowers import workspace_catalog
+    from viva_superpowers import workspace_catalog
 
     body = body or {}
     path = str(body.get("path") or "").strip()

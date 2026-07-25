@@ -67,3 +67,67 @@ def test_no_report_card_embed_is_a_noop(tmp_path):
     _promote_report_card_embeds(spec, tmp_path)
     assert len(spec["embed_visualizations"]) == 1
     assert spec["report_card_urls"]["c"]["url"] == "/viz/report_card/c.html"
+
+
+# --- Content-aware detection: a report card hand-dropped into reports/figures/
+# under a figure-style filename must still be classified as a report card, so
+# the misclassification does not depend on where the file lives or its name. ---
+
+def _write_html(ws: Path, rel: str, body: str) -> str:
+    p = ws / rel.lstrip("/")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+    return "/" + rel.lstrip("/")
+
+
+def test_detects_hand_authored_card_by_marker(tmp_path):
+    ws = tmp_path / "ws"
+    url = _write_html(ws, "reports/figures/s/1-fba-bridge.html",
+                      '<html><head><meta name="viv-artifact" content="report-card">'
+                      '<title>anything at all</title></head><body>…</body></html>')
+    # Figure-style name + figures/ location: heuristics alone miss it...
+    assert not _is_report_card_embed({"name": "1-fba-bridge", "url": url})
+    # ...but with ws_root the content marker deterministically catches it.
+    assert _is_report_card_embed({"name": "1-fba-bridge", "url": url}, ws)
+
+
+def test_detects_hand_authored_card_by_title(tmp_path):
+    ws = tmp_path / "ws"
+    url = _write_html(ws, "reports/figures/s/1-fba-bridge.html",
+                      "<html><head><title>v2ecoli vs Millard — central-carbon "
+                      "exchange — report card</title></head><body>…</body></html>")
+    assert _is_report_card_embed({"name": "1-fba-bridge", "url": url}, ws)
+
+
+def test_real_figure_by_content_is_not_a_report_card(tmp_path):
+    ws = tmp_path / "ws"
+    url = _write_html(ws, "reports/figures/s/5-nadh.html",
+                      "<html><head><title>KETCHUP FDH dynamic fit — NADH(t)</title>"
+                      "</head><body>plot</body></html>")
+    assert not _is_report_card_embed({"name": "5-nadh", "url": url}, ws)
+
+
+def test_promotes_multiple_figures_dir_cards_keyed_by_stem(tmp_path):
+    """Two report cards in the same figures/<study>/ dir promote under DISTINCT
+    stem keys (not colliding on the study dir), and a real figure stays."""
+    ws = tmp_path / "ws"
+    card1 = _write_html(ws, "reports/figures/ketchup/1-fba-bridge.html",
+                        "<title>A — report card</title>")
+    card2 = _write_html(ws, "reports/figures/ketchup/2-ecoli307.html",
+                        "<title>B — report card</title>")
+    fig = _write_html(ws, "reports/figures/ketchup/5-nadh.html",
+                      "<title>NADH(t)</title>")
+    spec = {
+        "embed_visualizations": [
+            {"name": "1-fba-bridge", "url": card1},
+            {"name": "2-ecoli307", "url": card2},
+            {"name": "5-nadh", "url": fig},
+        ],
+    }
+    _promote_report_card_embeds(spec, ws)
+    # Both cards promoted under their own stem — no collision, both survive.
+    assert set(spec["report_card_urls"]) == {"1-fba-bridge", "2-ecoli307"}
+    assert spec["report_card_urls"]["1-fba-bridge"]["url"] == card1
+    assert spec["report_card_urls"]["2-ecoli307"]["url"] == card2
+    # The real figure remains on Visualizations.
+    assert [e["name"] for e in spec["embed_visualizations"]] == ["5-nadh"]

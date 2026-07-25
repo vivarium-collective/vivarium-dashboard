@@ -87,11 +87,11 @@ class TestBuildFrameworkMetrics:
         assert isinstance(result["metrics"], dict)
 
     def test_tolerant_on_compute_failure(self, ws: Path, monkeypatch) -> None:
-        """If pbg_superpowers.rigor.framework_metrics raises, metrics stays {} + counts OK."""
-        pytest.importorskip("pbg_superpowers.rigor")
-        from pbg_superpowers import rigor as _rigor
+        """If viva_superpowers.rigor.framework_metrics raises, metrics stays {} + counts OK."""
+        pytest.importorskip("viva_superpowers.rigor")
+        from viva_superpowers import rigor as _rigor
         if not hasattr(_rigor, "framework_metrics"):
-            pytest.skip("pbg_superpowers.rigor.framework_metrics not available")
+            pytest.skip("viva_superpowers.rigor.framework_metrics not available")
 
         monkeypatch.setattr(
             _rigor, "framework_metrics",

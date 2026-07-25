@@ -88,13 +88,13 @@ def build_workspaces(ws_root: Path) -> dict:
 
     Mirrors ``server.Handler._get_workspaces`` exactly (servers-join + status/
     url/pid logic + sort order).  Reads the GLOBAL ``~/.pbg/workspaces.json``
-    via ``pbg_superpowers.workspace_catalog.list_workspaces()``; only the
+    via ``viva_superpowers.workspace_catalog.list_workspaces()``; only the
     ``current`` entry needs ``ws_root``.
 
     Always returns a dict (falls back to current-only on missing/corrupt
     catalog).
     """
-    from pbg_superpowers import workspace_catalog
+    from viva_superpowers import workspace_catalog
 
     current_root = ws_root
     current_resolved = str(current_root.resolve())
@@ -250,13 +250,13 @@ def check_system_dep(check: dict, venv_py: Path) -> tuple[bool, Optional[str]]:
 def module_registry(ws_root: Path) -> list[dict]:
     """The available-modules registry for a workspace.
 
-    Canonical source is ``pbg_superpowers.catalog.load_registry(ws_root)``
+    Canonical source is ``viva_superpowers.catalog.load_registry(ws_root)``
     (canonical list + optional per-workspace overlay.json). Falls back to a
     legacy per-workspace ``scripts/_catalog/modules.json`` when the installed
-    pbg_superpowers predates the canonical registry.
+    viva_superpowers predates the canonical registry.
     """
     try:
-        from pbg_superpowers.catalog import load_registry
+        from viva_superpowers.catalog import load_registry
         return load_registry(ws_root)
     except Exception:
         from vivarium_workbench.lib.workspace_paths import WorkspacePaths

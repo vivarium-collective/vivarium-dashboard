@@ -120,7 +120,7 @@ def test_registry_environment_packages_not_in_workspace(registry_server):
     # and is not a framework package, should be environment_only.
     framework_pkgs = {
         "process_bigraph", "bigraph_schema", "bigraph_viz",
-        "pbg_superpowers", "vivarium_workbench",
+        "viva_superpowers", "vivarium_workbench",
     }
     for p in processes:
         top_pkg = p.get("address", "").split(".")[0]

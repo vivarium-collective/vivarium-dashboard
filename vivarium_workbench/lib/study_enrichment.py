@@ -105,7 +105,7 @@ def reconcile_simset_with_runs(sim_set, runs, ws_root: Optional[Path] = None):
             seeds = sorted({x for r in mruns for x in _seeds(r)})
             # Prefer the framework-baked run-record summary (generations /
             # sim_minutes / n_readouts persisted at record time by
-            # pbg_superpowers.study_outcomes). Falls back to opening the store
+            # viva_superpowers.study_outcomes). Falls back to opening the store
             # only for legacy runs recorded before the summary was baked in.
             gens = [r.get("generations") for r in mruns if r.get("generations")]
             mins = [r.get("sim_minutes") or r.get("duration_min") for r in mruns
@@ -160,7 +160,7 @@ def compute_param_enforcement(spec: dict) -> Optional[dict]:
     caught. The "applied" params are each run's recorded overrides
     (``runs_meta.params_json``), surfaced via ``spec["runs"]``.
     """
-    from pbg_superpowers.param_enforcement import (  # noqa: PLC0415
+    from viva_superpowers.param_enforcement import (  # noqa: PLC0415
         load_enforced_params, check_enforced_params, resolve_run_expected,
     )
     declared = load_enforced_params(spec)
@@ -223,12 +223,12 @@ def collect_study_feedback(ws_root: Path, study_slug: str) -> list:
     """Gather imported feedback annotations targeting one study.
 
     Scans every ``investigations/<inv>/`` for stored feedback (via
-    pbg_superpowers' shared reader) and returns the annotations whose section
+    viva_superpowers' shared reader) and returns the annotations whose section
     id matches ``study-<slug>``, newest-first. Cross-investigation because a
     study's feedback is keyed by the study slug embedded in the section id,
     not by which investigation exported the report.
     """
-    from pbg_superpowers.feedback_import import (  # noqa: PLC0415
+    from viva_superpowers.feedback_import import (  # noqa: PLC0415
         load_investigation_feedback, feedback_for_study,
     )
     from vivarium_workbench.lib.workspace_paths import WorkspacePaths  # noqa: PLC0415

@@ -22,6 +22,7 @@ export interface SimRow {
   run_id: string;
   spec_id: string | null;
   composite_registered: boolean | null;
+  config: Record<string, any> | null;
   sim_name: string | null;
   label: string | null;
   status: string;

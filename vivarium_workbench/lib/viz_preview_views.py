@@ -1,7 +1,7 @@
 """Pure builder for the ``POST /api/visualization-preview`` route.
 
 Behaviour-preserving port of the stdlib handler
-``server.Handler._post_visualization_preview``.  It renders a ``pbg_superpowers``
+``server.Handler._post_visualization_preview``.  It renders a ``viva_superpowers``
 Visualization class — instantiating the class and calling ``.update()`` (NO
 subprocess) against either synthetic demo data or an existing investigation's
 emitter outputs, and returns ``{ok, html, source_used, notes}``.

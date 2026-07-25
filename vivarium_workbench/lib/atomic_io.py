@@ -2,7 +2,7 @@
 
 The write-to-a-sibling-``.tmp``-then-``os.replace`` pattern was duplicated
 across ``spec_migration``, ``simulations_index``, and ``server.py``. This is the
-one place it lives now. Dashboard-local on purpose — no ``pbg_superpowers``
+one place it lives now. Dashboard-local on purpose — no ``viva_superpowers``
 dependency, so the dashboard keeps running standalone (matching the
 self-contained ``composite_lookup``/``investigations`` lib convention).
 """

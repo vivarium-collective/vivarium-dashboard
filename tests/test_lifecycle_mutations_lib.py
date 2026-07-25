@@ -69,8 +69,8 @@ def test_feedback_apply_action_unknown_item(ws: Path) -> None:
 
 
 def test_feedback_apply_action_happy(ws: Path) -> None:
-    """Full happy path via pbg_superpowers (requires it to be installed)."""
-    from pbg_superpowers.feedback_actions import feedback_item_id
+    """Full happy path via viva_superpowers (requires it to be installed)."""
+    from viva_superpowers.feedback_actions import feedback_item_id
 
     _make_study(ws, "s1", findings=[{"id": "F-01", "statement": "X"}])
     iid = feedback_item_id("study-s1", "2026-01-01T10:00:00Z", "Alice")
@@ -216,7 +216,7 @@ def test_study_sync_runs_unknown_study(ws: Path) -> None:
 
 
 def test_study_sync_runs_happy(ws: Path) -> None:
-    from pbg_superpowers import run_registry, study_io
+    from viva_superpowers import run_registry, study_io
 
     d = ws / "studies" / "s1"
     d.mkdir()

@@ -191,6 +191,11 @@ def _row_to_dict(row, db_path_str: str) -> dict:
         # None means the run's data lives in the runs.db SQLite at db_path.
         "store_path": (prov.get("store_path") or remote_origin and remote_origin.get("s3_uri")) or None,
         "emitter": emitter,  # store-derived (xarray/parquet) for remote runs; None → falls back to db_path
+        # The exact reproduction config: the generator params saved at run time
+        # (params_json), minus the transport-provenance keys captured separately
+        # in remote_origin/store_path. None when no params were recorded.
+        "config": ({k: v for k, v in prov.items() if k not in _RUN_PROVENANCE_KEYS}
+                   or None),
         "studies": [],  # filled in by _annotate_studies
         # Match the SQLiteEmitter shape so JS consumers can rely on the
         # keys existing regardless of which emitter wrote the row.
@@ -330,6 +335,102 @@ def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
     return out
 
 
+# Run kinds that do NOT execute a composite — cross-study/meta aggregations. The
+# study-declared-composite fallback is not applied to these (attributing the
+# study's composite to them would misrepresent what ran). Extend if new pure-meta
+# kinds appear; simulation/analysis/ensemble/parameter_screen/cross_validation/
+# sensitivity_analysis all execute the composite and are intentionally NOT here.
+_NON_COMPOSITE_RUN_KINDS = frozenset({"synthesis"})
+
+# Keys in a runs_meta ``params_json`` that are transport/remote provenance, NOT
+# composite generator config — surfaced separately as remote_origin/store_path,
+# so they're stripped from the reproduction ``config`` view.
+_RUN_PROVENANCE_KEYS = frozenset({
+    "source", "simulation_id", "experiment_id", "backend", "s3_uri", "store_path",
+})
+
+
+def _study_declared_composite(data: dict) -> str | None:
+    """The composite a study declares at the DESIGN level, for runs whose own
+    entry omits ``composite:``.
+
+    mbp-style studies declare the composite once under ``conditions.baseline``
+    (or another condition), or as a top-level ``composite``/``baseline``, rather
+    than repeating it on every run entry. Resolution order: ``conditions.baseline
+    .composite`` → first ``conditions.*.composite`` → top-level ``composite`` →
+    ``baseline`` (string, or dict with ``composite``). Returns None if the study
+    declares no composite anywhere. Defensive: never raises on odd shapes.
+    """
+    if not isinstance(data, dict):
+        return None
+    conditions = data.get("conditions")
+    if isinstance(conditions, dict):
+        base = conditions.get("baseline")
+        if isinstance(base, dict) and isinstance(base.get("composite"), str):
+            return base["composite"]
+        for cond in conditions.values():
+            if isinstance(cond, dict) and isinstance(cond.get("composite"), str):
+                return cond["composite"]
+    comp = data.get("composite")
+    if isinstance(comp, str) and comp:
+        return comp
+    baseline = data.get("baseline")
+    if isinstance(baseline, str) and baseline:
+        return baseline
+    if isinstance(baseline, dict) and isinstance(baseline.get("composite"), str):
+        return baseline["composite"]
+    # ``baseline`` may be a list of variant dicts ([{name, composite, params}]);
+    # take the first that declares a composite.
+    if isinstance(baseline, list):
+        for variant in baseline:
+            if isinstance(variant, dict) and isinstance(variant.get("composite"), str):
+                return variant["composite"]
+    return None
+
+
+def _study_declared_params(data: dict) -> dict:
+    """The generator params a study declares at the DESIGN level (mirrors
+    :func:`_study_declared_composite`'s resolution). Returns {} if none.
+
+    These are the base config a run inherits (e.g. ``{condition: with_aa}``);
+    a run entry's own params override them.
+    """
+    if not isinstance(data, dict):
+        return {}
+    conditions = data.get("conditions")
+    if isinstance(conditions, dict):
+        base = conditions.get("baseline")
+        if isinstance(base, dict) and isinstance(base.get("params"), dict):
+            return dict(base["params"])
+        for cond in conditions.values():
+            if isinstance(cond, dict) and isinstance(cond.get("params"), dict):
+                return dict(cond["params"])
+    baseline = data.get("baseline")
+    if isinstance(baseline, dict) and isinstance(baseline.get("params"), dict):
+        return dict(baseline["params"])
+    if isinstance(baseline, list):
+        for variant in baseline:
+            if isinstance(variant, dict) and isinstance(variant.get("params"), dict):
+                return dict(variant["params"])
+    return {}
+
+
+def _run_entry_config(entry: dict, declared_params: dict) -> dict | None:
+    """Assemble the exact config for a study.yaml run: the study's declared
+    params overlaid with the run entry's own params/seed/trajectory_params/
+    n_steps. Returns None when nothing was captured.
+    """
+    config = dict(declared_params)
+    if isinstance(entry.get("params"), dict):
+        config.update(entry["params"])
+    for key in ("seed", "trajectory_params"):
+        if entry.get(key) is not None:
+            config[key] = entry[key]
+    if entry.get("n_steps") is not None:
+        config.setdefault("n_steps", entry["n_steps"])
+    return config or None
+
+
 def _read_study_yaml_runs(workspace: Path) -> list[dict]:
     """Surface runs recorded only in ``study.yaml`` ``runs:`` as first-class
     simulation rows.
@@ -354,6 +455,10 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
         runs = data.get("runs")
         if not isinstance(runs, list):
             continue
+        # Study-level fallback for runs whose own entry omits `composite:`
+        # (mbp-style studies declare it once under conditions.baseline).
+        declared_composite = _study_declared_composite(data)
+        declared_params = _study_declared_params(data)
         for entry in runs:
             if not isinstance(entry, dict):
                 continue
@@ -363,15 +468,23 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
             if not rid:
                 continue
             _name = entry.get("name") or entry.get("simulation")
+            # Apply the study-declared composite ONLY when the run executes one.
+            # `synthesis` runs are cross-study aggregations that run no composite,
+            # so we must not attribute the study's composite to them. (simulation/
+            # analysis/ensemble/parameter_screen/cross_validation/sensitivity_
+            # analysis all DO execute the composite and get the fallback.)
+            _entry_composite = entry.get("composite")
+            _fallback = None if entry.get("kind") in _NON_COMPOSITE_RUN_KINDS else declared_composite
             out.append({
                 "run_id": rid,
-                "spec_id": entry.get("composite"),
+                "spec_id": _entry_composite or _fallback,
+                "config": _run_entry_config(entry, declared_params),
                 "sim_name": _name or rid,
                 "label": _name or rid,
                 "status": entry.get("status") or "completed",
                 "n_steps": entry.get("n_steps"),
                 "progress_step": entry.get("n_steps") or 0,
-                # `record_runs` (pbg_superpowers.study_outcomes) writes the run's
+                # `record_runs` (viva_superpowers.study_outcomes) writes the run's
                 # completion time as `timestamp` (= db completed_at or started_at),
                 # NOT as started_at/completed_at — so without this fallback the
                 # Simulations DB Time column stayed blank for every study.yaml-
@@ -633,6 +746,31 @@ def _read_parquet_hives(workspace: Path) -> list[dict]:
 # Simulations DB must also discover them on disk to be XArray-aware.
 # ---------------------------------------------------------------------------
 
+def _read_zarr_provenance(zarr_path: Path) -> dict | None:
+    """Read a zarr store's ``provenance`` attribute — the self-describing run
+    provenance the XArrayEmitter writes ({composite, config, run_id}).
+
+    The emitter writes it at its ROOT group, which in the partitioned layout is
+    a NESTED group (``experiment_id=…/variant=…/lineage_seed=…``), not the
+    top-level ``store.zarr`` dir. So we check the top root, then descend
+    (bounded) to the first group carrying a ``provenance`` attr. Returns the
+    dict, or None for legacy attr-less stores / unopenable zarr. Never raises.
+    """
+    try:
+        import zarr  # optional dep; lazy so the index never hard-requires it
+        root = zarr.open_group(str(zarr_path), mode="r")
+        prov = dict(root.attrs).get("provenance")
+        if isinstance(prov, dict) and prov:
+            return prov
+        for _name, member in root.members(max_depth=4):
+            mprov = dict(getattr(member, "attrs", {})).get("provenance")
+            if isinstance(mprov, dict) and mprov:
+                return mprov
+        return None
+    except Exception:  # noqa: BLE001 — missing dep / unreadable / attr-less legacy store
+        return None
+
+
 def _discover_xarray_runs(workspace: Path) -> list[dict]:
     """Yield one row per ``.pbg/runs/<run_id>/`` dir that contains a
     ``store.zarr`` (directly or under ``seed_*/``). Shaped like the other
@@ -662,9 +800,13 @@ def _discover_xarray_runs(workspace: Path) -> list[dict]:
             mtime = run_dir.stat().st_mtime
         except OSError:
             mtime = None
-        out.append({
+        # Self-describing provenance: a store written by the XArrayEmitter carries
+        # {composite, config, run_id} in its root attrs, so a disk-discovered run
+        # still shows its composite + config (legacy attr-less stores → None).
+        prov = _read_zarr_provenance(zarrs[0])
+        row = {
             "run_id": run_id,
-            "spec_id": None,
+            "spec_id": (prov or {}).get("composite"),
             "sim_name": run_id,
             "label": run_id,
             "status": "completed",
@@ -678,7 +820,10 @@ def _discover_xarray_runs(workspace: Path) -> list[dict]:
             "study_slug": None,
             "investigation_slug": None,
             "source": "xarray",
-        })
+        }
+        if isinstance((prov or {}).get("config"), dict) and prov["config"]:
+            row["config"] = prov["config"]
+        out.append(row)
     return out
 
 
@@ -1078,18 +1223,24 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
         # supplies one, re-backfill so the log record carries it.
         has_composite = bool(row.get("spec_id"))
         prev_has_composite = bool(prev and prev.get("spec_id"))
+        # Same self-heal for the reproduction config: a run migrated before its
+        # config was derivable has none in the log; once study.yaml/params_json
+        # supplies it, re-backfill so the log record carries it.
+        has_config = bool(row.get("config"))
+        prev_has_config = bool(prev and prev.get("config"))
         # Skip when already represented AND its store location is known (or the
-        # legacy store has none to add) AND its composite is known (or the legacy
-        # store has none to add) — keeps this idempotent across builds.
+        # legacy store has none to add) AND its composite is known AND its config
+        # is known (or the legacy store has none to add) — idempotent across builds.
         if (prev is not None
                 and (prev_has_store or not has_store)
-                and (prev_has_composite or not has_composite)):
+                and (prev_has_composite or not has_composite)
+                and (prev_has_config or not has_config)):
             continue
         ev = {"run_id": rid, "event": "backfill"}
         for k in ("spec_id", "sim_name", "label", "status", "n_steps",
                   "progress_step", "started_at", "completed_at", "db_path",
                   "store_path", "emitter", "study_slug", "investigation_slug",
-                  "remote_origin"):
+                  "remote_origin", "config"):
             v = row.get(k)
             if v is not None:
                 ev[k] = v
@@ -1114,6 +1265,17 @@ def _rec_to_simrow(run_id: str, rec: dict) -> dict:
               "store_path", "study_slug", "investigation_slug"):
         if rec.get(k) is not None:
             row[k] = rec[k]
+
+    # Reproduction config: prefer an explicit config on the record (backfilled
+    # from study.yaml / runs_meta); else derive from the run's saved generator
+    # params (the 'started' event's ``params``), minus transport-provenance keys.
+    if isinstance(rec.get("config"), dict) and rec["config"]:
+        row["config"] = rec["config"]
+    elif isinstance(rec.get("params"), dict) and rec["params"]:
+        _cfg = {k: v for k, v in rec["params"].items()
+                if k not in _RUN_PROVENANCE_KEYS}
+        if _cfg:
+            row["config"] = _cfg
 
     emitter = rec.get("emitter")
     tag = _emitter_tag(emitter)

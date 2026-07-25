@@ -1,4 +1,4 @@
-# VENDORED COPY — canonical source is pbg_superpowers/investigation_inputs.py.
+# VENDORED COPY — canonical source is viva_superpowers/investigation_inputs.py.
 # Keep identical to the canonical; drift is caught by tests/test_investigation_inputs_mirror.py.
 """Resolve an investigation's owned inputs (datasets / references / expert docs)
 from investigations/<slug>/inputs/ + investigation.yaml's `inputs:` block, with an

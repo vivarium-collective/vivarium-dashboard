@@ -1,7 +1,7 @@
 """Backfill the per-study runs.db from on-disk emitter artifacts.
 
-VENDORED COPY. Canonical source: pbg_superpowers/backfill_runs.py in the
-pbg-superpowers repo. The dashboard venv has no pbg_superpowers, so this is a
+VENDORED COPY. Canonical source: viva_superpowers/backfill_runs.py in the
+pbg-superpowers repo. The dashboard venv has no viva_superpowers, so this is a
 copy of ONLY ``backfill_study_runs`` (the workspace-wide ``backfill`` + CLI in
 canonical pull extra deps and are not vendored). ``backfill_study_runs`` is
 kept byte-identical to canonical — the drift guard in

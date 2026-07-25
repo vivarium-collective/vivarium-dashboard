@@ -1,6 +1,6 @@
 """Workspace-local + installed-package composite discovery.
 
-Mirrors pbg_superpowers.composite_spec + composite_discovery for the dashboard's
+Mirrors viva_superpowers.composite_spec + composite_discovery for the dashboard's
 use. Self-contained: no dependency on pbg-superpowers (which is a Claude Code
 plugin, not always pip-installable in workspace venvs).
 
@@ -154,7 +154,7 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
 
     Also merges in `@composite_generator`-decorated functions from installed
     bigraph-schema-dependent packages via
-    :func:`pbg_superpowers.composite_discovery.discover_all`. Generator entries
+    :func:`viva_superpowers.composite_discovery.discover_all`. Generator entries
     carry ``kind: "generator"`` and a ``module`` field; spec entries are tagged
     ``kind: "spec"`` and gain a derived ``module``. If pbg-superpowers is not
     importable the function falls back to spec-only behavior.
@@ -305,11 +305,26 @@ def _ref_resolves(ref: str, known_ids: set[str]) -> bool:
     return False
 
 
+def annotate_composite_registered(sims: list[dict], known_ids: set[str]) -> None:
+    """Set ``row['composite_registered']`` on each Simulations-DB row in place.
+
+    Enforcement: every simulation must map to exactly one registered composite.
+    A row's ``spec_id`` is registered when it resolves against ``known_ids``
+    ALIAS-TOLERANTLY (:func:`_ref_resolves`) — so a run recorded with the short
+    ``baseline`` alias (or the doubled ``…baseline.baseline`` id) is recognised
+    as the registered dotted ``v2ecoli.composites.baseline``, not falsely flagged
+    as unregistered. A missing/empty ``spec_id`` is False (no composite).
+    """
+    for s in sims:
+        cid = s.get("spec_id")
+        s["composite_registered"] = bool(cid and _ref_resolves(cid, known_ids))
+
+
 def unresolved_study_composite_refs(spec: dict, known_ids: set[str]) -> list[str]:
     """Return the study's declared composite refs that DON'T resolve to any
     registered composite id.
 
-    Prefers ``pbg_superpowers.report_linter.unresolved_composite_refs`` (the
+    Prefers ``viva_superpowers.report_linter.unresolved_composite_refs`` (the
     canonical, spec-only contract) when available; falls back to the local
     extraction + last-segment match. Defensive: never raises.
 
@@ -324,9 +339,9 @@ def unresolved_study_composite_refs(spec: dict, known_ids: set[str]) -> list[str
     """
     known = set(known_ids)
     try:
-        from pbg_superpowers.report_linter import unresolved_composite_refs as _ps
+        from viva_superpowers.report_linter import unresolved_composite_refs as _ps
         flagged = list(_ps(spec, known))
-    except Exception:  # noqa: BLE001 — older/absent pbg_superpowers → local fallback
+    except Exception:  # noqa: BLE001 — older/absent viva_superpowers → local fallback
         return [r for r in _study_composite_refs(spec) if not _ref_resolves(r, known)]
     return [r for r in flagged if not _ref_resolves(r, known)]
 

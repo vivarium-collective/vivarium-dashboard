@@ -648,7 +648,10 @@ def create_app() -> FastAPI:
         the same Sim-DB table filtered to the study, instead of a bespoke one.
         """
         from vivarium_workbench.lib.simulations_index import build_simulations_data
-        from vivarium_workbench.lib.composite_lookup import known_composite_ids
+        from vivarium_workbench.lib.composite_lookup import (
+            known_composite_ids,
+            annotate_composite_registered,
+        )
         data = build_simulations_data(ws)
         sims = data.get("simulations", [])
         if study:
@@ -656,14 +659,13 @@ def create_app() -> FastAPI:
                     if s.get("study_slug") == study
                     or study in (s.get("studies") or [])]
         # Enforcement: annotate whether each run maps to exactly one registered
-        # composite (its ``spec_id`` must be an exact registered composite id).
+        # composite. ALIAS-TOLERANT (short slug / doubled id resolve to the
+        # dotted registered composite) — see annotate_composite_registered.
         try:
             _known = known_composite_ids(ws)
         except Exception:  # noqa: BLE001
             _known = set()
-        for s in sims:
-            _cid = s.get("spec_id")
-            s["composite_registered"] = bool(_cid and _cid in _known)
+        annotate_composite_registered(sims, _known)
         rows = [SimRow.model_validate(r) for r in sims]
         return SimulationsPayload(simulations=rows, current=data.get("current"))
 
@@ -1448,7 +1450,7 @@ def create_app() -> FastAPI:
 
         Returns ``{hypotheses: [...], investigation: name}``.  Each hypothesis
         carries a computed ``support_log`` (via
-        ``pbg_superpowers.hypotheses.rollup_support`` / ``score_support``).
+        ``viva_superpowers.hypotheses.rollup_support`` / ``score_support``).
         Always HTTP 200 — missing investigations return an empty list rather
         than 404; import / compute failures degrade to the authored hypotheses.
 
@@ -1821,12 +1823,12 @@ def create_app() -> FastAPI:
     def report_lint(ws: Path = Depends(get_workspace)) -> ReportLint:
         """Run the deterministic workspace report-linter and return its findings.
 
-        Runs ``pbg_superpowers.report_linter.lint_workspace_report`` over the
+        Runs ``viva_superpowers.report_linter.lint_workspace_report`` over the
         workspace and returns ``{findings: [{study, check, severity, message,
         field_path}]}``, in the linter's stable error→warning→info order.
 
         Always HTTP 200 — degrades to ``{findings: []}`` when the linter is
-        unavailable (older pbg_superpowers) or the workspace cannot be scanned.
+        unavailable (older viva_superpowers) or the workspace cannot be scanned.
 
         Library-backed via ``lib.report_views.build_report_lint``.
         """
@@ -1847,7 +1849,7 @@ def create_app() -> FastAPI:
 
         Returns ``{investigation, items: [...], summary: {by_severity,
         by_kind, total}}``.  Always HTTP 200 — degrades to empty lists/zeroes
-        when ``pbg_superpowers.needs_attention`` is unavailable.
+        when ``viva_superpowers.needs_attention`` is unavailable.
 
         Library-backed via ``lib.report_views.build_needs_attention``.
         """
@@ -1941,7 +1943,7 @@ def create_app() -> FastAPI:
 
         Runs the SAME in-process composite build the Composite Explorer uses and
         reports its emittable observables via
-        ``pbg_superpowers.readout_validation.available_observables``:
+        ``viva_superpowers.readout_validation.available_observables``:
         ``{ref, leaves: [dotted paths], catalogs: {observable: [labels]}}`` (plus
         ``cached: true`` on a TTL cache hit).
 
@@ -2055,7 +2057,7 @@ def create_app() -> FastAPI:
         - ``?investigation=`` (or ``?inv=``) → ``{investigation, ac_matrix, dag}``
         - (none)                     → the full ``{nodes, edges}`` graph
 
-        ALWAYS HTTP 200 — an older/absent pbg_superpowers or an unscannable
+        ALWAYS HTTP 200 — an older/absent viva_superpowers or an unscannable
         workspace returns an empty/typed payload rather than erroring.  The
         ``observable_registry`` / ``composite`` paths trigger a (cached)
         composite build, sourcing observables from
@@ -2091,12 +2093,12 @@ def create_app() -> FastAPI:
     ) -> Union[FrameworkMetrics, JSONResponse]:
         """Framework-self metrics scorecard for GET /api/framework-metrics.
 
-        Aggregates ``pbg_superpowers.rigor.framework_metrics`` over every
+        Aggregates ``viva_superpowers.rigor.framework_metrics`` over every
         study + investigation in the workspace.  Returns
         ``{metrics: {…}, n_investigations: int, n_studies: int}``.
 
         Always HTTP 200 (best-effort): ``metrics`` degrades to ``{}`` when
-        pbg_superpowers is absent or the compute raises.  If the builder dict
+        viva_superpowers is absent or the compute raises.  If the builder dict
         fails typed validation (forward-compat / off-spec shape) the raw dict is
         returned at HTTP 200 — byte-identical to the legacy handler, never 500.
 
@@ -3828,7 +3830,7 @@ def create_app() -> FastAPI:
         req: VisualizationPreviewRequest,
         ws: Path = Depends(get_workspace),
     ) -> JSONResponse:
-        """Render a ``pbg_superpowers`` Visualization class IN-PROCESS (instantiate
+        """Render a ``viva_superpowers`` Visualization class IN-PROCESS (instantiate
         + call ``.update()``; NO subprocess) against synthetic demo data or an
         existing investigation's emitter outputs.
 
@@ -4291,7 +4293,7 @@ def create_app() -> FastAPI:
         """Re-render a study's declared visualizations. No simulation re-run.
 
         Body: ``{name}``.  Builds the workspace ``<pkg>.core``, augments the
-        link registry with pbg_superpowers viz classes, and runs each viz doc
+        link registry with viva_superpowers viz classes, and runs each viz doc
         through a ``process_bigraph.Composite``.
 
         400 on missing ``name`` / spec error; 404 when the investigation is not
@@ -5946,7 +5948,7 @@ def create_app() -> FastAPI:
     # Workspaces — global ~/.pbg catalog WRITE routes (3 POSTs)
     #
     # These 3 POSTs edit the GLOBAL ~/.pbg workspace catalog via
-    # pbg_superpowers.workspace_catalog (process-global, NOT server state; no
+    # viva_superpowers.workspace_catalog (process-global, NOT server state; no
     # workspace/ws_root).  All three call the pure lib.workspaces_mutations
     # builders, which take ONLY the request body's ``path``.  Every path
     # (success AND error) is returned via JSONResponse so the lib-returned

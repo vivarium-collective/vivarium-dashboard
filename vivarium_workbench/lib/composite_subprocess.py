@@ -167,7 +167,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     # composites) keep the old state-serialization path below.
     use_generator_path = False
     try:
-        from pbg_superpowers.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
         if not _REGISTRY:
             discover_generators()
         use_generator_path = spec_id in _REGISTRY
@@ -249,7 +249,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                     from pbg_emitters.sqlite_emitter import SQLiteEmitter
                 except ImportError:  # process-bigraph < 1.4.17 (legacy location)
                     from process_bigraph.emitter import SQLiteEmitter
-                from pbg_superpowers.composite_generator import (
+                from viva_superpowers.composite_generator import (
                     _REGISTRY, build_generator, discover_generators,
                     apply_core_extensions,
                 )
@@ -472,10 +472,10 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
             for path_tuple, entries in results.items():
                 key = '.'.join(str(p) for p in path_tuple)
                 out[key] = entries
-            # Gather rendered viz HTML, if pbg_superpowers is importable.
+            # Gather rendered viz HTML, if viva_superpowers is importable.
             viz_html = {{}}
             try:
-                from pbg_superpowers.visualization import render_results
+                from viva_superpowers.visualization import render_results
                 rendered = render_results(composite)
                 for path_tuple, payload in rendered.items():
                     key = '.'.join(str(p) for p in path_tuple)
@@ -495,7 +495,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     # older generation as stale. No-op (None) when no generation is active.
     _generation_id = None
     try:
-        from pbg_superpowers import generation as _gen
+        from viva_superpowers import generation as _gen
         _generation_id = _gen.current_generation_id(ws_root)
     except Exception:  # noqa: BLE001 — generation is advisory, never fatal
         _generation_id = None

@@ -1,6 +1,6 @@
 """SP5 Task 4: GET /api/needs-attention + the `_needs_attention` worker.
 
-The endpoint runs the deterministic ``pbg_superpowers.needs_attention.
+The endpoint runs the deterministic ``viva_superpowers.needs_attention.
 scan_investigation`` over the workspace and returns its
 ``{"items": [...], "summary": {...}}`` payload so the dashboard can render a
 "Needs attention" panel. Build-free by default (no ``observables_for_ref``).
@@ -67,7 +67,7 @@ def test_needs_attention_tolerant_on_missing_ws(tmp_path):
 
 
 def test_needs_attention_tolerant_on_scan_failure(tmp_ws_uncovered_ac, monkeypatch):
-    from pbg_superpowers import needs_attention as _na
+    from viva_superpowers import needs_attention as _na
 
     def _boom(ws_root, inv_slug, **kw):
         raise RuntimeError("scan blew up")
