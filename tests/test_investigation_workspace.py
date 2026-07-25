@@ -33,6 +33,18 @@ def test_explore_workspace_toggle_functions():
     assert "window._showWorkspace" in JS
 
 
+def test_showexplore_restores_investigations_list():
+    # _openInvestigationDetail hides #investigations-list (the card grid shared
+    # by the Investigations and Studies tabs of Explore) via a legacy
+    # display:none. The "All investigations" back button routes through
+    # _showExplore, so it must restore that display — otherwise the back
+    # button lands on a blank Explore surface (cards still in the DOM, just
+    # hidden). No re-render is required, only the display restore.
+    e = JS[JS.index("function _showExplore"): JS.index("function _showExplore") + 900]
+    assert "investigations-list" in e
+    assert "style.display = ''" in e
+
+
 def test_context_collapse_function():
     assert "function _setInvestigationContextCollapsed" in JS
     assert "ws-context-bar" in JS

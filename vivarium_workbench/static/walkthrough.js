@@ -5134,6 +5134,14 @@
     var ws = document.getElementById('iset-workspace');
     if (ex) ex.style.display = '';
     if (ws) ws.style.display = 'none';
+    // #investigations-list is the shared card grid for both the Investigations
+    // and Studies tabs of Explore. _openInvestigationDetail hides it (legacy
+    // single-surface behavior); restore it here so the "All investigations"
+    // back button doesn't land on a blank grid. Cards are still in the DOM
+    // (only display was toggled), so a display restore is sufficient — no
+    // re-render needed.
+    var list = document.getElementById('investigations-list');
+    if (list) list.style.display = '';
   }
   window._showExplore = _showExplore;
 
