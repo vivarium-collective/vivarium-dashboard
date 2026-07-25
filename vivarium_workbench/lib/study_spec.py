@@ -713,6 +713,12 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
                                  "verdict": verdict, "groups": groups,
                                  "html_stub": html_stub}
         spec["report_card_urls"] = rc_urls
+        # A rich report card (docs/report_cards/<set>/<card>/report_card.html)
+        # belongs on the Report Cards tab, not embedded in Visualizations. Promote
+        # any such embed into report_card_urls (preferring its richer render + its
+        # own verdict over a thin/stale viz/report_card/<card>.html) and drop it
+        # from embed_visualizations so Visualizations shows real figures.
+        _promote_report_card_embeds(spec, ws_root)
         # Interactive plotly comparison (v2ecoli vs vEcoli overlays), rendered
         # into <study>/viz/comparison_plotly.html — surfaced above the scorecards
         # in the Report Cards tab. Absent for studies that don't have one.
@@ -731,6 +737,78 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
     spec["run_commands"] = study_run_commands(spec, name)
     spec["derived"] = _study_derivations.derived_block(spec)
     return spec
+
+
+def _is_report_card_embed(entry: dict) -> bool:
+    """True when a Visualizations embed actually points at a rendered report card
+    (a ReportCardStep output living under ``docs/report_cards/.../report_card.html``,
+    or otherwise self-identifying as a report card)."""
+    url = str((entry or {}).get("url") or "")
+    name = str((entry or {}).get("name") or "").lower()
+    path = url.split("?", 1)[0]
+    return (
+        ("/report_cards/" in path and path.endswith("report_card.html"))
+        or "report card" in name
+        or "report_card" in path.rsplit("/", 1)[-1]
+    )
+
+
+def _promote_report_card_embeds(spec: dict, ws_root: Path) -> None:
+    """Move rich report-card embeds off the Visualizations tab and onto the
+    Report Cards tab.
+
+    A report card is the ``ReportCardStep`` subtype's output; when a study wired
+    its *rich* render (``docs/report_cards/<set>/<card>/report_card.html``) into
+    ``embed_visualizations``, it showed up under Visualizations while the Report
+    Cards tab rendered a thinner/older ``viz/report_card/<card>.html``. Promote the
+    rich render into ``report_card_urls`` (keyed by the ``<card>`` path segment),
+    sourcing its verdict from the sibling ``report_card_verdict.json`` so the tab's
+    verdict pill matches the card, and remove it from ``embed_visualizations``.
+    Mutates *spec* in place; tolerant of missing files.
+    """
+    embeds = spec.get("embed_visualizations")
+    if not isinstance(embeds, list) or not embeds:
+        return
+    rc_urls = spec.get("report_card_urls")
+    if not isinstance(rc_urls, dict):
+        rc_urls = {}
+    kept: list = []
+    for entry in embeds:
+        if not (isinstance(entry, dict) and _is_report_card_embed(entry)):
+            kept.append(entry)
+            continue
+        url = str(entry.get("url") or "")
+        path = url.split("?", 1)[0]
+        # .../<card>/report_card.html  → card = <card>; else fall back to the stem.
+        parts = [p for p in path.split("/") if p]
+        card = parts[-2] if (len(parts) >= 2 and parts[-1].endswith(".html")) else \
+            (parts[-1].rsplit(".", 1)[0] if parts else "report_card")
+        verdict = None
+        groups = None
+        # Rich bundle carries its verdict as report_card_verdict.json (sibling).
+        try:
+            rel = path[1:] if path.startswith("/") else path
+            vj = (ws_root / rel).with_name("report_card_verdict.json")
+            if vj.is_file():
+                _vj = _json.loads(vj.read_text(encoding="utf-8"))
+                verdict = _vj.get("overall")
+                groups = _vj.get("groups")
+        except Exception:  # noqa: BLE001
+            pass
+        # Prefer the rich render (override any thin viz/report_card/<card> entry).
+        _prev = rc_urls.get(card)
+        prev: dict = _prev if isinstance(_prev, dict) else {}
+        rc_urls[card] = {
+            "url": url,
+            "verdict": verdict if verdict is not None else prev.get("verdict"),
+            "groups": groups if groups is not None else prev.get("groups"),
+            "html_stub": False,
+            "rich": True,
+            "label": entry.get("name") or prev.get("label"),
+        }
+    if len(kept) != len(embeds):
+        spec["embed_visualizations"] = kept
+        spec["report_card_urls"] = rc_urls
 
 
 def _latest_outcomes(spec: dict) -> tuple[dict, dict]:
