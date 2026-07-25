@@ -128,6 +128,19 @@ def composite_test_run(ws_root: Path, body: dict) -> tuple[dict, int]:
         "target": plan.target,
     }), encoding="utf-8")
 
+    # Reproducibility manifest (spec Part A): the composite path's full replay
+    # record — params here IS the full effective config for this launch (no
+    # separate baseline layer at this call site), so it doubles as both the
+    # override-delta (params_json, unchanged) and the manifest's full params.
+    # emitter is not yet resolved at launch time (that happens later, inside
+    # the detached run) so it's recorded None here; runtime has no study
+    # block on the composite path.
+    manifest = cr.build_run_manifest(
+        origin="composite", spec_id=spec_id, params=overrides, n_steps=steps,
+        emitter=None, emit_paths=emit_paths, runtime={}, pkg=pkg,
+        ws_root=ws_root,
+    )
+
     conn = cr.connect(db_file)
     try:
         # SP-B: runs are durable — no prune-to-20 eviction. Deletion is an
@@ -135,7 +148,7 @@ def composite_test_run(ws_root: Path, body: dict) -> tuple[dict, int]:
         cr.save_metadata(conn, spec_id=spec_id, run_id=run_id,
                          params=overrides, label=label,
                          started_at=time.time(), n_steps=steps,
-                         log_path=log_rel, workspace=ws_root)
+                         log_path=log_rel, workspace=ws_root, manifest=manifest)
         try:
             pid = run_registry.spawn_detached(
                 request_path, workspace=ws_root,

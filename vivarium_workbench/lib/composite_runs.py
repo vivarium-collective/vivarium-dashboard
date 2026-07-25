@@ -61,6 +61,14 @@ _NEW_COLUMNS = {
     # so complete_metadata()'s `SELECT emitter_path` silently no-op'd via its
     # broad except — closing that gap here.
     "emitter_path": "TEXT",
+    # Complete per-run replay manifest (reproducibility foundation for the
+    # rerun feature — see docs/superpowers/specs/2026-07-25-rerun-capability-
+    # design.md Part A). JSON-encoded ``build_run_manifest()`` dict: full
+    # effective params (not the delta), n_steps, resolved emitter/emit_paths,
+    # the study runtime block used, origin, study, pkg, generation_id, and a
+    # best-effort code_version. Nullable: legacy runs have NULL and
+    # ``rerun.resolve_rerun_target`` falls back to the delta params/n_steps.
+    "manifest_json": "TEXT",
 }
 
 
@@ -135,19 +143,78 @@ def generate_run_id(spec_id: str, params: dict | None = None,
     return f"{spec_id}__{ts}__{short}"
 
 
+def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
+                       runtime, origin, study=None, pkg=None,
+                       generation_id=None, ws_root=None) -> dict:
+    """Assemble the canonical per-run replay manifest (spec Part A).
+
+    A complete, self-contained record of everything a rerun needs to
+    reproduce this run *exactly*: the FULL effective ``params`` (baseline +
+    overrides — NOT the delta), ``n_steps``, the resolved ``emitter``/
+    ``emit_paths``, the study ``runtime`` block actually used, and
+    provenance (``origin``/``study``/``pkg``/``generation_id``).
+
+    ``code_version`` is best-effort: a git-HEAD lookup on ``ws_root`` and a
+    ``pkg`` version lookup, each independently wrapped so a failure (no git
+    repo, package not installed/importable, etc.) degrades to ``None``
+    rather than raising — this must never block a run from being recorded.
+    """
+    git_sha = None
+    if ws_root is not None:
+        try:
+            import subprocess
+            out = subprocess.run(
+                ["git", "-C", str(ws_root), "rev-parse", "HEAD"],
+                capture_output=True, text=True, check=True, timeout=5,
+            )
+            git_sha = out.stdout.strip() or None
+        except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
+            git_sha = None
+
+    pkg_version = None
+    if pkg:
+        try:
+            from importlib.metadata import version as _pkg_version
+            pkg_version = _pkg_version(pkg)
+        except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
+            pkg_version = None
+
+    return {
+        "version": 1,
+        "spec_id": spec_id,
+        "params": dict(params or {}),
+        "n_steps": int(n_steps) if n_steps is not None else None,
+        "emitter": emitter,
+        "emit_paths": list(emit_paths or []),
+        "runtime": dict(runtime or {}),
+        "origin": origin,
+        "study": study,
+        "pkg": pkg,
+        "generation_id": generation_id,
+        "code_version": {"git_sha": git_sha, "package": pkg_version},
+    }
+
+
 def save_metadata(conn, *, spec_id, run_id, params, label, started_at,
                   n_steps, log_path=None, generation_id=None,
                   workspace=None, emitter=None, study_slug=None,
-                  investigation_slug=None, origin="local"):
+                  investigation_slug=None, origin="local", manifest=None):
     """Insert a run row (status='running') and, if ``workspace`` is given,
-    append a 'started' event to the JSONL run log (durable metadata)."""
+    append a 'started' event to the JSONL run log (durable metadata).
+
+    ``manifest`` (optional) is the complete replay manifest built by
+    :func:`build_run_manifest`; stored verbatim as JSON in ``manifest_json``
+    so ``rerun.resolve_rerun_target`` can replay this run exactly rather than
+    reconstructing it from the override-delta ``params_json``/``n_steps``.
+    """
     conn.execute(
         "INSERT INTO runs_meta "
         "(run_id, spec_id, label, params_json, started_at, status, "
-        " n_steps, log_path, progress_step, generation_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)",
+        " n_steps, log_path, progress_step, generation_id, manifest_json) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
         (run_id, spec_id, label, json.dumps(params or {}),
-         started_at, "running", n_steps, log_path, generation_id),
+         started_at, "running", n_steps, log_path, generation_id,
+         json.dumps(manifest) if manifest else None),
     )
     conn.commit()
     if workspace is not None:
@@ -205,7 +272,7 @@ def query_run_meta(conn: sqlite3.Connection, *, run_id: str) -> dict | None:
     row = conn.execute(
         "SELECT run_id, spec_id, label, params_json, started_at, completed_at, "
         "n_steps, status, pid, progress_step, log_path, heartbeat_at, "
-        "generation_id "
+        "generation_id, manifest_json "
         "FROM runs_meta WHERE run_id=?",
         (run_id,),
     ).fetchone()
