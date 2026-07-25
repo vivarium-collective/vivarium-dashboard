@@ -5071,6 +5071,11 @@
       '<p id="investigations-empty" class="empty-state" style="display:none">No investigations match the filter.</p>';
 
     _filterInvestigations();
+
+    var _ic = document.getElementById('iset-tab-inv-count');
+    if (_ic) _ic.textContent = (window._isetIndex || []).length || '';
+    var _sc = document.getElementById('iset-tab-study-count');
+    if (_sc) _sc.textContent = (window._investigations || []).length || '';
   }
 
   // Member study objects for an investigation (from the client studies index).
@@ -5102,6 +5107,10 @@
     });
     var createBtn = document.getElementById('iset-browse-create');
     if (createBtn) createBtn.textContent = (tab === 'studies') ? '+ Study' : '+ Investigation';
+    var invCount = document.getElementById('iset-tab-inv-count');
+    var studyCount = document.getElementById('iset-tab-study-count');
+    if (invCount) invCount.textContent = (window._isetIndex || []).length || '';
+    if (studyCount) studyCount.textContent = (window._investigations || []).length || '';
     _renderInvestigationSets();
   }
   window._setIsetBrowseTab = _setIsetBrowseTab;
@@ -5224,19 +5233,37 @@
     }
     var sort = window._isetSort || 'default';
     var rank = { running: 0, in_progress: 1, planning: 2, planned: 2, failed: 3, complete: 4, ran: 4 };
-    studies.sort(function (a, b) {
+    var byStatus = function (s) { return rank[s.effective_status || s.status] ?? 9; };
+    var cmp = function (a, b) {
       var an = String(a.title || a.name), bn = String(b.title || b.name);
-      if (sort === 'name') return an.localeCompare(bn);
-      if (sort === 'status')
-        return (rank[a.effective_status || a.status] ?? 9) - (rank[b.effective_status || b.status] ?? 9) || an.localeCompare(bn);
+      if (sort === 'status') return byStatus(a) - byStatus(b) || an.localeCompare(bn);
       if (sort === 'studies_desc' || sort === 'recent') return (b.n_runs || 0) - (a.n_runs || 0) || an.localeCompare(bn);
       if (sort === 'studies_asc') return (a.n_runs || 0) - (b.n_runs || 0) || an.localeCompare(bn);
-      return an.localeCompare(bn);  // default: alphabetical
+      return an.localeCompare(bn);
+    };
+    // Bucket studies by their investigation (ordered by _isetIndex; leftovers last).
+    var groups = {};
+    studies.forEach(function (s) {
+      var inv = _investigationForStudy(s.name) || '__ungrouped__';
+      (groups[inv] = groups[inv] || []).push(s);
     });
+    var order = (window._isetIndex || []).map(function (i) { return i.name; })
+      .filter(function (n) { return groups[n]; });
+    if (groups.__ungrouped__) order.push('__ungrouped__');
     var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:6px 0 14px';
-    list.innerHTML =
-      '<div class="iset-group"><h3 class="iset-group-head" style="font-size:0.9em;color:#475569;font-weight:700;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.04em">All studies <span style="color:#94a3b8;font-weight:600">(' + studies.length + ')</span></h3>' +
-      '<div class="investigations-grid" style="' + GRID + '">' + studies.map(_studyBrowseCardHtml).join('') + '</div></div>' +
+    var titleFor = function (inv) {
+      if (inv === '__ungrouped__') return 'Ungrouped';
+      var it = (window._isetIndex || []).find(function (i) { return i.name === inv; });
+      return (it && (it.title || it.name)) || inv;
+    };
+    list.innerHTML = order.map(function (inv) {
+      var items = groups[inv].slice().sort(cmp);
+      return '<div class="iset-group" data-study-group="' + _esc(inv) + '">' +
+        '<h3 class="iset-group-head" style="font-size:0.9em;color:#475569;font-weight:700;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.04em">' +
+        _esc(titleFor(inv)) + ' <span style="color:#94a3b8;font-weight:600">(' + items.length + ')</span></h3>' +
+        '<div class="investigations-grid" style="' + GRID + '">' +
+        items.map(_studyBrowseCardHtml).join('') + '</div></div>';
+    }).join('') +
       '<p id="investigations-empty" class="empty-state" style="display:none">No studies match the filter.</p>';
     _filterInvestigations();
   }

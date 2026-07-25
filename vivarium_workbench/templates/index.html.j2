@@ -757,14 +757,17 @@ window.addEventListener('pageshow', function (e) {
 <section id="page-investigations" class="page" data-page="investigations">
   <!-- Browse toggle: flip the same search + sort + card grid between the
        Investigations and the (flat) Studies views. -->
+  <div class="iset-browse-header" style="display:flex;align-items:center;gap:14px;margin:0 0 4px">
+    <strong style="font-size:1.05em;color:#0f172a">Explore</strong>
+  </div>
   <div class="iset-browse-tabs" role="tablist"
        style="display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid #e5e7eb">
     <button class="iset-browse-tab active" data-browse="investigations" role="tab"
             onclick="_setIsetBrowseTab('investigations')"
-            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Investigations</button>
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Investigations <span id="iset-tab-inv-count" style="color:#94a3b8;font-weight:600"></span></button>
     <button class="iset-browse-tab" data-browse="studies" role="tab"
             onclick="_setIsetBrowseTab('studies')"
-            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Studies</button>
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Studies <span id="iset-tab-study-count" style="color:#94a3b8;font-weight:600"></span></button>
     <button id="iset-browse-create" class="action-btn" onclick="_openBrowseCreate()"
             style="margin-left:auto;align-self:center;margin-bottom:6px">+ Investigation</button>
   </div>
