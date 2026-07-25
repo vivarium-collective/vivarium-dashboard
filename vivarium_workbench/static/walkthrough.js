@@ -12249,44 +12249,49 @@
   window._investigationForStudy = _investigationForStudy;
 
   function _openStudyEmbeddedNewTab(name) {
-    // Use the in-place embed ONLY when the investigation detail view is actually
-    // on screen. ``_currentIset`` stays set after you leave the investigation
-    // tab, so keying on it alone made rail study clicks from other tabs (e.g.
-    // Analyses) try to embed into a hidden panel and appear to do nothing.
+    // When we're already inside a v3 investigation DETAIL view that has the
+    // study-embed panel on screen, embed there (nice in-context view).
+    var embedPanel = document.getElementById('investigation-study-embed-panel');
     var detail = document.getElementById('investigation-detail-view');
-    var onInvestigationView = window._currentIset && detail && detail.offsetParent !== null;
-    if (onInvestigationView) {
+    if (embedPanel && detail && detail.offsetParent !== null && window._currentIset) {
       _openStudyInsideInvestigation(name);
+      _selectStudyInRail(name);
       return;
     }
-    // Otherwise, DON'T full-window navigate to the stand-alone /studies/<name>
-    // page (a dead end with no sidebar). Instead open the study's investigation
-    // on the Studies page and embed the study inside it, so the sidebar +
-    // investigation context stay and the user can navigate back out.
-    var inv = _investigationForStudy(name);
-    if (inv && typeof _vivOpenInvestigationFromRail === 'function') {
-      _vivOpenInvestigationFromRail(inv);
-      // The investigation detail (with its study-embed panel) renders async;
-      // embed the study once the panel exists.
-      var tries = 0;
-      (function _embedWhenReady() {
-        var detail = document.getElementById('investigation-detail-view');
-        var ready = detail && detail.offsetParent !== null && window._currentIset;
-        if (ready || tries++ > 60) {
-          _openStudyInsideInvestigation(name);
-        } else {
-          setTimeout(_embedWhenReady, 50);
-        }
-      })();
-      return;
-    }
-    // Ungrouped study (no investigation): open the Studies page and embed it in
-    // the page-level study porthole.
+    // Otherwise open the STUDY's OWN pillar page in the studies-page porthole.
+    // Do NOT route through _openInvestigation — for a v2-shape investigation it
+    // renders the legacy "Study: <investigation>" icon-tab view, which is exactly
+    // the wrong thing. The porthole shows the actual study (pillar tabs) and
+    // works for v2 and v3 alike; never a dead-end full-window navigation.
     if (typeof _switchPage === 'function') { window.location.hash = '#studies'; _switchPage('studies'); }
     if (typeof _openStudyEmbedded === 'function') _openStudyEmbedded(name);
     else window.location = _studyHref(name);
+    _selectStudyInRail(name);
   }
   window._openStudyEmbeddedNewTab = _openStudyEmbeddedNewTab;
+
+  // Reflect the open study in the sidebar: highlight its leaf + reveal its
+  // investigation group. Tolerant if the rail hasn't rendered the leaf yet.
+  function _selectStudyInRail(name) {
+    document.querySelectorAll('.viv-rail-sublink.rail-study-active').forEach(function (a) {
+      a.classList.remove('rail-study-active'); a.style.background = '';
+    });
+    var sel = '.viv-rail-sublink[data-study-name="' +
+      (window.CSS && CSS.escape ? CSS.escape(name) : name) + '"]';
+    var leaf = document.querySelector(sel);
+    if (!leaf) return;
+    leaf.classList.add('rail-study-active');
+    leaf.style.background = '#eef2ff';
+    // If its investigation group is collapsed, expand it so the leaf is visible.
+    var grp = leaf.closest('[data-rail-group], .viv-rail-investigations-group');
+    if (grp && grp.classList.contains('collapsed') &&
+        typeof _vivToggleInvGroup === 'function') {
+      var hdr = grp.querySelector('.viv-rail-investigations-group-header');
+      if (hdr) _vivToggleInvGroup(hdr);
+    }
+    try { leaf.scrollIntoView({ block: 'nearest' }); } catch (e) { /* ignore */ }
+  }
+  window._selectStudyInRail = _selectStudyInRail;
 
   // Sidebar grouping: studies-by-investigation, collapsible.
   // Replaces the existing flat-list render in #viv-rail-investigations.
@@ -12316,7 +12321,7 @@
     var fontSize = opts.indent ? '0.85em' : '0.86em';
     var nameColor = opts.indent ? '#64748b' : '#374151';
     var tip = _esc(s.name) + ' — ' + _esc(status) + (s.blocked ? ' (blocked)' : '');
-    return '<a class="viv-rail-sublink" ' +
+    return '<a class="viv-rail-sublink" data-study-name="' + _esc(s.name) + '" ' +
            'onclick="event.preventDefault();_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\');return false;" ' +
            'href="#" title="' + tip + '" ' +
            'style="display:flex;align-items:center;gap:8px;padding:4px 14px 4px ' + indent + ';color:' + nameColor + ';text-decoration:none;font-size:' + fontSize + ';">' +
