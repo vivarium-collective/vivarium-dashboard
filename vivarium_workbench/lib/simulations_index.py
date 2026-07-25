@@ -1191,18 +1191,24 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
         # supplies one, re-backfill so the log record carries it.
         has_composite = bool(row.get("spec_id"))
         prev_has_composite = bool(prev and prev.get("spec_id"))
+        # Same self-heal for the reproduction config: a run migrated before its
+        # config was derivable has none in the log; once study.yaml/params_json
+        # supplies it, re-backfill so the log record carries it.
+        has_config = bool(row.get("config"))
+        prev_has_config = bool(prev and prev.get("config"))
         # Skip when already represented AND its store location is known (or the
-        # legacy store has none to add) AND its composite is known (or the legacy
-        # store has none to add) — keeps this idempotent across builds.
+        # legacy store has none to add) AND its composite is known AND its config
+        # is known (or the legacy store has none to add) — idempotent across builds.
         if (prev is not None
                 and (prev_has_store or not has_store)
-                and (prev_has_composite or not has_composite)):
+                and (prev_has_composite or not has_composite)
+                and (prev_has_config or not has_config)):
             continue
         ev = {"run_id": rid, "event": "backfill"}
         for k in ("spec_id", "sim_name", "label", "status", "n_steps",
                   "progress_step", "started_at", "completed_at", "db_path",
                   "store_path", "emitter", "study_slug", "investigation_slug",
-                  "remote_origin"):
+                  "remote_origin", "config"):
             v = row.get(k)
             if v is not None:
                 ev[k] = v
@@ -1227,6 +1233,17 @@ def _rec_to_simrow(run_id: str, rec: dict) -> dict:
               "store_path", "study_slug", "investigation_slug"):
         if rec.get(k) is not None:
             row[k] = rec[k]
+
+    # Reproduction config: prefer an explicit config on the record (backfilled
+    # from study.yaml / runs_meta); else derive from the run's saved generator
+    # params (the 'started' event's ``params``), minus transport-provenance keys.
+    if isinstance(rec.get("config"), dict) and rec["config"]:
+        row["config"] = rec["config"]
+    elif isinstance(rec.get("params"), dict) and rec["params"]:
+        _cfg = {k: v for k, v in rec["params"].items()
+                if k not in _RUN_PROVENANCE_KEYS}
+        if _cfg:
+            row["config"] = _cfg
 
     emitter = rec.get("emitter")
     tag = _emitter_tag(emitter)

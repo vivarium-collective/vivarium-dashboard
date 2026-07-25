@@ -138,6 +138,10 @@ def save_metadata(conn, *, spec_id, run_id, params, label, started_at,
             "label": label, "started_at": started_at, "status": "running",
             "n_steps": n_steps, "emitter": emitter, "origin": origin,
             "study_slug": study_slug, "investigation_slug": investigation_slug,
+            # Persist the run's generator params so the reproduction config
+            # survives the JSONL fold (build_simulations_data) — previously it
+            # lived only in runs_meta.params_json and was dropped by the fold.
+            "params": params or {},
         })
 
 
