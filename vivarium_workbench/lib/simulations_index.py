@@ -746,6 +746,31 @@ def _read_parquet_hives(workspace: Path) -> list[dict]:
 # Simulations DB must also discover them on disk to be XArray-aware.
 # ---------------------------------------------------------------------------
 
+def _read_zarr_provenance(zarr_path: Path) -> dict | None:
+    """Read a zarr store's ``provenance`` attribute — the self-describing run
+    provenance the XArrayEmitter writes ({composite, config, run_id}).
+
+    The emitter writes it at its ROOT group, which in the partitioned layout is
+    a NESTED group (``experiment_id=…/variant=…/lineage_seed=…``), not the
+    top-level ``store.zarr`` dir. So we check the top root, then descend
+    (bounded) to the first group carrying a ``provenance`` attr. Returns the
+    dict, or None for legacy attr-less stores / unopenable zarr. Never raises.
+    """
+    try:
+        import zarr  # optional dep; lazy so the index never hard-requires it
+        root = zarr.open_group(str(zarr_path), mode="r")
+        prov = dict(root.attrs).get("provenance")
+        if isinstance(prov, dict) and prov:
+            return prov
+        for _name, member in root.members(max_depth=4):
+            mprov = dict(getattr(member, "attrs", {})).get("provenance")
+            if isinstance(mprov, dict) and mprov:
+                return mprov
+        return None
+    except Exception:  # noqa: BLE001 — missing dep / unreadable / attr-less legacy store
+        return None
+
+
 def _discover_xarray_runs(workspace: Path) -> list[dict]:
     """Yield one row per ``.pbg/runs/<run_id>/`` dir that contains a
     ``store.zarr`` (directly or under ``seed_*/``). Shaped like the other
@@ -775,9 +800,13 @@ def _discover_xarray_runs(workspace: Path) -> list[dict]:
             mtime = run_dir.stat().st_mtime
         except OSError:
             mtime = None
-        out.append({
+        # Self-describing provenance: a store written by the XArrayEmitter carries
+        # {composite, config, run_id} in its root attrs, so a disk-discovered run
+        # still shows its composite + config (legacy attr-less stores → None).
+        prov = _read_zarr_provenance(zarrs[0])
+        row = {
             "run_id": run_id,
-            "spec_id": None,
+            "spec_id": (prov or {}).get("composite"),
             "sim_name": run_id,
             "label": run_id,
             "status": "completed",
@@ -791,7 +820,10 @@ def _discover_xarray_runs(workspace: Path) -> list[dict]:
             "study_slug": None,
             "investigation_slug": None,
             "source": "xarray",
-        })
+        }
+        if isinstance((prov or {}).get("config"), dict) and prov["config"]:
+            row["config"] = prov["config"]
+        out.append(row)
     return out
 
 
