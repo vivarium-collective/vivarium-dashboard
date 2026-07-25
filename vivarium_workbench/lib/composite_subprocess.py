@@ -136,13 +136,19 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                              label, overrides=None, sim_name=None, timeout=1800,
                              emit_paths=None, study_emitter=None,
                              study_max_generations=None,
-                             study_single_daughters=None):
+                             study_single_daughters=None, manifest=None):
     """Run a resolved composite ``state`` for ``steps`` steps in a subprocess,
     persisting runs_meta + history (via an injected SQLiteEmitter) to
     ``db_file``.
 
     Shared by ``_post_composite_test_run`` (scratchpad db) and the study-run
     handlers (per-Study db). Does NOT clear prior rows — callers decide.
+
+    ``manifest`` (optional) is the complete per-run replay manifest (Part A,
+    ``composite_runs.build_run_manifest``) built by the caller (e.g.
+    ``study_runs.launch_into_study``); threaded straight through to
+    ``cr.save_metadata`` so it lands in the run's ``runs_meta.manifest_json``
+    row for ``rerun.resolve_rerun_target`` to replay later.
 
     Returns ``(response_dict, status_code)``.  ``response_dict`` always has
     ``"simulation_id"``; on success also ``"results"``, ``"viz_html"``,
@@ -507,7 +513,8 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                              params=overrides, label=label,
                              started_at=time.time(), n_steps=steps,
                              generation_id=_generation_id,
-                             workspace=ws_root, emitter=run_emitter_kind)
+                             workspace=ws_root, emitter=run_emitter_kind,
+                             manifest=manifest)
             if sim_name is not None:
                 conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?",
                              (sim_name, run_id))
