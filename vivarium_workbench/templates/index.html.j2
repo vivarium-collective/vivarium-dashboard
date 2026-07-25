@@ -520,12 +520,6 @@ window.addEventListener('pageshow', function (e) {
         </span>
         <span class="viv-rail-link-label">Investigations</span>
       </a>
-      <!-- Studies: the flat catalog of every study (browse / sort / filter),
-           nested under Investigations since a study always belongs to one. -->
-      <a href="#studies" class="viv-rail-link menu-link viv-rail-submenu-link" data-page="studies"
-         style="padding-top:4px;padding-bottom:4px;padding-left:44px;font-size:0.92em">
-        <span class="viv-rail-link-label">Studies</span>
-      </a>
       <a href="#simulations"       class="viv-rail-link menu-link" data-page="simulations">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
@@ -761,6 +755,17 @@ window.addEventListener('pageshow', function (e) {
 
 <!-- ===== PAGE: STUDIES ===== -->
 <section id="page-investigations" class="page" data-page="investigations">
+  <!-- Browse toggle: flip the same search + sort + card grid between the
+       Investigations and the (flat) Studies views. -->
+  <div class="iset-browse-tabs" role="tablist"
+       style="display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid #e5e7eb">
+    <button class="iset-browse-tab active" data-browse="investigations" role="tab"
+            onclick="_setIsetBrowseTab('investigations')"
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Investigations</button>
+    <button class="iset-browse-tab" data-browse="studies" role="tab"
+            onclick="_setIsetBrowseTab('studies')"
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Studies</button>
+  </div>
   <!-- Prominent unified search: matches investigations AND their studies (same
        engine as the side-rail studies search — see _filterInvestigations). -->
   <div style="margin:0 0 10px">

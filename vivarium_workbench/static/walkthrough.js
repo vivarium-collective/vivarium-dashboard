@@ -4897,6 +4897,7 @@
   function _renderInvestigationSets() {
     var list = document.getElementById('investigations-list');
     if (!list) return;
+    if (window._isetBrowseTab === 'studies') { _renderStudyBrowseCards(list); return; }
     if (!window._isetIndex.length) {
       list.innerHTML = '<p class="empty-state">No investigations declared. Author one at <code>investigations/&lt;name&gt;/investigation.yaml</code>.</p>';
       return;
@@ -5087,6 +5088,83 @@
   }
   window._setIsetSort = _setIsetSort;
   window._isetStudyObjs = _isetStudyObjs;
+
+  // Flip the browse grid between the Investigations and the flat Studies view,
+  // sharing the same search + sort + card look.
+  function _setIsetBrowseTab(tab) {
+    window._isetBrowseTab = tab;
+    document.querySelectorAll('.iset-browse-tab').forEach(function (b) {
+      var on = b.getAttribute('data-browse') === tab;
+      b.classList.toggle('active', on);
+      b.style.color = on ? '#1e293b' : '#64748b';
+      b.style.fontWeight = on ? '600' : '400';
+      b.style.borderBottomColor = on ? '#3b82f6' : 'transparent';
+    });
+    _renderInvestigationSets();
+  }
+  window._setIsetBrowseTab = _setIsetBrowseTab;
+
+  // Status dot vocab shared by the study cards + breakdowns.
+  var _STUDY_DOT = {
+    complete: ['#16a34a', 'done'], ran: ['#16a34a', 'done'],
+    running: ['#2563eb', 'running'], in_progress: ['#d97706', 'in progress'],
+    failed: ['#dc2626', 'failed'], planning: ['#94a3b8', 'planned'],
+    planned: ['#94a3b8', 'planned'],
+  };
+  function _studyDotMeta(st) { return _STUDY_DOT[st] || _STUDY_DOT.planned; }
+
+  function _studyBrowseCardHtml(s) {
+    var status = s.effective_status || s.status || 'planned';
+    var m = _studyDotMeta(status);
+    var inv = _investigationForStudy(s.name);
+    var q = s.question || s.objective || '';
+    var nRuns = (s.n_runs !== undefined) ? s.n_runs
+              : (s.n_simulations !== undefined ? s.n_simulations : 0);
+    var cardStyle = 'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.1s,border-color 0.1s;';
+    return '<div class="investigation-set-card" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ' +
+           'title="' + _esc(s.name) + '" ' +
+           'data-iset-title="' + _esc(String(s.title || s.name).toLowerCase()) + '" ' +
+           'data-iset-slug="' + _esc(String(s.name).toLowerCase()) + '" ' +
+           'data-iset-status="' + _esc(String(status).toLowerCase()) + '" ' +
+           'style="' + cardStyle + '">' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">' +
+        '<strong style="font-size:1.02em;flex:1">' + _esc(s.title || s.name) + '</strong>' +
+        '<span style="font-size:0.72em;border-radius:9999px;padding:1px 9px;white-space:nowrap;' +
+          'background:' + m[0] + '22;color:' + m[0] + ';border:1px solid ' + m[0] + '55">' + _esc(m[1]) + '</span>' +
+      '</div>' +
+      (inv ? '<div style="font-size:0.78em;color:#94a3b8;margin:0 0 6px"><span style="color:#cbd5e1">▪</span> ' + _esc(inv) + '</div>' : '') +
+      (q ? '<p style="margin:0 0 8px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(String(q).split('\n')[0].slice(0, 180)) + '</p>' : '') +
+      '<div style="display:flex;align-items:center;gap:12px;font-size:0.85em;color:#64748b">' +
+        '<span style="flex:1"><strong>' + nRuns + '</strong> run' + (nRuns === 1 ? '' : 's') + '</span>' +
+        '<span style="color:#3b82f6">open ↗</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function _renderStudyBrowseCards(list) {
+    var studies = (window._investigations || []).slice();
+    if (!studies.length) {
+      list.innerHTML = '<p class="empty-state">No studies in this workspace yet.</p>';
+      return;
+    }
+    var sort = window._isetSort || 'default';
+    var rank = { running: 0, in_progress: 1, planning: 2, planned: 2, failed: 3, complete: 4, ran: 4 };
+    studies.sort(function (a, b) {
+      var an = String(a.title || a.name), bn = String(b.title || b.name);
+      if (sort === 'name') return an.localeCompare(bn);
+      if (sort === 'status')
+        return (rank[a.effective_status || a.status] ?? 9) - (rank[b.effective_status || b.status] ?? 9) || an.localeCompare(bn);
+      if (sort === 'studies_desc' || sort === 'recent') return (b.n_runs || 0) - (a.n_runs || 0) || an.localeCompare(bn);
+      if (sort === 'studies_asc') return (a.n_runs || 0) - (b.n_runs || 0) || an.localeCompare(bn);
+      return an.localeCompare(bn);  // default: alphabetical
+    });
+    var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:6px 0 14px';
+    list.innerHTML =
+      '<div class="iset-group"><h3 class="iset-group-head" style="font-size:0.9em;color:#475569;font-weight:700;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.04em">All studies <span style="color:#94a3b8;font-weight:600">(' + studies.length + ')</span></h3>' +
+      '<div class="investigations-grid" style="' + GRID + '">' + studies.map(_studyBrowseCardHtml).join('') + '</div></div>' +
+      '<p id="investigations-empty" class="empty-state" style="display:none">No studies match the filter.</p>';
+    _filterInvestigations();
+  }
 
   // Client-side filter for the Investigations landing list. UNIFIED with the
   // side-rail studies search (same _tokensMatch engine, same AND-first/OR-
