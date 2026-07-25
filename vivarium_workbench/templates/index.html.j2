@@ -755,21 +755,74 @@ window.addEventListener('pageshow', function (e) {
 
 <!-- ===== PAGE: STUDIES ===== -->
 <section id="page-investigations" class="page" data-page="investigations">
+  <div id="iset-explore">
+  <!-- Browse toggle: flip the same search + sort + card grid between the
+       Investigations and the (flat) Studies views. -->
+  <div class="iset-browse-tabs" role="tablist"
+       style="display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid #e5e7eb">
+    <button class="iset-browse-tab active" data-browse="investigations" role="tab"
+            onclick="_setIsetBrowseTab('investigations')"
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Investigations <span id="iset-tab-inv-count" style="color:#94a3b8;font-weight:600"></span></button>
+    <button class="iset-browse-tab" data-browse="studies" role="tab"
+            onclick="_setIsetBrowseTab('studies')"
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Studies <span id="iset-tab-study-count" style="color:#94a3b8;font-weight:600"></span></button>
+    <button id="iset-browse-create" class="action-btn" onclick="_openBrowseCreate()"
+            style="margin-left:auto;align-self:center;margin-bottom:6px">+ Investigation</button>
+  </div>
   <!-- Prominent unified search: matches investigations AND their studies (same
        engine as the side-rail studies search — see _filterInvestigations). -->
-  <div style="margin:0 0 16px">
+  <div style="margin:0 0 10px">
     <input id="investigations-filter" type="search"
-           placeholder="Search investigations and studies…"
+           placeholder="Search…"
            aria-label="Search investigations and studies" oninput="_filterInvestigations()"
-           style="width:100%;box-sizing:border-box;padding:11px 16px;border:1px solid #d1d5db;
-                  border-radius:10px;font-size:1.05em;background:#fff;
-                  box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+           style="width:100%;box-sizing:border-box;padding:6px 12px;border:1px solid #d1d5db;
+                  border-radius:7px;font-size:0.9em;background:#fff;">
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:0.85em;color:#64748b">
+    <label for="iset-sort" style="font-weight:600">Sort</label>
+    <select id="iset-sort" onchange="_setIsetSort(this.value)"
+            style="padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:0.95em">
+      <option value="default">Default (active first)</option>
+      <option value="name">Name (A→Z)</option>
+      <option value="status">Status</option>
+      <option value="studies_desc">Most studies</option>
+      <option value="studies_asc">Fewest studies</option>
+      <option value="recent">Recently updated</option>
+    </select>
+    <span id="iset-study-view-toggle" style="display:none;align-items:center;gap:0">
+      <button id="iset-view-cards" class="iset-view-btn" onclick="_setStudyView('cards')"
+              style="padding:5px 10px;border:1px solid #d1d5db;border-right:none;border-radius:6px 0 0 6px;background:#eef2ff;color:#1e293b;font-weight:600;font-size:0.95em;cursor:pointer">Cards</button>
+      <button id="iset-view-table" class="iset-view-btn" onclick="_setStudyView('table')"
+              style="padding:5px 10px;border:1px solid #d1d5db;border-radius:0 6px 6px 0;background:#fff;color:#64748b;font-size:0.95em;cursor:pointer">Table</button>
+    </span>
+    <span id="iset-list-tip" style="margin-left:auto">Tip: click a card's <strong>studies</strong> count to expand it.</span>
   </div>
 
   <!-- List view: grouped investigation cards (Active / Closed). The grid lives on
        the per-group .investigations-grid wrappers built by _renderInvestigationSets. -->
   <div id="investigations-list">
     <p class="empty-state">Loading…</p>
+  </div>
+  </div>
+
+  <div id="iset-workspace" style="display:none">
+    <div style="display:flex;align-items:center;gap:12px;margin:0 0 10px">
+      <button id="ws-back" class="btn-mini" onclick="_showExplore()" style="cursor:pointer">← All investigations</button>
+      <strong id="ws-title" style="font-size:1.1em;color:#0f172a"></strong>
+      <span id="ws-status" style="margin-left:6px"></span>
+      <span id="ws-actions" style="margin-left:auto"></span>
+    </div>
+    <!-- slim collapsed bar (hidden until a study is open) -->
+    <button id="ws-context-bar" onclick="_setInvestigationContextCollapsed(false)"
+            style="display:none;width:100%;text-align:left;background:#f8fafc;border:1px solid #e5e7eb;border-radius:6px;padding:6px 12px;cursor:pointer;color:#475569;font-weight:600">▸ Investigation: <span id="ws-context-bar-name"></span></button>
+    <!-- full investigation context (graph + objective) -->
+    <div id="ws-context"></div>
+    <!-- study tabs + porthole -->
+    <div id="ws-study-tabs" style="display:none;border-bottom:1px solid #e5e7eb;margin:12px 0 0"></div>
+    <div id="ws-study-panel" class="panel" style="display:none;margin-top:0;padding:0;overflow:hidden">
+      <iframe id="ws-study-frame" src="" title="Study detail"
+              style="width:100%;border:0;display:block"></iframe>
+    </div>
   </div>
 
   <!-- "+ New Investigation" modal. Hidden by default. -->
@@ -1067,9 +1120,8 @@ window.addEventListener('pageshow', function (e) {
 <section id="page-studies" class="page" data-page="studies">
   <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
     <h2 class="page-title" style="margin:0">Studies</h2>
-    <button class="action-btn" onclick="_createInvestigation()">+ New study</button>
   </div>
-  <p class="page-lead">Declarative research recipes — pick a composite, declare simulations (single / sweep / seeds), name observables, choose visualizations. Run, save, compare.</p>
+  <p class="page-lead">Browse every study in the workspace — filter, sort, and open any of them (each belongs to an investigation).</p>
 
   <!-- Browse toolbar matches v0.5.6 catalog/composite browse -->
   <div class="card-browse-toolbar" id="investigations-toolbar">
@@ -1212,6 +1264,29 @@ window.addEventListener('pageshow', function (e) {
       </label>
       <div class="form-error"></div>
       <button type="submit">Create</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: prompt-first create for an investigation OR a study (browse page). -->
+<div id="modal-browse-create" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-browse-create')">&times;</button>
+    <h3 id="browse-create-title">New investigation</h3>
+    <form id="form-browse-create" onsubmit="event.preventDefault(); _submitBrowseCreate(this)">
+      <label style="display:block;margin-bottom:10px"><span id="browse-create-prompt-label">Describe the investigation — the question you want to answer</span>
+        <textarea name="prompt" rows="3" required oninput="_browseCreateSuggestName(this)"
+                  style="width:100%;box-sizing:border-box;margin-top:4px"
+                  placeholder="e.g. Does v2ecoli's baseline reproduce the measured acetate overflow at high glucose?"></textarea>
+      </label>
+      <label style="display:block;margin-bottom:10px">Name <input name="name" required pattern="[a-z0-9][a-z0-9-]*"
+             placeholder="auto-derived from your description — editable"
+             oninput="this._touched=true" style="width:100%;box-sizing:border-box;margin-top:4px"></label>
+      <label id="browse-create-inv-row" style="display:none;margin-bottom:10px">Investigation
+        <select name="investigation" id="browse-create-inv" style="width:100%;box-sizing:border-box;margin-top:4px"></select>
+      </label>
+      <div class="form-error" style="color:#dc2626;margin:6px 0"></div>
+      <button type="submit" id="browse-create-submit">Create investigation</button>
     </form>
   </div>
 </div>
