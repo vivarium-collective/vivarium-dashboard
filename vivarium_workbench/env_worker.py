@@ -430,6 +430,61 @@ def _pd_json_sanitize(obj):
     return str(obj)
 
 
+def _pd_instance_config(inst):
+    """The live process instance's actual config dict (ParCa-hydrated, the values
+    it will SIMULATE with). Native pbg processes keep it on ``_config``;
+    vivarium-wrapped V1 processes keep it on ``parameters``. First non-empty dict
+    wins; ``None`` if the instance is absent or exposes no config dict."""
+    if inst is None or isinstance(inst, str):
+        return None
+    for attr in ("parameters", "_config", "config"):
+        v = getattr(inst, attr, None)
+        if isinstance(v, dict) and v:
+            return v
+    return None
+
+
+def _pd_config_sanitize(obj, depth=0):
+    """JSON-safe, SIZE-BOUNDED view of a loaded config value: keep scalars and
+    small collections verbatim, but summarize the ParCa-scale arrays / matrices /
+    lookup dicts (which would otherwise bloat the doc by megabytes) to a shape
+    string. Conveys "this is loaded and ready to simulate" without dumping every
+    element. Callables render as ``<fn name>``, quantities as their str form."""
+    import math as _math
+    if obj is None or isinstance(obj, bool):
+        return obj
+    if isinstance(obj, int):
+        return obj
+    if isinstance(obj, float):
+        return obj if _math.isfinite(obj) else None
+    if isinstance(obj, str):
+        return obj if len(obj) <= 200 else obj[:197] + "…"
+    if callable(obj):
+        return f"<fn {getattr(obj, '__name__', type(obj).__name__)}>"
+    # numpy / array-likes carrying a shape → summarize as Type(shape) dtype.
+    shape = getattr(obj, "shape", None)
+    if shape is not None and not isinstance(obj, dict):
+        dt = getattr(getattr(obj, "dtype", None), "name", "")
+        return f"{type(obj).__name__}{tuple(shape)}" + (f" {dt}" if dt else "")
+    # pint Quantity (magnitude + units) → its human string.
+    if hasattr(obj, "magnitude") and hasattr(obj, "units"):
+        return str(obj)[:120]
+    if isinstance(obj, dict):
+        # The top-level config dict is the parameter list — keep every key. A
+        # NESTED large dict is a lookup table (e.g. a matrix as dict) — summarize.
+        if depth > 0 and len(obj) > 16:
+            return f"dict[{len(obj)} keys]"
+        return {str(k): _pd_config_sanitize(v, depth + 1) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        seq = list(obj)
+        n = len(seq)
+        if n > 8:
+            et = type(seq[0]).__name__ if n else ""
+            return f"[{n} {et}s]" if et else f"[{n} items]"
+        return [_pd_config_sanitize(v, depth + 1) for v in seq]
+    return str(obj)[:120]
+
+
 import re as _re
 
 # ``repr`` of a live process instance once the state has been JSON-serialized:
@@ -569,6 +624,18 @@ def _attach_process_docs(doc):
                         schema = getattr(cls, "config_schema", None) if cls is not None else None
                         if schema:
                             node["config_schema"] = _pd_json_sanitize(schema)
+                    except Exception:  # noqa: BLE001
+                        pass
+                # Fully-loaded config: the spec's `config` is usually {} (the
+                # process runs on defaults), but the LIVE instance carries its
+                # actual ParCa-hydrated config — the values it will simulate with.
+                # Serialize that (size-bounded) so cards show a ready-to-simulate
+                # config, not empty/defaults. Only when the spec didn't set one.
+                if not node.get("config"):
+                    try:
+                        loaded = _pd_instance_config(node.get("instance"))
+                        if loaded:
+                            node["config"] = _pd_config_sanitize(loaded)
                     except Exception:  # noqa: BLE001
                         pass
                 if "_contract" not in node:
