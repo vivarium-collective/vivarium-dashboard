@@ -16,14 +16,19 @@ the gap was purely that nothing built it.
 
 This hook closes that gap by running the build as part of the wheel build.
 
-Target policy differs on purpose:
+Policy — the loom bundle is an OPTIONAL runtime asset, so a missing Node
+toolchain never breaks the build:
 
-- **wheel** — the bundle is REQUIRED. A wheel is what gets shipped and
-  installed by people who cannot fix it themselves, so a missing toolchain is a
-  hard error with an actionable message rather than a silently broken artifact.
-- **editable** (``pip install -e .``) — best-effort. A contributor working on
-  the Python side shouldn't be blocked by a missing Node, and they can run
-  ``scripts/build_loom.sh`` when they need the Explorer. Warn, don't fail.
+- **default (wheel + editable)** — best-effort. If Node/npm is present the bundle
+  is built and packaged; if not (or the build fails), warn and ship WITHOUT it.
+  The server degrades gracefully (an "Explorer unavailable" state), so consumers
+  that use the workbench as a library — the common case, installed in Node-less
+  Docker/CI — are never blocked by a frontend asset they don't use. This is the
+  fix for the ecosystem-wide "npm not found on PATH" `uv sync` failures.
+- **publish path** — sets ``VIVARIUM_WORKBENCH_REQUIRE_LOOM=1`` to turn a missing
+  bundle into a hard error, guaranteeing the read-only dashboard ships the
+  Explorer. (GitHub runners have Node, so it's built there regardless; this is
+  the belt-and-suspenders guard.)
 
 An already-built `_dist` is reused (see ``_is_fresh``) so repeat builds and the
 Docker image — which runs the script explicitly before installing — don't pay
@@ -43,6 +48,15 @@ from hatchling.builders.hooks.plugin.interface import BuildHookInterface
 # environments that supply _dist by other means (or genuinely don't need the
 # Explorer, e.g. a docs build); deliberately explicit, never inferred.
 SKIP_ENV = "VIVARIUM_WORKBENCH_SKIP_LOOM_BUILD"
+
+# Set to a non-empty value to make a missing loom bundle a HARD ERROR. The
+# DEFAULT is warn-and-ship-without: the workbench is consumed as a *library* by
+# ~every pbg workspace, and those installs happen in Node-less environments
+# (slim Docker images, CI without a JS toolchain). Hard-failing the wheel build
+# there turns an optional frontend asset into a mandatory Node dependency for
+# every downstream `uv sync` — which is exactly what broke builds ecosystem-wide.
+# The dashboard *publish* path (which must ship the Explorer) sets this to 1.
+REQUIRE_ENV = "VIVARIUM_WORKBENCH_REQUIRE_LOOM"
 
 
 class LoomBuildHook(BuildHookInterface):
@@ -105,18 +119,27 @@ class LoomBuildHook(BuildHookInterface):
             return False
 
     def _missing(self, version: str, reason: str) -> None:
-        """Hard-fail a wheel build; warn for anything else (notably editable)."""
+        """Warn and ship without the loom bundle by default; hard-fail only when
+        the caller explicitly REQUIRES it (``VIVARIUM_WORKBENCH_REQUIRE_LOOM``).
+
+        The bundle is an OPTIONAL runtime asset — the server degrades to a
+        graceful "Explorer unavailable" when ``_dist`` is absent, it does not
+        crash. So a missing Node toolchain (Docker / CI without JS) must not
+        break the wheel build for the many consumers that use the workbench as a
+        library and never open the Explorer. The publish path that must ship the
+        Explorer opts into a hard error with ``REQUIRE_ENV=1``."""
         msg = (
             f"loom bundle not built — {reason}.\n"
             f"The Composite Explorer is served from vivarium_workbench/loom/_dist, "
             f"which is generated (gitignored), not source.\n"
-            f"Install Node 20+ and re-run, build it manually with "
-            f"scripts/build_loom.sh, or set {SKIP_ENV}=1 to ship without it."
+            f"Install Node 20+ and build it with scripts/build_loom.sh to include it."
         )
-        if version == "editable":
-            self.app.display_warning(f"warning: {msg}")
-            return
-        raise RuntimeError(msg)
+        if os.environ.get(REQUIRE_ENV):
+            raise RuntimeError(f"{msg}\n({REQUIRE_ENV} is set — treating as fatal.)")
+        self.app.display_warning(
+            f"warning: {msg}\n"
+            f"Shipping without the Composite Explorer (the rest of the workbench "
+            f"works normally). Set {REQUIRE_ENV}=1 to make this a hard error.")
 
 
 # Hatchling discovers the hook class by scanning this module; the explicit
