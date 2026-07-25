@@ -24,8 +24,26 @@ export interface ProcessContract {
 const MATH_RE = /[=~∑∏≈←≥≤]|\b(Multinomial|Binomial|Poisson|Normal|Gamma|Exponential)\s*\(/;
 
 /** Structured types run past 300 chars; a card shows the shape, not the fields. */
+// Some processes declare port types as bigraph type OBJECTS rather than name
+// strings, so they serialize as a Python class repr, e.g.
+// `InPlaceDict(_default=None, _value=Node(_default=None))` or `Float(...)`.
+// Map the leading class name to a clean, friendly type name.
+const FRIENDLY_TYPE: Record<string, string> = {
+  InPlaceDict: 'tree', Node: 'node', Float: 'float', Integer: 'integer',
+  Overwrite: 'overwrite', String: 'string', Boolean: 'boolean', Method: 'method',
+  BulkNumpyUpdate: 'bulk', UniqueNumpyUpdate: 'unique', Quantity: 'quantity',
+  AccumulateFloat: 'accumulate[float]',
+};
+function friendlyTypeName(base: string): string {
+  return FRIENDLY_TYPE[base]
+    ?? base.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
 export function abbreviateType(type: string): string {
   if (!type || typeof type !== 'string') return '';
+  // Class-repr form `Name(...)` (a leaked type object) → a clean name.
+  const repr = type.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*\(/);
+  if (repr) return friendlyTypeName(repr[1]);
   const m = type.match(/^([A-Za-z0-9_]+)\[(.*)\]$/s);
   if (!m) return type;
   const [, base, inner] = m;
