@@ -305,6 +305,21 @@ def _ref_resolves(ref: str, known_ids: set[str]) -> bool:
     return False
 
 
+def annotate_composite_registered(sims: list[dict], known_ids: set[str]) -> None:
+    """Set ``row['composite_registered']`` on each Simulations-DB row in place.
+
+    Enforcement: every simulation must map to exactly one registered composite.
+    A row's ``spec_id`` is registered when it resolves against ``known_ids``
+    ALIAS-TOLERANTLY (:func:`_ref_resolves`) — so a run recorded with the short
+    ``baseline`` alias (or the doubled ``…baseline.baseline`` id) is recognised
+    as the registered dotted ``v2ecoli.composites.baseline``, not falsely flagged
+    as unregistered. A missing/empty ``spec_id`` is False (no composite).
+    """
+    for s in sims:
+        cid = s.get("spec_id")
+        s["composite_registered"] = bool(cid and _ref_resolves(cid, known_ids))
+
+
 def unresolved_study_composite_refs(spec: dict, known_ids: set[str]) -> list[str]:
     """Return the study's declared composite refs that DON'T resolve to any
     registered composite id.
