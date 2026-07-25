@@ -51,6 +51,10 @@ _NEW_COLUMNS = {
     # pbg_superpowers.generation. Nullable: runs predating the model have NULL
     # and are treated as stale once any generation exists.
     "generation_id": "TEXT",
+    # Analysis-tool capability tags derived from the run's emitted stores
+    # (see lib/run_capabilities.derive_capabilities). Written best-effort on
+    # finalize; a lazy backfill recovers any run that missed it. JSON list.
+    "capabilities_json": "TEXT",
 }
 
 
@@ -60,6 +64,14 @@ def _migrate_runs_meta(conn: sqlite3.Connection) -> None:
     for name, sqltype in _NEW_COLUMNS.items():
         if name not in existing:
             conn.execute(f"ALTER TABLE runs_meta ADD COLUMN {name} {sqltype}")
+    conn.commit()
+
+
+def write_run_capabilities(conn, run_id: str, tags) -> None:
+    """Store a run's capability tags as JSON text in runs_meta."""
+    import json
+    conn.execute("UPDATE runs_meta SET capabilities_json=? WHERE run_id=?",
+                 (json.dumps(list(tags)), run_id))
     conn.commit()
 
 
@@ -150,6 +162,17 @@ def complete_metadata(conn, *, run_id, n_steps, status, workspace=None):
         (completed_at, n_steps, status, run_id),
     )
     conn.commit()
+    if status == "completed":
+        try:
+            from vivarium_workbench.lib.run_capabilities import derive_capabilities
+            row = conn.execute(
+                "SELECT emitter_path FROM runs_meta WHERE run_id=?", (run_id,)
+            ).fetchone()
+            store = row[0] if row else None
+            if store:
+                write_run_capabilities(conn, run_id, derive_capabilities(store, run_id))
+        except Exception:  # noqa: BLE001 — best-effort; lazy backfill is the safety net
+            pass
     if workspace is not None:
         run_log.append_run_event(workspace, {
             "run_id": run_id,
