@@ -601,6 +601,34 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
             or []
         )
         findings = _enrich_findings_with_weight(study_spec)
+        # Deterministic evidence chain for the DAG node: the raw study.yaml load
+        # here has no enriched report_card_urls (that only happens in the study
+        # detail loader), so a study whose only evidence is report cards would
+        # render "pending". Discover its cards and derive one finding per card
+        # when none are authored — so the node's "Finds:"/claim populate.
+        node_claim = study_spec.get("claim")
+        if not findings:
+            try:
+                from vivarium_workbench.lib.study_spec import (  # noqa: PLC0415
+                    report_card_findings_for_study,
+                    _VERDICT_SEVERITY,
+                )
+                derived, _rc_urls = report_card_findings_for_study(
+                    ws_root, study_spec["name"], None)
+                if derived:
+                    findings = _enrich_findings_with_weight(
+                        {**study_spec, "findings": derived})
+                    if not node_claim:
+                        # Headline the most-severe card's summary.
+                        _worst = max(
+                            derived,
+                            key=lambda f: _VERDICT_SEVERITY.get(
+                                (f or {}).get("verdict"), 0),
+                        )
+                        node_claim = (_worst.get("summary")
+                                      or _worst.get("statement"))
+            except Exception:  # noqa: BLE001
+                pass
         n_runs_for_study = _count_runs_for_study(ws_root, study_spec["name"], study_spec)
         raw_status = study_spec.get("status", "planned")
         studies_out.append({
@@ -630,7 +658,7 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
             "discovery_implications": disc_impl,
             "n_findings":            len(findings),
             "findings":              findings,
-            "claim":                 study_spec.get("claim"),
+            "claim":                 node_claim,
             "confidence":            study_spec.get("confidence"),
             "design_status":         study_spec.get("design_status"),
             "implementation_status": study_spec.get("implementation_status"),

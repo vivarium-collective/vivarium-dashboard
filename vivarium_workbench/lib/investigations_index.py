@@ -282,6 +282,7 @@ def build_investigations(ws_root: Path) -> dict:
         load_spec,
     )
     from vivarium_workbench.lib.spec_norm import normalize_requirements
+    from vivarium_workbench.lib.investigation_status import _study_display_status
 
     # First pass: load every spec so we can resolve cross-study conditions.
     loaded: list[tuple[Path, dict]] = []
@@ -355,7 +356,10 @@ def build_investigations(ws_root: Path) -> dict:
             "description": spec.get("description", ""),
             "topic": spec.get("topic", ""),
             "tags": spec.get("tags") or [],
-            "status": spec.get("status", "planned"),
+            # Display status: multi-axis truth with "running" gated on a real
+            # active run, so a stale `status: running` doesn't mislabel a study
+            # (mirrors the investigation-summary rule).
+            "status": _study_display_status(ws_root, spec["name"], spec),
             "phase": spec.get("phase"),
             "last_run": spec.get("last_run"),
             "n_simulations": n_runs,
