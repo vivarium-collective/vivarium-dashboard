@@ -78,3 +78,20 @@ def test_investigation_open_entry_points_route_to_workspace():
     assert 'onclick="_showInvestigationWorkspace(' in JS
     rail = JS[JS.index("function _vivOpenInvestigationFromRail"): JS.index("function _vivOpenInvestigationFromRail") + 500]
     assert "_showInvestigationWorkspace" in rail
+    # No leftover page switch: _showWorkspace() (below) self-activates the
+    # host page now, so the old _switchPage('studies') call must be gone.
+    assert "_switchPage('studies')" not in rail
+
+
+def test_showworkspace_activates_investigations_page():
+    # #iset-workspace/#ws-context live inside #page-investigations, but pages
+    # are shown/hidden via the .page/.active CSS toggle, not the
+    # display:none/'' toggle _showWorkspace uses for the Explore/workspace
+    # surfaces. _showWorkspace must activate #page-investigations itself
+    # (mirroring _railOpenInvestigationDetail's manual page/menu activation)
+    # so callers landing here from another page don't render the workspace
+    # onto a hidden page.
+    w = JS[JS.index("function _showWorkspace"): JS.index("function _showWorkspace") + 900]
+    assert "page-investigations" in w
+    assert "classList.add('active')" in w
+    assert "classList.remove('active')" in w

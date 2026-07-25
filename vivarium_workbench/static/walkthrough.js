@@ -3678,9 +3678,10 @@
   window._vivToggleInvGroup = _vivToggleInvGroup;
 
   function _vivOpenInvestigationFromRail(name) {
-    // Switch to Studies page first, then open the detail panel and
-    // refresh the rail so the active-state moves with the selection.
-    if (typeof _switchPage === 'function') _switchPage('studies');
+    // Open the detail panel and refresh the rail so the active-state moves
+    // with the selection. Page activation is handled by _showWorkspace()
+    // (via _showInvestigationWorkspace), which self-activates
+    // #page-investigations — no separate _switchPage call needed here.
     if (typeof _showInvestigationWorkspace === 'function') _showInvestigationWorkspace(name);
     else if (typeof _openInvestigation === 'function') _openInvestigation(name);
     _vivRefreshInvestigationsRail();
@@ -5137,6 +5138,19 @@
   window._showExplore = _showExplore;
 
   function _showWorkspace() {
+    // The workspace surface (#iset-workspace / #ws-context) lives inside
+    // #page-investigations. Activate that host page first — mirrors
+    // _railOpenInvestigationDetail's manual page/menu activation — so callers
+    // that land here from another page (e.g. the rail's study sublinks, or a
+    // leftover _switchPage('studies') call) don't render the workspace onto
+    // a hidden page.
+    document.querySelectorAll('.page').forEach(function (s) { s.classList.remove('active'); });
+    document.querySelectorAll('.menu-link').forEach(function (a) { a.classList.remove('active'); });
+    var hostPage = document.getElementById('page-investigations');
+    var hostLink = document.querySelector('.menu-link[data-page="investigations"]');
+    if (hostPage) hostPage.classList.add('active');
+    if (hostLink) hostLink.classList.add('active');
+
     var ex = document.getElementById('iset-explore');
     var ws = document.getElementById('iset-workspace');
     if (ex) ex.style.display = 'none';
