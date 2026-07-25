@@ -994,6 +994,20 @@ def create_app() -> FastAPI:
                 error="composite discovery unavailable",
             )
         raw_composites = data.get("composites") or []
+        # Enrich each record with its cross-study track record (how many studies
+        # use it + pass/inconclusive/fail outcome tallies), so the Composites
+        # page can show + rank by real usage. Best-effort: a scan failure leaves
+        # records unenriched rather than failing the route.
+        try:
+            from vivarium_workbench.lib.composite_study_stats import composite_study_stats
+            ids = [c.get("id") for c in raw_composites if c.get("id")]
+            stats = composite_study_stats(ws, ids)
+            for c in raw_composites:
+                s = stats.get(c.get("id"))
+                if s:
+                    c["studies"] = s
+        except Exception:  # noqa: BLE001
+            pass
         return CompositesPayload(
             composites=[CompositeRecord.model_validate(c) for c in raw_composites],
             workspace_package=data.get("workspace_package"),
