@@ -1,290 +1,284 @@
-# Rerun capability — Implementation Plan
+# Reproducible runs + full flush + rerun — Implementation Plan (rev 2)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Rerun an investigation, a study, or a single simulation from the workbench — replaying recorded/declared inputs as a new run.
+**Goal:** Guarantee reproducible runs (complete per-run manifest), complete the post-run flush (real analyses + report cards on the composite path), and add rerun (investigation / study / simulation) that replays the manifest exactly + runs the full flush.
 
-**Architecture:** A new `lib/rerun.py` orchestrates over the existing run subsystem: `run_rerun` replays a recorded sim's exact `spec_id`+`params` into its **origin DB** (study `runs.db` via a factored `study_runs.launch_into_study`, else `composite-runs.db`); `rerun_investigation` re-launches every study's declared baseline. Two POST endpoints + three UI buttons.
+**Architecture:** Additive — a new `runs_meta.manifest_json` column stamped at both launch paths; finish the existing `composite_flush` stub; a new `lib/rerun.py` orchestrating over the run subsystem; two endpoints + three UI buttons.
 
-**Tech Stack:** Python 3, FastAPI (`api/app.py`), pydantic (`lib/models.py`), SQLite (`runs_meta`), vanilla JS (`static/*.js`) + Jinja (`templates/*`), pytest with the `dashboard_client` subprocess fixture.
+**Tech Stack:** Python 3, FastAPI (`api/app.py`), pydantic (`lib/models.py`), SQLite (`runs_meta`), env-worker pool (analyses), vanilla JS + Jinja, pytest with the `dashboard_client` subprocess fixture.
 
 ## Global Constraints
 
+- **Task 1 is DONE** (`lib/rerun.py::resolve_rerun_target`, commit `0af7983`). Build on it; don't recreate it.
 - Rerun always mints a **new** `run_id` — never overwrite.
-- **Sim rerun uses the run's EXACT recorded `spec_id`+`params`** (from `find_run`'s row), NOT the current `study.yaml`.
-- **Origin routing** is derived from `find_run`'s returned `db_file`: a study's `runs.db` (parent dir is a study under `WorkspacePaths.studies`) → study origin (slug = parent dir name); `.pbg/composite-runs.db` → composite origin.
-- All reruns are **detached** (never block the request); investigation rerun respects `run_registry.CONCURRENCY_CAP` (excess queue).
-- New mutating routes (`POST`) MUST call `_csrf_ok()` and return a pydantic model; put logic in `lib/`, route in `api/app.py`.
-- `study_runs.run_study_baseline` behavior must stay **byte-identical** after the `launch_into_study` extraction (existing tests green).
-- Rerun buttons are live-only; hidden/disabled in snapshot mode (mirror existing run buttons).
-- Tests: `pytest`; endpoint/UI tests use the `dashboard_client` fixture against `tests/_fixtures/`.
+- **Reproducibility guarantee:** the manifest must capture the COMPLETE effective replay inputs — `spec_id`, FULL effective `params` (not the delta), `n_steps`, `emitter`, `emit_paths`, `runtime` block, `origin`, `study`, `pkg`, `generation_id`, best-effort `code_version`. A rerun replays FROM the manifest, not the live YAML.
+- `runs_meta` schema change is additive nullable via `composite_runs._NEW_COLUMNS` only.
+- Manifest/flush/version capture is **best-effort**: a failure degrades (null manifest field / logged analysis error), never breaks a run.
+- Legacy runs (no manifest) still rerun via the delta `params`+`n_steps` fallback.
+- `study_runs.run_study_baseline` behavior stays byte-identical after the `launch_into_study` extraction; the full 7-stage flush is preserved (viz → post-run scripts → `run_study_analyses` (report cards) → `study_outcomes.sync` → `capture_run_params` → `auto_evaluate` → investigation rollup).
+- New POST routes call `_csrf_ok()` and return a pydantic model; logic in `lib/`, route in `api/app.py`.
+- Rerun buttons live-only; hidden/disabled in snapshot mode.
+- Tests run via the worktree interpreter: `PYTHONPATH=/Users/eranagmon/code/vwb-rerun /Users/eranagmon/code/vivarium-workbench/.venv/bin/python -m pytest …` from `/Users/eranagmon/code/vwb-rerun`.
 
 ---
 
-### Task 1: `resolve_rerun_target` — find a run + classify its origin
+### Task 2 — Run manifest infra + composite-path manifest (Part A)
 
 **Files:**
-- Create: `vivarium_workbench/lib/rerun.py`
-- Test: `tests/test_rerun_resolve.py`
+- Modify: `vivarium_workbench/lib/composite_runs.py` (`_NEW_COLUMNS`, `save_metadata`)
+- Modify: `vivarium_workbench/lib/composite_test_run_views.py` (build + pass the composite manifest)
+- Modify: `vivarium_workbench/lib/rerun.py` (`resolve_rerun_target` prefers manifest)
+- Test: `tests/test_run_manifest.py`, extend `tests/test_rerun_resolve.py`
 
 **Interfaces:**
-- Consumes: `cli_runs.find_run(ws_root, run_id) -> (db_file, row)`; `row` has `spec_id`, `params` (dict), `n_steps`. `workspace_paths.WorkspacePaths`.
-- Produces: `resolve_rerun_target(ws_root, run_id) -> dict | None` = `{run_id, origin: "study"|"composite", study: str|None, spec_id, params: dict, n_steps: int}` (None if not found).
+- Produces: `runs_meta.manifest_json` column; `save_metadata(..., manifest: dict | None = None)` writes it; `build_run_manifest(...)` helper (in `composite_runs.py`) that assembles the canonical manifest dict; `resolve_rerun_target` returns manifest fields (`emitter`, `emit_paths`, `runtime`) when a manifest exists, else the delta fallback.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write failing tests**
 
 ```python
-# tests/test_rerun_resolve.py
-from pathlib import Path
-from vivarium_workbench.lib import rerun, composite_runs as cr
+# tests/test_run_manifest.py
+import json
+from vivarium_workbench.lib import composite_runs as cr
 
-def _seed(db_path, run_id, spec_id, params, n_steps, status="completed"):
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = cr.connect(db_path)
-    import json
-    conn.execute("INSERT INTO runs_meta (run_id, spec_id, params_json, started_at, status, n_steps) "
-                 "VALUES (?,?,?,?,?,?)", (run_id, spec_id, json.dumps(params), 0.0, status, n_steps))
-    conn.commit(); conn.close()
+def test_migration_adds_manifest_column(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(runs_meta)")}
+    assert "manifest_json" in cols
 
-def test_study_origin(tmp_path):
-    # a run in studies/<slug>/runs.db → origin study, slug from dir
-    (tmp_path / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
-    db = tmp_path / "workspace" / "studies" / "s1" / "runs.db"
-    _seed(db, "spec__1__a", "v2ecoli.composites.baseline.baseline", {"seed": 0}, 100)
-    t = rerun.resolve_rerun_target(tmp_path, "spec__1__a")
-    assert t["origin"] == "study" and t["study"] == "s1"
-    assert t["spec_id"] == "v2ecoli.composites.baseline.baseline"
-    assert t["params"] == {"seed": 0} and t["n_steps"] == 100
+def test_save_metadata_writes_manifest(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    manifest = {"version": 1, "spec_id": "s", "params": {"seed": 0, "cache_dir": "out/cache"},
+                "n_steps": 100, "emitter": "parquet", "emit_paths": ["bulk"],
+                "runtime": {"emitter": "parquet"}, "origin": "study", "study": "s1"}
+    cr.save_metadata(conn, spec_id="s", run_id="r1", params={"seed": 0}, label="b",
+                     started_at=0.0, n_steps=100, manifest=manifest)
+    row = conn.execute("SELECT manifest_json FROM runs_meta WHERE run_id='r1'").fetchone()
+    assert json.loads(row[0])["emitter"] == "parquet"
+    assert json.loads(row[0])["params"]["cache_dir"] == "out/cache"
 
-def test_composite_origin(tmp_path):
-    (tmp_path / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
-    db = tmp_path / ".pbg" / "composite-runs.db"
-    _seed(db, "spec__2__b", "some.composite", {"x": 1}, 5)
-    t = rerun.resolve_rerun_target(tmp_path, "spec__2__b")
-    assert t["origin"] == "composite" and t["study"] is None
-
-def test_not_found(tmp_path):
-    (tmp_path / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
-    assert rerun.resolve_rerun_target(tmp_path, "nope") is None
+def test_build_run_manifest_shape():
+    m = cr.build_run_manifest(spec_id="s", params={"seed": 0}, n_steps=100,
+                              emitter="parquet", emit_paths=["bulk"], runtime={"x": 1},
+                              origin="study", study="s1", pkg="v2ecoli", generation_id=None)
+    for k in ("version", "spec_id", "params", "n_steps", "emitter", "emit_paths",
+              "runtime", "origin", "study", "pkg", "code_version"):
+        assert k in m
 ```
+Extend `tests/test_rerun_resolve.py`: seed a row with a full `manifest_json` → `resolve_rerun_target` returns `emitter`/`emit_paths`/`runtime` from the manifest; a row with only `params_json`+`n_steps` (no manifest) → falls back (those keys absent/None).
 
-- [ ] **Step 2: Run — verify it fails**
-
-Run: `python -m pytest tests/test_rerun_resolve.py -v`  Expected: FAIL (module/func undefined).
+- [ ] **Step 2: Run — verify fail.** `… -m pytest tests/test_run_manifest.py -v` → FAIL.
 
 - [ ] **Step 3: Implement**
 
-```python
-# vivarium_workbench/lib/rerun.py
-"""Rerun a recorded/declared run at investigation / study / simulation level.
-Thin orchestration over the run subsystem; never overwrites — always a new run."""
-from __future__ import annotations
+`composite_runs.py`:
+- Add `"manifest_json": "TEXT",` to `_NEW_COLUMNS`.
+- Add `build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths, runtime, origin, study=None, pkg=None, generation_id=None, ws_root=None) -> dict` — assembles the canonical dict (§ spec Part A), including best-effort `code_version = {"git_sha": <git HEAD of ws_root>, "package": <pkg version>}` (wrap git/version lookups in try/except → null).
+- `save_metadata(..., manifest=None)` — add the kwarg; extend the INSERT to include a `manifest_json` column with `json.dumps(manifest) if manifest else None`.
 
-from pathlib import Path
+`composite_test_run_views.py` — where it builds `request.json` / calls `save_metadata`: build the manifest via `build_run_manifest(origin="composite", spec_id=…, params=<full overrides>, n_steps=…, emitter=…, emit_paths=…, runtime={})` and pass `manifest=` to `save_metadata`.
 
-from vivarium_workbench.lib import cli_runs
-from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+`rerun.py::resolve_rerun_target` — if `row.get("manifest_json")`, parse it and return `{..., spec_id, params: manifest["params"], n_steps, emitter, emit_paths, runtime, origin (from manifest), study}`; else the existing delta path (add `emitter=None, emit_paths=None, runtime=None` to the returned dict for a uniform shape).
 
+- [ ] **Step 4: Run — verify pass.** `… -m pytest tests/test_run_manifest.py tests/test_rerun_resolve.py -v` → PASS.
 
-def resolve_rerun_target(ws_root, run_id):
-    db_file, row = cli_runs.find_run(ws_root, run_id)
-    if row is None:
-        return None
-    dbp = Path(db_file)
-    wp = WorkspacePaths.load(Path(ws_root))
-    studies_root = Path(wp.studies).resolve()
-    origin, study = "composite", None
-    # study runs.db lives at <studies_root>/<slug>/runs.db
-    if dbp.name == "runs.db" and dbp.parent.parent.resolve() == studies_root:
-        origin, study = "study", dbp.parent.name
-    return {
-        "run_id": run_id, "origin": origin, "study": study,
-        "spec_id": row.get("spec_id"),
-        "params": dict(row.get("params") or {}),
-        "n_steps": int(row.get("n_steps") or 5),
-    }
-```
-
-- [ ] **Step 4: Run — verify it passes**
-
-Run: `python -m pytest tests/test_rerun_resolve.py -v`  Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add vivarium_workbench/lib/rerun.py tests/test_rerun_resolve.py
-git commit -m "feat: resolve_rerun_target — find a run + classify origin"
-```
+- [ ] **Step 5: Commit.** `git add … && git commit -m "feat: runs_meta.manifest_json + build_run_manifest + composite-path manifest"`
 
 ---
 
-### Task 2: Factor `study_runs.launch_into_study`
+### Task 3 — `launch_into_study` (factor tail + stamp study manifest) (Part C-refactor + A)
 
 **Files:**
 - Modify: `vivarium_workbench/lib/study_runs.py` (`run_study_baseline`)
 - Test: `tests/test_launch_into_study.py`
 
 **Interfaces:**
-- Produces: `launch_into_study(ws_root, study, spec_id, params, n_steps, *, label=None) -> (resp, status)` — mints a run_id, runs `spec_id` with `params` (config) into `studies/<study>/runs.db`, runs the study post-run stages, returns `{run_id, ...}, status`. This is the run-launch + post-run **tail** of `run_study_baseline`, taking explicit `spec_id`/`params` instead of resolving them from `study.yaml`.
-- Consumes (unchanged): `run_core.invoke_run`, the existing post-run pipeline in `run_study_baseline`.
+- Produces: `launch_into_study(ws_root, study, spec_id, params, n_steps, *, emitter=None, emit_paths=None, runtime=None, label=None) -> (resp, status)` — the run-launch + FULL 7-stage flush tail of `run_study_baseline`, taking EXPLICIT replay inputs, building+stamping the run's manifest (Task 2) into `studies/<study>/runs.db`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write failing test**
 
 ```python
 # tests/test_launch_into_study.py
 from vivarium_workbench.lib import study_runs
 
-def test_launch_into_study_uses_explicit_spec_and_study_db(tmp_path, monkeypatch):
-    calls = {}
-    class _Plan: pass
+def test_launch_into_study_explicit_inputs_and_manifest(tmp_path, monkeypatch):
+    seen = {}
     def fake_invoke_run(ws_root, *, spec_id, config, db_path, label, n_steps):
-        calls.update(spec_id=spec_id, config=config, db_path=db_path, n_steps=n_steps)
-        return _Plan()
+        seen.update(spec_id=spec_id, config=config, db_path=db_path, n_steps=n_steps)
+        class P: pass
+        return P()
     monkeypatch.setattr(study_runs.run_core, "invoke_run", fake_invoke_run)
-    # stub the post-run tail so the test stays hermetic (no subprocess)
-    monkeypatch.setattr(study_runs, "_launch_and_stage", lambda *a, **k: ({"run_id": "r-new", "status": "running"}, 200), raising=False)
+    # stub the subprocess + post-run tail so the test is hermetic; capture the manifest passed to save_metadata
+    manifests = []
+    monkeypatch.setattr(study_runs, "_launch_run_and_flush",
+        lambda *a, **k: (manifests.append(k.get("manifest")) or ({"run_id": "r-new", "status": "running"}, 200)),
+        raising=False)
     resp, status = study_runs.launch_into_study(
-        tmp_path, "s1", "some.composite", {"seed": 3}, 50)
-    # db_path points at the study's runs.db; explicit spec+params used
-    assert "studies/s1/runs.db" in calls["db_path"].replace("\\", "/")
-    assert calls["spec_id"] == "some.composite"
-    assert calls["config"].get("seed") == 3 and calls["config"].get("n_steps") == 50
+        tmp_path, "s1", "some.composite", {"seed": 3}, 50,
+        emitter="parquet", emit_paths=["bulk"], runtime={"emitter": "parquet"})
+    assert "studies/s1/runs.db" in seen["db_path"].replace("\\", "/")
+    assert seen["spec_id"] == "some.composite" and seen["config"].get("seed") == 3
     assert status == 200 and resp["run_id"]
+    # manifest carries the explicit replay inputs
+    m = manifests[-1]; assert m and m["emitter"] == "parquet" and m["emit_paths"] == ["bulk"]
 ```
+(The exact stub seam depends on the extraction; the implementer adjusts monkeypatch targets to the real factored internals. The assertions that matter: explicit spec_id/params + the study `runs.db` path + a manifest carrying emitter/emit_paths/runtime.)
 
-(The exact stub seam depends on the extraction; the implementer adjusts the monkeypatch to whatever the post-invoke tail becomes — the assertion that matters is: explicit spec_id/params + the study's runs.db path.)
-
-- [ ] **Step 2: Run — verify it fails**
-
-Run: `python -m pytest tests/test_launch_into_study.py -v`  Expected: FAIL (`launch_into_study` undefined).
+- [ ] **Step 2: Run — verify fail.** → FAIL (`launch_into_study` undefined).
 
 - [ ] **Step 3: Implement the extraction**
 
-Read `run_study_baseline` in full. Extract everything from the `full_params`/`db_file`/`label` computation through the end of the function (the `run_core.invoke_run` call, the remote-build guard, the detached spawn, and the post-run stages — viz, post_run_scripts, analyses, `study_outcomes.sync`, `run_params.capture_run_params`, auto-evaluate) into:
+Read `run_study_baseline` in full. Extract from the `full_params`/`db_file`/`label` computation (study_runs.py ~L120) through the end — including `run_core.invoke_run`, the remote-build guard, the detached spawn, AND all 7 post-run stages (`render_study_visualizations`, `run_post_run_scripts`, `run_study_analyses`, `study_outcomes.sync`, `capture_run_params`/`write_run_params`, `auto_evaluate.evaluate_on_run_completion`, `_sync_parent_investigation`) — into `launch_into_study(ws_root, study, spec_id, params, n_steps, *, emitter=None, emit_paths=None, runtime=None, label=None)`. Inside it:
+- resolve `study_dir` + `db_file = study_dir/runs.db`; `full_params = {**params, "n_steps": n_steps}`.
+- build the manifest via `composite_runs.build_run_manifest(origin="study", study=study, spec_id=spec_id, params=full_params, n_steps=n_steps, emitter=emitter, emit_paths=emit_paths, runtime=runtime, pkg=…, ws_root=ws_root)` and thread it to the `save_metadata` call in the subprocess launch (via the existing `composite_subprocess` path — pass `manifest` through, OR stamp it onto the row right after save).
+- keep the 7 stages verbatim.
 
+Rewrite `run_study_baseline`: after it resolves `spec_id`, `generator_overrides`, `params_n_steps`, `emitter` (L176), `emit_paths` (L173), and the `runtime` block (L169-178) from `study.yaml`, delegate:
 ```python
-def launch_into_study(ws_root, study, spec_id, params, n_steps, *, label=None):
-    """Launch spec_id+params into studies/<study>/runs.db (+ post-run stages).
-    The run-launch tail of run_study_baseline, with EXPLICIT spec_id/params."""
-    study_dir = _resolve_study_dir(ws_root, study)
-    db_file = str(study_dir / "runs.db")
-    full_params = dict(params or {})
-    if n_steps is not None:
-        full_params["n_steps"] = n_steps
-    label = label or "baseline"
-    # ... (the invoke_run + guard + spawn + post-run pipeline, verbatim) ...
-    return resp, status
+    return launch_into_study(ws_root, name, spec_id, generator_overrides, params_n_steps,
+                             emitter=emitter, emit_paths=emit_paths, runtime=runtime_block,
+                             label=entry.get("name") or "baseline")
 ```
+Do the same delegation for `run_study_variant` if it duplicates the tail (keep its variant-specific resolution, delegate the launch+flush).
 
-Then rewrite `run_study_baseline` so that after it resolves `spec_id`, `generator_overrides` (params), and `params_n_steps` from `study.yaml`, it delegates:
-```python
-    return launch_into_study(ws_root, name, spec_id, generator_overrides,
-                             params_n_steps, label=entry.get("name") or "baseline")
-```
-Keep `run_study_baseline`'s early validation/resolution (study lookup, migration, baseline entry, remote-build guard placement) behaviorally identical.
+- [ ] **Step 4: Run — verify + no regression.** `… -m pytest tests/test_launch_into_study.py tests/test_study_runs.py -v` (+ any study-run-baseline endpoint test) → PASS. Manually confirm all 7 stage calls remain in `launch_into_study`.
 
-- [ ] **Step 4: Run — verify launch_into_study test + no regression**
-
-Run: `python -m pytest tests/test_launch_into_study.py tests/test_study_runs.py -v` (and any `study-run-baseline` endpoint test). Expected: PASS — the extraction preserves `run_study_baseline` behavior.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add vivarium_workbench/lib/study_runs.py tests/test_launch_into_study.py
-git commit -m "refactor: extract study_runs.launch_into_study from run_study_baseline"
-```
+- [ ] **Step 5: Commit.** `git commit -m "refactor: launch_into_study (explicit inputs + manifest + full 7-stage flush)"`
 
 ---
 
-### Task 3: `run_rerun` + `rerun_investigation`
+### Task 4 — Complete the composite-path flush (Part B)
+
+**Files:**
+- Modify: `vivarium_workbench/lib/composite_flush.py` (`_dispatch_analyses` / `run_flush`)
+- Test: `tests/test_composite_flush.py`
+
+**Interfaces:**
+- Consumes: the env-worker analysis dispatch used by `study_run_post.run_study_analyses` (line 183).
+- Produces: `run_flush` renders REAL analyses + a report card for a composite that declares analyses; graceful no-op (thin report) when it declares none.
+
+- [ ] **Step 1: Write failing test**
+
+```python
+# tests/test_composite_flush.py
+from vivarium_workbench.lib import composite_flush
+
+def test_flush_renders_declared_analyses(tmp_path, monkeypatch):
+    # a composite that declares one analysis → _dispatch_analyses RENDERS it (not just records)
+    rendered = {}
+    monkeypatch.setattr(composite_flush, "_render_analysis",
+        lambda **k: rendered.setdefault("called", True) or {"name": k.get("name"), "artifact": "a.json"},
+        raising=False)
+    monkeypatch.setattr(composite_flush, "_composite_analyses",
+        lambda spec_id, core: [{"name": "mass_over_time"}], raising=False)
+    out = composite_flush._dispatch_analyses(spec_id="c", db_file=str(tmp_path/"x.db"),
+                                             run_id="r1", core=object())
+    assert rendered.get("called") and out and out[0]["name"] == "mass_over_time"
+
+def test_flush_no_analyses_is_graceful(tmp_path, monkeypatch):
+    monkeypatch.setattr(composite_flush, "_composite_analyses", lambda spec_id, core: [], raising=False)
+    out = composite_flush._dispatch_analyses(spec_id="c", db_file=str(tmp_path/"x.db"),
+                                             run_id="r1", core=object())
+    assert out == []
+```
+(Adjust the monkeypatch seams to the real factored internals — the point: a declared analysis is RENDERED to an artifact, an analysis-less composite is a no-op.)
+
+- [ ] **Step 2: Run — verify fail.** → FAIL.
+
+- [ ] **Step 3: Implement**
+
+In `composite_flush.py`, replace the "records declarations" body of `_dispatch_analyses` (the NOTE at ~L32-34) so each declared analysis is actually rendered over the run's emitter output — reuse `study_run_post.run_study_analyses`'s env-worker dispatch (factor a shared `render_analysis(...)` if needed, or call the same env-worker `analysis` capability). `run_flush` then writes the real `analyses.json` (artifact list) + a report card (`render_report_card`) with the rendered results. Wrap each analysis render in try/except → log + skip (best-effort; one bad analysis doesn't fail the flush). Keep the analysis-less path a thin no-op.
+
+- [ ] **Step 4: Run — verify pass.** `… -m pytest tests/test_composite_flush.py -v` → PASS.
+
+- [ ] **Step 5: Commit.** `git commit -m "feat: composite flush renders real analyses + report card (finish stub)"`
+
+---
+
+### Task 5 — `run_rerun` (manifest replay) + `rerun_investigation` (Part C)
 
 **Files:**
 - Modify: `vivarium_workbench/lib/rerun.py`
 - Test: `tests/test_rerun_run.py`
 
 **Interfaces:**
-- Consumes: `resolve_rerun_target` (Task 1); `study_runs.launch_into_study` (Task 2); `cli_runs.run_composite(ws_root, spec_id, *, steps, params, emit_paths, detach)`; `investigations`/scaffold to read an investigation's `studies`.
-- Produces:
-  - `run_rerun(ws_root, run_id) -> (resp, status)` — study origin → `launch_into_study`; composite origin → `run_composite(detach=True)`; 404 if not found.
-  - `rerun_investigation(ws_root, investigation) -> (resp, status)` — for each study in the investigation, `study_runs.run_study_baseline(ws_root, {"study": s})`; aggregate.
+- Consumes: `resolve_rerun_target` (manifest-preferred, Task 2); `study_runs.launch_into_study` (Task 3); `cli_runs.run_composite`; the investigation reader.
+- Produces: `run_rerun(ws_root, run_id) -> (resp, status)`; `rerun_investigation(ws_root, investigation) -> (resp, status)`.
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 1: Write failing tests**
 
 ```python
 # tests/test_rerun_run.py
 from vivarium_workbench.lib import rerun
 
-def test_run_rerun_study_origin_routes_to_launch_into_study(monkeypatch, tmp_path):
+def test_run_rerun_study_forwards_full_manifest(monkeypatch, tmp_path):
     monkeypatch.setattr(rerun, "resolve_rerun_target", lambda ws, rid: {
-        "run_id": rid, "origin": "study", "study": "s1",
-        "spec_id": "some.composite", "params": {"seed": 2}, "n_steps": 80})
+        "run_id": rid, "origin": "study", "study": "s1", "spec_id": "c",
+        "params": {"seed": 2, "cache_dir": "out/cache"}, "n_steps": 80,
+        "emitter": "parquet", "emit_paths": ["bulk"], "runtime": {"emitter": "parquet"}})
     seen = {}
     monkeypatch.setattr(rerun.study_runs, "launch_into_study",
         lambda ws, study, spec_id, params, n_steps, **k: seen.update(
-            study=study, spec_id=spec_id, params=params, n_steps=n_steps) or ({"run_id": "r2", "status": "running"}, 200))
+            study=study, spec_id=spec_id, params=params, n_steps=n_steps, kw=k)
+            or ({"run_id": "r2", "status": "running"}, 200))
     resp, status = rerun.run_rerun(tmp_path, "r1")
-    assert status == 200 and resp["run_id"] == "r2" and resp["origin"] == "study"
-    assert seen == {"study": "s1", "spec_id": "some.composite", "params": {"seed": 2}, "n_steps": 80}
+    assert resp["run_id"] == "r2" and resp["origin"] == "study" and resp["reran"] == "r1"
+    assert seen["spec_id"] == "c" and seen["params"]["cache_dir"] == "out/cache"
+    assert seen["kw"]["emitter"] == "parquet" and seen["kw"]["emit_paths"] == ["bulk"]
+    assert seen["kw"]["runtime"] == {"emitter": "parquet"}
 
-def test_run_rerun_composite_origin_routes_to_run_composite(monkeypatch, tmp_path):
+def test_run_rerun_composite(monkeypatch, tmp_path):
     monkeypatch.setattr(rerun, "resolve_rerun_target", lambda ws, rid: {
-        "run_id": rid, "origin": "composite", "study": None,
-        "spec_id": "c.comp", "params": {"x": 1}, "n_steps": 5})
+        "run_id": rid, "origin": "composite", "study": None, "spec_id": "c.comp",
+        "params": {"x": 1}, "n_steps": 5, "emitter": None, "emit_paths": ["bulk"], "runtime": None})
     seen = {}
     monkeypatch.setattr(rerun.cli_runs, "run_composite",
         lambda ws, spec_id, *, steps, params, emit_paths, detach: seen.update(
-            spec_id=spec_id, steps=steps, params=params, detach=detach) or ({"run_id": "r3", "status": "running"}, 202))
+            spec_id=spec_id, params=params, emit_paths=emit_paths, detach=detach)
+            or ({"run_id": "r3", "status": "running"}, 202))
     resp, status = rerun.run_rerun(tmp_path, "r1")
-    assert resp["run_id"] == "r3" and seen["detach"] is True and seen["spec_id"] == "c.comp"
+    assert resp["run_id"] == "r3" and seen["detach"] is True and seen["emit_paths"] == ["bulk"]
 
 def test_run_rerun_not_found(monkeypatch, tmp_path):
     monkeypatch.setattr(rerun, "resolve_rerun_target", lambda ws, rid: None)
-    _resp, status = rerun.run_rerun(tmp_path, "nope")
-    assert status == 404
+    assert rerun.run_rerun(tmp_path, "x")[1] == 404
 
-def test_rerun_investigation_launches_each_study(monkeypatch, tmp_path):
+def test_rerun_investigation(monkeypatch, tmp_path):
     monkeypatch.setattr(rerun, "_investigation_studies", lambda ws, inv: ["s1", "s2"])
     launched = []
     monkeypatch.setattr(rerun.study_runs, "run_study_baseline",
-        lambda ws, body: launched.append(body["study"]) or ({"run_id": "r-" + body["study"], "status": "running"}, 200))
-    resp, status = rerun.rerun_investigation(tmp_path, "inv1")
-    assert launched == ["s1", "s2"]
-    assert {x["study"] for x in resp["launched"]} == {"s1", "s2"} and resp["count"] == 2
+        lambda ws, body: launched.append(body["study"]) or ({"run_id": "r-"+body["study"], "status": "running"}, 200))
+    resp, _ = rerun.rerun_investigation(tmp_path, "inv1")
+    assert launched == ["s1", "s2"] and resp["count"] == 2
 ```
 
-- [ ] **Step 2: Run — verify it fails**
+- [ ] **Step 2: Run — verify fail.** → FAIL.
 
-Run: `python -m pytest tests/test_rerun_run.py -v`  Expected: FAIL.
-
-- [ ] **Step 3: Implement**
+- [ ] **Step 3: Implement** (`rerun.py`)
 
 ```python
-# add to vivarium_workbench/lib/rerun.py
 from vivarium_workbench.lib import study_runs
 
-
 def run_rerun(ws_root, run_id):
-    target = resolve_rerun_target(ws_root, run_id)
-    if target is None:
+    t = resolve_rerun_target(ws_root, run_id)
+    if t is None:
         return {"error": f"run not found: {run_id}"}, 404
-    if target["origin"] == "study":
+    if t["origin"] == "study":
         resp, status = study_runs.launch_into_study(
-            ws_root, target["study"], target["spec_id"], target["params"], target["n_steps"])
+            ws_root, t["study"], t["spec_id"], t["params"], t["n_steps"],
+            emitter=t.get("emitter"), emit_paths=t.get("emit_paths"), runtime=t.get("runtime"))
     else:
         resp, status = cli_runs.run_composite(
-            ws_root, target["spec_id"], steps=target["n_steps"],
-            params=target["params"], emit_paths=[], detach=True)
+            ws_root, t["spec_id"], steps=t["n_steps"], params=t["params"],
+            emit_paths=t.get("emit_paths") or [], detach=True)
     if isinstance(resp, dict):
-        resp = {**resp, "origin": target["origin"], "reran": run_id}
+        resp = {**resp, "origin": t["origin"], "reran": run_id}
     return resp, status
 
-
 def _investigation_studies(ws_root, investigation):
-    """The study slugs an investigation declares (investigation.yaml `studies:`)."""
     from vivarium_workbench.lib import investigations as inv
-    spec = inv.load_investigation(Path(ws_root), investigation)  # confirm the real reader name
+    spec = inv.load_investigation(ws_root, investigation)   # confirm the real reader name
     return list(spec.get("studies") or [])
-
 
 def rerun_investigation(ws_root, investigation):
     studies = _investigation_studies(ws_root, investigation)
@@ -292,186 +286,66 @@ def rerun_investigation(ws_root, investigation):
     for s in studies:
         try:
             resp, status = study_runs.run_study_baseline(ws_root, {"study": s})
-            if status < 300 and isinstance(resp, dict) and resp.get("run_id"):
-                launched.append({"study": s, "run_id": resp["run_id"]})
-            else:
-                errors.append({"study": s, "error": (resp or {}).get("error", status)})
+            (launched if status < 300 and (resp or {}).get("run_id") else errors).append(
+                {"study": s, "run_id": (resp or {}).get("run_id")} if status < 300
+                else {"study": s, "error": (resp or {}).get("error", status)})
         except Exception as e:  # noqa: BLE001 — one bad study must not abort the batch
             errors.append({"study": s, "error": str(e)})
-    return {"investigation": investigation, "launched": launched,
-            "errors": errors, "count": len(launched)}, 200
+    return {"investigation": investigation, "launched": launched, "errors": errors,
+            "count": len(launched)}, 200
 ```
+(Confirm the real investigation reader name — `investigations.load_investigation` / `scaffold_mutations` — and adjust `_investigation_studies`.)
 
-(Confirm the real investigation reader — `investigations.load_investigation` / `scaffold_mutations` — and adjust `_investigation_studies`.)
+- [ ] **Step 4: Run — verify pass.** `… -m pytest tests/test_rerun_run.py -v` → PASS.
 
-- [ ] **Step 4: Run — verify it passes**
-
-Run: `python -m pytest tests/test_rerun_run.py -v`  Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add vivarium_workbench/lib/rerun.py tests/test_rerun_run.py
-git commit -m "feat: run_rerun (origin routing) + rerun_investigation"
-```
+- [ ] **Step 5: Commit.** `git commit -m "feat: run_rerun (manifest replay) + rerun_investigation"`
 
 ---
 
-### Task 4: Endpoints `/api/run-rerun` + `/api/investigation-rerun`
+### Task 6 — Endpoints `/api/run-rerun` + `/api/investigation-rerun`
 
 **Files:**
 - Modify: `vivarium_workbench/lib/models.py` (`RerunResult`, `InvestigationRerunResult`)
-- Modify: `vivarium_workbench/api/app.py` (two POST routes)
+- Modify: `vivarium_workbench/api/app.py` (two POST routes + CSRF list)
 - Test: `tests/test_api_rerun.py`
 
-**Interfaces:**
-- Consumes: `rerun.run_rerun`, `rerun.rerun_investigation`; `_root.get()` / `get_workspace`; `_csrf_ok()`.
-- Produces: `POST /api/run-rerun {run_id}` → `RerunResult`; `POST /api/investigation-rerun {investigation}` → `InvestigationRerunResult`.
+- [ ] **Step 1: Write failing test** — (as in rev-1 plan Task 4) `POST /api/run-rerun` unknown run → 404/error body; `POST /api/investigation-rerun` → `{launched, errors, count}`; both CSRF-guarded (present cross-origin Origin → 403/400). Use the real `dashboard_client` factory (see `tests/test_api_analysis_tools.py`).
 
-- [ ] **Step 1: Write the failing test**
+- [ ] **Step 2: Run — verify fail** (404 routes).
 
-```python
-# tests/test_api_rerun.py
-def test_run_rerun_404_for_unknown(dashboard_client):
-    c = dashboard_client(workspace=None)  # adapt to the real fixture factory
-    r = c.post("/api/run-rerun", json={"run_id": "does-not-exist"})
-    assert r.status_code in (404, 200)  # 404 body {"error": ...}
-    if r.status_code == 200:
-        assert "error" in r.json() or "run_id" in r.json()
+- [ ] **Step 3: Implement** — models `RerunResult`/`InvestigationRerunResult` (extra="allow"); routes mirroring `study-run-baseline`'s mutating-route form (`_csrf_ok(request)`, `Depends(get_workspace)`, `JSONResponse(status_code=status, content=resp)`); add both paths to the CSRF-required route list (app.py ~L445).
 
-def test_investigation_rerun_shape(dashboard_client):
-    c = dashboard_client(workspace=None)
-    r = c.post("/api/investigation-rerun", json={"investigation": "nonexistent"})
-    assert r.status_code == 200
-    body = r.json()
-    assert "launched" in body and "errors" in body and "count" in body
+- [ ] **Step 4: Run — verify pass.**
 
-def test_rerun_routes_csrf_guarded(dashboard_client):
-    # a present cross-origin Origin must be rejected (mirrors other mutating routes)
-    c = dashboard_client(workspace=None)
-    r = c.post("/api/run-rerun", json={"run_id": "x"}, headers={"Origin": "http://evil.example"})
-    assert r.status_code in (403, 400)
-```
-
-(Adapt `dashboard_client` usage to the real factory fixture — see `tests/test_api_analysis_tools.py` for the pattern; use a fixture workspace with at least one recorded run for a positive-path assertion if feasible.)
-
-- [ ] **Step 2: Run — verify it fails**
-
-Run: `python -m pytest tests/test_api_rerun.py -v`  Expected: FAIL (404 routes).
-
-- [ ] **Step 3: Implement**
-
-Models (`models.py`):
-```python
-class RerunResult(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    run_id: Optional[str] = None
-    origin: Optional[str] = None
-    status: Optional[str] = None
-    error: Optional[str] = None
-
-class InvestigationRerunResult(BaseModel):
-    model_config = ConfigDict(extra="allow")
-    investigation: Optional[str] = None
-    launched: list[dict] = []
-    errors: list[dict] = []
-    count: int = 0
-```
-
-Routes (`api/app.py`, mirror the `study-run-baseline` mutating-route pattern incl. `_csrf_ok()` and `Depends(get_workspace)`):
-```python
-@app.post("/api/run-rerun", tags=["Runs"], summary="Rerun a recorded simulation")
-def api_run_rerun(body: dict, request: Request = None, ws: Path = Depends(get_workspace)):
-    _csrf_ok(request)
-    from vivarium_workbench.lib.rerun import run_rerun
-    resp, status = run_rerun(ws, (body or {}).get("run_id", ""))
-    return JSONResponse(status_code=status, content=resp)
-
-@app.post("/api/investigation-rerun", tags=["Investigations"], summary="Rerun every study's baseline")
-def api_investigation_rerun(body: dict, request: Request = None, ws: Path = Depends(get_workspace)):
-    _csrf_ok(request)
-    from vivarium_workbench.lib.rerun import rerun_investigation
-    inv = (body or {}).get("investigation") or (body or {}).get("name") or ""
-    resp, status = rerun_investigation(ws, inv)
-    return JSONResponse(status_code=status, content=resp)
-```
-(Match how the existing routes obtain `request`/CSRF — copy the exact `_csrf_ok` call form used by `study-run-baseline`. Add both paths to any CSRF-required route list, e.g. app.py:445.)
-
-- [ ] **Step 4: Run — verify it passes**
-
-Run: `python -m pytest tests/test_api_rerun.py -v`  Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add vivarium_workbench/lib/models.py vivarium_workbench/api/app.py tests/test_api_rerun.py
-git commit -m "feat: POST /api/run-rerun + /api/investigation-rerun"
-```
+- [ ] **Step 5: Commit.** `git commit -m "feat: POST /api/run-rerun + /api/investigation-rerun"`
 
 ---
 
-### Task 5: UI — three Rerun buttons
+### Task 7 — UI: three Rerun buttons
 
 **Files:**
-- Modify: `vivarium_workbench/templates/index.html.j2` (investigation header)
-- Modify: `vivarium_workbench/static/walkthrough.js` (investigation rerun handler)
-- Modify: `vivarium_workbench/static/sim-table.js` (`_actions` per-row Rerun)
-- Modify: `vivarium_workbench/templates/study-detail.html` + `vivarium_workbench/static/study-detail.js` (Rerun study)
+- Modify: `templates/index.html.j2` (investigation header), `static/walkthrough.js`, `static/sim-table.js`, `templates/study-detail.html`, `static/study-detail.js`
 - Test: `tests/test_rerun_ui.py`
 
-**Interfaces:**
-- Consumes: `POST /api/investigation-rerun`, `POST /api/run-rerun`, `POST /api/study-run-baseline`. Each sim `<tr>` carries `data-run-id`.
+- [ ] **Step 1: Write failing test** — served `/` HTML has `id="investigation-rerun"`; `/sim-table.js` contains `run-rerun` + `Rerun`.
 
-- [ ] **Step 1: Write the failing test**
-
-```python
-# tests/test_rerun_ui.py
-def test_investigation_header_has_rerun_button(dashboard_client):
-    c = dashboard_client(workspace=None)
-    html = c.get("/").text
-    assert 'id="investigation-rerun"' in html
-
-def test_sim_table_js_wires_rerun(dashboard_client):
-    c = dashboard_client(workspace=None)
-    js = c.get("/sim-table.js").text
-    assert "run-rerun" in js and "Rerun" in js
-```
-
-- [ ] **Step 2: Run — verify it fails**
-
-Run: `python -m pytest tests/test_rerun_ui.py -v`  Expected: FAIL.
+- [ ] **Step 2: Run — verify fail.**
 
 - [ ] **Step 3: Implement**
+- Investigation header `.inv-export-actions` (index.html.j2 ~L906): `<button id="investigation-rerun" class="btn-mini">Rerun investigation</button>`; handler in `walkthrough.js` (near `_runUnblockedSimulations` ~L6188): confirm → `POST /api/investigation-rerun {investigation}` → toast (`<count> launched`) + reuse `#investigation-run-progress`. Snapshot-hidden.
+- Sim row `_actions(row)` (sim-table.js L116, td at L151): `↻ Rerun` one-click → `POST /api/run-rerun {run_id: row.run_id}` → toast + `renderTable` refresh. Snapshot-hidden.
+- Study-detail header (study-detail.html + study-detail.js): "Rerun study" → confirm → `POST /api/study-run-baseline {study}` → toast. Live-only.
 
-- **Investigation header** — `index.html.j2` `.inv-export-actions` span (line 906): add
-  `<button id="investigation-rerun" class="btn-mini" title="Re-run every study's baseline">Rerun investigation</button>`.
-  In `walkthrough.js` (near `_runUnblockedSimulations`, ~6188), wire a click handler (bind after `_openInvestigationDetail`): `if (!confirm('Re-run every study in this investigation? This launches a fresh baseline run per study.')) return;` → `POST /api/investigation-rerun {investigation: <current name>}` → toast `"<count> runs launched"`, then reuse `#investigation-run-progress`/refresh. Skip in snapshot mode.
-- **Sim DB row** — `sim-table.js` `_actions(row)` (line 116): append a `↻ Rerun` control (an `<a>`/`<button>` with `data-run-id`), one-click → `fetch('/api/run-rerun', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({run_id: row.run_id})})` → on ok, toast + `renderTable` refresh. Hide in snapshot mode. (Follows the existing ⬇Data/⬇Analysis action style; the row already exposes `row.run_id`.)
-- **Study-detail** — `study-detail.html` header actions + `study-detail.js`: add a "Rerun study" button → `if (!confirm('Re-run this study\'s baseline?')) return;` → `POST /api/study-run-baseline {study: <slug>}` → toast. Live-only.
+- [ ] **Step 4: Run — verify + JS parse.** `… -m pytest tests/test_rerun_ui.py -v` + `node --check` on the three JS files → PASS + OK.
 
-- [ ] **Step 4: Run — verify + JS parses**
-
-Run: `python -m pytest tests/test_rerun_ui.py -v` and `node --check vivarium_workbench/static/sim-table.js && node --check vivarium_workbench/static/walkthrough.js && node --check vivarium_workbench/static/study-detail.js`. Expected: PASS + JS OK.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add vivarium_workbench/templates/index.html.j2 vivarium_workbench/static/walkthrough.js vivarium_workbench/static/sim-table.js vivarium_workbench/templates/study-detail.html vivarium_workbench/static/study-detail.js tests/test_rerun_ui.py
-git commit -m "feat: Rerun buttons — investigation header, study-detail, sim-table row"
-```
+- [ ] **Step 5: Commit.** `git commit -m "feat: Rerun buttons — investigation / study / sim-table"`
 
 ---
 
 ## Self-Review
 
-**Spec coverage:**
-- Sim rerun exact recorded config into origin DB → Tasks 1 (classify) + 2 (`launch_into_study`) + 3 (`run_rerun` routing). ✔
-- Study rerun (declared baseline) → Task 5 (button → existing `study-run-baseline`). ✔
-- Investigation rerun (all studies, force) → Task 3 (`rerun_investigation`) + Task 5 (button). ✔
-- Endpoints + models + CSRF → Task 4. ✔
-- Three UI buttons + confirm-on-batch / one-click-sim + snapshot degradation → Task 5. ✔
-- Detached + concurrency cap → inherited (all launches use the existing detached path / `run_registry.CONCURRENCY_CAP`); no new blocking code. ✔
+**Spec coverage:** A (manifest) → Task 2 (infra + composite) + Task 3 (study manifest via launch_into_study); B (flush) → Task 4; C (rerun) → Task 1 (done, resolve) + Task 3 (launch_into_study) + Task 5 (run_rerun/investigation) + Task 6 (endpoints) + Task 7 (UI). Reproducibility guarantee → Task 2 manifest completeness + Task 5 forwards emitter/emit_paths/runtime verbatim (asserted). Full flush preserved → Task 3 keeps 7 stages; composite flush completed → Task 4. ✔
 
-**Placeholder scan:** No TBD/TODO. Three "confirm the real name" notes name the exact target to verify (`investigations` reader; the `launch_into_study` post-invoke tail; the `_csrf_ok`/`dashboard_client` form) — verification directives, not vague requirements.
+**Placeholder scan:** No TBD/TODO. Three "confirm the real name/seam" notes (investigation reader; the `launch_into_study` post-invoke internals; the composite-flush render seam) name the exact target to verify.
 
-**Type consistency:** `resolve_rerun_target` returns `{run_id,origin,study,spec_id,params,n_steps}` — consumed identically in `run_rerun` (Task 3). `launch_into_study(ws_root, study, spec_id, params, n_steps, *, label=None) -> (resp, status)` defined Task 2, called Task 3 with those exact args. `run_rerun`/`rerun_investigation` return `(resp, status)` consumed by the Task 4 routes. Row `run_id` / `data-run-id` is the handle across Task 5 UI and Task 4's `{run_id}` body.
+**Type consistency:** `build_run_manifest(...)`/`save_metadata(manifest=)` (Task 2) → `resolve_rerun_target` returns `{spec_id,params,n_steps,emitter,emit_paths,runtime,origin,study}` (Task 2) → `run_rerun` forwards them to `launch_into_study(..., emitter=, emit_paths=, runtime=)` (Task 3 signature) / `run_composite(..., emit_paths=)` (Task 5). Endpoint bodies `{run_id}` / `{investigation}` (Task 6) ↔ UI (Task 7).
