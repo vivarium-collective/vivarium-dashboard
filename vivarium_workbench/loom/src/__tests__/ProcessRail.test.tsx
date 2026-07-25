@@ -99,14 +99,9 @@ describe('ProcessRail', () => {
     expect(focus.select).toHaveBeenCalledWith('media_update');
   });
 
-  it('reports granularity slider changes', () => {
-    const onGranularityChange = vi.fn();
-    // setup() seeds granularity=0.5, so move to a DIFFERENT value — React's
-    // controlled-input value tracker suppresses onChange when the value is
-    // unchanged, which would make this a false pass.
-    setup({ onGranularityChange });
-    fireEvent.change(screen.getByLabelText(/granularity/i), { target: { value: '0.7' } });
-    expect(onGranularityChange).toHaveBeenCalledWith(0.7);
+  it('has no granularity slider (grouping is automatic, by connections)', () => {
+    setup({});
+    expect(screen.queryByLabelText(/granularity/i)).toBeNull();
   });
 
   it('hovers a row without selecting it', () => {

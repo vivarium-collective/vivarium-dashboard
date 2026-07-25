@@ -103,14 +103,39 @@ function FloatingStoreEdge({
   // Input ports sit on the process's left; output ports on its right.
   const procPosition = storeIsSource ? Position.Left : Position.Right;
 
-  const [path, labelX, labelY] = getBezierPath({
-    sourceX: storeIsSource ? storePoint.x : procPoint.x,
-    sourceY: storeIsSource ? storePoint.y : procPoint.y,
-    sourcePosition: storeIsSource ? storePosition : procPosition,
-    targetX: storeIsSource ? procPoint.x : storePoint.x,
-    targetY: storeIsSource ? procPoint.y : storePoint.y,
-    targetPosition: storeIsSource ? procPosition : storePosition,
-  });
+  // Route AROUND the card, not under it. A bezier drawn straight from a port
+  // to a store below the card dives beneath the rectangle. Instead the wire
+  // leaves the port perpendicular — out past the card's left edge for inputs,
+  // its right edge for outputs — by EXIT_GAP, and only then curves to the
+  // store. That horizontal stub keeps the wire clear of the card's footprint,
+  // so it rounds a corner rather than crossing the body.
+  const EXIT_GAP = 26;
+  const pAbs = procNode.internals.positionAbsolute;
+  const pw = procNode.measured.width ?? 0;
+  const exitX = storeIsSource ? pAbs.x - EXIT_GAP : pAbs.x + pw + EXIT_GAP;
+  const exit: Point = { x: exitX, y: procPoint.y };
+
+  // Bezier for the store↔exit leg (perpendicular at the process end); the stub
+  // from the exit to the actual port is appended so the marker still lands on
+  // the process for inputs (path drawn store→process) and on the store for
+  // outputs (path drawn process→store).
+  let path: string, labelX: number, labelY: number;
+  if (storeIsSource) {
+    const [leg, lx, ly] = getBezierPath({
+      sourceX: storePoint.x, sourceY: storePoint.y, sourcePosition: storePosition,
+      targetX: exit.x, targetY: exit.y, targetPosition: procPosition,
+    });
+    path = `${leg} L ${procPoint.x},${procPoint.y}`;
+    labelX = lx; labelY = ly;
+  } else {
+    const [leg, lx, ly] = getBezierPath({
+      sourceX: exit.x, sourceY: exit.y, sourcePosition: procPosition,
+      targetX: storePoint.x, targetY: storePoint.y, targetPosition: storePosition,
+    });
+    const cIdx = leg.indexOf('C');
+    path = `M ${procPoint.x},${procPoint.y} L ${exit.x},${exit.y} ${leg.slice(cIdx)}`;
+    labelX = lx; labelY = ly;
+  }
 
   // Semantic zoom is opt-in: only process-column mode stamps `_tier` onto the
   // edge data. Absent it (hierarchy mode, or the glyph tier which App leaves

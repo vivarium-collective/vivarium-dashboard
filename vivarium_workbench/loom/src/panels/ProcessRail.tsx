@@ -49,7 +49,7 @@ export interface ProcessRailProps {
 const EMPTY: Set<string> = new Set();
 
 export function ProcessRail({
-  bands, nodes, focus, granularity, onGranularityChange, onNavigate, hiddenIds = EMPTY,
+  bands, nodes, focus, onNavigate, hiddenIds = EMPTY,
   onToggleHidden, onShowAll,
 }: ProcessRailProps) {
   const [query, setQuery] = useState('');
@@ -102,16 +102,6 @@ export function ProcessRail({
         value={query}
         onChange={(e) => setQuery(e.target.value)}
       />
-
-      <label className="loom-rail-granularity">
-        <span>Granularity</span>
-        <input
-          type="range" min={0} max={1} step={0.05}
-          aria-label="Cluster granularity"
-          value={granularity}
-          onChange={(e) => onGranularityChange(parseFloat(e.target.value))}
-        />
-      </label>
 
       {onShowAll && onToggleHidden && (
         <button type="button" className="loom-rail-showall" onClick={onShowAll}>

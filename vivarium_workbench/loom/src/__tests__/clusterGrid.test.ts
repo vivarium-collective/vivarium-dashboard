@@ -155,9 +155,10 @@ describe('force layout on the real v2ecoli baseline', () => {
     // Viewport-like: not a wide sliver, not a tall pillar.
     expect(aspect).toBeGreaterThan(0.4);
     expect(aspect).toBeLessThan(4);
-    // Dense enough that a full-tier card is big at the overview (target ≳0.25,
-    // up from the old grid packing's ~0.088).
-    expect(fitZoom).toBeGreaterThan(0.25);
+    // Dense enough that a full-tier card is big at the overview (target ≳0.2,
+    // up from the old grid packing's ~0.088; the wider 620px full-tier card
+    // lowers this a touch from the earlier ~0.28).
+    expect(fitZoom).toBeGreaterThan(0.2);
   });
 
   it('exports the GRID constant', () => {

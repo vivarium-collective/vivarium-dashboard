@@ -378,11 +378,104 @@ body {
 .process-node-types,
 .process-node-contract,
 .process-node-full {
-  width: 460px;
+  width: 620px;
   min-height: 320px;
   padding: 12px 16px;
   text-align: left;
   min-width: 0;
+}
+/* Border dots sit half-outside the card edge — don't clip them. */
+.process-node { overflow: visible; }
+
+/* ---- Ports INSIDE the card: input names in a left column, outputs in a right
+   column, each aligned to its border dot. The center content (below) is
+   margined clear of these columns, so the card reads inputs → contract →
+   outputs. Names truncate to their column width. */
+.port-in-label {
+  position: absolute; transform: translateY(-50%);
+  display: flex; flex-direction: column; line-height: 1.12;
+  max-width: 106px; white-space: nowrap;
+  pointer-events: auto; cursor: pointer;   /* clickable → port info popover */
+}
+.port-in-label.is-in  { left: 13px;  align-items: flex-start; text-align: left; }
+.port-in-label.is-out { right: 13px; align-items: flex-end;   text-align: right; }
+.port-in-label:hover .port-in-name { text-decoration: underline; text-underline-offset: 2px; }
+.port-in-label.is-open .port-in-name { color: #4f46e5; }
+.port-in-name {
+  font-size: 13px; font-weight: 650; color: #334155;
+  max-width: 106px; overflow: hidden; text-overflow: ellipsis;
+}
+.port-in-label.is-out .port-in-name { color: #0f766e; }
+.port-in-type {
+  font-family: ui-monospace, monospace; font-size: 10px; color: #94a3b8;
+  max-width: 106px; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Port info popover — opens on click, shows where the port connects + its type. */
+.port-popover {
+  position: absolute; top: 50%; z-index: 300;
+  min-width: 210px; max-width: 340px; white-space: normal;
+  background: #0f172a; color: #e2e8f0;
+  border-radius: 7px; padding: 8px 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.32);
+  font-size: 11px; line-height: 1.45; cursor: default;
+  transform: translateY(-50%);
+}
+.port-popover.is-in  { left: calc(100% + 10px); }
+.port-popover.is-out { right: calc(100% + 10px); }
+.port-popover-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 5px; }
+.port-popover-name { font-weight: 700; font-size: 12px; color: #fff; }
+.port-popover-dir { text-transform: uppercase; letter-spacing: 0.05em; font-size: 9px; font-weight: 700; }
+.port-popover-dir.reads  { color: #6ee7b7; }
+.port-popover-dir.writes { color: #a5b4fc; }
+.port-popover-row { display: flex; gap: 6px; margin-top: 2px; }
+.port-popover-key { color: #94a3b8; flex: 0 0 auto; }
+.port-popover-val { color: #f1f5f9; overflow-wrap: anywhere; }
+.port-popover .mono { font-family: ui-monospace, monospace; }
+.port-popover-sem { margin-top: 6px; color: #cbd5e1; font-style: italic; }
+
+/* Resize handles: hidden by default, revealed only on card hover (the
+   functionality is always there, just not cluttering every card). */
+.loom-resize-line { border-color: transparent !important; }
+.loom-resize-handle {
+  opacity: 0; transition: opacity 0.12s;
+  width: 9px !important; height: 9px !important;
+  border-radius: 2px; background: #fff !important; border: 1.5px solid #6366f1 !important;
+}
+.react-flow__node:hover .loom-resize-handle { opacity: 1; }
+
+/* Center channel — margined clear of the two port columns (glyph keeps the full
+   box for its big centered name). */
+.process-node-ports    .process-node-center,
+.process-node-types    .process-node-center,
+.process-node-contract .process-node-center,
+.process-node-full     .process-node-center { margin: 0 122px; }
+
+/* ---- Config enters from the TOP --------------------------------------------
+   A band above the title holding the parameters that tune the translation. */
+.process-node-config-band {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
+  margin: -2px 0 8px; padding-bottom: 7px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.config-band-caret { font-size: 10px; color: #a855f7; font-weight: 700; letter-spacing: 0.02em; }
+.config-chip {
+  display: inline-flex; align-items: baseline; gap: 4px;
+  background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 5px;
+  padding: 1px 7px; font-size: 11px;
+}
+.config-chip .config-key { color: #7e22ce; font-weight: 600; }
+.config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
+
+/* ---- Contract: what the process does, cleanly typeset ----------------------
+   No boxes/chrome — the card's own left→center→right layout (input columns →
+   this → output columns) frames it. A serif recital (the "what"), then the
+   equations (the "how") in one restrained indigo-accented block, then a glossary. */
+.process-contract { margin-top: 6px; }
+.contract-recital {
+  font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  font-size: 14.5px; line-height: 1.6; color: #1e293b;
+  text-align: justify; margin: 0;
 }
 /* Overview tiers (glyph / ports): render the process NAME large + centered,
    filling the box so it is legible when the whole graph is fit to the viewport.
@@ -455,17 +548,29 @@ body {
 }
 
 .process-node-summary { font-size: 11px; color: #334155; margin-top: 6px; line-height: 1.4; }
+/* Governing equations — one restrained block, thin indigo accent, wraps. */
 .process-node-math {
-  margin-top: 5px; padding: 4px 6px; background: #f8fafc;
-  border-left: 2px solid #cbd5e1; border-radius: 3px;
-  font-family: ui-monospace, monospace; font-size: 11px; color: #1e293b;
-  line-height: 1.5; overflow-x: auto;
+  margin-top: 11px; padding: 11px 13px;
+  background: #f7f8fb; border: 1px solid #eceefb; border-left: 3px solid #6366f1;
+  border-radius: 7px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; color: #0f172a; line-height: 1.65;
+  white-space: pre-wrap; overflow-wrap: anywhere;
 }
-.process-node-symbols     { font-size: 11px; color: #64748b; margin-top: 5px; line-height: 1.4; }
-.process-node-description { font-size: 11px; color: #64748b; margin-top: 5px; line-height: 1.4; }
+.process-node-math > div { margin: 0; }
+/* Symbol glossary — hanging-indent definition list, symbol in ink. */
+.process-node-symbols {
+  margin-top: 11px; font-size: 12px; color: #475569; line-height: 1.55;
+}
+.process-node-symbols > div { padding-left: 1.3em; text-indent: -1.3em; margin: 1px 0; }
+.process-node-symbols em { font-style: italic; font-weight: 600; color: #1e293b; }
+.process-node-description {
+  margin-top: 11px; font-size: 12.5px; color: #475569; line-height: 1.55;
+  font-family: Georgia, 'Times New Roman', serif;
+}
 .process-node-completeness {
-  font-size: 10px; color: #94a3b8; margin-top: 6px;
-  border-top: 1px solid #f1f5f9; padding-top: 3px;
+  font-size: 10px; color: #94a3b8; margin-top: 10px;
+  border-top: 1px solid #f1f5f9; padding-top: 5px;
 }
 .process-node-completeness .is-warn { color: #b45309; }
 

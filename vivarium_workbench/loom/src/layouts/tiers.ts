@@ -13,7 +13,7 @@ export const TIERS: ZoomTier[] = [
   { id: 'ports',    minZoom: 0.25, cardWidth: 220, cardHeight: 96 },
   { id: 'types',    minZoom: 0.5,  cardWidth: 300, cardHeight: 150 },
   { id: 'contract', minZoom: 0.9,  cardWidth: 380, cardHeight: 240 },
-  { id: 'full',     minZoom: 1.6,  cardWidth: 460, cardHeight: 320 },
+  { id: 'full',     minZoom: 1.6,  cardWidth: 620, cardHeight: 320 },
 ];
 
 /** Zoom overlap a tier keeps once entered, so scrolling across a threshold

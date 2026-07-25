@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo, useState } from "react";
+import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
 import { portInfo } from "../portInfo";
@@ -122,43 +122,69 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const outTypes = ((data as any).outputSchema ?? {}) as Record<string, unknown>;
   const configEntries = Object.entries(data.config ?? {});
 
-  const portRow = (port: string, types: Record<string, unknown>, isOut: boolean) => {
+  const topFor = (i: number, n: number) => `${((i + 1) / (n + 1)) * 100}%`;
+
+  // Connection dots sit ON the card border (inputs left, outputs right) at each
+  // port's vertical fraction — that's where wires attach, at every tier.
+  const borderHandle = (
+    port: string, isOut: boolean, i: number, n: number, types: Record<string, unknown>,
+  ) => (
+    <Handle
+      key={`h-${isOut ? 'o' : 'i'}-${port}`}
+      type={isOut ? 'source' : 'target'}
+      position={isOut ? Position.Right : Position.Left}
+      id={port}
+      className={`port-handle ${isOut ? 'port-handle-output' : 'port-handle-input'}`}
+      title={handleTitle(port, isOut, types)}
+      style={{ top: topFor(i, n) }}
+    />
+  );
+
+  // Port names live INSIDE the card in a left column (inputs) and a right column
+  // (outputs), each aligned to its dot. The center content is margined clear of
+  // these columns, so the card reads inputs → contract → outputs spatially.
+  const insideLabel = (
+    port: string, types: Record<string, unknown>, isOut: boolean, i: number, n: number,
+  ) => {
     const info = portInfo(port, isOut, {
       typeSchema: types,
       portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
       portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
     });
+    const key = `${isOut ? 'o' : 'i'}-${port}`;
+    const open = openPort === key;
     const semantic = isOut ? contract?.outputs?.[port] : contract?.inputs?.[port];
     return (
-      <div key={`${isOut ? 'o' : 'i'}-${port}`}
-           className={`process-node-port-row${isOut ? ' is-out' : ''}`}>
-        <span className="process-node-port-name">{port}</span>
+      <div
+        key={`${isOut ? 'o' : 'i'}lbl-${port}`}
+        className={`port-in-label ${isOut ? 'is-out' : 'is-in'}${open ? ' is-open' : ''}`}
+        style={{ top: topFor(i, n) }}
+        title={handleTitle(port, isOut, types)}
+        onClick={(e) => { e.stopPropagation(); setOpenPort(open ? null : key); }}
+      >
+        <span className="port-in-name">{port}</span>
         {show.types && info.type && (
-          <span className="process-node-port-type" title={info.fullType}>{info.type}</span>
+          <span className="port-in-type" title={info.fullType}>{info.type}</span>
         )}
-        {show.contract && semantic && (
-          <span className="process-node-port-semantic">{semantic}</span>
-        )}
-        {/* Hover detail — CSS-driven (reveals on row :hover); computed at render
-            from node data, so hovering never re-mints the node. Shows direction,
-            the wired store, the full type, and (if known) the contract meaning. */}
-        <div className="port-row-tooltip" role="tooltip">
-          <div className="port-row-tooltip-head">
-            <span className={`port-row-tooltip-dir ${info.direction}`}>{info.direction}</span>
-            {info.connectsTo && (
-              <>
-                <span className="port-row-tooltip-arrow">→</span>
-                <span className="port-row-tooltip-target">{info.connectsTo}</span>
-              </>
+        {open && (
+          <div className={`port-popover ${isOut ? 'is-out' : 'is-in'}`} onClick={(e) => e.stopPropagation()}>
+            <div className="port-popover-head">
+              <span className="port-popover-name">{port}</span>
+              <span className={`port-popover-dir ${info.direction}`}>{info.direction}</span>
+            </div>
+            <div className="port-popover-row">
+              <span className="port-popover-key">connects to</span>
+              <span className="port-popover-val mono">{info.connectsTo || '(unwired)'}</span>
+            </div>
+            {info.fullType && (
+              <div className="port-popover-row">
+                <span className="port-popover-key">type</span>
+                <span className="port-popover-val mono">{info.fullType}</span>
+              </div>
             )}
+            {semantic && <div className="port-popover-sem">{semantic}</div>}
           </div>
-          {info.fullType && (
-            <div className="port-row-tooltip-type">{info.fullType}</div>
-          )}
-          {semantic && (
-            <div className="port-row-tooltip-sem">{semantic}</div>
-          )}
-        </div>
+        )}
       </div>
     );
   };
@@ -180,98 +206,103 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   const locked = (data as any)._locked === true;
 
+  // Manual resize: drag a corner to pull the card bigger. In-session inline
+  // override of the tier size. The corner handles are HIDDEN by default and
+  // revealed only on card hover (CSS), so they don't clutter every card — the
+  // functionality is there, just not always visible.
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.
+  const [openPort, setOpenPort] = useState<string | null>(null);
+
   return (
-    <div className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}>
-      {/* Handles anchor the wires at EVERY tier — they stay present even at the
-          glyph tier where no port labels are drawn, so focused-process wiring
-          (Task 6) keeps attaching by port id. A native `title` gives the raw
-          connector its own hover detail (direction + wired store). */}
-      {inputPorts.map((port, i) => (
-        <Handle
-          key={`h-in-${port}`}
-          type="target"
-          position={Position.Left}
-          id={port}
-          className="port-handle port-handle-input"
-          title={handleTitle(port, false, inTypes)}
-          style={{ top: `${((i + 1) / (inputPorts.length + 1)) * 100}%` }}
-        />
-      ))}
-      {outputPorts.map((port, i) => (
-        <Handle
-          key={`h-out-${port}`}
-          type="source"
-          position={Position.Right}
-          id={port}
-          className="port-handle port-handle-output"
-          title={handleTitle(port, true, outTypes)}
-          style={{ top: `${((i + 1) / (outputPorts.length + 1)) * 100}%` }}
-        />
-      ))}
+    <div
+      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}
+      style={dims ? { width: dims.width, height: dims.height, overflow: 'auto' } : undefined}
+    >
+      <NodeResizer
+        isVisible={show.ports}
+        minWidth={360}
+        minHeight={200}
+        onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
+        handleClassName="loom-resize-handle"
+        lineClassName="loom-resize-line"
+      />
+      {/* Connection dots on the border (all tiers, so focused wiring attaches). */}
+      {inputPorts.map((p, i) => borderHandle(p, false, i, inputPorts.length, inTypes))}
+      {outputPorts.map((p, i) => borderHandle(p, true, i, outputPorts.length, outTypes))}
 
-      <div className="process-node-title">
-        {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
-        {data.label}
-      </div>
+      {/* Port-name columns INSIDE the card: inputs left, outputs right. */}
+      {show.ports && inputPorts.map((p, i) => insideLabel(p, inTypes, false, i, inputPorts.length))}
+      {show.ports && outputPorts.map((p, i) => insideLabel(p, outTypes, true, i, outputPorts.length))}
 
-      {show.ports && (
-        <>
+      {/* Center channel — margined clear of the port columns. Reads top-down:
+          config (from above) → title → the contract (what inputs become). The
+          left/right port columns supply the inputs→outputs framing spatially,
+          so no abstract ƒ(inputs; config)→outputs line is needed. */}
+      <div className="process-node-center">
+        {show.types && configEntries.length > 0 && (
+          <div className="process-node-config-band" title="config parameters">
+            <span className="config-band-caret">▼ config</span>
+            {configEntries.map(([k, v]) => (
+              <span key={k} className="config-chip">
+                <span className="config-key">{k}</span>
+                {show.contract && <span className="config-val">{String(v).slice(0, 24)}</span>}
+              </span>
+            ))}
+          </div>
+        )}
+
+        <div className="process-node-title">
+          {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
+          {data.label}
+        </div>
+
+        {show.ports && (
           <div className="process-node-meta">
             {data.processType} · {inputPorts.length} in / {outputPorts.length} out
             {data.interval != null && <span> · every {data.interval}</span>}
           </div>
-          <div className="process-node-portlist">
-            {inputPorts.map((p) => portRow(p, inTypes, false))}
-            {outputPorts.map((p) => portRow(p, outTypes, true))}
+        )}
+
+        {/* The contract: a justified recital of what the process does, over its
+            governing equations. Only shown when actually documented. */}
+        {show.contract && contract?.summary && (
+          <div className="process-contract">
+            <p className="contract-recital">{contract.summary}</p>
           </div>
-        </>
-      )}
+        )}
 
-      {show.types && (data as any).address && (
-        <div className="process-node-address">{(data as any).address}</div>
-      )}
+        {show.contract && contract && contract.math.length > 0 && (
+          <div className="process-node-math">
+            {contract.math.map((m, i) => <div key={i}>{m}</div>)}
+          </div>
+        )}
 
-      {show.types && configEntries.length > 0 && (
-        <div className="process-node-config">
-          {configEntries.map(([k, v]) => (
-            <div key={k} className="process-node-config-row">
-              <span>{k}</span>
-              {show.contract && <span>{String(v).slice(0, 40)}</span>}
-            </div>
-          ))}
-        </div>
-      )}
+        {show.full && contract && Object.keys(contract.symbols).length > 0 && (
+          <div className="process-node-symbols">
+            {Object.entries(contract.symbols).map(([s, meaning]) => (
+              <div key={s}><em>{s}</em> — {meaning}</div>
+            ))}
+          </div>
+        )}
 
-      {show.contract && contract?.summary && (
-        <div className="process-node-summary">{contract.summary}</div>
-      )}
+        {show.full && contract?.description && (
+          <div className="process-node-description">{contract.description}</div>
+        )}
 
-      {show.contract && contract && contract.math.length > 0 && (
-        <div className="process-node-math">
-          {contract.math.map((m, i) => <div key={i}>{m}</div>)}
-        </div>
-      )}
+        {show.types && (data as any).address && (
+          <div className="process-node-address">{(data as any).address}</div>
+        )}
 
-      {show.full && contract && Object.keys(contract.symbols).length > 0 && (
-        <div className="process-node-symbols">
-          {Object.entries(contract.symbols).map(([s, meaning]) => (
-            <div key={s}><em>{s}</em> — {meaning}</div>
-          ))}
-        </div>
-      )}
-
-      {show.full && contract?.description && (
-        <div className="process-node-description">{contract.description}</div>
-      )}
-
-      {show.full && completeness && completeness.total > 0 && (
-        <div className="process-node-completeness">
-          {completeness.documented}/{completeness.total} ports documented
-          {completeness.unknownPorts.length > 0 && (
-            <span className="is-warn"> · unknown: {completeness.unknownPorts.join(', ')}</span>
-          )}
-        </div>
-      )}
+        {show.full && completeness && completeness.total > 0 && (
+          <div className="process-node-completeness">
+            {completeness.documented}/{completeness.total} ports documented
+            {completeness.unknownPorts.length > 0 && (
+              <span className="is-warn"> · unknown: {completeness.unknownPorts.join(', ')}</span>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
