@@ -1577,22 +1577,18 @@
     '</div>';
   }
 
-  // embed-explorer body: list matched runs as rows (label · detail) each with a
-  // "Launch" that preselects that run in the single embedded Data Explorer, then
-  // a #explorer-mount that _loadAnalysesPage mounts after inserting the HTML.
+  // embed-explorer body: a compact one-line count of compatible runs, then the
+  // single embedded Data Explorer — whose OWN run-picker dropdown selects any
+  // run, so a per-run list here would be redundant (and, with dozens of runs and
+  // verbose param labels, an unusably long wall of text).
   function _renderExplorerToolBody(runs) {
-    var rows = (runs || []).map(function(m) {
-      var ref = m.ref || m.run_id || '';
-      var detail = m.detail
-        ? ' <span class="muted" style="font-size:0.82em">' + _esc(m.detail) + '</span>' : '';
-      return '<div class="tool-row picker-row">' +
-        '<div class="picker-row-main"><strong>' + _esc(m.label || ref) + '</strong>' + detail + '</div>' +
-        '<div class="picker-row-actions">' +
-          '<button class="btn-mini" onclick="_explorerSelectRun(\'' + _esc(ref) + '\')">Launch</button>' +
-        '</div></div>';
-    }).join('');
-    return '<div class="tool-matches viewer-target-list">' + rows + '</div>' +
-      '<div id="explorer-mount" style="margin-top:10px"></div>';
+    var n = (runs || []).length;
+    var note = n
+      ? '<p class="muted" style="font-size:0.82em;margin:0 0 6px">' +
+          n + ' compatible run' + (n === 1 ? '' : 's') +
+          ' &mdash; choose one from the run picker below.</p>'
+      : '';
+    return note + '<div id="explorer-mount" style="margin-top:4px"></div>';
   }
 
   // launcher / default body: external-viewer targets, reusing the live Launch /

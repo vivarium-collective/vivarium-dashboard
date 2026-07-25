@@ -58,10 +58,23 @@ def build_analysis_tools(ws_root) -> list[dict]:
     packs = _pack_candidates(ws_root)
     tools: list[dict] = []
 
-    # external contributed viewers (may or may not declare requires)
+    pack_ids = {c["ref"] for c in packs}
+
+    # external contributed viewers (may or may not declare requires). The
+    # built-in Parsimony Viewer natively renders every 3D pack — it resolves the
+    # hosted/bundled viewer itself and always opens — so a legacy contributed
+    # viewer whose targets are ALL 3D-pack studies is a duplicate of it (and, in
+    # practice, the fragile one: its launch goes through the env worker and can
+    # 404). Drop such a viewer so there is exactly one, always-working 3D card.
+    native_3d = bool(packs)
     for v in viewers_public(ws_root):
         v = dict(v)
         v.setdefault("requires", [])
+        tgts = v.get("targets") or []
+        if (native_3d and not v["requires"] and tgts
+                and all(isinstance(t, dict) and t.get("study") in pack_ids
+                        for t in tgts)):
+            continue  # duplicate of the built-in Parsimony Viewer
         v["matched"] = match(v["requires"], runs) if v["requires"] else []
         tools.append(v)
 

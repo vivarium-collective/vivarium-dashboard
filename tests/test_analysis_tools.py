@@ -56,3 +56,46 @@ def test_data_explorer_matches_observables_run_end_to_end(monkeypatch):
     monkeypatch.setattr(at, "_pack_candidates", lambda ws: [])
     tools = {t["id"]: t for t in at.build_analysis_tools("/ws")}
     assert {m["ref"] for m in tools["data-explorer"]["matched"]} == {"r1"}
+
+
+def test_contributed_3d_duplicate_dropped_in_favor_of_native(monkeypatch):
+    # A contributed viewer whose targets are ALL 3D-pack studies duplicates the
+    # native Parsimony Viewer (which always resolves a working viewer). Drop the
+    # contributed one; keep the built-in — exactly one, always-working 3D card.
+    monkeypatch.setattr(at, "viewers_public", lambda ws: [
+        {"id": "ecoli-3d", "title": "3D E. coli viewer", "requires": [],
+         "targets": [{"study": "ecoli-3d", "label": "ecoli-3d",
+                      "detail": "1,302,935 molecules placed"}]},
+    ])
+    monkeypatch.setattr(at, "_run_candidates", lambda ws: [])
+    monkeypatch.setattr(at, "_pack_candidates",
+        lambda ws: [{"ref": "ecoli-3d", "label": "ecoli-3d", "capabilities": ["3d_pack"]}])
+    ids = [t["id"] for t in at.build_analysis_tools("/ws")]
+    assert "ecoli-3d" not in ids          # contributed duplicate dropped
+    assert "parsimony-viewer" in ids      # native viewer kept
+
+
+def test_non_3d_contributed_viewer_not_dropped(monkeypatch):
+    # A contributed viewer targeting a NON-pack study (e.g. Omics) is not a 3D
+    # duplicate and must survive.
+    monkeypatch.setattr(at, "viewers_public", lambda ws: [
+        {"id": "pathway-tools", "title": "Omics", "requires": [],
+         "targets": [{"study": "showcase", "label": "showcase"}]},
+    ])
+    monkeypatch.setattr(at, "_run_candidates", lambda ws: [])
+    monkeypatch.setattr(at, "_pack_candidates",
+        lambda ws: [{"ref": "ecoli-3d", "label": "ecoli-3d", "capabilities": ["3d_pack"]}])
+    ids = [t["id"] for t in at.build_analysis_tools("/ws")]
+    assert "pathway-tools" in ids         # non-3D viewer kept
+    assert "parsimony-viewer" in ids      # native 3D viewer also present
+
+
+def test_parsimony_viewer_kept_when_no_contributed_3d_viewer(monkeypatch):
+    # With packs but no contributed viewer covering them, the built-in Parsimony
+    # Viewer is the native fallback and IS shown.
+    monkeypatch.setattr(at, "viewers_public", lambda ws: [])
+    monkeypatch.setattr(at, "_run_candidates", lambda ws: [])
+    monkeypatch.setattr(at, "_pack_candidates",
+        lambda ws: [{"ref": "ecoli-3d", "label": "ecoli-3d", "capabilities": ["3d_pack"]}])
+    tools = {t["id"]: t for t in at.build_analysis_tools("/ws")}
+    assert {m["ref"] for m in tools["parsimony-viewer"]["matched"]} == {"ecoli-3d"}
