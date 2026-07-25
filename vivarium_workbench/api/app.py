@@ -102,6 +102,7 @@ from vivarium_workbench.lib import saved_visualizations as _saved_viz
 from vivarium_workbench.lib import static_serving as _static_serving
 from vivarium_workbench.lib import study_page as _study_page
 from vivarium_workbench.lib import study_runs as _study_runs
+from vivarium_workbench.lib import rerun as _rerun
 from vivarium_workbench.lib import run_unblocked_views as _run_unblocked_views
 from vivarium_workbench.lib import test_run_views as _test_run_views
 from vivarium_workbench.lib import study_spec as _study_spec
@@ -301,6 +302,9 @@ from vivarium_workbench.lib.models import (
     StudyRunVariantRequest,
     StudyTestsRunRequest,
     RunTestsRequest,
+    # Task 6: rerun-capability POST request bodies
+    RerunRequest,
+    InvestigationRerunRequest,
     # Misc POST request bodies
     SuggestRequest,
     StudyReportSingleRequest,
@@ -5112,6 +5116,52 @@ def create_app() -> FastAPI:
           - 200  run-result dict
         """
         body, status = _study_runs.run_study_variant(ws, req.model_dump(exclude_none=True))
+        return JSONResponse(status_code=status, content=body)
+
+    @app.post(
+        "/api/run-rerun",
+        tags=["Runs"],
+        summary="Replay a recorded run as a brand-new run",
+    )
+    def run_rerun(
+        req: RerunRequest,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Replay a recorded run (study- or composite-origin) as a new run.
+
+        Body: ``{"run_id"}`` — resolves the run's replay target (manifest-
+        preferred) and forwards it to the matching launcher (``lib.rerun.
+        run_rerun``). Never mutates the original run; always produces a new
+        one.
+
+        Status codes:
+          - 404  unknown ``run_id``
+          - 200/202  new run's launch-result dict, plus ``origin``/``reran``
+        """
+        body, status = _rerun.run_rerun(ws, req.run_id)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.post(
+        "/api/investigation-rerun",
+        tags=["Investigations"],
+        summary="Rerun every member study's baseline for an investigation",
+    )
+    def investigation_rerun(
+        req: InvestigationRerunRequest,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Rerun every member study of an investigation's baseline (force).
+
+        Body: ``{"investigation"}`` — iterates the investigation's declared
+        studies and re-launches each one's baseline (``lib.rerun.
+        rerun_investigation``), ignoring the unblocked-gate. One bad study's
+        exception or non-2xx response is recorded in ``errors`` rather than
+        aborting the rest of the batch.
+
+        Always 200: ``{"investigation", "launched", "errors", "count"}``, even
+        when the investigation has no (or no known) member studies.
+        """
+        body, status = _rerun.rerun_investigation(ws, req.investigation)
         return JSONResponse(status_code=status, content=body)
 
     @app.post("/api/save-run-as-variant", tags=["Runs"],

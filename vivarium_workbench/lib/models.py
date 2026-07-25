@@ -2575,6 +2575,63 @@ class StudyTestsRunRequest(BaseModel):
     study: str = ""
 
 
+class RerunRequest(BaseModel):
+    """POST /api/run-rerun request body — ``{"run_id"}``.
+
+    Replays a recorded run (study or composite origin) as a brand-new run.
+    An unknown ``run_id`` is rejected with HTTP 404 by ``lib.rerun.run_rerun``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    run_id: str = ""
+
+
+class RerunResult(BaseModel):
+    """Result of ``POST /api/run-rerun`` — the new run's launch result plus
+    rerun provenance (``origin``, and on success the replayed ``reran`` run_id).
+
+    ``extra="allow"``: the wrapped launcher (``study_runs.launch_into_study``
+    / ``cli_runs.run_composite``) contributes a variable result shape
+    (``run_id``, ``status``, ...); only the fields both callers control here
+    are typed.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    run_id: Optional[str] = None
+    origin: Optional[str] = None
+    status: Optional[str] = None
+    error: Optional[str] = None
+
+
+class InvestigationRerunRequest(BaseModel):
+    """POST /api/investigation-rerun request body — ``{"investigation"}``.
+
+    Reruns every member study's baseline for the named investigation. An
+    investigation with no declared studies (or that doesn't exist) yields an
+    empty, still-200 batch result from ``lib.rerun.rerun_investigation``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    investigation: str = ""
+
+
+class InvestigationRerunResult(BaseModel):
+    """Result of ``POST /api/investigation-rerun`` — the batch outcome across
+    an investigation's member studies: which launched, which errored, and how
+    many succeeded.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    investigation: Optional[str] = None
+    launched: Optional[list] = None
+    errors: Optional[list] = None
+    count: Optional[int] = None
+
+
 class RunTestsRequest(BaseModel):
     """POST /api/run-tests request body — empty ``{}`` (v0.3.0: no model param).
 
