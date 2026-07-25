@@ -49,3 +49,32 @@ def test_study_tabs_manager():
     assert "_setInvestigationContextCollapsed(true)" in o
     c = JS[JS.index("function _wsCloseStudyTab"): JS.index("function _wsCloseStudyTab") + 900]
     assert "_setInvestigationContextCollapsed(false)" in c
+
+
+# ── Task 5: consistency router + investigation-workspace render ──────────────
+
+def test_router_uses_workspace_not_legacy():
+    assert "function _showInvestigationWorkspace" in JS
+    r = JS[JS.index("function _openStudyEmbeddedNewTab"): JS.index("function _openStudyEmbeddedNewTab") + 1200]
+    assert "_showInvestigationWorkspace" in r        # loads the study's own investigation
+    assert "_wsOpenStudyTab" in r                    # opens/focuses the tab
+    assert "_selectStudyInRail" in r                 # reflects selection in the rail
+    assert "window.location = _studyHref" not in r   # no dead-end full-window nav
+    assert "window.location" not in r                # no full-window navigation at all
+    assert "_openInvestigation(" not in r            # never the legacy icon-view path
+
+
+def test_showworkspace_renders_graph_not_legacy_icon_view():
+    w = JS[JS.index("function _showInvestigationWorkspace"): JS.index("function _showInvestigationWorkspace") + 1200]
+    assert "ws-context" in w
+    assert "_showWorkspace" in w
+    assert "_wsResetStudyTabs" in w
+    assert "_openInvestigation(" not in w            # never the legacy icon-view path
+
+
+def test_investigation_open_entry_points_route_to_workspace():
+    # The card onclick and the rail entry point open the workspace, not the
+    # legacy focus-mode render.
+    assert 'onclick="_showInvestigationWorkspace(' in JS
+    rail = JS[JS.index("function _vivOpenInvestigationFromRail"): JS.index("function _vivOpenInvestigationFromRail") + 500]
+    assert "_showInvestigationWorkspace" in rail

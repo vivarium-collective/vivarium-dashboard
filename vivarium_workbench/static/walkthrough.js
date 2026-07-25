@@ -644,7 +644,9 @@
       var tries = 0;
       var attemptOpen = function() {
         var detailEl = document.getElementById('investigation-detail-view');
-        if (detailEl && typeof _openInvestigationDetail === 'function') {
+        if (detailEl && typeof _showInvestigationWorkspace === 'function') {
+          _showInvestigationWorkspace(qInv);
+        } else if (detailEl && typeof _openInvestigationDetail === 'function') {
           _openInvestigationDetail(qInv);
         } else if (tries++ < 20) {
           setTimeout(attemptOpen, 100);
@@ -3679,7 +3681,8 @@
     // Switch to Studies page first, then open the detail panel and
     // refresh the rail so the active-state moves with the selection.
     if (typeof _switchPage === 'function') _switchPage('studies');
-    if (typeof _openInvestigation === 'function') _openInvestigation(name);
+    if (typeof _showInvestigationWorkspace === 'function') _showInvestigationWorkspace(name);
+    else if (typeof _openInvestigation === 'function') _openInvestigation(name);
     _vivRefreshInvestigationsRail();
   }
   window._vivOpenInvestigationFromRail = _vivOpenInvestigationFromRail;
@@ -3695,7 +3698,11 @@
     var link = document.querySelector('.menu-link[data-page="investigations"]');
     if (page) page.classList.add('active');
     if (link) link.classList.add('active');
-    if (typeof _openInvestigationDetail === 'function') _openInvestigationDetail(name);
+    // Route through the workspace so the graph + objective render inside
+    // #ws-context (where _renderInvestigationDetailInto relocates the shared
+    // detail-view node), not the retired standalone page-level detail view.
+    if (typeof _showInvestigationWorkspace === 'function') _showInvestigationWorkspace(name);
+    else if (typeof _openInvestigationDetail === 'function') _openInvestigationDetail(name);
   };
 
   // -------------------------------------------------------------------------
@@ -4866,7 +4873,8 @@
         // explicitly via _openInvestigationDetail. (Previously this auto-opened
         // the "current" investigation, so the menu never returned to the list.)
         if (window._isetIndex.length === 1) {
-          _openInvestigationDetail(window._isetIndex[0].name);
+          if (typeof _showInvestigationWorkspace === 'function') _showInvestigationWorkspace(window._isetIndex[0].name);
+          else _openInvestigationDetail(window._isetIndex[0].name);
         } else {
           _showInvestigationList();
         }
@@ -4991,7 +4999,7 @@
       var lifeChip = iset.lifecycle && iset.lifecycle !== 'active'
         ? '<span style="font-size:0.72em;color:#64748b;background:#f1f5f9;border-radius:9999px;padding:1px 8px">' + _esc(iset.lifecycle) + '</span>' : '';
 
-      return '<div class="investigation-set-card" onclick="_openInvestigationDetail(\'' + _esc(iset.name) + '\')" ' +
+      return '<div class="investigation-set-card" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ' +
              'title="' + _esc(iset.name) + '" ' +
              'data-iset-title="' + _esc(String(iset.title || iset.name).toLowerCase()) + '" ' +
              'data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" ' +
@@ -5216,6 +5224,62 @@
     }
   }
   window._wsCloseStudyTab = _wsCloseStudyTab;
+
+  // Task 5: render an investigation's graph + objective into an arbitrary mount
+  // (the workspace #ws-context). Reuses the v3 detail renderer verbatim by
+  // relocating the shared #investigation-detail-view subtree (title/objective
+  // "About" block, needs-attention, and the interactive study DAG) into the
+  // mount, then letting the existing async _openInvestigationDetail populate it
+  // in place. This is the graph + objective source for BOTH v3 AND v2-shape
+  // specs — it is NEVER the legacy #investigation-detail icon-tab view.
+  function _renderInvestigationDetailInto(name, mountEl) {
+    if (!name || !mountEl) return;
+    var view = document.getElementById('investigation-detail-view');
+    if (view) {
+      if (view.parentNode !== mountEl) mountEl.appendChild(view);
+      view.style.display = '';
+      // The workspace header (#ws-title/#ws-status/#ws-actions) is the single
+      // chrome now; hide the relocated view's duplicate back-link + title row.
+      var back = view.querySelector('.iset-back-link');
+      if (back) back.style.display = 'none';
+      var titleEl = document.getElementById('investigation-detail-title');
+      if (titleEl && titleEl.parentNode) titleEl.parentNode.style.display = 'none';
+    }
+    if (typeof _openInvestigationDetail === 'function') _openInvestigationDetail(name);
+  }
+  window._renderInvestigationDetailInto = _renderInvestigationDetailInto;
+
+  // Report / Notebook actions in the workspace header (#ws-actions), moved off
+  // the detail-view header (hidden by _renderInvestigationDetailInto).
+  function _wsSetInvestigationActions() {
+    var actions = document.getElementById('ws-actions');
+    if (!actions) return;
+    actions.innerHTML =
+      '<button class="btn-mini" onclick="_generateInvestigationReport()" ' +
+        'title="Generate a shareable HTML report">Report 📄</button> ' +
+      '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
+        'title="Download a self-contained Jupyter notebook">Notebook 📓</button>';
+  }
+  window._wsSetInvestigationActions = _wsSetInvestigationActions;
+
+  // Task 5: the investigation workspace render — replacement for the legacy
+  // focus-mode icon view. Always shows the study's OWN investigation graph +
+  // objective, expanded, with an empty study-tabs bar and a hidden porthole.
+  function _showInvestigationWorkspace(name) {
+    if (!name) return;
+    window._wsInvestigation = name;
+    _showWorkspace();
+    var title = document.getElementById('ws-title');
+    if (title) title.textContent = 'Investigation: ' + name;
+    var status = document.getElementById('ws-status');
+    if (status) { status.textContent = ''; status.className = ''; }
+    // Always the graph + objective detail — NOT the legacy "Study:<inv>" icon view.
+    var ctx = document.getElementById('ws-context');
+    if (ctx) _renderInvestigationDetailInto(name, ctx);
+    _wsResetStudyTabs(name);   // graph expanded, no study open
+    _wsSetInvestigationActions();   // Report/Notebook actions in #ws-actions
+  }
+  window._showInvestigationWorkspace = _showInvestigationWorkspace;
 
   // Prompt-first create: a free-text description scaffolds a real investigation /
   // study seeded with that as the question, name auto-derived (editable).
@@ -12453,23 +12517,28 @@
   window._investigationForStudy = _investigationForStudy;
 
   function _openStudyEmbeddedNewTab(name) {
-    // When we're already inside a v3 investigation DETAIL view that has the
-    // study-embed panel on screen, embed there (nice in-context view).
-    var embedPanel = document.getElementById('investigation-study-embed-panel');
-    var detail = document.getElementById('investigation-detail-view');
-    if (embedPanel && detail && detail.offsetParent !== null && window._currentIset) {
-      _openStudyInsideInvestigation(name);
-      _selectStudyInRail(name);
-      return;
+    // Single router: show the study's OWN investigation workspace, then
+    // open/focus its study tab. Never the legacy icon view, never full-window nav.
+    var inv = _investigationForStudy(name);
+    if (inv) {
+      if (window._wsInvestigation !== inv) _showInvestigationWorkspace(inv);
+      else _showWorkspace();
+      _wsOpenStudyTab(name);
+    } else {
+      // Ungrouped study: minimal workspace (no graph), just the study tab.
+      window._wsInvestigation = null;
+      _showWorkspace();
+      // #ws-context may host the relocated shared #investigation-detail-view;
+      // HIDE it rather than wipe innerHTML (which would destroy the node).
+      var ctx = document.getElementById('ws-context');
+      var view = document.getElementById('investigation-detail-view');
+      if (view && view.parentNode === ctx) view.style.display = 'none';
+      else if (ctx) ctx.innerHTML = '';
+      var t = document.getElementById('ws-title'); if (t) t.textContent = 'Study: ' + name;
+      var a = document.getElementById('ws-actions'); if (a) a.innerHTML = '';
+      _wsResetStudyTabs(null);
+      _wsOpenStudyTab(name);
     }
-    // Otherwise open the STUDY's OWN pillar page in the studies-page porthole.
-    // Do NOT route through _openInvestigation — for a v2-shape investigation it
-    // renders the legacy "Study: <investigation>" icon-tab view, which is exactly
-    // the wrong thing. The porthole shows the actual study (pillar tabs) and
-    // works for v2 and v3 alike; never a dead-end full-window navigation.
-    if (typeof _switchPage === 'function') { window.location.hash = '#studies'; _switchPage('studies'); }
-    if (typeof _openStudyEmbedded === 'function') _openStudyEmbedded(name);
-    else window.location = _studyHref(name);
     _selectStudyInRail(name);
   }
   window._openStudyEmbeddedNewTab = _openStudyEmbeddedNewTab;
