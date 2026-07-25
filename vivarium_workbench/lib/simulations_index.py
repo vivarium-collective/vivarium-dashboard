@@ -330,6 +330,52 @@ def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
     return out
 
 
+# Run kinds that do NOT execute a composite — cross-study/meta aggregations. The
+# study-declared-composite fallback is not applied to these (attributing the
+# study's composite to them would misrepresent what ran). Extend if new pure-meta
+# kinds appear; simulation/analysis/ensemble/parameter_screen/cross_validation/
+# sensitivity_analysis all execute the composite and are intentionally NOT here.
+_NON_COMPOSITE_RUN_KINDS = frozenset({"synthesis"})
+
+
+def _study_declared_composite(data: dict) -> str | None:
+    """The composite a study declares at the DESIGN level, for runs whose own
+    entry omits ``composite:``.
+
+    mbp-style studies declare the composite once under ``conditions.baseline``
+    (or another condition), or as a top-level ``composite``/``baseline``, rather
+    than repeating it on every run entry. Resolution order: ``conditions.baseline
+    .composite`` → first ``conditions.*.composite`` → top-level ``composite`` →
+    ``baseline`` (string, or dict with ``composite``). Returns None if the study
+    declares no composite anywhere. Defensive: never raises on odd shapes.
+    """
+    if not isinstance(data, dict):
+        return None
+    conditions = data.get("conditions")
+    if isinstance(conditions, dict):
+        base = conditions.get("baseline")
+        if isinstance(base, dict) and isinstance(base.get("composite"), str):
+            return base["composite"]
+        for cond in conditions.values():
+            if isinstance(cond, dict) and isinstance(cond.get("composite"), str):
+                return cond["composite"]
+    comp = data.get("composite")
+    if isinstance(comp, str) and comp:
+        return comp
+    baseline = data.get("baseline")
+    if isinstance(baseline, str) and baseline:
+        return baseline
+    if isinstance(baseline, dict) and isinstance(baseline.get("composite"), str):
+        return baseline["composite"]
+    # ``baseline`` may be a list of variant dicts ([{name, composite, params}]);
+    # take the first that declares a composite.
+    if isinstance(baseline, list):
+        for variant in baseline:
+            if isinstance(variant, dict) and isinstance(variant.get("composite"), str):
+                return variant["composite"]
+    return None
+
+
 def _read_study_yaml_runs(workspace: Path) -> list[dict]:
     """Surface runs recorded only in ``study.yaml`` ``runs:`` as first-class
     simulation rows.
@@ -354,6 +400,9 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
         runs = data.get("runs")
         if not isinstance(runs, list):
             continue
+        # Study-level fallback for runs whose own entry omits `composite:`
+        # (mbp-style studies declare it once under conditions.baseline).
+        declared_composite = _study_declared_composite(data)
         for entry in runs:
             if not isinstance(entry, dict):
                 continue
@@ -363,9 +412,16 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
             if not rid:
                 continue
             _name = entry.get("name") or entry.get("simulation")
+            # Apply the study-declared composite ONLY when the run executes one.
+            # `synthesis` runs are cross-study aggregations that run no composite,
+            # so we must not attribute the study's composite to them. (simulation/
+            # analysis/ensemble/parameter_screen/cross_validation/sensitivity_
+            # analysis all DO execute the composite and get the fallback.)
+            _entry_composite = entry.get("composite")
+            _fallback = None if entry.get("kind") in _NON_COMPOSITE_RUN_KINDS else declared_composite
             out.append({
                 "run_id": rid,
-                "spec_id": entry.get("composite"),
+                "spec_id": _entry_composite or _fallback,
                 "sim_name": _name or rid,
                 "label": _name or rid,
                 "status": entry.get("status") or "completed",
