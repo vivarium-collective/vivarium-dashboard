@@ -48,19 +48,37 @@ investigation together with the studies opened inside it as embedded tabs.
 
 ### Two surfaces
 
-**Browse surface** — everything for *finding/creating*:
-- the search input (`#investigations-filter`),
-- the `Investigations | Studies` tab toggle (`_setIsetBrowseTab`),
-- the Sort control + card grid (`#investigations-list`),
-- the context-aware `+ New` create button + prompt modal.
+**Explore surface** (the browse/search surface) — everything for
+*finding/creating*, organized like the Registry page's clean tab layout
+("Modules | Discovered registry" over "Processes | Steps | …"):
 
-This is what the **Investigations** left-nav item shows.
+- a header/label **"Explore"**,
+- a single **tab row: `Investigations N | Studies M`** (Registry-style tabs with
+  live counts; `_setIsetBrowseTab`),
+- the search input (`#investigations-filter`) + the **Sort** control,
+- the card grid (`#investigations-list`),
+- the context-aware **`+ New`** create button + prompt modal.
+
+**Smart grouping within each tab** (this is the "intelligently organized for easy
+exploring" part):
+
+- **Investigations tab** → grouped **Active / Closed** (as today), each an
+  uppercase group heading with a count, cards in a responsive grid.
+- **Studies tab** → grouped **by their investigation**: one group heading per
+  investigation (title + study count) followed by that investigation's study
+  cards; studies with no investigation fall into an **"Ungrouped"** group. So the
+  flat 42-study list reads in context (e.g. `COLONY COMPOSITE (3)` → its three
+  study cards).
+- The **Sort** control re-slices within groups (by name, status, recency, run
+  count); it does not flatten the grouping.
+
+This surface is what the **Investigations** left-nav item shows.
 
 **Viewing surface (the "investigation workspace")** — a persistent surface for
 *one* investigation plus the studies opened inside it. Opening an investigation
-**hides Browse** and shows this surface. The user returns to Browse via the
+**hides Explore** and shows this surface. The user returns to Explore via the
 **Investigations** nav item or a **"← All investigations"** control in the
-workspace header. Search + create exist only on Browse.
+workspace header. Search + create exist only on Explore.
 
 ### Viewing surface layout
 
@@ -87,8 +105,8 @@ Regions:
 
 ### Behaviors
 
-- **Open an investigation** (from a Browse card or a sidebar investigation group
-  header): Browse hides; workspace shows with the graph + objective **expanded**;
+- **Open an investigation** (from a Explore card or a sidebar investigation group
+  header): Explore hides; workspace shows with the graph + objective **expanded**;
   study-tabs bar empty; no porthole.
 - **Open a study** (graph node, study card on the Studies tab, or sidebar study
   leaf): its tab **pops in** (or focuses if already open); the investigation
@@ -101,11 +119,10 @@ Regions:
 - **Close a study tab (×)**: if it was active, focus the nearest remaining tab
   and keep the context collapsed; if it was the last tab, **return to graph-only**
   (context re-expands, porthole hidden). *(Decision: closing all tabs returns to
-  graph-only, not to Browse.)*
-- **Return to Browse**: the Investigations nav item or "← All investigations"
-  shows Browse and hides the workspace. The workspace state (current
-  investigation + open study tabs + active tab) is **retained** so re-opening the
-  same investigation restores its tabs within the session.
+  graph-only, not to Explore.)*
+- **Return to Explore**: the Investigations nav item or "← All investigations"
+  shows Explore and hides the workspace. The workspace state (current
+  investigation + open study tabs + active tab) is **retained** so re-opening the same investigation restores its tabs within the session.
 
 ### Consistency router
 
@@ -145,9 +162,16 @@ Client-side only, in `walkthrough.js` (+ markup in `index.html.j2`):
   slim-bar; wired to the slim bar click and to open/close-study transitions.
 - **`_openStudyEmbeddedNewTab(slug)`** — rewritten to be the single router above
   (replaces the current pillar-in-porthole behavior).
-- **`_showBrowse()` / `_showWorkspace()`** — toggle the two surfaces; wired to the
+- **Explore surface** — a header/label + Registry-style `Investigations N |
+  Studies M` tab row (styling reused from the Registry page's tabs). The
+  Investigations tab keeps the Active/Closed grouping; the Studies tab renderer
+  (`_renderStudyBrowseCards`) is updated to **group study cards by their
+  investigation** (heading + count per investigation, an "Ungrouped" bucket for
+  the rest) instead of one flat "All studies" group. Sort applies within groups.
+- **`_showExplore()` / `_showWorkspace()`** — toggle the two surfaces; wired to the
   Investigations nav (`data-page="investigations"` handler) and the "← All
-  investigations" control.
+  investigations" control. ("Explore" is the surface; "Explore ⇄ Viewing" is the
+  toggle.)
 - **Sidebar rail** — study leaves already carry `data-study-name` and call
   `_openStudyEmbeddedNewTab`; they now route through the workspace like every
   other entry point. `_selectStudyInRail` keeps the rail highlight in sync.
@@ -172,7 +196,7 @@ regions.
   `_studyHref`; no live-only assumptions beyond what the current embed already
   makes.
 - **Reopening the same investigation** in a session restores its open study tabs
-  + active tab (state retained across Browse ⇄ Viewing toggles).
+  + active tab (state retained across Explore ⇄ Viewing toggles).
 
 ## Testing
 
@@ -180,7 +204,7 @@ regions.
   existing pattern in `tests/test_*structure*`/`test_pillar_unify`): the router
   `_openStudyEmbeddedNewTab` no longer full-window-navigates and no longer routes
   through the legacy `_openInvestigation` icon render; the workspace exposes the
-  study-tabs manager + collapse toggle; Browse and Viewing are distinct
+  study-tabs manager + collapse toggle; Explore and Viewing are distinct
   toggled surfaces.
 - **Render checks** against a live server on a workspace with both a v3
   investigation (colonies) and a v2-shape one (v2ecoli-vecoli-comparison):
@@ -188,7 +212,7 @@ regions.
   workspace under *its own* investigation, with the context collapsed, and the
   sidebar highlighting the study — asserted via DOM state, not the legacy
   "Baseline Composite" markers.
-- Manual pass: open/close/focus study tabs; collapse/expand context; Browse ⇄
+- Manual pass: open/close/focus study tabs; collapse/expand context; Explore ⇄
   Viewing round-trip retains tabs.
 
 ## Rollout
