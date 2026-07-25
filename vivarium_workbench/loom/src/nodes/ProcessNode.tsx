@@ -337,7 +337,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           <InnerCompositePreview
             rootId={(data as any)._rootId}
             hops={[...(((data as any)._hops as string[][]) ?? []), data.path]}
-            auto={show.full}
+            auto
           />
         )}
 

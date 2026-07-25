@@ -148,17 +148,26 @@ function ProcessDetail(props: { details: ProcessNodeData }) {
     (d as { configSchema?: Record<string, unknown> }).configSchema,
     d.config,
   );
+  // The prominent "Contract" callout is for a DECLARED structured contract
+  // (e.g. EcoliWCM / PymunkProcess), not one merely derived from the docstring —
+  // otherwise it would just duplicate the Description. Docstring-only processes
+  // keep their Description section.
+  const declared = (d as unknown as { contract?: { summary?: unknown } }).contract;
+  const declaredSummary = declared && typeof declared === 'object'
+    && typeof declared.summary === 'string' && declared.summary.trim()
+      ? declared.summary : undefined;
   const rawDescription = d.description;
   const hasDescription = typeof rawDescription === 'string' && rawDescription.trim().length > 0
-    && rawDescription !== contract?.summary;
+    && rawDescription !== declaredSummary;
 
   return (
     <>
-      {/* Prominent contract summary — the headline "what this process does". */}
-      {contract?.summary && (
+      {/* Prominent contract summary — the headline "what this process does".
+          Only for a declared structured contract (else the Description covers it). */}
+      {declaredSummary && (
         <div className="insp-contract">
           <div className="insp-contract-label">Contract</div>
-          <p className="insp-contract-text">{contract.summary}</p>
+          <p className="insp-contract-text">{declaredSummary}</p>
         </div>
       )}
 

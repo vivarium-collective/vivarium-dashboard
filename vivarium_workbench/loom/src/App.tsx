@@ -29,6 +29,7 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
+import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
 import { getDefaultView, decodeView, fetchView, type View } from './viewStore';
@@ -933,6 +934,24 @@ export default function App() {
       console.error('[bigraph-loom] breadcrumb navigation failed', e);
     }
   }, [drillHops, drillCrumbs, applyLoadedState]);
+
+  // Prefetch every Composite Process's inner composite in the BACKGROUND as soon
+  // as the composite loads, so its in-card mini-map renders instantly when the
+  // user zooms in (no "building…" flash). Deferred + best-effort; the env worker
+  // is serial so these just queue. Re-runs per composite / drill level.
+  useEffect(() => {
+    if (STATIC) return;
+    const root = drillHops.length === 0 ? compositeId : rootIdRef.current;
+    if (!root) return;
+    const comps = (raw.nodes as any[]).filter(
+      (n) => n.type === 'process' && n.data?.isCompositeProcess,
+    );
+    if (!comps.length) return;
+    const t = window.setTimeout(() => {
+      for (const n of comps) prefetchInner(root, [...drillHops, n.data.path]);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [raw, compositeId, drillHops, STATIC]);
 
   const handleNodeDoubleClick = useCallback((_: any, node: any) => {
     // A Composite Process drills into its inner composite (all the way down).

@@ -8,7 +8,8 @@
 // is lazy + module-cached + shows a "building…" placeholder. Double-clicking
 // the card still opens the full drill-down view (App's onNodeDoubleClick).
 
-import { useEffect, useState } from 'react';
+import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   stateToReactFlow, defaultCollapsedIds, defaultHiddenIds,
 } from '../convert';
@@ -67,6 +68,13 @@ function _overviewGraph(state: any): Graph {
   return { nodes, edges };
 }
 
+/** Warm the cache for a Composite Process's inner composite in the background,
+ *  so its in-card mini-map renders instantly when the user zooms in (no
+ *  "building…" flash). No-op if already loaded/loading. */
+export function prefetchInner(rootId: string, hops: string[][]) {
+  if (!_CACHE.has(_key(rootId, hops))) _load(rootId, hops);
+}
+
 const PROC = { w: 150, h: 52 };
 const STORE = { w: 60, h: 60 };
 
@@ -89,14 +97,32 @@ function _miniLayout(nodes: any[]): Map<string, { x: number; y: number }> {
   const SG_X = 26, SG_Y = 46;   // store grid gaps (room above dot for its label)
   const PG_X = 40, PG_Y = 48;   // process grid gaps
   const colsS = Math.max(1, Math.round(Math.sqrt(stores.length * 3.2)));
-  stores.forEach((n, i) => {
-    pos.set(n.id, {
-      x: (i % colsS) * (STORE.w + SG_X),
-      y: Math.floor(i / colsS) * (STORE.h + SG_Y),
+  // Soft depth alignment: group stores by bigraph depth (path length) and stack
+  // the groups in bands top→bottom, so stores keep SOME preference for aligning
+  // by depth while still wrapping (not a strict single row per depth).
+  const depthOf = (n: any) =>
+    Math.max(1, ((n.data?.path as unknown[] | undefined)?.length ?? 1));
+  const byDepth = new Map<number, any[]>();
+  for (const s of stores) {
+    const d = depthOf(s);
+    if (!byDepth.has(d)) byDepth.set(d, []);
+    byDepth.get(d)!.push(s);
+  }
+  let sy = 0;
+  for (const d of [...byDepth.keys()].sort((a, b) => a - b)) {
+    const grp = byDepth.get(d)!
+      .slice()
+      .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+    grp.forEach((s, i) => {
+      pos.set(s.id, {
+        x: (i % colsS) * (STORE.w + SG_X),
+        y: sy + Math.floor(i / colsS) * (STORE.h + SG_Y),
+      });
     });
-  });
-  const storeRows = Math.max(1, Math.ceil(stores.length / colsS));
-  const bandH = storeRows * (STORE.h + SG_Y) + 30;
+    const rows = Math.max(1, Math.ceil(grp.length / colsS));
+    sy += rows * (STORE.h + SG_Y) + 14;  // small gap between depth bands
+  }
+  const bandH = sy + 20;
 
   const colsP = Math.max(1, Math.round(Math.sqrt(procs.length * 1.9)));
   procs.forEach((n, i) => {
@@ -131,8 +157,7 @@ function MiniMap(props: { graph: Graph }) {
   const pad = 16;
   const w = maxX - minX + pad * 2, h = maxY - minY + pad * 2;
   const vb = `${minX - pad} ${minY - pad} ${w} ${h}`;
-  // Widths in viewBox units, scaled to the extent so wires stay hairline and
-  // labels read once the compact figure is fit into the card box.
+  const Cx = minX - pad + w / 2, Cy = minY - pad + h / 2;
   const sw = Math.max(1, Math.max(w, h) / 700);
   const lbl = PROC.h * 0.42;
 
@@ -140,30 +165,75 @@ function MiniMap(props: { graph: Graph }) {
   const storeCount = nodes.length - procCount;
   const drawEdges = edges.length <= 800;
 
+  // --- Interaction: wheel-zoom (center-anchored), drag-pan, click-select.
+  // Contained: wheel/mousedown stopPropagation so the OUTER canvas doesn't also
+  // zoom/drag. Double-click still bubbles to the card → opens the full view.
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const [k, setK] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [sel, setSel] = useState<string | null>(null);
+  const drag = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  const tx = Cx * (1 - k) + pan.x, ty = Cy * (1 - k) + pan.y;
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.stopPropagation();
+    const f = e.deltaY < 0 ? 1.18 : 1 / 1.18;
+    setK((cur) => Math.min(10, Math.max(1, cur * f)));
+  };
+  const onDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    drag.current = { sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y };
+  };
+  const onMove = (e: React.MouseEvent) => {
+    const d = drag.current, el = svgRef.current;
+    if (!d || !el) return;
+    const rect = el.getBoundingClientRect();
+    setPan({
+      x: d.px + ((e.clientX - d.sx) / rect.width) * w,
+      y: d.py + ((e.clientY - d.sy) / rect.height) * h,
+    });
+  };
+  const onUp = () => { drag.current = null; };
+  const reset = (e: React.MouseEvent) => { e.stopPropagation(); setK(1); setPan({ x: 0, y: 0 }); };
+  const panned = k !== 1 || pan.x !== 0 || pan.y !== 0;
+
   return (
     <div className="inner-preview">
       <div className="inner-preview-head">
         <span className="inner-preview-badge">⤢ inner composite</span>
-        <span className="inner-preview-count">{procCount} processes · {storeCount} stores</span>
+        <span className="inner-preview-count">
+          {procCount} processes · {storeCount} stores · drag / scroll
+          {panned && <button className="mini-reset" onClick={reset} title="Reset view">reset</button>}
+        </span>
       </div>
       <svg
-        className="inner-preview-svg"
+        ref={svgRef}
+        /* nodrag/nowheel: let THIS element handle drag + wheel instead of the
+           outer React Flow canvas (which owns node-drag + pane-zoom). */
+        className="inner-preview-svg nodrag nowheel"
         viewBox={vb}
         preserveAspectRatio="xMidYMid meet"
-        style={{ aspectRatio: `${w} / ${h}` }}
+        style={{ aspectRatio: `${w} / ${h}`, cursor: 'grab' }}
+        onWheel={onWheel}
+        onMouseDown={onDown}
+        onMouseMove={onMove}
+        onMouseUp={onUp}
+        onMouseLeave={onUp}
       >
+        <g transform={`translate(${tx} ${ty}) scale(${k})`}>
         {drawEdges && edges.map((e: any) => {
           const a = centerById.get(e.source);
           const b = centerById.get(e.target);
           if (!a || !b) return null;
+          const hot = sel != null && (e.source === sel || e.target === sel);
           const place = e.data?.edgeType === 'place';
           return (
             <line
               key={e.id}
               x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-              stroke={place ? '#cbd5e1' : '#bcd4f5'}
-              strokeWidth={place ? sw * 1.2 : sw}
-              strokeOpacity={place ? 0.5 : 0.4}
+              stroke={hot ? '#2563eb' : place ? '#cbd5e1' : '#bcd4f5'}
+              strokeWidth={hot ? sw * 2 : place ? sw * 1.2 : sw}
+              strokeOpacity={hot ? 0.9 : place ? 0.5 : 0.4}
             />
           );
         })}
@@ -172,11 +242,13 @@ function MiniMap(props: { graph: Graph }) {
           const c = centerById.get(n.id);
           if (!c) return null;
           const name = n.data?.label ?? '';
+          const on = sel === n.id;
           return (
-            <g key={n.id} className="mini-store">
+            <g key={n.id} className={`mini-store${on ? ' is-sel' : ''}`}
+               onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (store)</title>
               <circle cx={c.x} cy={c.y} r={STORE.w / 1.7}
-                fill="#eef2f7" stroke="#b6c2d1" strokeWidth={sw} />
+                fill={on ? '#dbeafe' : '#eef2f7'} stroke={on ? '#3b82f6' : '#b6c2d1'} strokeWidth={sw} />
               <text
                 x={c.x} y={c.y - STORE.w / 1.3} fontSize={lbl * 0.82}
                 textAnchor="middle" dominantBaseline="ideographic" fill="#64748b"
@@ -194,12 +266,15 @@ function MiniMap(props: { graph: Graph }) {
           if (!p) return null;
           const c = centerById.get(n.id)!;
           const name = n.data?.label ?? '';
+          const on = sel === n.id;
           return (
-            <g key={n.id} className="mini-proc">
+            <g key={n.id} className={`mini-proc${on ? ' is-sel' : ''}`}
+               onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (process)</title>
               <rect
-                x={p.x} y={p.y} width={PROC.w} height={PROC.h} rx={7}
-                fill="#ffffff" stroke="#3b82f6" strokeWidth={sw * 2.2}
+                x={p.x} y={p.y} width={PROC.w} height={PROC.h}
+                fill={on ? '#eff6ff' : '#ffffff'} stroke={on ? '#1d4ed8' : '#3b82f6'}
+                strokeWidth={on ? sw * 3.4 : sw * 2.2}
               />
               <text
                 x={c.x} y={c.y} fontSize={lbl} textAnchor="middle"
@@ -211,6 +286,7 @@ function MiniMap(props: { graph: Graph }) {
             </g>
           );
         })}
+        </g>
       </svg>
     </div>
   );

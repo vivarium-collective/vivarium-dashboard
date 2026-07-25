@@ -554,7 +554,7 @@ body {
 .inner-preview {
   margin: 5px 0 2px;
   border: 1px solid #cfe3fb;
-  border-radius: 6px;
+  border-radius: 0;
   background: #fff;
   padding: 0;
   overflow: hidden;
@@ -573,6 +573,12 @@ body {
    Native <title> tooltips give the full name on any node. */
 .inner-preview-svg .mini-store-label { opacity: 0.85; }
 .inner-preview-svg .mini-store:hover .mini-store-label { opacity: 1; font-weight: 700; }
+.inner-preview-svg:active { cursor: grabbing; }
+.mini-reset {
+  margin-left: 8px; font-size: 10px; color: #2563eb; cursor: pointer;
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0 6px;
+}
+.mini-reset:hover { background: #dbeafe; }
 .inner-preview-svg .mini-store:hover circle { fill: #dbeafe; stroke: #3b82f6; }
 .inner-preview-svg .mini-proc:hover rect { fill: #eff6ff; stroke: #2563eb; }
 .inner-preview-svg .mini-proc, .inner-preview-svg .mini-store { cursor: pointer; }
