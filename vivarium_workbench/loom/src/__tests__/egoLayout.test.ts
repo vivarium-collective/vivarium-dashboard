@@ -29,14 +29,14 @@ const edges: Edge[] = [
 describe('egoLayout', () => {
   it('classifies stores into left (read), right (write), and below (read+write)', () => {
     const { positions } = egoLayout(nodes, edges, 'P');
-    const p = positions.get('P')!;
+    const proc = nodes.find((n) => n.id === 'P')!;   // stays put — not in positions
     const a = positions.get('A')!;   // input-only → left
     const b = positions.get('B')!;   // output-only → right
     const c = positions.get('C')!;   // read+write → below
 
-    expect(a.x).toBeLessThan(p.x);
-    expect(b.x).toBeGreaterThan(p.x);
-    expect(c.y).toBeGreaterThan(p.y);
+    expect(positions.has('P')).toBe(false);        // the process is not moved
+    expect(a.x).toBeLessThan(b.x);                 // input left of output
+    expect(c.y).toBeGreaterThan(proc.position.y);  // read+write below the process
   });
 
   it('egoIds are the process plus its stores (not the unrelated ones)', () => {
@@ -47,13 +47,14 @@ describe('egoLayout', () => {
     expect(egoIds).not.toContain('Q');
   });
 
-  it('positions every node (ego set + parked rest) and parks non-ego far right', () => {
+  it('moves ONLY the process stores; leaves the process and every other node untouched', () => {
     const { positions } = egoLayout(nodes, edges, 'P');
-    expect(positions.size).toBe(nodes.length);
-    const b = positions.get('B')!;   // rightmost ego store
-    // Parked nodes sit well beyond the ego frame.
-    expect(positions.get('D')!.x).toBeGreaterThan(b.x);
-    expect(positions.get('Q')!.x).toBeGreaterThan(b.x);
+    // Only the connected stores appear (they moved to flank the process);
+    // the process itself and unrelated nodes are absent → kept in place.
+    expect(new Set(positions.keys())).toEqual(new Set(['A', 'B', 'C']));
+    expect(positions.has('P')).toBe(false);  // process stays put
+    expect(positions.has('D')).toBe(false);  // unrelated store untouched
+    expect(positions.has('Q')).toBe(false);  // other process untouched
   });
 
   it('is deterministic', () => {

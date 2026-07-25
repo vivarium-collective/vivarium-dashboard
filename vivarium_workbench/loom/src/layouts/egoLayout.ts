@@ -1,15 +1,13 @@
-// src/layouts/egoLayout.ts — "center on this process" arrangement.
+// src/layouts/egoLayout.ts — "center on this process" LOCAL rearrangement.
 //
-// Given one focused process, lay its wiring out as a readable ego graph:
+// The process stays exactly where it is, and only ITS connected stores are
+// pulled in to flank it:
 //   - stores it ONLY reads  → a column on the LEFT  (feed the process)
 //   - stores it ONLY writes  → a column on the RIGHT (its results)
 //   - stores it reads AND writes → a row BELOW it (read-modify-write state)
-//   - the process itself centered between them
-// Every other node is parked in a compact grid well to the right, out of the
-// ego frame, so the caller can fitView() to just the ego set and get a clean
-// bipartite-ish picture. This is honest about processes (like equilibrium)
-// that mostly update stores in place: those stores land in the shared row
-// rather than being forced onto one side.
+// EVERY OTHER NODE IS LEFT UNTOUCHED — the returned map contains only the moved
+// stores, so the caller keeps all other nodes (processes + unrelated stores) in
+// their existing positions. A purely local move around the focused process.
 //
 // Pure: no React, no DOM. Positions are React-Flow node TOP-LEFT coordinates.
 
@@ -17,7 +15,8 @@ import type { Node, Edge } from '@xyflow/react';
 import { fullFootprint } from './clusterGrid';
 
 export interface EgoLayout {
-  /** Node id → new top-left position for EVERY node (ego set + parked rest). */
+  /** Node id → new top-left position, ONLY for the process's stores that moved.
+   *  Every other node is absent, so the caller leaves it in place. */
   positions: Map<string, { x: number; y: number }>;
   /** The focused process plus its stores — what the caller should fitView to. */
   egoIds: string[];
@@ -29,10 +28,6 @@ const COL_GAP = 140;
 const ROW_GAP = 32;
 /** Gap between the process and the shared (read+write) row below it. */
 const SHARED_GAP = 90;
-/** Clearance between the ego frame and the parked-rest grid. */
-const PARK_GAP = 480;
-const PARK_COLS = 6;
-const PARK_CELL = 200;
 
 interface Sized { id: string; w: number; h: number }
 
@@ -88,10 +83,11 @@ export function egoLayout(nodes: Node[], edges: Edge[], procId: string): EgoLayo
     return { id, w: f.w, h: f.h };
   };
   const pf = fullFootprint(proc);
+  // The process STAYS PUT — everything is placed relative to its current center.
+  const pcx = proc.position.x + pf.w / 2;
+  const pcy = proc.position.y + pf.h / 2;
 
   const positions = new Map<string, { x: number; y: number }>();
-  // Process centered at the origin (CENTER (0,0) → top-left offset).
-  positions.set(procId, { x: -pf.w / 2, y: -pf.h / 2 });
 
   const leftItems = leftOnly.map(sized);
   const rightItems = rightOnly.map(sized);
@@ -99,34 +95,16 @@ export function egoLayout(nodes: Node[], edges: Edge[], procId: string): EgoLayo
 
   const maxStoreW = [...leftItems, ...rightItems].reduce((m, it) => Math.max(m, it.w), 0);
   const colDX = pf.w / 2 + COL_GAP + maxStoreW / 2;
-  stackColumn(leftItems, -colDX, 0, positions);
-  stackColumn(rightItems, colDX, 0, positions);
+  stackColumn(leftItems, pcx - colDX, pcy, positions);
+  stackColumn(rightItems, pcx + colDX, pcy, positions);
 
   if (bidirItems.length) {
     const maxH = bidirItems.reduce((m, it) => Math.max(m, it.h), 0);
-    layRow(bidirItems, 0, pf.h / 2 + SHARED_GAP + maxH / 2, positions);
+    layRow(bidirItems, pcx, proc.position.y + pf.h + SHARED_GAP + maxH / 2, positions);
   }
 
+  // positions holds ONLY the moved stores; the process and every other node are
+  // deliberately absent so the caller leaves them exactly where they are.
   const egoIds = [procId, ...leftOnly, ...rightOnly, ...bidir];
-
-  // Park everything else in a compact grid to the right of the ego frame so it
-  // never overlaps the arrangement (and fitView-to-ego stays clean).
-  const egoSet = new Set(egoIds);
-  let egoRight = -Infinity;
-  let egoTop = Infinity;
-  for (const id of egoIds) {
-    const p = positions.get(id)!;
-    const f = fullFootprint(byId.get(id)!);
-    egoRight = Math.max(egoRight, p.x + f.w);
-    egoTop = Math.min(egoTop, p.y);
-  }
-  const parkX0 = egoRight + PARK_GAP;
-  const parked = nodes.filter((n) => !egoSet.has(n.id)).sort((a, b) => (a.id < b.id ? -1 : 1));
-  parked.forEach((n, i) => {
-    const col = i % PARK_COLS;
-    const row = Math.floor(i / PARK_COLS);
-    positions.set(n.id, { x: parkX0 + col * PARK_CELL, y: egoTop + row * PARK_CELL });
-  });
-
   return { positions, egoIds };
 }
