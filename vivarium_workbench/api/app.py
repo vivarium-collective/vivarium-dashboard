@@ -913,6 +913,20 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=status, content=result)
 
     @app.get(
+        "/api/study/{study}/3d/models.json",
+        tags=["Analyses"],
+        summary="3D-pack model gallery manifest for a study",
+    )
+    def study_3d_models(study: str, ws: Path = Depends(get_workspace)) -> JSONResponse:
+        """Saved-view 3D-pack manifest for one study (``[{name, file}, ...]``),
+        ``initial``/``birth``/early-snapshot packs ordered first.
+
+        Library-backed via ``lib.analysis_tools_3d.study_models_manifest``.
+        """
+        from vivarium_workbench.lib.analysis_tools_3d import study_models_manifest
+        return JSONResponse(content=study_models_manifest(ws, study))
+
+    @app.get(
         "/api/registry",
         response_model=RegistryPayload,
         tags=["Registry & catalog"],
