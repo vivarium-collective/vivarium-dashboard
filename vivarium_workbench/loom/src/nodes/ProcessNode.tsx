@@ -176,10 +176,10 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
               <span className="port-popover-key">connects to</span>
               <span className="port-popover-val mono">{info.connectsTo || '(unwired)'}</span>
             </div>
-            {info.type && (
+            {info.fullType && (
               <div className="port-popover-row">
                 <span className="port-popover-key">type</span>
-                <span className="port-popover-val mono">{info.type}</span>
+                <span className="port-popover-val mono">{info.fullType}</span>
               </div>
             )}
             {semantic && <div className="port-popover-sem">{semantic}</div>}
