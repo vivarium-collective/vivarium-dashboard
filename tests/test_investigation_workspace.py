@@ -38,3 +38,14 @@ def test_context_collapse_function():
     assert "ws-context-bar" in JS
     # the slim bar's onclick re-expands
     assert "_setInvestigationContextCollapsed(false)" in TPL
+
+
+def test_study_tabs_manager():
+    for fn in ["_wsOpenStudyTab", "_wsCloseStudyTab", "_wsRenderStudyTabs", "_wsResetStudyTabs"]:
+        assert "function %s" % fn in JS, fn
+        assert "window.%s" % fn in JS, fn
+    # opening a tab collapses the context; closing the last returns to graph-only
+    o = JS[JS.index("function _wsOpenStudyTab"): JS.index("function _wsOpenStudyTab") + 900]
+    assert "_setInvestigationContextCollapsed(true)" in o
+    c = JS[JS.index("function _wsCloseStudyTab"): JS.index("function _wsCloseStudyTab") + 900]
+    assert "_setInvestigationContextCollapsed(false)" in c
