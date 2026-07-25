@@ -12161,6 +12161,15 @@
   window._popoutInvestigation = _popoutInvestigation;
 
   // Back-compat shim for any old callers (sidebar groups still use this).
+  // The investigation a study belongs to (from the iset index), or '' if none.
+  function _investigationForStudy(slug) {
+    var iset = (window._isetIndex || []).find(function(i) {
+      return (i.studies || []).indexOf(slug) !== -1;
+    });
+    return iset ? iset.name : '';
+  }
+  window._investigationForStudy = _investigationForStudy;
+
   function _openStudyEmbeddedNewTab(name) {
     // Use the in-place embed ONLY when the investigation detail view is actually
     // on screen. ``_currentIset`` stays set after you leave the investigation
@@ -12172,8 +12181,32 @@
       _openStudyInsideInvestigation(name);
       return;
     }
-    // Otherwise navigate straight to the study page (works from any tab).
-    window.location = _studyHref(name);
+    // Otherwise, DON'T full-window navigate to the stand-alone /studies/<name>
+    // page (a dead end with no sidebar). Instead open the study's investigation
+    // on the Studies page and embed the study inside it, so the sidebar +
+    // investigation context stay and the user can navigate back out.
+    var inv = _investigationForStudy(name);
+    if (inv && typeof _vivOpenInvestigationFromRail === 'function') {
+      _vivOpenInvestigationFromRail(inv);
+      // The investigation detail (with its study-embed panel) renders async;
+      // embed the study once the panel exists.
+      var tries = 0;
+      (function _embedWhenReady() {
+        var detail = document.getElementById('investigation-detail-view');
+        var ready = detail && detail.offsetParent !== null && window._currentIset;
+        if (ready || tries++ > 60) {
+          _openStudyInsideInvestigation(name);
+        } else {
+          setTimeout(_embedWhenReady, 50);
+        }
+      })();
+      return;
+    }
+    // Ungrouped study (no investigation): open the Studies page and embed it in
+    // the page-level study porthole.
+    if (typeof _switchPage === 'function') { window.location.hash = '#studies'; _switchPage('studies'); }
+    if (typeof _openStudyEmbedded === 'function') _openStudyEmbedded(name);
+    else window.location = _studyHref(name);
   }
   window._openStudyEmbeddedNewTab = _openStudyEmbeddedNewTab;
 
