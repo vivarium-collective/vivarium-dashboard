@@ -72,6 +72,11 @@ class SimRow(BaseModel):
     # when ``spec_id`` is an exact registered composite in this workspace, False
     # when it is missing or unregistered. Annotated by GET /api/simulations.
     composite_registered: Optional[bool] = None
+    # The exact config that reproduces this run: the composite generator params
+    # (seed, config_overrides, condition/media, n_steps, …). Sourced from the
+    # dashboard run's ``params_json`` or the study.yaml run/condition params.
+    # None when no config was captured. JSON-serialisable dict.
+    config: Optional[dict] = None
     sim_name: Optional[str] = None
     label: Optional[str] = None
     status: str                # "completed" | "running" | "failed" | ...

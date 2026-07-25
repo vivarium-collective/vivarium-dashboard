@@ -191,6 +191,11 @@ def _row_to_dict(row, db_path_str: str) -> dict:
         # None means the run's data lives in the runs.db SQLite at db_path.
         "store_path": (prov.get("store_path") or remote_origin and remote_origin.get("s3_uri")) or None,
         "emitter": emitter,  # store-derived (xarray/parquet) for remote runs; None → falls back to db_path
+        # The exact reproduction config: the generator params saved at run time
+        # (params_json), minus the transport-provenance keys captured separately
+        # in remote_origin/store_path. None when no params were recorded.
+        "config": ({k: v for k, v in prov.items() if k not in _RUN_PROVENANCE_KEYS}
+                   or None),
         "studies": [],  # filled in by _annotate_studies
         # Match the SQLiteEmitter shape so JS consumers can rely on the
         # keys existing regardless of which emitter wrote the row.
@@ -337,6 +342,13 @@ def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
 # sensitivity_analysis all execute the composite and are intentionally NOT here.
 _NON_COMPOSITE_RUN_KINDS = frozenset({"synthesis"})
 
+# Keys in a runs_meta ``params_json`` that are transport/remote provenance, NOT
+# composite generator config — surfaced separately as remote_origin/store_path,
+# so they're stripped from the reproduction ``config`` view.
+_RUN_PROVENANCE_KEYS = frozenset({
+    "source", "simulation_id", "experiment_id", "backend", "s3_uri", "store_path",
+})
+
 
 def _study_declared_composite(data: dict) -> str | None:
     """The composite a study declares at the DESIGN level, for runs whose own
@@ -376,6 +388,49 @@ def _study_declared_composite(data: dict) -> str | None:
     return None
 
 
+def _study_declared_params(data: dict) -> dict:
+    """The generator params a study declares at the DESIGN level (mirrors
+    :func:`_study_declared_composite`'s resolution). Returns {} if none.
+
+    These are the base config a run inherits (e.g. ``{condition: with_aa}``);
+    a run entry's own params override them.
+    """
+    if not isinstance(data, dict):
+        return {}
+    conditions = data.get("conditions")
+    if isinstance(conditions, dict):
+        base = conditions.get("baseline")
+        if isinstance(base, dict) and isinstance(base.get("params"), dict):
+            return dict(base["params"])
+        for cond in conditions.values():
+            if isinstance(cond, dict) and isinstance(cond.get("params"), dict):
+                return dict(cond["params"])
+    baseline = data.get("baseline")
+    if isinstance(baseline, dict) and isinstance(baseline.get("params"), dict):
+        return dict(baseline["params"])
+    if isinstance(baseline, list):
+        for variant in baseline:
+            if isinstance(variant, dict) and isinstance(variant.get("params"), dict):
+                return dict(variant["params"])
+    return {}
+
+
+def _run_entry_config(entry: dict, declared_params: dict) -> dict | None:
+    """Assemble the exact config for a study.yaml run: the study's declared
+    params overlaid with the run entry's own params/seed/trajectory_params/
+    n_steps. Returns None when nothing was captured.
+    """
+    config = dict(declared_params)
+    if isinstance(entry.get("params"), dict):
+        config.update(entry["params"])
+    for key in ("seed", "trajectory_params"):
+        if entry.get(key) is not None:
+            config[key] = entry[key]
+    if entry.get("n_steps") is not None:
+        config.setdefault("n_steps", entry["n_steps"])
+    return config or None
+
+
 def _read_study_yaml_runs(workspace: Path) -> list[dict]:
     """Surface runs recorded only in ``study.yaml`` ``runs:`` as first-class
     simulation rows.
@@ -403,6 +458,7 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
         # Study-level fallback for runs whose own entry omits `composite:`
         # (mbp-style studies declare it once under conditions.baseline).
         declared_composite = _study_declared_composite(data)
+        declared_params = _study_declared_params(data)
         for entry in runs:
             if not isinstance(entry, dict):
                 continue
@@ -422,6 +478,7 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
             out.append({
                 "run_id": rid,
                 "spec_id": _entry_composite or _fallback,
+                "config": _run_entry_config(entry, declared_params),
                 "sim_name": _name or rid,
                 "label": _name or rid,
                 "status": entry.get("status") or "completed",
