@@ -18,3 +18,16 @@ def test_explore_tab_row_has_counts():
     assert 'id="iset-tab-inv-count"' in TPL
     assert 'id="iset-tab-study-count"' in TPL
     assert "Explore" in TPL                      # the surface label
+
+
+def test_workspace_regions_exist():
+    for _id in ['iset-explore', 'iset-workspace', 'ws-back', 'ws-title',
+                'ws-context', 'ws-context-bar', 'ws-study-tabs', 'ws-study-frame']:
+        assert 'id="%s"' % _id in TPL, _id
+
+
+def test_explore_workspace_toggle_functions():
+    assert "function _showExplore" in JS
+    assert "function _showWorkspace" in JS
+    assert "window._showExplore" in JS
+    assert "window._showWorkspace" in JS

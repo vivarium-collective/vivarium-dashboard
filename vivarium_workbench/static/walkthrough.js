@@ -631,6 +631,7 @@
         if ((window.location.hash || '').replace(/^#/, '') === 'investigations') {
           _switchPage('investigations');
         }
+        if (typeof _showExplore === 'function') _showExplore();
       });
     });
 
@@ -5114,6 +5115,26 @@
     _renderInvestigationSets();
   }
   window._setIsetBrowseTab = _setIsetBrowseTab;
+
+  // Two-surface split: #iset-explore (browse) vs #iset-workspace (viewing an
+  // investigation + its studies). Toggle hides/shows — never destroys — each
+  // surface's DOM so workspace state (open study, tab, scroll) survives a
+  // round trip back to Explore.
+  function _showExplore() {
+    var ex = document.getElementById('iset-explore');
+    var ws = document.getElementById('iset-workspace');
+    if (ex) ex.style.display = '';
+    if (ws) ws.style.display = 'none';
+  }
+  window._showExplore = _showExplore;
+
+  function _showWorkspace() {
+    var ex = document.getElementById('iset-explore');
+    var ws = document.getElementById('iset-workspace');
+    if (ex) ex.style.display = 'none';
+    if (ws) ws.style.display = '';
+  }
+  window._showWorkspace = _showWorkspace;
 
   // Prompt-first create: a free-text description scaffolds a real investigation /
   // study seeded with that as the question, name auto-derived (editable).
