@@ -32,3 +32,27 @@ def test_build_composes_external_and_builtin(monkeypatch):
     assert {m["ref"] for m in tools["data-explorer"]["matched"]} == {"run1"}
     # parsimony matched the 3d_pack study
     assert {m["ref"] for m in tools["parsimony-viewer"]["matched"]} == {"ecoli-3d"}
+
+def test_run_candidates_reads_simulations_key(monkeypatch):
+    monkeypatch.setattr(at, "build_simulations_data", lambda ws: {
+        "simulations": [
+            {"run_id": "r1", "label": "run one", "emitter_type": "XArray",
+             "capabilities": ["observables", "fluxes"]},
+            {"run_id": "r2", "label": "run two", "emitter_type": "SQLite",
+             "capabilities": []},
+        ],
+        "current": None,
+    })
+    cands = at._run_candidates("/ws")
+    assert {c["ref"] for c in cands} == {"r1", "r2"}
+    assert {c["ref"] for c in cands if "observables" in c["capabilities"]} == {"r1"}
+
+def test_data_explorer_matches_observables_run_end_to_end(monkeypatch):
+    monkeypatch.setattr(at, "viewers_public", lambda ws: [])
+    monkeypatch.setattr(at, "build_simulations_data", lambda ws: {
+        "simulations": [{"run_id": "r1", "label": "run one",
+                         "emitter_type": "XArray", "capabilities": ["observables"]}],
+        "current": None})
+    monkeypatch.setattr(at, "_pack_candidates", lambda ws: [])
+    tools = {t["id"]: t for t in at.build_analysis_tools("/ws")}
+    assert {m["ref"] for m in tools["data-explorer"]["matched"]} == {"r1"}

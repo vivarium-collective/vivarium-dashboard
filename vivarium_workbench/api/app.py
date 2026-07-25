@@ -902,7 +902,10 @@ def create_app() -> FastAPI:
         Library-backed via ``lib.analysis_tools.build_analysis_tools``.
         """
         from vivarium_workbench.lib.analysis_tools import build_analysis_tools
-        return JSONResponse(content={"tools": build_analysis_tools(ws)})
+        try:
+            return JSONResponse(content={"tools": build_analysis_tools(ws)})
+        except Exception:  # noqa: BLE001 — never 500 the Analyses tab
+            return JSONResponse(content={"tools": []})
 
     @app.get(
         "/api/analysis-viewer/{uid}/launch",

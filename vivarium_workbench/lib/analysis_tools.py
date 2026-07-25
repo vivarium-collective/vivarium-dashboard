@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from vivarium_workbench.lib.analysis_viewers import viewers_public
+from vivarium_workbench.lib.simulations_index import build_simulations_data
 
 
 def match(requires, candidates: list[dict]) -> list[dict]:
@@ -30,10 +31,9 @@ def builtin_tools() -> list[dict]:
 
 
 def _run_candidates(ws_root) -> list[dict]:
-    from vivarium_workbench.lib.simulations_index import build_simulations_data
     data = build_simulations_data(ws_root) or {}
     out = []
-    for r in data.get("runs", []):
+    for r in data.get("simulations", []):
         out.append({"ref": r.get("run_id"),
                     "label": r.get("label") or r.get("sim_name") or r.get("run_id"),
                     "detail": r.get("emitter_type") or "",
