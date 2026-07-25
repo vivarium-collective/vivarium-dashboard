@@ -173,7 +173,7 @@ def _stub_remote_boundaries(monkeypatch):
     monkeypatch.setattr(remote_run, "workspace_pinned_deps", lambda ws: [])
     monkeypatch.setattr(
         remote_run, "export_composite_pbg",
-        lambda ws, cid, path: Path(path).write_bytes(b"{}"))
+        lambda ws, cid, path, overrides=None: Path(path).write_bytes(b"{}"))
 
 
 @pytest.mark.parametrize("n_steps,expected", [
@@ -206,7 +206,7 @@ def _stub_export_deps_only(monkeypatch):
     monkeypatch.setattr(remote_run, "workspace_pinned_deps", lambda ws: [])
     monkeypatch.setattr(
         remote_run, "export_composite_pbg",
-        lambda ws, cid, path: Path(path).write_bytes(b"{}"))
+        lambda ws, cid, path, overrides=None: Path(path).write_bytes(b"{}"))
 
 
 def _forbid_git_pip_url(monkeypatch):

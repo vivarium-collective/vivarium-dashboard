@@ -95,10 +95,11 @@ def test_execute_deployment_target_dispatches_remote(tmp_path, monkeypatch):
 
     calls = {}
 
-    def _fake_run_remote(ws_root, spec_id, *, dest, n_steps):
+    def _fake_run_remote(ws_root, spec_id, *, dest, n_steps, overrides=None):
         calls["ws_root"] = Path(ws_root)
         calls["spec_id"] = spec_id
         calls["n_steps"] = n_steps
+        calls["overrides"] = overrides
         return dest / "results.zip"
 
     from vivarium_workbench.lib import remote_run
@@ -108,6 +109,8 @@ def test_execute_deployment_target_dispatches_remote(tmp_path, monkeypatch):
     assert rc == 0
     assert calls["spec_id"] == req["spec_id"]
     assert calls["n_steps"] == 4
+    # the run form's parameter overrides must reach the remote runner
+    assert calls["overrides"] == (req.get("overrides") or {})
     conn = connect(ws / ".pbg" / "composite-runs.db")
     meta = query_run_meta(conn, run_id=run_id)
     assert meta["status"] == "completed"

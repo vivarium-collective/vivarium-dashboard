@@ -550,7 +550,8 @@ def _execute_remote(req: RunRequest, run_dir: Path) -> int:
     try:
         try:
             remote_run.run_remote(
-                req.workspace, req.spec_id, dest=run_dir, n_steps=req.steps
+                req.workspace, req.spec_id, dest=run_dir, n_steps=req.steps,
+                overrides=req.overrides,
             )
         except Exception:
             tb = traceback.format_exc()

@@ -88,6 +88,7 @@ def run_remote(
     poll_interval: float = _DEFAULT_POLL_INTERVAL,
     dest: "Path | None" = None,
     n_steps: int = 1,
+    overrides: "dict | None" = None,
 ) -> Path:
     """Export a composite, submit to sms-api, poll, and land results.zip.
 
@@ -151,7 +152,7 @@ def run_remote(
         pbg_path = Path(tmp.name)
 
     try:
-        export_composite_pbg(ws_root, composite_id, pbg_path)
+        export_composite_pbg(ws_root, composite_id, pbg_path, overrides=overrides)
         pbg_bytes = pbg_path.read_bytes()
     finally:
         try:
