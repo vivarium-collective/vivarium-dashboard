@@ -77,9 +77,12 @@
     }
     var short = cid.split(".").pop();
     if (row.composite_registered) {
-      var href = "/?focus=composite-explore&id=" + encodeURIComponent(cid) + "#composite-explore";
-      return '<a href="' + href + '" title="' + esc(cid) + ' — open in the Composite Explorer" ' +
-        'style="text-decoration:none;white-space:nowrap;"><code style="font-size:11px;">' + esc(short) + "</code> ↗</a>";
+      // In-app link (keeps the left nav) that opens THIS run in the Composite
+      // Explorer with its saved config pre-filled — wired in renderTable().
+      return '<span class="sim-composite-link" data-run-id="' + esc(row.run_id || "") + '" ' +
+        'title="' + esc(cid) + ' — open this run in the Composite Explorer (its saved config pre-filled)" ' +
+        'style="text-decoration:underline;text-underline-offset:2px;cursor:pointer;white-space:nowrap;color:#2563eb;">' +
+        '<code style="font-size:11px;color:inherit;">' + esc(short) + "</code> ↗</span>";
     }
     return '<span title="' + esc(cid) + ' — not a registered composite. Every simulation must map to one registered composite." ' +
       'style="color:#b91c1c;font-size:12px;white-space:nowrap;">⚠ <code style="font-size:11px;color:inherit;">' + esc(short) + "</code></span>";
@@ -217,6 +220,16 @@
         // Sim-DB behavior (navigate to the run's study / Composite Explorer).
         if (typeof opts.onRowClick === "function") opts.onRowClick(row, tr);
         else if (window._openSimulation) window._openSimulation(row);
+      });
+    });
+    // Composite links always open the run in the Composite Explorer (in-app,
+    // nav preserved) with its saved config seeded — regardless of study assoc.
+    mount.querySelectorAll(".sim-composite-link").forEach(function (link) {
+      link.addEventListener("click", function (e) {
+        e.stopPropagation();  // don't fall through to the row's default handler
+        var rid = link.getAttribute("data-run-id");
+        var row = rows.find(function (r) { return (r.run_id || "") === rid; });
+        if (row && window._openCompositeFromRun) window._openCompositeFromRun(row);
       });
     });
   }
