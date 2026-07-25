@@ -765,6 +765,8 @@ window.addEventListener('pageshow', function (e) {
     <button class="iset-browse-tab" data-browse="studies" role="tab"
             onclick="_setIsetBrowseTab('studies')"
             style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Studies</button>
+    <button id="iset-browse-create" class="action-btn" onclick="_openBrowseCreate()"
+            style="margin-left:auto;align-self:center;margin-bottom:6px">+ Investigation</button>
   </div>
   <!-- Prominent unified search: matches investigations AND their studies (same
        engine as the side-rail studies search — see _filterInvestigations). -->
@@ -1235,6 +1237,29 @@ window.addEventListener('pageshow', function (e) {
       </label>
       <div class="form-error"></div>
       <button type="submit">Create</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: prompt-first create for an investigation OR a study (browse page). -->
+<div id="modal-browse-create" class="modal-overlay">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-browse-create')">&times;</button>
+    <h3 id="browse-create-title">New investigation</h3>
+    <form id="form-browse-create" onsubmit="event.preventDefault(); _submitBrowseCreate(this)">
+      <label style="display:block;margin-bottom:10px"><span id="browse-create-prompt-label">Describe the investigation — the question you want to answer</span>
+        <textarea name="prompt" rows="3" required oninput="_browseCreateSuggestName(this)"
+                  style="width:100%;box-sizing:border-box;margin-top:4px"
+                  placeholder="e.g. Does v2ecoli's baseline reproduce the measured acetate overflow at high glucose?"></textarea>
+      </label>
+      <label style="display:block;margin-bottom:10px">Name <input name="name" required pattern="[a-z0-9][a-z0-9-]*"
+             placeholder="auto-derived from your description — editable"
+             oninput="this._touched=true" style="width:100%;box-sizing:border-box;margin-top:4px"></label>
+      <label id="browse-create-inv-row" style="display:none;margin-bottom:10px">Investigation
+        <select name="investigation" id="browse-create-inv" style="width:100%;box-sizing:border-box;margin-top:4px"></select>
+      </label>
+      <div class="form-error" style="color:#dc2626;margin:6px 0"></div>
+      <button type="submit" id="browse-create-submit">Create investigation</button>
     </form>
   </div>
 </div>

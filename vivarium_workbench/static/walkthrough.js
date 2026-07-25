@@ -5100,9 +5100,84 @@
       b.style.fontWeight = on ? '600' : '400';
       b.style.borderBottomColor = on ? '#3b82f6' : 'transparent';
     });
+    var createBtn = document.getElementById('iset-browse-create');
+    if (createBtn) createBtn.textContent = (tab === 'studies') ? '+ Study' : '+ Investigation';
     _renderInvestigationSets();
   }
   window._setIsetBrowseTab = _setIsetBrowseTab;
+
+  // Prompt-first create: a free-text description scaffolds a real investigation /
+  // study seeded with that as the question, name auto-derived (editable).
+  function _openBrowseCreate() {
+    var isStudy = window._isetBrowseTab === 'studies';
+    window._browseCreateMode = isStudy ? 'study' : 'investigation';
+    document.getElementById('browse-create-title').textContent = isStudy ? 'New study' : 'New investigation';
+    document.getElementById('browse-create-submit').textContent = isStudy ? 'Create study' : 'Create investigation';
+    document.getElementById('browse-create-prompt-label').textContent = isStudy
+      ? 'Describe the study — the question you want to answer'
+      : 'Describe the investigation — the question you want to answer';
+    document.getElementById('browse-create-inv-row').style.display = isStudy ? '' : 'none';
+    if (isStudy) {
+      var sel = document.getElementById('browse-create-inv');
+      sel.innerHTML = (window._isetIndex || []).map(function (i) {
+        return '<option value="' + _esc(i.name) + '">' + _esc(i.title || i.name) + '</option>';
+      }).join('');
+    }
+    var form = document.getElementById('form-browse-create');
+    form.reset();
+    var nameInput = form.querySelector('[name=name]');
+    if (nameInput) nameInput._touched = false;
+    form.querySelector('.form-error').textContent = '';
+    openModal('modal-browse-create');
+  }
+  window._openBrowseCreate = _openBrowseCreate;
+
+  function _browseCreateSuggestName(ta) {
+    var nameInput = ta.form.querySelector('[name=name]');
+    if (!nameInput || nameInput._touched) return;   // don't clobber a manual edit
+    nameInput.value = String(ta.value).toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
+      .split('-').filter(Boolean).slice(0, 6).join('-');
+  }
+  window._browseCreateSuggestName = _browseCreateSuggestName;
+
+  function _submitBrowseCreate(form) {
+    var data = new FormData(form);
+    var name = String(data.get('name') || '').trim();
+    var prompt = String(data.get('prompt') || '').trim();
+    var errEl = form.querySelector('.form-error');
+    if (!name) { errEl.textContent = 'Name required.'; return; }
+    var post = function (url, body) {
+      return fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+        .then(function (r) { return r.json().then(function (j) { return [r.ok, j]; }); });
+    };
+    if (window._browseCreateMode === 'investigation') {
+      post('/api/investigation-create', { name: name, overview: prompt, question: prompt })
+        .then(function (p) {
+          if (!p[0]) { errEl.textContent = p[1].error || 'Create failed.'; return; }
+          closeModal('modal-browse-create');
+          window._investigationsLoaded = false;
+          if (typeof _loadInvestigations === 'function') _loadInvestigations();
+          if (typeof _vivOpenInvestigationFromRail === 'function') _vivOpenInvestigationFromRail(name);
+        });
+    } else {
+      var inv = String(data.get('investigation') || '');
+      post('/api/study-create', { name: name, investigation: inv, question: prompt })
+        .then(function (p) {
+          if (!p[0]) { errEl.textContent = p[1].error || 'Create failed.'; return; }
+          var created = (p[1] && p[1].name) || name;
+          // Seed the question on the scaffolded study (best-effort).
+          post('/api/study-narrative-set', { study: created, path: 'purpose.question', value: prompt })
+            .catch(function () {}).then(function () {
+              closeModal('modal-browse-create');
+              window._investigationsLoaded = false;
+              if (typeof _loadInvestigations === 'function') _loadInvestigations();
+              _openStudyEmbeddedNewTab(created);
+            });
+        });
+    }
+  }
+  window._submitBrowseCreate = _submitBrowseCreate;
 
   // Status dot vocab shared by the study cards + breakdowns.
   var _STUDY_DOT = {
