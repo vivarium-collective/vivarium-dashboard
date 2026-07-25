@@ -151,16 +151,39 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
       portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
       portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
     });
+    const key = `${isOut ? 'o' : 'i'}-${port}`;
+    const open = openPort === key;
+    const semantic = isOut ? contract?.outputs?.[port] : contract?.inputs?.[port];
     return (
       <div
         key={`${isOut ? 'o' : 'i'}lbl-${port}`}
-        className={`port-in-label ${isOut ? 'is-out' : 'is-in'}`}
+        className={`port-in-label ${isOut ? 'is-out' : 'is-in'}${open ? ' is-open' : ''}`}
         style={{ top: topFor(i, n) }}
         title={handleTitle(port, isOut, types)}
+        onClick={(e) => { e.stopPropagation(); setOpenPort(open ? null : key); }}
       >
         <span className="port-in-name">{port}</span>
         {show.types && info.type && (
           <span className="port-in-type" title={info.fullType}>{info.type}</span>
+        )}
+        {open && (
+          <div className={`port-popover ${isOut ? 'is-out' : 'is-in'}`} onClick={(e) => e.stopPropagation()}>
+            <div className="port-popover-head">
+              <span className="port-popover-name">{port}</span>
+              <span className={`port-popover-dir ${info.direction}`}>{info.direction}</span>
+            </div>
+            <div className="port-popover-row">
+              <span className="port-popover-key">connects to</span>
+              <span className="port-popover-val mono">{info.connectsTo || '(unwired)'}</span>
+            </div>
+            {info.fullType && (
+              <div className="port-popover-row">
+                <span className="port-popover-key">type</span>
+                <span className="port-popover-val mono">{info.fullType}</span>
+              </div>
+            )}
+            {semantic && <div className="port-popover-sem">{semantic}</div>}
+          </div>
         )}
       </div>
     );
@@ -183,10 +206,13 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   const locked = (data as any)._locked === true;
 
-  // Manual resize: drag a corner to pull the card bigger (handy when the center
-  // contract is dense). Local, inline override of the default tier width/height;
-  // in-session only. Handles show once ports are visible (not at the glyph tier).
+  // Manual resize: drag a corner to pull the card bigger. In-session inline
+  // override of the tier size. The corner handles are HIDDEN by default and
+  // revealed only on card hover (CSS), so they don't clutter every card — the
+  // functionality is there, just not always visible.
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.
+  const [openPort, setOpenPort] = useState<string | null>(null);
 
   return (
     <div
@@ -198,8 +224,8 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         minWidth={360}
         minHeight={200}
         onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
-        handleStyle={{ width: 9, height: 9, borderRadius: 2, background: '#fff', borderColor: '#6366f1' }}
-        lineStyle={{ borderColor: 'transparent' }}
+        handleClassName="loom-resize-handle"
+        lineClassName="loom-resize-line"
       />
       {/* Connection dots on the border (all tiers, so focused wiring attaches). */}
       {inputPorts.map((p, i) => borderHandle(p, false, i, inputPorts.length, inTypes))}

@@ -33,11 +33,23 @@ export interface PortSchemas {
   portsTarget?: Record<string, string>;
 }
 
+/** A port's declared type as a string. Handles the two authored forms:
+ *  - bare type string (how `outputs()` writes it): `"rna"`
+ *  - schema dict (how `inputs()` writes it): `{_type: "rna", _default: []}`
+ *  A compound port group with no top-level `_type` (e.g. ppgpp_state's
+ *  sub-fields) has no single type → ''. */
+function portType(v: unknown): string {
+  if (typeof v === 'string') return v;
+  if (v && typeof v === 'object') {
+    const t = (v as { _type?: unknown })._type;
+    if (typeof t === 'string') return t;
+  }
+  return '';
+}
+
 /** Fold a single port's type + wiring into its display shape. */
 export function portInfo(port: string, isOutput: boolean, s: PortSchemas): PortInfo {
-  const rawType = s.typeSchema && typeof s.typeSchema[port] === 'string'
-    ? (s.typeSchema[port] as string)
-    : '';
+  const rawType = s.typeSchema ? portType(s.typeSchema[port]) : '';
   const rawTarget = s.portsSchema?.[port] ?? '';
   const resolved = s.portsTarget?.[port];
   // The resolved absolute path is unambiguous, so prefer it; '' is the valid
