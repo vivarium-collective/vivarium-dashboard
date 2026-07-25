@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from vivarium_workbench.lib import composite_runs as cr
 from vivarium_workbench.lib import emitters
 from vivarium_workbench.lib import run_capabilities
+from vivarium_workbench.lib import _root
 from vivarium_workbench.lib import run_log
 from vivarium_workbench.lib import run_store
 from vivarium_workbench.lib.models import SimRow
@@ -150,12 +151,17 @@ def discover_default_baseline_db(workspace: Path) -> Path | None:
 def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     """Capabilities for one runs_meta row: cached value, else derive.
 
-    Completed runs are cached back (including []); in-progress runs derive on
-    the fly and are NOT cached (so a still-emitting run isn't frozen empty)."""
+    A completed run's NON-EMPTY tag set is cached back; empties are NOT cached
+    (and a cached empty re-derives), so a run whose store was transiently
+    unreadable — or derived before the workspace root was resolvable — is never
+    permanently frozen at ``[]``. In-progress runs derive fresh every call and
+    are never cached (a still-emitting run's tag set isn't final)."""
     cached = row.get("capabilities_json")
     if cached:
         try:
-            return list(json.loads(cached))
+            parsed = list(json.loads(cached))
+            if parsed:  # only trust a non-empty cache; re-derive an empty one
+                return parsed
         except Exception:  # noqa: BLE001
             pass
     # `row` may carry any of these three; store_path/emitter_path are absent
@@ -167,8 +173,16 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     store = row.get("store_path") or row.get("emitter_path") or row.get("db_path")
     if not store:
         return []
-    tags = run_capabilities.derive_capabilities(store, row.get("run_id"))
-    if row.get("status") == "completed" and conn is not None:
+    # Store paths in runs_meta are workspace-RELATIVE (e.g. ``.pbg/runs/<id>``),
+    # so the reader needs the workspace root to resolve them — without it every
+    # run derives ``[]``. Use the effective (per-request or process-default)
+    # root; best-effort so tests/contexts without one still work.
+    try:
+        ws = _root.workspace_root()
+    except Exception:  # noqa: BLE001 — no root set (e.g. unit test) -> None
+        ws = None
+    tags = run_capabilities.derive_capabilities(store, row.get("run_id"), ws)
+    if tags and row.get("status") == "completed" and conn is not None:
         try:
             from vivarium_workbench.lib.composite_runs import write_run_capabilities
             write_run_capabilities(conn, row["run_id"], tags)

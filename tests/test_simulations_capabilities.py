@@ -36,6 +36,41 @@ class _FakeConn:
     def __init__(self): self.writes = []
 
 
+def test_capabilities_for_row_threads_workspace(monkeypatch):
+    # runs_meta store paths are workspace-RELATIVE (e.g. ".pbg/runs/<id>"), so
+    # the effective workspace root must reach derive_capabilities or every run
+    # resolves to no store and derives []. Regression: the workspace was dropped.
+    captured = {}
+    def spy(store, run_id=None, workspace=None):
+        captured["store"] = store
+        captured["workspace"] = workspace
+        return ["observables"]
+    monkeypatch.setattr(si.run_capabilities, "derive_capabilities", spy)
+    monkeypatch.setattr(si._root, "workspace_root", lambda: "/ws/root")
+    row = {"run_id": "r1", "status": "running", "capabilities_json": None,
+           "db_path": ".pbg/runs/r1"}
+    si._capabilities_for_row(row, conn=None)
+    assert captured["store"] == ".pbg/runs/r1"
+    assert captured["workspace"] == "/ws/root"
+
+
+def test_empty_cached_value_re_derives(monkeypatch):
+    # A wrongly-cached [] (e.g. written before the workspace was resolvable)
+    # must NOT permanently shadow a real derive — an empty cache re-derives.
+    calls = {"n": 0}
+    def spy(*a, **k):
+        calls["n"] += 1
+        return ["observables"]
+    monkeypatch.setattr(si.run_capabilities, "derive_capabilities", spy)
+    monkeypatch.setattr(si._root, "workspace_root", lambda: "/ws/root")
+    row = {"run_id": "r1", "status": "completed",
+           "capabilities_json": json.dumps([]),  # stale/wrong empty cache
+           "db_path": ".pbg/runs/r1"}
+    out = si._capabilities_for_row(row, conn=_FakeConn())
+    assert out == ["observables"]  # re-derived, not the stale []
+    assert calls["n"] == 1         # empty cache did not short-circuit
+
+
 def test_running_to_completed_transition_refreshes_jsonl_capabilities(tmp_path, monkeypatch):
     """A run's capabilities must NOT get stuck on a stale mid-run snapshot.
 
