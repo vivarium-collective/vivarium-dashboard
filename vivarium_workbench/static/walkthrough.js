@@ -4949,6 +4949,46 @@
       var cardStyle = 'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.1s,border-color 0.1s;' +
         (closed ? 'opacity:0.6;' : '');
       var filterStatus = (closed ? 'closed' : effStatus);
+
+      // Per-study status → a compact breakdown line + an expandable study list.
+      var _SD = { complete:['#16a34a','done'], running:['#2563eb','running'],
+                  in_progress:['#d97706','in progress'], failed:['#dc2626','failed'],
+                  planning:['#94a3b8','planned'] };
+      function _sMeta(st) { return _SD[st] || _SD[st === 'ran' ? 'complete' : 'planning'] || ['#94a3b8','planned']; }
+      var studyObjs = _isetStudyObjs(iset);
+      var byStatus = {};
+      studyObjs.forEach(function(s) {
+        var st = (s && (s.effective_status || s.status)) || 'planning';
+        byStatus[st] = (byStatus[st] || 0) + 1;
+      });
+      var breakdown = Object.keys(byStatus).sort(function(a, b) {
+        return (_statusRank[a] ?? 9) - (_statusRank[b] ?? 9);
+      }).map(function(st) {
+        var m = _sMeta(st);
+        return '<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap">' +
+          '<span style="width:8px;height:8px;border-radius:50%;background:' + m[0] + '"></span>' +
+          byStatus[st] + ' ' + _esc(m[1]) + '</span>';
+      }).join('<span style="color:#cbd5e1">·</span>');
+
+      // Expandable study list (revealed by clicking the studies count).
+      var studyRows = studyObjs.map(function(s) {
+        var m = _sMeta((s && (s.effective_status || s.status)) || 'planning');
+        var slug = (s && s.name) || '';
+        return '<a href="/studies/' + encodeURIComponent(slug) + '" onclick="event.stopPropagation()" ' +
+          'style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;' +
+          'text-decoration:none;color:#334155;font-size:0.86em" ' +
+          'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
+          '<span style="width:7px;height:7px;border-radius:50%;background:' + m[0] + '"></span>' +
+          '<code style="font-size:0.92em;color:#475569">' + _esc(slug) + '</code>' +
+          '<span style="margin-left:auto;color:#94a3b8">' + _esc(m[1]) + '</span></a>';
+      }).join('');
+
+      var qLine = iset.question
+        ? '<p style="margin:0 0 6px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(String(iset.question).split('\n')[0].slice(0, 200)) + '</p>'
+        : (desc ? '<p style="margin:0 0 6px 0;font-size:0.9em;color:#475569">' + _esc(desc) + (iset.description.length > 240 ? '…' : '') + '</p>' : '');
+      var lifeChip = iset.lifecycle && iset.lifecycle !== 'active'
+        ? '<span style="font-size:0.72em;color:#64748b;background:#f1f5f9;border-radius:9999px;padding:1px 8px">' + _esc(iset.lifecycle) + '</span>' : '';
+
       return '<div class="investigation-set-card" onclick="_openInvestigationDetail(\'' + _esc(iset.name) + '\')" ' +
              'title="' + _esc(iset.name) + '" ' +
              'data-iset-title="' + _esc(String(iset.title || iset.name).toLowerCase()) + '" ' +
@@ -4960,9 +5000,12 @@
           currentPill +
           statusPill +
         '</div>' +
-        (desc ? '<p style="margin:0 0 8px 0;font-size:0.9em;color:#475569">' + _esc(desc) + (iset.description.length > 240 ? '…' : '') + '</p>' : '') +
+        qLine +
+        (breakdown ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:0.82em;color:#64748b;margin:0 0 8px">' + breakdown + (lifeChip ? '<span style="margin-left:auto">' + lifeChip + '</span>' : '') + '</div>' : '') +
         '<div style="display:flex;align-items:center;gap:12px;font-size:0.85em;color:#64748b">' +
-          '<span style="flex:1"><strong>' + iset.n_studies + '</strong> stud' + (iset.n_studies === 1 ? 'y' : 'ies') + '</span>' +
+          '<span class="iset-studies-toggle" role="button" tabindex="0" ' +
+            'onclick="event.stopPropagation();var d=this.closest(\'.investigation-set-card\').querySelector(\'.iset-studies-detail\');var open=d.style.display===\'none\';d.style.display=open?\'block\':\'none\';this.querySelector(\'.iset-chev\').textContent=open?\'▾\':\'▸\'" ' +
+            'style="flex:1;cursor:pointer;user-select:none"><strong>' + iset.n_studies + '</strong> stud' + (iset.n_studies === 1 ? 'y' : 'ies') + ' <span class="iset-chev" style="color:#94a3b8">▸</span></span>' +
           '<a href="#" title="Download the rendered HTML report for this investigation" ' +
             'onclick="window._vivReportFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ report</a>' +
@@ -4970,6 +5013,7 @@
             'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ notebook</a>' +
         '</div>' +
+        '<div class="iset-studies-detail" style="display:none;margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">' + (studyRows || '<span class="muted" style="font-size:0.85em">No studies.</span>') + '</div>' +
       '</div>';
     }
 
@@ -4992,13 +5036,57 @@
       else active.push(iset);
     });
 
+    // User sort (applied WITHIN the Active/Closed grouping so the split stays).
+    var _sortMode = window._isetSort || 'default';
+    var _statusRank = { running: 0, in_progress: 1, planning: 2, failed: 3, complete: 4, closed: 5, archived: 5 };
+    function _isetUpdatedAt(iset) {
+      // Most-recent member-study run time (empty for never-run).
+      var t = '';
+      _isetStudyObjs(iset).forEach(function(s) {
+        var st = s && (s.last_run || s.updated_at || '');
+        if (st && st > t) t = st;
+      });
+      return t;
+    }
+    function _sortIsets(items) {
+      if (_sortMode === 'default') return items;
+      return items.slice().sort(function(a, b) {
+        if (_sortMode === 'name')
+          return String(a.title || a.name).localeCompare(String(b.title || b.name));
+        if (_sortMode === 'status')
+          return (_statusRank[a.effective_status || a.status] ?? 9) -
+                 (_statusRank[b.effective_status || b.status] ?? 9) ||
+                 String(a.title || a.name).localeCompare(String(b.title || b.name));
+        if (_sortMode === 'studies_desc') return (b.n_studies || 0) - (a.n_studies || 0);
+        if (_sortMode === 'studies_asc') return (a.n_studies || 0) - (b.n_studies || 0);
+        if (_sortMode === 'recent') return _isetUpdatedAt(b).localeCompare(_isetUpdatedAt(a));
+        return 0;
+      });
+    }
+
     list.innerHTML =
-      _groupHtml('Active', active) +
-      _groupHtml('Closed', closedItems) +
+      _groupHtml('Active', _sortIsets(active)) +
+      _groupHtml('Closed', _sortIsets(closedItems)) +
       '<p id="investigations-empty" class="empty-state" style="display:none">No investigations match the filter.</p>';
 
     _filterInvestigations();
   }
+
+  // Member study objects for an investigation (from the client studies index).
+  function _isetStudyObjs(iset) {
+    return ((iset && iset.studies) || [])
+      .map(function(slug) {
+        return (window._investigations || []).find(function(s) { return s.name === slug; })
+          || { name: slug };
+      });
+  }
+
+  function _setIsetSort(value) {
+    window._isetSort = value;
+    _renderInvestigationSets();
+  }
+  window._setIsetSort = _setIsetSort;
+  window._isetStudyObjs = _isetStudyObjs;
 
   // Client-side filter for the Investigations landing list. UNIFIED with the
   // side-rail studies search (same _tokensMatch engine, same AND-first/OR-

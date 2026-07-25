@@ -757,13 +757,26 @@ window.addEventListener('pageshow', function (e) {
 <section id="page-investigations" class="page" data-page="investigations">
   <!-- Prominent unified search: matches investigations AND their studies (same
        engine as the side-rail studies search — see _filterInvestigations). -->
-  <div style="margin:0 0 16px">
+  <div style="margin:0 0 10px">
     <input id="investigations-filter" type="search"
            placeholder="Search investigations and studies…"
            aria-label="Search investigations and studies" oninput="_filterInvestigations()"
            style="width:100%;box-sizing:border-box;padding:11px 16px;border:1px solid #d1d5db;
                   border-radius:10px;font-size:1.05em;background:#fff;
                   box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:0.85em;color:#64748b">
+    <label for="iset-sort" style="font-weight:600">Sort</label>
+    <select id="iset-sort" onchange="_setIsetSort(this.value)"
+            style="padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:0.95em">
+      <option value="default">Default (active first)</option>
+      <option value="name">Name (A→Z)</option>
+      <option value="status">Status</option>
+      <option value="studies_desc">Most studies</option>
+      <option value="studies_asc">Fewest studies</option>
+      <option value="recent">Recently updated</option>
+    </select>
+    <span style="margin-left:auto">Tip: click a card's <strong>studies</strong> count to expand it.</span>
   </div>
 
   <!-- List view: grouped investigation cards (Active / Closed). The grid lives on
