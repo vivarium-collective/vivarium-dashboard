@@ -796,7 +796,8 @@ def _promote_report_card_embeds(spec: dict, ws_root: Path) -> None:
         except Exception:  # noqa: BLE001
             pass
         # Prefer the rich render (override any thin viz/report_card/<card> entry).
-        prev = rc_urls.get(card) if isinstance(rc_urls.get(card), dict) else {}
+        _prev = rc_urls.get(card)
+        prev: dict = _prev if isinstance(_prev, dict) else {}
         rc_urls[card] = {
             "url": url,
             "verdict": verdict if verdict is not None else prev.get("verdict"),
