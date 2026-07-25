@@ -76,7 +76,7 @@ class SimRow(BaseModel):
     # (seed, config_overrides, condition/media, n_steps, …). Sourced from the
     # dashboard run's ``params_json`` or the study.yaml run/condition params.
     # None when no config was captured. JSON-serialisable dict.
-    config: Optional[dict] = None
+    config: Optional[dict[str, Any]] = None
     sim_name: Optional[str] = None
     label: Optional[str] = None
     status: str                # "completed" | "running" | "failed" | ...
