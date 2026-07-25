@@ -304,6 +304,9 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           inputSchema: node._inputs ?? undefined,
           outputSchema: node._outputs ?? undefined,
           contract: node._contract ?? undefined,
+          // A Composite Process (its inner model is itself a composite) — the
+          // card gets a drill-in affordance; double-click opens the inner view.
+          isCompositeProcess: node.is_composite_process === true,
           // Extra schema data consumed by ProcessNode (as any cast in the component)
           ...(Object.keys(inputPortsSchema).length ? { inputPortsSchema, inputPortsTarget } : {}),
           ...(Object.keys(outputPortsSchema).length ? { outputPortsSchema, outputPortsTarget } : {}),

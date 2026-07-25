@@ -1,17 +1,18 @@
 // src/panels/InspectorPanel.tsx — selected-node detail.
 //
-// Extracted verbatim from the old right-sidebar "Inspector" tab so it can dock
-// independently. Updates on canvas node click (App's handleNodeClick →
-// setSelection). Stores show their raw schema; a process gets a COMPREHENSIVE
-// detail view — every port with its type + wired store + contract meaning, plus
-// config, math, symbols, assumptions and references — so a locked (clicked)
-// process reads as a real reference panel, not just a couple of fields.
+// Updates on canvas node click (App's handleNodeClick → setSelection). A store
+// shows its schema; a process gets a COMPREHENSIVE, aesthetic reference panel:
+// a header with type/interval, a prominent contract summary, then description,
+// a full ports table (type + wired store + meaning), config (schema-driven, with
+// types + which values are set), equations, symbols, assumptions, references —
+// and the raw type/wiring schemas collapsed for completeness.
 
 import type React from 'react';
 import type { ExploreInspectMsg } from '../api';
 import type { ProcessNodeData } from '../types';
 import { deriveContract } from '../contract';
 import { portInfo } from '../portInfo';
+import { configParams } from '../configView';
 
 type Selection = Omit<ExploreInspectMsg, 'type'> | null;
 
@@ -24,24 +25,37 @@ export interface InspectorPanelProps {
 export function InspectorPanel(props: InspectorPanelProps) {
   const sel = props.selection;
   if (!sel) {
-    return <p style={{ color: '#888', fontSize: 12 }}>Click a node to inspect.</p>;
+    return <p className="insp-empty">Click a node to inspect.</p>;
   }
+  const isProc = sel.kind === 'process';
+  const d = sel.details as unknown as ProcessNodeData;
+  const leaf = sel.path.length ? sel.path[sel.path.length - 1] : '<root>';
 
   return (
-    <div>
-      <h4 style={{
-        margin: 0, fontSize: 14, textTransform: 'capitalize',
-        display: 'flex', alignItems: 'center', gap: 6,
-      }}>
-        {props.locked && <span title="Locked — click empty canvas to unlock">🔒</span>}
-        {sel.kind}
-      </h4>
-      <p style={{ fontFamily: 'monospace', fontSize: 12, margin: '4px 0' }}>
-        {sel.path.length ? sel.path.join('.') : '<root>'}
-      </p>
+    <div className="insp">
+      <div className="insp-header">
+        <div className="insp-kindrow">
+          {props.locked && <span title="Locked — click empty canvas to unlock">🔒</span>}
+          <span className="insp-kind">{sel.kind}</span>
+          {isProc && d?.isCompositeProcess && (
+            <span className="insp-badge" title="A Composite Process — double-click its card to open the inner model">
+              ⤢ composite process
+            </span>
+          )}
+        </div>
+        <div className="insp-title">{leaf}</div>
+        <div className="insp-path mono">{sel.path.length ? sel.path.join('.') : '<root>'}</div>
+        {isProc && (
+          <div className="insp-sub">
+            {d.processType}
+            {d.interval != null && <> · every {d.interval}</>}
+            {' · '}{(d.inputPorts?.length ?? 0)} in / {(d.outputPorts?.length ?? 0)} out
+          </div>
+        )}
+      </div>
 
-      {sel.kind === 'process' ? (
-        <ProcessDetail details={sel.details as unknown as ProcessNodeData} />
+      {isProc ? (
+        <ProcessDetail details={d} />
       ) : (
         <StoreDetail details={sel.details} />
       )}
@@ -67,57 +81,33 @@ function StoreDetail(props: { details: Record<string, unknown> }) {
   );
 }
 
-/** A labeled inspector section — collapsible (open by default) so long schemas
- * can be folded away. Content flows at full height into the panel's single
- * scrollbar; no inner scroll box. */
+/** A labeled inspector section — collapsible (open by default). */
 function InspectorSection(props: { title: string; children: React.ReactNode; defaultOpen?: boolean }) {
   return (
-    <details className="inspector-section" open={props.defaultOpen !== false} style={{ margin: '10px 0' }}>
-      <summary style={{
-        fontSize: 12, fontWeight: 600, color: '#374151', cursor: 'pointer',
-        userSelect: 'none', display: 'flex', alignItems: 'center', gap: 5,
-      }}>
-        <span className="inspector-caret" style={{ fontSize: 9, color: '#9ca3af' }}>▶</span>
+    <details className="inspector-section" open={props.defaultOpen !== false}>
+      <summary>
+        <span className="inspector-caret">▶</span>
         {props.title}
       </summary>
-      <div style={{ marginTop: 5 }}>{props.children}</div>
+      <div className="inspector-section-body">{props.children}</div>
     </details>
   );
 }
 
 function Prose(props: { text: string }) {
-  return (
-    <pre style={{
-      fontSize: 12, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      background: '#f7f7f7', padding: 8, margin: 0, borderRadius: 4,
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#1f2937',
-      lineHeight: 1.5,
-    }}>
-      {props.text}
-    </pre>
-  );
+  return <p className="insp-prose">{props.text}</p>;
 }
 
-/** A pretty-printed JSON block, or an em-dash when empty. Flows at full height —
- * long lines wrap (no inner scrollbar); the inspector panel scrolls as a whole. */
+/** A pretty-printed JSON block, or an em-dash when empty. */
 function SchemaBlock(props: { value: unknown }) {
   const v = props.value;
   const empty = v == null
     || (typeof v === 'object' && v !== null && Object.keys(v as object).length === 0);
-  if (empty) return <div style={{ fontSize: 12, color: '#9ca3af' }}>—</div>;
-  return (
-    <pre style={{
-      fontSize: 11, background: '#f7f7f7', padding: 8, margin: 0, borderRadius: 4,
-      whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: '#1f2937',
-    }}>
-      {JSON.stringify(v, null, 2)}
-    </pre>
-  );
+  if (empty) return <div className="insp-empty-val">—</div>;
+  return <pre className="insp-schema">{JSON.stringify(v, null, 2)}</pre>;
 }
 
-/** One port row in the Inspector's Ports section: name · type · wired store ·
- *  contract meaning. Mirrors the card's port tooltip content, at rest. */
+/** One port row: name · direction · type · wired store · contract meaning. */
 function PortDetail(props: {
   port: string;
   isOut: boolean;
@@ -131,58 +121,45 @@ function PortDetail(props: {
     portsTarget: isOut ? data.outputPortsTarget : data.inputPortsTarget,
   });
   return (
-    <div className="inspector-port" style={{
-      padding: '6px 0', borderBottom: '1px solid #f1f5f9',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
-        <span style={{ fontWeight: 600, fontSize: 12, color: isOut ? '#0d9488' : '#4338ca' }}>
-          {port}
-        </span>
-        <span style={{
-          fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.04em',
-          color: '#9ca3af', fontWeight: 700,
-        }}>
-          {info.direction}
-        </span>
-        {info.type && (
-          <code title={info.fullType} style={{ fontSize: 11, color: '#64748b' }}>{info.type}</code>
-        )}
+    <div className="insp-port">
+      <div className="insp-port-head">
+        <span className={`insp-port-name ${isOut ? 'is-out' : 'is-in'}`}>{port}</span>
+        <span className="insp-port-dir">{info.direction}</span>
+        {info.type && <code className="insp-port-type" title={info.fullType}>{info.type}</code>}
       </div>
       {info.connectsTo && (
-        <div style={{ fontSize: 11, marginTop: 2 }}>
-          <span style={{ color: '#9ca3af' }}>→ </span>
-          <code style={{ color: '#334155', wordBreak: 'break-all' }}>{info.connectsTo}</code>
+        <div className="insp-port-wire">
+          <span className="insp-port-arrow">→ </span>
+          <code>{info.connectsTo}</code>
         </div>
       )}
-      {semantic && (
-        <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, fontStyle: 'italic' }}>
-          {semantic}
-        </div>
-      )}
+      {semantic && <div className="insp-port-sem">{semantic}</div>}
     </div>
   );
 }
 
-/** Comprehensive process inspector: contract prose, a full ports table (type +
- *  connection + meaning), config, math, symbols, assumptions, references — then
- *  the raw type/wiring schemas, collapsed, for completeness. */
+/** Comprehensive process inspector. */
 function ProcessDetail(props: { details: ProcessNodeData }) {
   const d = props.details;
   const contract = deriveContract(d);
   const inputPorts = d.inputPorts ?? [];
   const outputPorts = d.outputPorts ?? [];
-  const configEntries = Object.entries(d.config ?? {});
+  const cfg = configParams(
+    (d as { configSchema?: Record<string, unknown> }).configSchema,
+    d.config,
+  );
   const rawDescription = d.description;
-  const hasDescription = typeof rawDescription === 'string' && rawDescription.trim().length > 0;
+  const hasDescription = typeof rawDescription === 'string' && rawDescription.trim().length > 0
+    && rawDescription !== contract?.summary;
 
   return (
     <>
-      {typeof d.address === 'string' && d.address && (
-        <InspectorSection title="Address">
-          <code style={{ fontSize: 11, color: '#374151', wordBreak: 'break-all' }}>
-            {d.address}
-          </code>
-        </InspectorSection>
+      {/* Prominent contract summary — the headline "what this process does". */}
+      {contract?.summary && (
+        <div className="insp-contract">
+          <div className="insp-contract-label">Contract</div>
+          <p className="insp-contract-text">{contract.summary}</p>
+        </div>
       )}
 
       {hasDescription && (
@@ -202,18 +179,20 @@ function ProcessDetail(props: { details: ProcessNodeData }) {
         </InspectorSection>
       )}
 
-      {configEntries.length > 0 && (
-        <InspectorSection title="Config">
-          <div>
-            {configEntries.map(([k, v]) => (
-              <div key={k} style={{
-                display: 'flex', justifyContent: 'space-between', gap: 10,
-                fontSize: 11, padding: '2px 0', fontFamily: 'ui-monospace, monospace',
-              }}>
-                <span style={{ color: '#4b5563' }}>{k}</span>
-                <span style={{ color: '#1f2937', wordBreak: 'break-all', textAlign: 'right' }}>
-                  {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+      {cfg.length > 0 && (
+        <InspectorSection title={`Config (${cfg.length})`}>
+          <div className="insp-config">
+            <div className="insp-config-head">
+              <span>parameter</span><span>value</span><span>type</span>
+            </div>
+            {cfg.map((c) => (
+              <div key={c.name} className={`insp-config-row${c.set ? ' is-set' : ''}`}>
+                <span className="insp-config-key" title={c.set ? 'set by the composite' : 'default'}>
+                  {c.set && <span className="insp-config-dot" />}
+                  {c.name}
                 </span>
+                <span className="insp-config-val mono" title={c.value}>{c.value}</span>
+                <span className="insp-config-type mono">{c.type || '—'}</span>
               </div>
             ))}
           </div>
@@ -222,11 +201,7 @@ function ProcessDetail(props: { details: ProcessNodeData }) {
 
       {contract && contract.math.length > 0 && (
         <InspectorSection title="Equations">
-          <div style={{
-            padding: '6px 8px', background: '#f8fafc', borderLeft: '2px solid #cbd5e1',
-            borderRadius: 3, fontFamily: 'ui-monospace, monospace', fontSize: 11,
-            color: '#1e293b', lineHeight: 1.6,
-          }}>
+          <div className="insp-math">
             {contract.math.map((m, i) => <div key={i}>{m}</div>)}
           </div>
         </InspectorSection>
@@ -234,7 +209,7 @@ function ProcessDetail(props: { details: ProcessNodeData }) {
 
       {contract && Object.keys(contract.symbols).length > 0 && (
         <InspectorSection title="Symbols">
-          <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.5 }}>
+          <div className="insp-symbols">
             {Object.entries(contract.symbols).map(([s, meaning]) => (
               <div key={s}><em>{s}</em> — {meaning}</div>
             ))}
@@ -244,7 +219,7 @@ function ProcessDetail(props: { details: ProcessNodeData }) {
 
       {contract && contract.assumptions.length > 0 && (
         <InspectorSection title="Assumptions">
-          <ul style={{ fontSize: 11, color: '#475569', margin: 0, paddingLeft: 16, lineHeight: 1.5 }}>
+          <ul className="insp-list">
             {contract.assumptions.map((a, i) => <li key={i}>{a}</li>)}
           </ul>
         </InspectorSection>
@@ -252,12 +227,17 @@ function ProcessDetail(props: { details: ProcessNodeData }) {
 
       {contract && contract.references.length > 0 && (
         <InspectorSection title="References">
-          <ul style={{ fontSize: 11, color: '#475569', margin: 0, paddingLeft: 16, lineHeight: 1.5 }}>
+          <ul className="insp-list">
             {contract.references.map((r, i) => <li key={i}>{r}</li>)}
           </ul>
         </InspectorSection>
       )}
 
+      {typeof d.address === 'string' && d.address && (
+        <InspectorSection title="Address" defaultOpen={false}>
+          <code className="insp-address">{d.address}</code>
+        </InspectorSection>
+      )}
       <InspectorSection title="Input type schema" defaultOpen={false}>
         <SchemaBlock value={d.inputSchema} />
       </InspectorSection>

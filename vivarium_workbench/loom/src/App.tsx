@@ -43,7 +43,7 @@ import { DocumentPanel } from './panels/DocumentPanel';
 import { EmitContext } from './EmitContext';
 import {
   postReady, postInspect, postEmitChanged, onCompositeLoad, decodeUrlComposite,
-  resolveComposite,
+  resolveComposite, fetchInnerComposite,
 } from './api';
 import type { ExploreInspectMsg, ParameterDecl } from './api';
 
@@ -138,6 +138,15 @@ export default function App() {
   // Display metadata for the top bar — composite name + the library it's from.
   const [name, setName] = useState<string | null>(null);
   const [library, setLibrary] = useState<string | null>(null);
+  // Composite-Process drill-down. `drillHops` is the accumulated list of node
+  // paths (one per level) into successive inner composites; `drillCrumbs` the
+  // matching human labels for the breadcrumb. `rootIdRef`/`rootNameRef` hold the
+  // TOP composite's id + name (drilling repoints `compositeId`/`name` at the
+  // inner view, but every /api/composite-inner-state call keys off the root).
+  const [drillHops, setDrillHops] = useState<string[][]>([]);
+  const [drillCrumbs, setDrillCrumbs] = useState<string[]>([]);
+  const rootIdRef = useRef<string | null>(null);
+  const rootNameRef = useRef<string | null>(null);
   // Composite parameters + current overrides (for the Configure tab).
   const [parameters, setParameters] = useState<Record<string, ParameterDecl>>({});
   const [overrides, setOverrides] = useState<Record<string, unknown>>({});
@@ -170,9 +179,17 @@ export default function App() {
   // settled (collapsed) bounds. Simpler + more reliable than gating on refs.
   const fitTab = tab === 'wiring';
   const haveNodes = nodes.length > 0;
+  // Zoom-fight guard: once the user pans/zooms, a still-pending auto-fit timer
+  // must NOT yank the viewport back. Set on user-initiated onMove (below);
+  // reset per composite so a fresh load / drill still gets its initial fit.
+  const userMovedRef = useRef(false);
+  useEffect(() => { userMovedRef.current = false; }, [compositeId]);
   useEffect(() => {
     if (!fitTab || !haveNodes) return;
-    const fit = () => rfRef.current?.fitView?.({ padding: 0.2, duration: 300 });
+    const fit = () => {
+      if (userMovedRef.current) return;  // user took over — don't fight them
+      rfRef.current?.fitView?.({ padding: 0.2, duration: 300 });
+    };
     const timers = [120, 500, 1200, 2400, 4000].map((d) => window.setTimeout(fit, d));
     return () => timers.forEach(clearTimeout);
   }, [fitTab, haveNodes, compositeId]);
@@ -195,11 +212,20 @@ export default function App() {
   // never re-runs the layout. `tieredNodes` stamps `_tier` from this for card
   // rendering; the layout effect deliberately does not depend on it.
   const [tier, setTier] = useState<ZoomTierId>('ports');
-  const onMove = useCallback((_: unknown, vp: { zoom: number }) => {
-    // Only tiered modes react to zoom. Modes without a tier ladder leave their
-    // tier untouched so nothing re-runs their layout on a zoom step.
+  // Zoom-fight fix: applying a new tier resizes every card, and doing that on
+  // EVERY wheel step mid-gesture makes React Flow re-measure growing nodes while
+  // the user is still zooming — which reads as the canvas shoving back / zooming
+  // out. Defer the tier (card-size) change until the zoom settles (~130ms idle),
+  // so zooming stays smooth and cards refine once the user pauses.
+  const tierTimerRef = useRef<number | null>(null);
+  const onMove = useCallback((event: unknown, vp: { zoom: number }) => {
+    // Any DOM-event-driven move means the user took over (gate auto-fit).
+    if (event) userMovedRef.current = true;
     if (!layoutMode.mode.tiers) return;
-    setTier((cur) => tierForZoom(vp.zoom, cur));
+    if (tierTimerRef.current) clearTimeout(tierTimerRef.current);
+    tierTimerRef.current = window.setTimeout(() => {
+      setTier((cur) => tierForZoom(vp.zoom, cur));
+    }, 130);
   }, [layoutMode.mode]);
 
   // Wire postMessage protocol. Use a ref guard so StrictMode's double-effect
@@ -506,6 +532,11 @@ export default function App() {
             _pinnedOpen: focus.keptOpen.has(n.id)
               || focus.selected === n.id || focus.locked === n.id,
             _locked: focus.locked === n.id,
+            // Drill context for the in-card inner-composite mini-map: the root
+            // composite id + the accumulated hops to THIS view. The card appends
+            // its own path to fetch its inner composite (Composite Processes).
+            _rootId: rootIdRef.current,
+            _hops: drillHops,
           },
         };
       }
@@ -521,7 +552,7 @@ export default function App() {
         },
       };
     });
-  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds]);
+  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -817,7 +848,98 @@ export default function App() {
     inst.setCenter?.(n.position.x + 110, n.position.y + 30, { zoom, duration: 300 });
   }, [nodes]);
 
+  // Keep the ROOT composite id/name current while at the top level, so drill-in
+  // (which repoints compositeId/name at the inner view) can always resolve back
+  // to the real generator for /api/composite-inner-state.
+  useEffect(() => {
+    if (drillHops.length === 0) {
+      rootIdRef.current = compositeId;
+      rootNameRef.current = name;
+    }
+  }, [compositeId, name, drillHops.length]);
+
+  // Apply a freshly-fetched composite state (an inner drill target, or the root
+  // when popping back) to the canvas — resetting the derived view sets + focus
+  // exactly like a fresh composite load.
+  const applyLoadedState = useCallback((st: any) => {
+    setState(st);
+    setCollapsed(defaultCollapsedIds(st));
+    setHidden(defaultHiddenIds(st));
+    const seeded = initialEmitSet(st);
+    setEmitSet(seeded);
+    postEmitChanged([...seeded].sort());
+    focus.clear();
+    setTrajectory(null);
+    setVizHtml(null);
+    setActiveRunId(null);
+    setDownloadable(false);
+  }, [focus]);
+
+  // Drill INTO a Composite Process: fetch its inner composite and show it in
+  // place, pushing a breadcrumb. Recursive — the inner view's own Composite
+  // Processes are flagged too, so it works all the way down.
+  const drillInto = useCallback(async (node: any) => {
+    const data = node?.data as ProcessNodeData | undefined;
+    if (!data?.isCompositeProcess) return;
+    const root = rootIdRef.current;
+    if (!root) return;
+    const newHops = [...drillHops, data.path];
+    try {
+      const res = await fetchInnerComposite(root, newHops);
+      if (!res?.state) return;
+      applyLoadedState(res.state);
+      setDrillHops(newHops);
+      setDrillCrumbs(
+        res.crumbs && res.crumbs.length === newHops.length
+          ? res.crumbs
+          : [...drillCrumbs, data.label],
+      );
+      // Synthetic id so layout persistence / saved views are scoped per level.
+      setCompositeId(root + ' ▸ ' + newHops.map((h) => h.join('.')).join(' ▸ '));
+      setName(data.label);
+      setTab('wiring');
+    } catch (e) {
+      console.error('[bigraph-loom] drill failed', e);
+    }
+  }, [drillHops, drillCrumbs, applyLoadedState]);
+
+  // Pop the breadcrumb to `level` (0 = the root composite). Re-fetches that
+  // level so the shown state is always consistent (cached server-side).
+  const popTo = useCallback(async (level: number) => {
+    const root = rootIdRef.current;
+    if (!root) return;
+    try {
+      if (level <= 0) {
+        const r = await fetch('/api/composite-state?ref=' + encodeURIComponent(root));
+        const data = await r.json();
+        const st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
+        if (!st) return;
+        applyLoadedState(st);
+        setDrillHops([]);
+        setDrillCrumbs([]);
+        setCompositeId(root);
+        setName(rootNameRef.current);
+        return;
+      }
+      const newHops = drillHops.slice(0, level);
+      const res = await fetchInnerComposite(root, newHops);
+      if (!res?.state) return;
+      applyLoadedState(res.state);
+      setDrillHops(newHops);
+      setDrillCrumbs(drillCrumbs.slice(0, level));
+      setCompositeId(root + ' ▸ ' + newHops.map((h) => h.join('.')).join(' ▸ '));
+      setName(drillCrumbs[level - 1] ?? null);
+    } catch (e) {
+      console.error('[bigraph-loom] breadcrumb navigation failed', e);
+    }
+  }, [drillHops, drillCrumbs, applyLoadedState]);
+
   const handleNodeDoubleClick = useCallback((_: any, node: any) => {
+    // A Composite Process drills into its inner composite (all the way down).
+    if (node.type === 'process' && (node.data as any)?.isCompositeProcess) {
+      drillInto(node);
+      return;
+    }
     // Only group stores (synthesized container nodes) can be collapsed.
     if (!(node.data as any)?.isGroup) return;
     setCollapsed((prev) => {
@@ -826,7 +948,7 @@ export default function App() {
       else next.add(node.id);
       return next;
     });
-  }, []);
+  }, [drillInto]);
 
   const handleApplied = useCallback(
     (newOverrides: Record<string, unknown>, newState: unknown) => {
@@ -954,13 +1076,48 @@ export default function App() {
             background: '#fff',
             flex: '0 0 auto',
           }}>
-            <span style={{ fontWeight: 600, color: '#111827' }}>
-              {name || compositeId}
-            </span>
-            {library && (
+            {drillHops.length > 0 ? (
+              // Drill breadcrumb: root › cell › … › current. Every crumb but the
+              // last pops back to that level (Composite-Process drill-down).
               <>
-                <span style={{ color: '#d1d5db' }}>·</span>
-                <span style={{ color: '#6b7280' }}>{library}</span>
+                <span
+                  className="loom-crumb loom-crumb-link"
+                  onClick={() => popTo(0)}
+                  title="Back to the top composite"
+                >
+                  {rootNameRef.current || rootIdRef.current}
+                </span>
+                {drillCrumbs.map((c, i) => {
+                  const isLast = i === drillCrumbs.length - 1;
+                  return (
+                    <span key={i} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
+                      <span style={{ color: '#d1d5db' }}>▸</span>
+                      {isLast ? (
+                        <span className="loom-crumb loom-crumb-current">{c}</span>
+                      ) : (
+                        <span
+                          className="loom-crumb loom-crumb-link"
+                          onClick={() => popTo(i + 1)}
+                          title={`Back to ${c}`}
+                        >
+                          {c}
+                        </span>
+                      )}
+                    </span>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                <span style={{ fontWeight: 600, color: '#111827' }}>
+                  {name || compositeId}
+                </span>
+                {library && (
+                  <>
+                    <span style={{ color: '#d1d5db' }}>·</span>
+                    <span style={{ color: '#6b7280' }}>{library}</span>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1170,6 +1327,9 @@ export default function App() {
                      only render what's in the viewport so pan/zoom stays smooth. */
                   onlyRenderVisibleElements={!exporting && !STATIC}
                   minZoom={0.02}
+                  /* Allow zooming right in on a card / its inner-composite
+                     mini-map, almost to a full-screen view of one process. */
+                  maxZoom={12}
                   /* Read-only viewer for wiring/structure, but users CAN rearrange
                      node positions by dragging individual nodes. What's forbidden:
                      new edges, edge reconnects, and any delete. */
