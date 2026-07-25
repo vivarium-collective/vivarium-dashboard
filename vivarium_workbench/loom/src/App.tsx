@@ -23,6 +23,7 @@ import type { ZoomTierId } from './layouts/types';
 import type { ProcessNodeData } from './types';
 import { readersAndWriters, hubStoreIds } from './storeFacts';
 import { deriveContract } from './contract';
+import { portType } from './portInfo';
 import {
   loadLayout, saveLayout, clearLayout,
   applySavedPositions, positionsFromNodes, debounce,
@@ -538,7 +539,7 @@ export default function App() {
         ...base,
         data: {
           ...e.data, _tier: tier, port,
-          _portType: typeof types[port] === 'string' ? types[port] : undefined,
+          _portType: portType(types[port]) || undefined,
           _semantic: isOut ? contract?.outputs?.[port] : contract?.inputs?.[port],
         },
       };

@@ -33,16 +33,22 @@ export interface PortSchemas {
   portsTarget?: Record<string, string>;
 }
 
-/** A port's declared type as a string. Handles the two authored forms:
+/** A port's declared type as a string. Handles the authored forms:
  *  - bare type string (how `outputs()` writes it): `"rna"`
  *  - schema dict (how `inputs()` writes it): `{_type: "rna", _default: []}`
- *  A compound port group with no top-level `_type` (e.g. ppgpp_state's
- *  sub-fields) has no single type → ''. */
-function portType(v: unknown): string {
+ *  - a compound port with no top-level `_type` that maps a SUBTREE of stores
+ *    (e.g. `unique → {active_ribosome, active_RNAP, active_replisome}` or
+ *    `listeners → {rna_counts, monomer_counts, …}`). Such a port has no single
+ *    leaf type, but it is not untyped — it is a tree. Report its immediate
+ *    field names as `tree[a|b|c]`; `abbreviateType` collapses ≥2 fields to
+ *    `tree[N fields]` for the caption while the popover keeps the full list. */
+export function portType(v: unknown): string {
   if (typeof v === 'string') return v;
   if (v && typeof v === 'object') {
     const t = (v as { _type?: unknown })._type;
     if (typeof t === 'string') return t;
+    const fields = Object.keys(v as object).filter((k) => !k.startsWith('_'));
+    if (fields.length) return `tree[${fields.join('|')}]`;
   }
   return '';
 }
