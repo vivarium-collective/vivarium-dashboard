@@ -34,7 +34,7 @@ dependencies = [
     # the prior version-split. The [test] extra below uses a bare `zarr`, so
     # >=3.1.6 keeps the runtime + test specifiers aligned (a floor, not a cap).
     "zarr>=3.1.6",
-    "bigraph-schema>=1.4.1",
+    "bigraph-schema>=1.4.3",
     "pbg-superpowers>=0.14.0",
     # pbg-superpowers 0.14+ requires pbg-basic-processes, which is not yet on
     # PyPI. Declare it BARE here and supply the git URL via [tool.uv.sources]

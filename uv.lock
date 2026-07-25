@@ -423,8 +423,8 @@ wheels = [
 
 [[package]]
 name = "bigraph-schema"
-version = "1.4.2"
-source = { git = "https://github.com/vivarium-collective/bigraph-schema.git?branch=main#33f682f4fad016248b128131efa20470f0d700fa" }
+version = "1.4.3"
+source = { git = "https://github.com/vivarium-collective/bigraph-schema.git?branch=main#5004769e01036e88366a510d1a36fa390b284dc4" }
 dependencies = [
     { name = "fire", marker = "python_full_version == '3.12.12'" },
     { name = "numpy", marker = "python_full_version == '3.12.12'" },
