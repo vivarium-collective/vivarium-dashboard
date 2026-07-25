@@ -65,7 +65,7 @@ def _resolve_state(req: RunRequest) -> tuple[dict, dict | None]:
     """
     # Generator-kind branch.
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, build_generator, discover_generators,
         )
         if not _REGISTRY:
@@ -103,11 +103,11 @@ def _generator_entry(spec_id: str):
 
     Mirrors the generator resolution every other ``spec_id`` lookup uses
     (``_REGISTRY.get(spec_id)`` after ``discover_generators()``). Never raises
-    when pbg_superpowers is unavailable or the spec_id isn't a registered
+    when viva_superpowers is unavailable or the spec_id isn't a registered
     generator.
     """
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, discover_generators,
         )
     except ImportError:
@@ -121,14 +121,14 @@ def _generator_emitter_defaults(spec_id: str) -> list:
     """Declared default emitter(s) for a GENERATOR composite, or ``[]``.
 
     Reads the decorator's ``emitters=[...]`` via ``emitter_defaults(entry)``.
-    Returns ``[]`` (never raises) when pbg_superpowers is unavailable or the
+    Returns ``[]`` (never raises) when viva_superpowers is unavailable or the
     spec_id is not a registered generator, so callers can treat it like the
     static-spec ``emitter_defaults(spec)`` path.
     """
     entry = _generator_entry(spec_id)
     if entry is None:
         return []
-    from pbg_superpowers.composite_generator import emitter_defaults
+    from viva_superpowers.composite_generator import emitter_defaults
     return emitter_defaults(entry)
 
 
@@ -165,7 +165,7 @@ def _select_emitter_name(*, spec: dict | None, spec_id: str, db_file: str) -> st
     Pure and side-effect-free so R1 is unit-testable without a full ``execute``.
     """
     from vivarium_workbench.lib import emitters
-    from pbg_superpowers.composite_generator import emitter_defaults
+    from viva_superpowers.composite_generator import emitter_defaults
     declared = (emitter_defaults(spec) if spec is not None
                 else _generator_emitter_defaults(spec_id))
     if declared:
@@ -224,7 +224,7 @@ def _render_viz(composite, run_dir: Path, *,
          v2ecoli pattern).  These are metadata, not state, so they are not
          visible to ``render_results`` and must be materialized after the
          fact: read ``entry.visualizations`` from
-         ``pbg_superpowers.composite_generator._REGISTRY``, build a small
+         ``viva_superpowers.composite_generator._REGISTRY``, build a small
          viz composite per entry against the just-completed run's emitter
          output, and capture its rendered HTML.
 
@@ -235,7 +235,7 @@ def _render_viz(composite, run_dir: Path, *,
 
     # 1. Inline viz steps.
     try:
-        from pbg_superpowers.visualization import render_results
+        from viva_superpowers.visualization import render_results
         rendered = render_results(composite)
         for path_tuple, payload in rendered.items():
             key = ".".join(str(p) for p in path_tuple)
@@ -299,7 +299,7 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
     function itself never raises.
     """
     try:
-        from pbg_superpowers.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
         from vivarium_workbench.lib.investigations import (
             build_viz_composite, gather_emitter_outputs,
         )
@@ -320,7 +320,7 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
     # addresses resolve through core.link_registry.
     registry = dict(core.link_registry)
     try:
-        from pbg_superpowers.visualizations import (
+        from viva_superpowers.visualizations import (
             TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap,
         )
         for cls in (TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap):
@@ -333,7 +333,7 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
         pass
 
     try:
-        from pbg_superpowers.visualization import Visualization
+        from viva_superpowers.visualization import Visualization
         def _walk(cls):
             for sub in cls.__subclasses__():
                 yield sub
@@ -447,7 +447,7 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
         from vivarium_workbench.lib.investigations import (
             build_viz_composite, gather_emitter_outputs,
         )
-        from pbg_superpowers.visualizations import (
+        from viva_superpowers.visualizations import (
             TimeSeriesPlot, TimeSeriesFromObservables,
         )
         from process_bigraph import Composite
@@ -458,7 +458,7 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
     # `local:<ClassName>` addresses resolve through core.link_registry.
     registry = dict(core.link_registry)
     try:
-        from pbg_superpowers.visualizations import (
+        from viva_superpowers.visualizations import (
             ParamVsObservable, Distribution, PhaseSpace, Heatmap,
         )
         for cls in (
@@ -474,7 +474,7 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
         pass
 
     try:
-        from pbg_superpowers.visualization import Visualization
+        from viva_superpowers.visualization import Visualization
         def _walk(cls):
             for sub in cls.__subclasses__():
                 yield sub

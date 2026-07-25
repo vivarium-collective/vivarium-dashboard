@@ -1,7 +1,7 @@
 """Tests for vivarium_workbench.server._collect_study_feedback (B.1)."""
 import pytest
 
-pytest.importorskip("pbg_superpowers.feedback_import")
+pytest.importorskip("viva_superpowers.feedback_import")
 import yaml
 
 

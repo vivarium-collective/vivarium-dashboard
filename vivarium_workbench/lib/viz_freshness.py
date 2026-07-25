@@ -1,4 +1,4 @@
-# VENDORED COPY — canonical source is pbg_superpowers/viz_freshness.py.
+# VENDORED COPY — canonical source is viva_superpowers/viz_freshness.py.
 # Keep identical to the canonical; drift is caught by tests/test_viz_freshness_mirror.py.
 """Pure run->chart freshness core (single source of truth; vendored into the
 dashboard). A chart's <chart>.meta.json records which run produced it; freshness

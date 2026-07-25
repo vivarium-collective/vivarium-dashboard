@@ -48,7 +48,7 @@ _NEW_COLUMNS = {
     # Coordinated-generation provenance (expert-feedback A.2). Links this run
     # to one (git_sha, param_set, composite_versions) snapshot so the report
     # can flag panels from an older generation as stale. See
-    # pbg_superpowers.generation. Nullable: runs predating the model have NULL
+    # viva_superpowers.generation. Nullable: runs predating the model have NULL
     # and are treated as stale once any generation exists.
     "generation_id": "TEXT",
 }
@@ -460,7 +460,7 @@ def inject_declared_emitter(state: dict, *, spec_id: str, run_id: str,
     where ``kind`` is e.g. ``"parquet"``, or ``(state, None)`` unchanged when
     nothing is declared (pure — never mutates the input ``state``).
 
-    Resolution goes through ``pbg_superpowers.composite_generator`` — the
+    Resolution goes through ``viva_superpowers.composite_generator`` — the
     same module every other ``spec_id`` lookup in this codebase uses
     (``_REGISTRY.get(spec_id)`` for the generator entry; see
     ``run_runner.py``, ``composite_flush.py``, ``observables_views.py``).
@@ -476,7 +476,7 @@ def inject_declared_emitter(state: dict, *, spec_id: str, run_id: str,
     interface than this task's tuple return.
     """
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, discover_generators, install_default_emitters)
     except Exception:
         return state, None
@@ -681,10 +681,10 @@ def collect_emit_paths_from_spec(spec: dict) -> list[str]:
     # store_path, so the loop above misses every real dnaa study. Resolve them
     # to their underlying observables and add the array/scalar that must be
     # emitted so RunReader.select can pick the element at read time. Imported
-    # defensively: an older pbg_superpowers without the resolver simply yields
+    # defensively: an older viva_superpowers without the resolver simply yields
     # no readout-driven additions (the dashboard still works).
     try:
-        from pbg_superpowers.readout_resolver import (
+        from viva_superpowers.readout_resolver import (
             resolve_study_readouts, ResolvedReadout,
         )
     except ImportError:

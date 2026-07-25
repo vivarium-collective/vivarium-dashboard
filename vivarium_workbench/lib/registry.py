@@ -186,7 +186,7 @@ def _build_reexport_map(include: set[str]) -> dict[str, str]:
     # namespace. Mirrors _FRAMEWORK_PKGS in the registry subprocess.
     _FRAMEWORK_PKGS = {
         "process_bigraph", "bigraph_schema", "bigraph_viz",
-        "pbg_superpowers", "vivarium_workbench",
+        "viva_superpowers", "vivarium_workbench",
     }
 
     reexports: dict[str, str] = {}
@@ -416,7 +416,7 @@ def build_registry(ws_root: Path, *, bypass_cache: bool = False) -> dict:
         declared import (workspace.yaml.imports).
       - ``"framework"`` — class is from the process-bigraph framework
         infrastructure (process_bigraph, bigraph_schema, bigraph_viz,
-        pbg_superpowers, vivarium_workbench).
+        viva_superpowers, vivarium_workbench).
       - ``"environment_only"`` — discovered via allocate_core() entry-point scan
         but not declared in workspace.yaml. Installed in the Python env but not
         explicitly imported by this workspace.

@@ -1,19 +1,19 @@
 """Drift guard: vendored vivarium_workbench/lib/runs_index.py must stay
-identical to the canonical pbg_superpowers/runs_index.py for the emitter-type
+identical to the canonical viva_superpowers/runs_index.py for the emitter-type
 classification helpers the dashboard's Simulations DB endpoint relies on.
 
 ``emitter_type_of`` + ``_store_emitter_type`` are compared byte-for-byte.
 (The workspace-wide run listing lives in
 ``vivarium_workbench.lib.simulations_index.list_simulations``, not here.)
 
-Uses the file-read approach (pbg_superpowers is not installed in the dashboard
+Uses the file-read approach (viva_superpowers is not installed in the dashboard
 venv), extracting each function's source by scanning for `def <name>` blocks.
 """
 import re
 import pytest
 from pathlib import Path
 
-CANONICAL = Path(__file__).parent.parent.parent / "pbg-superpowers" / "pbg_superpowers" / "runs_index.py"
+CANONICAL = Path(__file__).parent.parent.parent / "pbg-superpowers" / "viva_superpowers" / "runs_index.py"
 VENDORED = Path(__file__).parent.parent / "vivarium_workbench" / "lib" / "runs_index.py"
 
 FUNCS = ["emitter_type_of", "_store_emitter_type"]
@@ -49,5 +49,5 @@ def test_vendored_runs_index_matches_canonical():
         assert name in canon_funcs, f"{name} missing from canonical"
         assert name in vend_funcs, f"{name} missing from vendored"
         assert canon_funcs[name] == vend_funcs[name], (
-            f"DRIFT in {name}: vendored copy differs from pbg_superpowers canonical"
+            f"DRIFT in {name}: vendored copy differs from viva_superpowers canonical"
         )

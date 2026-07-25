@@ -227,15 +227,15 @@ def run_study_baseline(ws_root, body):
         if analysis_errors:
             response.setdefault("analysis_errors", []).extend(analysis_errors)
         try:
-            from pbg_superpowers import study_outcomes
+            from viva_superpowers import study_outcomes
             study_outcomes.sync(study_dir)  # record runs + compute outcomes
         except Exception as exc:  # never fail a successful run on a record error
             print(f"[study_outcomes] sync failed: {exc}", file=sys.stderr)
         # Feedback-friction: capture this run's effective parameters onto
-        # runs[].provenance.params (guarded; no-op on older pbg_superpowers).
+        # runs[].provenance.params (guarded; no-op on older viva_superpowers).
         # Runs AFTER study_outcomes.sync so the runs[] entry exists to attach to.
         try:
-            from pbg_superpowers import run_params
+            from viva_superpowers import run_params
             captured = run_params.capture_run_params(
                 full_params, overrides=generator_overrides)
             run_params.write_run_params(
@@ -246,7 +246,7 @@ def run_study_baseline(ws_root, body):
         # just-completed run so per-study test pills stop showing pending
         # (guarded; SAFE DEFAULT — never stamps canonical).
         try:
-            from pbg_superpowers import auto_evaluate
+            from viva_superpowers import auto_evaluate
             auto_evaluate.evaluate_on_run_completion(study_dir, run_id, ws_root=ws_root)
         except Exception as exc:  # never fail a successful run on an eval error
             print(f"[auto_evaluate] failed: {exc}", file=sys.stderr)
@@ -476,15 +476,15 @@ def run_study_variant(ws_root, body):
         if analysis_errors:
             response.setdefault("analysis_errors", []).extend(analysis_errors)
         try:
-            from pbg_superpowers import study_outcomes
+            from viva_superpowers import study_outcomes
             study_outcomes.sync(study_dir)  # record runs + compute outcomes
         except Exception as exc:  # never fail a successful run on a record error
             print(f"[study_outcomes] sync failed: {exc}", file=sys.stderr)
         # Feedback-friction: capture this run's effective parameters onto
-        # runs[].provenance.params (guarded; no-op on older pbg_superpowers).
+        # runs[].provenance.params (guarded; no-op on older viva_superpowers).
         # Runs AFTER study_outcomes.sync so the runs[] entry exists to attach to.
         try:
-            from pbg_superpowers import run_params
+            from viva_superpowers import run_params
             captured = run_params.capture_run_params(
                 full_params, overrides=generator_overrides)
             run_params.write_run_params(
@@ -495,7 +495,7 @@ def run_study_variant(ws_root, body):
         # just-completed run so per-study test pills stop showing pending
         # (guarded; SAFE DEFAULT — never stamps canonical).
         try:
-            from pbg_superpowers import auto_evaluate
+            from viva_superpowers import auto_evaluate
             auto_evaluate.evaluate_on_run_completion(study_dir, run_id, ws_root=ws_root)
         except Exception as exc:  # never fail a successful run on an eval error
             print(f"[auto_evaluate] failed: {exc}", file=sys.stderr)

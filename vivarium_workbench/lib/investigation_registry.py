@@ -214,7 +214,7 @@ def build_investigation_registry(
     """
     if list_servers_fn is None:
         try:
-            from pbg_superpowers import workspace_catalog
+            from viva_superpowers import workspace_catalog
             list_servers_fn = workspace_catalog.list_servers
         except Exception:
             list_servers_fn = lambda: []
@@ -374,7 +374,7 @@ def derive_this_url(ws_root: Path, host: str | None) -> str:
     """
     this_url = ""
     try:
-        from pbg_superpowers import workspace_catalog
+        from viva_superpowers import workspace_catalog
         rec = workspace_catalog.find_running(ws_root)
         if rec:
             this_url = rec.get("url") or ""

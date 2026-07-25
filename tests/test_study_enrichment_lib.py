@@ -3,7 +3,7 @@
 Covers the four helpers extracted from server.py in Phase A, Batch 4:
 
 - reconcile_simset_with_runs   (pure-ish, ws_root-parameterised)
-- compute_param_enforcement     (pure — requires pbg_superpowers.param_enforcement)
+- compute_param_enforcement     (pure — requires viva_superpowers.param_enforcement)
 - collect_study_feedback        (ws_root-parameterised)
 - study_acceptance_criterion    (ws_root-parameterised)
 
@@ -85,7 +85,7 @@ def _make_workspace_with_acceptance(tmp_path: Path) -> tuple[Path, str]:
 
 def _make_feedback_workspace(tmp_path: Path) -> tuple[Path, str]:
     """A workspace with feedback annotation targeting 'dnaa-00' study."""
-    pytest.importorskip("pbg_superpowers.feedback_import")
+    pytest.importorskip("viva_superpowers.feedback_import")
     slug = "dnaa-00-param"
     inv = "dnaa-replication"
     inv_dir = tmp_path / "investigations" / inv
@@ -143,9 +143,9 @@ class TestComputeParamEnforcement:
     """Smoke tests for the pure helper — behavior mirrors the old server function."""
 
     def test_none_when_no_enforced_params(self) -> None:
-        mod = pytest.importorskip("pbg_superpowers.param_enforcement")
+        mod = pytest.importorskip("viva_superpowers.param_enforcement")
         if not hasattr(mod, "resolve_run_expected"):
-            pytest.skip("pbg_superpowers.param_enforcement.resolve_run_expected not available")
+            pytest.skip("viva_superpowers.param_enforcement.resolve_run_expected not available")
         from vivarium_workbench.lib.study_enrichment import compute_param_enforcement
         assert compute_param_enforcement({"runs": []}) is None
 
@@ -156,7 +156,7 @@ class TestComputeParamEnforcement:
 
 class TestCollectStudyFeedback:
     def test_empty_when_no_investigations(self, tmp_path: Path) -> None:
-        pytest.importorskip("pbg_superpowers.feedback_import")
+        pytest.importorskip("viva_superpowers.feedback_import")
         from vivarium_workbench.lib.study_enrichment import collect_study_feedback
         assert collect_study_feedback(tmp_path, "any-study") == []
 

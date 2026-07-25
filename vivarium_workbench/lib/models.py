@@ -547,7 +547,7 @@ class DirtyStatus(BaseModel):
 class GenerationSummary(BaseModel):
     """The inner ``generation`` object inside ``GET /api/generation``.
 
-    Fields from ``pbg_superpowers.generation.Generation``.
+    Fields from ``viva_superpowers.generation.Generation``.
     ``extra="allow"`` for forward-compat.
     """
 
@@ -711,7 +711,7 @@ class InvestigationRigor(BaseModel):
     """``GET /api/investigation-rigor`` payload (lib.rigor_views.build_investigation_rigor).
 
     The rigor roll-up across member studies from
-    ``pbg_superpowers.rigor.investigation_rigor`` (``dimensions`` / ``per_study``
+    ``viva_superpowers.rigor.investigation_rigor`` (``dimensions`` / ``per_study``
     / ``score`` / ``summary``), or one of the 200-shaped error fallbacks.  Like
     :class:`StudyRigor`, a pure pass-through (``extra="allow"``, no declared
     fields) so nothing is stripped or injected.
@@ -1040,7 +1040,7 @@ class FrameworkMetrics(BaseModel):
 
     Aggregated framework-self metrics over every study + investigation in the
     workspace.  Always HTTP 200 (best-effort): ``metrics`` is ``{}`` when
-    pbg_superpowers is absent or the compute raises.
+    viva_superpowers is absent or the compute raises.
 
     ``extra="allow"`` preserves any forward-compat keys the builder may add.
     """
@@ -2418,7 +2418,7 @@ class WorkLinkBranchResponse(BaseModel):
 # C-state-3h1: workspace-registry POST routes
 #   POST /api/workspaces/add /api/workspaces/forget /api/workspaces/cleanup-stale
 # All three edit the GLOBAL ~/.pbg workspace catalog via
-# pbg_superpowers.workspace_catalog (no ws_root) through the pure
+# viva_superpowers.workspace_catalog (no ws_root) through the pure
 # lib.workspaces_mutations builders; every path (success AND error) is returned
 # via JSONResponse so the lib-returned status code is preserved verbatim.  The
 # request model's ``path`` is Optional so an omitted path reaches the lib
@@ -2464,7 +2464,7 @@ class WorkspaceEntry(BaseModel):
     """200-path payload for ``POST /api/workspaces/add`` — the catalog entry dict.
 
     Pure pass-through (``extra="allow"``, no declared fields) — the
-    ``workspace_catalog.add`` entry shape is owned by ``pbg_superpowers`` and
+    ``workspace_catalog.add`` entry shape is owned by ``viva_superpowers`` and
     carries variable keys (``name``, ``path``, status, ...).  The non-200 error
     paths (``{"error": ...}``, HTTP 400) are returned via ``JSONResponse``, not
     this model.
@@ -2725,7 +2725,7 @@ class InvestigationRunUnblockedRequest(BaseModel):
 class VisualizationPreviewRequest(BaseModel):
     """POST /api/visualization-preview request body.
 
-    ``{"address", "config"?, "source"?}`` — renders a ``pbg_superpowers``
+    ``{"address", "config"?, "source"?}`` — renders a ``viva_superpowers``
     Visualization class IN-PROCESS against synthetic demo data (``source:
     "demo"``, default) OR an existing investigation's emitter outputs
     (``source: "investigation:<name>"``). A missing ``address`` is rejected with

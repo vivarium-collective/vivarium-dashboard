@@ -3,7 +3,7 @@
 The ``ws_root``-parameterised builder for the rigor GET route ported in
 Phase A, Batch 3.  It reads the **run-merged** per-study spec via
 ``lib.study_spec.load_study_detail_spec`` — this is the whole reason the loader
-was extracted first: ``pbg_superpowers.rigor`` reads ``spec["runs"]`` for the
+was extracted first: ``viva_superpowers.rigor`` reads ``spec["runs"]`` for the
 replication (dim 1) and run-persistence (dim 13) dimensions, so the runs.db
 merge must already be applied or the scores drift from the legacy handler.
 
@@ -60,7 +60,7 @@ def build_investigation_rigor(ws_root: Path, investigation: Optional[str]) -> di
 
     Returns the rigor roll-up across the investigation's member studies plus the
     investigation-level dimensions (adversarial coverage, traceable methodology),
-    from ``pbg_superpowers.rigor.investigation_rigor``.  Each member study's spec
+    from ``viva_superpowers.rigor.investigation_rigor``.  Each member study's spec
     is loaded run-merged via :func:`load_study_detail_spec`.
 
     Raises ``RigorViewError``:
@@ -93,7 +93,7 @@ def build_investigation_rigor(ws_root: Path, investigation: Optional[str]) -> di
         if sp:
             member_specs.append(sp)
     try:
-        from pbg_superpowers.rigor import investigation_rigor
+        from viva_superpowers.rigor import investigation_rigor
         return investigation_rigor(inv_spec, member_specs)
     except Exception as e:  # noqa: BLE001
         return {"error": f"{type(e).__name__}: {e}",

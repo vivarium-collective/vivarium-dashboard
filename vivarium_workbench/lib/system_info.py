@@ -33,10 +33,10 @@ def build_framework_metrics(ws_root: Path) -> dict:
 
     Aggregates framework-self metrics across EVERY study + every investigation
     in the workspace via the deterministic
-    ``pbg_superpowers.rigor.framework_metrics`` (each metric is
+    ``viva_superpowers.rigor.framework_metrics`` (each metric is
     ``{fraction, count, total}``).
 
-    AI-free + tolerant: an absent/old pbg_superpowers, or an unreadable
+    AI-free + tolerant: an absent/old viva_superpowers, or an unreadable
     workspace, returns ``{metrics: {}, n_investigations: int, n_studies: int}``
     rather than raising, so the dashboard degrades gracefully.
     """
@@ -77,8 +77,8 @@ def build_framework_metrics(ws_root: Path) -> dict:
         "n_studies": len(study_specs),
     }
     try:
-        from pbg_superpowers.rigor import framework_metrics
-    except Exception:  # noqa: BLE001 — older pbg_superpowers lacks the function
+        from viva_superpowers.rigor import framework_metrics
+    except Exception:  # noqa: BLE001 — older viva_superpowers lacks the function
         return base
     try:
         metrics = framework_metrics(study_specs, inv_specs) or {}

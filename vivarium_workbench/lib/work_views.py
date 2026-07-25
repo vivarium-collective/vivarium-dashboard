@@ -55,7 +55,7 @@ def build_generation(ws_root: Path) -> dict:
     """
     ws_root = Path(ws_root)
     try:
-        from pbg_superpowers import generation as _gen
+        from viva_superpowers import generation as _gen
         g = _gen.current_generation(ws_root)
     except Exception:  # noqa: BLE001
         g = None

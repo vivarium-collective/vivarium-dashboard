@@ -6,7 +6,7 @@ deterministic functions. ALL AI assistance lives in the pbg-superpowers
 module under ``vivarium_workbench/`` and fails if any of them imports a known
 LLM/AI SDK, so the boundary can't erode silently.
 
-Note: importing ``pbg_superpowers`` (its DETERMINISTIC modules) is allowed —
+Note: importing ``viva_superpowers`` (its DETERMINISTIC modules) is allowed —
 the dashboard may call pbg-superpowers' deterministic functions. What is
 forbidden is pulling an LLM provider SDK into the dashboard process.
 """
@@ -91,6 +91,6 @@ def test_gate_detects_a_planted_violation():
     assert _violation("anthropic.types")
     assert _violation("langchain_openai")
     assert _violation("google.generativeai")
-    assert not _violation("pbg_superpowers")
-    assert not _violation("pbg_superpowers.linkage_index")
+    assert not _violation("viva_superpowers")
+    assert not _violation("viva_superpowers.linkage_index")
     assert not _violation("yaml")

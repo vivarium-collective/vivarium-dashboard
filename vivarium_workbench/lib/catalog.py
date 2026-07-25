@@ -481,7 +481,7 @@ def build_catalog(ws_root: Path) -> dict:
 
     # Module registry (canonical pbg-superpowers list + per-workspace overlay)
     try:
-        from pbg_superpowers.catalog import load_registry as _lr
+        from viva_superpowers.catalog import load_registry as _lr
         default_modules: list = _lr(ws_root)
     except Exception:
         _wp = WorkspacePaths.load(ws_root)
@@ -566,7 +566,7 @@ def build_catalog(ws_root: Path) -> dict:
     # Surface workspace.yaml `imports` that aren't in the curated catalog
     # (e.g. pbg-ketchup / pbg-parsimony / pbg-torch / pbg-oxidizeme) so EVERY
     # declared import shows in the Modules grid as an installed module, not just
-    # the curated ones. Without this, an imported pbg-* repo that pbg_superpowers'
+    # the curated ones. Without this, an imported pbg-* repo that viva_superpowers'
     # catalog doesn't know about silently never appears here.
     if isinstance(imports, dict):
         _known_variants: set = set()

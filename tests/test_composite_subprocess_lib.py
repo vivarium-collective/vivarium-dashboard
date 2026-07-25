@@ -24,7 +24,7 @@ from conftest import register_generator
 from vivarium_workbench.lib import composite_subprocess as cs
 from vivarium_workbench.lib import composite_runs as cr
 from vivarium_workbench.lib import _root
-import pbg_superpowers.composite_generator as cg
+import viva_superpowers.composite_generator as cg
 
 
 # ---------------------------------------------------------------------------
@@ -340,7 +340,7 @@ def test_run_duplicate_run_id_returns_500(tmp_path, monkeypatch):
 _GENPKG_CORE_SRC = '''
 from bigraph_schema import allocate_core
 from process_bigraph.composite import Process
-from pbg_superpowers.composite_generator import composite_generator
+from viva_superpowers.composite_generator import composite_generator
 
 
 class Counter(Process):

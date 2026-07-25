@@ -88,7 +88,7 @@ def test_hide_superseded_true_no_manifest_keeps_all(tmp_path):
 
 def test_hide_superseded_filters_named_charts(monkeypatch, tmp_path):
     """When chart_store reports a superseded basename, it's dropped (True path)."""
-    chart_store = __import__("pbg_superpowers.chart_store",
+    chart_store = __import__("viva_superpowers.chart_store",
                              fromlist=["superseded_chart_names"])
     monkeypatch.setattr(chart_store, "superseded_chart_names",
                         lambda study_dir: {"01_old.png"})

@@ -28,7 +28,7 @@ def _make_study(ws: Path, slug: str, findings: list[dict]) -> None:
 
 
 def _seed_feedback_with_action(ws: Path, slug: str, finding_id: str) -> str:
-    from pbg_superpowers.feedback_actions import feedback_item_id
+    from viva_superpowers.feedback_actions import feedback_item_id
 
     iid = feedback_item_id(f"study-{slug}", "2026-01-01T10:00:00Z", "Alice")
     fb = ws / "investigations" / "inv1" / "feedback" / "r1.yaml"
