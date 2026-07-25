@@ -11,10 +11,10 @@ import traceback
 from pathlib import Path
 
 
-def _dispatch_analyses(*, spec_id: str, db_file: str, run_id: str, core) -> list:
-    """Render @composite_generator(analyses=[...]) entries over this run's
-    emitter output. Returns a list of {name, result} dicts; [] when the
-    composite declares no analyses. Mirrors run_runner._render_canonical_viz."""
+def _composite_analyses(spec_id: str, core) -> list:
+    """Return this composite's ``@composite_generator(analyses=[...])``
+    declarations (each a dict with at least ``name``, optionally ``params``).
+    [] when the generator is unregistered or declares none."""
     try:
         from viva_superpowers.composite_generator import _REGISTRY, discover_generators
     except ImportError:
@@ -22,16 +22,75 @@ def _dispatch_analyses(*, spec_id: str, db_file: str, run_id: str, core) -> list
     if not _REGISTRY:
         discover_generators()
     entry = _REGISTRY.get(spec_id)
-    analyses = list(getattr(entry, "analyses", []) or []) if entry else []
+    return list(getattr(entry, "analyses", []) or []) if entry else []
+
+
+def _render_analysis(*, name: str, params: dict, db_file: str, run_id: str,
+                      run_dir, core) -> dict:
+    """Render one declared analysis over this run's emitter output.
+
+    Reuses the same env-worker ``run_study_analyses`` capability
+    ``study_run_post.run_study_analyses`` dispatches to for the study path
+    (see env_worker.py's ``_run_study_analyses``), scoped to this run's own
+    fixed sweep dir — ``run_dir/parquet/run_id``, the same path
+    ``run_runner.execute`` exports as ``VIVARIUM_WORKBENCH_SWEEP_DIR`` and
+    ``_render_canonical_viz`` hands ``ParquetAnalysisView`` — and this run's
+    ParCa sim_data pickle (``run_runner._resolve_sim_data_path``).
+
+    Raises on failure; the caller (``_dispatch_analyses``) catches per-entry
+    so one bad analysis never breaks the flush.
+    """
+    if run_dir is None:
+        raise RuntimeError("run_dir required to resolve this run's sweep dir")
+    run_dir = Path(run_dir)
+    # run_dir is <ws>/.pbg/runs/<run_id> (see run_runner._resolve_sim_data_path).
+    ws_root = run_dir.parents[2]
+    sweep_dir = run_dir / "parquet" / run_id
+
+    from vivarium_workbench.lib.run_runner import _resolve_sim_data_path
+    sim_data_path = _resolve_sim_data_path(run_dir) or None
+
+    from vivarium_workbench.lib.env_worker_client import EnvWorkerUnavailable
+    from vivarium_workbench.lib.env_worker_pool import get_pool
+    try:
+        res = get_pool().call(ws_root, "run_study_analyses", {
+            "entries": [{"name": name, "params": params}],
+            "sweep_dir": str(sweep_dir),
+            "sim_data_path": sim_data_path,
+        })
+    except EnvWorkerUnavailable as exc:
+        raise RuntimeError(f"environment worker unavailable: {exc}") from exc
+
+    written = list(res.get("written") or [])
+    errors = list(res.get("errors") or [])
+    if errors and not written:
+        raise RuntimeError(f"analysis {name!r} failed: {errors}")
+    return {"name": name, "written": written, "errors": errors}
+
+
+def _dispatch_analyses(*, spec_id: str, db_file: str, run_id: str, core,
+                        run_dir=None) -> list:
+    """Render every ``@composite_generator(analyses=[...])`` entry over this
+    run's emitter output. Returns the list of rendered-artifact dicts; []
+    when the composite declares no analyses (graceful no-op). Best-effort:
+    each entry is rendered in isolation — a failing analysis is logged and
+    skipped, never breaks the flush."""
+    analyses = _composite_analyses(spec_id, core)
     if not analyses:
         return []
     out = []
     for a in analyses:
         name = a.get("name") if isinstance(a, dict) else str(a)
-        out.append({"name": name, "status": "declared"})
-    # NOTE: rendering the analysis composites over gathered_emitter_outputs is
-    # the richer follow-up; day-one dispatch records declarations so the UI can
-    # list them. Expand here when composites declare real analyses.
+        params = (a.get("params") or {}) if isinstance(a, dict) else {}
+        try:
+            rendered = _render_analysis(
+                name=name, params=params, db_file=db_file, run_id=run_id,
+                run_dir=run_dir, core=core)
+        except Exception:
+            traceback.print_exc()
+            continue
+        if rendered:
+            out.append(rendered)
     return out
 
 
@@ -64,7 +123,8 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
     has_analyses = False
     try:
         analyses = _dispatch_analyses(
-            spec_id=spec_id, db_file=db_file, run_id=run_id, core=core)
+            spec_id=spec_id, db_file=db_file, run_id=run_id, core=core,
+            run_dir=run_dir)
         has_analyses = bool(analyses)
     except Exception:
         traceback.print_exc()
