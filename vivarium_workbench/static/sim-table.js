@@ -124,13 +124,19 @@
         'href="/api/study-analysis-zip?study=' + encodeURIComponent(studySlug) + '" download style="text-decoration:none;">⬇ Analysis</a>' : "";
     // Rerun — replays this run as a brand-new one via POST /api/run-rerun.
     // Not available against a published read-only snapshot (no live backend
-    // to launch against). The <tr> is clickable (opens the run), so the
-    // button's onclick MUST stopPropagation or the row-open handler would
-    // also fire.
+    // to launch against). No run_id is interpolated into markup/attributes
+    // here: embedding it in an inline onclick= JS string would need JS
+    // escaping, not esc()'s HTML-entity escaping (the browser HTML-decodes
+    // the attribute before compiling it as JS, so a literal `'` in run_id
+    // would decode back and terminate the string early). Instead the button
+    // carries no id at all — the document-level delegated listener below
+    // resolves run_id from the enclosing <tr data-run-id> (already safely
+    // HTML-escaped there), and calls stopPropagation itself so the row's own
+    // click-to-open handler (the <tr> is clickable) never fires.
     var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === "snapshot";
     var rerun = (row.run_id && !isSnapshot)
-      ? '<button type="button" class="action-btn js-authoring" title="Re-run this simulation as a brand-new run" ' +
-        'onclick="event.stopPropagation();window._rerunSim(\'' + esc(row.run_id) + '\', this);">↻ Rerun</button>' : "";
+      ? '<button type="button" class="action-btn js-authoring rerun-btn" ' +
+        'title="Re-run this simulation as a brand-new run">↻ Rerun</button>' : "";
     var parts = [data, analysis, rerun].filter(function (h) { return !!h; });
     return parts.join(" ");
   }
@@ -174,6 +180,40 @@
     });
   }
   window._rerunSim = _rerunSim;
+
+  // Delegated ↻ Rerun click handling — wired ONCE at the document level
+  // (not per-mount inside renderTable) because rows rendered by this module
+  // reach the DOM through two different paths that don't share a common
+  // container: the per-study SimTable.renderTable() mount AND the global
+  // Sim-DB page's own tbody (walkthrough.js's _applySimFilter sets
+  // tbody.innerHTML from renderRow() output directly, never calling
+  // renderTable()). One document-level listener covers both without
+  // duplicating wiring — and, critically, avoids double-firing that would
+  // happen if a second listener were also added inside renderTable.
+  //
+  // Capture phase (the trailing `true`) is required, not just convenient:
+  // the enclosing <tr> is itself clickable (opens the run) via its OWN
+  // bubble-phase listener, so stopping propagation from a bubble-phase
+  // document listener would run too late — the <tr> handler bubbles through
+  // before an event reaches document. Capturing at document first lets
+  // stopPropagation() here pre-empt the <tr> handler entirely.
+  //
+  // The run_id is read back from the enclosing <tr data-run-id="...">
+  // (already safely HTML-escaped when rendered — see renderRow) rather than
+  // interpolated into an inline onclick= JS string, which would need JS
+  // string-escaping, not esc()'s HTML-entity escaping: the browser
+  // HTML-decodes an attribute value before compiling it as JS, so a literal
+  // `'` in run_id would decode back to `'` and terminate the string early.
+  function _onRerunButtonClick(e) {
+    var btn = e.target.closest(".rerun-btn");
+    if (!btn) return;
+    e.stopPropagation();
+    var tr = btn.closest("tr[data-run-id]");
+    var runId = tr ? tr.getAttribute("data-run-id") : "";
+    if (!runId) return;
+    _rerunSim(runId, btn);
+  }
+  document.addEventListener("click", _onRerunButtonClick, true);
 
   // Render one <tr>. opts.scope === 'study' drops Investigation + Study columns.
   function renderRow(row, opts) {
