@@ -288,6 +288,11 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           processType: node._type ?? 'process',
           address: node.address ?? '',
           config: node.config ?? {},
+          // The declared config parameter surface: name -> {_type, _default}.
+          // `config` above holds only the values EXPLICITLY set (usually {} —
+          // the process runs on defaults), so the card reads the schema to show
+          // every parameter's type + default, overlaying set values where present.
+          configSchema: (node as { config_schema?: Record<string, unknown> }).config_schema ?? undefined,
           interval: node.interval,
           path,
           inputPorts,

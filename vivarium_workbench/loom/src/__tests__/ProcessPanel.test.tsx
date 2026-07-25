@@ -38,8 +38,8 @@ const NODES: Node[] = [
 
 function makeFocus(over: Record<string, unknown> = {}) {
   return {
-    hovered: null, selected: null, pinned: new Set<string>(),
-    hover: vi.fn(), select: vi.fn(), togglePin: vi.fn(),
+    hovered: null, selected: null, pinned: new Set<string>(), keptOpen: new Set<string>(),
+    hover: vi.fn(), select: vi.fn(), togglePin: vi.fn(), toggleKeepOpen: vi.fn(),
     clear: vi.fn(), prunePins: vi.fn(),
     ctx: { focused: new Set<string>(), pinned: new Set<string>() },
     ...over,
@@ -67,7 +67,7 @@ function setup(over: Partial<React.ComponentProps<typeof ProcessPanel>> = {}) {
 
 describe('bandsFromNodes (clusters straight from affinity.clusterProcesses)', () => {
   it('groups by shared store and adds a bookkeeping bucket for filtered processes', () => {
-    const bands = bandsFromNodes(NODES, 0.5);
+    const bands = bandsFromNodes(NODES, 'connection', 0.5);
     // The two shared-store processes cluster together...
     const shared = bands.find((b) => b.nodeIds.includes('alpha'));
     expect(shared).toBeTruthy();
@@ -83,7 +83,7 @@ describe('bandsFromNodes (clusters straight from affinity.clusterProcesses)', ()
   it('is exactly clusterProcesses at the mapped hubFraction plus leftovers', () => {
     const g = 0.7;
     const { clusters } = clusterProcesses(NODES, { hubFraction: hubFractionFor(g) });
-    const bands = bandsFromNodes(NODES, g);
+    const bands = bandsFromNodes(NODES, 'connection', g);
     // Every real (non-bookkeeping) band mirrors a clusterProcesses cluster.
     for (const c of clusters) {
       const b = bands.find((x) => x.key === c.key);
@@ -96,10 +96,12 @@ describe('bandsFromNodes (clusters straight from affinity.clusterProcesses)', ()
 describe('ProcessPanel', () => {
   it('renders clustered processes under their cluster label', () => {
     setup();
+    // Switch to the CONNECTION axis so processes group by their shared store.
+    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
     expect(screen.getByText('alpha')).toBeTruthy();
     expect(screen.getByText('beta')).toBeTruthy();
-    // Grouped under the shared-store cluster band...
-    const band = screen.getByText('shared', { selector: '.loom-rail-cluster-label' });
+    // Grouped under the shared-store cluster band (name lives in its own span)...
+    const band = screen.getByText('shared', { selector: '.loom-rail-cluster-name' });
     expect(band).toBeTruthy();
     // ...and no process ROW exists for the store node itself (store exclusion is
     // proven structurally in bandsFromNodes above).
@@ -152,10 +154,10 @@ describe('ProcessPanel', () => {
     expect(screen.getByText('beta')).toBeTruthy();
   });
 
-  it('pins from a row without navigating', () => {
+  it('keeps a card open from a row without navigating', () => {
     const { focus, onNavigate } = setup();
-    fireEvent.click(screen.getAllByTitle('Pin')[0]);
-    expect(focus.togglePin).toHaveBeenCalled();
+    fireEvent.click(screen.getAllByTitle('Keep card open (full detail)')[0]);
+    expect(focus.toggleKeepOpen).toHaveBeenCalled();
     expect(onNavigate).not.toHaveBeenCalled();
   });
 });

@@ -42,9 +42,11 @@ function makeFocus(over: Record<string, unknown> = {}) {
     hovered: null,
     selected: null,
     pinned: new Set<string>(),
+    keptOpen: new Set<string>(),
     hover: vi.fn(),
     select: vi.fn(),
     togglePin: vi.fn(),
+    toggleKeepOpen: vi.fn(),
     clear: vi.fn(),
     prunePins: vi.fn(),
     ctx: { focused: new Set<string>(), pinned: new Set<string>() },
@@ -60,8 +62,8 @@ function setup(over: Partial<React.ComponentProps<typeof ProcessRail>> = {}) {
       bands={bands}
       nodes={nodes}
       focus={focus as never}
-      granularity={0.5}
-      onGranularityChange={vi.fn()}
+      groupAxis="connection"
+      onGroupAxisChange={vi.fn()}
       onNavigate={onNavigate}
       {...over}
     />,
@@ -114,10 +116,10 @@ describe('ProcessRail', () => {
     expect(focus.hover).toHaveBeenLastCalledWith(null);
   });
 
-  it('pins from the row without navigating', () => {
+  it('keeps a card open from the row without navigating', () => {
     const { focus, onNavigate } = setup();
-    fireEvent.click(screen.getAllByTitle('Pin')[0]);
-    expect(focus.togglePin).toHaveBeenCalledWith('transcript-initiation');
+    fireEvent.click(screen.getAllByTitle('Keep card open (full detail)')[0]);
+    expect(focus.toggleKeepOpen).toHaveBeenCalledWith('transcript-initiation');
     expect(onNavigate).not.toHaveBeenCalled();
   });
 
@@ -161,10 +163,11 @@ describe('ProcessRail', () => {
     expect(rows[0].textContent).toContain('media_update');
   });
 
-  it('highlights focused and pinned rows', () => {
+  it('highlights focused and kept-open rows', () => {
     const { container } = setup({
       focus: makeFocus({
-        ctx: { focused: new Set(['media_update']), pinned: new Set(['rna-degradation']) },
+        keptOpen: new Set(['rna-degradation']),
+        ctx: { focused: new Set(['media_update']), pinned: new Set<string>() },
       }) as never,
     });
     const active = [...container.querySelectorAll('.loom-rail-row.is-active')]

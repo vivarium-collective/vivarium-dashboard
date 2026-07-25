@@ -16,6 +16,11 @@ export interface UseFocus {
   hovered: string | null;
   selected: string | null;
   pinned: Set<string>;
+  /** Processes the user asked to KEEP OPEN (full-detail card at any zoom). This
+   *  is a DETAIL concept only — orthogonal to wire-reveal (which is hover ∪
+   *  selection ∪ lock ∪ pinned). Toggled from the rail's keep-open control. */
+  keptOpen: Set<string>;
+  toggleKeepOpen: (id: string) => void;
   /** The single "locked" node — set by a plain canvas click, which both selects
    *  (Inspector) and pins its wiring persistently. Distinct from the multi-`pinned`
    *  comparison set: a plain click on another node SWITCHES the lock (replaces
@@ -39,10 +44,19 @@ export function useFocus(): UseFocus {
   const [hovered, setHovered] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [pinned, setPinned] = useState<Set<string>>(() => new Set());
+  const [keptOpen, setKeptOpen] = useState<Set<string>>(() => new Set());
   const [locked, setLocked] = useState<string | null>(null);
 
   const togglePin = useCallback((id: string) => {
     setPinned((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleKeepOpen = useCallback((id: string) => {
+    setKeptOpen((prev) => {
       const next = new Set(prev);
       if (!next.delete(id)) next.add(id);
       return next;
@@ -61,10 +75,11 @@ export function useFocus(): UseFocus {
     setSelected(null);
     setLocked(null);
     setPinned((prev) => (prev.size === 0 ? prev : new Set()));
+    setKeptOpen((prev) => (prev.size === 0 ? prev : new Set()));
   }, []);
 
-  const prunePins = useCallback((isLive: (id: string) => boolean) => {
-    setPinned((prev) => {
+  const pruneSet = (isLive: (id: string) => boolean) =>
+    (prev: Set<string>) => {
       let changed = false;
       const next = new Set<string>();
       for (const id of prev) {
@@ -72,7 +87,11 @@ export function useFocus(): UseFocus {
         else changed = true;
       }
       return changed ? next : prev;
-    });
+    };
+
+  const prunePins = useCallback((isLive: (id: string) => boolean) => {
+    setPinned(pruneSet(isLive));
+    setKeptOpen(pruneSet(isLive));
     setLocked((prev) => (prev && !isLive(prev) ? null : prev));
   }, []);
 
@@ -92,8 +111,8 @@ export function useFocus(): UseFocus {
   }, [hovered, selected, pinned, locked]);
 
   return {
-    hovered, selected, pinned, locked,
+    hovered, selected, pinned, keptOpen, locked,
     hover: setHovered, select: setSelected,
-    togglePin, lock, clear, prunePins, ctx,
+    togglePin, toggleKeepOpen, lock, clear, prunePins, ctx,
   };
 }

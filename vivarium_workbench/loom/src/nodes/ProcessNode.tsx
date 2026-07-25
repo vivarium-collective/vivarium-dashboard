@@ -42,6 +42,50 @@ function fmtConfigValue(v: unknown): string {
   return String(v);
 }
 
+/** A scalar (single-value) config type worth showing inline in the band. The
+ *  ParCa-derived arrays/maps/matrices/functions are the noise we keep to the
+ *  expandable detail popover, not the always-on band. */
+function isScalarConfigType(type: string): boolean {
+  return /^(integer|float|number|boolean|string)$/.test(type) || /^quantity\[/.test(type);
+}
+
+export interface ConfigParam {
+  name: string; type: string; value: string; set: boolean; scalar: boolean;
+}
+
+/** The process's config parameters: every declared parameter (from
+ *  `config_schema`) with its type and default, overlaid with any value the
+ *  composite EXPLICITLY set. Set parameters sort first, then alphabetically. */
+function configParams(
+  schema: Record<string, unknown> | undefined,
+  config: Record<string, unknown> | undefined,
+): ConfigParam[] {
+  const out: ConfigParam[] = [];
+  const seen = new Set<string>();
+  const typeOf = (decl: unknown): string =>
+    typeof decl === 'string' ? decl
+      : (decl && typeof decl === 'object' && typeof (decl as { _type?: unknown })._type === 'string')
+        ? String((decl as { _type: string })._type) : '';
+  const defOf = (decl: unknown): unknown =>
+    (decl && typeof decl === 'object' && '_default' in (decl as object))
+      ? (decl as { _default?: unknown })._default : undefined;
+
+  for (const [name, decl] of Object.entries(schema ?? {})) {
+    seen.add(name);
+    const type = typeOf(decl);
+    const set = !!config && Object.prototype.hasOwnProperty.call(config, name);
+    const raw = set ? config![name] : defOf(decl);
+    out.push({ name, type, value: fmtConfigValue(raw), set, scalar: isScalarConfigType(type) });
+  }
+  // Any loaded value not in the schema (rare) — surface it too.
+  for (const [name, v] of Object.entries(config ?? {})) {
+    if (seen.has(name)) continue;
+    out.push({ name, type: configValueType(v), value: fmtConfigValue(v), set: true, scalar: true });
+  }
+  // Scalar "knobs" first (readable inline), then alphabetical.
+  return out.sort((a, b) => (Number(b.scalar) - Number(a.scalar)) || a.name.localeCompare(b.name));
+}
+
 /** One-line "what is this section" hints, shown on hover of each middle box. */
 const SECTION_HINT = {
   config:   'Configuration — build-time parameters that set how this process behaves. Click for values & types.',
@@ -150,7 +194,15 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const completeness = show.full ? contractCompleteness(contract, data) : null;
   const inTypes = ((data as any).inputSchema ?? {}) as Record<string, unknown>;
   const outTypes = ((data as any).outputSchema ?? {}) as Record<string, unknown>;
-  const configEntries = Object.entries(data.config ?? {});
+  // Config comes from the declared schema (types + defaults), overlaid with any
+  // set values — NOT just `data.config`, which is usually {} (defaults in use).
+  const cfg = configParams(
+    (data as { configSchema?: Record<string, unknown> }).configSchema,
+    data.config,
+  );
+  // Inline band shows the scalar "knobs" (readable at a glance); the ParCa-scale
+  // arrays/maps/matrices live in the click-to-expand detail popover.
+  const inlineCfg = cfg.filter((c) => c.scalar);
 
   const topFor = (i: number, n: number) => `${((i + 1) / (n + 1)) * 100}%`;
 
@@ -275,31 +327,34 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           left/right port columns supply the inputs→outputs framing spatially,
           so no abstract ƒ(inputs; config)→outputs line is needed. */}
       <div className="process-node-center">
-        {show.types && configEntries.length > 0 && (
+        {show.types && cfg.length > 0 && (
           <div
             className={`process-node-config-band section-box${openSection === 'config' ? ' is-open' : ''}`}
             title={SECTION_HINT.config}
             onClick={(e) => { e.stopPropagation(); toggleSection('config'); }}
           >
             <span className="config-band-caret">▾ config</span>
-            {configEntries.map(([k, v]) => (
-              <span key={k} className="config-chip">
-                <span className="config-key">{k}</span>
-                {show.contract && <span className="config-val">{fmtConfigValue(v).slice(0, 24)}</span>}
+            {(inlineCfg.length ? inlineCfg : cfg).slice(0, 8).map((c) => (
+              <span key={c.name} className="config-chip" title={`${c.name}: ${c.type || '—'} = ${c.value}`}>
+                <span className="config-key">{c.name}</span>
+                {show.contract && <span className="config-val">{c.value.slice(0, 24)}</span>}
               </span>
             ))}
+            {cfg.length > Math.min(8, (inlineCfg.length ? inlineCfg : cfg).length) && (
+              <span className="config-more">+{cfg.length - Math.min(8, (inlineCfg.length ? inlineCfg : cfg).length)} more…</span>
+            )}
             {openSection === 'config' && (
               <div className="section-popover" onClick={(e) => e.stopPropagation()}>
                 <div className="section-popover-head">
-                  config parameters <span className="section-popover-sub">value · type</span>
+                  config parameters ({cfg.length}) <span className="section-popover-sub">value · type</span>
                 </div>
-                {configEntries.map(([k, v]) => (
-                  <div key={k} className="section-popover-row">
-                    <span className="section-popover-key">{k}</span>
-                    <span className="section-popover-val mono" title={fmtConfigValue(v)}>
-                      {fmtConfigValue(v).slice(0, 80)}
+                {cfg.map((c) => (
+                  <div key={c.name} className="section-popover-row">
+                    <span className="section-popover-key">{c.name}</span>
+                    <span className="section-popover-val mono" title={c.value}>
+                      {c.value.slice(0, 80)}
                     </span>
-                    <span className="section-popover-type mono">{configValueType(v)}</span>
+                    <span className="section-popover-type mono">{c.type || '—'}</span>
                   </div>
                 ))}
               </div>
