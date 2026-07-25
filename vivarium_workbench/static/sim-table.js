@@ -85,6 +85,34 @@
       'style="color:#b91c1c;font-size:12px;white-space:nowrap;">⚠ <code style="font-size:11px;color:inherit;">' + esc(short) + "</code></span>";
   }
 
+  // Config cell — the exact generator params that reproduce this run. Shows the
+  // first few key=value chips (repro-relevant keys first); full config in the
+  // hover title. Empty config → grey em-dash.
+  function config(row) {
+    var c = row && row.config;
+    if (!c || typeof c !== "object" || !Object.keys(c).length) {
+      return '<span style="color:#9ca3af;">—</span>';
+    }
+    var order = ["condition", "media", "seed", "n_steps", "config_overrides"];
+    var keys = Object.keys(c).sort(function (a, b) {
+      var ia = order.indexOf(a), ib = order.indexOf(b);
+      return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+    });
+    var parts = keys.map(function (k) {
+      var v = c[k];
+      if (v && typeof v === "object") {
+        v = Object.keys(v).length ? JSON.stringify(v) : "{}";
+      }
+      return esc(k) + "=" + esc(String(v));
+    });
+    var shown = parts.slice(0, 3).join(" · ");
+    var more = parts.length > 3 ? " +" + (parts.length - 3) : "";
+    var full = JSON.stringify(c, null, 2);
+    return '<code style="font-size:11px;color:#6b7280;display:block;overflow:hidden;' +
+      'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(full) + '">' +
+      shown + esc(more) + "</code>";
+  }
+
   function _actions(row) {
     var runIdEnc = encodeURIComponent(row.run_id || "");
     var studySlug = study(row);
@@ -114,6 +142,7 @@
       'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(runId + (row.db_path ? "\n" + row.db_path : "")) +
       '">' + esc(runLabel) + "</code>", "overflow:hidden;");
     cells += td(composite(row), "overflow:hidden;");
+    cells += td(config(row), "overflow:hidden;max-width:220px;");
     cells += td(location(row), "overflow:hidden;");
     cells += td(originPill(row));
     cells += td(emitterPill(row.emitter_type));
@@ -126,6 +155,7 @@
 
   var STUDY_COLS = [
     { label: "Run", key: "run" }, { label: "Composite", key: "composite" },
+    { label: "Config", key: "config" },
     { label: "Location", key: "location" },
     { label: "Origin", key: "origin" }, { label: "Emitter", key: "emitter" },
     { label: "Time", key: "time" }, { label: "Status", key: "status" }, { label: "", key: null },

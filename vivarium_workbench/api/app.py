@@ -648,7 +648,10 @@ def create_app() -> FastAPI:
         the same Sim-DB table filtered to the study, instead of a bespoke one.
         """
         from vivarium_workbench.lib.simulations_index import build_simulations_data
-        from vivarium_workbench.lib.composite_lookup import known_composite_ids
+        from vivarium_workbench.lib.composite_lookup import (
+            known_composite_ids,
+            annotate_composite_registered,
+        )
         data = build_simulations_data(ws)
         sims = data.get("simulations", [])
         if study:
@@ -656,14 +659,13 @@ def create_app() -> FastAPI:
                     if s.get("study_slug") == study
                     or study in (s.get("studies") or [])]
         # Enforcement: annotate whether each run maps to exactly one registered
-        # composite (its ``spec_id`` must be an exact registered composite id).
+        # composite. ALIAS-TOLERANT (short slug / doubled id resolve to the
+        # dotted registered composite) — see annotate_composite_registered.
         try:
             _known = known_composite_ids(ws)
         except Exception:  # noqa: BLE001
             _known = set()
-        for s in sims:
-            _cid = s.get("spec_id")
-            s["composite_registered"] = bool(_cid and _cid in _known)
+        annotate_composite_registered(sims, _known)
         rows = [SimRow.model_validate(r) for r in sims]
         return SimulationsPayload(simulations=rows, current=data.get("current"))
 

@@ -195,6 +195,13 @@ def _ts_type(tp: object) -> str:
             inner_ts = f"({inner_ts})"
         return f"{inner_ts}[]"
 
+    # dict[K, V] -> Record<string, V> (keys are strings in JSON); bare dict or
+    # dict[str, Any] -> Record<string, any>.
+    if origin in (dict, typing.Dict) or tp is dict:
+        args = typing.get_args(tp)
+        val_ts = _ts_type(args[1]) if len(args) == 2 else "any"
+        return f"Record<string, {val_ts}>"
+
     # Primitives.
     if tp is str:
         return "string"
