@@ -498,6 +498,12 @@ body {
 }
 .config-chip .config-key { color: #7e22ce; font-weight: 600; }
 .config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
+/* A parameter the composite explicitly SET (vs running on its default) reads
+   stronger; defaults are the quieter majority. */
+.config-chip.is-set { background: #f3e8ff; border-color: #d8b4fe; }
+.config-more { font-size: 10.5px; color: #a855f7; font-weight: 600; align-self: center; }
+.section-popover-row.is-set .section-popover-key { font-weight: 700; color: #6b21a8; }
+.section-popover-row.is-set .section-popover-val { color: #1e293b; }
 
 /* ---- Contract: what the process does, cleanly typeset ----------------------
    No boxes/chrome — the card's own left→center→right layout (input columns →
@@ -1393,28 +1399,51 @@ textarea.sr-input {
   gap: 8px; padding: 10px; overflow: hidden;
   background: #fafafa; font-size: 12px;
 }
-.loom-rail-showall {
-  align-self: flex-start; border: 0; background: none; padding: 0;
-  color: #2563eb; font-size: 12px; cursor: pointer; text-decoration: underline;
-}
 .loom-rail-visible { margin: 0 2px 0 0; cursor: pointer; flex: 0 0 auto; }
 .loom-rail-search {
   padding: 5px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 12px;
 }
-.loom-rail-granularity {
-  display: flex; align-items: center; gap: 6px; color: #64748b; font-size: 11px;
+
+/* Group-by axis selector — a compact segmented control. */
+.loom-rail-groupby {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px;
 }
-.loom-rail-granularity input { flex: 1; accent-color: #2563eb; }
+.loom-rail-groupby-label {
+  color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em;
+  margin-right: 2px;
+}
+.loom-rail-axis {
+  border: 1px solid #d4d9e2; background: #fff; color: #475569;
+  border-radius: 5px; padding: 2px 8px; font-size: 11px; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.loom-rail-axis:hover { background: #f1f5f9; }
+.loom-rail-axis.is-active {
+  background: #4f46e5; border-color: #4f46e5; color: #fff; font-weight: 600;
+}
+
+/* Expand-all / Collapse-all / Show-all row. */
+.loom-rail-actions { display: flex; gap: 12px; margin: 2px 0 6px; }
+.loom-rail-link {
+  border: 0; background: none; padding: 0; color: #2563eb;
+  font-size: 11px; cursor: pointer; text-decoration: underline;
+}
+
 .loom-rail-list { overflow-y: auto; flex: 1; }
 .loom-rail-cluster { margin-bottom: 10px; }
 .loom-rail-cluster-label {
   padding: 2px 4px; margin-bottom: 3px;
   border-bottom: 1px solid #e5e7eb;
   display: flex; align-items: center; gap: 4px;
+  cursor: pointer; user-select: none;
 }
-.loom-rail-cluster-label.is-collapsible { cursor: pointer; user-select: none; }
+.loom-rail-cluster-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loom-rail-count {
+  flex: 0 0 auto; color: #64748b; font-size: 10px;
+  background: #eef2f7; border-radius: 9px; padding: 0 7px; line-height: 16px;
+}
 .loom-rail-caret { color: #94a3b8; font-size: 9px; }
-.loom-rail-hidden-note {
+.loom-rail-collapsed-note {
   padding: 3px 6px; color: #94a3b8; font-size: 11px; font-style: italic;
 }
 .loom-rail-row {
@@ -1425,11 +1454,14 @@ textarea.sr-input {
 .loom-rail-row.is-active { background: #dbeafe; font-weight: 600; }
 .loom-rail-row.is-hidden .loom-rail-row-label { color: #b0b7c3; font-style: italic; }
 .loom-rail-row-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.loom-rail-pin {
-  border: 0; background: none; cursor: pointer; opacity: 0.25; font-size: 11px;
-  line-height: 1; padding: 0 2px;
+/* Keep-open toggle: dim outline star by default, gold when keeping the card
+   open. Hover reveals it so the affordance is discoverable without cluttering. */
+.loom-rail-keepopen {
+  border: 0; background: none; cursor: pointer; opacity: 0.25; font-size: 12px;
+  line-height: 1; padding: 0 2px; color: #64748b;
 }
-.loom-rail-pin.is-pinned, .loom-rail-pin:hover { opacity: 1; }
+.loom-rail-row:hover .loom-rail-keepopen { opacity: 0.7; }
+.loom-rail-keepopen.is-open { opacity: 1; color: #f59e0b; }
 .loom-rail-empty { color: #94a3b8; padding: 8px 4px; }
 
 /* --- dockable panel zones ------------------------------------------------- */

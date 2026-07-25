@@ -500,7 +500,11 @@ export default function App() {
           ...n,
           data: {
             ...n.data, _tier: tier,
-            _pinnedOpen: focus.ctx.pinned.has(n.id),
+            // Full-detail ("open") card = explicitly kept-open ∪ the currently
+            // selected/locked one. Keep-open persists; selection opens the card
+            // you just clicked. Wire-reveal is a separate concept (ctx below).
+            _pinnedOpen: focus.keptOpen.has(n.id)
+              || focus.selected === n.id || focus.locked === n.id,
             _locked: focus.locked === n.id,
           },
         };
@@ -517,7 +521,7 @@ export default function App() {
         },
       };
     });
-  }, [nodes, edges, tier, focus.ctx.pinned, focus.locked, layoutMode.modeId, hubIds]);
+  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`

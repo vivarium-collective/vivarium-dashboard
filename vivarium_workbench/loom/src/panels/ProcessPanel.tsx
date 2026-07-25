@@ -15,6 +15,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Node } from '@xyflow/react';
 import { clusterProcesses } from '../layouts/affinity';
+import { subsystemClusters, locationClusters, type GroupAxis } from '../layouts/subsystem';
 import { hubFractionFor, DEFAULT_GRANULARITY, UNCLUSTERED_KEY } from '../layouts/processColumn';
 import type { GroupBand } from '../layouts/types';
 import type { UseFocus } from '../hooks/useFocus';
@@ -35,6 +36,12 @@ export interface ProcessPanelProps {
 }
 
 const GRANULARITY_KEY = 'loom.process-panel.granularity';
+const GROUP_AXIS_KEY = 'loom.process-panel.group-axis';
+
+function readGroupAxis(): GroupAxis {
+  const raw = lsGet(GROUP_AXIS_KEY);
+  return raw === 'connection' || raw === 'location' || raw === 'subsystem' ? raw : 'subsystem';
+}
 
 function lsGet(key: string): string | null {
   try { return window.localStorage.getItem(key); } catch { return null; }
@@ -50,22 +57,36 @@ function readGranularity(): number {
 }
 
 /**
- * Group the process inventory into cluster bands for the list. Mirrors the
- * former processColumnMode.run band construction (minus canvas geometry): the
- * affinity clusters, plus a trailing "bookkeeping" bucket for the processes
- * clusterProcesses filters out (listeners / allocators / *unique_update*).
+ * Group the process inventory into cluster bands for the list, along the chosen
+ * axis:
+ *   subsystem — biological function (subsystem.ts). Every process placed.
+ *   connection — the store-affinity clusters (affinity.ts), plus a trailing
+ *                "bookkeeping" bucket for the processes clusterProcesses filters
+ *                out (listeners / allocators / *unique_update*).
+ *   location  — the containing composite path (subsystem.ts). Every process placed.
  */
-export function bandsFromNodes(nodes: Node[], granularity: number): GroupBand[] {
-  const { clusters } = clusterProcesses(nodes, { hubFraction: hubFractionFor(granularity) });
-  const clustered = new Set(clusters.flatMap((c) => c.processIds));
-  const leftovers = nodes
-    .filter((n) => n.type === 'process' && !clustered.has(n.id))
-    .map((n) => n.id)
-    .sort();
-  const groups = leftovers.length
-    ? [...clusters, { key: UNCLUSTERED_KEY, label: 'bookkeeping', processIds: leftovers }]
-    : clusters;
-  return groups
+export function bandsFromNodes(
+  nodes: Node[], axis: GroupAxis, granularity: number,
+): GroupBand[] {
+  let clusters;
+  if (axis === 'subsystem') {
+    clusters = subsystemClusters(nodes);
+  } else if (axis === 'location') {
+    clusters = locationClusters(nodes);
+  } else {
+    // connection: affinity clusters + a bookkeeping bucket for the leftovers
+    // clusterProcesses drops (only this axis produces leftovers).
+    const res = clusterProcesses(nodes, { hubFraction: hubFractionFor(granularity) });
+    const clustered = new Set(res.clusters.flatMap((c) => c.processIds));
+    const leftovers = nodes
+      .filter((n) => n.type === 'process' && !clustered.has(n.id))
+      .map((n) => n.id)
+      .sort();
+    clusters = leftovers.length
+      ? [...res.clusters, { key: UNCLUSTERED_KEY, label: 'bookkeeping', processIds: leftovers }]
+      : res.clusters;
+  }
+  return clusters
     .filter((c) => c.processIds.length > 0)
     .map((c) => ({
       key: c.key,
@@ -80,15 +101,18 @@ export function bandsFromNodes(nodes: Node[], granularity: number): GroupBand[] 
 export function ProcessPanel({
   nodes, focus, onNavigate, hidden, onToggleHidden, onShowAll,
 }: ProcessPanelProps) {
-  const [granularity, setGranularity] = useState<number>(() => readGranularity());
-  useEffect(() => { lsSet(GRANULARITY_KEY, String(granularity)); }, [granularity]);
+  // Granularity only tunes the CONNECTION axis's hub cutoff; the slider was
+  // retired (grouping is automatic), so it stays at the persisted/default value.
+  const [granularity] = useState<number>(() => readGranularity());
+  const [groupAxis, setGroupAxis] = useState<GroupAxis>(() => readGroupAxis());
+  useEffect(() => { lsSet(GROUP_AXIS_KEY, groupAxis); }, [groupAxis]);
 
-  // Recompute clusters only when the inventory or granularity changes — NOT on
-  // canvas hover/selection (focus is threaded straight through to ProcessRail,
-  // which memoizes its own per-hover work).
+  // Recompute clusters only when the inventory, axis, or granularity changes —
+  // NOT on canvas hover/selection (focus is threaded straight through to
+  // ProcessRail, which memoizes its own per-hover work).
   const bands = useMemo(
-    () => bandsFromNodes(nodes, granularity),
-    [nodes, granularity],
+    () => bandsFromNodes(nodes, groupAxis, granularity),
+    [nodes, groupAxis, granularity],
   );
 
   return (
@@ -96,8 +120,8 @@ export function ProcessPanel({
       bands={bands}
       nodes={nodes}
       focus={focus}
-      granularity={granularity}
-      onGranularityChange={setGranularity}
+      groupAxis={groupAxis}
+      onGroupAxisChange={setGroupAxis}
       onNavigate={onNavigate}
       hiddenIds={hidden}
       onToggleHidden={onToggleHidden}

@@ -13,6 +13,10 @@ export interface ProcessNodeData {
   processType: string;
   address: string;
   config: Record<string, unknown>;
+  /** Declared config parameter surface: name -> {_type, _default} (from the
+   *  process's `config_schema`). `config` above holds only EXPLICITLY-set
+   *  values; the card reads this to show each parameter's type + default. */
+  configSchema?: Record<string, unknown>;
   interval?: number;
   path: string[];
   inputPorts: string[];
