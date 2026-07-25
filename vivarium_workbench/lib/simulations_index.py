@@ -1125,8 +1125,32 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
         # existed (or before its lazy backfill ran) has none in the fold; once
         # list_simulations resolves them (cached or freshly derived), re-backfill
         # so /api/simulations rows carry them without waiting on a fresh run.
-        has_capabilities = bool(row.get("capabilities"))
-        prev_has_capabilities = bool(prev and prev.get("capabilities"))
+        #
+        # Unlike store_path/spec_id, capabilities are NOT invariant once any
+        # value is folded: a running run's tag set is a live, uncached,
+        # possibly-partial preview (_capabilities_for_row derives it fresh
+        # every call and never writes it to runs_meta), and only becomes the
+        # authoritative, finalized value once the run completes (cached into
+        # runs_meta.capabilities_json). A presence-only check (as store_path/
+        # spec_id use) would let a partial mid-run snapshot, once folded,
+        # permanently shadow the final tag set after completion — status
+        # alone can't gate this either, since `complete_metadata` folds its
+        # own "completed" status event independently of (and before) this
+        # backfill pass, so `prev["status"]` is already "completed" by the
+        # time a LATER call finally resolves+caches the final capabilities.
+        # So compare VALUES: only treat capabilities as "already known" when
+        # the prior fold's value equals what `row` carries right now (which,
+        # for a completed run, is the authoritative cached-or-just-derived
+        # final answer — see _capabilities_for_row). This also correctly
+        # resyncs when the final set is `[]` (a real, complete answer, not
+        # "nothing to add").
+        capabilities = row.get("capabilities")
+        has_capabilities = capabilities is not None
+        prev_has_capabilities = (
+            prev is not None
+            and prev.get("capabilities") is not None
+            and prev.get("capabilities") == capabilities
+        )
         # Skip when already represented AND its store location is known (or the
         # legacy store has none to add) AND its composite is known (or the legacy
         # store has none to add) AND its capabilities are known (or the legacy
