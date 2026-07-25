@@ -1140,7 +1140,8 @@ def discover_report_card_urls(ws_root: Path, slug: str) -> dict:
         _promote_report_card_embeds(probe, ws_root)
     except Exception:  # noqa: BLE001
         pass
-    return probe.get("report_card_urls") or rc_urls
+    promoted = probe.get("report_card_urls")
+    return promoted if isinstance(promoted, dict) else rc_urls
 
 
 def report_card_findings_for_study(ws_root: Path, slug: str, existing_findings=None):

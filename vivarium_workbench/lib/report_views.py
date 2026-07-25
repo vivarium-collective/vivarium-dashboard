@@ -623,7 +623,7 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
                         _worst = max(
                             derived,
                             key=lambda f: _VERDICT_SEVERITY.get(
-                                (f or {}).get("verdict"), 0),
+                                (f or {}).get("verdict") or "", 0),
                         )
                         node_claim = (_worst.get("summary")
                                       or _worst.get("statement"))
