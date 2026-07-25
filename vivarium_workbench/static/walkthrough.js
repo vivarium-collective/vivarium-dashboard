@@ -4907,7 +4907,11 @@
   function _renderInvestigationSets() {
     var list = document.getElementById('investigations-list');
     if (!list) return;
-    if (window._isetBrowseTab === 'studies') { _renderStudyBrowseCards(list); return; }
+    if (window._isetBrowseTab === 'studies') {
+      if (window._isetStudyView === 'table') _renderStudyBrowseTable(list);
+      else _renderStudyBrowseCards(list);
+      return;
+    }
     if (!window._isetIndex.length) {
       list.innerHTML = '<p class="empty-state">No investigations declared. Author one at <code>investigations/&lt;name&gt;/investigation.yaml</code>.</p>';
       return;
@@ -5117,6 +5121,11 @@
     });
     var createBtn = document.getElementById('iset-browse-create');
     if (createBtn) createBtn.textContent = (tab === 'studies') ? '+ Study' : '+ Investigation';
+    // The Cards/Table view toggle + tip are Studies-only.
+    var viewToggle = document.getElementById('iset-study-view-toggle');
+    if (viewToggle) viewToggle.style.display = (tab === 'studies') ? 'inline-flex' : 'none';
+    var tip = document.getElementById('iset-list-tip');
+    if (tip) tip.style.display = (tab === 'studies') ? 'none' : '';
     var invCount = document.getElementById('iset-tab-inv-count');
     var studyCount = document.getElementById('iset-tab-study-count');
     if (invCount) invCount.textContent = (window._isetIndex || []).length || '';
@@ -5215,7 +5224,7 @@
   }
   window._wsRenderStudyTabs = _wsRenderStudyTabs;
 
-  function _wsOpenStudyTab(slug) {
+  function _wsOpenStudyTab(slug, tab) {
     var st = window._wsStudyTabs;
     if (st.openTabs.indexOf(slug) === -1) st.openTabs.push(slug);
     st.active = slug;
@@ -5223,7 +5232,11 @@
     var panel = document.getElementById('ws-study-panel');
     var frame = document.getElementById('ws-study-frame');
     if (panel) panel.style.display = '';
-    if (frame) { frame.src = _studyHref(slug); }
+    if (frame) {
+      var href = _studyHref(slug);
+      if (tab) href += (href.indexOf('?') >= 0 ? '&' : '?') + 'tab=' + encodeURIComponent(tab);
+      frame.src = href;
+    }
     _setInvestigationContextCollapsed(true);    // study active -> context collapses
     if (typeof _fitEmbedToViewport === 'function') _fitEmbedToViewport(frame, panel, 560);
   }
@@ -5456,6 +5469,98 @@
     _filterInvestigations();
   }
 
+  // Investigation title for a slug (Studies table's Investigation column).
+  function _isetTitleForSlug(inv) {
+    if (!inv) return 'Ungrouped';
+    var it = (window._isetIndex || []).find(function (i) { return i.name === inv; });
+    return (it && (it.title || it.name)) || inv;
+  }
+  function _fmtStudyDate(iso) {
+    if (!iso) return '<span style="color:#cbd5e1">—</span>';
+    return _esc(String(iso).slice(0, 10));   // YYYY-MM-DD
+  }
+
+  // Studies TABLE view — one row per study, sortable by ANY column (including a
+  // real last-run date), row-click opens the study in the workspace. This is the
+  // flat, globally-sortable counterpart to the investigation-grouped cards.
+  function _renderStudyBrowseTable(list) {
+    var studies = (window._investigations || []).slice();
+    if (!studies.length) { list.innerHTML = '<p class="empty-state">No studies in this workspace yet.</p>'; return; }
+    var sort = window._isetTableSort || { col: 'investigation', dir: 1 };
+    var runsOf = function (s) { return (s.n_runs != null) ? s.n_runs : (s.n_simulations || 0); };
+    var val = function (s, col) {
+      if (col === 'investigation') return _investigationForStudy(s.name) || 'zzz~ungrouped';
+      if (col === 'status') return String(s.effective_status || s.status || '');
+      if (col === 'phase') return String(s.phase || '');
+      if (col === 'runs') return runsOf(s);
+      if (col === 'last_run') return String(s.last_run || '');
+      if (col === 'composite') return String(s.composite || '');
+      return String(s.title || s.name || '');
+    };
+    studies.sort(function (a, b) {
+      var av = val(a, sort.col), bv = val(b, sort.col), r;
+      r = (typeof av === 'number') ? (av - bv) : String(av).localeCompare(String(bv));
+      if (r === 0) r = String(a.title || a.name).localeCompare(String(b.title || b.name));
+      return r * sort.dir;
+    });
+    var cols = [['name', 'Study'], ['investigation', 'Investigation'], ['status', 'Status'],
+                ['phase', 'Phase'], ['runs', 'Runs'], ['last_run', 'Last run'], ['composite', 'Composite']];
+    var th = cols.map(function (c) {
+      var arrow = sort.col === c[0] ? (sort.dir > 0 ? ' ▲' : ' ▼') : '';
+      var alignR = (c[0] === 'runs') ? 'text-align:right;' : 'text-align:left;';
+      return '<th onclick="_setStudyTableSort(\'' + c[0] + '\')" style="' + alignR +
+        'position:sticky;top:0;background:#f8fafc;padding:7px 10px;cursor:pointer;font-size:0.78em;' +
+        'text-transform:uppercase;letter-spacing:0.03em;color:#475569;border-bottom:1px solid #e5e7eb;white-space:nowrap">' +
+        _esc(c[1]) + arrow + '</th>';
+    }).join('');
+    var rows = studies.map(function (s) {
+      var inv = _investigationForStudy(s.name) || '';
+      var invTitle = _isetTitleForSlug(inv);
+      var status = s.effective_status || s.status || 'planned';
+      var m = _studyDotMeta(status);
+      var runs = runsOf(s);
+      var rowText = (String(s.title || s.name) + ' ' + inv + ' ' + invTitle + ' ' + status + ' ' + (s.phase || '')).toLowerCase();
+      return '<tr data-row-text="' + _esc(rowText) + '" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ' +
+        'style="cursor:pointer;border-bottom:1px solid #f1f5f9" ' +
+        'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
+        '<td style="padding:7px 10px;font-weight:600;color:#1e293b">' + _esc(s.title || s.name) + '</td>' +
+        '<td style="padding:7px 10px;color:#64748b">' + _esc(invTitle) + '</td>' +
+        '<td style="padding:7px 10px;white-space:nowrap"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:' + m[0] + ';margin-right:5px"></span>' + _esc(m[1]) + '</td>' +
+        '<td style="padding:7px 10px;color:#64748b">' + _esc(s.phase || '—') + '</td>' +
+        '<td style="padding:7px 10px;text-align:right;color:' + (runs ? '#1e293b' : '#cbd5e1') + '">' + runs + '</td>' +
+        '<td style="padding:7px 10px;color:#64748b;white-space:nowrap">' + _fmtStudyDate(s.last_run) + '</td>' +
+        '<td style="padding:7px 10px;color:#94a3b8;font-family:ui-monospace,monospace;font-size:0.85em">' + _esc(s.composite || '—') + '</td>' +
+        '</tr>';
+    }).join('');
+    list.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.9em;' +
+      'background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">' +
+      '<thead><tr>' + th + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+    _filterInvestigations();
+  }
+  window._renderStudyBrowseTable = _renderStudyBrowseTable;
+
+  function _setStudyTableSort(col) {
+    var cur = window._isetTableSort || { col: 'investigation', dir: 1 };
+    window._isetTableSort = { col: col, dir: (cur.col === col ? -cur.dir : 1) };
+    _renderInvestigationSets();
+  }
+  window._setStudyTableSort = _setStudyTableSort;
+
+  function _setStudyView(mode) {
+    window._isetStudyView = mode;
+    var cardsBtn = document.getElementById('iset-view-cards');
+    var tableBtn = document.getElementById('iset-view-table');
+    [[cardsBtn, mode === 'cards'], [tableBtn, mode === 'table']].forEach(function (pair) {
+      var btn = pair[0], on = pair[1];
+      if (!btn) return;
+      btn.style.background = on ? '#eef2ff' : '#fff';
+      btn.style.color = on ? '#1e293b' : '#64748b';
+      btn.style.fontWeight = on ? '600' : '400';
+    });
+    _renderInvestigationSets();
+  }
+  window._setStudyView = _setStudyView;
+
   // Client-side filter for the Investigations landing list. UNIFIED with the
   // side-rail studies search (same _tokensMatch engine, same AND-first/OR-
   // fallback): an investigation card shows when the investigation itself OR any
@@ -5465,6 +5570,13 @@
   function _filterInvestigations() {
     var input = document.getElementById('investigations-filter');
     var tokens = _tokenize(input && input.value);
+    // Studies TABLE view: filter rows directly (each carries data-row-text).
+    if (window._isetBrowseTab === 'studies' && window._isetStudyView === 'table') {
+      document.querySelectorAll('#investigations-list tr[data-row-text]').forEach(function (tr) {
+        tr.style.display = _tokensMatch(tr.getAttribute('data-row-text') || '', tokens) ? '' : 'none';
+      });
+      return;
+    }
     var cards = document.querySelectorAll('#investigations-list .investigation-set-card');
 
     // iset slug -> member study objects, for study-aware matching.
@@ -6807,25 +6919,13 @@
   // DAG (no jump to the legacy Studies tab). The iframe is the same
   // /studies/<name> route the standalone embed uses.
   function _openStudyInsideInvestigation(name, tab) {
-    var panel = document.getElementById('investigation-study-embed-panel');
-    var frame = document.getElementById('investigation-study-embed-frame');
-    var nameEl = document.getElementById('investigation-study-embed-name');
-    // Optional deep-link to a specific study tab (e.g. a Needs-attention item
-    // pointing at the verdict opens ?tab=conclusions).
-    var href = _studyHref(name) + (tab ? (_studyHref(name).indexOf('?') >= 0 ? '&' : '?') + 'tab=' + encodeURIComponent(tab) : '');
-    if (!panel || !frame) {
-      // This view (e.g. the report / deep-link investigation view) has no
-      // in-place study-embed panel — navigate to the study page directly so the
-      // sidebar study link still works instead of dying silently.
-      window.location = href;
-      return;
-    }
-    window._currentInvestigationStudy = name;
-    frame.src = href;
-    if (nameEl) nameEl.textContent = name;
-    panel.style.display = '';
-    panel.scrollIntoView({behavior: 'smooth', block: 'start'});
-    _fitEmbedToViewport(frame, panel, 600);
+    // Unified with every other study-open entry point: route through the single
+    // workspace router so a graph node / ref link / needs-attention button opens
+    // the study exactly like clicking a study card — the investigation context
+    // collapses to the slim bar and the study opens as a tab in the porthole.
+    // (Previously this embedded a separate panel BELOW the graph with its own
+    // Pop-out/×, leaving the context expanded — the inconsistency this fixes.)
+    _openStudyEmbeddedNewTab(name, tab);
   }
   window._openStudyInsideInvestigation = _openStudyInsideInvestigation;
 
@@ -12538,14 +12638,15 @@
   }
   window._investigationForStudy = _investigationForStudy;
 
-  function _openStudyEmbeddedNewTab(name) {
+  function _openStudyEmbeddedNewTab(name, tab) {
     // Single router: show the study's OWN investigation workspace, then
     // open/focus its study tab. Never the legacy icon view, never full-window nav.
+    // Optional `tab` deep-links the porthole to a study sub-tab (e.g. conclusions).
     var inv = _investigationForStudy(name);
     if (inv) {
       if (window._wsInvestigation !== inv) _showInvestigationWorkspace(inv);
       else _showWorkspace();
-      _wsOpenStudyTab(name);
+      _wsOpenStudyTab(name, tab);
     } else {
       // Ungrouped study: minimal workspace (no graph), just the study tab.
       window._wsInvestigation = null;
@@ -12559,7 +12660,7 @@
       var t = document.getElementById('ws-title'); if (t) t.textContent = 'Study: ' + name;
       var a = document.getElementById('ws-actions'); if (a) a.innerHTML = '';
       _wsResetStudyTabs(null);
-      _wsOpenStudyTab(name);
+      _wsOpenStudyTab(name, tab);
     }
     _selectStudyInRail(name);
   }

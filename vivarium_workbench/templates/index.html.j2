@@ -758,9 +758,6 @@ window.addEventListener('pageshow', function (e) {
   <div id="iset-explore">
   <!-- Browse toggle: flip the same search + sort + card grid between the
        Investigations and the (flat) Studies views. -->
-  <div class="iset-browse-header" style="display:flex;align-items:center;gap:14px;margin:0 0 4px">
-    <strong style="font-size:1.05em;color:#0f172a">Explore</strong>
-  </div>
   <div class="iset-browse-tabs" role="tablist"
        style="display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid #e5e7eb">
     <button class="iset-browse-tab active" data-browse="investigations" role="tab"
@@ -776,11 +773,10 @@ window.addEventListener('pageshow', function (e) {
        engine as the side-rail studies search — see _filterInvestigations). -->
   <div style="margin:0 0 10px">
     <input id="investigations-filter" type="search"
-           placeholder="Search investigations and studies…"
+           placeholder="Search…"
            aria-label="Search investigations and studies" oninput="_filterInvestigations()"
-           style="width:100%;box-sizing:border-box;padding:11px 16px;border:1px solid #d1d5db;
-                  border-radius:10px;font-size:1.05em;background:#fff;
-                  box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+           style="width:100%;box-sizing:border-box;padding:6px 12px;border:1px solid #d1d5db;
+                  border-radius:7px;font-size:0.9em;background:#fff;">
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:0.85em;color:#64748b">
     <label for="iset-sort" style="font-weight:600">Sort</label>
@@ -793,7 +789,13 @@ window.addEventListener('pageshow', function (e) {
       <option value="studies_asc">Fewest studies</option>
       <option value="recent">Recently updated</option>
     </select>
-    <span style="margin-left:auto">Tip: click a card's <strong>studies</strong> count to expand it.</span>
+    <span id="iset-study-view-toggle" style="display:none;align-items:center;gap:0">
+      <button id="iset-view-cards" class="iset-view-btn" onclick="_setStudyView('cards')"
+              style="padding:5px 10px;border:1px solid #d1d5db;border-right:none;border-radius:6px 0 0 6px;background:#eef2ff;color:#1e293b;font-weight:600;font-size:0.95em;cursor:pointer">Cards</button>
+      <button id="iset-view-table" class="iset-view-btn" onclick="_setStudyView('table')"
+              style="padding:5px 10px;border:1px solid #d1d5db;border-radius:0 6px 6px 0;background:#fff;color:#64748b;font-size:0.95em;cursor:pointer">Table</button>
+    </span>
+    <span id="iset-list-tip" style="margin-left:auto">Tip: click a card's <strong>studies</strong> count to expand it.</span>
   </div>
 
   <!-- List view: grouped investigation cards (Active / Closed). The grid lives on
