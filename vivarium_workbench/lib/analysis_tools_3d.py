@@ -45,17 +45,38 @@ def studies_with_3d_pack(ws_root) -> list[dict]:
         by_study.setdefault(study, []).append(
             {"name": entry.get("name") or "snapshot",
              "file": entry.get("pack_url")})
+    # ``ui.viz_viewer_urls`` is keyed by PACK NAME (as saved_visualizations.py
+    # attaches it, matching ``entry["name"]``), though a workspace may also key
+    # it by study slug. Either way the hosted URL belongs to the study that owns
+    # a matching pack — NOT to a study of its own — so a hosted key like
+    # ``ecoli_3d`` doesn't spawn a phantom card beside the real ``ecoli-3d``.
     hosted = _hosted_viewer_urls(ws_root)
+    used_keys: set[str] = set()
     out = []
-    studies = set(by_study) | set(hosted)
-    for study in sorted(studies):
-        packs = sorted(by_study.get(study, []),
+    for study in sorted(by_study):
+        packs = sorted(by_study[study],
                         key=lambda p: (_pack_name_rank(p["name"]), p["name"]))
-        rec = {"study": study, "packs": packs}
-        if hosted.get(study):
-            rec["viewer_url"] = hosted[study]
+        rec: dict = {"study": study, "packs": packs}
+        # attach a hosted URL keyed by the study slug, else by any pack name
+        url = hosted.get(study)
+        if url is not None:
+            used_keys.add(study)
+        else:
+            for p in packs:
+                if p["name"] in hosted:
+                    url = hosted[p["name"]]
+                    used_keys.add(p["name"])
+                    break
+        if url:
+            rec["viewer_url"] = url
         out.append(rec)
-    return out
+    # A hosted key that matched no study slug and no pack name is a pure-hosted
+    # study (no local packs) — it still advertises 3d_pack under its own key.
+    for key, url in hosted.items():
+        if key in used_keys or key in by_study:
+            continue
+        out.append({"study": key, "packs": [], "viewer_url": url})
+    return sorted(out, key=lambda r: r["study"])
 
 
 def study_models_manifest(ws_root, study) -> list[dict]:
