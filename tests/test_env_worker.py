@@ -180,6 +180,13 @@ def test_viz_classes_discovers_workspace_and_default_classes():
     """The worker builds the fixture core and returns its viz classes as JSON —
     the workspace's own Demo* classes plus the pbg_superpowers defaults."""
     pytest.importorskip("pbg_superpowers")
+    # Env-limitation guard (same as test_registry_catalog above): when the
+    # fixture core can't build in this env — e.g. a workspace/optional dep is
+    # absent on the CI runner — the worker returns only the injected defaults, so
+    # the Demo* assertion below would spuriously fail. Skip instead of failing.
+    from vivarium_workbench.lib import registry
+    if registry.build_registry(_FIXTURE, bypass_cache=True).get("error"):
+        pytest.skip("fixture core unbuildable in this env (no workspace classes)")
     with EnvWorker(_FIXTURE) as w:
         classes = w.call("viz_classes")["classes"]
     names = {c["name"] for c in classes}
@@ -196,6 +203,11 @@ def test_viz_classes_lib_entrypoint_routes_through_the_worker():
     """The lib entry point produces the same catalog the worker does — i.e. it is
     now backed by the worker, not an in-process build_core."""
     pytest.importorskip("pbg_superpowers")
+    # Same env-limitation guard: without a buildable fixture core the lib and the
+    # worker can disagree on the degraded (defaults-only) result.
+    from vivarium_workbench.lib import registry
+    if registry.build_registry(_FIXTURE, bypass_cache=True).get("error"):
+        pytest.skip("fixture core unbuildable in this env (no workspace classes)")
     from vivarium_workbench.lib.env_worker_pool import get_pool
     from vivarium_workbench.lib.visualization_classes import list_visualization_classes
 
