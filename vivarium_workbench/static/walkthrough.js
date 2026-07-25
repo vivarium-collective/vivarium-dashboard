@@ -2300,10 +2300,12 @@
         var paramSummary = '';
         var paramKeys = Object.keys(c.parameters || {});
         if (paramKeys.length) {
-          paramSummary = '<div class="module-tags">' +
+          paramSummary = '<div class="param-block">' +
+            '<div class="param-label">Parameters <span class="param-count">' + paramKeys.length + '</span></div>' +
+            '<div class="param-list">' +
             paramKeys.map(function(k) {
-              return '<span class="tag-pill">' + _esc(k) + '</span>';
-            }).join('') + '</div>';
+              return '<code class="param-pill">' + _esc(k) + '</code>';
+            }).join('') + '</div></div>';
         }
         var requires = '';
         if (c.requires && c.requires.processes && c.requires.processes.length) {
@@ -2312,10 +2314,10 @@
         }
         var tagSummary = '';
         if (c.tags && c.tags.length) {
-          tagSummary = '<div class="module-tags">' +
+          tagSummary = '<div class="module-tags topic-list">' +
             c.tags.map(function(t) {
-              return '<span class="tag-pill" style="background:#e0e7ff;color:#3730a3">' + _esc(t) + '</span>';
-            }).join(' ') + '</div>';
+              return '<span class="topic-pill">' + _esc(t) + '</span>';
+            }).join('') + '</div>';
         }
         var divider = _maybeDivider(prevG, c);
         prevG = c;
