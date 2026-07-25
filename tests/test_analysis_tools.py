@@ -99,3 +99,14 @@ def test_parsimony_viewer_kept_when_no_contributed_3d_viewer(monkeypatch):
         lambda ws: [{"ref": "ecoli-3d", "label": "ecoli-3d", "capabilities": ["3d_pack"]}])
     tools = {t["id"]: t for t in at.build_analysis_tools("/ws")}
     assert {m["ref"] for m in tools["parsimony-viewer"]["matched"]} == {"ecoli-3d"}
+
+
+def test_run_label_strips_module_prefix():
+    # a run's dropdown label should be the concise, unique id — not the verbose
+    # stored param-dump label.
+    assert at._run_label(
+        {"run_id": "v2ecoli.composites.baseline__1784747701__b026df",
+         "label": "cache_dir=out/cache, config_overrides={}, emitter=parquet"}
+    ) == "baseline__1784747701__b026df"
+    assert at._run_label({"run_id": "phase0-multigen-xarray"}) == "phase0-multigen-xarray"
+    assert at._run_label({"sim_name": "s"}) == "s"

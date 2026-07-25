@@ -2350,11 +2350,10 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 /* ── Analyses gallery (saved interactive visualizations) ────────────────── */
 .analyses-gallery {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-@media (min-width: 1100px) {
-  .analyses-gallery { grid-template-columns: 1fr 1fr; }
+  /* Compact launcher cards in a responsive grid — scales as viewers are added. */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 .analyses-card {
   border: 1px solid #e2e8f0;
@@ -2370,6 +2369,21 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   margin-bottom: 2px;
 }
 .analyses-card .viz-embed { display: block; }
+
+/* Compact tool card: header · description · footer (result selector + Open). */
+.tool-card { display: flex; flex-direction: column; }
+.tool-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tool-head strong { font-size: 0.95em; }
+.tool-need { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.tool-desc { font-size: 0.82em; line-height: 1.35; margin: 4px 0 10px; }
+.tool-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.tool-select { flex: 1; min-width: 0; font-size: 0.82em; padding: 3px 6px;
+  border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; }
+.tool-one { flex: 1; min-width: 0; font-size: 0.82em; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.tool-empty { font-size: 0.82em; }
+.tool-open { flex-shrink: 0; }
+
 .tool-requires { color: var(--gray); font-size: 0.82em; }
 .tool-matches { display: flex; flex-direction: column; gap: 4px; }
 .tool-row + .tool-row { margin-top: 8px; }

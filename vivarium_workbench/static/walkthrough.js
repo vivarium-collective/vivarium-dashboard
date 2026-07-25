@@ -1560,109 +1560,83 @@
           encodeURIComponent(base + '/api/study/' + encodeURIComponent(ref) + '/3d/models.json');
   }
 
-  // One matched 3D study: an inline embedded viewer plus an "Open ↗" link,
-  // mirroring _render3dVizCard's iframe pattern.
-  function _render3dMatch(m) {
-    var src = _build3dSrc(m);
-    var label = m.label || m.study || m.ref || '3D model';
-    var meta = m.detail
-      ? '<div class="muted" style="font-size:0.82em;margin:2px 0 6px">' + _esc(m.detail) + '</div>' : '';
-    return '<div class="tool-row" style="margin-top:8px">' +
-      '<div class="analyses-card-head">' +
-        '<strong>' + _esc(label) + '</strong>' +
-        '<a class="btn-mini" href="' + _esc(src) + '" target="_blank" rel="noopener" title="Open full-window in a new tab">Open &#8599;</a>' +
-      '</div>' + meta +
-      '<iframe class="viz-embed" src="' + _esc(src) + '" loading="lazy" ' +
-        'style="width:100%;height:460px;border:1px solid #2a313c;border-radius:6px;background:#0e1116"></iframe>' +
-    '</div>';
+  // Human-readable label for a matched run/study in a card's result dropdown.
+  function _toolItemLabel(m) {
+    m = m || {};
+    var label = m.label || m.study || m.ref || m.run_id || '(result)';
+    return m.detail ? label + ' — ' + m.detail : label;
   }
 
-  // embed-explorer body: a compact one-line count of compatible runs, then the
-  // single embedded Data Explorer — whose OWN run-picker dropdown selects any
-  // run, so a per-run list here would be redundant (and, with dozens of runs and
-  // verbose param labels, an unusably long wall of text).
-  function _renderExplorerToolBody(runs) {
-    var n = (runs || []).length;
-    var note = n
-      ? '<p class="muted" style="font-size:0.82em;margin:0 0 6px">' +
-          n + ' compatible run' + (n === 1 ? '' : 's') +
-          ' &mdash; choose one from the run picker below.</p>'
-      : '';
-    return note + '<div id="explorer-mount" style="margin-top:4px"></div>';
+  function _toolItems(t) {
+    return (t && t.matched && t.matched.length)
+      ? t.matched
+      : ((t && t.targets && t.targets.length) ? t.targets : []);
   }
 
-  // launcher / default body: external-viewer targets, reusing the live Launch /
-  // snapshot-note behavior of _renderViewerCard.
-  function _renderLauncherToolBody(tool, targets) {
-    var _isSnapshot = _analysesSnapshot();
-    var uid = tool.uid || tool.id || '';
-    var rows = (targets || []).map(function(t) {
-      var action = t.href
-        ? '<a class="btn-mini" href="' + _esc(t.href) + '" target="_blank" rel="noopener">Open</a>'
-        : (_isSnapshot
-          ? '<span class="muted" style="font-size:0.8em">Launch from the local workbench</span>'
-          : '<button class="btn-mini" onclick="_launchViewer(\'' + _esc(uid) + '\',\'' + _esc(t.study || t.ref || '') + '\')">Launch</button>');
-      return '<div class="picker-row">' +
-        '<div class="picker-row-main"><strong>' + _esc(t.label || t.study || t.ref || '') + '</strong>' +
-          (t.detail ? ' <span class="muted" style="font-size:0.82em">' + _esc(t.detail) + '</span>' : '') + '</div>' +
-        '<div class="picker-row-actions">' + action + '</div>' +
-      '</div>';
-    }).join('');
-    var html = '<div class="viewer-target-list">' + rows + '</div>';
-    var _needsLaunch = (targets || []).some(function(t) { return !t.href; });
-    if (_isSnapshot && _needsLaunch) {
-      html += '<p class="muted" style="font-size:0.8em;margin:8px 0 0">' +
-        'Available in the live workbench: this viewer launches against a local ' +
-        'service, so this read-only view lists which studies have exports rather ' +
-        'than opening it.</p>';
-    }
-    return html;
-  }
+  // id -> tool descriptor, populated by _loadAnalysesPage; read by _openTool to
+  // build the right full-window URL for the card's currently-selected result.
+  var _TOOLS_BY_ID = {};
 
-  // One tool card. `matched` (capability-matched runs/studies) drives the body;
-  // external viewers fall back to `targets`; empty falls back to a reason line.
+  // One compact tool card: title, a small description, a result selector
+  // (dropdown when several results match, a static line for one), and an Open
+  // button that launches the viewer FULL-WINDOW in a new tab for the selected
+  // result. No inline embeds — the tab stays a lightweight launcher that scales
+  // as viewers are added.
   function _renderToolCard(t) {
     t = t || {};
-    var kind = t.kind || '';
-    var head = '<div class="analyses-card-head"><strong>' +
-      _esc(t.title || t.id || 'Tool') + '</strong></div>';
+    var items = _toolItems(t);
+    var head = '<div class="tool-head"><strong>' + _esc(t.title || t.id || 'Tool') + '</strong>' +
+      ((t.requires && t.requires.length)
+        ? '<span class="tool-need muted">needs ' + _esc(t.requires.join(', ')) + '</span>' : '') +
+      '</div>';
     var desc = t.description
-      ? '<p class="muted" style="font-size:0.85em;margin:4px 0 6px">' + _esc(t.description) + '</p>' : '';
-    var req = (t.requires && t.requires.length)
-      ? '<div class="tool-requires muted" style="font-size:0.82em;margin:0 0 8px">Needs: ' +
-          _esc(t.requires.join(', ')) + '</div>' : '';
-    var items = (t.matched && t.matched.length)
-      ? t.matched
-      : ((t.targets && t.targets.length) ? t.targets : []);
+      ? '<p class="tool-desc muted">' + _esc(t.description) + '</p>' : '';
+    var id = _esc(String(t.id || ''));
     var body;
     if (!items.length) {
-      body = '<p class="empty-state muted" style="margin:0">' +
-        _esc(t.unmatched_reason || 'No compatible runs.') + '</p>';
-    } else if (kind === 'embed-explorer') {
-      body = _renderExplorerToolBody(items);
-    } else if (kind === 'embed-3d') {
-      body = items.map(_render3dMatch).join('');
+      body = '<div class="tool-foot"><span class="muted tool-empty">' +
+        _esc(t.unmatched_reason || 'No compatible results.') + '</span></div>';
     } else {
-      body = _renderLauncherToolBody(t, items);
+      var control;
+      if (items.length > 1) {
+        control = '<select class="tool-select" id="tool-sel-' + id + '">' +
+          items.map(function(m, i) {
+            return '<option value="' + i + '">' + _esc(_toolItemLabel(m)) + '</option>';
+          }).join('') + '</select>';
+      } else {
+        control = '<span class="tool-one muted">' + _esc(_toolItemLabel(items[0])) + '</span>';
+      }
+      body = '<div class="tool-foot">' + control +
+        '<button class="btn-mini tool-open" onclick="_openTool(\'' + id + '\', this)">' +
+        'Open &#8599;</button></div>';
     }
-    return '<div class="analyses-card">' + head + desc + req + body + '</div>';
+    return '<div class="analyses-card tool-card" data-tool="' + id + '">' +
+      head + desc + body + '</div>';
   }
 
-  // Mount / re-mount the single embedded Data Explorer, optionally preselecting
-  // a run. Explorer.mount honors opts.initialRun (see explorer.js). Snapshot-safe:
-  // Explorer already rewrites its own fetches to static bundle files.
-  function _mountExplorer(initialRun) {
-    if (!window.Explorer) return;
-    var em = document.getElementById('explorer-mount');
-    if (!em) return;
-    window.Explorer.mount(em, {
-      basePath: _analysesBase(),
-      snapshot: _analysesSnapshot(),
-      initialRun: initialRun || undefined
-    });
+  // Open a tool's selected result full-window in a new tab. Per kind:
+  //   embed-explorer -> the standalone Data Explorer page for the run
+  //   embed-3d       -> the (hosted or bundled) parsimony viewer for the study
+  //   launcher       -> the target's external href, else the live launch endpoint
+  function _openTool(toolId, btn) {
+    var t = _TOOLS_BY_ID[toolId]; if (!t) return;
+    var items = _toolItems(t);
+    var card = (btn && btn.closest) ? btn.closest('.tool-card') : null;
+    var sel = card ? card.querySelector('.tool-select') : null;
+    var idx = sel ? (parseInt(sel.value, 10) || 0) : 0;
+    var m = items[idx] || items[0]; if (!m) return;
+    if (t.kind === 'embed-explorer') {
+      window.open(_analysesBase() + '/assets/explorer.html?run=' +
+        encodeURIComponent(m.ref || m.run_id || ''), '_blank', 'noopener');
+    } else if (t.kind === 'embed-3d') {
+      window.open(_build3dSrc(m), '_blank', 'noopener');
+    } else if (m.href) {
+      window.open(m.href, '_blank', 'noopener');
+    } else {
+      _launchViewer(t.id, m.study || m.ref || '');  // resolves via endpoint / snapshot note
+    }
   }
-  function _explorerSelectRun(runId) { _mountExplorer(runId); }
-  window._explorerSelectRun = _explorerSelectRun;
+  window._openTool = _openTool;
 
   function _loadAnalysesPage() {
     var container = document.getElementById('analyses-gallery');
@@ -1693,11 +1667,10 @@
           if (countEl) countEl.textContent = '';
           return;
         }
+        _TOOLS_BY_ID = {};
+        tools.forEach(function(t) { if (t && t.id != null) _TOOLS_BY_ID[t.id] = t; });
         container.innerHTML = tools.map(_renderToolCard).join('');
         if (countEl) countEl.textContent = '(' + tools.length + ')';
-        // Mount the single embedded Data Explorer once (if a tool rendered its
-        // #explorer-mount). Per-run "Launch" buttons re-mount with a preselect.
-        if (document.getElementById('explorer-mount')) _mountExplorer();
       })
       .catch(function(err) {
         container.innerHTML = '<p class="empty-state" style="color:#991b1b">Error loading analysis tools: ' + _esc(String(err)) + '</p>';

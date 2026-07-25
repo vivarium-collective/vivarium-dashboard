@@ -30,12 +30,23 @@ def builtin_tools() -> list[dict]:
     ]
 
 
+def _run_label(r: dict) -> str:
+    """A concise, unique-enough label for a run's result dropdown. A run's stored
+    ``label`` is a verbose composite-param dump (``cache_dir=…, config_overrides=
+    {}, …``) — unusable in a picker — so prefer the run_id with any dotted module
+    prefix stripped (``v2ecoli.composites.baseline__…__b026df`` -> ``baseline__…__
+    b026df``), which keeps the disambiguating hash. Falls back to sim_name."""
+    rid = str(r.get("run_id") or "")
+    short = rid.rsplit(".", 1)[-1] if rid else ""
+    return short or str(r.get("sim_name") or "") or rid or "run"
+
+
 def _run_candidates(ws_root) -> list[dict]:
     data = build_simulations_data(ws_root) or {}
     out = []
     for r in data.get("simulations", []):
         out.append({"ref": r.get("run_id"),
-                    "label": r.get("label") or r.get("sim_name") or r.get("run_id"),
+                    "label": _run_label(r),
                     "detail": r.get("emitter_type") or "",
                     "capabilities": r.get("capabilities") or []})
     return out
