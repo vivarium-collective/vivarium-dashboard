@@ -274,6 +274,20 @@ class SavedVisualizationsPayload(BaseModel):
     report_cards: list[ReportCard] = []
 
 
+class AnalysisToolsPayload(BaseModel):
+    """``GET /api/analysis-tools`` payload — the tools-first Analysis Tools tab.
+
+    Composed by ``lib.analysis_tools.build_analysis_tools``: external
+    contributed viewers + built-in tools (data-explorer, parsimony-viewer),
+    each capability-matched to candidate runs/studies. Tool shapes vary
+    (external viewers carry extra fields), so unknown keys are preserved.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    tools: list[dict] = []
+
+
 class VizClass(BaseModel):
     """One entry in the ``GET /api/visualization-classes`` ``classes`` list.
 

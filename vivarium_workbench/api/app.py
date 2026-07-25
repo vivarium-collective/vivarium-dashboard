@@ -121,6 +121,7 @@ from vivarium_workbench.lib import composite_runs as _composite_runs
 from vivarium_workbench.lib.composite_resolve import resolve_composite_for_request, _degraded_result
 from vivarium_workbench.lib.composites_query import composites_via_subprocess
 from vivarium_workbench.lib.models import (
+    AnalysisToolsPayload,
     BibEntry,
     CatalogModule,
     CatalogPayload,
@@ -887,6 +888,21 @@ def create_app() -> FastAPI:
         contributor is skipped with a warning.
         """
         return JSONResponse(content={"viewers": _analysis_viewers.viewers_public(ws)})
+
+    @app.get(
+        "/api/analysis-tools",
+        tags=["Analyses"],
+        summary="Capability-matched analysis tools for this workspace",
+    )
+    def analysis_tools(ws: Path = Depends(get_workspace)) -> JSONResponse:
+        """Tools-first Analysis Tools tab: external viewers + built-in tools
+        (data-explorer, parsimony-viewer), each matched to the runs/studies
+        whose capabilities satisfy the tool's ``requires``.
+
+        Library-backed via ``lib.analysis_tools.build_analysis_tools``.
+        """
+        from vivarium_workbench.lib.analysis_tools import build_analysis_tools
+        return JSONResponse(content={"tools": build_analysis_tools(ws)})
 
     @app.get(
         "/api/analysis-viewer/{uid}/launch",
