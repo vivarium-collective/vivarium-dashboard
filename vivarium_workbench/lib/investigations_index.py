@@ -243,7 +243,7 @@ def _condition_satisfied(parent: Optional[dict], condition: str) -> bool:
         return status == "complete"
     if condition == "tests-passed":
         try:
-            from pbg_superpowers import study_status  # type: ignore[import]
+            from viva_superpowers import study_status  # type: ignore[import]
 
             counts = study_status.count_test_outcomes(parent, parent.get("runs"))
             return counts["fail"] == 0 and counts["pass"] > 0

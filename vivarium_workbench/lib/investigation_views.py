@@ -7,7 +7,7 @@ is one implementation shared by both the stdlib server and the FastAPI seam.
 
 ``investigation-rigor`` is intentionally NOT ported here: it depends on the
 per-study run-merging loader (``server._study_detail_spec`` merges runs.db +
-reconciles simulation_set), which ``pbg_superpowers.rigor`` reads via
+reconciles simulation_set), which ``viva_superpowers.rigor`` reads via
 ``spec["runs"]`` — extracting that loader belongs with Batch 3.
 
 Builders
@@ -226,8 +226,8 @@ def build_investigation_hypotheses(ws_root: Path, name: str) -> dict:
 
     Returns ``{hypotheses: [...], investigation: name}`` always (never raises).
     The ``hypotheses`` list carries computed ``support_log`` fields (via
-    ``pbg_superpowers.hypotheses.rollup_support`` / ``score_support``).  An
-    absent ``pbg_superpowers``, missing investigation, or compute failure
+    ``viva_superpowers.hypotheses.rollup_support`` / ``score_support``).  An
+    absent ``viva_superpowers``, missing investigation, or compute failure
     returns the authored hypotheses unchanged (or an empty list) rather than
     a 500.
 
@@ -271,7 +271,7 @@ def build_investigation_hypotheses(ws_root: Path, name: str) -> dict:
 
     # 1) Preferred: rollup_support returns the enriched inv_spec (or list).
     try:
-        from pbg_superpowers.hypotheses import rollup_support  # type: ignore[import]
+        from viva_superpowers.hypotheses import rollup_support  # type: ignore[import]
     except Exception:  # noqa: BLE001
         rollup_support = None
     if rollup_support is not None:
@@ -290,7 +290,7 @@ def build_investigation_hypotheses(ws_root: Path, name: str) -> dict:
 
     # 2) Fallback: score_support per hypothesis.
     try:
-        from pbg_superpowers.hypotheses import score_support  # type: ignore[import]
+        from viva_superpowers.hypotheses import score_support  # type: ignore[import]
     except Exception:  # noqa: BLE001
         return base
     out = []

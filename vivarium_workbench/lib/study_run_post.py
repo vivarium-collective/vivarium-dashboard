@@ -244,7 +244,7 @@ def render_study_visualizations(ws_root, study_dir, spec, spec_id):
     """Render canonical + Study-declared visualizations after a completed run.
 
     Merges the composite's ``@composite_generator(visualizations=...)``
-    defaults (from ``pbg_superpowers._REGISTRY``) with
+    defaults (from ``viva_superpowers._REGISTRY``) with
     ``spec.visualizations`` (Study entries win on name collision), then
     delegates to ``vivarium_workbench.lib.investigations.render_visualizations``
     to render against ``study_dir/runs.db``.

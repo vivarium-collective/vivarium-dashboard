@@ -234,7 +234,7 @@ def visualization_generate(ws_root: Path, body: dict[str, Any]) -> "tuple[dict, 
         f'"""\n'
         f"from __future__ import annotations\n"
         f"import html as _html, json\n"
-        f"from pbg_superpowers.visualization import as_visualization\n\n\n"
+        f"from viva_superpowers.visualization import as_visualization\n\n\n"
         f"@as_visualization(\n"
         f"    inputs={{'<port>': '<bigraph-type>', ...}},  # typed input ports\n"
         f"    name='<ClassName>',\n"
@@ -254,7 +254,7 @@ def visualization_generate(ws_root: Path, body: dict[str, Any]) -> "tuple[dict, 
         f"subclass.\n"
         f"- Do NOT edit `__init__.py` — `bigraph_schema.discover_packages()` walks the "
         f"package automatically.\n"
-        f"- The file must be self-contained (only `pbg_superpowers`, `process_bigraph`, "
+        f"- The file must be self-contained (only `viva_superpowers`, `process_bigraph`, "
         f"`html`, `json`, and standard `plotly`/`matplotlib` imports allowed).\n"
     )
 

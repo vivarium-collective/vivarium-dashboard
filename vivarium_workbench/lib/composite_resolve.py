@@ -31,7 +31,7 @@ def _prime_registry() -> None:
     """Best-effort: import bigraph-schema packages so decorator-registered
     generators populate the process-bigraph registry. Monkeypatched in tests."""
     try:
-        from pbg_superpowers.composite_generator import discover_generators
+        from viva_superpowers.composite_generator import discover_generators
         discover_generators()
     except Exception:
         pass
@@ -41,12 +41,12 @@ def declared_emit_paths(decls: "list[dict] | None") -> list:
     """Flatten a composite's declared ``emitters=[...]`` decl(s) into the
     ordered, deduped list of paths they emit (e.g. ``["global_time", "bulk",
     "listeners"]`` for v2ecoli's ``baseline``, matching ``spec.emitters`` /
-    ``pbg_superpowers.composite_generator.emitter_defaults``'s shape).
+    ``viva_superpowers.composite_generator.emitter_defaults``'s shape).
 
     Each decl's ``paths`` entries are '.'-or-'/'-joined; segments are
     re-joined with ``/`` to match the client's ``emitSet`` path convention
     (mirrors ``_emitter_node_from_decl``'s own path-splitting in
-    ``pbg_superpowers.composite_generator``, and loom's
+    ``viva_superpowers.composite_generator``, and loom's
     ``convert.ts: declaredEmitPaths``). Returns ``[]`` when nothing is
     declared or ``decls`` is falsy/malformed, so callers can embed the
     result unconditionally.

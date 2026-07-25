@@ -6,8 +6,8 @@ goes through ``composite_runs`` — this module only deals with OS processes.
 
 This module ALSO hosts the vendored ``runs_meta`` read accessor
 (``RUNS_META_DDL`` + ``latest_run``), a byte-faithful copy of the canonical
-``pbg_superpowers/run_registry.py`` (which carries the same name). The
-dashboard venv has no ``pbg_superpowers``; the vendored ``lib/backfill_runs``
+``viva_superpowers/run_registry.py`` (which carries the same name). The
+dashboard venv has no ``viva_superpowers``; the vendored ``lib/backfill_runs``
 imports ``RUNS_META_DDL`` from here. These additions are kept identical to
 canonical (see tests/test_backfill_runs_mirror.py for the backfill drift
 guard).
@@ -25,7 +25,7 @@ from vivarium_workbench.lib import composite_runs as cr
 # Maximum simultaneous in-flight runs. POST returns 429 above this.
 CONCURRENCY_CAP = 4
 
-# --- vendored from pbg_superpowers/run_registry.py (RUNS_META_DDL + latest_run) ---
+# --- vendored from viva_superpowers/run_registry.py (RUNS_META_DDL + latest_run) ---
 # Minimal DDL for tests + first-time creation. Real DBs are migrated by the
 # dashboard's composite_runs connect()/_migrate_runs_meta which ALTERs in
 # nullable columns (incl. emitter_path, added in the dashboard phase).

@@ -12,7 +12,7 @@ They run the SAME in-process composite build the Composite Explorer uses
 entry via ``build_generator``, else a spec file parsed + ``substitute_parameters``-
 resolved, with a best-effort workspace ``build_core()`` threaded through for
 ``LabeledArray`` catalog resolution.  Emittable observables are reported via
-``pbg_superpowers.readout_validation.available_observables``.
+``viva_superpowers.readout_validation.available_observables``.
 
 Pure ``ws_root``-parameterised functions: NO ``import server`` (the stdlib
 ``vivarium_workbench.server`` keeps thin shims that delegate here, passing the
@@ -108,7 +108,7 @@ def build_composite_state_for_observables(ws_root: Path, ref: str) -> tuple[Any,
     apply_core_extensions: Any = None
     build_generator: Any = None
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY,
             build_generator as _build_generator,
             discover_generators,
@@ -374,7 +374,7 @@ def build_study_observable_check(ws_root: Path, slug: str) -> tuple[dict, int]:
 def observables_for_ref_payload(ws_root: Path, ref: str) -> dict:
     """Adapter for the SP4b linkage paths: ``ref -> {"leaves", "catalogs"}``.
 
-    The ``pbg_superpowers.linkage_index`` enrich callable wants the plain
+    The ``viva_superpowers.linkage_index`` enrich callable wants the plain
     ``{"leaves": [...], "catalogs": {...}}`` dict (it reads ``leaves`` to map a
     composite's emissions onto observable nodes).  This mirrors the shape the
     legacy ``server._linkage_index`` fed in via its ``_obs_for_ref`` wrapper —

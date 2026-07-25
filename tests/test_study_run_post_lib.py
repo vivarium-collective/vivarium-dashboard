@@ -322,7 +322,7 @@ def _install_fake_core(monkeypatch, pkg="fakepkg"):
 
 
 def _quiet_discover(monkeypatch):
-    import pbg_superpowers.composite_generator as cg
+    import viva_superpowers.composite_generator as cg
     monkeypatch.setattr(cg, "discover_generators", lambda: None)
     # keep registry truthy + ensure the test spec_id is absent (entry None).
     from conftest import register_generator

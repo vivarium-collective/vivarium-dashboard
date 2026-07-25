@@ -1,14 +1,14 @@
 """Drift guard: vendored vivarium_workbench/lib/viz_freshness.py must stay
-identical to the canonical pbg_superpowers/viz_freshness.py.
+identical to the canonical viva_superpowers/viz_freshness.py.
 
-Uses the file-read approach (pbg_superpowers is not installed in the dashboard
+Uses the file-read approach (viva_superpowers is not installed in the dashboard
 venv), extracting each function's source by scanning for `def <name>` blocks.
 """
 import re
 import pytest
 from pathlib import Path
 
-CANONICAL = Path(__file__).parent.parent.parent / "pbg-superpowers" / "pbg_superpowers" / "viz_freshness.py"
+CANONICAL = Path(__file__).parent.parent.parent / "pbg-superpowers" / "viva_superpowers" / "viz_freshness.py"
 VENDORED = Path(__file__).parent.parent / "vivarium_workbench" / "lib" / "viz_freshness.py"
 
 FUNCS = ["stamp_meta", "read_meta", "chart_freshness", "manifest_diff", "_meta_path", "_hash"]
@@ -74,7 +74,7 @@ def test_vendored_viz_freshness_matches_canonical():
         assert name in canon_funcs, f"{name} missing from canonical"
         assert name in vend_funcs, f"{name} missing from vendored"
         assert canon_funcs[name] == vend_funcs[name], (
-            f"DRIFT in {name}: vendored copy differs from pbg_superpowers canonical"
+            f"DRIFT in {name}: vendored copy differs from viva_superpowers canonical"
         )
 
 

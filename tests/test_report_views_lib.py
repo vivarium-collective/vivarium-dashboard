@@ -126,7 +126,7 @@ def test_build_linkage_index_investigation_param(tmp_ws):
     from vivarium_workbench.lib.report_views import build_linkage_index
     body, status = build_linkage_index(tmp_ws, investigation="the-inv")
     assert status == 200
-    # May return nodes/edges or ac_matrix depending on pbg_superpowers version
+    # May return nodes/edges or ac_matrix depending on viva_superpowers version
     assert isinstance(body, dict)
 
 
@@ -147,7 +147,7 @@ def test_build_linkage_index_observable_registry_no_fn(tmp_ws):
 
 
 def test_build_linkage_index_observable_registry_with_fn(tmp_ws):
-    """With an injectable fn, observable_registry path calls pbg_superpowers."""
+    """With an injectable fn, observable_registry path calls viva_superpowers."""
     from vivarium_workbench.lib.report_views import build_linkage_index
 
     def _stub_obs(ws_root, ref):

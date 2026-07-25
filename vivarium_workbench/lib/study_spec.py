@@ -5,7 +5,7 @@ the per-study loader that resolves a study's spec, **merges the runs recorded in
 ``studies/<slug>/runs.db``** on top of any ``spec.runs`` persisted in
 study.yaml, **reconciles ``simulation_set``** with what actually ran, and
 **auto-discovers pre-rendered viz HTML**.  Several routes need exactly this
-merged spec — most importantly rigor (``pbg_superpowers.rigor`` reads
+merged spec — most importantly rigor (``viva_superpowers.rigor`` reads
 ``spec["runs"]`` for the replication + run-persistence dimensions), and
 ``GET /api/study/{slug}`` (Phase A, Batch 4).
 
@@ -359,7 +359,7 @@ def read_runs_db_for_study(ws_root: Path, name: str) -> list[dict]:
     # older generation than the workspace's current one is flagged so the
     # report/Runs tab can mark it instead of silently mixing it in.
     try:
-        from pbg_superpowers import generation as _gen
+        from viva_superpowers import generation as _gen
         _cur_gen = _gen.current_generation_id(ws_root)
     except Exception:  # noqa: BLE001
         _cur_gen = None
@@ -580,7 +580,7 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         # (open / addressed / dismissed).  Pure Python in pbg-superpowers —
         # no AI dependency.  Best-effort; empty result on any error.
         try:
-            from pbg_superpowers.feedback_tracking import study_feedback_tracked
+            from viva_superpowers.feedback_tracking import study_feedback_tracked
             ft = study_feedback_tracked(ws_root, name)
             # Always attach so the SPA can render the panel (empty → no items).
             spec["feedback_tracked"] = ft
@@ -592,7 +592,7 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         # Pure Python in pbg-superpowers (the dashboard never computes the
         # action — it renders this + applies via /api/feedback-apply-action).
         try:
-            from pbg_superpowers.feedback_actions import study_feedback_actions
+            from viva_superpowers.feedback_actions import study_feedback_actions
             spec["feedback_actions"] = study_feedback_actions(ws_root, name)
         except Exception:  # noqa: BLE001
             pass
@@ -602,7 +602,7 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         # flag any stored axis (or legacy planning headline) that contradicts
         # execution state. Stops the "planning status after execution" drift.
         try:
-            from pbg_superpowers import study_status as _ss
+            from viva_superpowers import study_status as _ss
             runs = spec.get("runs") or []
             spec["derived_status"] = _ss.derive_status(spec, runs)
             diss = _ss.status_disagreements(spec, runs)
@@ -628,7 +628,7 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
             if isinstance(persisted_ge, dict) and persisted_ge.get("result"):
                 spec["computed_gate_verdict"] = dict(persisted_ge)
             else:
-                from pbg_superpowers.study_verdict import roll_up_verdict
+                from viva_superpowers.study_verdict import roll_up_verdict
                 spec["computed_gate_verdict"] = roll_up_verdict(spec)
         except Exception:  # noqa: BLE001
             pass
@@ -640,7 +640,7 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         # function in pbg-superpowers; render-only, never modifies study.yaml.
         # Defensive: degrade silently if pbg-superpowers isn't importable.
         try:
-            from pbg_superpowers.study_verdict import preregistration_status
+            from viva_superpowers.study_verdict import preregistration_status
             ps = preregistration_status(spec)
             if isinstance(ps, dict) and ps.get("preregistered"):
                 spec["preregistration_status"] = ps
@@ -661,10 +661,10 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
 
         # Wave 3b #25 — attach the derived lifecycle floor to each finding (the
         # report-data path so the SPA renders the chip without a JS recompute).
-        # Defensive: a missing pbg_superpowers.study_verdict.lifecycle_floor
+        # Defensive: a missing viva_superpowers.study_verdict.lifecycle_floor
         # leaves findings untouched (the chip then shows only the authored state).
         try:
-            from pbg_superpowers.study_verdict import lifecycle_floor as _lf
+            from viva_superpowers.study_verdict import lifecycle_floor as _lf
             for _f in (spec.get("findings") or []):
                 if not isinstance(_f, dict) or "_lifecycle_floor" in _f:
                     continue

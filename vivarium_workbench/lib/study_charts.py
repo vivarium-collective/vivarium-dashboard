@@ -340,12 +340,12 @@ def discover_static_study_charts(
         return []
     # Feedback-friction (opt-in): hide charts produced by a superseded
     # (non-canonical, unpinned) run so a report shows only current figures.
-    # Guarded import — empty skip-set (no hiding) on older pbg_superpowers.
+    # Guarded import — empty skip-set (no hiding) on older viva_superpowers.
     # Default OFF; charts_dir's parent is the study dir.
     skip: set[str] = set()
     if hide_superseded:
         try:
-            from pbg_superpowers import chart_store
+            from viva_superpowers import chart_store
             skip = chart_store.superseded_chart_names(charts_dir.parent)
         except Exception:
             skip = set()
@@ -1420,7 +1420,7 @@ def _render_perf_sweep_charts(conn) -> list[dict]:
 def latest_run_row(runs_db) -> dict | None:
     """Newest runs_meta row as {run_id, completed_at, generation_id, emitter_path},
     tolerating older DBs missing the optional columns. Mirrors
-    pbg_superpowers.run_registry.latest_run (not importable here)."""
+    viva_superpowers.run_registry.latest_run (not importable here)."""
     runs_db = Path(runs_db)
     if not runs_db.is_file():
         return None

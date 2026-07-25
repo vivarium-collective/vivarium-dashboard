@@ -109,7 +109,7 @@ def test_lineage_prefix_normalization_bare_readouts_match():
     readout matches the real prefixed leaf — WITHOUT inventing arbitrary leaves
     (a genuinely-absent path still flags ``not_in_structure``).
     """
-    from pbg_superpowers.readout_validation import validate_readouts
+    from viva_superpowers.readout_validation import validate_readouts
 
     available = {
         "leaves": ["agents.0.listeners.x", "agents.0.unique.y"],
@@ -156,9 +156,9 @@ def _v2e_observables_or_skip():
     if not (_V2E_INVEST / "workspace.yaml").is_file():
         pytest.skip("v2e-invest not present")
     try:
-        from pbg_superpowers.readout_validation import available_observables  # noqa: F401
+        from viva_superpowers.readout_validation import available_observables  # noqa: F401
     except Exception:
-        pytest.skip("pbg_superpowers.readout_validation unavailable")
+        pytest.skip("viva_superpowers.readout_validation unavailable")
     payload, code = build_observables(_V2E_INVEST, _V2E_BASELINE)
     if code != 200 or not payload.get("leaves"):
         pytest.skip(f"v2ecoli baseline not buildable in this interpreter: {code} {payload.get('error')}")
@@ -195,7 +195,7 @@ def test_v2e_invest_golden_real_leaf_ok_phantom_flagged():
     still flagged (`not_in_structure`) — the never-fabricate value preserved.
     """
     payload = _v2e_observables_or_skip()
-    from pbg_superpowers.readout_validation import validate_readouts
+    from viva_superpowers.readout_validation import validate_readouts
     # the real emitted form is prefixed (lineage); the study authors it bare
     assert any(l.endswith("listeners.mass.cell_mass") for l in payload["leaves"])
     assert "listeners.mass.cell_mass" not in payload["leaves"]  # bare form NOT raw-emitted

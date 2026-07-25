@@ -47,11 +47,11 @@ def _sync_parent_investigation(ws_root: Any, study_dir: Any) -> None:
     acceptance so the verdict on disk tracks the member study's new outcome.
 
     No-op when the study has no owning investigation, or when the installed
-    pbg_superpowers predates ``sync_investigation``. Never raises — a record
+    viva_superpowers predates ``sync_investigation``. Never raises — a record
     error must not fail a successful sync.
     """
     try:
-        from pbg_superpowers import study_outcomes
+        from viva_superpowers import study_outcomes
         from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
         sync_investigation = getattr(study_outcomes, "sync_investigation", None)
@@ -229,7 +229,7 @@ def feedback_apply_action(ws_root: Path, body: dict) -> "tuple[dict, int]":
     if not item_id:
         return {"error": "item_id required"}, 400
     try:
-        from pbg_superpowers.feedback_actions import apply_feedback_action
+        from viva_superpowers.feedback_actions import apply_feedback_action
     except ImportError as e:
         return {"error": f"feedback-apply requires pbg-superpowers: {e}"}, 500
     try:
@@ -373,7 +373,7 @@ def study_sync_runs(ws_root: Path, body: dict) -> "tuple[dict, int]":
 
     Body: ``{study: <slug>}``
     """
-    from pbg_superpowers import study_outcomes
+    from viva_superpowers import study_outcomes
     from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
     slug = (body or {}).get("study")

@@ -3,7 +3,7 @@
 For each study in an investigation that declares ``comparative_visualizations``,
 this runs the baseline + every comparison variant those overlays reference (via
 the dashboard run API), records every run into the workspace's *current*
-coordinated generation (``pbg_superpowers.generation`` — the same core the run
+coordinated generation (``viva_superpowers.generation`` — the same core the run
 path stamps and the report's banner reads), then renders the comparative
 figures.
 
@@ -14,7 +14,7 @@ time, not written after.
 Moved out of the v2ecoli workspace ``scripts/`` (it has no biology/workspace
 coupling) so it's maintained against the run API + ``comparative_viz`` it
 depends on. Exposed as ``vivarium-dashboard prepare-investigation`` and, for
-the framework, ``pbg_superpowers`` is aware of it.
+the framework, ``viva_superpowers`` is aware of it.
 
 Requires a running dashboard for the workspace (the run engine); the URL is
 auto-detected from ``<workspace>/.pbg/dashboard/dashboard-info``.
@@ -169,7 +169,7 @@ def prepare_investigation(workspace: Path | str, *,
     ``study``: prepare only this study (reuses the current generation).
     ``render_only``: skip sims; just re-render comparatives.
     """
-    from pbg_superpowers import generation as _gen
+    from viva_superpowers import generation as _gen
 
     ws = Path(workspace)
     inv = investigation

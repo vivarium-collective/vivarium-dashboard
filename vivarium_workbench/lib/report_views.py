@@ -123,12 +123,12 @@ def _enrich_findings_with_weight(study_spec: dict) -> list:
     """Attach evidential weight to each finding.
 
     Mirrors ``server._enrich_findings_with_weight``.  Tolerant: if
-    ``pbg_superpowers.rigor.finding_evidential_weight`` is unavailable the
+    ``viva_superpowers.rigor.finding_evidential_weight`` is unavailable the
     findings pass through unchanged.
     """
     findings = study_spec.get("findings") or []
     try:
-        from pbg_superpowers.rigor import finding_evidential_weight
+        from viva_superpowers.rigor import finding_evidential_weight
     except Exception:  # noqa: BLE001
         return findings
     out = []
@@ -296,7 +296,7 @@ def _linkage_cached_index(ws_root: Path) -> Optional[dict]:
     if hit is not None and now - hit[0] < _LINKAGE_TTL:
         return hit[1]  # type: ignore[no-any-return]
     try:
-        from pbg_superpowers.linkage_index import build_index
+        from viva_superpowers.linkage_index import build_index
         index = build_index(ws_root)
     except Exception:  # noqa: BLE001
         return None
@@ -311,14 +311,14 @@ def _linkage_cached_index(ws_root: Path) -> Optional[dict]:
 def build_report_lint(ws_root: Path) -> tuple[dict, int]:
     """GET /api/report-lint builder.
 
-    Runs the deterministic linter (``pbg_superpowers.report_linter``) over
+    Runs the deterministic linter (``viva_superpowers.report_linter``) over
     the workspace and returns ``(payload_dict, status_code)``.  Always 200 —
     tolerant on linter absence or workspace scan failure.
     """
     ws_root = Path(ws_root)
     try:
-        from pbg_superpowers.report_linter import lint_workspace_report
-    except Exception:  # noqa: BLE001 — older pbg_superpowers lacks the linter
+        from viva_superpowers.report_linter import lint_workspace_report
+    except Exception:  # noqa: BLE001 — older viva_superpowers lacks the linter
         return {"findings": []}, 200
     try:
         raw = lint_workspace_report(ws_root)
@@ -361,7 +361,7 @@ def build_linkage_index(
     """
     ws_root = Path(ws_root)
     try:
-        from pbg_superpowers import linkage_index as _li
+        from viva_superpowers import linkage_index as _li
     except Exception:  # noqa: BLE001
         return {"nodes": [], "edges": []}, 200
 
@@ -416,7 +416,7 @@ def build_needs_attention(
 ) -> tuple[dict, int]:
     """GET /api/needs-attention builder.
 
-    Runs ``pbg_superpowers.needs_attention.scan_investigation`` and returns
+    Runs ``viva_superpowers.needs_attention.scan_investigation`` and returns
     ``(payload_dict, 200)``.  Always 200 — tolerant on absence / scan failure.
     """
     ws_root = Path(ws_root)
@@ -430,7 +430,7 @@ def build_needs_attention(
         },
     }
     try:
-        from pbg_superpowers import needs_attention as _na
+        from viva_superpowers import needs_attention as _na
     except Exception:  # noqa: BLE001
         return _empty, 200
     try:
@@ -662,8 +662,8 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
 
     computed_acceptance: Optional[dict] = None
     try:
-        from pbg_superpowers.investigation_status import roll_up_acceptance
-        from pbg_superpowers import study_io as _sio
+        from viva_superpowers.investigation_status import roll_up_acceptance
+        from viva_superpowers import study_io as _sio
         studies_by_name: dict = {}
         for _sd in wp.iter_study_dirs():
             _syp = _sd / "study.yaml"

@@ -309,7 +309,7 @@ def _spec_var(spec_id: str) -> str:
 def _load_inspect_code(package: str, spec_id: str, var: str) -> str:
     comp_rel = f"{package}/composites/{spec_id}.composite.yaml"
     return (
-        "from pbg_superpowers.composite_spec import load_spec\n"
+        "from viva_superpowers.composite_spec import load_spec\n"
         f"{var} = load_spec(REPO / {comp_rel!r})\n"
         f"describe_spec({var})"
     )
@@ -411,7 +411,7 @@ def _run_code(slug: str, studies_rel: str, recipes: list[dict],
             )
     else:
         lines.append("        # Generic process-bigraph protocol (no workspace runner detected):")
-        lines.append("        from pbg_superpowers.composite_spec import build_composite_from_spec")
+        lines.append("        from viva_superpowers.composite_spec import build_composite_from_spec")
         for r in recipes:
             sl = _py_ident(r["sim"])
             var = spec_vars[r["spec_id"]]

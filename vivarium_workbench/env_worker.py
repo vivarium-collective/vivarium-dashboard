@@ -13,7 +13,7 @@ in later slices, what the workspace venv already has). It never imports
 package (and, for the latter two, calls ``build_core``) **in this process**, so
 the imports the HTTP process must not do live here instead. The remaining
 ``build_core``-backed methods (``resolve_composite_state``, ``observables`` …)
-land in later slices. These import pbg_superpowers + the workspace package (both
+land in later slices. These import viva_superpowers + the workspace package (both
 workspace-venv deps, spec §4); everything else is stdlib.
 
 Invocation (spec §4/§5)::
@@ -91,7 +91,7 @@ _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
 
 _FRAMEWORK_PKGS = {
     "process_bigraph", "bigraph_schema", "bigraph_viz",
-    "pbg_superpowers", "vivarium_workbench", "pbg_emitters",
+    "viva_superpowers", "vivarium_workbench", "pbg_emitters",
 }
 
 
@@ -154,7 +154,7 @@ def _registry_catalog() -> dict:
     import process_bigraph as _pb
     EMITTER_CLS = getattr(_pb, "Emitter", None)
     try:
-        from pbg_superpowers.visualization import Visualization as VISUALIZATION_CLS
+        from viva_superpowers.visualization import Visualization as VISUALIZATION_CLS
     except ImportError:
         VISUALIZATION_CLS = None
 
@@ -246,7 +246,7 @@ def _list_visualizations() -> dict:
 
     A faithful in-worker port of ``visualization_classes.list_visualization_classes``
     — build the workspace core, snapshot its ``link_registry``, inject the default
-    ``pbg_superpowers`` viz classes + any workspace-local ``<pkg>.visualizations``
+    ``viva_superpowers`` viz classes + any workspace-local ``<pkg>.visualizations``
     submodules, filter to ``Visualization`` subclasses, and append the v2ecoli
     ``Analysis`` steps. Returns the JSON ``{"classes": [...]}`` (the live classes
     can't cross the socket, so this introspection runs where they live). Tolerant:
@@ -273,7 +273,7 @@ def _list_visualizations() -> dict:
 
     # Inject the standard pbg-superpowers visualization classes.
     try:
-        from pbg_superpowers.visualizations import (
+        from viva_superpowers.visualizations import (
             Distribution, Heatmap, ParamVsObservable, PhaseSpace, TimeSeriesPlot,
         )
         for cls in [TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap]:
@@ -286,7 +286,7 @@ def _list_visualizations() -> dict:
         import importlib as _importlib
         import pkgutil as _pkgutil
 
-        from pbg_superpowers.visualization import Visualization as _VizBase
+        from viva_superpowers.visualization import Visualization as _VizBase
         _pkg_name = ws_data.get("package_path") or (
             "pbg_" + str(ws_data.get("name", "")).replace("-", "_"))
         viz_pkg = _importlib.import_module(f"{_pkg_name}.visualizations")
@@ -306,7 +306,7 @@ def _list_visualizations() -> dict:
         pass
 
     try:
-        from pbg_superpowers.visualization import Visualization as _VB
+        from viva_superpowers.visualization import Visualization as _VB
     except ImportError:
         _VB = None
 
@@ -731,7 +731,7 @@ def _resolve_composite_state(params: dict) -> dict:
     _import_workspace_package(_workspace)
     out: dict = {"__not_registered__": True}
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, build_generator, discover_generators, emitter_defaults,
         )
         if not _REGISTRY:
@@ -828,7 +828,7 @@ def _obs_available(params: dict) -> dict:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
     try:
-        from pbg_superpowers.readout_validation import available_observables
+        from viva_superpowers.readout_validation import available_observables
     except Exception as e:  # noqa: BLE001
         return {"__no_validator__": str(e)}
 
@@ -840,7 +840,7 @@ def _obs_available(params: dict) -> dict:
         apply_core_extensions = None
         build_generator = None
         try:
-            from pbg_superpowers.composite_generator import (
+            from viva_superpowers.composite_generator import (
                 _REGISTRY,
                 apply_core_extensions as _ace,
                 build_generator as _bg,
@@ -903,7 +903,7 @@ def _study_readout_check(params: dict) -> dict:
     if any(k.startswith("__") for k in avail):
         return avail  # not_registered / build_error / no_validator / introspect_error
     try:
-        from pbg_superpowers.readout_validation import validate_readouts
+        from viva_superpowers.readout_validation import validate_readouts
     except Exception as e:  # noqa: BLE001
         return {"__no_validator__": str(e)}
     try:
@@ -917,7 +917,7 @@ def _study_readout_check(params: dict) -> dict:
 def _discover_composites() -> dict:
     """Generator composite entries for this environment (spec §11).
 
-    Imports the workspace package + runs pbg_superpowers generator discovery in
+    Imports the workspace package + runs viva_superpowers generator discovery in
     THIS process, returning the raw ``{gid: entry}`` **generator** half as JSON
     (the workbench keeps its pure FS/YAML spec scan + dedup and merges these in).
     So the HTTP process no longer imports/executes ``@composite_generator``
@@ -928,7 +928,7 @@ def _discover_composites() -> dict:
 
     reg_keys: list = []
     try:
-        from pbg_superpowers.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
         if not _REGISTRY:
             try:
                 discover_generators()
@@ -940,7 +940,7 @@ def _discover_composites() -> dict:
 
     out: dict = {}
     try:
-        from pbg_superpowers.composite_discovery import discover_all
+        from viva_superpowers.composite_discovery import discover_all
         merged = discover_all() or {}
     except Exception:  # noqa: BLE001 — no generator discovery available → spec-only
         merged = {}
@@ -1022,7 +1022,7 @@ def _validate_generated_visualization(params: dict) -> dict:
                         pass
                 if not found:
                     try:
-                        from pbg_superpowers.visualization import Visualization as _VizBase
+                        from viva_superpowers.visualization import Visualization as _VizBase
                         if issubclass(attr_val, _VizBase) and attr_val is not _VizBase:
                             found = True
                             break
@@ -1120,7 +1120,7 @@ _VIZ_CORE = None  # (core, registry) once built
 
 def _build_viz_core():
     """Build the workspace core + register every Visualization class onto it
-    (pbg_superpowers defaults + the whole Visualization subclass tree), cached per
+    (viva_superpowers defaults + the whole Visualization subclass tree), cached per
     worker. Faithful port of study_run_post.render_study_visualizations' in-process
     core+registry build. Returns ``(core, registry_dict)``."""
     global _VIZ_CORE
@@ -1134,7 +1134,7 @@ def _build_viz_core():
     registry = dict(core.link_registry)
 
     try:
-        from pbg_superpowers.visualizations import (
+        from viva_superpowers.visualizations import (
             Distribution, Heatmap, ParamVsObservable, PhaseSpace, TimeSeriesPlot,
         )
         for cls in (TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap):
@@ -1144,8 +1144,8 @@ def _build_viz_core():
         pass
 
     try:
-        from pbg_superpowers.composite_generator import discover_generators
-        from pbg_superpowers.visualization import Visualization
+        from viva_superpowers.composite_generator import discover_generators
+        from viva_superpowers.visualization import Visualization
         discover_generators()  # force-load packages so @Visualization classes appear
 
         def _walk(cls):
@@ -1198,7 +1198,7 @@ def _render_viz_doc(params: dict) -> dict:
     return {"html": html if isinstance(html, str) else ""}
 
 
-# Synthetic demo states for the 5 built-in pbg_superpowers Visualization classes
+# Synthetic demo states for the 5 built-in viva_superpowers Visualization classes
 # (byte-identical to lib.viz_core.BUILTIN_VIZ_DEMOS). Used when previewing a viz
 # without real run data, or as a fallback when investigation data is incompatible.
 _BUILTIN_VIZ_DEMOS: dict = {
@@ -1276,7 +1276,7 @@ def _viz_preview(params: dict) -> dict:
     inv_inputs_store = p.get("investigation_inputs_store")
     notes = list(p.get("note_prefix") or [])
 
-    # Resolve the class off the cached viz core (pbg_superpowers builtins + the
+    # Resolve the class off the cached viz core (viva_superpowers builtins + the
     # workspace Visualization subclass tree). Presence in the registry == registered.
     core, registry = _build_viz_core()
     raw_key = address.split(":", 1)[1] if ":" in address else address
@@ -1457,7 +1457,7 @@ def _reexport_map(params: dict) -> dict:
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     framework = {"process_bigraph", "bigraph_schema", "bigraph_viz",
-                 "pbg_superpowers", "vivarium_workbench"}
+                 "viva_superpowers", "vivarium_workbench"}
     reexports: dict = {}
     for pkg in sorted(include):
         try:
@@ -1713,7 +1713,7 @@ def _list_generators() -> dict:
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
-    from pbg_superpowers.composite_generator import _REGISTRY, discover_generators
+    from viva_superpowers.composite_generator import _REGISTRY, discover_generators
     try:
         if not _REGISTRY:
             discover_generators()

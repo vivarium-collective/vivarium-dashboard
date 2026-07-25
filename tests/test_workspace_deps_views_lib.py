@@ -95,11 +95,11 @@ class TestBuildWorkspaces:
 
         ws = self._make_ws(tmp_path, "test-ws")
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.list_workspaces",
+            "viva_superpowers.workspace_catalog.list_workspaces",
             lambda: [],
         )
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.find_entry",
+            "viva_superpowers.workspace_catalog.find_entry",
             lambda path: None,
         )
         result = wdv.build_workspaces(ws)
@@ -120,11 +120,11 @@ class TestBuildWorkspaces:
             raise RuntimeError("catalog exploded")
 
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.list_workspaces",
+            "viva_superpowers.workspace_catalog.list_workspaces",
             _raise,
         )
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.find_entry",
+            "viva_superpowers.workspace_catalog.find_entry",
             lambda path: None,
         )
         result = wdv.build_workspaces(ws)
@@ -145,7 +145,7 @@ class TestBuildWorkspaces:
 
         other_path = str(other.resolve())
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.list_workspaces",
+            "viva_superpowers.workspace_catalog.list_workspaces",
             lambda: [{"name": "other-ws", "path": other_path}],
         )
         alive_pid = os.getpid()  # current process is always alive
@@ -156,7 +156,7 @@ class TestBuildWorkspaces:
             return None
 
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.find_entry",
+            "viva_superpowers.workspace_catalog.find_entry",
             _find_entry,
         )
         result = wdv.build_workspaces(ws)
@@ -183,11 +183,11 @@ class TestBuildWorkspaces:
         dead_pid = proc.pid
 
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.list_workspaces",
+            "viva_superpowers.workspace_catalog.list_workspaces",
             lambda: [{"name": "stale-ws", "path": other_path}],
         )
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.find_entry",
+            "viva_superpowers.workspace_catalog.find_entry",
             lambda path: {"pid": dead_pid, "url": "http://127.0.0.1:9999"}
             if path == other_path else None,
         )
@@ -204,11 +204,11 @@ class TestBuildWorkspaces:
         ghost_path = str(tmp_path / "ghost" / "workspace")
 
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.list_workspaces",
+            "viva_superpowers.workspace_catalog.list_workspaces",
             lambda: [{"name": "ghost", "path": ghost_path}],
         )
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.find_entry",
+            "viva_superpowers.workspace_catalog.find_entry",
             lambda path: None,
         )
         result = wdv.build_workspaces(ws)
@@ -230,14 +230,14 @@ class TestBuildWorkspaces:
         ghost_path = str(tmp_path / "ghost-ws")  # does not exist
 
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.list_workspaces",
+            "viva_superpowers.workspace_catalog.list_workspaces",
             lambda: [
                 {"name": "stopped-ws", "path": stopped_path},
                 {"name": "ghost-ws", "path": ghost_path},
             ],
         )
         monkeypatch.setattr(
-            "pbg_superpowers.workspace_catalog.find_entry",
+            "viva_superpowers.workspace_catalog.find_entry",
             lambda path: None,
         )
         result = wdv.build_workspaces(ws)
