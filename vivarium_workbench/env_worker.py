@@ -602,6 +602,51 @@ def _attach_process_docs_method(params: dict) -> dict:
     return {"document": _attach_process_docs((params or {}).get("document"))}
 
 
+def _render_port_schemas(doc):
+    """Serialize each process/step port TYPE to its bigraph type-name form.
+
+    A process may declare a port type as a bigraph type OBJECT (e.g. division's
+    ``inputs()`` returns ``InPlaceDict()``); left as-is it JSON-serializes to a
+    Python class repr (``InPlaceDict(_default=None, _value=Node(_default=None))``).
+    Running each ``_inputs``/``_outputs`` value through ``render`` turns a type
+    object into its registered NAME (``inplace_dict``, ``float``, ``overwrite[…]``)
+    — the same clean form processes that authored string types already emit.
+    Best-effort: an older bigraph-schema or an unrenderable value is left alone.
+    """
+    try:
+        from bigraph_schema.methods.serialize import render
+        from bigraph_schema.schema import Node
+    except Exception:  # noqa: BLE001
+        return
+
+    def conv(v):
+        if isinstance(v, Node):
+            try:
+                return render(v)
+            except Exception:  # noqa: BLE001
+                return str(v)
+        if isinstance(v, dict):
+            return {k: conv(x) for k, x in v.items()}
+        return v
+
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("_type") in ("process", "step"):
+                for key in ("_inputs", "_outputs"):
+                    if isinstance(node.get(key), dict):
+                        node[key] = {p: conv(t) for p, t in node[key].items()}
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    try:
+        walk(doc)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _resolve_composite_state(params: dict) -> dict:
     """Build a ``@composite_generator``'s state (spec §11), summarized +
     doc-decorated. A faithful in-worker port of
@@ -634,6 +679,7 @@ def _resolve_composite_state(params: dict) -> dict:
                 doc = build_generator(entry)
                 doc = _summarize_large_values(doc)
                 _attach_process_docs(doc)
+                _render_port_schemas(doc)
                 out = {"state": doc, "module": getattr(entry, "module", None),
                        "emitters": declared_emitters}
             except Exception as e:  # noqa: BLE001
