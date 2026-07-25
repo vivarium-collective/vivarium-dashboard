@@ -188,10 +188,10 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
             core.register_link('SQLiteEmitter', SQLiteEmitter)
             composite = Composite({{'state': __import__('json').loads({json.dumps(json.dumps(state, default=_json_default))})}}, core=core)
             composite.run({steps})
-            # Gather rendered viz HTML, if pbg_superpowers is importable.
+            # Gather rendered viz HTML, if viva_superpowers is importable.
             viz_html = {{}}
             try:
-                from pbg_superpowers.visualization import render_results
+                from viva_superpowers.visualization import render_results
                 rendered = render_results(composite)
                 for path_tuple, payload in rendered.items():
                     key = '.'.join(str(p) for p in path_tuple)

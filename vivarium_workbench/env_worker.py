@@ -13,7 +13,7 @@ in later slices, what the workspace venv already has). It never imports
 package (and, for the latter two, calls ``build_core``) **in this process**, so
 the imports the HTTP process must not do live here instead. The remaining
 ``build_core``-backed methods (``resolve_composite_state``, ``observables`` …)
-land in later slices. These import pbg_superpowers + the workspace package (both
+land in later slices. These import viva_superpowers + the workspace package (both
 workspace-venv deps, spec §4); everything else is stdlib.
 
 Invocation (spec §4/§5)::
@@ -91,7 +91,7 @@ _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
 
 _FRAMEWORK_PKGS = {
     "process_bigraph", "bigraph_schema", "bigraph_viz",
-    "pbg_superpowers", "vivarium_workbench", "pbg_emitters",
+    "viva_superpowers", "vivarium_workbench", "pbg_emitters",
 }
 
 
@@ -154,7 +154,7 @@ def _registry_catalog() -> dict:
     import process_bigraph as _pb
     EMITTER_CLS = getattr(_pb, "Emitter", None)
     try:
-        from pbg_superpowers.visualization import Visualization as VISUALIZATION_CLS
+        from viva_superpowers.visualization import Visualization as VISUALIZATION_CLS
     except ImportError:
         VISUALIZATION_CLS = None
 
@@ -246,7 +246,7 @@ def _list_visualizations() -> dict:
 
     A faithful in-worker port of ``visualization_classes.list_visualization_classes``
     — build the workspace core, snapshot its ``link_registry``, inject the default
-    ``pbg_superpowers`` viz classes + any workspace-local ``<pkg>.visualizations``
+    ``viva_superpowers`` viz classes + any workspace-local ``<pkg>.visualizations``
     submodules, filter to ``Visualization`` subclasses, and append the v2ecoli
     ``Analysis`` steps. Returns the JSON ``{"classes": [...]}`` (the live classes
     can't cross the socket, so this introspection runs where they live). Tolerant:
@@ -273,7 +273,7 @@ def _list_visualizations() -> dict:
 
     # Inject the standard pbg-superpowers visualization classes.
     try:
-        from pbg_superpowers.visualizations import (
+        from viva_superpowers.visualizations import (
             Distribution, Heatmap, ParamVsObservable, PhaseSpace, TimeSeriesPlot,
         )
         for cls in [TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap]:
@@ -286,7 +286,7 @@ def _list_visualizations() -> dict:
         import importlib as _importlib
         import pkgutil as _pkgutil
 
-        from pbg_superpowers.visualization import Visualization as _VizBase
+        from viva_superpowers.visualization import Visualization as _VizBase
         _pkg_name = ws_data.get("package_path") or (
             "pbg_" + str(ws_data.get("name", "")).replace("-", "_"))
         viz_pkg = _importlib.import_module(f"{_pkg_name}.visualizations")
@@ -306,7 +306,7 @@ def _list_visualizations() -> dict:
         pass
 
     try:
-        from pbg_superpowers.visualization import Visualization as _VB
+        from viva_superpowers.visualization import Visualization as _VB
     except ImportError:
         _VB = None
 
@@ -413,6 +413,99 @@ def _pd_doc_for_address(address: str) -> str:
     return _pd_describe_class(cls) if cls is not None else ""
 
 
+def _class_for_address(address: str, core=None):
+    """Resolve a process address to its class — dotted OR bare registry name.
+
+    ``_pd_class_for_address`` only handles a dotted ``local:pkg.mod.Cls`` address
+    (it imports the module). A bare registry-name address (``local:EcoliWCM``,
+    the ``register_link`` convention) has no importable path, so it must be
+    resolved through the composite's own ``core.link_registry``. ``core`` is the
+    one built from the generator's ``core_extensions`` (see
+    ``_resolve_composite_state``); ``None`` when unavailable. All failures → None.
+    """
+    cls = _pd_class_for_address(address)
+    if cls is not None:
+        return cls
+    if core is None or not isinstance(address, str):
+        return None
+    name = address.split(":", 1)[1] if ":" in address else address
+    if not name or "." in name:
+        return None  # dotted already handled above; bare name only here
+    reg = getattr(core, "link_registry", None)
+    try:
+        if isinstance(reg, dict):
+            return reg.get(name)
+        if reg is not None and hasattr(reg, "get"):
+            return reg.get(name)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _is_composite_process_class(cls) -> bool:
+    """True when ``cls`` is a "Composite Process" — a process whose inner model
+    is itself a bigraph ``Composite`` the loom can drill into. Two signals:
+    the class IS a ``Composite`` subclass, or it declares the ``inner_composite``
+    convention method (a wrapper ``Process`` holding an inner composite, e.g.
+    ``EcoliWCM``). Cheap: class introspection only, no instantiation."""
+    if cls is None or not isinstance(cls, type):
+        return False
+    try:
+        from process_bigraph import Composite
+        if issubclass(cls, Composite):
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return hasattr(cls, "inner_composite")
+
+
+def _inner_composite_of(inst):
+    """The inner ``Composite`` a live process instance wraps, or ``None``.
+
+    Mirror of ``_is_composite_process_class`` on the instance side: the instance
+    IS a ``Composite``, or exposes ``inner_composite()`` (builds it lazily —
+    e.g. ``EcoliWCM``), or holds one as an attribute. Used to drill one level."""
+    if inst is None:
+        return None
+    try:
+        from process_bigraph import Composite
+    except Exception:  # noqa: BLE001
+        return None
+    if isinstance(inst, Composite):
+        return inst
+    fn = getattr(inst, "inner_composite", None)
+    if callable(fn):
+        try:
+            got = fn()
+        except Exception:  # noqa: BLE001
+            return None
+        return got if isinstance(got, Composite) else None
+    try:
+        for v in vars(inst).values():
+            if isinstance(v, Composite):
+                return v
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+def _nav_state(state_tree, segs):
+    """Navigate a composite ``state`` tree by a list of key segments (the loom
+    node ``path``). Tolerates one leading ``{'state': ...}`` wrapper per level
+    (build_generator emits it; a live ``Composite.state`` does not), matching
+    ``convert.ts``'s ``state?.state ?? state`` unwrap. Returns the node or None."""
+    cur = state_tree
+    for s in segs:
+        if not isinstance(cur, dict):
+            return None
+        if s not in cur and isinstance(cur.get("state"), dict):
+            cur = cur["state"]
+        if not isinstance(cur, dict) or s not in cur:
+            return None
+        cur = cur[s]
+    return cur
+
+
 def _pd_json_sanitize(obj):
     """Stdlib-only JSON-safety pass for the small structures we attach here
     (``config_schema``): drop non-finite floats, stringify anything not
@@ -461,14 +554,31 @@ def _pd_config_sanitize(obj, depth=0):
         return obj if len(obj) <= 200 else obj[:197] + "…"
     if callable(obj):
         return f"<fn {getattr(obj, '__name__', type(obj).__name__)}>"
+    # pint Quantity → split magnitude (the VALUE) from unit (the TYPE). Must run
+    # BEFORE the numpy-shape branch: a scalar Quantity is numpy-backed, so it has
+    # a `.shape` and would otherwise summarize as "Quantity() float64" — losing
+    # both the number AND the unit. Emit `{_type: <unit>, _value: <magnitude>}`
+    # so the card shows e.g. value 1100, type "gram / liter" (units never sit in
+    # the value string). config_schema's own type is unreliable for wrapped V1
+    # processes (reports bare `float`), so the unit from the live value wins.
+    mag = getattr(obj, "magnitude", None)
+    units = getattr(obj, "units", None)
+    if mag is not None and units is not None:
+        unit = str(units)
+        mshape = getattr(mag, "shape", None)
+        if mshape:  # array quantity
+            return {"_type": f"array[{unit}]", "_value": f"array{tuple(mshape)}"}
+        try:
+            v = float(mag)
+            v = v if _math.isfinite(v) else None
+        except Exception:  # noqa: BLE001
+            v = str(mag)[:60]
+        return {"_type": unit, "_value": v}
     # numpy / array-likes carrying a shape → summarize as Type(shape) dtype.
     shape = getattr(obj, "shape", None)
     if shape is not None and not isinstance(obj, dict):
         dt = getattr(getattr(obj, "dtype", None), "name", "")
         return f"{type(obj).__name__}{tuple(shape)}" + (f" {dt}" if dt else "")
-    # pint Quantity (magnitude + units) → its human string.
-    if hasattr(obj, "magnitude") and hasattr(obj, "units"):
-        return str(obj)[:120]
     if isinstance(obj, dict):
         # The top-level config dict is the parameter list — keep every key. A
         # NESTED large dict is a lookup table (e.g. a matrix as dict) — summarize.
@@ -516,7 +626,7 @@ def _pd_resolve_contract_from_value(value):
         return None
 
 
-def _pd_contract_for_node(node, parent=None, key=None) -> "dict | None":
+def _pd_contract_for_node(node, parent=None, key=None, get_core=None) -> "dict | None":
     """Resolve the JSON-safe ``_contract`` dict for a process/step ``node``, or
     ``None``. Handles the ``Requester``/``Evolver`` partition wrappers: their
     contract belongs to the WRAPPED ``PartitionedProcess``, which is carried
@@ -535,6 +645,11 @@ def _pd_contract_for_node(node, parent=None, key=None) -> "dict | None":
         return None
     addr = node.get("address", "")
     cls = _pd_class_for_address(addr)
+    # Bare registry-name address (local:EcoliWCM / local:PymunkProcess) — not
+    # importable by path; resolve it through the composite's core link_registry
+    # so registry-linked processes still get their declared contract.
+    if cls is None and get_core is not None:
+        cls = _class_for_address(addr, get_core())
     cfg = node.get("config")
     cfg = cfg if isinstance(cfg, dict) else {}
     cls_name = getattr(cls, "__name__", "")
@@ -599,9 +714,14 @@ def _summarize_large_values(node, max_list: int = 40, max_str: int = 2000):
     return f"⟨{n} items⟩" if n > max_list else node
 
 
-def _attach_process_docs(doc):
+def _attach_process_docs(doc, get_core=None):
     """Walk a composite-state doc in place, setting ``node['doc']`` for each
-    process/step from its address's class description. All failures swallowed."""
+    process/step from its address's class description. All failures swallowed.
+
+    ``get_core`` is an optional zero-arg callable returning the composite's core
+    (built lazily from its ``core_extensions``) — used only to resolve bare
+    registry-name addresses (``local:EcoliWCM``) when flagging Composite
+    Processes, so a composite with no such addresses never pays to build one."""
     _cache: dict = {}
 
     def walk(node, parent=None, key=None):
@@ -626,6 +746,21 @@ def _attach_process_docs(doc):
                             node["config_schema"] = _pd_json_sanitize(schema)
                     except Exception:  # noqa: BLE001
                         pass
+                # Flag Composite Processes (a process whose inner model is itself
+                # a bigraph Composite) so the loom shows a drill-in affordance.
+                # Resolve the class dotted-first, then via the composite's core
+                # for bare registry-name addresses (local:EcoliWCM). get_core is
+                # only invoked when the cheap dotted resolve fails, so a flat
+                # composite of dotted-address leaf processes never builds a core.
+                if "is_composite_process" not in node:
+                    try:
+                        cls = _pd_class_for_address(addr)
+                        if cls is None and get_core is not None:
+                            cls = _class_for_address(addr, get_core())
+                        if _is_composite_process_class(cls):
+                            node["is_composite_process"] = True
+                    except Exception:  # noqa: BLE001
+                        pass
                 # Fully-loaded config: the spec's `config` is usually {} (the
                 # process runs on defaults), but the LIVE instance carries its
                 # actual ParCa-hydrated config — the values it will simulate with.
@@ -640,9 +775,34 @@ def _attach_process_docs(doc):
                         pass
                 if "_contract" not in node:
                     try:
-                        contract = _pd_contract_for_node(node, parent, key)
+                        contract = _pd_contract_for_node(node, parent, key, get_core)
                         if contract:
                             node["_contract"] = contract
+                    except Exception:  # noqa: BLE001
+                        pass
+                # Port TYPE schemas: a hand-authored composite node (e.g. the
+                # colony's `ecoli`/`multibody`) carries only wiring, not port
+                # types, so the card/inspector show port names with no type. When
+                # `_inputs`/`_outputs` are absent, read them off a lightweight
+                # instance of the process class (inputs()/outputs() return the
+                # declared type map). Guarded + only-when-absent, so instantiated
+                # docs and processes that already ship `_inputs` are untouched.
+                if not node.get("_inputs") or not node.get("_outputs"):
+                    try:
+                        pcls = _pd_class_for_address(addr)
+                        if pcls is None and get_core is not None:
+                            pcls = _class_for_address(addr, get_core())
+                        if pcls is not None:
+                            pcore = get_core() if get_core is not None else None
+                            inst = pcls(node.get("config") or {}, pcore)
+                            if not node.get("_inputs"):
+                                pi = inst.inputs() if hasattr(inst, "inputs") else None
+                                if isinstance(pi, dict):
+                                    node["_inputs"] = pi
+                            if not node.get("_outputs"):
+                                po = inst.outputs() if hasattr(inst, "outputs") else None
+                                if isinstance(po, dict):
+                                    node["_outputs"] = po
                     except Exception:  # noqa: BLE001
                         pass
             for k, v in node.items():
@@ -731,8 +891,9 @@ def _resolve_composite_state(params: dict) -> dict:
     _import_workspace_package(_workspace)
     out: dict = {"__not_registered__": True}
     try:
-        from pbg_superpowers.composite_generator import (
-            _REGISTRY, build_generator, discover_generators, emitter_defaults,
+        from viva_superpowers.composite_generator import (
+            _REGISTRY, apply_core_extensions, build_generator,
+            discover_generators, emitter_defaults,
         )
         if not _REGISTRY:
             discover_generators()
@@ -742,10 +903,23 @@ def _resolve_composite_state(params: dict) -> dict:
                 declared_emitters = emitter_defaults(entry)
             except Exception:  # noqa: BLE001
                 declared_emitters = []
+            # Lazy: only built if a bare registry-name address needs class
+            # resolution for Composite-Process flagging (see _attach_process_docs).
+            _core_cache: dict = {}
+
+            def _get_core():
+                if "c" not in _core_cache:
+                    try:
+                        from bigraph_schema import allocate_core
+                        _core_cache["c"] = apply_core_extensions(entry, allocate_core())
+                    except Exception:  # noqa: BLE001
+                        _core_cache["c"] = None
+                return _core_cache["c"]
+
             try:
                 doc = build_generator(entry)
                 doc = _summarize_large_values(doc)
-                _attach_process_docs(doc)
+                _attach_process_docs(doc, get_core=_get_core)
                 _render_port_schemas(doc)
                 out = {"state": doc, "module": getattr(entry, "module", None),
                        "emitters": declared_emitters}
@@ -754,6 +928,66 @@ def _resolve_composite_state(params: dict) -> dict:
     except Exception as e:  # noqa: BLE001
         out = {"__build_error__": str(e)}
     return out
+
+
+def _resolve_inner_composite_state(params: dict) -> dict:
+    """Drill into a Composite Process: return the loom state of the inner
+    ``Composite`` embedded at ``hops`` under generator ``ref``.
+
+    ``params`` = ``{ref, hops}`` where ``hops`` is a list of node paths (each a
+    list of key segments, as ``convert.ts`` emits), one per drill level. The
+    root generator is instantiated (``apply_core_extensions`` → ``build_generator``
+    → ``Composite``); for each hop we navigate to that node's live instance, take
+    its inner composite (``_inner_composite_of`` — ``inner_composite()`` /
+    ``Composite`` self / wrapped attr), and recurse. The final inner composite's
+    ``state`` is summarized + doc-decorated (its own Composite Processes flagged,
+    so drilling continues all the way down) and returned as ``{state, crumbs}``.
+
+    Returns ``{__not_registered__}`` (bad ref), ``{__error__}`` (bad hop / not a
+    composite process), or ``{__build_error__}`` (instantiation raised)."""
+    ref = (params or {}).get("ref")
+    hops = (params or {}).get("hops") or []
+    if _workspace and _workspace not in sys.path:
+        sys.path.insert(0, _workspace)
+    _import_workspace_package(_workspace)
+    try:
+        from viva_superpowers.composite_generator import (
+            _REGISTRY, apply_core_extensions, build_generator, discover_generators,
+        )
+        from bigraph_schema import allocate_core
+        from process_bigraph import Composite
+    except Exception as e:  # noqa: BLE001
+        return {"__build_error__": str(e)}
+    if not _REGISTRY:
+        try:
+            discover_generators()
+        except Exception:  # noqa: BLE001
+            pass
+    entry = _REGISTRY.get(ref)
+    if entry is None:
+        return {"__not_registered__": True}
+    try:
+        core = apply_core_extensions(entry, allocate_core())
+        doc = build_generator(entry, core=core)
+        state = doc["state"] if isinstance(doc, dict) and "state" in doc else doc
+        cur = Composite({"state": state}, core=core)
+        crumbs: list = []
+        for hop in hops:
+            node = _nav_state(cur.state, hop)
+            if not isinstance(node, dict):
+                return {"__error__": f"path not found: {hop}"}
+            inner = _inner_composite_of(node.get("instance"))
+            if inner is None:
+                return {"__error__": f"not a composite process: {hop}"}
+            crumbs.append(hop[-1] if hop else "?")
+            cur = inner
+        inner_doc = _summarize_large_values(cur.state)
+        icore = getattr(cur, "core", None) or core
+        _attach_process_docs(inner_doc, get_core=lambda: icore)
+        _render_port_schemas(inner_doc)
+        return {"state": inner_doc, "crumbs": crumbs}
+    except Exception as e:  # noqa: BLE001
+        return {"__build_error__": str(e)}
 
 
 # --- observables (spec §11): build + available_observables + validate, all
@@ -828,7 +1062,7 @@ def _obs_available(params: dict) -> dict:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
     try:
-        from pbg_superpowers.readout_validation import available_observables
+        from viva_superpowers.readout_validation import available_observables
     except Exception as e:  # noqa: BLE001
         return {"__no_validator__": str(e)}
 
@@ -840,7 +1074,7 @@ def _obs_available(params: dict) -> dict:
         apply_core_extensions = None
         build_generator = None
         try:
-            from pbg_superpowers.composite_generator import (
+            from viva_superpowers.composite_generator import (
                 _REGISTRY,
                 apply_core_extensions as _ace,
                 build_generator as _bg,
@@ -903,7 +1137,7 @@ def _study_readout_check(params: dict) -> dict:
     if any(k.startswith("__") for k in avail):
         return avail  # not_registered / build_error / no_validator / introspect_error
     try:
-        from pbg_superpowers.readout_validation import validate_readouts
+        from viva_superpowers.readout_validation import validate_readouts
     except Exception as e:  # noqa: BLE001
         return {"__no_validator__": str(e)}
     try:
@@ -917,7 +1151,7 @@ def _study_readout_check(params: dict) -> dict:
 def _discover_composites() -> dict:
     """Generator composite entries for this environment (spec §11).
 
-    Imports the workspace package + runs pbg_superpowers generator discovery in
+    Imports the workspace package + runs viva_superpowers generator discovery in
     THIS process, returning the raw ``{gid: entry}`` **generator** half as JSON
     (the workbench keeps its pure FS/YAML spec scan + dedup and merges these in).
     So the HTTP process no longer imports/executes ``@composite_generator``
@@ -928,7 +1162,7 @@ def _discover_composites() -> dict:
 
     reg_keys: list = []
     try:
-        from pbg_superpowers.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
         if not _REGISTRY:
             try:
                 discover_generators()
@@ -940,7 +1174,7 @@ def _discover_composites() -> dict:
 
     out: dict = {}
     try:
-        from pbg_superpowers.composite_discovery import discover_all
+        from viva_superpowers.composite_discovery import discover_all
         merged = discover_all() or {}
     except Exception:  # noqa: BLE001 — no generator discovery available → spec-only
         merged = {}
@@ -1022,7 +1256,7 @@ def _validate_generated_visualization(params: dict) -> dict:
                         pass
                 if not found:
                     try:
-                        from pbg_superpowers.visualization import Visualization as _VizBase
+                        from viva_superpowers.visualization import Visualization as _VizBase
                         if issubclass(attr_val, _VizBase) and attr_val is not _VizBase:
                             found = True
                             break
@@ -1120,7 +1354,7 @@ _VIZ_CORE = None  # (core, registry) once built
 
 def _build_viz_core():
     """Build the workspace core + register every Visualization class onto it
-    (pbg_superpowers defaults + the whole Visualization subclass tree), cached per
+    (viva_superpowers defaults + the whole Visualization subclass tree), cached per
     worker. Faithful port of study_run_post.render_study_visualizations' in-process
     core+registry build. Returns ``(core, registry_dict)``."""
     global _VIZ_CORE
@@ -1134,7 +1368,7 @@ def _build_viz_core():
     registry = dict(core.link_registry)
 
     try:
-        from pbg_superpowers.visualizations import (
+        from viva_superpowers.visualizations import (
             Distribution, Heatmap, ParamVsObservable, PhaseSpace, TimeSeriesPlot,
         )
         for cls in (TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap):
@@ -1144,8 +1378,8 @@ def _build_viz_core():
         pass
 
     try:
-        from pbg_superpowers.composite_generator import discover_generators
-        from pbg_superpowers.visualization import Visualization
+        from viva_superpowers.composite_generator import discover_generators
+        from viva_superpowers.visualization import Visualization
         discover_generators()  # force-load packages so @Visualization classes appear
 
         def _walk(cls):
@@ -1198,7 +1432,7 @@ def _render_viz_doc(params: dict) -> dict:
     return {"html": html if isinstance(html, str) else ""}
 
 
-# Synthetic demo states for the 5 built-in pbg_superpowers Visualization classes
+# Synthetic demo states for the 5 built-in viva_superpowers Visualization classes
 # (byte-identical to lib.viz_core.BUILTIN_VIZ_DEMOS). Used when previewing a viz
 # without real run data, or as a fallback when investigation data is incompatible.
 _BUILTIN_VIZ_DEMOS: dict = {
@@ -1276,7 +1510,7 @@ def _viz_preview(params: dict) -> dict:
     inv_inputs_store = p.get("investigation_inputs_store")
     notes = list(p.get("note_prefix") or [])
 
-    # Resolve the class off the cached viz core (pbg_superpowers builtins + the
+    # Resolve the class off the cached viz core (viva_superpowers builtins + the
     # workspace Visualization subclass tree). Presence in the registry == registered.
     core, registry = _build_viz_core()
     raw_key = address.split(":", 1)[1] if ":" in address else address
@@ -1457,7 +1691,7 @@ def _reexport_map(params: dict) -> dict:
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     framework = {"process_bigraph", "bigraph_schema", "bigraph_viz",
-                 "pbg_superpowers", "vivarium_workbench"}
+                 "viva_superpowers", "vivarium_workbench"}
     reexports: dict = {}
     for pkg in sorted(include):
         try:
@@ -1713,7 +1947,7 @@ def _list_generators() -> dict:
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
-    from pbg_superpowers.composite_generator import _REGISTRY, discover_generators
+    from viva_superpowers.composite_generator import _REGISTRY, discover_generators
     try:
         if not _REGISTRY:
             discover_generators()
@@ -1744,6 +1978,8 @@ def _handle(method: str, params: dict) -> dict:
         return _list_visualizations()
     if method == "resolve_composite_state":
         return _resolve_composite_state(params)
+    if method == "resolve_inner_composite_state":
+        return _resolve_inner_composite_state(params)
     if method == "observables":
         return _observables(params)
     if method == "study_readout_check":

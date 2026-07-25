@@ -34,7 +34,7 @@ def _get(url):
 def server(tmp_path):
     if not FIXTURE_WORKSPACE.is_dir():
         pytest.skip(f"Fixture workspace not present at {FIXTURE_WORKSPACE}")
-    pytest.importorskip("pbg_superpowers.generation")
+    pytest.importorskip("viva_superpowers.generation")
     ws = tmp_path / "ws"
     shutil.copytree(FIXTURE_WORKSPACE, ws)
     pbg_home = tmp_path / "pbg-home"
@@ -86,7 +86,7 @@ def test_generation_null_when_none_active(server):
 def test_generation_reports_current(server):
     """After start_generation, the endpoint surfaces the summary the report
     banner renders."""
-    from pbg_superpowers import generation as gen
+    from viva_superpowers import generation as gen
     g = gen.start_generation(
         server["ws"],
         git_sha_value="d146458",

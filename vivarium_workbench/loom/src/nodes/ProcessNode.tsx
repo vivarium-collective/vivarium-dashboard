@@ -3,6 +3,8 @@ import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
 import { portInfo } from "../portInfo";
+import InnerCompositePreview from "./InnerCompositePreview";
+import { configParams } from "../configView";
 
 function _classifyStep(address: string | undefined, label: string | undefined): 'process' | 'emitter' | 'visualization' {
   const addr = address || '';
@@ -19,71 +21,6 @@ function _classifyStep(address: string | undefined, label: string | undefined): 
     return 'visualization';
   }
   return 'process';
-}
-
-/** A config value's inferred type, for the config detail popover. Config is a
- *  plain dict (no declared schema), so we read the JS runtime shape. */
-function configValueType(v: unknown): string {
-  if (v === null || v === undefined) return 'null';
-  if (Array.isArray(v)) return `list[${v.length}]`;
-  switch (typeof v) {
-    case 'number':  return Number.isInteger(v) ? 'integer' : 'float';
-    case 'boolean': return 'boolean';
-    case 'string':  return 'string';
-    case 'object':  return `dict[${Object.keys(v as object).length}]`;
-    default:        return typeof v;
-  }
-}
-
-/** A config value rendered for display (objects/lists as compact JSON). */
-function fmtConfigValue(v: unknown): string {
-  if (v === null || v === undefined) return '—';
-  if (typeof v === 'object') { try { return JSON.stringify(v); } catch { return String(v); } }
-  return String(v);
-}
-
-/** A scalar (single-value) config type worth showing inline in the band. The
- *  ParCa-derived arrays/maps/matrices/functions are the noise we keep to the
- *  expandable detail popover, not the always-on band. */
-function isScalarConfigType(type: string): boolean {
-  return /^(integer|float|number|boolean|string)$/.test(type) || /^quantity\[/.test(type);
-}
-
-export interface ConfigParam {
-  name: string; type: string; value: string; set: boolean; scalar: boolean;
-}
-
-/** The process's config parameters: every declared parameter (from
- *  `config_schema`) with its type and default, overlaid with any value the
- *  composite EXPLICITLY set. Set parameters sort first, then alphabetically. */
-function configParams(
-  schema: Record<string, unknown> | undefined,
-  config: Record<string, unknown> | undefined,
-): ConfigParam[] {
-  const out: ConfigParam[] = [];
-  const seen = new Set<string>();
-  const typeOf = (decl: unknown): string =>
-    typeof decl === 'string' ? decl
-      : (decl && typeof decl === 'object' && typeof (decl as { _type?: unknown })._type === 'string')
-        ? String((decl as { _type: string })._type) : '';
-  const defOf = (decl: unknown): unknown =>
-    (decl && typeof decl === 'object' && '_default' in (decl as object))
-      ? (decl as { _default?: unknown })._default : undefined;
-
-  for (const [name, decl] of Object.entries(schema ?? {})) {
-    seen.add(name);
-    const type = typeOf(decl);
-    const set = !!config && Object.prototype.hasOwnProperty.call(config, name);
-    const raw = set ? config![name] : defOf(decl);
-    out.push({ name, type, value: fmtConfigValue(raw), set, scalar: isScalarConfigType(type) });
-  }
-  // Any loaded value not in the schema (rare) — surface it too.
-  for (const [name, v] of Object.entries(config ?? {})) {
-    if (seen.has(name)) continue;
-    out.push({ name, type: configValueType(v), value: fmtConfigValue(v), set: true, scalar: true });
-  }
-  // Scalar "knobs" first (readable inline), then alphabetical.
-  return out.sort((a, b) => (Number(b.scalar) - Number(a.scalar)) || a.name.localeCompare(b.name));
 }
 
 /** One-line "what is this section" hints, shown on hover of each middle box. */
@@ -134,7 +71,17 @@ function LegacyBody({ data, stepKind }: {
       })}
 
       <div className="process-body">
-        <div className="process-label">{data.label}</div>
+        <div className="process-label">
+          {data.label}
+          {data.isCompositeProcess && (
+            <span
+              className="process-node-drill"
+              title="Composite Process — double-click to open its inner composite"
+            >
+              {' '}⤢
+            </span>
+          )}
+        </div>
         <div className="process-type">{data.processType}</div>
       </div>
 
@@ -365,8 +312,15 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         <div className="process-node-title">
           {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
           {data.label}
+          {data.isCompositeProcess && (
+            <span
+              className="process-node-drill"
+              title="Composite Process — double-click to open its inner composite"
+            >
+              ⤢
+            </span>
+          )}
         </div>
-
         {show.ports && (
           <div className="process-node-meta" title={SECTION_HINT.meta}>
             {data.processType} · {inputPorts.length} in / {outputPorts.length} out
@@ -374,10 +328,24 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           </div>
         )}
 
+        {/* Composite Process: render a live mini-map of its INNER composite in
+            place of the contract, at the contract+ tier. Auto-loads at `full`
+            tier (the focused/most-zoomed card); at `contract` tier it shows the
+            ⤢ viz icon to render on demand — so zoom doesn't trigger a ParCa
+            build on every card at once. Double-click still opens the full view. */}
+        {show.contract && data.isCompositeProcess && (data as any)._rootId && (
+          <InnerCompositePreview
+            rootId={(data as any)._rootId}
+            hops={[...(((data as any)._hops as string[][]) ?? []), data.path]}
+            auto
+          />
+        )}
+
         {/* The contract: a justified recital of what the process does, over its
             governing equations. Only shown when actually documented. Click to
-            reveal the full description below (when there is one to reveal). */}
-        {show.contract && contract?.summary && (
+            reveal the full description below (when there is one to reveal).
+            Composite Processes show their inner mini-map above instead. */}
+        {show.contract && !data.isCompositeProcess && contract?.summary && (
           <div
             className={`process-contract section-box${openSection === 'contract' ? ' is-open' : ''}`}
             title={SECTION_HINT.contract}

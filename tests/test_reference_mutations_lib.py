@@ -29,12 +29,12 @@ from typing import Any
 import pytest
 import yaml
 
-import pbg_superpowers
+import viva_superpowers
 
 from vivarium_workbench.lib import reference_mutations as rm
 
 
-_SCHEMA_SRC = Path(pbg_superpowers.__file__).parent / "schemas" / "workspace.schema.json"
+_SCHEMA_SRC = Path(viva_superpowers.__file__).parent / "schemas" / "workspace.schema.json"
 
 _WS_YAML = """\
 schema_version: 3

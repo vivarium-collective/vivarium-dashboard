@@ -106,7 +106,7 @@ def test_get_composite_doc_handles_generator_entry():
     only surface from packages declared as bigraph-schema dependents, so we
     register directly into _REGISTRY via the decorator + tweak module bookkeeping.
     """
-    from pbg_superpowers.composite_generator import (
+    from viva_superpowers.composite_generator import (
         _REGISTRY, composite_generator, build_generator,
     )
 
@@ -136,7 +136,7 @@ def test_get_composite_doc_handles_generator_entry():
         # pbg-superpowers is importable. We can't easily invoke it against
         # a workspace path without polluting it, so verify directly via the
         # discover_all bridge that composite_lookup uses.
-        from pbg_superpowers.composite_discovery import discover_all
+        from viva_superpowers.composite_discovery import discover_all
         merged = discover_all()
         assert expected_id in merged, (
             f"discover_all must surface the registered generator; "
@@ -154,7 +154,7 @@ def test_get_composite_doc_handles_generator_entry():
 
 def test_discover_all_composites_propagates_default_n_steps(tmp_path, monkeypatch):
     """Generator entries with default_n_steps surface that field in the catalog."""
-    from pbg_superpowers.composite_generator import (
+    from viva_superpowers.composite_generator import (
         composite_generator, _REGISTRY,
     )
     from vivarium_workbench.lib.composite_lookup import discover_all_composites
@@ -184,7 +184,7 @@ def test_discover_all_composites_propagates_default_n_steps(tmp_path, monkeypatc
 
 def test_discover_all_composites_propagates_none_default_n_steps(tmp_path, monkeypatch):
     """Generator entries without default_n_steps surface default_n_steps=None."""
-    from pbg_superpowers.composite_generator import (
+    from viva_superpowers.composite_generator import (
         composite_generator, _REGISTRY,
     )
     from vivarium_workbench.lib.composite_lookup import discover_all_composites

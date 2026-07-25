@@ -238,7 +238,7 @@ def fixture_study_with_recorded_run(fixture_study_ws):
 # ---------------------------------------------------------------------------
 # pbg-superpowers generator registry
 # ---------------------------------------------------------------------------
-# `pbg_superpowers.composite_generator._REGISTRY` used to be a plain dict. As of
+# `viva_superpowers.composite_generator._REGISTRY` used to be a plain dict. As of
 # pbg-superpowers #168 ("shim composite front-ends onto process-bigraph
 # CompositeSpec") it is a *view* over process-bigraph's global registry:
 #
@@ -261,7 +261,7 @@ def register_generator(spec_id, entry=None, **fields):
     expressing "just put *something* in the registry" without knowing the
     current CompositeSpec shape.
     """
-    from pbg_superpowers.composite_generator import GeneratorEntry, _REGISTRY
+    from viva_superpowers.composite_generator import GeneratorEntry, _REGISTRY
 
     # CompositeSpec requires exactly one of `state` or `builder`, so `func`
     # must be callable even for a pure placeholder entry. Tests that care about

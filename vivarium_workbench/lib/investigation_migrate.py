@@ -102,7 +102,7 @@ def _resolve_composite_source_or_generate(
 
     Returns ``(yaml_path, is_generator, name)``:
       - YAML found → ``(path, False, stem)`` matching the legacy lookup.
-      - Generator found in ``pbg_superpowers.composite_generator._REGISTRY``
+      - Generator found in ``viva_superpowers.composite_generator._REGISTRY``
         → ``(None, True, last_segment)``. The caller decides whether to
         actually materialize the document (via :func:`materialize_generator_doc`)
         — many v3-shape callers don't need it, since the dotted ref is
@@ -117,7 +117,7 @@ def _resolve_composite_source_or_generate(
         pass  # fall through to generator lookup
 
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, discover_generators,
         )
     except ImportError as e:
@@ -154,7 +154,7 @@ def materialize_generator_doc(ref: str) -> dict:
     composites whose state contains live Process instances that can't be
     serialized — those need a different storage path).
     """
-    from pbg_superpowers.composite_generator import (
+    from viva_superpowers.composite_generator import (
         _REGISTRY, build_generator, discover_generators,
     )
     if not _REGISTRY:

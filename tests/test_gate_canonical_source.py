@@ -1,4 +1,4 @@
-from pbg_superpowers import study_status
+from viva_superpowers import study_status
 
 
 def _passed(parent):

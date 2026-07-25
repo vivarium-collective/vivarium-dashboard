@@ -72,7 +72,7 @@ def test_invalidate_clears_identical_cache_set_via_registry():
 
 
 def test_source_switch_rejects_unregistered_path(tmp_path, monkeypatch):
-    from pbg_superpowers import workspace_catalog
+    from viva_superpowers import workspace_catalog
     monkeypatch.setattr(workspace_catalog, "list_workspaces", lambda: [])
 
     obj, code = _switch_views.source_switch({"path": str(tmp_path / "nope")})
@@ -82,7 +82,7 @@ def test_source_switch_rejects_unregistered_path(tmp_path, monkeypatch):
 
 def test_source_switch_accepts_registered_path(tmp_path, monkeypatch):
     ws = tmp_path / "ws"; ws.mkdir(); (ws / "workspace.yaml").write_text("name: w\n")
-    from pbg_superpowers import workspace_catalog
+    from viva_superpowers import workspace_catalog
     monkeypatch.setattr(workspace_catalog, "list_workspaces",
                         lambda: [{"path": str(ws), "name": "w"}])
 

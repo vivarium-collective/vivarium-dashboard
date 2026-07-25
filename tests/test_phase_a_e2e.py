@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from vivarium_workbench.api.app import create_app, get_workspace
 from vivarium_workbench.lib import active_workspace
-from pbg_superpowers.event_client import EventClient, on_finding_created
+from viva_superpowers.event_client import EventClient, on_finding_created
 
 
 @pytest.fixture(autouse=True)

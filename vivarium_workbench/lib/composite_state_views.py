@@ -85,6 +85,64 @@ def composite_state_via_subprocess(ws_root: Path, ref: str) -> "dict | None":
         return None
 
 
+def inner_composite_state_via_subprocess(
+    ws_root: Path, ref: str, hops: "list[list[str]]"
+) -> "dict | None":
+    """Drill into a Composite Process via the workspace env worker.
+
+    Routes ``resolve_inner_composite_state{ref, hops}`` to the warm pool, which
+    instantiates the generator ``ref``, walks ``hops`` (a list of node paths)
+    into successive inner composites, and returns the innermost composite's loom
+    state. Returns ``{"state": <doc>, "crumbs": [...]}`` on success, a sentinel
+    (``{"__not_registered__"}`` / ``{"__error__"}`` / ``{"__build_error__"}``),
+    or ``None`` when the worker is unavailable. Mirrors
+    ``composite_state_via_subprocess``'s contract."""
+    from vivarium_workbench.lib.env_worker_client import EnvWorkerUnavailable
+    from vivarium_workbench.lib.env_worker_pool import get_pool
+
+    try:
+        return get_pool().call(
+            ws_root, "resolve_inner_composite_state", {"ref": ref, "hops": hops})
+    except EnvWorkerUnavailable:
+        return None
+
+
+def build_inner_composite_state(
+    ws_root: Path, ref: str, hops: "list[list[str]]"
+) -> "tuple[dict, int]":
+    """GET /api/composite-inner-state worker — ``(payload_dict, status)``.
+
+    ``ref`` is the ROOT generator id; ``hops`` is the accumulated drill path
+    (list of node-path segment lists). Returns 200 ``{state, kind:
+    "inner", crumbs}`` on success; 400 on a bad hop / non-composite node or a
+    build error; 404 when ``ref`` is not a registered generator; 503 when the
+    env worker is unavailable. Result cached by ``(ws_root, ref, hops)``."""
+    ref = (ref or "").strip()
+    if not ref:
+        return {"error": "ref required"}, 400
+    ws_root = Path(ws_root)
+    ckey = (str(ws_root), ref, tuple(tuple(h) for h in hops))
+    hit = _COMPOSITE_STATE_CACHE.get(ckey)
+    if hit is not None and (time.time() - hit[0]) < _COMPOSITE_STATE_TTL_S:
+        return {**hit[1], "cached": True}, 200
+
+    res = inner_composite_state_via_subprocess(ws_root, ref, hops)
+    if res is None:
+        return {"error": "env worker unavailable"}, 503
+    if "state" in res:
+        payload = {"state": res["state"], "kind": "inner",
+                   "crumbs": res.get("crumbs", [])}
+        _COMPOSITE_STATE_CACHE[ckey] = (time.time(), payload)
+        if len(_COMPOSITE_STATE_CACHE) > 16:
+            _COMPOSITE_STATE_CACHE.pop(next(iter(_COMPOSITE_STATE_CACHE)))
+        return payload, 200
+    if res.get("__not_registered__"):
+        return {"error": f"composite not found: {ref}", "unresolved": True,
+                "ref": ref}, 404
+    err = res.get("__error__") or res.get("__build_error__") or "drill failed"
+    return {"error": err}, 400
+
+
 def build_composite_state(
     ws_root: Path, ref: str, *, fresh: bool = False
 ) -> "tuple[dict, int]":

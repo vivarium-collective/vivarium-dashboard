@@ -1,18 +1,18 @@
 """Drift guard: vendored vivarium_workbench/lib/backfill_runs.py must keep
 ``backfill_study_runs`` byte-identical to the canonical
-pbg_superpowers/backfill_runs.py.
+viva_superpowers/backfill_runs.py.
 
 Only ``backfill_study_runs`` is compared — the dashboard vendors that single
 function (not the workspace-wide ``backfill``/CLI which pull extra deps).
 
-Uses the file-read approach (pbg_superpowers is not installed in the dashboard
+Uses the file-read approach (viva_superpowers is not installed in the dashboard
 venv), extracting the function's source by scanning for `def <name>` blocks.
 """
 import re
 import pytest
 from pathlib import Path
 
-CANONICAL = Path(__file__).parent.parent.parent / "pbg-superpowers" / "pbg_superpowers" / "backfill_runs.py"
+CANONICAL = Path(__file__).parent.parent.parent / "pbg-superpowers" / "viva_superpowers" / "backfill_runs.py"
 VENDORED = Path(__file__).parent.parent / "vivarium_workbench" / "lib" / "backfill_runs.py"
 
 FUNCS = ["backfill_study_runs"]
@@ -48,5 +48,5 @@ def test_vendored_backfill_runs_matches_canonical():
         assert name in canon_funcs, f"{name} missing from canonical"
         assert name in vend_funcs, f"{name} missing from vendored"
         assert canon_funcs[name] == vend_funcs[name], (
-            f"DRIFT in {name}: vendored copy differs from pbg_superpowers canonical"
+            f"DRIFT in {name}: vendored copy differs from viva_superpowers canonical"
         )

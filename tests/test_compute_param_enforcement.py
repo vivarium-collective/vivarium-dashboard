@@ -3,13 +3,13 @@
 Per-run param-drift check: each run is compared against the params IT was
 supposed to apply (baseline run → baseline declared values; variant run →
 baseline overlaid with that variant's parameter_overrides), via
-pbg_superpowers.param_enforcement.resolve_run_expected. This removes the
+viva_superpowers.param_enforcement.resolve_run_expected. This removes the
 false positive where a variant run that legitimately overrides a baseline
 param was flagged against the single flat baseline dict.
 """
 import pytest
 
-_pe = pytest.importorskip("pbg_superpowers.param_enforcement")
+_pe = pytest.importorskip("viva_superpowers.param_enforcement")
 # The MODULE exists, but `resolve_run_expected` never shipped in
 # pbg-superpowers — `study_enrichment.compute_param_enforcement` imports it and
 # raises ImportError, which `study_spec.py`'s `except Exception: pass` swallows.
@@ -20,7 +20,7 @@ _pe = pytest.importorskip("pbg_superpowers.param_enforcement")
 # see the tracking issue before deleting the guard.
 if not hasattr(_pe, "resolve_run_expected"):
     pytest.skip(
-        "pbg_superpowers.param_enforcement.resolve_run_expected not available "
+        "viva_superpowers.param_enforcement.resolve_run_expected not available "
         "— compute_param_enforcement is inert; see tracking issue",
         allow_module_level=True,
     )

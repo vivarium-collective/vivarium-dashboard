@@ -527,6 +527,179 @@ body {
 
 .process-node-title { font-size: 12px; font-weight: 600; color: #1e293b; line-height: 1.25; }
 .process-node-meta  { font-size: 11px; color: #64748b; margin-top: 3px; }
+
+/* Composite-Process drill affordance: a subtle badge on cards whose inner model
+   is itself a composite, plus a one-line hint that double-click opens it. */
+.process-node-drill {
+  display: inline-block;
+  margin-left: 6px;
+  color: #2563eb;
+  font-weight: 700;
+  cursor: pointer;
+}
+.process-node-drill-hint {
+  font-size: 10px;
+  color: #2563eb;
+  opacity: 0.8;
+  margin-top: 2px;
+  font-style: italic;
+}
+/* Give a Composite-Process card a faint blue edge so it reads as "openable". */
+.process-node:has(.process-node-drill) { box-shadow: 0 0 0 1.5px #bfdbfe inset; }
+
+/* In-card mini-map of a Composite Process's inner composite (shown in place of
+   the contract at high zoom). */
+/* One tight frame — the mini-map fills it edge-to-edge (no colored margin
+   around a separate inner box). A thin header sits flush on top. */
+.inner-preview {
+  margin: 5px 0 2px;
+  border: 1px solid #cfe3fb;
+  border-radius: 0;
+  background: #fff;
+  padding: 0;
+  overflow: hidden;
+}
+.inner-preview-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  padding: 3px 7px; background: #f4f8ff; border-bottom: 1px solid #eef2f7;
+}
+.inner-preview-badge { font-size: 10px; font-weight: 700; color: #2563eb; }
+.inner-preview-count { font-size: 10px; color: #64748b; }
+.inner-preview-svg {
+  display: block; width: 100%; height: auto; max-height: 460px;
+  background: #fff; border: 0;
+}
+/* Store labels are shown (small); process cards + stores highlight on hover.
+   Native <title> tooltips give the full name on any node. */
+.inner-preview-svg .mini-store-label { opacity: 0.85; }
+.inner-preview-svg .mini-store:hover .mini-store-label { opacity: 1; font-weight: 700; }
+.inner-preview-svg:active { cursor: grabbing; }
+.mini-reset {
+  margin-left: 8px; font-size: 10px; color: #2563eb; cursor: pointer;
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 0 6px;
+}
+.mini-reset:hover { background: #dbeafe; }
+.inner-preview-svg .mini-store:hover circle { fill: #dbeafe; stroke: #3b82f6; }
+.inner-preview-svg .mini-proc:hover rect { fill: #eff6ff; stroke: #2563eb; }
+.inner-preview-svg .mini-proc, .inner-preview-svg .mini-store { cursor: pointer; }
+/* A Composite Process card grows wider so its inner-composite mini-map has room
+   to show labelled subprocesses (a wide, detailed figure — not a tall sliver). */
+.process-node:has(.inner-preview) { min-width: 660px; }
+.inner-preview-hint { font-size: 10px; color: #64748b; font-style: italic; }
+.inner-preview-idle {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  cursor: pointer;
+}
+.inner-preview-idle:hover { background: #eff6ff; }
+.inner-preview-loading .inner-preview-hint { color: #2563eb; }
+
+/* ── Inspector panel ─────────────────────────────────────────────────────── */
+.insp { font-size: 12px; color: #1f2937; }
+.insp-empty { color: #94a3b8; font-size: 12px; }
+.insp-empty-val { font-size: 12px; color: #9ca3af; }
+
+.insp-header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef2f7;
+  margin-bottom: 6px;
+}
+.insp-kindrow { display: flex; align-items: center; gap: 6px; }
+.insp-kind {
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em;
+  color: #94a3b8;
+}
+.insp-badge {
+  font-size: 10px; font-weight: 700; color: #2563eb;
+  background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 10px;
+  padding: 1px 7px;
+}
+.insp-title { font-size: 15px; font-weight: 700; color: #0f172a; margin-top: 3px; }
+.insp-path { font-size: 11px; color: #94a3b8; margin-top: 1px; word-break: break-all; }
+.insp-sub { font-size: 11px; color: #64748b; margin-top: 4px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Prominent contract callout. */
+.insp-contract {
+  margin: 10px 0;
+  padding: 9px 11px;
+  background: linear-gradient(180deg, #f0f7ff, #f8fbff);
+  border: 1px solid #cfe3fb; border-left: 3px solid #3b82f6;
+  border-radius: 6px;
+}
+.insp-contract-label {
+  font-size: 9px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;
+  color: #2563eb; margin-bottom: 3px;
+}
+.insp-contract-text { margin: 0; font-size: 12.5px; line-height: 1.5; color: #1e293b; }
+
+.inspector-section { margin: 10px 0; }
+.inspector-section > summary {
+  font-size: 12px; font-weight: 600; color: #374151; cursor: pointer;
+  user-select: none; display: flex; align-items: center; gap: 5px; list-style: none;
+}
+.inspector-section > summary::-webkit-details-marker { display: none; }
+.inspector-caret { font-size: 9px; color: #9ca3af; transition: transform 0.12s; }
+.inspector-section[open] > summary .inspector-caret { transform: rotate(90deg); }
+.inspector-section-body { margin-top: 6px; }
+
+.insp-prose {
+  font-size: 12px; line-height: 1.55; color: #334155; margin: 0;
+  white-space: pre-wrap; word-break: break-word;
+}
+.insp-schema {
+  font-size: 11px; background: #f7f8fa; padding: 8px; margin: 0; border-radius: 4px;
+  white-space: pre-wrap; word-break: break-word; color: #1f2937;
+}
+.insp-address { font-size: 11px; color: #374151; word-break: break-all; }
+
+/* Ports */
+.insp-port { padding: 7px 0; border-bottom: 1px solid #f1f5f9; }
+.insp-port-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.insp-port-name { font-weight: 700; font-size: 12px; }
+.insp-port-name.is-in { color: #4338ca; }
+.insp-port-name.is-out { color: #0d9488; }
+.insp-port-dir {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #9ca3af; font-weight: 700;
+}
+.insp-port-type { font-size: 11px; color: #64748b; }
+.insp-port-wire { font-size: 11px; margin-top: 2px; }
+.insp-port-arrow { color: #9ca3af; }
+.insp-port-wire code { color: #334155; word-break: break-all; }
+.insp-port-sem { font-size: 11px; color: #64748b; margin-top: 2px; font-style: italic; }
+
+/* Config table */
+.insp-config { font-size: 11px; }
+.insp-config-head, .insp-config-row {
+  display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 8px;
+  align-items: baseline; padding: 3px 0;
+}
+.insp-config-head {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: #9ca3af; font-weight: 700; border-bottom: 1px solid #f1f5f9;
+}
+.insp-config-row { border-bottom: 1px solid #f8fafc; }
+.insp-config-row.is-set { background: #fbfdff; }
+.insp-config-key { color: #4b5563; display: flex; align-items: center; gap: 5px; }
+.insp-config-row.is-set .insp-config-key { color: #1e293b; font-weight: 600; }
+.insp-config-dot {
+  width: 6px; height: 6px; border-radius: 50%; background: #3b82f6; flex: 0 0 auto;
+}
+.insp-config-val { color: #1f2937; word-break: break-all; }
+.insp-config-type { color: #94a3b8; text-align: right; }
+
+.insp-math {
+  padding: 7px 9px; background: #f8fafc; border-left: 2px solid #cbd5e1; border-radius: 3px;
+  font-family: ui-monospace, monospace; font-size: 11px; color: #1e293b; line-height: 1.6;
+}
+.insp-symbols { font-size: 11px; color: #475569; line-height: 1.5; }
+.insp-list { font-size: 11px; color: #475569; margin: 0; padding-left: 16px; line-height: 1.5; }
+
+/* Drill breadcrumb trail in the loom header. */
+.loom-crumb { font-size: 12px; }
+.loom-crumb-current { font-weight: 600; color: #111827; }
+.loom-crumb-link { color: #2563eb; cursor: pointer; }
+.loom-crumb-link:hover { text-decoration: underline; }
 .process-node-address {
   font-size: 11px; color: #94a3b8; font-family: ui-monospace, monospace;
   margin-top: 4px; overflow-wrap: anywhere;

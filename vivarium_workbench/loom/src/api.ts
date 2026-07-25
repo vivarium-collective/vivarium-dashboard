@@ -99,6 +99,28 @@ export function decodeUrlComposite(): any | null {
   }
 }
 
+/** Drill into a Composite Process: fetch the loom state of the inner composite
+ *  embedded at `hops` under root generator `rootId`. `hops` is the accumulated
+ *  list of node paths (one per drill level, each a bigraph path array). Returns
+ *  the same `{state}` shape as /api/composite-state, plus `crumbs`. Rejects on
+ *  non-2xx (bad hop / not a composite process / worker unavailable). */
+export interface InnerCompositeResponse {
+  state: any;
+  crumbs?: string[];
+  error?: string;
+}
+
+export async function fetchInnerComposite(
+  rootId: string,
+  hops: string[][],
+): Promise<InnerCompositeResponse> {
+  const q = new URLSearchParams({ ref: rootId, hops: JSON.stringify(hops) });
+  const r = await fetch('/api/composite-inner-state?' + q.toString());
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+  return body as InnerCompositeResponse;
+}
+
 // --- Run lifecycle (start-then-poll) -------------------------------------
 
 export type RunStatusValue = 'running' | 'completed' | 'failed' | 'orphaned';

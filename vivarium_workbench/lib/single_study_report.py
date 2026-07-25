@@ -253,7 +253,7 @@ def _preregistration_status(spec: dict) -> dict | None:
     ``study_verdict.preregistration_status``. Returns None when pbg-superpowers
     (or the function) isn't importable so the chip simply doesn't render."""
     try:
-        from pbg_superpowers.study_verdict import preregistration_status
+        from viva_superpowers.study_verdict import preregistration_status
     except Exception:
         return None
     try:
@@ -658,7 +658,7 @@ def _render_controls_and_falsifiability(spec: dict) -> str:
 def _render_rigor(study_spec: dict, *, skeptic: bool = False) -> str:
     """Evidence & rigor scorecard section — deterministic skeptic-feedback
     (replication, negative controls, alternative hypotheses, claim discipline,
-    falsifiability, engineered-vs-emergent) computed by pbg_superpowers.rigor.
+    falsifiability, engineered-vs-emergent) computed by viva_superpowers.rigor.
 
     Returns '' if pbg-superpowers isn't importable, so the report degrades
     gracefully.
@@ -669,7 +669,7 @@ def _render_rigor(study_spec: dict, *, skeptic: bool = False) -> str:
     renders it as its own ordered section immediately below.
     """
     try:
-        from pbg_superpowers.rigor import study_rigor
+        from viva_superpowers.rigor import study_rigor
     except Exception:
         return ""
     sc = study_rigor(study_spec)
@@ -735,13 +735,13 @@ _WEIGHT_CHIP_COLORS = {
 
 
 def _finding_weight(spec: dict, finding: dict) -> dict | None:
-    """W8 — per-finding evidential weight via pbg_superpowers.rigor.
+    """W8 — per-finding evidential weight via viva_superpowers.rigor.
 
     Defensive: returns None when pbg-superpowers (or the new function) isn't
     importable, so the chip simply doesn't render and the report degrades.
     """
     try:
-        from pbg_superpowers.rigor import finding_evidential_weight
+        from viva_superpowers.rigor import finding_evidential_weight
     except Exception:
         return None
     try:
@@ -872,7 +872,7 @@ def _lifecycle_floor(spec: dict, finding: dict) -> str | None:
     Returns None when pbg-superpowers (or the function) isn't importable, so the
     chip falls back to the authored value (or nothing)."""
     try:
-        from pbg_superpowers.study_verdict import lifecycle_floor
+        from viva_superpowers.study_verdict import lifecycle_floor
     except Exception:
         return None
     try:
@@ -981,7 +981,7 @@ def _threshold_sensitivity(spec: dict, test_name: str):
     """critique #9 — defensive bridge to ``rigor.threshold_sensitivity``.
     Returns a list of ``{cutoff, result}`` or None when unavailable/guarded."""
     try:
-        from pbg_superpowers.rigor import threshold_sensitivity
+        from viva_superpowers.rigor import threshold_sensitivity
     except Exception:
         return None
     try:
@@ -1132,12 +1132,12 @@ _DEBT_SEV_COLORS = {
 
 def _render_epistemic_debts(spec: dict) -> str:
     """W15 — "Open epistemic debts" panel, driven by the deterministic
-    ``pbg_superpowers.needs_attention.open_epistemic_debts`` collector (which
+    ``viva_superpowers.needs_attention.open_epistemic_debts`` collector (which
     derives from rigor + viz-freshness so it can't drift). Returns '' when the
     collector isn't importable or there are no debts.
     """
     try:
-        from pbg_superpowers.needs_attention import open_epistemic_debts
+        from viva_superpowers.needs_attention import open_epistemic_debts
     except Exception:
         return ""
     try:
@@ -1826,7 +1826,7 @@ def _resolve_composite_doc(ws_root: Path, spec: dict) -> Optional[dict]:
     doc = None
     # 1) generator registry (built composites)
     try:
-        from pbg_superpowers.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, build_generator, discover_generators,
         )
         if not _REGISTRY:
