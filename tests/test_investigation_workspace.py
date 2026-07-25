@@ -31,3 +31,10 @@ def test_explore_workspace_toggle_functions():
     assert "function _showWorkspace" in JS
     assert "window._showExplore" in JS
     assert "window._showWorkspace" in JS
+
+
+def test_context_collapse_function():
+    assert "function _setInvestigationContextCollapsed" in JS
+    assert "ws-context-bar" in JS
+    # the slim bar's onclick re-expands
+    assert "_setInvestigationContextCollapsed(false)" in TPL

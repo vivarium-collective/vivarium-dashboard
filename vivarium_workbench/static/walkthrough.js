@@ -5136,6 +5136,21 @@
   }
   window._showWorkspace = _showWorkspace;
 
+  // Investigation context toggle: expanded (#ws-context — graph + objective)
+  // vs the slim collapsed bar (#ws-context-bar, "▸ Investigation: <name>").
+  // Toggle via style.display; DOM is retained either way. Clicking the slim
+  // bar (wired in the template) re-expands via collapsed=false.
+  function _setInvestigationContextCollapsed(collapsed) {
+    window._wsContextCollapsed = !!collapsed;
+    var ctx = document.getElementById('ws-context');
+    var bar = document.getElementById('ws-context-bar');
+    var name = document.getElementById('ws-context-bar-name');
+    if (ctx) ctx.style.display = collapsed ? 'none' : '';
+    if (bar) bar.style.display = collapsed ? '' : 'none';
+    if (name) name.textContent = window._wsInvestigation || '';
+  }
+  window._setInvestigationContextCollapsed = _setInvestigationContextCollapsed;
+
   // Prompt-first create: a free-text description scaffolds a real investigation /
   // study seeded with that as the question, name auto-derived (editable).
   function _openBrowseCreate() {
