@@ -5377,11 +5377,15 @@
   function _wsSetInvestigationActions() {
     var actions = document.getElementById('ws-actions');
     if (!actions) return;
+    var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
     actions.innerHTML =
       '<button class="btn-mini" onclick="_generateInvestigationReport()" ' +
         'title="Generate a shareable HTML report">Report 📄</button> ' +
       '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
-        'title="Download a self-contained Jupyter notebook">Notebook 📓</button>';
+        'title="Download a self-contained Jupyter notebook">Notebook 📓</button>' +
+      (isSnapshot ? '' :
+      ' <button class="btn-mini" onclick="_rerunInvestigation()" ' +
+        'title="Re-run every study\'s baseline">Rerun investigation</button>');
   }
   window._wsSetInvestigationActions = _wsSetInvestigationActions;
 
@@ -6070,6 +6074,13 @@
 
   function _openInvestigationDetail(name) {
     window._currentIset = name;
+    // Rerun POSTs to a live-only endpoint — hide it in a published read-only
+    // snapshot (no backend to launch against). Report/Notebook stay visible
+    // since they only read data, so they still work off the static bundle.
+    var rerunBtn = document.getElementById('investigation-rerun');
+    if (rerunBtn) {
+      rerunBtn.style.display = (window.__DASH_CONFIG__ || {}).mode === 'snapshot' ? 'none' : '';
+    }
     // Opening an investigation is an explicit context switch → re-scope the
     // Simulations DB to it. Clearing the sticky manual pick lets the next visit
     // default to this investigation (see _populateSimFilters / _simCurrent).
@@ -6321,6 +6332,64 @@
     });
   }
   window._runUnblockedSimulations = _runUnblockedSimulations;
+
+  // "Rerun investigation" — force-relaunch every member study's baseline
+  // (ignores the unblocked-gate; explicit user action). POSTs to
+  // /api/investigation-rerun, toasts the launched count, then re-renders the
+  // run-progress panel with per-study results and refreshes the detail view
+  // so new runs show up in charts/Simulations.
+  function _rerunInvestigation() {
+    var name = window._currentIset;
+    if (!name) return;
+    if (!confirm('Re-run every study in this investigation? Launches a fresh baseline run per study.')) return;
+    var btn = document.getElementById('investigation-rerun');
+    var panel = document.getElementById('investigation-run-progress');
+    if (btn) { btn.disabled = true; btn.textContent = '… launching'; }
+    if (panel) { panel.style.display = ''; panel.innerHTML = '<div class="inv-run-progress-banner">Launching reruns…</div>'; }
+    fetch('/api/investigation-rerun', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ investigation: name }),
+    }).then(function(r) {
+      return r.json().then(function(j) { return { ok: r.ok, body: j, status: r.status }; });
+    }).then(function(res) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Rerun investigation'; }
+      if (!res.ok) {
+        var errMsg = 'Rerun failed: ' + ((res.body && res.body.error) || res.status);
+        if (typeof _showToast === 'function') _showToast(errMsg); else alert(errMsg);
+        if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">' + _h(errMsg) + '</div>';
+        return;
+      }
+      var body = res.body || {};
+      var launched = body.launched || [], errors = body.errors || [];
+      var msg = (body.count || launched.length) + ' runs launched';
+      if (errors.length) msg += ', ' + errors.length + ' failed';
+      if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+      if (panel) {
+        var items = launched.map(function(it) {
+          return '<div class="inv-run-item inv-run-done"><span class="inv-run-icon">✓</span>' +
+            '<code>' + _h(it.study) + '</code> <span class="inv-run-arrow">›</span> run <code>' + _h(it.run_id) + '</code></div>';
+        }).concat(errors.map(function(it) {
+          return '<div class="inv-run-item inv-run-failed"><span class="inv-run-icon">✗</span>' +
+            '<code>' + _h(it.study) + '</code><span class="inv-run-err"> ' + _h(String(it.error)) + '</span></div>';
+        })).join('');
+        panel.innerHTML = '<div class="inv-run-progress-banner"><strong>' + _h(msg) + '</strong></div>' +
+          '<div class="inv-run-list">' + items + '</div>';
+      }
+      // Refresh the investigation detail so newly-launched runs surface.
+      if (typeof _refreshInvestigationDetail === 'function') {
+        setTimeout(_refreshInvestigationDetail, 500);
+      } else if (typeof _openInvestigationDetail === 'function') {
+        setTimeout(function() { _openInvestigationDetail(name); }, 500);
+      }
+    }).catch(function(err) {
+      if (btn) { btn.disabled = false; btn.textContent = 'Rerun investigation'; }
+      var netMsg = 'Network error: ' + err;
+      if (typeof _showToast === 'function') _showToast(netMsg); else alert(netMsg);
+      if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">' + _h(netMsg) + '</div>';
+    });
+  }
+  window._rerunInvestigation = _rerunInvestigation;
 
   function _vivPollRunProgress(jobId) {
     if (_vivRunUnblockedTimer) clearTimeout(_vivRunUnblockedTimer);

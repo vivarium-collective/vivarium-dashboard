@@ -9,6 +9,7 @@
 <body>
 <main class="study-page">
 <header class="study-header">
+  <div style="display:flex; align-items:baseline; gap:12px; justify-content:space-between;">
   <h1 class="study-title">
     {% if name_chip %}<span class="study-num-chip" style="font-size:0.5em; font-weight:700; color:#64748b; background:#f1f5f9; padding:3px 9px; border-radius:9999px; vertical-align:middle; margin-right:8px">{{ name_chip }}</span>{% endif %}<span class="study-name" id="study-name" data-slug="{{ name }}" title="{{ name }}">{{ display_name }}</span>
     {% if study.phase %}
@@ -37,6 +38,10 @@
     <span class="gate-divergence-chip" title="Code-computed verdict (spine study_verdict, not human-authored) disagrees with the authored gate_status." style="display:inline-block;font-size:0.5em;font-weight:700;padding:3px 9px;border-radius:9999px;vertical-align:middle;margin-left:8px;background:#fffbeb;border:1px solid #f59e0b;color:#92400e">⚠ code: {{ _cgv.result }} · authored: {{ study.gate_status }}</span>
     {% endif %}
   </h1>
+  <span class="study-header-actions" style="display:inline-flex; gap:6px; flex-shrink:0;">
+    <button type="button" id="study-rerun" class="btn-mini" title="Re-run this study's baseline (POST /api/study-run-baseline) as a brand-new run">↻ Rerun study</button>
+  </span>
+  </div>
 </header>
 
 {# Composite-resolution lint banner (framework-emitters). Surfaced server-side
@@ -1891,6 +1896,10 @@ window._seedFollowupProposal = _seedFollowupProposal;
   if (window.__DASH_CONFIG__ && window.__DASH_CONFIG__.mode === "snapshot") {
     var rp = document.getElementById("remote-run-panel");
     if (rp) rp.style.display = "none";
+    // "Rerun study" POSTs to a live-only endpoint — hide it alongside the
+    // remote-run launcher in a published read-only snapshot.
+    var rerunBtn = document.getElementById("study-rerun");
+    if (rerunBtn) rerunBtn.style.display = "none";
   } else if (window._initRemoteRunPinned) {
     // Live backend: relabel the remote-run card if pinned mode is enabled.
     window._initRemoteRunPinned();

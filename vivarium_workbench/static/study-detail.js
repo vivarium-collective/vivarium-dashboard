@@ -837,6 +837,35 @@
     window.location = '/api/study-export?study=' + encodeURIComponent(studyName());
   });
 
+  // "Rerun study" — force-relaunch this study's baseline as a brand-new run
+  // (POST /api/study-run-baseline, same endpoint the Baseline tab's Run button
+  // uses). Live-only: a published read-only snapshot has no backend to launch
+  // against, so the button is hidden there (see the snapshot-mode block near
+  // the end of this file, mirroring the remote-run-panel hide).
+  bindAll('#study-rerun', function(btn) {
+    if (!confirm("Re-run this study's baseline?")) return;
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '… rerunning';
+    api('POST', '/api/study-run-baseline', { study: studyName() })
+      .then(function(res) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (res.status === 200) {
+          var msg = 'Rerun launched' + (res.body && res.body.run_id ? ' — new run ' + res.body.run_id : '');
+          if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+          if (typeof _loadStudySims === 'function') _loadStudySims(true);
+        } else {
+          alert('Rerun failed: ' + (res.body && res.body.error || res.status));
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        alert('Rerun failed: network error — ' + err);
+      });
+  });
+
   // btn-delete has class "btn-delete danger" — selector ".btn-delete" still matches.
   // Handler _post_investigation_delete uses body key "name".
   bindAll('.btn-delete', function(btn) {

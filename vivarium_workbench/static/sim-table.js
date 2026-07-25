@@ -122,8 +122,58 @@
     var analysis = studySlug
       ? '<a class="action-btn js-authoring" title="Download the analysis-flush output for this run\'s study (.zip)" ' +
         'href="/api/study-analysis-zip?study=' + encodeURIComponent(studySlug) + '" download style="text-decoration:none;">⬇ Analysis</a>' : "";
-    return data + (data && analysis ? " " : "") + analysis;
+    // Rerun — replays this run as a brand-new one via POST /api/run-rerun.
+    // Not available against a published read-only snapshot (no live backend
+    // to launch against). The <tr> is clickable (opens the run), so the
+    // button's onclick MUST stopPropagation or the row-open handler would
+    // also fire.
+    var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === "snapshot";
+    var rerun = (row.run_id && !isSnapshot)
+      ? '<button type="button" class="action-btn js-authoring" title="Re-run this simulation as a brand-new run" ' +
+        'onclick="event.stopPropagation();window._rerunSim(\'' + esc(row.run_id) + '\', this);">↻ Rerun</button>' : "";
+    var parts = [data, analysis, rerun].filter(function (h) { return !!h; });
+    return parts.join(" ");
   }
+
+  // Global handler for the ⬇/↻ action buttons rendered above (sim-table.js is
+  // an IIFE, so expose on window like the other row helpers). One-click
+  // rerun: POST /api/run-rerun, then refresh whichever Simulations table is
+  // mounted (global Sim-DB page and/or per-study tab — both expose a
+  // refresh hook when present).
+  function _rerunSim(runId, btnEl) {
+    if (!runId) return;
+    var origLabel = btnEl ? btnEl.textContent : "";
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = "… rerunning"; }
+    fetch("/api/run-rerun", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ run_id: runId }),
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; })
+        .catch(function () { return { ok: r.ok, status: r.status, body: {} }; });
+    }).then(function (res) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = origLabel || "↻ Rerun"; }
+      var body = res.body || {};
+      if (!res.ok) {
+        var errMsg = "Rerun failed: " + (body.error || res.status);
+        if (typeof _showToast === "function") _showToast(errMsg);
+        else alert(errMsg);
+        return;
+      }
+      var okMsg = "Rerun launched" + (body.run_id ? " — new run " + body.run_id : "");
+      if (typeof _showToast === "function") _showToast(okMsg);
+      else alert(okMsg);
+      // Refresh whichever Simulations table(s) are on the current page.
+      if (typeof window._initSimulations === "function") window._initSimulations(true);
+      if (typeof window._loadStudySims === "function") window._loadStudySims(true);
+    }).catch(function (err) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = origLabel || "↻ Rerun"; }
+      var netMsg = "Rerun failed: network error — " + err;
+      if (typeof _showToast === "function") _showToast(netMsg);
+      else alert(netMsg);
+    });
+  }
+  window._rerunSim = _rerunSim;
 
   // Render one <tr>. opts.scope === 'study' drops Investigation + Study columns.
   function renderRow(row, opts) {
