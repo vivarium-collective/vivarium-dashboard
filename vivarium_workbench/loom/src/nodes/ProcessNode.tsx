@@ -21,6 +21,36 @@ function _classifyStep(address: string | undefined, label: string | undefined): 
   return 'process';
 }
 
+/** A config value's inferred type, for the config detail popover. Config is a
+ *  plain dict (no declared schema), so we read the JS runtime shape. */
+function configValueType(v: unknown): string {
+  if (v === null || v === undefined) return 'null';
+  if (Array.isArray(v)) return `list[${v.length}]`;
+  switch (typeof v) {
+    case 'number':  return Number.isInteger(v) ? 'integer' : 'float';
+    case 'boolean': return 'boolean';
+    case 'string':  return 'string';
+    case 'object':  return `dict[${Object.keys(v as object).length}]`;
+    default:        return typeof v;
+  }
+}
+
+/** A config value rendered for display (objects/lists as compact JSON). */
+function fmtConfigValue(v: unknown): string {
+  if (v === null || v === undefined) return '—';
+  if (typeof v === 'object') { try { return JSON.stringify(v); } catch { return String(v); } }
+  return String(v);
+}
+
+/** One-line "what is this section" hints, shown on hover of each middle box. */
+const SECTION_HINT = {
+  config:   'Configuration — build-time parameters that set how this process behaves. Click for values & types.',
+  meta:     'Process type and how many input / output ports it has.',
+  contract: 'Contract — what this process reads, computes, and writes. Click for the full description.',
+  math:     'Governing equations — how the outputs are computed from the inputs.',
+  symbols:  'Symbol legend — what each variable in the equations means.',
+} as const;
+
 /**
  * Legacy card body: centered label + type with flanking port labels. Used in
  * modes that do NOT drive semantic zoom (hierarchy). Preserved verbatim so
@@ -213,6 +243,11 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
   // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.
   const [openPort, setOpenPort] = useState<string | null>(null);
+  // Which middle section's detail is expanded (click a center box). 'config'
+  // opens a values+types popover; 'contract' reveals the full description.
+  const [openSection, setOpenSection] = useState<'config' | 'contract' | null>(null);
+  const toggleSection = (s: 'config' | 'contract') =>
+    setOpenSection((cur) => (cur === s ? null : s));
 
   return (
     <div
@@ -241,14 +276,34 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           so no abstract ƒ(inputs; config)→outputs line is needed. */}
       <div className="process-node-center">
         {show.types && configEntries.length > 0 && (
-          <div className="process-node-config-band" title="config parameters">
-            <span className="config-band-caret">▼ config</span>
+          <div
+            className={`process-node-config-band section-box${openSection === 'config' ? ' is-open' : ''}`}
+            title={SECTION_HINT.config}
+            onClick={(e) => { e.stopPropagation(); toggleSection('config'); }}
+          >
+            <span className="config-band-caret">▾ config</span>
             {configEntries.map(([k, v]) => (
               <span key={k} className="config-chip">
                 <span className="config-key">{k}</span>
-                {show.contract && <span className="config-val">{String(v).slice(0, 24)}</span>}
+                {show.contract && <span className="config-val">{fmtConfigValue(v).slice(0, 24)}</span>}
               </span>
             ))}
+            {openSection === 'config' && (
+              <div className="section-popover" onClick={(e) => e.stopPropagation()}>
+                <div className="section-popover-head">
+                  config parameters <span className="section-popover-sub">value · type</span>
+                </div>
+                {configEntries.map(([k, v]) => (
+                  <div key={k} className="section-popover-row">
+                    <span className="section-popover-key">{k}</span>
+                    <span className="section-popover-val mono" title={fmtConfigValue(v)}>
+                      {fmtConfigValue(v).slice(0, 80)}
+                    </span>
+                    <span className="section-popover-type mono">{configValueType(v)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -258,35 +313,46 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         </div>
 
         {show.ports && (
-          <div className="process-node-meta">
+          <div className="process-node-meta" title={SECTION_HINT.meta}>
             {data.processType} · {inputPorts.length} in / {outputPorts.length} out
             {data.interval != null && <span> · every {data.interval}</span>}
           </div>
         )}
 
         {/* The contract: a justified recital of what the process does, over its
-            governing equations. Only shown when actually documented. */}
+            governing equations. Only shown when actually documented. Click to
+            reveal the full description below (when there is one to reveal). */}
         {show.contract && contract?.summary && (
-          <div className="process-contract">
+          <div
+            className={`process-contract section-box${openSection === 'contract' ? ' is-open' : ''}`}
+            title={SECTION_HINT.contract}
+            onClick={(e) => {
+              if (!contract.description || contract.description === contract.summary) return;
+              e.stopPropagation(); toggleSection('contract');
+            }}
+          >
             <p className="contract-recital">{contract.summary}</p>
           </div>
         )}
 
         {show.contract && contract && contract.math.length > 0 && (
-          <div className="process-node-math">
+          <div className="process-node-math" title={SECTION_HINT.math}>
             {contract.math.map((m, i) => <div key={i}>{m}</div>)}
           </div>
         )}
 
         {show.full && contract && Object.keys(contract.symbols).length > 0 && (
-          <div className="process-node-symbols">
+          <div className="process-node-symbols" title={SECTION_HINT.symbols}>
             {Object.entries(contract.symbols).map(([s, meaning]) => (
               <div key={s}><em>{s}</em> — {meaning}</div>
             ))}
           </div>
         )}
 
-        {show.full && contract?.description && (
+        {/* Full description: shown at the `full` tier, OR on demand when the
+            contract box is clicked at the `contract` tier. */}
+        {(show.full || openSection === 'contract') && contract?.description
+          && contract.description !== contract.summary && (
           <div className="process-node-description">{contract.description}</div>
         )}
 
