@@ -5819,11 +5819,17 @@
       });
     });
 
-    // BFS depth from roots.
+    // BFS depth from roots. A "root" is a study with no prerequisite AMONG THE
+    // STUDIES IN THIS INVESTIGATION. External prereqs (e.g. `parca`, which is not a
+    // study node in this graph) must NOT disqualify a root — otherwise a chain whose
+    // head depends on an external node is never reached by the BFS and every study
+    // falls through to the depth-0 default, collapsing the whole chain into a single
+    // column (vertical stack) instead of flowing left->right by dependency depth.
     var depth = {};
     var queue = [];
     studies.forEach(function(s) {
-      if (!_dagEdges(s).length) { depth[s.name] = 0; queue.push(s.name); }
+      var inParents = _dagEdges(s).filter(function(p) { return byName[p.study]; });
+      if (!inParents.length) { depth[s.name] = 0; queue.push(s.name); }
     });
     var guard = studies.length * 4;
     while (queue.length && guard-- > 0) {
@@ -12360,11 +12366,16 @@
         if (pn && childrenMap[pn]) childrenMap[pn].push(inv.name);
       });
     });
-    // BFS depth from roots.
+    // BFS depth from roots — root = no parent AMONG the nodes in this set. Ignore
+    // external prereqs (e.g. `parca`) that aren't in childrenMap, else a chain whose
+    // head has an external parent collapses to depth 0 (same bug as the DAG render).
     var depthMap = {};
     var queue = [];
     all.forEach(function(inv) {
-      if (!(inv.parent_studies || []).length) {
+      var inParents = (inv.parent_studies || []).filter(function(p) {
+        return childrenMap[_parentName(p)] !== undefined;
+      });
+      if (!inParents.length) {
         depthMap[inv.name] = 0;
         queue.push(inv.name);
       }
