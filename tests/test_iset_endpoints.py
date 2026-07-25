@@ -410,14 +410,30 @@ def _write_study(ws, name, status):
     ))
 
 
-def test_iset_summary_effective_status_running(_ws):
+def test_iset_summary_stale_running_status_is_not_running(_ws):
+    # A stale authored `status: running` with NO active run must NOT pin the
+    # investigation to "running" — "Running now" requires a real live run.
     _write_iset(_ws, "inv", status="planning", studies=["s1", "s2"])
     _write_study(_ws, "s1", "planned")
-    _write_study(_ws, "s2", "running")
+    _write_study(_ws, "s2", "running")   # legacy status, no live run → stale
     out = _build_iset_summary_for_test(_ws)
     items = [i for i in out if i["name"] == "inv"]
     assert len(items) == 1
     assert items[0]["status"] == "planning"   # author intent
+    assert items[0]["effective_status"] != "running"
+
+
+def test_iset_summary_running_requires_active_run(_ws):
+    # A study with a genuinely active run (running row + fresh heartbeat) DOES
+    # make the investigation read "running".
+    import time
+    _write_iset(_ws, "inv", status="planning", studies=["s1"])
+    _write_study_full(
+        _ws, "s1", status="running",
+        runs=[{"kind": "simulation", "status": "running", "heartbeat_at": time.time()}],
+    )
+    out = _build_iset_summary_for_test(_ws)
+    items = [i for i in out if i["name"] == "inv"]
     assert items[0]["effective_status"] == "running"
 
 

@@ -719,6 +719,22 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         # own verdict over a thin/stale viz/report_card/<card>.html) and drop it
         # from embed_visualizations so Visualizations shows real figures.
         _promote_report_card_embeds(spec, ws_root)
+        # Deterministic evidence chain: when the study has report cards but no
+        # authored findings, DERIVE one finding per card from the card's own
+        # verdict/subject so the study pillar (and the investigation graph) show
+        # the evidence instead of "pending". Authored findings are never
+        # clobbered (derive returns them unchanged). Also backfills each card's
+        # verdict pill when it was None. Best-effort — never breaks the response.
+        try:
+            _existing = spec.get("findings")
+            _rc = spec.get("report_card_urls")
+            if (not _existing) and isinstance(_rc, dict) and _rc:
+                _derived = derive_findings_from_report_cards(
+                    ws_root, name, _rc, _existing)
+                if _derived:
+                    spec["findings"] = _derived
+        except Exception:  # noqa: BLE001
+            pass
         # Interactive plotly comparison (v2ecoli vs vEcoli overlays), rendered
         # into <study>/viz/comparison_plotly.html — surfaced above the scorecards
         # in the Report Cards tab. Absent for studies that don't have one.
@@ -739,18 +755,54 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
     return spec
 
 
-def _is_report_card_embed(entry: dict) -> bool:
-    """True when a Visualizations embed actually points at a rendered report card
-    (a ReportCardStep output living under ``docs/report_cards/.../report_card.html``,
-    or otherwise self-identifying as a report card)."""
+# Canonical machine marker a report card carries in its <head> so it is classified
+# deterministically regardless of filename or which directory it was dropped into.
+# Rendered report cards and hand-authored ones should both emit it; the classifier
+# below prefers it over the fragile filename/title heuristics.
+REPORT_CARD_MARKER = '<meta name="viv-artifact" content="report-card">'
+
+
+def _html_self_identifies_as_report_card(path: Path) -> bool:
+    """Content sniff: does this HTML self-identify as a report card?
+
+    Deterministic marker first (``REPORT_CARD_MARKER`` in the head); falls back to a
+    ``<title>… report card</title>`` for hand-authored cards predating the marker.
+    Reads only a bounded prefix — report-card identity lives in the document head, so
+    this never loads a multi-MB figure in full.
+    """
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:8192]
+    except OSError:
+        return False
+    low = head.lower()
+    if 'name="viv-artifact"' in low and 'content="report-card"' in low:
+        return True
+    m = re.search(r"<title>(.*?)</title>", low, re.DOTALL)
+    return bool(m and "report card" in m.group(1))
+
+
+def _is_report_card_embed(entry: dict, ws_root: Optional[Path] = None) -> bool:
+    """True when a Visualizations embed actually points at a rendered report card.
+
+    Filename/path/display-name heuristics catch the conventional locations cheaply
+    (a ReportCardStep output under ``docs/report_cards/.../report_card.html``). When a
+    ``ws_root`` is given, a report card that was hand-dropped into ``reports/figures/``
+    under a figure-style filename is *still* caught by sniffing the HTML for the
+    report-card marker (or a ``… report card`` title) — so classification depends on
+    what the artifact IS, not where it lives or what it is named."""
     url = str((entry or {}).get("url") or "")
     name = str((entry or {}).get("name") or "").lower()
     path = url.split("?", 1)[0]
-    return (
+    if (
         ("/report_cards/" in path and path.endswith("report_card.html"))
         or "report card" in name
         or "report_card" in path.rsplit("/", 1)[-1]
-    )
+    ):
+        return True
+    if ws_root is not None and path.endswith(".html"):
+        rel = path[1:] if path.startswith("/") else path
+        return _html_self_identifies_as_report_card(ws_root / rel)
+    return False
 
 
 def _promote_report_card_embeds(spec: dict, ws_root: Path) -> None:
@@ -774,15 +826,18 @@ def _promote_report_card_embeds(spec: dict, ws_root: Path) -> None:
         rc_urls = {}
     kept: list = []
     for entry in embeds:
-        if not (isinstance(entry, dict) and _is_report_card_embed(entry)):
+        if not (isinstance(entry, dict) and _is_report_card_embed(entry, ws_root)):
             kept.append(entry)
             continue
         url = str(entry.get("url") or "")
         path = url.split("?", 1)[0]
-        # .../<card>/report_card.html  → card = <card>; else fall back to the stem.
+        # Canonical rich render is ``.../<card>/report_card.html`` → key by <card>.
+        # A hand-authored card in ``reports/figures/<study>/<stem>.html`` must key by
+        # its own <stem>, NOT the parent dir — otherwise every promoted card in the
+        # same study collides on the study name and only the last survives.
         parts = [p for p in path.split("/") if p]
-        card = parts[-2] if (len(parts) >= 2 and parts[-1].endswith(".html")) else \
-            (parts[-1].rsplit(".", 1)[0] if parts else "report_card")
+        stem = parts[-1].rsplit(".", 1)[0] if parts else "report_card"
+        card = parts[-2] if (len(parts) >= 2 and parts[-1] == "report_card.html") else stem
         verdict = None
         groups = None
         # Rich bundle carries its verdict as report_card_verdict.json (sibling).
@@ -809,6 +864,299 @@ def _promote_report_card_embeds(spec: dict, ws_root: Path) -> None:
     if len(kept) != len(embeds):
         spec["embed_visualizations"] = kept
         spec["report_card_urls"] = rc_urls
+
+
+# ---------------------------------------------------------------------------
+# Report-card evidence derivation
+# ---------------------------------------------------------------------------
+#
+# When a study carries report cards but no authored ``findings``, its evidence
+# chain would otherwise render blank ("pending evidence") in the investigation
+# DAG and the study pillar. These helpers DETERMINISTICALLY derive one finding
+# per report card from the card's own verdict/subject, so the graph shows
+# "Finds: …" and the pillar reflects the evidence — without ever clobbering
+# hand-authored findings.
+
+# The verdict vocabulary the Report Cards tab pills understand
+# (static/walkthrough.js ``_rcPill``): within_tol / drift / mismatch / ungraded.
+_REPORT_CARD_VERDICTS = ("within_tol", "drift", "mismatch", "ungraded")
+
+# Badge tokens (and JSON ``overall`` values) mapped to that canonical vocabulary.
+# Hand-authored cards spell the overall verdict as PASS / MISMATCH in the badge;
+# rendered cards use the canonical within_tol/drift/mismatch. Both normalise here.
+_VERDICT_ALIASES = {
+    "mismatch": "mismatch", "fail": "mismatch", "failed": "mismatch",
+    "fails": "mismatch", "diverge": "mismatch", "divergent": "mismatch",
+    "pass": "within_tol", "passed": "within_tol", "passes": "within_tol",
+    "within_tol": "within_tol", "withintol": "within_tol", "within": "within_tol",
+    "match": "within_tol", "matched": "within_tol", "ok": "within_tol",
+    "drift": "drift", "partial": "drift", "marginal": "drift",
+    "ungraded": "ungraded", "na": "ungraded", "n_a": "ungraded", "none": "ungraded",
+}
+
+# Map a card verdict to the finding ``status`` glyph the SPA renders
+# (static/walkthrough.js: confirms ✓ / partial ◐ / contradicts ✗ / novel ◆).
+_VERDICT_TO_STATUS = {
+    "within_tol": "confirms",
+    "drift": "partial",
+    "mismatch": "contradicts",
+    "ungraded": "novel",
+}
+_VERDICT_LABEL = {
+    "within_tol": "within tolerance",
+    "drift": "drift",
+    "mismatch": "mismatch",
+    "ungraded": "ungraded",
+}
+# Higher = more severe. Used to pick the DAG node's headline claim.
+_VERDICT_SEVERITY = {"mismatch": 3, "drift": 2, "within_tol": 1, "ungraded": 0}
+
+
+def _normalize_verdict(token: Optional[str]) -> Optional[str]:
+    """Canonicalise a raw verdict token to the ``_REPORT_CARD_VERDICTS`` vocab.
+
+    Lower-cases, collapses spaces/dashes to underscores, then maps through
+    ``_VERDICT_ALIASES``. Returns the canonical string, or ``None`` when the
+    token is empty/unrecognised (callers treat ``None`` as ungraded).
+    """
+    if not token or not isinstance(token, str):
+        return None
+    t = re.sub(r"[\s\-]+", "_", token.strip().lower())
+    if not t:
+        return None
+    if t in _VERDICT_ALIASES:
+        return _VERDICT_ALIASES[t]
+    return t if t in _REPORT_CARD_VERDICTS else None
+
+
+def _report_card_verdict_and_subject(path: Path):
+    """Extract ``(verdict, subject, counts)`` from a report-card artifact.
+
+    - **verdict**: canonical token (within_tol/drift/mismatch/ungraded) or None.
+      A sibling ``<stem>.verdict.json`` / ``report_card_verdict.json`` ``overall``
+      is PREFERRED (authoritative); otherwise the overall badge token in the HTML
+      (``<… class="obadge …">MISMATCH · 1 ✓ 0 ≈ 3 ✗ 0 –</…>``) is parsed. Only the
+      badge is read for the verdict — never the CSS/legend, which mention every
+      verdict class and would poison a whole-document scan.
+    - **subject**: the ``<title>`` segment before "… report card"
+      (e.g. "v2ecoli baseline vs v2ecoli + Millard FBA-bridge — central-carbon
+      exchange"), or None.
+    - **counts**: ``{within_tol, drift, mismatch, ungraded}`` tallies parsed from
+      the badge glyphs (✓ ≈ ✗ –), or None when unparsable.
+
+    Tolerant: any read/parse failure yields ``None`` in that slot. Reads a bounded
+    prefix so a multi-MB embedded figure is never loaded whole.
+    """
+    import html as _html
+
+    verdict = None
+    # 1) Sibling verdict.json wins (authoritative, machine-written).
+    for sib in (path.with_name(path.stem + ".verdict.json"),
+                path.with_name("report_card_verdict.json")):
+        try:
+            if sib.is_file():
+                _vj = _json.loads(sib.read_text(encoding="utf-8"))
+                verdict = _normalize_verdict(_vj.get("overall"))
+                if verdict is not None:
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")[:400_000]
+    except OSError:
+        return verdict, None, None
+
+    # Subject from <title>, dropping a trailing "… report card".
+    subject = None
+    mt = re.search(r"<title>(.*?)</title>", text, re.DOTALL | re.IGNORECASE)
+    if mt:
+        title = _html.unescape(re.sub(r"\s+", " ", mt.group(1))).strip()
+        title = re.sub(r"\s*[—–-]\s*report card\s*$", "", title, flags=re.IGNORECASE).strip()
+        subject = title or None
+
+    # Overall verdict badge + glyph counts (only the obadge span, never the CSS).
+    counts = None
+    mb = re.search(r'class="[^"]*obadge[^"]*"[^>]*>(.*?)</', text, re.DOTALL | re.IGNORECASE)
+    if mb:
+        badge = _html.unescape(re.sub(r"<[^>]+>", " ", mb.group(1)))
+        badge = badge.replace("\xa0", " ")
+        badge = re.sub(r"\s+", " ", badge).strip()
+        if verdict is None:
+            mtok = re.match(r"[^A-Za-z]*([A-Za-z][A-Za-z _\-]*?)\s*(?:[·|]|&|\d|$)", badge)
+            if mtok:
+                verdict = _normalize_verdict(mtok.group(1))
+        c = {}
+        for key, glyph in (("within_tol", "✓"), ("drift", "≈"),
+                           ("mismatch", "✗"), ("ungraded", "–")):
+            gm = re.search(r"(\d+)\s*" + re.escape(glyph), badge)
+            if gm:
+                c[key] = int(gm.group(1))
+        if c:
+            counts = {k: c.get(k, 0) for k in _REPORT_CARD_VERDICTS}
+
+    return verdict, subject, counts
+
+
+def _resolve_report_card_path(ws_root: Path, url: Optional[str]) -> Optional[Path]:
+    """Resolve a workspace-relative report-card URL to an on-disk file, or None."""
+    if not url or not isinstance(url, str):
+        return None
+    p = url.split("?", 1)[0]
+    rel = p[1:] if p.startswith("/") else p
+    cand = Path(ws_root) / rel
+    return cand if cand.is_file() else None
+
+
+def _finding_from_report_card(card: str, url, verdict, subject, counts, label) -> dict:
+    """Build ONE derived finding dict for a report card.
+
+    The key set matches exactly what the SPA finding readers consume
+    (static/walkthrough.js): ``id`` (anchor + fallback), ``statement`` and
+    ``summary`` (DAG "Finds:" / claim / takeaways / synthesis), ``status``
+    (glyph), ``kind`` (grouping), ``evidence`` (observed/summary). Plus
+    provenance the readers ignore but downstream tooling can trust:
+    ``verdict``, ``source: "report_card"``, ``url``.
+    """
+    v = verdict if verdict in _REPORT_CARD_VERDICTS else "ungraded"
+    subj = (subject or label or card).strip()
+    blurb = ""
+    if counts:
+        parts = []
+        for key, glyph in (("within_tol", "✓"), ("drift", "≈"),
+                           ("mismatch", "✗"), ("ungraded", "–")):
+            if counts.get(key):
+                parts.append(f"{counts[key]} {glyph}")
+        blurb = " ".join(parts)
+    summary = f"{subj}: {_VERDICT_LABEL.get(v, v)}"
+    if blurb:
+        summary += f" ({blurb})"
+    fid = "report-card-" + re.sub(r"[^a-z0-9]+", "-", str(card).lower()).strip("-")
+    evidence = {"summary": f"Report card verdict: {_VERDICT_LABEL.get(v, v)}"}
+    if blurb:
+        evidence["observed"] = blurb
+    return {
+        "id": fid,
+        "summary": summary,
+        "statement": summary,
+        "status": _VERDICT_TO_STATUS.get(v, "novel"),
+        "kind": "computational",
+        "verdict": v,
+        "source": "report_card",
+        "url": url,
+        "evidence": evidence,
+    }
+
+
+def derive_findings_from_report_cards(
+    ws_root: Path,
+    study_slug: str,
+    report_card_urls: dict,
+    existing_findings,
+) -> list[dict]:
+    """Deterministically derive findings from a study's report cards.
+
+    - If ``existing_findings`` is a non-empty list → returned unchanged (authored
+      findings are NEVER clobbered).
+    - Otherwise, one finding per report card, in a STABLE order (sorted by card
+      key). Each finding's verdict/subject/counts come from
+      :func:`_report_card_verdict_and_subject` (verdict.json preferred over HTML).
+      When a card's ``report_card_urls[card]["verdict"]`` is currently ``None`` it
+      is BACKFILLED from the extracted verdict (improves the Report Cards tab
+      pills). Pure and tolerant of missing/malformed files.
+    """
+    if isinstance(existing_findings, list) and existing_findings:
+        return existing_findings
+    if not isinstance(report_card_urls, dict) or not report_card_urls:
+        return []
+    ws_root = Path(ws_root)
+    out: list[dict] = []
+    for card in sorted(report_card_urls):
+        meta = report_card_urls.get(card)
+        meta = meta if isinstance(meta, dict) else {}
+        url = meta.get("url")
+        verdict = _normalize_verdict(meta.get("verdict"))
+        subject = None
+        counts = None
+        path = _resolve_report_card_path(ws_root, url)
+        if path is not None:
+            try:
+                v2, subject, counts = _report_card_verdict_and_subject(path)
+            except Exception:  # noqa: BLE001
+                v2 = None
+            if verdict is None:
+                verdict = v2
+        # Backfill the report-card entry's verdict when it was unset.
+        if verdict is not None and meta.get("verdict") is None:
+            meta["verdict"] = verdict
+            report_card_urls[card] = meta
+        out.append(_finding_from_report_card(
+            card, url, verdict, subject, counts, meta.get("label")))
+    return out
+
+
+def discover_report_card_urls(ws_root: Path, slug: str) -> dict:
+    """Assemble a study's ``report_card_urls`` WITHOUT the full detail loader.
+
+    Mirrors the report-card discovery inside :func:`load_study_detail_spec` — the
+    ``viz/report_card/<card>.{html,verdict.json}`` artifacts plus any rich card
+    hand-dropped into ``reports/figures/<slug>/`` (folded in via
+    :func:`_promote_report_card_embeds`, which is content-aware). Used by the
+    investigation-graph node builder, which loads the raw study.yaml and so lacks
+    the enriched ``report_card_urls``. Tolerant: returns ``{}`` on any failure.
+    """
+    rc_urls: dict = {}
+    try:
+        sdir = study_dir(ws_root, slug)
+    except Exception:  # noqa: BLE001
+        sdir = None
+    rc_dir = (sdir / "viz" / "report_card") if sdir else None
+    if rc_dir and rc_dir.is_dir():
+        for html in sorted(rc_dir.glob("*.html")):
+            card = html.name[: -len(".html")]
+            vf = html.with_name(card + ".verdict.json")
+            verdict = None
+            groups = None
+            if vf.is_file():
+                try:
+                    _vj = _json.loads(vf.read_text(encoding="utf-8"))
+                    verdict = _vj.get("overall")
+                    groups = _vj.get("groups")
+                except Exception:  # noqa: BLE001
+                    verdict = None
+            try:
+                html_stub = html.stat().st_size < 64
+            except OSError:
+                html_stub = True
+            rc_urls[card] = {"url": "/" + html.relative_to(ws_root).as_posix(),
+                             "verdict": verdict, "groups": groups,
+                             "html_stub": html_stub}
+    try:
+        embeds = discover_viz_html_files(ws_root, slug)
+    except Exception:  # noqa: BLE001
+        embeds = []
+    probe = {"embed_visualizations": list(embeds), "report_card_urls": rc_urls}
+    try:
+        _promote_report_card_embeds(probe, ws_root)
+    except Exception:  # noqa: BLE001
+        pass
+    promoted = probe.get("report_card_urls")
+    return promoted if isinstance(promoted, dict) else rc_urls
+
+
+def report_card_findings_for_study(ws_root: Path, slug: str, existing_findings=None):
+    """Discover a study's report cards and derive findings when none are authored.
+
+    Returns ``(findings, report_card_urls)``. If ``existing_findings`` is a
+    non-empty list it is returned unchanged (with the discovered urls). Used by
+    the investigation-graph node builder so a DAG node's "Finds:"/claim reflect
+    the report-card evidence chain.
+    """
+    rc_urls = discover_report_card_urls(ws_root, slug)
+    if isinstance(existing_findings, list) and existing_findings:
+        return existing_findings, rc_urls
+    findings = derive_findings_from_report_cards(ws_root, slug, rc_urls, None)
+    return findings, rc_urls
 
 
 def _latest_outcomes(spec: dict) -> tuple[dict, dict]:

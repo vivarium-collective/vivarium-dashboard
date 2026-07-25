@@ -32,6 +32,85 @@ _STUDY_STATUS_DONE_ROLLUP = _STUDY_STATUS_COMPLETE | frozenset({"evaluated", "de
 _STUDY_STATUS_RUNNING = frozenset({"running", "implementing", "runnable", "analyzing"})
 _STUDY_STATUS_PLANNED = frozenset({"planned", "planning"})
 
+# Multi-axis status truth, most-downstream first. The legacy top-level ``status``
+# field is deprecated (and often stale — e.g. a leftover ``status: running`` from
+# a run launched long ago), so it is only consulted as a last resort.
+_MULTI_AXIS_PRECEDENCE = (
+    "gate_status", "evaluation_status", "simulation_status",
+    "implementation_status", "design_status", "expert_review_status",
+)
+
+
+def _study_has_active_run(
+    ws_root: Path, slug: str, spec: dict, *, freshness_s: float = 300.0
+) -> bool:
+    """True only if a run for this study is *actually executing right now* — a
+    ``running`` row with a fresh heartbeat, in study.yaml ``runs[]`` or in
+    ``studies/<slug>/runs.db``. This is the sole authority for a live status;
+    a stale authored ``status: running`` is NOT evidence of a live run.
+    """
+    import time
+    now = time.time()
+
+    def _fresh(hb: object) -> bool:
+        if hb is None:
+            return False
+        try:
+            return (now - float(hb)) <= freshness_s  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return False
+
+    for r in (spec.get("runs") or []):
+        if isinstance(r, dict) and str(r.get("status") or "").strip().lower() == "running" \
+                and _fresh(r.get("heartbeat_at")):
+            return True
+    try:
+        from vivarium_workbench.lib.study_spec import read_runs_db_for_study
+        for r in read_runs_db_for_study(ws_root, slug):
+            if str((r or {}).get("status") or "").strip().lower() == "running" \
+                    and _fresh((r or {}).get("heartbeat_at")):
+                return True
+    except Exception:  # noqa: BLE001
+        pass
+    return False
+
+
+def _study_display_status(ws_root: Path, slug: str, spec: dict) -> str:
+    """A study's headline status for investigation roll-ups.
+
+    ``running`` is a LIVE claim, so it is decided ONLY by an actual active run
+    (a running row with a fresh heartbeat): with a live run the study reads
+    "running"; without one it can never read "running", no matter what an old
+    ``status: running`` says. Absent a live run, the headline comes from the
+    multi-axis truth (gate > evaluation > simulation > implementation > design >
+    expert_review), falling back to the deprecated legacy ``status`` field only
+    when no axis is set, with any stale running-ish value demoted to the study's
+    real non-running state.
+    """
+    if _study_has_active_run(ws_root, slug, spec):
+        return "running"
+
+    status = None
+    for axis in _MULTI_AXIS_PRECEDENCE:
+        v = spec.get(axis)
+        if v:
+            status = str(v).strip()
+            break
+    if not status:
+        status = str(spec.get("status") or "planning").strip()
+
+    if status.lower() in _STUDY_STATUS_RUNNING:
+        # No live run → a running-ish headline is stale. Demote to the first
+        # non-running axis value (its real design/impl/gate state), else "planning".
+        alt = None
+        for axis in _MULTI_AXIS_PRECEDENCE:
+            v = spec.get(axis)
+            if v and str(v).strip().lower() not in _STUDY_STATUS_RUNNING:
+                alt = str(v).strip()
+                break
+        status = alt or "planning"
+    return status
+
 
 def compute_investigation_status(
     study_statuses: list[str],
@@ -135,7 +214,7 @@ def read_study_status(
             spec = yaml.safe_load(sp.read_text(encoding="utf-8")) or {}
         except Exception:
             return "planning", False
-        status = spec.get("status") or "planning"
+        status = _study_display_status(ws_root, slug, spec)
         return status, study_has_runs(slug, spec)
     return "planning", False
 
