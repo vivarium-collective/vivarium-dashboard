@@ -1,5 +1,5 @@
 from pathlib import Path
-from pbg_superpowers import study_io, run_registry
+from viva_superpowers import study_io, run_registry
 from vivarium_workbench.lib import lifecycle_mutations
 
 

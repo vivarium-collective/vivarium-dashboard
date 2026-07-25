@@ -16,7 +16,7 @@ def _dispatch_analyses(*, spec_id: str, db_file: str, run_id: str, core) -> list
     emitter output. Returns a list of {name, result} dicts; [] when the
     composite declares no analyses. Mirrors run_runner._render_canonical_viz."""
     try:
-        from pbg_superpowers.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
     except ImportError:
         return []
     if not _REGISTRY:

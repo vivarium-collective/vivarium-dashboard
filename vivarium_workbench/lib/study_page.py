@@ -192,10 +192,10 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     tpl = env.get_template("study-detail.html")
     _hn = _humanize_study_name(name)
     # W15 — open epistemic debts, computed server-side via the deterministic
-    # pbg_superpowers collector. Defensive: degrade to no panel if not importable.
+    # viva_superpowers collector. Defensive: degrade to no panel if not importable.
     epistemic_debts: list = []
     try:
-        from pbg_superpowers.needs_attention import open_epistemic_debts
+        from viva_superpowers.needs_attention import open_epistemic_debts
         epistemic_debts = open_epistemic_debts(spec) or []
     except Exception:
         epistemic_debts = []

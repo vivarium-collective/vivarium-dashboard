@@ -84,7 +84,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
 
     def _unregister():
         try:
-            from pbg_superpowers import workspace_catalog
+            from viva_superpowers import workspace_catalog
             workspace_catalog.unregister_server(workspace)
         except Exception:
             pass
@@ -103,7 +103,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     # non-fatal — the dashboard still works, it just won't appear in other
     # dashboards' switchers.
     try:
-        from pbg_superpowers import workspace_catalog
+        from viva_superpowers import workspace_catalog
         ws_name = _workspace_name(workspace)
         # Ensure this workspace appears in OTHER dashboards' switchers.
         # add() is idempotent; safe to call on every boot.

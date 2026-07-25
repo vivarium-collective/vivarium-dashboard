@@ -1,7 +1,7 @@
 """SP4a: GET /api/linkage-index + the `_linkage_index` worker.
 
 The endpoint runs the deterministic linkage index/queries from
-``pbg_superpowers.linkage_index`` over the workspace and returns JSON so the
+``viva_superpowers.linkage_index`` over the workspace and returns JSON so the
 dashboard can render the AC→study gating matrix (and surface unlinked-AC gaps).
 The dashboard adds no AI — it just runs the derive and renders. Tolerant:
 never 500, empty on absence.

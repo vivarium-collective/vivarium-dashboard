@@ -115,7 +115,7 @@ def _patched_ws(monkeypatch, _ws_with_catalog):
     """Return the test workspace + stub the venv probe to return a fixed dict
     (so we can test the three-layer detection without spinning up a real venv).
 
-    The catalog is sourced via ``pbg_superpowers.catalog.load_registry`` (the
+    The catalog is sourced via ``viva_superpowers.catalog.load_registry`` (the
     canonical registry seam ``build_catalog`` consults) rather than a
     per-workspace modules.json. Feed this test's controlled 3-entry catalog
     through that seam so the install-source annotation logic is exercised
@@ -137,7 +137,7 @@ def _patched_ws(monkeypatch, _ws_with_catalog):
                         lambda ws, pkg, path: None)
     fixture_modules = json.loads(
         (_ws_with_catalog / "scripts" / "_catalog" / "modules.json").read_text())
-    monkeypatch.setattr("pbg_superpowers.catalog.load_registry",
+    monkeypatch.setattr("viva_superpowers.catalog.load_registry",
                         lambda _ws: [dict(m) for m in fixture_modules])
     return _ws_with_catalog
 
@@ -200,7 +200,7 @@ def test_module_registry_is_canonical_plus_overlay(tmp_path, monkeypatch):
     """The registry is now the canonical pbg-superpowers list (single source
     of truth) merged with the workspace's optional overlay.json — NOT a
     vendored per-workspace modules.json."""
-    from pbg_superpowers.catalog import load_registry
+    from viva_superpowers.catalog import load_registry
     ws = tmp_path / "ws"
     (ws / "scripts" / "_catalog").mkdir(parents=True)
 
@@ -239,7 +239,7 @@ def test_uncurated_declared_import_surfaces_in_catalog(tmp_path, monkeypatch):
     monkeypatch.setattr(_catalog, "_read_workspace_pyproject_deps", lambda _w: set())
     monkeypatch.setattr(_catalog, "_detect_workspace_venv_distributions", lambda _w: {})
     monkeypatch.setattr(_catalog, "_check_installed_module_sync", lambda ws, pkg, path: None)
-    monkeypatch.setattr("pbg_superpowers.catalog.load_registry",
+    monkeypatch.setattr("viva_superpowers.catalog.load_registry",
                         lambda _w: [{"name": "pbg-copasi", "package": "pbg_copasi",
                                      "description": "c"}])
 

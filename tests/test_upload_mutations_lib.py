@@ -24,13 +24,13 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-import pbg_superpowers
+import viva_superpowers
 
 from vivarium_workbench.lib import upload_mutations as um
 from vivarium_workbench.api.app import create_app, get_workspace
 
 
-_SCHEMA_SRC = Path(pbg_superpowers.__file__).parent / "schemas" / "workspace.schema.json"
+_SCHEMA_SRC = Path(viva_superpowers.__file__).parent / "schemas" / "workspace.schema.json"
 
 _WS_YAML = """\
 schema_version: 3

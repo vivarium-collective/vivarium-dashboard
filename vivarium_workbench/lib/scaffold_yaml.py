@@ -306,7 +306,7 @@ phase: Design
 #   registered_at: ''               # ISO-8601 timestamp you registered these (author-supplied)
 #
 # controls:                         # a system that SHOULD fail + a passing/borderline case
-#   - name: ""                      # build the negative control with pbg_superpowers.intervention
+#   - name: ""                      # build the negative control with viva_superpowers.intervention
 #     kind: negative                # negative | positive | borderline | adversarial
 #     hypothesis: ""                # why this should (not) qualify
 #     expected: ""

@@ -1,4 +1,4 @@
-# VENDORED COPY — canonical source is pbg_superpowers/refresh_viz.py.
+# VENDORED COPY — canonical source is viva_superpowers/refresh_viz.py.
 # Keep identical to the canonical; drift is caught by tests/test_refresh_viz_mirror.py.
 """Re-run the render: command of each visualizations[] entry against the
 study's latest run, stamping provenance. Error-tolerant: a failed render leaves

@@ -18,7 +18,7 @@ Routes covered:
       re-render the study's declared visualizations against its existing
       emitter data (NO simulation re-run). This route has NO commit wrapper —
       a plain no-commit extract: the WHOLE handler logic (workspace core build,
-      pbg_superpowers viz-class registry augmentation, the ``build_and_run``
+      viva_superpowers viz-class registry augmentation, the ``build_and_run``
       ``process_bigraph.Composite`` runner and ``render_visualizations``) moves
       here, and the server shim becomes a thin lib delegate.
 
@@ -122,7 +122,7 @@ def render_viz(ws_root: Path, body: dict[str, Any]) -> "tuple[dict, int]":
 
     Re-render the study's declared visualizations against its existing emitter
     data. No simulation re-run. Builds the workspace ``<pkg>.core``, augments
-    the link registry with pbg_superpowers viz classes, and runs each viz doc
+    the link registry with viva_superpowers viz classes, and runs each viz doc
     through a ``process_bigraph.Composite`` via ``build_and_run``.
 
     Returns:

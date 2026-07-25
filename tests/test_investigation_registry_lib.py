@@ -89,14 +89,14 @@ def test_build_registry_running_others_hermetic(tmp_path):
 
 
 def test_derive_this_url_prefers_catalog_record(tmp_path, monkeypatch):
-    from pbg_superpowers import workspace_catalog
+    from viva_superpowers import workspace_catalog
     monkeypatch.setattr(workspace_catalog, "find_running",
                         lambda ws: {"url": "http://10.0.0.5:8771"})
     assert ir.derive_this_url(tmp_path, "ignored:9") == "http://10.0.0.5:8771"
 
 
 def test_derive_this_url_falls_back_to_host_header(tmp_path, monkeypatch):
-    from pbg_superpowers import workspace_catalog
+    from viva_superpowers import workspace_catalog
     monkeypatch.setattr(workspace_catalog, "find_running", lambda ws: None)
     assert ir.derive_this_url(tmp_path, "myhost:1234") == "http://myhost:1234"
     # No host at all -> loopback default.

@@ -581,7 +581,7 @@ def test_computed_outcomes_survive_enrich_runs(_ws_with_computed_outcomes):
 
 _HAS_DEBTS = False
 try:  # pragma: no cover - environment dependent
-    from pbg_superpowers.needs_attention import open_epistemic_debts  # noqa: F401
+    from viva_superpowers.needs_attention import open_epistemic_debts  # noqa: F401
     _HAS_DEBTS = True
 except Exception:  # pragma: no cover
     _HAS_DEBTS = False
