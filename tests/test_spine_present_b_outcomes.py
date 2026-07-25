@@ -34,13 +34,14 @@ def test_study_detail_renders_per_test_computed_outcomes():
     assert "pass_if" in js
 
 
-def test_runs_table_has_test_results_column():
-    html = (_PKG / "templates" / "study-detail.html").read_text(encoding="utf-8")
-    assert "Test results" in html
-    assert "run-test-results" in html
-    # Sourced from each run's computed_outcomes; rows anchorable by run id.
-    assert "computed_outcomes" in html
-    assert 'id="run-{{ r.run_id or r.name }}"' in html
+def test_per_test_computed_outcomes_render_on_tests_tab():
+    """The old server-rendered runs-table 'Test results' column was retired with
+    the runs table (runs now render client-side via SimTable). Per-test
+    code-computed outcomes are canonical on the Tests tab instead, driven from
+    each run's computed_outcomes in study-detail.js."""
+    js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
+    assert "computed_outcomes" in js
+    assert "computed-outcome-row" in js
 
 
 def test_report_separates_authored_from_computed_no_raw_dump():

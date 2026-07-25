@@ -31,7 +31,7 @@ def test_panel_sections_no_premature_close():
     """Fix 5: each of the three key panels has exactly one </section> before the
     next study-tab-panel (guards the premature-</section> regression class).
     """
-    panel_ids = ["panel-observables", "panel-runs", "panel-visualizations"]
+    panel_ids = ["panel-overview", "panel-simulate", "panel-visualize"]
     for pid in panel_ids:
         start = TPL.find(f'id="{pid}"')
         assert start != -1, f"Panel {pid!r} not found in template"

@@ -424,7 +424,7 @@ wheels = [
 [[package]]
 name = "bigraph-schema"
 version = "1.4.2"
-source = { git = "https://github.com/vivarium-collective/bigraph-schema.git?branch=main#87e6b7cdf5b410064e5245f22cd7138b62f64017" }
+source = { git = "https://github.com/vivarium-collective/bigraph-schema.git?branch=main#33f682f4fad016248b128131efa20470f0d700fa" }
 dependencies = [
     { name = "fire", marker = "python_full_version == '3.12.12'" },
     { name = "numpy", marker = "python_full_version == '3.12.12'" },
@@ -4549,7 +4549,7 @@ dependencies = [
 requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4" },
     { name = "pyyaml", specifier = ">=6.0" },
-    { name = "vivarium-workbench", editable = "." },
+    { name = "vivarium-workbench", editable = "../vivarium-workbench" },
 ]
 provides-extras = ["dev"]
 
@@ -7376,7 +7376,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/3e/87/794e0b4c5dccbca30
 
 [[package]]
 name = "vivarium-workbench"
-version = "0.3.4"
+version = "0.3.5"
 source = { editable = "." }
 dependencies = [
     { name = "bigraph-schema", marker = "python_full_version == '3.12.12'" },

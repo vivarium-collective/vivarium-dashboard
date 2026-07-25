@@ -21,6 +21,7 @@ export interface StudyRef {
 export interface SimRow {
   run_id: string;
   spec_id: string | null;
+  composite_registered: boolean | null;
   sim_name: string | null;
   label: string | null;
   status: string;

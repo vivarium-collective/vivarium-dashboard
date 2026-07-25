@@ -5819,11 +5819,17 @@
       });
     });
 
-    // BFS depth from roots.
+    // BFS depth from roots. A "root" is a study with no prerequisite AMONG THE
+    // STUDIES IN THIS INVESTIGATION. External prereqs (e.g. `parca`, which is not a
+    // study node in this graph) must NOT disqualify a root — otherwise a chain whose
+    // head depends on an external node is never reached by the BFS and every study
+    // falls through to the depth-0 default, collapsing the whole chain into a single
+    // column (vertical stack) instead of flowing left->right by dependency depth.
     var depth = {};
     var queue = [];
     studies.forEach(function(s) {
-      if (!_dagEdges(s).length) { depth[s.name] = 0; queue.push(s.name); }
+      var inParents = _dagEdges(s).filter(function(p) { return byName[p.study]; });
+      if (!inParents.length) { depth[s.name] = 0; queue.push(s.name); }
     });
     var guard = studies.length * 4;
     while (queue.length && guard-- > 0) {
@@ -12360,11 +12366,16 @@
         if (pn && childrenMap[pn]) childrenMap[pn].push(inv.name);
       });
     });
-    // BFS depth from roots.
+    // BFS depth from roots — root = no parent AMONG the nodes in this set. Ignore
+    // external prereqs (e.g. `parca`) that aren't in childrenMap, else a chain whose
+    // head has an external parent collapses to depth 0 (same bug as the DAG render).
     var depthMap = {};
     var queue = [];
     all.forEach(function(inv) {
-      if (!(inv.parent_studies || []).length) {
+      var inParents = (inv.parent_studies || []).filter(function(p) {
+        return childrenMap[_parentName(p)] !== undefined;
+      });
+      if (!inParents.length) {
         depthMap[inv.name] = 0;
         queue.push(inv.name);
       }
@@ -14792,59 +14803,21 @@
     return Math.floor(d / 86400) + 'd ago';
   }
 
-  function _simStatusChip(status) {
-    var colors = {
-      completed: ['#dcfce7', '#166534'],
-      running:   ['#dbeafe', '#1e40af'],
-      failed:    ['#fee2e2', '#991b1b'],
-      orphaned:  ['#e5e7eb', '#374151'],
-    };
-    var c = colors[status] || ['#e5e7eb', '#374151'];
-    return '<span style="background:' + c[0] + '; color:' + c[1] +
-      '; padding:2px 8px; border-radius:10px; font-size:12px;">' +
-      _escSim(status || '?') + '</span>';
-  }
+  function _simStatusChip(status) { return window.SimTable.statusChip(status); }
 
   // Emitter-type pill, keyed by the API's emitter_type ("SQLite"/"Parquet"/
   // "XArray"). Colors live in CSS classes emitter-sqlite/parquet/xarray.
-  function _simEmitterPill(emitterType) {
-    var t = (emitterType || 'SQLite');
-    // "—" = genuinely emitter-less run (summary recorded in study.yaml, no
-    // per-step trajectory persisted). Render an honest dash with a tooltip
-    // rather than a fake emitter pill.
-    if (t === '—' || t === 'none' || t === '') {
-      return '<span class="emitter-pill emitter-none" ' +
-        'title="no emitter (summary-only run)">—</span>';
-    }
-    var cls = 'emitter-' + t.toLowerCase();
-    return '<span class="emitter-pill ' + cls + '" ' +
-      'title="emitter / persistence format">' + _escSim(t) + '</span>';
-  }
+  function _simEmitterPill(emitterType) { return window.SimTable.emitterPill(emitterType); }
 
   // Single source for the Origin column's text — used by BOTH the pill and the
   // sort key so they can't diverge. `remote_origin` is an OBJECT
   // ({deployment, simulation_id, …}) or null; it is never a bare string.
-  function _simOriginLabel(row) {
-    var o = row && row.remote_origin;
-    return o ? String(o.deployment || 'remote') : 'local';
-  }
+  function _simOriginLabel(row) { return window.SimTable.originLabel(row); }
 
-  function _simOriginPill(row) {
-    var o = row && row.remote_origin;
-    if (!o) return '<span class="origin-pill origin-local" title="local run">local</span>';
-    var dep = _simOriginLabel(row);
-    var tip = 'Remote run on ' + dep + ' (AWS GovCloud)'
-      + (o.simulation_id != null ? ' — sim ' + o.simulation_id : '')
-      + (o.experiment_id ? '\nexperiment: ' + o.experiment_id : '')
-      + (o.s3_uri ? '\nS3: ' + o.s3_uri : '');
-    return '<span class="origin-pill origin-remote" title="' + _escSim(tip) + '">' + _escSim(dep) + '</span>';
-  }
+  function _simOriginPill(row) { return window.SimTable.originPill(row); }
 
   // Format an epoch-seconds timestamp as a readable local time.
-  function _simFmtTime(sec) {
-    if (!sec) return '—';
-    return new Date(sec * 1000).toLocaleString();
-  }
+  function _simFmtTime(sec) { return window.SimTable.fmtTime(sec); }
 
   // Module-scope cache. _simRows = all runs from the API (the {simulations}
   // shape from simulations_index.list_simulations); _simCurrent = the current
@@ -14854,23 +14827,12 @@
 
   // Investigation/study come from the index's *_slug fields; the study slug
   // falls back to the first cross-referenced study name.
-  function _simInvestigation(row) { return row.investigation_slug || ''; }
-  function _simStudy(row) {
-    return row.study_slug || (row.studies && row.studies.length ? row.studies[0] : '');
-  }
+  function _simInvestigation(row) { return window.SimTable.investigation(row); }
+  function _simStudy(row) { return window.SimTable.study(row); }
   // Where the run's data lives: the native store (zarr/parquet dir or s3 uri)
   // when present, else the runs.db SQLite at db_path. Shows a compact tail with
   // the full path on hover.
-  function _simLocation(row) {
-    var loc = row.store_path || row.db_path || '';
-    if (!loc) return '<span style="color:#9ca3af;">—</span>';
-    var norm = String(loc).replace(/\\/g, '/');
-    var parts = norm.split('/');
-    var tail = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : norm;
-    return '<code style="font-size:11px; color:#6b7280; display:block; ' +
-      'overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' +
-      _escSim(loc) + '">' + _escSim(tail) + '</code>';
-  }
+  function _simLocation(row) { return window.SimTable.location(row); }
 
   /** Open the Composite Explorer for a specific past simulation.
    *
@@ -14902,58 +14864,7 @@
   }
   window._openSimulation = _openSimulation;
 
-  function _renderSimRow(row) {
-    var inv = _simInvestigation(row);
-    var invCell = inv
-      ? '<code style="font-size:12px; color:#374151;">' + _escSim(inv) + '</code>'
-      : '<span style="color:#9ca3af;">—</span>';
-    var study = _simStudy(row);
-    var studyCell = study
-      ? '<code style="font-size:12px; color:#374151;">' + _escSim(study) + '</code>'
-      : '<span style="color:#9ca3af;">—</span>';
-    var runId = row.run_id || '';
-    var runLabel = row.sim_name || row.label || runId;
-    var runTitle = ' title="' + _escSim(runId + (row.db_path ? '\n' + row.db_path : '')) + '"';
-    var timeSec = row.completed_at || row.started_at;
-    // Actions: if the run belongs to a study → open its Runs tab at the run;
-    // else if it has a spec_id → open in the Composite Explorer. The
-    // {simulations} shape carries spec_id + db_path so both are reconstructable.
-    var studySlug = _simStudy(row);
-    var runIdEnc = encodeURIComponent(runId);
-    // Download the run's RAW EMITTER DATA (native zarr/parquet store, else the
-    // SQLite runs.db) as a zip. The server resolves the on-disk store from the
-    // run_id via its own workspace scan — no path is trusted from the client.
-    // Only offered when the run has a local store; yaml-referenced history runs
-    // whose artifacts aren't in this checkout have nothing to download.
-    var hasLocalData = !!(row.store_path || row.db_path);
-    var emitterDl = (runId && hasLocalData)
-      ? '<a class="action-btn js-authoring" title="Download this run\'s raw emitter data (.zip)" ' +
-        'href="/api/simulation-run-download?run_id=' + runIdEnc + '" download style="text-decoration:none;">⬇ Data</a>'
-      : '';
-    // Download the ANALYSIS-FLUSH OUTPUT (analyses / figures / report cards) for
-    // the run's study, when the run belongs to one.
-    var analysisDl = studySlug
-      ? '<a class="action-btn js-authoring" title="Download the analysis-flush output for this run\'s study (.zip)" ' +
-        'href="/api/study-analysis-zip?study=' + encodeURIComponent(studySlug) + '" download style="text-decoration:none;">⬇ Analysis</a>'
-      : '';
-    return (
-      '<tr data-run-id="' + _escSim(runId) + '" style="border-bottom:1px solid #f3f4f6;cursor:pointer;" ' +
-        'title="Click to open this run — its study, or the Composite Explorer">' +
-      '<td style="padding:6px 8px; overflow-wrap:anywhere;">' + invCell + '</td>' +
-      '<td style="padding:6px 8px; overflow-wrap:anywhere;">' + studyCell + '</td>' +
-      '<td style="padding:6px 8px; overflow:hidden;"><code style="font-size:11px; color:#6b7280; ' +
-        'display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"' +
-        runTitle + '>' + _escSim(runLabel) + '</code></td>' +
-      '<td style="padding:6px 8px; overflow:hidden;">' + _simLocation(row) + '</td>' +
-      '<td style="padding:6px 8px;">' + _simOriginPill(row) + '</td>' +
-      '<td style="padding:6px 8px;">' + _simEmitterPill(row.emitter_type) + '</td>' +
-      '<td style="padding:6px 8px; color:#6b7280;">' + _escSim(_simFmtTime(timeSec)) + '</td>' +
-      '<td style="padding:6px 8px;">' + _simStatusChip(row.status) + '</td>' +
-      '<td style="padding:6px 8px; text-align:center; white-space:nowrap;">' +
-        emitterDl + (emitterDl && analysisDl ? ' ' : '') + analysisDl + '</td>' +
-      '</tr>'
-    );
-  }
+  function _renderSimRow(row) { return window.SimTable.renderRow(row, { scope: 'full' }); }
 
   // Client-side column sort for the Simulations DB table. Purely a rendering
   // concern on top of the server-ordered (newest-first) _simRows — clicking a
@@ -14972,6 +14883,7 @@
     if (key === 'study') return String(_simStudy(row) || '').toLowerCase();
     if (key === 'investigation') return String(_simInvestigation(row) || '').toLowerCase();
     if (key === 'run') return String(row.sim_name || row.label || row.run_id || '').toLowerCase();
+    if (key === 'composite') return String(row.spec_id || '').toLowerCase();
     if (key === 'status') return String(row.status || '').toLowerCase();
     return '';
   }
