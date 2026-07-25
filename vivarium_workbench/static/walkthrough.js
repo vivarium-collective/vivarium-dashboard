@@ -5201,10 +5201,12 @@
 
   function _wsCloseStudyTab(slug) {
     var st = window._wsStudyTabs;
+    var wasActive = (st.active === slug);
     var i = st.openTabs.indexOf(slug);
     if (i !== -1) st.openTabs.splice(i, 1);
-    if (st.active === slug) st.active = st.openTabs[Math.max(0, i - 1)] || st.openTabs[0] || null;
+    if (wasActive) st.active = st.openTabs[Math.max(0, i - 1)] || st.openTabs[0] || null;
     _wsRenderStudyTabs();
+    if (!wasActive) return;                      // background tab closed -> porthole untouched
     if (st.active) {
       _wsOpenStudyTab(st.active);                // re-focus nearest remaining tab
     } else {
