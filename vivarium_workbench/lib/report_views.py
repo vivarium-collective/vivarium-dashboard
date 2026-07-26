@@ -175,6 +175,7 @@ def _composite_resolution_findings(ws_root: Path) -> list[dict]:
     try:
         from vivarium_workbench.lib.composite_lookup import (
             known_composite_ids,
+            suggest_composite_ref,
             unresolved_study_composite_refs,
         )
         known = known_composite_ids(ws_root)
@@ -202,15 +203,28 @@ def _composite_resolution_findings(ws_root: Path) -> list[dict]:
         except Exception:  # noqa: BLE001
             continue
         for ref in unresolved:
+            try:
+                suggestion = suggest_composite_ref(ref, known)
+            except Exception:  # noqa: BLE001
+                suggestion = None
+            if suggestion:
+                reason = "(it may not declare a real, registered composite)"
+            else:
+                reason = (
+                    "(check the composite id — it should be the registered "
+                    "generator id `<pkg>.composites.<module>.<name>`)"
+                )
+            message = (
+                f"composite not found in registry: {ref} — the study "
+                f"references a composite that doesn't resolve {reason}"
+            )
+            if suggestion:
+                message += f" — did you mean `{suggestion}`?"
             out.append({
                 "study": d.name,
                 "check": "unresolved_composite",
                 "severity": "warning",
-                "message": (
-                    f"composite not found in registry: {ref} — the study "
-                    "references a composite that doesn't resolve (it may not "
-                    "declare a real, registered composite)"
-                ),
+                "message": message,
                 "field_path": "baseline[].composite",
             })
     return out
