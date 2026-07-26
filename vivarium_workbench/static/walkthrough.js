@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -288,8 +288,14 @@
   // feedback loop — at 0 height, body.scrollHeight is the true content height.
   function _fitEmbedToContent(frame, minH) {
     if (!frame) return;
-    var fit = function () {
+    var fit = function (fromObserver) {
       if (!frame.isConnected) return;
+      // During the initial landing scroll (set by _wsOpenStudyTab), skip
+      // observer-driven refits. Their synchronous height:0 measure clamps
+      // window.scrollY and the restore below cancels the in-flight smooth
+      // scroll-to-study — the "starts down, then snaps back up to the graph"
+      // glitch. _wsOpenStudyTab runs one final _refit once the window closes.
+      if (fromObserver && window._embedLandingUntil && Date.now() < window._embedLandingUntil) return;
       var doc;
       try { doc = frame.contentDocument; } catch (_) { return; }   // cross-origin -> bail
       if (!doc || !doc.body) return;
@@ -309,12 +315,15 @@
       frame.style.height = Math.max(minH || 0, h) + 'px';
       if (window.pageYOffset !== prevY) window.scrollTo(0, prevY);
     };
+    // Expose a direct (non-observer) refit so _wsOpenStudyTab can run a final
+    // fit after the landing window closes.
+    frame._refit = function () { fit(false); };
     var onload = function () {
-      fit();
+      fit(false);
       try {
         var doc = frame.contentDocument;
         if (doc && doc.body && window.ResizeObserver && !frame._roFit) {
-          frame._roFit = new ResizeObserver(function () { fit(); });
+          frame._roFit = new ResizeObserver(function () { fit(true); });
           frame._roFit.observe(doc.body);
         }
       } catch (_) { /* cross-origin */ }
@@ -324,7 +333,7 @@
       if (frame.contentDocument && frame.contentDocument.readyState === 'complete') onload();
     } catch (_) {}
     if (!frame._fitContentBound) {
-      window.addEventListener('resize', fit);
+      window.addEventListener('resize', function () { fit(false); });
       frame._fitContentBound = true;
     }
   }
@@ -1849,6 +1858,37 @@
   }
   window._useRegistryClass = _useRegistryClass;
 
+  // Compact, readable label for a bigraph type schema (a port's value).
+  function _regTypeLabel(v) {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string') return v;
+    if (typeof v === 'object') {
+      if (v._type) return String(v._type);
+      var keys = Object.keys(v).filter(function (k) { return k.charAt(0) !== '_'; });
+      if (keys.length) return '{' + keys.slice(0, 4).join(', ') + (keys.length > 4 ? ', …' : '') + '}';
+      return 'store';
+    }
+    return String(v);
+  }
+
+  // One port column (Inputs or Outputs): port name → type, from a schema dict.
+  function _regPortColumn(title, schema) {
+    var keys = schema && typeof schema === 'object' ? Object.keys(schema) : null;
+    var body;
+    if (keys === null) {
+      body = '<div class="reg-port-na" title="Ports depend on a configured instance and can\'t be introspected statically.">—</div>';
+    } else if (!keys.length) {
+      body = '<div class="reg-port-na">(none)</div>';
+    } else {
+      body = '<ul class="reg-port-list">' + keys.map(function (k) {
+        var t = _regTypeLabel(schema[k]);
+        return '<li><code class="reg-port-name">' + _esc(k) + '</code>' +
+          (t ? ' <span class="reg-port-type">' + _esc(t) + '</span>' : '') + '</li>';
+      }).join('') + '</ul>';
+    }
+    return '<div class="reg-port-col"><div class="reg-port-title">' + title + '</div>' + body + '</div>';
+  }
+
   function _renderRegistryEntry(p) {
     var aliases = (p.aliases || []).length
       ? ' <small style="color:#888">(aliases: ' + p.aliases.map(_esc).join(', ') + ')</small>'
@@ -1861,12 +1901,36 @@
     var defaultBadge = p.is_workspace_default
       ? ' <span class="count-badge" style="background:#1f7a36;color:#fff;font-size:0.7em;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle" title="Workspace default per runtime.default_emitter in workspace.yaml">DEFAULT</span>'
       : '';
+    // Description (pbg `description` attr or docstring).
+    var desc = (p.description || '').trim();
+    var descHtml = desc
+      ? '<p class="reg-entry-desc">' + _esc(desc) + '</p>'
+      : '';
+    // Ports (contract): inputs / outputs schemas. Show the two-column block
+    // whenever we have EITHER side — like the loom composite viewer's process
+    // ports, but from static introspection.
+    var hasPorts = (p.inputs && typeof p.inputs === 'object') ||
+                   (p.outputs && typeof p.outputs === 'object');
+    var portsHtml = hasPorts
+      ? '<div class="reg-ports">' +
+          _regPortColumn('Inputs', p.inputs === undefined ? null : p.inputs) +
+          _regPortColumn('Outputs', p.outputs === undefined ? null : p.outputs) +
+        '</div>'
+      : '';
+    // Config schema (full when available, else the truncated preview).
+    var cfgBody = '';
+    if (p.config_schema && typeof p.config_schema === 'object' && Object.keys(p.config_schema).length) {
+      try { cfgBody = JSON.stringify(p.config_schema, null, 2); } catch (_) { cfgBody = p.schema_preview || ''; }
+    } else if (p.schema_preview) {
+      cfgBody = p.schema_preview;
+    }
+    var cfgHtml = cfgBody
+      ? '<details class="reg-config"><summary>config schema</summary><pre class="json-tree">' + _esc(cfgBody) + '</pre></details>'
+      : '';
     return '<div class="registry-entry"' + sourceAttr + '>' +
-      '<strong>' + _esc(p.name) + '</strong>' + defaultBadge + aliases + '<br>' +
+      '<div class="reg-entry-head"><strong>' + _esc(p.name) + '</strong>' + defaultBadge + aliases + '</div>' +
       '<small><code>' + _esc(p.address) + '</code></small>' +
-      (p.schema_preview
-        ? '<details><summary>config schema</summary><pre class="json-tree">' + _esc(p.schema_preview) + '</pre></details>'
-        : '') +
+      descHtml + portsHtml + cfgHtml +
     '</div>';
   }
 
@@ -2097,7 +2161,7 @@
         }
         var processes = data.processes || [];
         var types = data.types || [];
-        var byKind = {process: [], step: [], emitter: [], visualization: [], other: []};
+        var byKind = {process: [], step: [], emitter: [], visualization: [], report_card: [], other: []};
         processes.forEach(function(p) {
           var k = p.kind || 'other';
           if (!byKind[k]) byKind[k] = [];
@@ -2113,6 +2177,7 @@
         _renderRegistryGrid('registry-emitters-container', byKind.emitter);
         window._registryVizEntries = byKind.visualization;
         _renderRegistryGrid('registry-visualizations-container', byKind.visualization);
+        _renderRegistryGrid('registry-report_cards-container', byKind.report_card);
         _renderRegistryTypesGrid('registry-types-container', types);
 
         // Enrich Visualizations + populate the new Analyses tab from the class
@@ -2140,6 +2205,7 @@
         setCount('registry-step-count', byKind.step);
         setCount('registry-emitter-count', byKind.emitter);
         setCount('registry-visualization-count', byKind.visualization);
+        setCount('registry-report_card-count', byKind.report_card);
         var typeCountEl = document.getElementById('registry-type-count');
         if (typeCountEl) typeCountEl.textContent = types.length;
         var total = document.getElementById('registry-total-count');
@@ -2707,21 +2773,28 @@
   // the metric is to draw the eye). Renders '' when the module carries no
   // stats at all (wheel-only / available-to-install modules).
   function _moduleStatsRow(m) {
-    function chip(cls, glyph, n, singular, plural) {
-      return '<span class="module-stat-chip ' + cls + '"><span class="mstat-glyph">' + glyph +
-        '</span>' + n + ' ' + (n === 1 ? singular : plural) + '</span>';
-    }
-    var chips = [];
-    if (m.n_composites) chips.push(chip('mstat-composites', '▦', m.n_composites, 'composite', 'composites'));
-    if (m.n_studies) chips.push(chip('mstat-studies', '⌥', m.n_studies, 'study', 'studies'));
-    if (m.n_investigations) chips.push(chip('mstat-investigations', '⌸', m.n_investigations, 'investigation', 'investigations'));
+    // "Used here" — how many of THIS workspace's studies use the module. The
+    // headline signal, so it leads: a filled green bar when used, nothing when
+    // not (rather than a noisy "0"). Replaces the old ★ chip.
+    var usageHtml = '';
     if (m.n_used) {
-      chips.push('<span class="module-stat-chip module-stat-used" ' +
-        'title="Referenced by this workspace\'s own studies / investigations">' +
-        '<span class="mstat-glyph">★</span>' + m.n_used + ' used here</span>');
+      usageHtml = '<div class="module-usage" title="Used by ' + m.n_used +
+        ' of this workspace’s studies">' +
+        '<span class="module-usage-dot"></span>Used by <strong>' + m.n_used +
+        '</strong> stud' + (m.n_used === 1 ? 'y' : 'ies') + '</div>';
     }
-    if (!chips.length) return '';
-    return '<div class="module-stats-row">' + chips.join('') + '</div>';
+    // What the module PROVIDES — a quiet, comma-free count strip.
+    function count(n, singular, plural) {
+      return '<span class="module-count"><strong>' + n + '</strong> ' +
+        (n === 1 ? singular : plural) + '</span>';
+    }
+    var counts = [];
+    if (m.n_composites) counts.push(count(m.n_composites, 'composite', 'composites'));
+    if (m.n_studies) counts.push(count(m.n_studies, 'study', 'studies'));
+    if (m.n_investigations) counts.push(count(m.n_investigations, 'investigation', 'investigations'));
+    var countsHtml = counts.length ? '<div class="module-counts">' + counts.join('') + '</div>' : '';
+    if (!usageHtml && !countsHtml) return '';
+    return '<div class="module-stats-row">' + usageHtml + countsHtml + '</div>';
   }
 
   function _moduleActionFor(m, marketplace) {
@@ -2875,7 +2948,7 @@
   // layout stacked these as three scrolling panels; sub-tabs let users
   // flip without scrolling.
   function _setRegistrySubtab(name) {
-    name = name || 'modules';
+    name = name || 'discovered';   // Registry is the main tab; Marketplace is secondary
     document.querySelectorAll('.registry-subtab').forEach(function(el) {
       el.classList.toggle('active', el.dataset.subtab === name);
     });
@@ -5742,6 +5815,10 @@
     // scroll: land on the study, scroll up into the graph and past it to the
     // overview (user request).
     _setInvestigationContextCollapsed(false);
+    // Open a landing window BEFORE sizing: while active, content-driven refits
+    // skip their scroll-restore so they can't cancel the smooth scroll-to-study
+    // below (which was snapping the view back up to the graph).
+    window._embedLandingUntil = Date.now() + 1400;
     if (typeof _fitEmbedToContent === 'function') _fitEmbedToContent(frame, 560);
     else if (typeof _fitEmbedToViewport === 'function') _fitEmbedToViewport(frame, panel, 560);
     // Gracefully scroll down to the study AFTER its porthole has loaded + sized,
@@ -5757,6 +5834,10 @@
       };
       if (frame) frame.addEventListener('load', function () { setTimeout(_land, 80); }, { once: true });
       setTimeout(_land, 600);   // fallback if load already fired or never fires
+      // Once the landing window closes, run one final content-fit (suppressed
+      // during landing) so the porthole ends at its true height, now preserving
+      // the landed scroll position instead of fighting the smooth scroll.
+      if (frame) setTimeout(function () { if (frame._refit) frame._refit(); }, 1550);
     }
   }
   window._wsOpenStudyTab = _wsOpenStudyTab;

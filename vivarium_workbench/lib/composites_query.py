@@ -19,14 +19,29 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import time
 from pathlib import Path
+
+# Module-level cache: composite discovery spawns a fresh Python subprocess that
+# re-imports the whole workspace package (~8s cold on v2ecoli). Without a cache
+# every /api/composites hit paid that in full — and, fired at page boot, the
+# slow calls saturated the browser's connection pool and stalled other tabs
+# (Sources' "Loading inputs…"). A short TTL keeps discovery fresh while making
+# repeated loads instant. Keyed by str(ws_root); cleared on workspace switch.
+_COMPOSITES_CACHE: dict = {}
+_COMPOSITES_TTL = 30.0  # seconds
+
+
+def clear_composites_cache() -> None:
+    """Invalidate the composite-discovery cache (call on workspace switch)."""
+    _COMPOSITES_CACHE.clear()
 
 # Fence markers — chosen to be unlikely to appear in real Python output.
 _START = "@@@C_START@@@"
 _END = "@@@C_END@@@"
 
 
-def composites_via_subprocess(ws_root: Path) -> dict | None:
+def composites_via_subprocess(ws_root: Path, *, bypass_cache: bool = False) -> dict | None:
     """Return composite discovery data by running a fresh Python subprocess.
 
     The child process imports ``lib.composite_lookup``, calls
@@ -47,6 +62,10 @@ def composites_via_subprocess(ws_root: Path) -> dict | None:
         or ``None`` on any failure (timeout, non-zero exit, parse error).
     """
     ws_root_str = str(ws_root)
+    now = time.time()
+    _slot = _COMPOSITES_CACHE.get(ws_root_str)
+    if not bypass_cache and _slot is not None and now - _slot["ts"] < _COMPOSITES_TTL:
+        return _slot["data"]
     script = (
         "import json, sys\n"
         "from pathlib import Path\n"
@@ -79,6 +98,15 @@ def composites_via_subprocess(ws_root: Path) -> dict | None:
 
     json_text = stdout[start_idx + len(_START) : end_idx]
     try:
-        return json.loads(json_text)
+        data = json.loads(json_text)
     except (json.JSONDecodeError, ValueError):
         return None
+    # Cache successful discovery only; failures (None above) are never cached so
+    # a transient import error re-tries on the next request.
+    _COMPOSITES_CACHE[ws_root_str] = {"data": data, "ts": now}
+    return data
+
+
+# Invalidate the composite-discovery cache on workspace switch.
+from . import active_workspace as _aw  # noqa: E402
+_aw.register_clear_cb(clear_composites_cache)

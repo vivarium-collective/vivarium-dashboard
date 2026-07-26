@@ -95,6 +95,51 @@ _FRAMEWORK_PKGS = {
 }
 
 
+def _describe_class(cls) -> str:
+    """Human description for a registered class: an explicit ``description``
+    attribute (the pbg convention) if present, else the first paragraph of the
+    docstring. Best-effort — never raises."""
+    import inspect as _inspect
+    try:
+        d = getattr(cls, "description", None)
+        if isinstance(d, str) and d.strip():
+            return d.strip()
+    except Exception:
+        pass
+    try:
+        doc = _inspect.getdoc(cls)
+        return doc.strip() if doc else ""
+    except Exception:
+        return ""
+
+
+def _port_schema(cls, which: str):
+    """Best-effort ports (``inputs``/``outputs``) schema for a Process/Step
+    class, WITHOUT instantiating it.
+
+    ``inputs()``/``outputs()`` are normally instance methods returning a schema
+    dict; most implementations return a static schema and tolerate being called
+    with the class in place of ``self``. We try that and degrade to ``None`` when
+    the method genuinely needs a configured instance. Returns a JSON-safe dict
+    (port name -> type schema) or ``None``."""
+    import inspect as _inspect
+    import json as _json
+    fn = getattr(cls, which, None)
+    if fn is None:
+        return None
+    try:
+        sig = _inspect.signature(fn)
+        got = fn(cls) if len(sig.parameters) >= 1 else fn()
+    except Exception:
+        return None
+    if not isinstance(got, dict):
+        return None
+    try:
+        return _json.loads(_json.dumps(got, default=str))
+    except Exception:
+        return None
+
+
 def _workspace_meta(workspace: str):
     """``(package_name, workspace_pkgs_set, ws_data)`` from ``workspace.yaml`` —
     faithful to ``registry.build_registry``'s pre-script computation (both
@@ -198,15 +243,25 @@ def _registry_catalog() -> dict:
                     if ancestor.__name__ in ("Process", "ProcessEnsemble"):
                         kind = "process"
                         break
+                    # ReportCardStep is a Step subclass — classify it FIRST as its
+                    # own kind so the Registry's "Report Cards" tab can list them.
+                    if ancestor.__name__ == "ReportCardStep":
+                        kind = "report_card"
+                        break
                     if ancestor.__name__ == "Step":
                         kind = "step"
                         break
         schema_preview = ""
+        config_schema = None
         if hasattr(cls, "config_schema"):
             try:
+                config_schema = _json.loads(_json.dumps(cls.config_schema, default=str))
                 schema_preview = _json.dumps(cls.config_schema, default=str)[:400]
             except Exception:
                 schema_preview = "<unserializable>"
+        description = _describe_class(cls)
+        inputs_schema = _port_schema(cls, "inputs")
+        outputs_schema = _port_schema(cls, "outputs")
         source = _classify_source(cls)
         # Framework hygiene: hide process_bigraph's OWN built-in process/step/other
         # classes from every workspace's registry (emitters + visualizations kept).
@@ -222,6 +277,10 @@ def _registry_catalog() -> dict:
         processes.append({
             "name": name, "address": addr, "kind": kind,
             "schema_preview": schema_preview, "aliases": [], "source": source,
+            "description": description,
+            "config_schema": config_schema,
+            "inputs": inputs_schema,
+            "outputs": outputs_schema,
         })
     _source_order = {"in_workspace": 0, "framework": 1, "environment_only": 2}
     processes.sort(key=lambda p: (

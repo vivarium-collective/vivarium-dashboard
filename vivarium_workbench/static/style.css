@@ -1331,6 +1331,35 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .registry-entry code{ font-size:0.88em }
 .registry-entry pre{ margin:4px 0; max-height:200px; overflow:auto }
 
+/* Rich registry entry: description + ports (contract) + config schema, a more
+   accessible take on the loom composite viewer's process view. */
+.reg-entry-head{ margin-bottom:2px }
+.reg-entry-desc{
+  margin:6px 0 8px; color:#475569; font-size:0.92em; line-height:1.5;
+  white-space:pre-line; max-height:8.5em; overflow:auto;
+  border-left:2px solid #e5e7eb; padding-left:10px;
+}
+.reg-ports{
+  display:grid; grid-template-columns:1fr 1fr; gap:10px;
+  margin:8px 0; background:#f8fafc; border:1px solid #eef2f7;
+  border-radius:8px; padding:8px 10px;
+}
+@media (max-width:640px){ .reg-ports{ grid-template-columns:1fr } }
+.reg-port-col{ min-width:0 }
+.reg-port-title{
+  font-size:0.7em; text-transform:uppercase; letter-spacing:0.06em;
+  font-weight:700; color:#94a3b8; margin-bottom:4px;
+}
+.reg-port-list{ margin:0; padding:0; list-style:none }
+.reg-port-list li{
+  display:flex; align-items:baseline; gap:6px; padding:1px 0;
+  font-size:0.86em; line-height:1.4;
+}
+.reg-port-name{ color:#1e40af; font-weight:600; word-break:break-word }
+.reg-port-type{ color:#64748b; font-size:0.92em; font-family:ui-monospace,Menlo,monospace }
+.reg-port-na{ color:#cbd5e1; font-size:0.86em }
+.reg-config summary{ cursor:pointer; user-select:none; color:#64748b; font-size:0.85em; margin-top:2px }
+
 /* ===== Study Detail — 5-tab redesign (Plan 3) ===== */
 
 /* Tab bar — visually identical to .registry-tabs but scoped.
@@ -2199,33 +2228,40 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
  * =================================================================== */
 .module-stats-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin: 5px 0 2px;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 2px;
 }
-.module-stat-chip {
+/* "Used by N studies" — the headline usage signal (replaces the ★ chip). A
+   quiet green pill with a status dot; shown only when actually used. */
+.module-usage {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.75em;
-  font-weight: 600;
-  padding: 2px 8px;
+  gap: 7px;
+  align-self: flex-start;
+  font-size: 0.78em;
+  font-weight: 500;
+  padding: 3px 10px 3px 8px;
   border-radius: 9999px;
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-  white-space: nowrap;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
 }
-.module-stat-chip .mstat-glyph { font-weight: 700; opacity: 0.85; }
-.module-stat-chip.mstat-composites { background:#eef2ff; color:#4338ca; border-color:#e0e7ff }
-.module-stat-chip.mstat-studies     { background:#ecfeff; color:#0e7490; border-color:#cffafe }
-.module-stat-chip.mstat-investigations { background:#f5f3ff; color:#6d28d9; border-color:#ede9fe }
-.module-stat-chip.module-stat-used {
-  background: #fffbeb;
-  color: #b45309;
-  border-color: #fde68a;
+.module-usage strong { font-weight: 700; }
+.module-usage-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #10b981; flex: none;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
 }
-.module-stat-chip.module-stat-used .mstat-glyph { color: #f59e0b; opacity: 1; }
+/* What the module PROVIDES — a quiet, evenly-spaced count strip. */
+.module-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.8em;
+  color: #64748b;
+}
+.module-count strong { color: #334155; font-weight: 600; }
 
 /* Installed-card action row: keeps the install-source badge and the
    Uninstall button on one baseline. */
