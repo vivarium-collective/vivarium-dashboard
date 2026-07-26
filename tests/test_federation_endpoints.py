@@ -3,6 +3,7 @@ from pathlib import Path
 from vivarium_workbench.lib.investigations_index import build_investigations
 from vivarium_workbench.lib.investigation_status import build_iset_summary
 from vivarium_workbench.lib.models import InvestigationSummary
+from vivarium_workbench.lib.composite_lookup import discover_all_composites
 
 FIX = Path(__file__).parent / "_fixtures" / "ws_federation_demo"
 
@@ -42,3 +43,9 @@ def test_investigation_summary_model_preserves_provenance_fields():
     ).model_dump()
     assert dumped["origin_repo"] == "donor-repo"
     assert dumped["read_only"] is True
+
+
+def test_discover_all_composites_tags_federated_origin():
+    comps = discover_all_composites(FIX, "host")  # host_ws has no own package
+    rec = next(r for r in comps.values() if r.get("name") == "donor_comp")
+    assert rec["origin_repo"] == "donor-repo"

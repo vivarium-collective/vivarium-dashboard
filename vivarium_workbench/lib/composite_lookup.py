@@ -165,11 +165,22 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
         if spec_id not in out:
             out[spec_id] = rec
 
+    # Federated composites from linked workspaces under external/ (read-only).
+    from vivarium_workbench.lib import federation as _fed
+    for spec_id, rec in _fed.federated_composites(ws_root).items():
+        out.setdefault(spec_id, rec)
+
     # Tag every spec entry with kind + derived module (idempotent).
     for spec_id, rec in out.items():
         rec.setdefault("kind", "spec")
         if not rec.get("module"):
             rec["module"] = _derive_module_from_spec_id(spec_id)
+
+    # Tag origin: own/installed composites get origin_repo None unless already
+    # set (federated recs already carry a truthy origin_repo).
+    for rec in out.values():
+        rec.setdefault("origin_repo", None)
+        rec.setdefault("read_only", False)
 
     # Merge @composite_generator entries — discovered in the env worker (importing
     # generator modules is workspace Python, kept out of the HTTP process). The
