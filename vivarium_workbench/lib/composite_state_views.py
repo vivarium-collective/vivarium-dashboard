@@ -268,7 +268,7 @@ def build_composite_state(
     except Exception as e:  # noqa: BLE001
         return {"error": f"parse failed: {e}"}, 500
 
-    doc = process_docs.attach_process_docs_via_worker(ws_root, doc)  # per-process docstrings for the inspector
+    doc = process_docs.attach_process_docs_via_worker(ws_root, doc, spec_id=ref)  # per-process docstrings for the inspector; spec_id resolves bare addresses (local:EcoliWCM) for Composite-Process flagging
     # This branch's `doc` is either a raw composite-spec file (top-level
     # `state:`/`emitters:` keys, e.g. a `.composite.yaml`) or an already
     # resolve()-shaped static snapshot (top-level `state:` nested one level,
