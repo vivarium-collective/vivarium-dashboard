@@ -232,7 +232,12 @@ def build_iset_summary(
         except Exception as e:
             out.append({"name": d.name, "error": f"parse failed: {e}"})
             continue
-        study_slugs = list(spec.get("studies") or [])
+        # `study-registry-migration` moved an investigation's member-study list
+        # from the `studies:` key to `members:` (nested studies -> top-level
+        # registry + investigations-as-members). Accept either so both the
+        # pre- and post-migration schema render (safe superset: `members` is
+        # only consulted when `studies` is absent/empty).
+        study_slugs = list(spec.get("studies") or spec.get("members") or [])
         statuses_and_runs = [
             read_study_status(ws_root, s, study_has_runs=study_has_runs)
             for s in study_slugs
