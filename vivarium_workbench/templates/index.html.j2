@@ -70,10 +70,21 @@ window.addEventListener('pageshow', function (e) {
 .form-error { color: #c00; font-size: 0.9em; margin-top: 4px; min-height: 1.2em; }
 .action-btn {
   margin-top: 10px; padding: 5px 12px;
-  border: 1px solid #1976d2; background: #e3f2fd;
-  border-radius: 4px; cursor: pointer; font-size: 0.88em;
+  border: 1px solid #d1d5db; background: #fff; color: #374151;
+  border-radius: 6px; cursor: pointer; font-size: 0.88em;
+  transition: background .12s ease, border-color .12s ease;
 }
-.action-btn:hover { background: #bbdefb; }
+.action-btn:hover { background: #f9fafb; border-color: #9ca3af; }
+/* Compact icon-only button (e.g. a ⟳ refresh) — quiet, not a bold blue slab. */
+.icon-btn {
+  width: 28px; height: 28px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #e5e7eb; background: #fff; color: #6b7280;
+  border-radius: 6px; cursor: pointer; font-size: 1.05em; line-height: 1;
+  transition: background .12s ease, color .12s ease, border-color .12s ease;
+}
+.icon-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+.icon-btn:active { transform: scale(0.94); }
 /* Emitter-type pills for the Simulations DB table */
 .emitter-pill {
   display: inline-block; padding: 2px 8px; border-radius: 10px;
@@ -708,15 +719,15 @@ window.addEventListener('pageshow', function (e) {
      grid itself; each card carries its own uninstall affordance + path
      /source info, so the table was redundant. #}
   <div class="registry-subtabs" role="tablist">
-    <button class="registry-subtab active" data-subtab="discovered"
+    <button class="registry-subtab active" data-subtab="modules"
+            onclick="_setRegistrySubtab('modules')" role="tab">Modules</button>
+    <button class="registry-subtab" data-subtab="discovered"
             onclick="_setRegistrySubtab('discovered')" role="tab">Registry
       <span class="count-badge muted" id="registry-total-count"></span></button>
-    <button class="registry-subtab" data-subtab="modules"
-            onclick="_setRegistrySubtab('modules')" role="tab">Marketplace</button>
   </div>
 
-  <!-- Subtab: Marketplace (catalog grid; workspace + installed entries pinned at top) -->
-  <section class="panel registry-subtab-panel" data-subtab="modules">
+  <!-- Subtab: Modules (catalog grid; workspace + installed entries pinned at top) -->
+  <section class="panel registry-subtab-panel active" data-subtab="modules">
     <div class="card-browse-toolbar" id="catalog-toolbar">
       <input type="search" class="card-browse-search" id="catalog-search" placeholder="Search modules…">
       <div class="card-browse-chips" id="catalog-tag-chips"></div>
@@ -752,9 +763,9 @@ window.addEventListener('pageshow', function (e) {
   </section>
 
   <!-- Subtab: Registry (live build_core() introspection) — the main tab -->
-  <section class="panel registry-subtab-panel active" data-subtab="discovered">
+  <section class="panel registry-subtab-panel" data-subtab="discovered">
 
-    <button class="action-btn" onclick="_loadRegistry(true)">Refresh registry</button>
+    <button class="icon-btn" onclick="_loadRegistry(true)" title="Refresh registry" aria-label="Refresh registry" style="float:right;margin-top:2px">&#8635;</button>
     <div id="registry-status" class="muted" style="margin:8px 0"></div>
 
     <div class="registry-tabs">
@@ -767,7 +778,17 @@ window.addEventListener('pageshow', function (e) {
       <button class="registry-tab"        data-kind="type"          onclick="_setRegistryTab('type')">Types <span class="count-badge" id="registry-type-count"></span></button>
     </div>
 
-    <input type="search" class="registry-search" id="registry-search" placeholder="Filter&hellip;" oninput="_filterRegistry(this.value)">
+    <div class="registry-view-toolbar">
+      <input type="search" class="registry-search" id="registry-search" placeholder="Filter&hellip;" oninput="_filterRegistry(this.value)">
+      {# Semantic zoom, most-dense → most-detailed: Table (sortable) → Cards grid
+         (config/ports on expand) → Full loom process view (inputs left margin,
+         outputs right margin, rich middle). #}
+      <div class="registry-zoom" role="group" aria-label="View density" title="View density">
+        <button class="reg-zoom-btn" data-zoom="table" onclick="_setRegistryZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
+        <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — grid; config &amp; ports on expand">&#9638;</button>
+        <button class="reg-zoom-btn" data-zoom="full" onclick="_setRegistryZoom('full')" title="Full — loom process view with ports">&#9707;</button>
+      </div>
+    </div>
 
     <div class="registry-tab-panel active" data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>
     <div class="registry-tab-panel"        data-kind="step"          id="registry-steps-container"></div>
@@ -1233,7 +1254,7 @@ window.addEventListener('pageshow', function (e) {
         <option value="">All</option>
       </select>
     </label>
-    <button id="sim-refresh" class="action-btn">Refresh</button>
+    <button id="sim-refresh" class="icon-btn" title="Refresh" aria-label="Refresh">&#8635;</button>
   </div>
 
   <div id="sim-loading" style="color: #6b7280; padding: 12px;">Loading simulations…</div>

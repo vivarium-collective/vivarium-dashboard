@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.6.9: registry filter now data-driven (works in Table/Cards/Full); middle Cards zoom is full-row with composite/study usage split + details; double-click zooms in centered; select persists across zoom; run panel input ports as per-field form (type + resolved default, auto-grow) + Copy outputs; loom config bar lightened to match workbench palette. v0.6.8: run panel lazy-loads RESOLVED defaults (core.fill via /api/registry/process-template) into a per-field config form + inputs JSON (no more null-heavy templates); loom card restyled as a crisp rectangle. v0.6.7: Registry Full-view interactive runner — editable config + input-port JSON, Run → outputs (POST /api/registry/run-process; env_worker._run_process instantiates + Step.update / Process.update(interval)); loom inputs left / outputs right. v0.6.6: Registry semantic zoom (compact/detailed/full loom-rectangle: inputs left, outputs right, config top) + Cards⇄Table sortable view (_setRegistryZoom/_setRegistryView/_renderRegistryTable); rail pins hover-only + ungrouped back to a collapsible folder. v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -1889,56 +1889,402 @@
     return '<div class="reg-port-col"><div class="reg-port-title">' + title + '</div>' + body + '</div>';
   }
 
+  // ── Registry semantic zoom ──────────────────────────────────────────────
+  // 'table' (dense sortable table) | 'grid' (card grid; config/ports on expand)
+  // | 'full' (loom-style: inputs left margin, outputs right margin, rich middle).
+  // Persists in localStorage.
+  window._registryZoom = (function () {
+    var z; try { z = localStorage.getItem('viv.registryZoom'); } catch (e) { z = null; }
+    return (z === 'table' || z === 'grid' || z === 'full') ? z : 'grid';
+  })();
+
+  function _syncRegistryToolbar() {
+    document.querySelectorAll('.reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-zoom') === window._registryZoom);
+    });
+  }
+  function _rerenderRegistryKinds() {
+    var m = window._registryByKind || {};
+    Object.keys(m).forEach(function (cid) { _renderRegistryGrid(cid, m[cid]); });
+  }
+  function _setRegistryZoom(z) {
+    window._registryZoom = z;
+    try { localStorage.setItem('viv.registryZoom', z); } catch (e) { /* private mode */ }
+    _syncRegistryToolbar(); _rerenderRegistryKinds();
+    _refocusRegistrySelection();   // keep the selected process in focus on zoom
+  }
+  window._setRegistryZoom = _setRegistryZoom;
+
+  function _nPorts(schema) {
+    return (schema && typeof schema === 'object') ? Object.keys(schema).length : 0;
+  }
+
+  // Zoom dispatcher: the grid calls this per entry (table is rendered in bulk).
   function _renderRegistryEntry(p) {
-    var aliases = (p.aliases || []).length
-      ? ' <small style="color:#888">(aliases: ' + p.aliases.map(_esc).join(', ') + ')</small>'
-      : '';
-    var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
-    // Workspace-default badge: shown only on emitter entries whose class
-    // matches workspace.yaml::runtime.default_emitter (see server-side
-    // _mark_default_emitter()). Keeps users aware which emitter their
-    // study runs will pick by default.
-    var defaultBadge = p.is_workspace_default
-      ? ' <span class="count-badge" style="background:#1f7a36;color:#fff;font-size:0.7em;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle" title="Workspace default per runtime.default_emitter in workspace.yaml">DEFAULT</span>'
-      : '';
-    // Use count: how many composites/runners reference this class.
-    var useBadge = (p.use_count)
+    return (window._registryZoom === 'full') ? _renderRegistryEntryFull(p) : _renderRegistryEntryGrid(p);
+  }
+
+  function _regUseBadge(p) {
+    return p.use_count
       ? '<span class="registry-use-badge" title="Referenced by ' + p.use_count +
         ' composite(s) / runner script(s) in this workspace">' + p.use_count +
         ' use' + (p.use_count === 1 ? '' : 's') + '</span>'
       : '';
-    // Description (pbg `description` attr or docstring).
-    var desc = (p.description || '').trim();
-    var descHtml = desc
-      ? '<p class="reg-entry-desc">' + _esc(desc) + '</p>'
-      : '';
-    // Ports (contract): inputs / outputs schemas. Show the two-column block
-    // whenever we have EITHER side — like the loom composite viewer's process
-    // ports, but from static introspection.
-    var hasPorts = (p.inputs && typeof p.inputs === 'object') ||
-                   (p.outputs && typeof p.outputs === 'object');
-    var portsHtml = hasPorts
-      ? '<div class="reg-ports">' +
-          _regPortColumn('Inputs', p.inputs === undefined ? null : p.inputs) +
-          _regPortColumn('Outputs', p.outputs === undefined ? null : p.outputs) +
-        '</div>'
-      : '';
-    // Config schema (full when available, else the truncated preview).
+  }
+
+  // Config-schema + ports body, revealed by a per-card "config & ports" dropdown
+  // in the grid view — keeps the grid dense but the contract one click away.
+  function _regDetailsBody(p) {
+    var out = '';
+    var hasPorts = (p.inputs && typeof p.inputs === 'object') || (p.outputs && typeof p.outputs === 'object');
+    if (hasPorts) {
+      out += '<div class="reg-ports reg-ports-compact">' +
+        _regPortColumn('Inputs', p.inputs === undefined ? null : p.inputs) +
+        _regPortColumn('Outputs', p.outputs === undefined ? null : p.outputs) +
+      '</div>';
+    }
     var cfgBody = '';
     if (p.config_schema && typeof p.config_schema === 'object' && Object.keys(p.config_schema).length) {
       try { cfgBody = JSON.stringify(p.config_schema, null, 2); } catch (_) { cfgBody = p.schema_preview || ''; }
-    } else if (p.schema_preview) {
-      cfgBody = p.schema_preview;
-    }
-    var cfgHtml = cfgBody
-      ? '<details class="reg-config"><summary>config schema</summary><pre class="json-tree">' + _esc(cfgBody) + '</pre></details>'
+    } else if (p.schema_preview) { cfgBody = p.schema_preview; }
+    if (cfgBody) out += '<pre class="json-tree reg-card-cfg">' + _esc(cfgBody) + '</pre>';
+    return out;
+  }
+
+  // Grid card (default zoom): a dense card — name, use, one-line description, and
+  // a "config & ports" dropdown. NO inline ports (those are the Full view).
+  function _renderRegistryEntryGrid(p) {
+    var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
+    var esc = _esc, addr = _esc(p.address || '');
+    var defaultBadge = p.is_workspace_default
+      ? ' <span class="count-badge" style="background:#1f7a36;color:#fff;font-size:0.66em;padding:1px 5px;border-radius:3px;vertical-align:middle">DEFAULT</span>'
       : '';
-    return '<div class="registry-entry"' + sourceAttr + '>' +
-      '<div class="reg-entry-head"><span class="reg-entry-name"><strong>' + _esc(p.name) + '</strong>' + defaultBadge + aliases + '</span>' + useBadge + '</div>' +
-      '<small><code>' + _esc(p.address) + '</code></small>' +
-      descHtml + portsHtml + cfgHtml +
+    var desc = (p.description || '').trim();
+    var short = desc ? desc.split('\n')[0] : '';
+    var inN = _nPorts(p.inputs), outN = _nPorts(p.outputs);
+    // Usage split — across composites vs studies — plus the port I/O counts.
+    function stat(glyph, n, singular, plural, title) {
+      return '<span class="reg-stat" title="' + esc(title) + '"><span class="reg-stat-glyph">' + glyph +
+        '</span><strong>' + n + '</strong> ' + (n === 1 ? singular : plural) + '</span>';
+    }
+    var stats = [];
+    if (p.composite_uses) stats.push(stat('▦', p.composite_uses, 'composite', 'composites', 'Used in this many composite generators'));
+    if (p.study_uses) stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
+    stats.push(stat('⇄', inN, 'input', 'inputs', 'Input ports'));
+    stats.push(stat('⇄', outN, 'output', 'outputs', 'Output ports'));
+    var details = _regDetailsBody(p);
+    var selCls = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
+    return '<div class="registry-card' + selCls + '"' + sourceAttr + ' data-address="' + addr + '"' +
+        ' onclick="_selectRegistryEntry(\'' + addr + '\')" ondblclick="_zoomInOn(\'' + addr + '\')"' +
+        ' title="Double-click to zoom in on this ' + (p.kind || 'process') + '">' +
+      '<div class="reg-card-row">' +
+        '<div class="reg-card-main">' +
+          '<div class="reg-card-head"><strong class="reg-card-name">' + esc(p.name) + '</strong>' + defaultBadge + _regUseBadge(p) + '</div>' +
+          '<code class="reg-card-addr">' + addr + '</code>' +
+          (short ? '<p class="reg-card-desc">' + esc(short) + '</p>' : '') +
+        '</div>' +
+        '<div class="reg-card-stats">' + stats.join('') + '</div>' +
+      '</div>' +
+      (details ? '<details class="reg-card-details"><summary>config &amp; ports</summary>' + details + '</details>' : '') +
     '</div>';
   }
+
+  // Full: the loom-style process rectangle — inputs down the left edge, outputs
+  // down the right edge, name/type centered, config across the top. Mirrors
+  // bigraph-loom's ProcessNode, as a static, accessible card.
+  function _renderRegistryEntryFull(p) {
+    var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
+    var kind = p.kind || 'process';
+    function ports(schema, side) {
+      var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : [];
+      if (!keys.length) return '<div class="loom-port loom-port-empty">—</div>';
+      return keys.map(function (k) {
+        var t = _regTypeLabel(schema[k]);
+        return '<div class="loom-port loom-port-' + side + '" title="' + _esc(t || '') + '">' +
+          '<span class="loom-port-dot"></span>' +
+          '<span class="loom-port-name">' + _esc(k) + '</span>' +
+          (t ? '<span class="loom-port-type">' + _esc(t) + '</span>' : '') +
+          '</div>';
+      }).join('');
+    }
+    var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
+    var cfgTop = cfgKeys.length
+      ? '<div class="loom-config"><span class="loom-config-label">config</span>' +
+        cfgKeys.slice(0, 14).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
+        (cfgKeys.length > 14 ? ' <span class="muted">+' + (cfgKeys.length - 14) + '</span>' : '') + '</div>'
+      : '';
+    var desc = (p.description || '').trim();
+    // Interactive run panel: editable config + inputs, then Run → outputs (or a
+    // validation/run error). Only for runnable kinds (process/step).
+    var runPanel = '';
+    if (kind === 'process' || kind === 'step') {
+      runPanel = '<details class="loom-run" data-address="' + _esc(p.address || '') + '" data-kind="' + kind + '" ontoggle="_loadRunPanel(this)">' +
+        '<summary>Run this ' + kind + '</summary>' +
+        '<div class="loom-run-body"><p class="muted" style="font-size:0.83em;padding:10px 18px 14px">Open to load defaults &amp; run…</p></div>' +
+        '</details>';
+    }
+    var selClsFull = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
+    return '<div class="registry-entry registry-entry-full' + selClsFull + '"' + sourceAttr + ' data-address="' + _esc(p.address || '') + '">' +
+      '<div class="loom-card loom-card-' + kind + '">' +
+        cfgTop +
+        '<div class="loom-row">' +
+          '<div class="loom-ports loom-ports-in">' + ports(p.inputs, 'in') + '</div>' +
+          '<div class="loom-body">' +
+            '<div class="loom-body-head"><span class="loom-name">' + _esc(p.name) + '</span>' + _regUseBadge(p) + '</div>' +
+            '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
+            (desc ? '<p class="loom-desc">' + _esc(desc) + '</p>' : '') +
+          '</div>' +
+          '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
+        '</div>' +
+        runPanel +
+      '</div>' +
+    '</div>';
+  }
+
+  // Lazy-load the run panel on first open: fetch RESOLVED defaults (core.fill,
+  // not null placeholders) and render an editable form.
+  function _loadRunPanel(details) {
+    if (!details || !details.open || details._loaded) return;
+    details._loaded = true;
+    var address = details.getAttribute('data-address');
+    var kind = details.getAttribute('data-kind');
+    var body = details.querySelector('.loom-run-body');
+    if (!body) return;
+    body.innerHTML = '<p class="muted" style="font-size:0.83em;padding:10px 18px">Resolving defaults…</p>';
+    var url = (window.DataSource && window.DataSource.apiUrl ? window.DataSource.apiUrl('/api/registry/process-template') : '/api/registry/process-template') +
+      '?address=' + encodeURIComponent(address);
+    fetch(url)
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var config = (j && j.ok && j.config && typeof j.config === 'object') ? j.config : {};
+        var inputs = (j && j.ok && j.inputs && typeof j.inputs === 'object') ? j.inputs : {};
+        var inSchema = (j && j.inputs_schema && typeof j.inputs_schema === 'object') ? j.inputs_schema : {};
+        details._defaults = { config: config, inputs: inputs, inputsSchema: inSchema };
+        body.innerHTML = _renderRunForm(kind, config, inputs, inSchema);
+        _autoGrowRunFields(details);
+      })
+      .catch(function () { body.innerHTML = _renderRunForm(kind, {}, {}, {}); });
+  }
+  window._loadRunPanel = _loadRunPanel;
+
+  // One typed config field, chosen from the resolved default's JS type.
+  function _runField(key, value) {
+    var t = (value === null) ? 'null' : (Array.isArray(value) ? 'json' : typeof value);
+    var attr = 'class="loom-cfg-field" data-key="' + _esc(key) + '" data-vtype="';
+    var input;
+    if (t === 'boolean') {
+      input = '<input type="checkbox" ' + attr + 'boolean"' + (value ? ' checked' : '') + '>';
+    } else if (t === 'number') {
+      input = '<input type="number" step="any" ' + attr + 'number" value="' + _esc(String(value)) + '">';
+    } else if (t === 'string') {
+      input = '<input type="text" ' + attr + 'string" value="' + _esc(value) + '">';
+    } else {
+      var jv = ''; try { jv = JSON.stringify(value); } catch (e) { jv = ''; }
+      input = '<input type="text" ' + attr + 'json" value="' + _esc(jv) + '" placeholder="JSON / null">';
+    }
+    return '<label class="loom-cfg-row"><span class="loom-cfg-key" title="' + _esc(key) + '">' + _esc(key) + '</span>' + input + '</label>';
+  }
+
+  // One input-port field: name + expected TYPE + editable default. Scalars get a
+  // typed input; nested/complex values get an auto-growing JSON box (no scroll).
+  function _runInputField(key, value, typeSchema) {
+    var typeLabel = _regTypeLabel(typeSchema);
+    var t = (value === null) ? 'null' : (Array.isArray(value) ? 'json' : typeof value);
+    var attr = 'class="loom-in-field" data-key="' + _esc(key) + '" data-vtype="';
+    var field;
+    if (t === 'boolean') {
+      field = '<input type="checkbox" ' + attr + 'boolean"' + (value ? ' checked' : '') + '>';
+    } else if (t === 'number') {
+      field = '<input type="number" step="any" ' + attr + 'number" value="' + _esc(String(value)) + '">';
+    } else if (t === 'string') {
+      field = '<input type="text" ' + attr + 'string" value="' + _esc(value) + '">';
+    } else {
+      var jv = ''; try { jv = JSON.stringify(value); } catch (e) { jv = ''; }
+      field = '<textarea ' + attr + 'json" rows="1" spellcheck="false" oninput="_autoGrow(this)">' + _esc(jv) + '</textarea>';
+    }
+    return '<div class="loom-in-row">' +
+      '<div class="loom-in-head"><span class="loom-in-key">' + _esc(key) + '</span>' +
+        (typeLabel ? '<span class="loom-in-type" title="expected type">' + _esc(typeLabel) + '</span>' : '') + '</div>' +
+      field + '</div>';
+  }
+
+  function _autoGrow(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = (el.scrollHeight + 2) + 'px';
+  }
+  window._autoGrow = _autoGrow;
+  function _autoGrowRunFields(root) {
+    (root || document).querySelectorAll('textarea.loom-in-field').forEach(_autoGrow);
+  }
+
+  function _renderRunForm(kind, config, inputs, inputsSchema) {
+    var isProc = (kind === 'process');
+    var cfgKeys = Object.keys(config || {});
+    var cfgFields = cfgKeys.length
+      ? cfgKeys.map(function (k) { return _runField(k, config[k]); }).join('')
+      : '<p class="muted" style="font-size:0.82em">No config parameters.</p>';
+    inputsSchema = inputsSchema || {};
+    var inKeys = Object.keys(inputs || {});
+    var inFields = inKeys.length
+      ? inKeys.map(function (k) { return _runInputField(k, inputs[k], inputsSchema[k]); }).join('')
+      : '<p class="muted" style="font-size:0.82em">No input ports.</p>';
+    return '<div class="loom-run-form">' +
+        '<div class="loom-run-section"><div class="loom-run-legend">Config</div>' +
+          '<div class="loom-cfg-fields">' + cfgFields + '</div></div>' +
+        '<div class="loom-run-section"><div class="loom-run-legend">Input ports</div>' +
+          '<div class="loom-in-fields">' + inFields + '</div></div>' +
+        (isProc ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>' : '') +
+        '<div class="loom-run-actions">' +
+          '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+          '<button class="btn-mini" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+        '</div>' +
+        '<div class="loom-run-output"></div>' +
+      '</div>';
+  }
+
+  function _resetRunPanel(btn) {
+    var details = btn.closest('.loom-run');
+    if (!details) return;
+    var d = details._defaults || { config: {}, inputs: {}, inputsSchema: {} };
+    var body = details.querySelector('.loom-run-body');
+    if (body) { body.innerHTML = _renderRunForm(details.getAttribute('data-kind'), d.config, d.inputs, d.inputsSchema); _autoGrowRunFields(details); }
+  }
+  window._resetRunPanel = _resetRunPanel;
+
+  // Collect the panel's config (per-field) + inputs (JSON), run, show outputs.
+  function _runRegistryProcess(btn) {
+    var form = btn.closest('.loom-run-form');
+    var details = btn.closest('.loom-run');
+    if (!form || !details) return;
+    var out = form.querySelector('.loom-run-output');
+    var address = details.getAttribute('data-address');
+
+    var config = {}, bad = null;
+    form.querySelectorAll('.loom-cfg-field').forEach(function (el) {
+      if (bad) return;
+      var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
+      if (vt === 'boolean') v = el.checked;
+      else if (vt === 'number') v = (el.value === '' ? null : parseFloat(el.value));
+      else if (vt === 'json') {
+        try { v = (el.value === '' ? null : JSON.parse(el.value)); }
+        catch (e) { bad = 'Config "' + key + '": ' + e.message; return; }
+      } else v = el.value;
+      config[key] = v;
+    });
+    if (bad) { out.innerHTML = '<div class="loom-run-err">' + _esc(bad) + '</div>'; return; }
+
+    var inputs = {};
+    form.querySelectorAll('.loom-in-field').forEach(function (el) {
+      if (bad) return;
+      var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
+      if (vt === 'boolean') v = el.checked;
+      else if (vt === 'number') v = (el.value === '' ? null : parseFloat(el.value));
+      else if (vt === 'json') {
+        try { v = (el.value === '' ? null : JSON.parse(el.value)); }
+        catch (e) { bad = 'Input "' + key + '": ' + e.message; return; }
+      } else v = el.value;
+      inputs[key] = v;
+    });
+    if (bad) { out.innerHTML = '<div class="loom-run-err">' + _esc(bad) + '</div>'; return; }
+
+    var ivEl = form.querySelector('.loom-run-interval');
+    var interval = ivEl ? parseFloat(ivEl.value) : undefined;
+    var orig = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Running…';
+    out.innerHTML = '<div class="muted" style="font-size:0.85em">Running…</div>';
+    fetch('/api/registry/run-process', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: address, config: config, inputs: inputs, interval: interval }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        btn.disabled = false; btn.textContent = orig;
+        if (j && j.ok) {
+          out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs:' +
+            '<button class="btn-mini loom-copy-btn" onclick="_copyRunOutput(this)" title="Copy outputs JSON">⧉ Copy</button></div>' +
+            '<pre class="json-tree loom-run-pre">' + _esc(JSON.stringify(j.outputs, null, 2)) + '</pre>';
+        } else {
+          var stage = (j && j.stage) ? '[' + j.stage + '] ' : '';
+          out.innerHTML = '<div class="loom-run-err">✗ ' + _esc(stage) + _esc((j && j.error) || 'run failed') + '</div>' +
+            (j && j.trace ? '<pre class="json-tree loom-run-pre loom-run-trace">' + _esc(j.trace) + '</pre>' : '');
+        }
+      })
+      .catch(function (e) {
+        btn.disabled = false; btn.textContent = orig;
+        out.innerHTML = '<div class="loom-run-err">Network error: ' + _esc(String(e)) + '</div>';
+      });
+  }
+  window._runRegistryProcess = _runRegistryProcess;
+
+  // Copy the run output's JSON to the clipboard.
+  function _copyRunOutput(btn) {
+    var out = btn.closest('.loom-run-output');
+    var pre = out ? out.querySelector('.loom-run-pre') : null;
+    if (!pre) return;
+    var text = pre.textContent || '';
+    var done = function () { var o = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(function () { btn.textContent = o; }, 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done).catch(function () { done(); });
+    } else {
+      try {
+        var ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta);
+        ta.select(); document.execCommand('copy'); document.body.removeChild(ta); done();
+      } catch (e) { /* ignore */ }
+    }
+  }
+  window._copyRunOutput = _copyRunOutput;
+
+  // Table view: all entries in one sortable table (Name/Module/Uses/In/Out/Source).
+  function _renderRegistryTable(el, entries) {
+    var sortKey = window._registryTableSort || 'use';
+    var sortDir = window._registryTableDir || 'desc';
+    var mod = function (p) { return (p.address || '').split('.')[0]; };
+    var rows = entries.slice().sort(function (a, b) {
+      var av, bv;
+      if (sortKey === 'name') { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); }
+      else if (sortKey === 'module') { av = mod(a).toLowerCase(); bv = mod(b).toLowerCase(); }
+      else if (sortKey === 'in') { av = _nPorts(a.inputs); bv = _nPorts(b.inputs); }
+      else if (sortKey === 'out') { av = _nPorts(a.outputs); bv = _nPorts(b.outputs); }
+      else if (sortKey === 'source') { av = a.source || ''; bv = b.source || ''; }
+      else { av = a.use_count || 0; bv = b.use_count || 0; }
+      var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
+      return sortDir === 'desc' ? -c : c;
+    });
+    function th(key, label, cls) {
+      var on = sortKey === key;
+      return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
+        '" onclick="_setRegistryTableSort(\'' + key + '\')">' + label +
+        (on ? (sortDir === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
+    }
+    var body = rows.map(function (p) {
+      var sel = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
+      return '<tr class="reg-tr' + sel + '" data-source="' + _esc(p.source || '') + '" data-address="' + _esc(p.address || '') +
+          '" onclick="_selectRegistryEntry(\'' + _esc(p.address || '') + '\')" ondblclick="_zoomInOn(\'' + _esc(p.address || '') + '\')"' +
+          ' title="Click to select · double-click to zoom in on this process">' +
+        '<td class="reg-td-name"><strong>' + _esc(p.name) + '</strong> <code>' + _esc(p.address || '') + '</code></td>' +
+        '<td>' + _esc(mod(p)) + '</td>' +
+        '<td class="num">' + (p.use_count || 0) + '</td>' +
+        '<td class="num">' + _nPorts(p.inputs) + '</td>' +
+        '<td class="num">' + _nPorts(p.outputs) + '</td>' +
+        '<td class="reg-td-src">' + _esc(p.source || '') + '</td>' +
+      '</tr>';
+    }).join('');
+    el.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
+      th('name', 'Name') + th('module', 'Module') + th('use', 'Uses', 'num') +
+      th('in', 'In', 'num') + th('out', 'Out', 'num') + th('source', 'Source') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function _setRegistryTableSort(key) {
+    if (window._registryTableSort === key) {
+      window._registryTableDir = (window._registryTableDir === 'desc') ? 'asc' : 'desc';
+    } else {
+      window._registryTableSort = key;
+      window._registryTableDir = (key === 'name' || key === 'module' || key === 'source') ? 'asc' : 'desc';
+    }
+    _rerenderRegistryKinds();
+  }
+  window._setRegistryTableSort = _setRegistryTableSort;
 
   // Imported repositories panel: one card per workspace.yaml::imports entry,
   // showing the repo (linked to its source) + the registry classes it
@@ -2012,22 +2358,36 @@
       el.innerHTML = '<p class="empty-state">None registered.</p>';
       return;
     }
+    // Apply the (data-driven) search filter uniformly across every layout.
+    if (window._registryFilter) {
+      entries = entries.filter(_registryEntryMatches);
+      if (!entries.length) {
+        el.innerHTML = '<p class="empty-state muted" style="font-size:0.9em">No entries match “' + _esc(window._registryFilter) + '”.</p>';
+        return;
+      }
+    }
+
+    var zoom = window._registryZoom || 'grid';
+
+    // Most-compact zoom IS the table: one sortable table over all entries.
+    if (zoom === 'table') { _renderRegistryTable(el, entries); return; }
 
     // Partition by source: in_workspace first, then framework, then environment_only.
     var inWs = entries.filter(function(p) { return p.source === 'in_workspace'; });
     var framework = entries.filter(function(p) { return p.source === 'framework'; });
     var envOnly = entries.filter(function(p) { return p.source === 'environment_only' || !p.source; });
 
+    // Grid zoom packs cards into a multi-column grid; Full is one wide card/row.
+    var cardsCls = 'reg-cards reg-cards-' + (zoom === 'full' ? 'full' : 'grid');
     var html = '';
 
-    // In-workspace and framework entries render normally, sorted by USE
-    // (most-referenced across composites/runners first), then name.
+    // In-workspace and framework entries, sorted by USE (most-referenced first).
     var primary = inWs.concat(framework).sort(function(a, b) {
       return (b.use_count || 0) - (a.use_count || 0) ||
              String(a.name || '').localeCompare(String(b.name || ''));
     });
     if (primary.length) {
-      html += primary.map(_renderRegistryEntry).join('');
+      html += '<div class="' + cardsCls + '">' + primary.map(_renderRegistryEntry).join('') + '</div>';
     } else {
       html += '<p class="empty-state muted" style="font-size:0.9em">No workspace-declared entries of this kind.</p>';
     }
@@ -2039,7 +2399,7 @@
         '<summary style="cursor:pointer;color:#6b7280;font-size:0.9em;padding:4px 0">' +
         'Also available in environment (' + envOnly.length + ') — not declared in workspace.yaml' +
         '</summary>' +
-        '<div style="opacity:0.6;margin-top:6px">' +
+        '<div class="' + cardsCls + '" style="opacity:0.6;margin-top:6px">' +
         envOnly.map(_renderRegistryEntry).join('') +
         '</div>' +
         '<p style="font-size:0.8em;color:#9ca3af;margin:4px 0 0">Run <code>/pbg-install &lt;pkg&gt;</code> to add a package to this workspace\'s imports.</p>' +
@@ -2134,25 +2494,60 @@
   }
   window._setRegistryTab = _setRegistryTab;
 
+  // Data-driven filter: store the query and re-render so it works uniformly
+  // across the Table / Cards / Full layouts (the old per-.registry-entry DOM
+  // hide didn't match the new table rows or grid cards).
   function _filterRegistry(query) {
-    var q = (query || '').toLowerCase();
-    var activePanel = document.querySelector('.registry-tab-panel.active');
-    if (!activePanel) return;
-    activePanel.querySelectorAll('.registry-entry').forEach(function(row) {
-      var text = row.textContent.toLowerCase();
-      row.style.display = (!q || text.indexOf(q) !== -1) ? '' : 'none';
-    });
-    // Auto-open the environment-only details section when a search matches entries inside it.
-    activePanel.querySelectorAll('.registry-env-section').forEach(function(details) {
-      if (!q) { details.open = false; return; }
-      var hasVisible = false;
-      details.querySelectorAll('.registry-entry').forEach(function(row) {
-        if (row.style.display !== 'none') hasVisible = true;
-      });
-      if (hasVisible) details.open = true;
-    });
+    window._registryFilter = (query || '').toLowerCase().trim();
+    _rerenderRegistryKinds();
   }
   window._filterRegistry = _filterRegistry;
+
+  function _registryEntryMatches(p) {
+    var q = window._registryFilter;
+    if (!q) return true;
+    var hay = ((p.name || '') + ' ' + (p.address || '') + ' ' + (p.description || '') + ' ' +
+      ((p.aliases || []).join(' '))).toLowerCase();
+    return hay.indexOf(q) !== -1;
+  }
+
+  // Select a process (from any zoom): remembered so that when you switch zoom
+  // the view re-focuses on it. Highlights the row/card and scrolls it in.
+  function _selectRegistryEntry(address) {
+    window._registrySelected = address;
+    var panel = document.querySelector('.registry-tab-panel.active');
+    if (!panel) return;
+    panel.querySelectorAll('[data-address].reg-selected').forEach(function (el) { el.classList.remove('reg-selected'); });
+    var sel = panel.querySelector('[data-address="' + (window.CSS && CSS.escape ? CSS.escape(address) : address) + '"]');
+    if (sel) {
+      sel.classList.add('reg-selected');
+      try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ }
+    }
+  }
+  window._selectRegistryEntry = _selectRegistryEntry;
+
+  // Double-click a process → zoom in one level (table → cards → full), centered
+  // on it.
+  function _zoomInOn(address) {
+    var order = ['table', 'grid', 'full'];
+    var i = order.indexOf(window._registryZoom || 'grid');
+    window._registrySelected = address;
+    _setRegistryZoom(order[Math.min(order.length - 1, i + 1)]);
+  }
+  window._zoomInOn = _zoomInOn;
+
+  // Re-apply the selection highlight + scroll after a re-render (zoom change).
+  function _refocusRegistrySelection() {
+    var addr = window._registrySelected;
+    if (!addr) return;
+    var panel = document.querySelector('.registry-tab-panel.active');
+    if (!panel) return;
+    var sel = panel.querySelector('[data-address="' + (window.CSS && CSS.escape ? CSS.escape(addr) : addr) + '"]');
+    if (!sel) return;
+    sel.classList.add('reg-selected');
+    // A Full/Grid card that carries a run panel: nudge it into view.
+    setTimeout(function () { try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ } }, 30);
+  }
 
   function _loadRegistry(refresh) {
     var status = document.getElementById('registry-status');
@@ -2181,6 +2576,15 @@
         // ("Imported repositories" panel removed — those repos live in the
         // Modules tab; see _renderImportedRepos (now unused) for the old render.)
 
+        // Cache per-kind entries so the semantic-zoom / view-mode toggles can
+        // re-render without re-fetching. Keyed container-id -> entries.
+        window._registryByKind = {
+          'registry-processes-container': byKind.process,
+          'registry-steps-container': byKind.step,
+          'registry-emitters-container': byKind.emitter,
+          'registry-visualizations-container': byKind.visualization,
+          'registry-report_cards-container': byKind.report_card,
+        };
         // Render tabbed Registry browser (Registry page).
         _renderRegistryGrid('registry-processes-container', byKind.process);
         _renderRegistryGrid('registry-steps-container', byKind.step);
@@ -2189,6 +2593,7 @@
         _renderRegistryGrid('registry-visualizations-container', byKind.visualization);
         _renderRegistryGrid('registry-report_cards-container', byKind.report_card);
         _renderRegistryTypesGrid('registry-types-container', types);
+        _syncRegistryToolbar();   // reflect saved zoom / view-mode on the toolbar
 
         // Enrich Visualizations + populate the new Analyses tab from the class
         // catalog (/api/visualization-classes) — the catalog the Analyses page
@@ -2958,7 +3363,7 @@
   // layout stacked these as three scrolling panels; sub-tabs let users
   // flip without scrolling.
   function _setRegistrySubtab(name) {
-    name = name || 'discovered';   // Registry is the main tab; Marketplace is secondary
+    name = name || 'modules';   // Modules is the main tab; Registry is secondary
     document.querySelectorAll('.registry-subtab').forEach(function(el) {
       el.classList.toggle('active', el.dataset.subtab === name);
     });
@@ -5826,28 +6231,52 @@
     // overview (user request).
     _setInvestigationContextCollapsed(false);
     // Open a landing window BEFORE sizing: while active, content-driven refits
-    // skip their scroll-restore so they can't cancel the smooth scroll-to-study
-    // below (which was snapping the view back up to the graph).
-    window._embedLandingUntil = Date.now() + 1400;
+    // skip their scroll-restore so they can't cancel the scroll-to-study below.
+    var _HOLD_MS = 1800;
+    window._embedLandingUntil = Date.now() + _HOLD_MS;
     if (typeof _fitEmbedToContent === 'function') _fitEmbedToContent(frame, 560);
     else if (typeof _fitEmbedToViewport === 'function') _fitEmbedToViewport(frame, panel, 560);
-    // Gracefully scroll down to the study AFTER its porthole has loaded + sized,
-    // so the smooth scroll targets the study's final position (scrolling before
-    // load lands on the pre-load height and misses). The context stays above,
-    // reachable by scrolling back up.
+    // Land on the study AND actively HOLD it there. A one-shot smooth scroll
+    // wasn't enough: the investigation graph / About block re-renders (and the
+    // iframe refits) AFTER the scroll, springing the view back up to the top.
+    // So for a short window we re-land whenever the study gets pushed back down
+    // the page — releasing immediately on the first genuine user scroll so the
+    // user can freely scroll up into the graph.
     if (panel && panel.scrollIntoView) {
+      var _released = false, _lastAssert = 0, _holdUntil = Date.now() + _HOLD_MS;
+      var _release = function () { _released = true; };
+      window.addEventListener('wheel', _release, { passive: true, once: true });
+      window.addEventListener('touchmove', _release, { passive: true, once: true });
+      window.addEventListener('keydown', function (e) {
+        if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].indexOf(e.key) !== -1) _release();
+      }, { once: true });
+      var _tick = function () {
+        if (_released || !panel.isConnected) return;
+        var now = Date.now();
+        // panel.top well below the viewport top ⇒ the view sprang back up to the
+        // graph; re-land (throttled so smooth animations don't stack).
+        if (panel.getBoundingClientRect().top > 96 && now - _lastAssert > 240) {
+          _lastAssert = now;
+          try { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+        }
+        if (now < _holdUntil) requestAnimationFrame(_tick);
+        else {
+          window.removeEventListener('wheel', _release);
+          window.removeEventListener('touchmove', _release);
+        }
+      };
       var _landed = false;
       var _land = function () {
         if (_landed || !panel.isConnected) return;
         _landed = true;
-        try { panel.scrollIntoView({behavior: 'smooth', block: 'start'}); } catch (_) {}
+        try { panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {}
+        requestAnimationFrame(_tick);   // start the hold once we've landed
       };
       if (frame) frame.addEventListener('load', function () { setTimeout(_land, 80); }, { once: true });
       setTimeout(_land, 600);   // fallback if load already fired or never fires
-      // Once the landing window closes, run one final content-fit (suppressed
-      // during landing) so the porthole ends at its true height, now preserving
-      // the landed scroll position instead of fighting the smooth scroll.
-      if (frame) setTimeout(function () { if (frame._refit) frame._refit(); }, 1550);
+      // After the hold window, one final content-fit (suppressed during it) so
+      // the porthole ends at its true height, preserving the landed position.
+      if (frame) setTimeout(function () { if (frame._refit) frame._refit(); }, _HOLD_MS + 150);
     }
   }
   window._wsOpenStudyTab = _wsOpenStudyTab;
@@ -13596,16 +14025,17 @@
       return _railGroupHtml(g, searching || (!hasActive && i === 0));
     }).join('');
 
-    // Ungrouped studies (bottom): a plain flat list, no collapsible header.
+    // Ungrouped studies (bottom): a collapsible "Ungrouped" folder, like the
+    // investigation groups (collapsed by default; force-open while searching).
     var ungroupedList = searching
       ? ungrouped.filter(function(s) { return _studyMatchesQuery(s, 'Ungrouped', tokens, requireAll); })
       : ungrouped;
     var ungroupedHtml = '';
     if (ungroupedList.length) {
-      ungroupedHtml = '<div class="viv-rail-ungrouped-section">'
-        + (groupsHtml ? '<div class="viv-rail-ungrouped-divider"></div>' : '')
-        + ungroupedList.map(function(s) { return _railStudyItem(s, {}); }).join('')
-        + '</div>';
+      ungroupedHtml = _railGroupHtml(
+        { name: '__ungrouped__', title: 'Ungrouped', studies: ungroupedList, _ungrouped: true },
+        searching
+      );
     }
 
     var html = pinnedHtml + groupsHtml + ungroupedHtml;
