@@ -40,6 +40,25 @@ from vivarium_workbench.lib.registry import (
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
 
+def _viva_display_name(name: str | None) -> str | None:
+    """Derive a viva-branded UI label from a module name, mirroring
+    ``viva_superpowers.catalog.sync_catalog._display_name`` for modules that
+    aren't in the curated catalog (surfaced from workspace.yaml imports).
+
+    ``pbg-torch`` / ``pbg_torch`` -> ``viva-torch``; already-viva or non-pbg
+    names pass through (dashes/underscores normalized to a dashed display).
+    """
+    if not name:
+        return name
+    s = str(name)
+    low = s.lower()
+    if low.startswith("pbg-") or low.startswith("pbg_"):
+        return "viva-" + s[4:].replace("_", "-")
+    if low.startswith("viva"):
+        return s[:1].lower() + s[1:].replace("_", "-")
+    return s
+
+
 # ---------------------------------------------------------------------------
 # Catalog-module allow-list filter
 # ---------------------------------------------------------------------------
@@ -692,5 +711,12 @@ def build_catalog(ws_root: Path, full: bool = False) -> dict:
         m["n_studies"] = s.get("n_studies", 0)
         m["n_used"] = s.get("n_used", 0)
         m["last_updated"] = s.get("last_updated")
+        # viva-* display name for the UI. Curated catalog entries carry an
+        # explicit `display_name` (from modules.json); modules surfaced from
+        # workspace.yaml imports (e.g. pbg_torch, pbg_ketchup) don't, so derive
+        # one here so ALL pbg-* cards read viva-*. name/package/source stay pbg-*
+        # so install/uninstall resolution is unchanged (workspace pkg exempt).
+        if not m.get("display_name") and m.get("kind") != "workspace":
+            m["display_name"] = _viva_display_name(name)
 
     return {"modules": modules}

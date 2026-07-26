@@ -200,6 +200,79 @@ def _own_referenced_ids(ws_root: Path) -> set[str]:
     return out
 
 
+def _own_module_usage(ws_root: Path) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
+    """Per-study module usage from THIS workspace's own studies, two maps:
+
+    ``study_refs[slug]`` -- the composite ids study ``slug`` references in its
+    ``baseline``/``variants`` (migrated spec view, so v2/v3/v4 shapes normalize
+    the same). The caller attributes each id to a module both by its package
+    prefix (``pbg_ketchup.composites.…`` -> ``pbg_ketchup``, which catches
+    Python ``@composite_generator`` modules that file-discovery misses) and by
+    whichever module's federated/installed content set contains it (which
+    catches federated modules whose composite ids don't embed the module name).
+
+    ``study_uses[slug]`` -- normalized module identities from an explicit
+    top-level ``uses_modules:`` list in ``study.yaml``. The escape hatch for
+    modules used only through a runner script / process wiring, which leave no
+    composite reference in the spec (e.g. ``pbg-torch`` assembling a
+    ``TransitionDataset`` in a surrogate study's runner).
+
+    Best-effort: a malformed spec is skipped, never raises.
+    """
+    ws_root = Path(ws_root)
+    study_refs: dict[str, set[str]] = {}
+    study_uses: dict[str, set[str]] = {}
+
+    try:
+        wp = WorkspacePaths.load(ws_root)
+    except Exception:
+        return study_refs, study_uses
+
+    try:
+        from vivarium_workbench.lib.investigations import load_spec as _load_study_spec
+    except Exception:
+        _load_study_spec = None
+
+    try:
+        study_dirs = list(wp.iter_study_dirs())
+    except Exception:
+        study_dirs = []
+
+    for sdir in study_dirs:
+        f = sdir / "study.yaml"
+        if not f.is_file():
+            f = sdir / "spec.yaml"
+        if not f.is_file():
+            continue
+        slug = sdir.name
+
+        # (a) composite references, via the migrated spec view.
+        if _load_study_spec is not None:
+            try:
+                spec = _load_study_spec(f)
+            except Exception:
+                spec = None
+            if isinstance(spec, dict):
+                for section in ("baseline", "variants"):
+                    for entry in (spec.get(section) or []):
+                        if isinstance(entry, dict) and entry.get("composite"):
+                            study_refs.setdefault(slug, set()).add(str(entry["composite"]))
+
+        # (b) explicit `uses_modules:` -- read from RAW yaml so a new top-level
+        # field survives regardless of what the migrated schema keeps.
+        try:
+            raw = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        except Exception:
+            raw = {}
+        if isinstance(raw, dict):
+            for mod in (raw.get("uses_modules") or []):
+                nk = _norm(mod if isinstance(mod, str) else (mod or {}).get("name"))
+                if nk:
+                    study_uses.setdefault(slug, set()).add(nk)
+
+    return study_refs, study_uses
+
+
 def module_content_stats(ws_root: Path) -> dict[str, dict]:
     """Per-module content counts + this workspace's usage, keyed by
     :func:`_norm` of the module identity (the linked workspace's
@@ -266,44 +339,73 @@ def module_content_stats(ws_root: Path) -> dict[str, dict]:
 
     installed_comps_by_norm = _installed_composites_by_norm()
 
+    # Reference-driven usage: which imported modules THIS workspace's own studies
+    # actually use. Attribute each study to a module by (1) the package prefix of
+    # a composite id it references (catches Python @composite_generator modules
+    # that file-discovery misses, e.g. pbg-ketchup), (2) whichever module's
+    # federated/installed content set contains that id (catches federated modules
+    # whose composite ids don't embed the module name), and (3) an explicit
+    # `uses_modules:` list (catches modules used only via a runner script, e.g.
+    # pbg-torch). `n_used` then counts THIS workspace's own studies -- not items.
+    try:
+        study_refs, study_uses = _own_module_usage(ws_root)
+    except Exception:
+        study_refs, study_uses = {}, {}
+
+    # Reverse index: composite/study item id -> the module norms that own it.
+    item_to_norms: dict[str, set[str]] = {}
+    for _by in (comps_by_norm, installed_comps_by_norm, studies_by_norm):
+        for _nk, _ids in _by.items():
+            for _id in _ids:
+                item_to_norms.setdefault(_id, set()).add(_nk)
+
+    used_by_studies: dict[str, set[str]] = {}
+    ref_comps_by_norm: dict[str, set[str]] = {}   # referenced composites, by module (for n_composites)
+    for slug, cids in study_refs.items():
+        for cid in cids:
+            pkg = cid.split(".composites.", 1)[0] if ".composites." in cid else cid
+            attribute = set(item_to_norms.get(cid, set()))
+            pfx = _norm(pkg)
+            if pfx:
+                attribute.add(pfx)
+                if ".composites." in cid:
+                    ref_comps_by_norm.setdefault(pfx, set()).add(cid)
+            for nk in attribute:
+                used_by_studies.setdefault(nk, set()).add(slug)
+    for slug, norms in study_uses.items():
+        for nk in norms:
+            used_by_studies.setdefault(nk, set()).add(slug)
+
     all_norm_keys = (
         set(comps_by_norm)
         | set(studies_by_norm)
         | set(n_investigations_by_norm)
         | set(installed_comps_by_norm)
+        | set(ref_comps_by_norm)
+        | set(used_by_studies)
     )
     all_norm_keys.discard("")
 
-    module_ids_by_norm: dict[str, set[str]] = {}
     for key in all_norm_keys:
         try:
-            composite_ids = comps_by_norm.get(key, set()) | installed_comps_by_norm.get(key, set())
+            composite_ids = (
+                comps_by_norm.get(key, set())
+                | installed_comps_by_norm.get(key, set())
+                | ref_comps_by_norm.get(key, set())
+            )
             study_ids = studies_by_norm.get(key, set())
             n_inv = n_investigations_by_norm.get(key, 0)
-            if not composite_ids and not study_ids and not n_inv:
+            n_used = len(used_by_studies.get(key, set()))
+            if not composite_ids and not study_ids and not n_inv and not n_used:
                 continue
-            module_ids_by_norm[key] = composite_ids | study_ids
             stats[key] = {
                 "n_composites": len(composite_ids),
                 "n_investigations": n_inv,
                 "n_studies": len(study_ids),
-                "n_used": 0,
+                "n_used": n_used,
                 "last_updated": last_updated_by_norm.get(key),
             }
         except Exception:
             continue
-
-    if not stats:
-        return stats
-
-    try:
-        referenced = _own_referenced_ids(ws_root)
-    except Exception:
-        referenced = set()
-
-    if referenced:
-        for key, rec in stats.items():
-            module_ids = module_ids_by_norm.get(key, set())
-            rec["n_used"] = len(module_ids & referenced)
 
     return stats
