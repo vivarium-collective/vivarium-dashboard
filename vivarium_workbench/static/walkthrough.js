@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -2642,32 +2642,24 @@
   }
   window._setCatalogView = _setCatalogView;
 
-  function _renderCatalog() {
-    var grid = document.getElementById('catalog-modules-grid');
-    if (!grid) return;
-    var f = window._catalogFilter;
-    var search = f.search.toLowerCase();
-    var activeTags = f.tags;
-    var modules = window._catalogModules.filter(function(m) {
-      // The workspace's own first-party package (kind === 'workspace')
-      // used to be filtered out here because it had its own dedicated
-      // row in the now-removed "Installed modules" table. After the
-      // page-reorg (separate Installed panel folded into this catalog
-      // grid), it gets pinned at the very top instead — see the
-      // installed-first sort below.
-      // Search filter — workspace package is exempt from text-search
-      // hiding (it should always show as the pinned "your workspace"
-      // card so users have a stable anchor at the top of the grid).
+  // -------------------------------------------------------------------------
+  // Shared module-card rendering (Modules tab + Marketplace tab)
+  // -------------------------------------------------------------------------
+
+  // Search / installed / tag filter. `f` is a {search, installed, tags} state
+  // object (window._catalogFilter or window._marketplaceFilter).
+  function _filterModules(list, f) {
+    var search = (f.search || '').toLowerCase();
+    var activeTags = f.tags || new Set();
+    return (list || []).filter(function(m) {
+      // Workspace package is exempt from text-search / tag hiding so it always
+      // stays pinned as the anchor card at the top of the grid.
       if (search && m.kind !== 'workspace') {
         var haystack = (m.name + ' ' + (m.description || '') + ' ' + (m.tags || []).join(' ')).toLowerCase();
         if (haystack.indexOf(search) === -1) return false;
       }
-      // Installed filter — workspace package always passes (it's
-      // structurally installed).
       if (f.installed === 'installed' && !m.installed && m.kind !== 'workspace') return false;
       if (f.installed === 'uninstalled' && (m.installed || m.kind === 'workspace')) return false;
-      // Tag chip filter (OR within: pass if any selected tag matches).
-      // Workspace package is exempt (no tags).
       if (activeTags.size > 0 && m.kind !== 'workspace') {
         var mTags = m.tags || [];
         var match = false;
@@ -2676,20 +2668,62 @@
       }
       return true;
     });
+  }
 
-    // Registry shows only what is IN this workspace — the workspace's own
-    // package plus installed modules. The browse-everything "Available to
-    // install" catalog is intentionally not shown.
-    modules = modules.filter(function (m) {
-      return m.kind === 'workspace' || m.installed;
-    });
+  function _moduleInstalledMeta(m) {
+    // Source / ref / path rows surfaced inline on installed cards.
+    if (!m.installed && m.kind !== 'workspace') return '';
+    var bits = [];
+    if (m.source) bits.push('<small class="muted">Source: <code>' + _esc(m.source) + '</code>' +
+      (m.ref ? ' @ <code>' + _esc(m.ref) + '</code>' : '') + '</small>');
+    var path = m.install_path || m.path;
+    if (path) bits.push('<small class="muted">Path: <code>' + _esc(path) + '</code></small>');
+    return bits.length ? '<div class="module-installed-meta">' + bits.join('<br>') + '</div>' : '';
+  }
 
-    // Sort: workspace package first (anchor), then installed modules
-    // (alphabetical), then everything else (alphabetical). This is the
-    // visible expression of "what's in your workspace surfaces first;
-    // browse-everything is secondary" — the same pattern the Composites
-    // tab adopted (workspace-first sort) for the same reason.
-    modules.sort(function(a, b) {
+  function _moduleActionFor(m) {
+    // Workspace's own first-party package is not uninstallable — show a
+    // "first-party" pill. Installed modules show an install-source badge.
+    // Available modules show an Install button (authoring-only).
+    if (m.kind === 'workspace') {
+      return '<span class="status-pill installed" title="The workspace\'s own first-party package. Always present; cannot be uninstalled.">first-party</span>';
+    }
+    if (m.installed) {
+      var src = m.install_source || 'imports';
+      var srcBadge = '';
+      if (src === 'venv') {
+        var via = (m.installed_via || []);
+        if (via.length === 0) {
+          srcBadge = '<span class="install-src-pill install-src-unmanaged" title="Installed in the venv but not declared in workspace.yaml.imports and not required by any installed package.">📦 unmanaged</span>';
+        } else {
+          var viaText = 'via ' + via.slice(0, 3).map(_esc).join(', ') + (via.length > 3 ? ' +' + (via.length - 3) : '');
+          srcBadge = '<span class="install-src-pill install-src-venv" title="Brought in by another installed package.">📦 ' + viaText + '</span>';
+        }
+      } else if (src === 'pyproject') {
+        srcBadge = '<span class="install-src-pill install-src-pyproject" title="Declared in pyproject.toml [project.dependencies].">📋 via pyproject</span>';
+      } else {
+        srcBadge = '<span class="status-pill installed">installed</span>';
+      }
+      return srcBadge;
+    }
+    return '<button class="action-btn js-authoring" onclick="_installFromCatalog(\'' + _esc(m.name) + '\')">Install</button>';
+  }
+
+  // Section divider injected at boundaries: workspace → installed → available.
+  function _moduleSectionDivider(prev, cur) {
+    if (!prev || !cur) return '';
+    var prevSection = prev.kind === 'workspace' ? 0 : (prev.installed ? 1 : 2);
+    var curSection  = cur.kind  === 'workspace' ? 0 : (cur.installed  ? 1 : 2);
+    if (prevSection === curSection) return '';
+    var label = (curSection === 1) ? 'Installed in this workspace' : 'Available to install';
+    return '<div class="module-section-divider"><span>' + label + '</span></div>';
+  }
+
+  // Render an already-filtered module list into `grid` (grid or list view).
+  // Sort: workspace package first (anchor), then installed (alpha), then
+  // available (alpha) — "what's in your workspace surfaces first".
+  function _renderModuleGrid(grid, modules, view) {
+    modules = modules.slice().sort(function(a, b) {
       var aw = a.kind === 'workspace' ? 0 : 1;
       var bw = b.kind === 'workspace' ? 0 : 1;
       if (aw !== bw) return aw - bw;
@@ -2705,83 +2739,16 @@
       return;
     }
 
-    function _installedMeta(m) {
-      // Source / ref / path rows that used to live in the now-removed
-      // "Installed modules" table. Surface them inline on installed
-      // cards so the info isn't lost.
-      if (!m.installed && m.kind !== 'workspace') return '';
-      var bits = [];
-      if (m.source) bits.push('<small class="muted">Source: <code>' + _esc(m.source) + '</code>' +
-        (m.ref ? ' @ <code>' + _esc(m.ref) + '</code>' : '') + '</small>');
-      var path = m.install_path || m.path;
-      if (path) bits.push('<small class="muted">Path: <code>' + _esc(path) + '</code></small>');
-      return bits.length ? '<div class="module-installed-meta">' + bits.join('<br>') + '</div>' : '';
-    }
-
-    function _actionFor(m) {
-      // Workspace's own first-party package is not uninstallable — show
-      // a "first-party" pill. Otherwise: Install or Uninstall.
-      if (m.kind === 'workspace') {
-        return '<span class="status-pill installed" title="The workspace\'s own first-party package. Always present; cannot be uninstalled.">first-party</span>';
-      }
-      if (m.installed) {
-        // Render the install-source badge + a context-appropriate action.
-        // Three install-source layers (see server.py:_get_catalog):
-        //   imports   — workspace.yaml.imports declared it; uninstall is
-        //               the simple two-file edit (workspace.yaml + pyproject)
-        //   pyproject — declared in pyproject.toml only; uninstall flow
-        //               still works (drops the dep + re-locks the venv)
-        //   venv      — present in venv via another package's transitive
-        //               dep; cannot be uninstalled directly (the user has
-        //               to remove the parent). Show "via X, Y" hint instead.
-        // Uninstall from the dashboard is intentionally NOT offered — module
-        // removal is a workspace/venv edit best done deliberately outside the
-        // UI. Installed cards show only their install-source badge.
-        var src = m.install_source || 'imports';
-        var srcBadge = '';
-        if (src === 'venv') {
-          var via = (m.installed_via || []);
-          if (via.length === 0) {
-            srcBadge = '<span class="install-src-pill install-src-unmanaged" title="Installed in the venv but not declared in workspace.yaml.imports and not required by any installed package.">📦 unmanaged</span>';
-          } else {
-            var viaText = 'via ' + via.slice(0, 3).map(_esc).join(', ') + (via.length > 3 ? ' +' + (via.length - 3) : '');
-            srcBadge = '<span class="install-src-pill install-src-venv" title="Brought in by another installed package.">📦 ' + viaText + '</span>';
-          }
-        } else if (src === 'pyproject') {
-          srcBadge = '<span class="install-src-pill install-src-pyproject" title="Declared in pyproject.toml [project.dependencies].">📋 via pyproject</span>';
-        } else {
-          srcBadge = '<span class="status-pill installed">installed</span>';
-        }
-        return srcBadge;
-      }
-      return '<button class="action-btn js-authoring" onclick="_installFromCatalog(\'' + _esc(m.name) + '\')">Install</button>';
-    }
-
-    // Section divider injected at boundaries: workspace → installed →
-    // available. Spans all grid columns; styled in style.css under
-    // .module-section-divider.
-    function _maybeSectionDivider(prev, cur) {
-      if (!prev || !cur) return '';
-      var prevSection = prev.kind === 'workspace' ? 0 : (prev.installed ? 1 : 2);
-      var curSection  = cur.kind  === 'workspace' ? 0 : (cur.installed  ? 1 : 2);
-      if (prevSection === curSection) return '';
-      var label = (curSection === 1)
-        ? 'Installed in this workspace'
-        : 'Available to install';
-      return '<div class="module-section-divider"><span>' + label + '</span></div>';
-    }
-
-    if (window._catalogView === 'list') {
+    if (view === 'list') {
       grid.className = 'module-list';
       var prevL = null;
       var rows = modules.map(function(m) {
-        var divider = _maybeSectionDivider(prevL, m);
+        var divider = _moduleSectionDivider(prevL, m);
         prevL = m;
-        var tagPills = ''; // tag pills hidden
         return divider + '<div class="module-list-row' + (m.kind === 'workspace' ? ' module-row-workspace' : '') + '">' +
           '<span class="name">' + _esc(m.name) + '</span>' +
-          '<span class="desc">' + tagPills + ' ' + _esc(m.description || '') + _installedMeta(m) + '</span>' +
-          '<span>' + _actionFor(m) + '</span>' +
+          '<span class="desc"> ' + _esc(m.description || '') + _moduleInstalledMeta(m) + '</span>' +
+          '<span>' + _moduleActionFor(m) + '</span>' +
           '</div>';
       });
       grid.innerHTML = rows.join('');
@@ -2789,12 +2756,10 @@
       grid.className = 'module-grid';
       var prevG = null;
       var cards = modules.map(function(m) {
-        var divider = _maybeSectionDivider(prevG, m);
+        var divider = _moduleSectionDivider(prevG, m);
         prevG = m;
-        var tags = ''; // tag pills hidden
         // Installed-via-imports modules carry their GitHub URL in `source`, not
-        // `homepage` (which only the curated catalog populates) — fall back to a
-        // URL-shaped source so they get the same "GitHub" header link.
+        // `homepage`; fall back to a URL-shaped source for the header link.
         var _hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
         var homepage = _hp
           ? '<a href="' + _esc(_hp) + '" target="_blank" class="module-link">GitHub &#8599;</a>'
@@ -2804,15 +2769,96 @@
         return divider + '<div class="module-card' + workspaceCls + '">' +
           '<div class="module-card-header"><strong>' + _esc(m.name) + '</strong> ' + homepage + '</div>' +
           '<p class="module-desc">' + _esc(m.description) + '</p>' +
-          '<div class="module-tags">' + tags + '</div>' +
-          _installedMeta(m) +
-          '<div class="module-action">' + _actionFor(m) + '</div>' +
+          '<div class="module-tags"></div>' +
+          _moduleInstalledMeta(m) +
+          '<div class="module-action">' + _moduleActionFor(m) + '</div>' +
           '</div>';
       });
       grid.innerHTML = cards.join('');
     }
   }
+
+  function _renderCatalog() {
+    var grid = document.getElementById('catalog-modules-grid');
+    if (!grid) return;
+    var modules = _filterModules(window._catalogModules, window._catalogFilter);
+    // The Modules tab shows only what is IN this workspace — the workspace's
+    // own package plus installed modules. Browse-everything (available-to-
+    // install) lives in the Marketplace tab.
+    modules = modules.filter(function (m) { return m.kind === 'workspace' || m.installed; });
+    _renderModuleGrid(grid, modules, window._catalogView);
+  }
   window._renderCatalog = _renderCatalog;
+
+  // -------------------------------------------------------------------------
+  // Marketplace: browse the FULL viva ecosystem (unfiltered by this
+  // workspace's registry.include / registry.modules) and install modules.
+  // Data: /api/marketplace (build_catalog full=True). Reuses the Modules
+  // tab's card rendering + install flow.
+  // -------------------------------------------------------------------------
+  window._marketplaceModules = [];
+  window._marketplaceFilter = { search: '', tags: new Set(), installed: 'all' };
+  window._marketplaceView = 'grid';
+  window._marketplaceLoaded = false;
+
+  function _setMarketplaceView(view) {
+    window._marketplaceView = view;
+    document.querySelectorAll('#marketplace-toolbar .view-btn').forEach(function(b) {
+      b.classList.toggle('active', b.getAttribute('data-view') === view);
+    });
+    _renderMarketplace();
+  }
+  window._setMarketplaceView = _setMarketplaceView;
+
+  function _renderMarketplace() {
+    var grid = document.getElementById('marketplace-modules-grid');
+    if (!grid) return;
+    // Marketplace includes available-to-install modules (no installed-only
+    // filter) — that's the whole point of the tab.
+    var modules = _filterModules(window._marketplaceModules, window._marketplaceFilter);
+    _renderModuleGrid(grid, modules, window._marketplaceView);
+  }
+  window._renderMarketplace = _renderMarketplace;
+
+  function _loadMarketplace(force) {
+    var grid = document.getElementById('marketplace-modules-grid');
+    if (!grid) return;
+    if (window._marketplaceLoaded && !force) { _renderMarketplace(); return; }
+    fetch('/api/marketplace')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        window._marketplaceModules = data.modules || [];
+        window._marketplaceLoaded = true;
+        // Wire toolbar interactions once.
+        var searchEl = document.getElementById('marketplace-search');
+        if (searchEl && !searchEl._pbgWired) {
+          searchEl._pbgWired = true;
+          searchEl.oninput = function() {
+            window._marketplaceFilter.search = this.value.toLowerCase();
+            _renderMarketplace();
+          };
+        }
+        var radios = document.querySelectorAll('input[name="marketplace-installed-filter"]');
+        radios.forEach(function(r) {
+          if (!r._pbgWired) {
+            r._pbgWired = true;
+            r.onchange = function() {
+              window._marketplaceFilter.installed = this.value;
+              _renderMarketplace();
+            };
+          }
+        });
+        if (!window._marketplaceModules.length) {
+          grid.innerHTML = '<p class="empty-state">No ecosystem modules available.</p>';
+          return;
+        }
+        _renderMarketplace();
+      })
+      .catch(function(err) {
+        grid.innerHTML = '<p class="empty-state" style="color:#c00">Marketplace load failed: ' + _esc(String(err)) + '</p>';
+      });
+  }
+  window._loadMarketplace = _loadMarketplace;
 
   // Registry page sub-tab toggle. Two sub-tabs: "modules" (the catalog
   // grid above, where the workspace package + installed modules now
@@ -2833,6 +2879,11 @@
     // unless force=true, so this is cheap when called repeatedly.
     if (name === 'discovered' && typeof _loadRegistry === 'function') {
       _loadRegistry(false);
+    }
+    // Marketplace is lazy-loaded on first open (then cached). _loadMarketplace
+    // re-renders from cache on repeat opens unless force=true.
+    if (name === 'marketplace' && typeof _loadMarketplace === 'function') {
+      _loadMarketplace(false);
     }
   }
   window._setRegistrySubtab = _setRegistrySubtab;
