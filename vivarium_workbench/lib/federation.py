@@ -15,9 +15,7 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
-from vivarium_workbench.lib.composite_lookup import (
-    discover_workspace_composites, load_spec,  # existing helpers
-)
+from vivarium_workbench.lib.composite_lookup import discover_workspace_composites
 
 
 @dataclass
@@ -95,27 +93,30 @@ def federated_studies(ws_root: Path) -> list[dict]:
 def federated_investigation_sets(ws_root: Path) -> list[dict]:
     out: list[dict] = []
     for lw in linked_workspaces(ws_root):
-        idir = lw.layout.investigations
-        if not idir.is_dir():
+        try:
+            idir = lw.layout.investigations
+            if not idir.is_dir():
+                continue
+            for d in sorted(p for p in idir.iterdir() if p.is_dir()):
+                f = d / "investigation.yaml"
+                if not f.is_file():
+                    continue
+                try:
+                    spec = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+                except Exception:
+                    continue
+                name = spec.get("name") or d.name
+                members = [f"{lw.repo}::{s}" for s in (spec.get("studies") or [])]
+                out.append({
+                    "name": name,
+                    "id": f"{lw.repo}::{name}",
+                    "origin_repo": lw.repo,
+                    "read_only": True,
+                    "spec": spec,
+                    "member_studies": members,
+                })
+        except Exception:
             continue
-        for d in sorted(p for p in idir.iterdir() if p.is_dir()):
-            f = d / "investigation.yaml"
-            if not f.is_file():
-                continue
-            try:
-                spec = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
-            except Exception:
-                continue
-            name = spec.get("name") or d.name
-            members = [f"{lw.repo}::{s}" for s in (spec.get("studies") or [])]
-            out.append({
-                "name": name,
-                "id": f"{lw.repo}::{name}",
-                "origin_repo": lw.repo,
-                "read_only": True,
-                "spec": spec,
-                "member_studies": members,
-            })
     return out
 
 

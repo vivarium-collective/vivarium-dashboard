@@ -1,6 +1,8 @@
 from pathlib import Path
 
+from vivarium_workbench.lib import federation as federation_mod
 from vivarium_workbench.lib.federation import (
+    LinkedWorkspace,
     linked_workspaces,
     federated_studies,
     federated_investigation_sets,
@@ -45,3 +47,41 @@ def test_federated_composites_tagged():
     rec = next(r for r in comps.values() if r.get("name") == "donor_comp")
     assert rec["origin_repo"] == "donor-repo"
     assert rec["read_only"] is True
+
+
+class _RaisingDir:
+    """Stands in for a Path whose .is_dir() reports True but .iterdir()
+    genuinely raises (e.g. a permission-denied directory) — Path.is_dir()
+    swallows OSError and returns False, so this simulates the case that
+    slips past that guard and hits iterdir() directly."""
+
+    def is_dir(self):
+        return True
+
+    def iterdir(self):
+        raise OSError("permission denied")
+
+
+class _RaisingLayout:
+    @property
+    def investigations(self):
+        return _RaisingDir()
+
+    @property
+    def studies(self):
+        return _RaisingDir()
+
+
+def test_federated_investigation_sets_never_raises_on_bad_workspace(monkeypatch):
+    """One linked workspace whose investigations/ dir raises OSError mid-iteration
+    must be skipped, not abort enumeration for the other linked workspaces."""
+    good = linked_workspaces(FIX)
+    assert good  # sanity: donor-repo is discovered
+    bad_lw = LinkedWorkspace(repo="bad-repo", root=FIX, layout=_RaisingLayout())
+    monkeypatch.setattr(federation_mod, "linked_workspaces", lambda ws_root: good + [bad_lw])
+
+    isets = federation_mod.federated_investigation_sets(FIX)  # must not raise
+
+    names = {i["name"] for i in isets}
+    assert "donor_inv" in names
+    assert "bad-repo" not in {i["origin_repo"] for i in isets}
