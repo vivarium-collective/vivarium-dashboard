@@ -2,6 +2,7 @@ from pathlib import Path
 
 from vivarium_workbench.lib.investigations_index import build_investigations
 from vivarium_workbench.lib.investigation_status import build_iset_summary
+from vivarium_workbench.lib.models import InvestigationSummary
 
 FIX = Path(__file__).parent / "_fixtures" / "ws_federation_demo"
 
@@ -29,3 +30,15 @@ def test_iset_summary_includes_federated_investigation():
     assert di["origin_repo"] == "donor-repo"
     assert di["read_only"] is True
     assert "donor_study" in di["studies"]
+
+
+def test_investigation_summary_model_preserves_provenance_fields():
+    # Serialization-boundary check: InvestigationSummary is the pydantic response
+    # model GET /api/investigation-summaries validates each summary dict against
+    # (api/app.py). Without explicit typed fields for origin_repo/read_only, pydantic
+    # silently drops them since the model has no extra="allow".
+    dumped = InvestigationSummary.model_validate(
+        {"name": "x", "origin_repo": "donor-repo", "read_only": True}
+    ).model_dump()
+    assert dumped["origin_repo"] == "donor-repo"
+    assert dumped["read_only"] is True
