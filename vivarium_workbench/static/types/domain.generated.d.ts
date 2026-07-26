@@ -100,6 +100,8 @@ export interface InvestigationSummary {
   lifecycle: any;
   current: boolean | null;
   error: string | null;
+  origin_repo: string | null;
+  read_only: boolean | null;
 }
 
 export interface InvestigationSummariesPayload {
