@@ -1637,6 +1637,56 @@ textarea.sr-input {
 .loom-rail-keepopen.is-open { opacity: 1; color: #f59e0b; }
 .loom-rail-empty { color: #94a3b8; padding: 8px 4px; }
 
+/* --- nesting-tree process browser --------------------------------------- */
+.loom-tree { display: flex; flex-direction: column; }
+.loom-tree-empty { color: #94a3b8; padding: 8px 4px; }
+.loom-tree-summary { font-size: 11px; color: #64748b; flex: 1; }
+.loom-badge-orphan-inline { color: #b45309; }
+.loom-tree-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 2px 6px 2px 0; border-radius: 4px; cursor: pointer;
+  font-size: 12px; line-height: 1.5; min-height: 22px;
+}
+.loom-tree-row:hover { background: rgba(0, 0, 0, 0.05); }
+.loom-tree-group { color: #475569; font-weight: 600; }
+.loom-tree-group .loom-tree-name { color: #334155; }
+.loom-tree-leaf.is-active { background: #dbeafe; }
+.loom-tree-leaf.is-active .loom-tree-name { font-weight: 600; }
+.loom-tree-leaf.is-hidden .loom-tree-name { color: #b0b7c3; font-style: italic; }
+.loom-tree-leaf.is-inner { cursor: default; }
+.loom-tree-caret {
+  width: 12px; flex: 0 0 12px; text-align: center; color: #94a3b8; font-size: 9px;
+}
+.loom-tree-caret-empty { visibility: hidden; }
+.loom-tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loom-tree-count {
+  font-size: 10px; color: #94a3b8; background: rgba(0,0,0,0.05);
+  border-radius: 8px; padding: 0 6px; margin-left: 4px;
+}
+.loom-tree-visible { margin: 0 2px 0 0; flex: 0 0 auto; }
+.loom-tree-badge {
+  font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em;
+  border-radius: 3px; padding: 0 4px; flex: 0 0 auto;
+}
+.loom-badge-composite { background: #ede9fe; color: #6d28d9; }
+.loom-badge-orphan { background: #fef3c7; color: #b45309; }
+.loom-tree-pin {
+  border: 0; background: none; cursor: pointer; opacity: 0.25; font-size: 12px;
+  line-height: 1; padding: 0 2px; color: #64748b; flex: 0 0 auto;
+}
+.loom-tree-row:hover .loom-tree-pin { opacity: 0.7; }
+.loom-tree-pin.is-pinned { opacity: 1; color: #f59e0b; }
+.loom-tree-note { color: #94a3b8; font-size: 11px; font-style: italic; padding: 2px 6px; }
+.loom-tree-note.loom-tree-err { color: #dc2626; font-style: normal; }
+/* Pinned ("preferred") section floats above the tree. */
+.loom-tree-pinned {
+  border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; margin-bottom: 4px;
+}
+.loom-tree-pinned-head {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: #b45309; padding: 2px 6px; font-weight: 700;
+}
+
 /* --- dockable panel zones ------------------------------------------------- */
 .loom-dock-zone { overflow: hidden; }
 .loom-dock-panel { border-bottom: 1px solid #f3f4f6; }

@@ -1018,6 +1018,8 @@ export default function App() {
           hidden={hidden}
           onToggleHidden={toggleHidden}
           onShowAll={showAll}
+          rootId={drillHops.length === 0 ? compositeId : rootIdRef.current}
+          hopsPrefix={drillHops}
         />
       ),
     },
