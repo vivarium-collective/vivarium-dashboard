@@ -2,7 +2,7 @@
 // Tests for run lifecycle — migrated to SetupRunPanel when RunPanel was merged
 // into SetupRunPanel (Tasks 5+6).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { SetupRunPanel } from '../panels/SetupRunPanel';
 
 beforeEach(() => {
@@ -10,6 +10,7 @@ beforeEach(() => {
   sessionStorage.clear();
 });
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
   vi.useRealTimers();
 });
@@ -90,5 +91,46 @@ describe('SetupRunPanel start-then-poll', () => {
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith('/api/composite-run/r-prev/status'),
       { timeout: 5000 });
+  });
+});
+
+describe('SetupRunPanel run-kind (temporal vs workflow)', () => {
+  it('temporal shows a Duration field; workflow hides it and just Runs', () => {
+    const { rerender } = render(
+      <SetupRunPanel {...PANEL_EXTRAS} compositeId="pkg.composites.temporal"
+        emitSet={new Set()} runKind="temporal" />
+    );
+    expect(screen.getByText('Duration')).toBeTruthy();
+
+    rerender(
+      <SetupRunPanel {...PANEL_EXTRAS} compositeId="pkg.composites.flow"
+        emitSet={new Set()} runKind="workflow" />
+    );
+    expect(screen.queryByText('Duration')).toBeNull();
+    expect(screen.getByRole('button', { name: /^run$/i })).toBeTruthy();
+  });
+
+  it('a workflow run submits a single tick (steps: 1)', async () => {
+    let body: any = null;
+    const fetchMock = vi.fn((url: string, opts?: any) => {
+      if (url.includes('/api/composite-test-run')) {
+        body = JSON.parse(opts.body);
+        return Promise.resolve({ ok: true, status: 202, json: async () => ({ run_id: 'r-w', status: 'running' }) });
+      }
+      if (url.includes('/api/composite-run/r-w/status'))
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ run_id: 'r-w', status: 'completed', progress_step: 1, n_steps: 1 }) });
+      if (url.includes('/api/composite-run/r-w'))
+        return Promise.resolve({ ok: true, status: 200, json: async () => ({ run_id: 'r-w', trajectory: [] }) });
+      return Promise.resolve({ ok: true, status: 200, json: async () => ({ runs: [] }) });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <SetupRunPanel {...PANEL_EXTRAS} compositeId="pkg.composites.flow"
+        emitSet={new Set()} runKind="workflow" />
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^run$/i }));
+    await waitFor(() => expect(body).not.toBeNull(), { timeout: 5000 });
+    expect(body.steps).toBe(1);
   });
 });

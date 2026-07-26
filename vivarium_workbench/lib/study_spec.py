@@ -186,6 +186,55 @@ def study_spec_path(ws_root: Path, name: str) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# Normalized interface (composite/config/inputs/outputs/emitter)
+# ---------------------------------------------------------------------------
+
+def study_interface(spec: dict) -> dict:
+    """Normalize a study spec's execution interface.
+
+    Returns ``{composite, config, inputs: [{artifact, from}], outputs: [str],
+    emitter}``. ``inputs``/``outputs`` default to ``[]`` and ``config``
+    defaults to ``{}`` when absent (back-compat with legacy specs that don't
+    declare an interface at all). ``composite``/``emitter`` default to
+    ``None`` when absent.
+
+    Later tasks derive investigation-graph edges from ``inputs[].from`` and
+    drive the pull-or-compute pipeline from this block, so a malformed
+    ``inputs`` entry (missing ``artifact`` or ``from``) raises
+    :class:`InvestigationSpecError` rather than being silently dropped.
+    """
+    from vivarium_workbench.lib.investigations import InvestigationSpecError
+
+    raw_inputs = spec.get("inputs") or []
+    inputs: list[dict] = []
+    for i, entry in enumerate(raw_inputs):
+        if not isinstance(entry, dict):
+            raise InvestigationSpecError(f"interface.inputs[{i}] must be a mapping")
+        artifact = entry.get("artifact")
+        source = entry.get("from")
+        if not artifact:
+            raise InvestigationSpecError(
+                f"interface.inputs[{i}] is missing required field 'artifact'"
+            )
+        if not source:
+            raise InvestigationSpecError(
+                f"interface.inputs[{i}] ({artifact!r}) is missing required field 'from'"
+            )
+        inputs.append({"artifact": str(artifact), "from": str(source)})
+
+    raw_outputs = spec.get("outputs") or []
+    outputs = [str(o) for o in raw_outputs]
+
+    return {
+        "composite": spec.get("composite"),
+        "config": spec.get("config") or {},
+        "inputs": inputs,
+        "outputs": outputs,
+        "emitter": spec.get("emitter"),
+    }
+
+
+# ---------------------------------------------------------------------------
 # runs.db reading (ws_root-parameterised)
 # ---------------------------------------------------------------------------
 
@@ -504,6 +553,12 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         return None
     spec = load_spec(spec_path)
     if isinstance(spec, dict):
+        # Normalized execution interface (composite/config/inputs/outputs/
+        # emitter). Legacy specs with no interface block get inputs=[]/
+        # outputs=[] and never raise; a malformed input (missing 'from')
+        # is an authoring error and SHOULD surface, so this is deliberately
+        # not wrapped in a bare try/except like the best-effort blocks below.
+        spec["interface"] = study_interface(spec)
         try:
             db_runs = read_runs_db_for_study(ws_root, name)
         except Exception:

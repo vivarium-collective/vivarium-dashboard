@@ -4274,7 +4274,8 @@
         'No composite id specified. Open via the Use button on a composite card.';
       return;
     }
-    window._ceCurrent = {id: id, overrides: {}, run_id: run_id || null};
+    window._ceCurrent = {id: id, overrides: (window._ceIncomingOverrides || {}), run_id: run_id || null};
+    window._ceIncomingOverrides = null;  // consumed once (Sim-DB "open this run's config")
     window._ceLastRunId = run_id || null;
     // Hide the post-run bar when loading a fresh composite (it's set by the
     // explore:run-complete postMessage path).
@@ -4856,7 +4857,11 @@
     if (document.body.classList.contains('snapshot')) {
       var _snapshotBase = (window.__DASH_CONFIG__ && window.__DASH_CONFIG__.basePath) || "";
       var stateUrl = _snapshotBase + '/api/composite-state/' + encodeURIComponent(ref) + '.json';
-      var loomUrl = _snapshotBase + '/bigraph-loom/index.html?static=1&stateUrl=' + encodeURIComponent(stateUrl);
+      // apiBase lets the loom locate pre-built inner-composite states
+      // (api/composite-inner-state/<key>.json) for the drill-in mini-map in
+      // static mode, where the live /api/composite-inner-state has no backend.
+      var loomUrl = _snapshotBase + '/bigraph-loom/index.html?static=1&apiBase=' +
+        encodeURIComponent(_snapshotBase) + '&stateUrl=' + encodeURIComponent(stateUrl);
       iframe.src = loomUrl;
       iframe.style.display = '';
       // Record the loaded composite so "Pop out" works in snapshot mode. There
@@ -15920,6 +15925,31 @@
     if (row.run_id && row.spec_id) { _openSimulationInExplorer(row.run_id, row.spec_id); }
   }
   window._openSimulation = _openSimulation;
+
+  // Extract a composite-parameter override dict from a Simulations-DB row's
+  // saved config, so opening the run in the Composite Explorer pre-fills the
+  // Configure form with the values that produced it (Run → reproduces the run).
+  function _runConfigToOverrides(row) {
+    var c = row && row.config;
+    if (!c || typeof c !== 'object') return {};
+    var ov = {};
+    if (c.config_overrides && typeof c.config_overrides === 'object') {
+      Object.keys(c.config_overrides).forEach(function (k) { ov[k] = c.config_overrides[k]; });
+    }
+    Object.keys(c).forEach(function (k) {
+      if (k === 'config_overrides') return;              // already merged above
+      if (c[k] !== null && typeof c[k] !== 'object') ov[k] = c[k];  // scalar params (seed, n_cells, …)
+    });
+    return ov;
+  }
+  // Open a run in the Composite Explorer (in-app, left nav preserved) with its
+  // saved config seeded into the Configure form so Run reproduces the run.
+  function _openCompositeFromRun(row) {
+    if (!row || !row.run_id || !row.spec_id) return;
+    window._ceIncomingOverrides = _runConfigToOverrides(row);
+    _openSimulationInExplorer(row.run_id, row.spec_id);
+  }
+  window._openCompositeFromRun = _openCompositeFromRun;
 
   function _renderSimRow(row) { return window.SimTable.renderRow(row, { scope: 'full' }); }
 

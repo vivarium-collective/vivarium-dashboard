@@ -93,19 +93,24 @@ describe('bandsFromNodes (clusters straight from affinity.clusterProcesses)', ()
   });
 });
 
-describe('ProcessPanel', () => {
-  it('renders clustered processes under their cluster label', () => {
+describe('ProcessPanel (nesting tree)', () => {
+  it('renders every process under its containing group, never a store row', () => {
     setup();
-    // Switch to the CONNECTION axis so processes group by their shared store.
-    fireEvent.click(screen.getByRole('tab', { name: 'Connection' }));
     expect(screen.getByText('alpha')).toBeTruthy();
     expect(screen.getByText('beta')).toBeTruthy();
-    // Grouped under the shared-store cluster band (name lives in its own span)...
-    const band = screen.getByText('shared', { selector: '.loom-rail-cluster-name' });
-    expect(band).toBeTruthy();
-    // ...and no process ROW exists for the store node itself (store exclusion is
-    // proven structurally in bandsFromNodes above).
+    // The containing composite path segment becomes a group header...
+    expect(screen.getByText('top', { selector: '.loom-tree-name' })).toBeTruthy();
+    // ...and the store node itself is never listed as a process.
     expect(screen.queryByText('top.shared')).toBeNull();
+    expect(screen.queryByText('shared')).toBeNull();
+  });
+
+  it('flags uncategorized processes and counts them', () => {
+    setup();
+    // alpha/beta match no subsystem → uncategorized; mass_listener → Observation.
+    // Two per-row badges + the header summary ("N uncategorized").
+    expect(screen.getAllByText('uncategorized').length).toBe(2);
+    expect(screen.getByText(/2 uncategorized/)).toBeTruthy();
   });
 
   it('filters processes by the search box', () => {
@@ -122,18 +127,9 @@ describe('ProcessPanel', () => {
     expect(focus.select).toHaveBeenCalledWith('alpha');
   });
 
-  it('focuses the process on row click so its wires highlight (focusReveals)', () => {
-    // Row click routes through useFocus.select — the SAME focus the cluster-grid
-    // edgeVisibility reveals + highlights a process's wires by. So clicking a
-    // panel row lights up that process's wiring on the canvas at any zoom.
-    const { focus } = setup();
-    fireEvent.click(screen.getByText('beta'));
-    expect(focus.select).toHaveBeenCalledWith('beta');
-  });
-
   it('toggles a process\'s canvas visibility from its row checkbox', () => {
     const { onToggleHidden } = setup();
-    const row = screen.getByText('alpha').closest('.loom-rail-row') as HTMLElement;
+    const row = screen.getByText('alpha').closest('.loom-tree-row') as HTMLElement;
     const checkbox = within(row).getByRole('checkbox');
     fireEvent.click(checkbox);
     expect(onToggleHidden).toHaveBeenCalledWith('alpha');
@@ -145,19 +141,26 @@ describe('ProcessPanel', () => {
     expect(onShowAll).toHaveBeenCalledWith('process');
   });
 
-  it('groups automatically (by connections) with no granularity slider', () => {
+  it('pins a process to the top via its ☆ star', () => {
     setup();
-    // Grouping is automatic — there is no granularity control — and every
-    // process still renders under its auto-derived cluster.
-    expect(screen.queryByLabelText(/granularity/i)).toBeNull();
-    expect(screen.getByText('alpha')).toBeTruthy();
-    expect(screen.getByText('beta')).toBeTruthy();
+    // No Pinned section initially (no composite processes → no default pins).
+    expect(screen.queryByText('★ Pinned')).toBeNull();
+    // Click alpha's pin star (first matching star row).
+    const row = screen.getByText('alpha').closest('.loom-tree-row') as HTMLElement;
+    fireEvent.click(within(row).getByTitle('Pin to top'));
+    // Pinned section appears with alpha in it.
+    const pinned = screen.getByText('★ Pinned').closest('.loom-tree-pinned') as HTMLElement;
+    expect(within(pinned).getByText('alpha')).toBeTruthy();
   });
 
-  it('keeps a card open from a row without navigating', () => {
-    const { focus, onNavigate } = setup();
-    fireEvent.click(screen.getAllByTitle('Keep card open (full detail)')[0]);
-    expect(focus.toggleKeepOpen).toHaveBeenCalled();
-    expect(onNavigate).not.toHaveBeenCalled();
+  it('default-pins Composite Processes on first load', () => {
+    const withComposite: Node[] = [
+      ...NODES,
+      { id: 'top.cell', type: 'process', position: { x: 0, y: 0 },
+        data: { label: 'cell', path: ['top', 'cell'], isCompositeProcess: true } } as unknown as Node,
+    ];
+    setup({ nodes: withComposite, rootId: 'ws.demo.first-load' });
+    const pinned = screen.getByText('★ Pinned').closest('.loom-tree-pinned') as HTMLElement;
+    expect(within(pinned).getByText('cell')).toBeTruthy();
   });
 });

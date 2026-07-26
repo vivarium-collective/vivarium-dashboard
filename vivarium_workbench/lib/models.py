@@ -2661,7 +2661,9 @@ class CompositeTestRunRequest(BaseModel):
 
     id: str = ""
     overrides: Optional[dict] = None
-    steps: Optional[int] = None
+    # Run length in composite time units. float so a temporal composite can run a
+    # fractional duration (e.g. 2.5); a workflow just passes 1.
+    steps: Optional[float] = None
     label: Optional[str] = None
     emit_paths: Optional[list] = None
 

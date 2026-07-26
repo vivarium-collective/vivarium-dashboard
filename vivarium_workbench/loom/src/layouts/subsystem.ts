@@ -41,6 +41,13 @@ export function subsystemOf(label: string): string {
   return OTHER;
 }
 
+/** True when a process name matches no known subsystem — i.e. it is
+ *  uncategorized ("orphan"). The nesting-tree panel flags these so a newly
+ *  added / unclassified process stands out instead of blending in. */
+export function isUncategorizedProcess(label: string): boolean {
+  return subsystemOf(label) === OTHER;
+}
+
 /** Sort key so groups display in SUBSYSTEMS order, with Other last. */
 const subsystemOrder = new Map<string, number>(SUBSYSTEMS.map((s, i) => [s.label, i]));
 

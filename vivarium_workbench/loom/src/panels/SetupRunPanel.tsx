@@ -123,10 +123,19 @@ export interface SetupRunPanelProps {
   /** Read-only posture (static/snapshot mode): render the parameter form but
    *  disable Run + Preview wiring, since no live dashboard backend exists. */
   readOnly?: boolean;
+  /** How this composite runs: 'temporal' composites advance over time (offer a
+   *  Duration); 'workflow' composites are a Step network that just "Run"s once
+   *  (no duration). Detected upstream from the node inventory. Default temporal. */
+  runKind?: 'temporal' | 'workflow';
 }
 
 const ACTIVE_RUN_KEY = 'bigraph-loom:active-run';
 const POLL_MS = 1500;
+
+/** Human label for a run phase (backend emits lowercase stage names). */
+function _phaseLabel(phase: string): string {
+  return phase.charAt(0).toUpperCase() + phase.slice(1);
+}
 
 export function SetupRunPanel(props: SetupRunPanelProps) {
   // ---- Parameter form state (from ConfigurePanel) --------------------------
@@ -165,6 +174,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
   const inInvestigation = !!(props.runContext && props.runContext.startsWith('investigation:'));
   const canRun = !!props.compositeId && !inInvestigation && !props.readOnly;
   const isRunning = status?.status === 'running' || (!!runId && !status);
+  const isWorkflow = props.runKind === 'workflow';
 
   // Use refs for callbacks so the polling closure always sees the latest
   // version without needing to be recreated (same pattern as RunPanel).
@@ -265,7 +275,10 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
     try {
       const res = await startRun({
         id: props.compositeId,
-        steps,
+        // A workflow (Step network) runs its DAG once — a single composite tick
+        // fires every ready Step; no duration applies. A temporal composite runs
+        // for the chosen Duration.
+        steps: props.runKind === 'workflow' ? 1 : steps,
         emit_paths: Array.from(props.emitSet),
         overrides: Object.keys(runOverrides).length > 0 ? runOverrides : undefined,
       });
@@ -296,7 +309,7 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
   }
 
   const pct = status && status.n_steps
-    ? Math.round((status.progress_step / status.n_steps) * 100)
+    ? Math.min(100, Math.round((status.progress_step / status.n_steps) * 100))
     : 0;
 
   return (
@@ -390,13 +403,26 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
 
       {isRunning && status && (
         <div style={{ margin: '8px 0' }}>
-          <div style={{ background: '#e5e7eb', borderRadius: 4, height: 10, overflow: 'hidden' }}>
-            <div style={{ width: `${pct}%`, background: '#3b82f6', height: '100%' }} />
-          </div>
-          <small style={{ color: '#6b7280' }}>
-            Step {status.progress_step} of {status.n_steps ?? '?'} — running detached;
-            safe to reload this tab.
-          </small>
+          {status.phase && status.phase !== 'simulating' ? (
+            // Post-simulation stages (rendering visualizations / analysis flush):
+            // the sim bar is done; announce the current stage instead.
+            <small style={{ color: '#6b7280', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="sr-phase-dot" />
+              {_phaseLabel(status.phase)}… — running detached; safe to reload this tab.
+            </small>
+          ) : (
+            <>
+              <div style={{ background: '#e5e7eb', borderRadius: 4, height: 10, overflow: 'hidden' }}>
+                <div style={{ width: `${pct}%`, background: '#3b82f6', height: '100%' }} />
+              </div>
+              <small style={{ color: '#6b7280' }}>
+                {isWorkflow
+                  ? 'Running workflow'
+                  : `Simulating — step ${status.progress_step} of ${status.n_steps ?? '?'}`}
+                {' '}— running detached; safe to reload this tab.
+              </small>
+            </>
+          )}
         </div>
       )}
       {isRunning && !status && (
@@ -426,34 +452,41 @@ export function SetupRunPanel(props: SetupRunPanelProps) {
 
       {status?.status === 'completed' && (
         <p style={{ color: '#6b7280', fontSize: 13, margin: '4px 0 10px' }}>
-          Run complete — <strong>{status.n_steps ?? 0}</strong> steps.
-          Switching to the <strong>Results</strong> tab…
+          {isWorkflow
+            ? <>Workflow complete. Switching to the <strong>Results</strong> tab…</>
+            : <>Run complete — <strong>{status.n_steps ?? 0}</strong> steps. Switching to the <strong>Results</strong> tab…</>}
         </p>
       )}
 
       {!runId && !startError && (
         <p style={{ color: '#888' }}>
-          Click <strong>Run</strong> to execute the composite for the chosen number of steps.
+          {isWorkflow
+            ? <>Click <strong>Run</strong> to execute this composite&apos;s Step network once.</>
+            : <>Click <strong>Run</strong> to advance this composite for the chosen duration.</>}
           {paramKeys.length > 0 && ' Current parameter values will be applied automatically.'}
         </p>
       )}
 
-      {/* ---- Sticky action bar: Steps + Run -------------------------------- */}
+      {/* ---- Sticky action bar --------------------------------------------- */}
+      {/* Temporal composites offer a Duration; workflow (Step-network) composites
+          just Run once — their run length is not a user choice. */}
       <div className="sr-actionbar">
-        <label>
-          Steps{' '}
-          <input
-            type="number" min={1} max={10000} value={steps}
-            onChange={(e) => setSteps(parseInt(e.target.value) || 1)}
-            style={{ width: 70 }} disabled={isRunning}
-          />
-        </label>
+        {!isWorkflow && (
+          <label title="How long to advance the composite, in time units (fractional allowed for temporal composites)">
+            Duration{' '}
+            <input
+              type="number" min={0} max={10000} step="any" value={steps}
+              onChange={(e) => { const v = parseFloat(e.target.value); setSteps(Number.isFinite(v) && v > 0 ? v : 1); }}
+              style={{ width: 70 }} disabled={isRunning}
+            />
+          </label>
+        )}
         <button
           onClick={handleRun}
           disabled={isRunning || !canRun}
           className="sr-run-btn"
         >
-          {isRunning ? 'Running…' : 'Run'}
+          {isRunning ? (isWorkflow ? 'Running workflow…' : 'Running…') : 'Run'}
         </button>
         <small style={{ color: '#666' }}>
           Emit selections:{' '}
