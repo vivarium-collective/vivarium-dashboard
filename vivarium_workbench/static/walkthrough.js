@@ -6335,6 +6335,8 @@
       '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
         'title="Download a self-contained Jupyter notebook">Notebook 📓</button>' +
       (isSnapshot ? '' :
+      ' <button class="btn-mini" onclick="_resolveInvestigation()" ' +
+        'title="Pull-or-compute each study in dependency order — reuse unchanged artifacts (e.g. sim_data), recompute only what changed">Resolve &#9187;</button>' +
       ' <button class="btn-mini" onclick="_rerunInvestigation()" ' +
         'title="Re-run every study\'s baseline">Rerun investigation</button>');
   }
@@ -7288,6 +7290,52 @@
     });
   }
   window._runUnblockedSimulations = _runUnblockedSimulations;
+
+  // "Resolve (pull-or-compute)" — POST /api/investigation-resolve: run the
+  // members in dependency order over inputs.from, content-addressed, reusing
+  // unchanged artifacts (e.g. sim_data) and recomputing only what changed.
+  // Surfaces per-study reused vs recomputed (2b-2).
+  function _resolveInvestigation() {
+    var name = window._currentIset;
+    if (!name) return;
+    var panel = document.getElementById('investigation-run-progress');
+    if (panel) { panel.style.display = ''; panel.innerHTML = '<div class="inv-run-progress-banner">Resolving (pull-or-compute)&hellip;</div>'; }
+    fetch('/api/investigation-resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ investigation: name }),
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, body: j }; });
+    }).then(function (res) {
+      var body = res.body || {};
+      if (!res.ok || body.error) {
+        var em = 'Resolve failed: ' + (body.error || 'server error');
+        if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">' + _h(em) + '</div>';
+        return;
+      }
+      var nodes = body.nodes || [];
+      var reused = nodes.filter(function (n) { return n.status === 'cached'; }).length;
+      var recomputed = nodes.filter(function (n) { return n.status === 'computed'; }).length;
+      var MAP = {
+        cached:   { cls: 'inv-run-reused', icon: '♻', label: 'reused' },
+        computed: { cls: 'inv-run-done',   icon: '⟳', label: 'recomputed' },
+        skipped:  { cls: 'inv-run-skip',   icon: '—', label: 'skipped' },
+        failed:   { cls: 'inv-run-failed', icon: '✗', label: 'failed' },
+      };
+      var items = nodes.map(function (n) {
+        var m = MAP[n.status] || { cls: '', icon: '•', label: n.status };
+        return '<div class="inv-run-item ' + m.cls + '"><span class="inv-run-icon">' + m.icon + '</span>' +
+          '<code>' + _h(n.slug) + '</code> <span class="inv-run-badge">' + m.label + '</span>' +
+          (n.artifact_id ? ' <span class="inv-run-aid">' + _h(String(n.artifact_id)) + '</span>' : '') + '</div>';
+      }).join('');
+      var banner = '<div class="inv-run-progress-banner">Resolved ' + nodes.length + ' stud' + (nodes.length === 1 ? 'y' : 'ies') +
+        ' &mdash; <strong>' + reused + '</strong> reused, <strong>' + recomputed + '</strong> recomputed</div>';
+      if (panel) panel.innerHTML = banner + items;
+      if (typeof _showToast === 'function') _showToast(reused + ' reused, ' + recomputed + ' recomputed');
+    }).catch(function (e) {
+      if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">Resolve error: ' + _h(String(e)) + '</div>';
+    });
+  }
+  window._resolveInvestigation = _resolveInvestigation;
 
   // "Rerun investigation" — force-relaunch every member study's baseline
   // (ignores the unblocked-gate; explicit user action). POSTs to

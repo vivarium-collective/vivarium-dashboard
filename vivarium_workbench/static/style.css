@@ -2092,6 +2092,12 @@ textarea.loom-in-field{
 .inv-run-running .inv-run-icon { color: #2563eb; animation: inv-run-pulse 1s infinite; }
 .inv-run-done     { background: #f0fdf4; border-color: #86efac; color: #14532d; }
 .inv-run-done    .inv-run-icon { color: #16a34a; }
+/* Resolve (pull-or-compute) per-study statuses: reused (cache hit) vs skipped. */
+.inv-run-reused   { background: #eff6ff; border-color: #bfdbfe; color: #1e3a8a; }
+.inv-run-reused  .inv-run-icon { color: #2563eb; }
+.inv-run-skip     { background: #f8fafc; border-color: #e2e8f0; color: #64748b; }
+.inv-run-badge { font-size: 0.76em; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; opacity: 0.85; }
+.inv-run-aid   { font-family: ui-monospace, Menlo, monospace; font-size: 0.74em; color: #94a3b8; margin-left: 6px; }
 .inv-run-failed   { background: #fef2f2; border-color: #fca5a5; color: #991b1b; }
 .inv-run-failed  .inv-run-icon { color: #dc2626; }
 .inv-run-blocked  { background: #fef3c7; border-color: #fcd34d; color: #78350f; }

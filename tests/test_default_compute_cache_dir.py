@@ -104,3 +104,47 @@ def test_failed_run_raises_and_is_not_cached(tmp_path, monkeypatch):
             tmp_path, "parca", artifact_id="oidF", composite="parca",
             config={}, input_ids=[], out_dir=out_dir, resolved_inputs=None,
         )
+
+
+def test_produce_command_runs_with_artifact_dir(tmp_path, monkeypatch):
+    """A study declaring produce.command runs THAT (not the composite runner),
+    with $ARTIFACT_DIR = the store scratch dir, and captures out_dir."""
+    captured = {}
+
+    def fake_run(cmd, *, cwd, env, stdout, stderr):
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        captured["artifact_dir"] = env.get("ARTIFACT_DIR")
+        return types.SimpleNamespace(returncode=0)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    _write_study(tmp_path, "parca", {
+        "composite": "parca", "config": {"mode": "full"}, "outputs": ["sim_data"],
+        "produce": {"command": 'build_cache --cache "$ARTIFACT_DIR"'},
+    })
+    out_dir = tmp_path / "scratch-prod"
+    out_dir.mkdir()
+    result = _default_compute(
+        tmp_path, "parca", artifact_id="oidP", composite="parca",
+        config={"mode": "full"}, input_ids=[], out_dir=out_dir, resolved_inputs=None,
+    )
+    assert result == out_dir
+    assert captured["artifact_dir"] == str(out_dir)
+    assert captured["cwd"] == str(tmp_path)
+    assert captured["cmd"][0] == "bash"
+
+
+def test_produce_command_failure_raises(tmp_path, monkeypatch):
+    import pytest
+    monkeypatch.setattr(
+        subprocess, "run", lambda *a, **k: types.SimpleNamespace(returncode=2))
+    _write_study(tmp_path, "parca", {
+        "composite": "parca", "config": {}, "outputs": ["sim_data"],
+        "produce": {"command": "false"},
+    })
+    out_dir = tmp_path / "scratch-pf"
+    out_dir.mkdir()
+    with pytest.raises(RuntimeError):
+        _default_compute(
+            tmp_path, "parca", artifact_id="oid", composite="parca",
+            config={}, input_ids=[], out_dir=out_dir, resolved_inputs=None,
+        )

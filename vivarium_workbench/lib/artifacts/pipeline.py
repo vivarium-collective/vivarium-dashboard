@@ -215,6 +215,37 @@ def resolve_study(
         in_progress.discard(slug)
 
 
+def _run_produce_command(ws_root, slug: str, command: str, out_dir) -> Path:
+    """Run a data-producing study's ``produce.command`` and capture its output.
+
+    The command runs with ``cwd=ws_root`` and ``$ARTIFACT_DIR`` set to the store
+    scratch dir — it MUST write its artifact (e.g. the sim_data cache bundle:
+    initial_state.json + sim_data_cache.dill + ...) into ``$ARTIFACT_DIR``. On a
+    nonzero exit we RAISE so ``resolve_study`` never caches a failed producer
+    (same no-cache-poisoning contract as a failed composite run). Output is
+    teed to ``produce.log`` in the artifact dir for debugging.
+    """
+    import os
+    import subprocess
+
+    out_dir = Path(out_dir)
+    env = os.environ.copy()
+    env["ARTIFACT_DIR"] = str(out_dir)
+    env["PYTHONPATH"] = str(ws_root) + os.pathsep + env.get("PYTHONPATH", "")
+    log_path = out_dir / "produce.log"
+    with open(log_path, "w") as fh:
+        proc = subprocess.run(
+            ["bash", "-c", command],
+            cwd=str(ws_root), env=env, stdout=fh, stderr=subprocess.STDOUT,
+        )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"producer study '{slug}' command failed (exit {proc.returncode}); "
+            f"see {log_path}"
+        )
+    return out_dir
+
+
 def _default_compute(
     ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir,
     resolved_inputs: dict | None = None,
@@ -247,14 +278,27 @@ def _default_compute(
     out_dir = Path(out_dir)
     db_path = out_dir / "runs.db"
 
+    spec = _load_study_spec(ws_root, slug)
+
+    # Data-producing studies (e.g. a ParCa study -> the sim_data cache bundle)
+    # cannot run through the composite runner: the `parca` composite is a
+    # STRUCTURAL document that never fires the multi-hour fit (raw_data=None, no
+    # run_steps_on_init). Such a study instead declares a `produce.command` that
+    # materializes its artifact directly into the store scratch dir, exposed to
+    # the command as $ARTIFACT_DIR. Run it and capture out_dir as the
+    # content-addressed artifact (the sim_data bundle a downstream cache_dir
+    # consumer reads). This generalizes to any command-produced artifact.
+    _produce = (spec.get("produce") or {}) if isinstance(spec, dict) else {}
+    if _produce.get("command"):
+        return _run_produce_command(ws_root, slug, _produce["command"], out_dir)
+
     plan = run_core.invoke_run(
         ws_root, spec_id=composite or slug, config=config, db_path=db_path,
     )
 
-    # Load study spec and collect emit_paths from declared observables
-    # (readouts, tests, visualizations, etc). Fall back to [] only when
-    # the study declares no observables (run_runner then expands [] to all-store).
-    spec = _load_study_spec(ws_root, slug)
+    # Collect emit_paths from the study's declared observables (readouts, tests,
+    # visualizations). Fall back to [] only when the study declares none
+    # (run_runner then expands [] to all-store).
     emit_paths = collect_emit_paths_from_spec(spec) or []
 
     # Forward producer artifact paths into this run's overrides — never
