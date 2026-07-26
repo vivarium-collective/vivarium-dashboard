@@ -1331,6 +1331,35 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .registry-entry code{ font-size:0.88em }
 .registry-entry pre{ margin:4px 0; max-height:200px; overflow:auto }
 
+/* Rich registry entry: description + ports (contract) + config schema, a more
+   accessible take on the loom composite viewer's process view. */
+.reg-entry-head{ margin-bottom:2px }
+.reg-entry-desc{
+  margin:6px 0 8px; color:#475569; font-size:0.92em; line-height:1.5;
+  white-space:pre-line; max-height:8.5em; overflow:auto;
+  border-left:2px solid #e5e7eb; padding-left:10px;
+}
+.reg-ports{
+  display:grid; grid-template-columns:1fr 1fr; gap:10px;
+  margin:8px 0; background:#f8fafc; border:1px solid #eef2f7;
+  border-radius:8px; padding:8px 10px;
+}
+@media (max-width:640px){ .reg-ports{ grid-template-columns:1fr } }
+.reg-port-col{ min-width:0 }
+.reg-port-title{
+  font-size:0.7em; text-transform:uppercase; letter-spacing:0.06em;
+  font-weight:700; color:#94a3b8; margin-bottom:4px;
+}
+.reg-port-list{ margin:0; padding:0; list-style:none }
+.reg-port-list li{
+  display:flex; align-items:baseline; gap:6px; padding:1px 0;
+  font-size:0.86em; line-height:1.4;
+}
+.reg-port-name{ color:#1e40af; font-weight:600; word-break:break-word }
+.reg-port-type{ color:#64748b; font-size:0.92em; font-family:ui-monospace,Menlo,monospace }
+.reg-port-na{ color:#cbd5e1; font-size:0.86em }
+.reg-config summary{ cursor:pointer; user-select:none; color:#64748b; font-size:0.85em; margin-top:2px }
+
 /* ===== Study Detail — 5-tab redesign (Plan 3) ===== */
 
 /* Tab bar — visually identical to .registry-tabs but scoped.

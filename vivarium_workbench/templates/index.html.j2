@@ -708,15 +708,15 @@ window.addEventListener('pageshow', function (e) {
      grid itself; each card carries its own uninstall affordance + path
      /source info, so the table was redundant. #}
   <div class="registry-subtabs" role="tablist">
-    <button class="registry-subtab active" data-subtab="modules"
-            onclick="_setRegistrySubtab('modules')" role="tab">Modules</button>
-    <button class="registry-subtab" data-subtab="discovered"
-            onclick="_setRegistrySubtab('discovered')" role="tab">Discovered registry
+    <button class="registry-subtab active" data-subtab="discovered"
+            onclick="_setRegistrySubtab('discovered')" role="tab">Registry
       <span class="count-badge muted" id="registry-total-count"></span></button>
+    <button class="registry-subtab" data-subtab="modules"
+            onclick="_setRegistrySubtab('modules')" role="tab">Marketplace</button>
   </div>
 
-  <!-- Subtab: Modules (catalog grid; workspace + installed entries pinned at top) -->
-  <section class="panel registry-subtab-panel active" data-subtab="modules">
+  <!-- Subtab: Marketplace (catalog grid; workspace + installed entries pinned at top) -->
+  <section class="panel registry-subtab-panel" data-subtab="modules">
     <div class="card-browse-toolbar" id="catalog-toolbar">
       <input type="search" class="card-browse-search" id="catalog-search" placeholder="Search modules…">
       <div class="card-browse-chips" id="catalog-tag-chips"></div>
@@ -751,14 +751,11 @@ window.addEventListener('pageshow', function (e) {
     <span id="installed-modules-count" hidden></span>
   </section>
 
-  <!-- Subtab: Discovered registry (live build_core() introspection) -->
-  <section class="panel registry-subtab-panel" data-subtab="discovered">
+  <!-- Subtab: Registry (live build_core() introspection) — the main tab -->
+  <section class="panel registry-subtab-panel active" data-subtab="discovered">
 
     <button class="action-btn" onclick="_loadRegistry(true)">Refresh registry</button>
     <div id="registry-status" class="muted" style="margin:8px 0"></div>
-
-    <!-- "Imported repositories" was removed: those repos are already shown in
-         the Modules tab, so duplicating them under Discovered registry was noise. -->
 
     <div class="registry-tabs">
       <button class="registry-tab active" data-kind="process"       onclick="_setRegistryTab('process')">Processes <span class="count-badge" id="registry-process-count"></span></button>
@@ -766,6 +763,7 @@ window.addEventListener('pageshow', function (e) {
       <button class="registry-tab"        data-kind="emitter"       onclick="_setRegistryTab('emitter')">Emitters <span class="count-badge" id="registry-emitter-count"></span></button>
       <button class="registry-tab"        data-kind="visualization" onclick="_setRegistryTab('visualization')">Visualizations <span class="count-badge" id="registry-visualization-count"></span></button>
       <button class="registry-tab"        data-kind="analysis"      onclick="_setRegistryTab('analysis')">Analyses <span class="count-badge" id="registry-analysis-count"></span></button>
+      <button class="registry-tab"        data-kind="report_card"   onclick="_setRegistryTab('report_card')">Report Cards <span class="count-badge" id="registry-report_card-count"></span></button>
       <button class="registry-tab"        data-kind="type"          onclick="_setRegistryTab('type')">Types <span class="count-badge" id="registry-type-count"></span></button>
     </div>
 
@@ -776,6 +774,7 @@ window.addEventListener('pageshow', function (e) {
     <div class="registry-tab-panel"        data-kind="emitter"       id="registry-emitters-container"></div>
     <div class="registry-tab-panel"        data-kind="visualization" id="registry-visualizations-container"></div>
     <div class="registry-tab-panel"        data-kind="analysis"      id="registry-analyses-container"></div>
+    <div class="registry-tab-panel"        data-kind="report_card"   id="registry-report_cards-container"></div>
     <div class="registry-tab-panel"        data-kind="type"          id="registry-types-container"></div>
   </section>
 
