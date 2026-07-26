@@ -56,11 +56,18 @@ def test_study_tabs_manager():
     for fn in ["_wsOpenStudyTab", "_wsCloseStudyTab", "_wsRenderStudyTabs", "_wsResetStudyTabs"]:
         assert "function %s" % fn in JS, fn
         assert "window.%s" % fn in JS, fn
-    # opening a tab collapses the context; closing the last returns to graph-only
-    o = JS[JS.index("function _wsOpenStudyTab"): JS.index("function _wsOpenStudyTab") + 900]
-    assert "_setInvestigationContextCollapsed(true)" in o
-    c = JS[JS.index("function _wsCloseStudyTab"): JS.index("function _wsCloseStudyTab") + 900]
-    assert "_setInvestigationContextCollapsed(false)" in c
+    # Opening a study keeps the investigation context EXPANDED above it (PR #587,
+    # "keep the investigation context expanded above an open study" — a user
+    # request), and closing the last tab returns to graph-only — both call
+    # _setInvestigationContextCollapsed(false). Slice each function body to the
+    # next sibling-function boundary rather than a fixed char window, so unrelated
+    # edits inside the function can't shift the assertion out of range.
+    def _fn_body(name):
+        i = JS.index("function %s" % name)
+        j = JS.find("\n  function ", i + 1)
+        return JS[i:j] if j != -1 else JS[i:]
+    assert "_setInvestigationContextCollapsed(false)" in _fn_body("_wsOpenStudyTab")
+    assert "_setInvestigationContextCollapsed(false)" in _fn_body("_wsCloseStudyTab")
 
 
 # ── Task 5: consistency router + investigation-workspace render ──────────────
