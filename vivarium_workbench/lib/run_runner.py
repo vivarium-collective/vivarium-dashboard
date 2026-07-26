@@ -55,6 +55,37 @@ class RunRequest:
         )
 
 
+def _lookup_generator(registry, spec_id: str):
+    """Resolve ``spec_id`` to a registered generator entry, tolerating a study
+    that declares a composite by its SHORT name.
+
+    Generators register under their dotted path (e.g.
+    ``v2ecoli.composites.parca.parca`` — and an alias
+    ``v2ecoli.composites.parca``), but a study may declare ``composite: parca``.
+    Exact match is tried first (unchanged behavior — no regression for the FQN
+    or already-registered short names). Only on an exact miss do we fall back to
+    a suffix match, and ONLY when every matching key resolves to the SAME
+    generator (the alias case); genuinely ambiguous short names (two different
+    generators sharing a final segment) stay unresolved so the caller falls
+    through to the file-spec branch / a clear error.
+    """
+    entry = registry.get(spec_id)
+    if entry is not None:
+        return entry
+    matches = [k for k in registry if k.split(".")[-1] == spec_id]
+    if not matches:
+        return None
+    if len(matches) == 1:
+        return registry[matches[0]]
+    # Multiple keys share the final segment — typically a module alias
+    # (``pkg.composites.parca``) plus the generator (``pkg.composites.parca.parca``).
+    # Prefer the single most-specific (longest dotted) key. If two DIFFERENT
+    # packages tie at max depth, it is genuinely ambiguous -> leave unresolved.
+    max_depth = max(k.count(".") for k in matches)
+    deepest = [k for k in matches if k.count(".") == max_depth]
+    return registry[deepest[0]] if len(deepest) == 1 else None
+
+
 def _resolve_state(req: RunRequest) -> tuple[dict, dict | None]:
     """Resolve the composite state — generator entry first, then file spec.
 
@@ -72,7 +103,7 @@ def _resolve_state(req: RunRequest) -> tuple[dict, dict | None]:
         )
         if not _REGISTRY:
             discover_generators()
-        entry = _REGISTRY.get(req.spec_id)
+        entry = _lookup_generator(_REGISTRY, req.spec_id)
         if entry is not None:
             doc = build_generator(entry, overrides=req.overrides)
             if isinstance(doc, dict) and isinstance(doc.get("state"), dict):
@@ -116,7 +147,7 @@ def _generator_entry(spec_id: str):
         return None
     if not _REGISTRY:
         discover_generators()
-    return _REGISTRY.get(spec_id)
+    return _lookup_generator(_REGISTRY, spec_id)
 
 
 def _generator_emitter_defaults(spec_id: str) -> list:

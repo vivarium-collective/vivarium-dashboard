@@ -241,7 +241,6 @@ def _default_compute(
     import json
 
     from vivarium_workbench.lib import run_core
-    from vivarium_workbench.lib import run_runner
 
     ws_root = Path(ws_root)
     wp = WorkspacePaths.load(ws_root)
@@ -266,6 +265,22 @@ def _default_compute(
         if artifact == "sim_data":
             overrides["cache_dir"] = str(path)
 
+    # Producer side: a study that PRODUCES sim_data (a ParCa cache bundle —
+    # initial_state.json + sim_data_cache.dill + ...) must write that bundle
+    # INTO the artifact-store scratch dir, so the stored artifact IS the bundle
+    # a downstream `cache_dir` consumer reads — not just runs.db/log. Redirect
+    # the run's cache_dir to out_dir; the caller's store.put then captures the
+    # bundle as this study's content-addressed artifact. Without this a real
+    # ParCa->baseline resolve would point baseline's cache_dir at a dir with no
+    # initial_state.json (the input-forwarding above assumes the producer's
+    # artifact is the bundle). Consumer forwarding wins if a study does both.
+    _out_names = {
+        (o if isinstance(o, str) else (o.get("artifact") or o.get("name")))
+        for o in (study_interface(spec).get("outputs") or [])
+    }
+    if "sim_data" in _out_names and "sim_data" not in (resolved_inputs or {}):
+        overrides["cache_dir"] = str(out_dir)
+
     # NOTE (Task 8 integration): the run-request shape below is the best
     # inference available from run_runner.RunRequest — n_steps/emit_paths
     # are now wired from the study spec (Task 4), so `steps` defaults
@@ -284,7 +299,47 @@ def _default_compute(
     }
     request_path = out_dir / "request.json"
     request_path.write_text(json.dumps(request), encoding="utf-8")
-    run_runner.execute(request_path)
+
+    # Run in a FRESH subprocess (cwd=workspace), the way the dashboard does
+    # (run_registry.spawn_detached), and WAIT for it. This cannot run in-process:
+    #   1. Discovery — run_runner._resolve_state only calls discover_generators()
+    #      when the generator _REGISTRY is empty. The in-process resolve path has
+    #      already partially populated it (its own imports), so a study's short
+    #      composite name (e.g. "parca") would never be discovered ->
+    #      "composite spec not found". A fresh process starts with an empty
+    #      _REGISTRY -> full discovery -> the short name resolves.
+    #   2. Failure propagation — execute() returns 0 on success, 1 on failure. A
+    #      nonzero exit (or a status='failed' row) MUST raise so resolve_study
+    #      never store.puts (and thus caches) a failed/empty run.
+    import os
+    import subprocess
+    import sys
+
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(ws_root) + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.run(
+        [sys.executable, "-m", "vivarium_workbench.cli",
+         "run-composite", "--request", str(request_path)],
+        cwd=str(ws_root), env=env,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"study '{slug}' run failed (exit {proc.returncode}); see {out_dir / 'run.log'}"
+        )
+    # Belt-and-suspenders: a run that exited 0 but recorded status='failed' must
+    # also not be cached (guards against any exit-code drift in the worker).
+    try:
+        import sqlite3
+        with sqlite3.connect(str(db_path)) as _c:
+            row = _c.execute(
+                "SELECT status FROM runs_meta WHERE run_id=?", (plan.run_id,)
+            ).fetchone()
+        if row and row[0] == "failed":
+            raise RuntimeError(
+                f"study '{slug}' run recorded status='failed'; see {out_dir / 'run.log'}"
+            )
+    except sqlite3.Error:
+        pass  # a missing/locked runs_meta is already covered by the exit-code check
     return out_dir
 
 
