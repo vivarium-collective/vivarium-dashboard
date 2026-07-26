@@ -215,6 +215,12 @@ def resolve_study(
         in_progress.discard(slug)
 
 
+# Study-config keys that are run-control (carried by the RunRequest), not
+# generator parameters — stripped from the generator overrides so
+# build_generator does not reject them as unknown parameters.
+_RUN_CONTROL_KEYS = ("n_steps",)
+
+
 def _default_compute(
     ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir,
     resolved_inputs: dict | None = None,
@@ -261,6 +267,11 @@ def _default_compute(
     # Forward producer artifact paths into this run's overrides — never
     # mutate the caller's config dict in place.
     overrides = dict(config or {})
+    # Run-control keys are carried by the RunRequest itself (e.g. n_steps -> the
+    # `steps` field below), NOT by the generator. Strip them from the generator
+    # overrides so build_generator does not reject them as unknown parameters.
+    for _run_control_key in _RUN_CONTROL_KEYS:
+        overrides.pop(_run_control_key, None)
     for artifact, path in (resolved_inputs or {}).items():
         overrides[f"{artifact}_path"] = str(path)
         if artifact == "sim_data":

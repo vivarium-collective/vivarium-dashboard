@@ -281,3 +281,48 @@ def test_default_compute_merges_resolved_inputs_into_overrides(tmp_path, monkeyp
     assert overrides["cache_dir"] == producer_path
     # Caller's config dict must not be mutated in place.
     assert orig_config == {"seed": 0}
+
+
+def test_default_compute_strips_run_control_keys_from_overrides(tmp_path, monkeypatch):
+    """`n_steps` is a run-control key routed to RunRequest.steps, NOT a generator
+    parameter — it must be stripped from the generator `overrides` (else
+    build_generator rejects it as an unknown parameter), while `steps` is still
+    derived from it. Order-independent (attribute-patching, per the emit_paths test)."""
+    import importlib
+    from pathlib import Path
+
+    (tmp_path / "studies" / "sim").mkdir(parents=True)
+    spec = {
+        "name": "sim",
+        "composite": "sim_composite",
+        "config": {"seed": 0, "n_steps": 3},
+    }
+    (tmp_path / "studies" / "sim" / "study.yaml").write_text(
+        yaml.safe_dump(spec), encoding="utf-8"
+    )
+
+    run_core = importlib.import_module("vivarium_workbench.lib.run_core")
+    run_runner = importlib.import_module("vivarium_workbench.lib.run_runner")
+
+    class FakePlan:
+        run_id = "rc-run-1"
+        spec_id = "sim_composite"
+        target = "process_bigraph"
+
+    monkeypatch.setattr(run_core, "invoke_run", lambda *a, **k: FakePlan())
+
+    captured = []
+    monkeypatch.setattr(
+        run_runner, "execute",
+        lambda request_path: captured.append(
+            json.loads(Path(request_path).read_text(encoding="utf-8"))
+        ),
+    )
+
+    resolve_study(tmp_path, "sim")
+
+    assert len(captured) == 1
+    req = captured[0]
+    assert "n_steps" not in req["overrides"], "run-control key leaked into generator overrides"
+    assert req["overrides"].get("seed") == 0, "generator param must be preserved"
+    assert req["steps"] == 3, "steps must still be derived from n_steps"
