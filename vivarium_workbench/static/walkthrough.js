@@ -2689,7 +2689,7 @@
     return bits.length ? '<div class="module-installed-meta">' + bits.join('<br>') + '</div>' : '';
   }
 
-  function _moduleActionFor(m) {
+  function _moduleActionFor(m, marketplace) {
     // Workspace's own first-party package is not uninstallable — show a
     // "first-party" pill. Installed modules show an install-source badge.
     // Available modules show an Install button (authoring-only).
@@ -2714,7 +2714,8 @@
       }
       return srcBadge;
     }
-    return '<button class="action-btn js-authoring" onclick="_installFromCatalog(\'' + _esc(m.name) + '\')">Install</button>';
+    var installFn = marketplace ? '_installFromMarketplace' : '_installFromCatalog';
+    return '<button class="action-btn js-authoring" onclick="' + installFn + '(\'' + _esc(m.name) + '\')">Install</button>';
   }
 
   // Section divider injected at boundaries: workspace → installed → available.
@@ -2730,7 +2731,7 @@
   // Render an already-filtered module list into `grid` (grid or list view).
   // Sort: workspace package first (anchor), then installed (alpha), then
   // available (alpha) — "what's in your workspace surfaces first".
-  function _renderModuleGrid(grid, modules, view) {
+  function _renderModuleGrid(grid, modules, view, marketplace) {
     modules = modules.slice().sort(function(a, b) {
       var aw = a.kind === 'workspace' ? 0 : 1;
       var bw = b.kind === 'workspace' ? 0 : 1;
@@ -2756,7 +2757,7 @@
         return divider + '<div class="module-list-row' + (m.kind === 'workspace' ? ' module-row-workspace' : '') + '">' +
           '<span class="name">' + _esc(m.name) + '</span>' +
           '<span class="desc"> ' + _esc(m.description || '') + _moduleInstalledMeta(m) + '</span>' +
-          '<span>' + _moduleActionFor(m) + '</span>' +
+          '<span>' + _moduleActionFor(m, marketplace) + '</span>' +
           '</div>';
       });
       grid.innerHTML = rows.join('');
@@ -2779,7 +2780,7 @@
           '<p class="module-desc">' + _esc(m.description) + '</p>' +
           '<div class="module-tags"></div>' +
           _moduleInstalledMeta(m) +
-          '<div class="module-action">' + _moduleActionFor(m) + '</div>' +
+          '<div class="module-action">' + _moduleActionFor(m, marketplace) + '</div>' +
           '</div>';
       });
       grid.innerHTML = cards.join('');
@@ -2794,7 +2795,7 @@
     // own package plus installed modules. Browse-everything (available-to-
     // install) lives in the Marketplace tab.
     modules = modules.filter(function (m) { return m.kind === 'workspace' || m.installed; });
-    _renderModuleGrid(grid, modules, window._catalogView);
+    _renderModuleGrid(grid, modules, window._catalogView, false);
   }
   window._renderCatalog = _renderCatalog;
 
@@ -2824,7 +2825,7 @@
     // Marketplace includes available-to-install modules (no installed-only
     // filter) — that's the whole point of the tab.
     var modules = _filterModules(window._marketplaceModules, window._marketplaceFilter);
-    _renderModuleGrid(grid, modules, window._marketplaceView);
+    _renderModuleGrid(grid, modules, window._marketplaceView, true);
   }
   window._renderMarketplace = _renderMarketplace;
 
@@ -3093,7 +3094,7 @@
     return "Install failed:\n" + (json.error || 'unknown') + "\n\n" + (json.log || '').slice(0, 500);
   }
 
-  function _installFromCatalog(name) {
+  function _installFromCatalog(name, opts) {
     // First check whether the catalog entry declares any native/system
     // dependencies and, if so, that they're satisfied in the workspace venv.
     // If anything is missing, show the consent modal instead of jumping
@@ -3106,21 +3107,30 @@
         if (!rOk || !j || !j.checks || !j.checks.length || j.ok) {
           // No checks declared, all green, or the check endpoint itself
           // errored — fall through to the existing install flow.
-          return _proceedWithCatalogInstall(name);
+          return _proceedWithCatalogInstall(name, opts);
         }
-        _showSystemDepsModal(name, j);
+        _showSystemDepsModal(name, j, opts);
       })
       .catch(function() {
         // Network/parse error: don't block the user — let the install try.
-        _proceedWithCatalogInstall(name);
+        _proceedWithCatalogInstall(name, opts);
       });
   }
   window._installFromCatalog = _installFromCatalog;
+
+  // Marketplace-tab installs must force the full-repo git-submodule path
+  // (not the lightweight PyPI wheel) so the module's top-level studies/ and
+  // investigations/ land on disk under external/<name>/ and can federate.
+  function _installFromMarketplace(name) {
+    _installFromCatalog(name, {full_repo: true});
+  }
+  window._installFromMarketplace = _installFromMarketplace;
 
   function _proceedWithCatalogInstall(name, opts) {
     if (!confirm("Install '" + name + "' on the active investigation branch?\n\nThis adds a submodule, pip installs the package, and appends it to pyproject.toml. Requires an active investigation branch.")) return;
     var body = {name: name};
     if (opts && opts.skip_system_deps_check) body.skip_system_deps_check = true;
+    if (opts && opts.full_repo) body.full_repo = true;
     fetch('/api/catalog-install', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -3144,7 +3154,7 @@
                   install: m.install, notes: m.notes,
                 };
               }),
-            });
+            }, opts);
             return;
           }
           alert(_renderInstallError(json));
@@ -3173,7 +3183,7 @@
   }
   window._closeSystemDepsModal = _closeSystemDepsModal;
 
-  function _showSystemDepsModal(name, depsResult) {
+  function _showSystemDepsModal(name, depsResult, opts) {
     _closeSystemDepsModal();
     var checks = (depsResult && depsResult.checks) || [];
     var missing = checks.filter(function(c) { return !c.ok; });
@@ -3246,7 +3256,7 @@
     var installBtnEl = document.getElementById('sysdeps-install-btn');
     if (installBtnEl) {
       installBtnEl.addEventListener('click', function() {
-        _installSystemDeps(name, installableNames);
+        _installSystemDeps(name, installableNames, opts);
       });
     }
     var skipBtnEl = document.getElementById('sysdeps-skip-btn');
@@ -3254,13 +3264,15 @@
       skipBtnEl.addEventListener('click', function() {
         if (!confirm("Skip system-deps check and install '" + name + "' anyway?\n\nThis is unsafe — the install will likely succeed at the pip step but fail with a native-library error at first Run.")) return;
         _closeSystemDepsModal();
-        _proceedWithCatalogInstall(name, {skip_system_deps_check: true});
+        var skipOpts = {skip_system_deps_check: true};
+        if (opts && opts.full_repo) skipOpts.full_repo = true;
+        _proceedWithCatalogInstall(name, skipOpts);
       });
     }
   }
   window._showSystemDepsModal = _showSystemDepsModal;
 
-  function _installSystemDeps(name, checkNames) {
+  function _installSystemDeps(name, checkNames, opts) {
     var errEl = document.getElementById('sysdeps-error');
     var btn = document.getElementById('sysdeps-install-btn');
     if (errEl) errEl.textContent = '';
@@ -3282,7 +3294,7 @@
         var stillFailing = (j.recheck || []).filter(function(r) { return !r.ok; });
         if (stillFailing.length === 0) {
           _closeSystemDepsModal();
-          _proceedWithCatalogInstall(name);
+          _proceedWithCatalogInstall(name, opts);
           return;
         }
         // Surface the remaining failures so the user can decide what to do.
