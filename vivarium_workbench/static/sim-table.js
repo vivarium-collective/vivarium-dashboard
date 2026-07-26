@@ -116,6 +116,70 @@
       shown + esc(more) + "</code>";
   }
 
+  // Compatible-analysis-tools cell — a compact launch chip per entry in
+  // `row.matched_tools` (attached server-side by lib/simulations_index.py's
+  // `_attach_matched_tools`, capability-matched against the workspace's
+  // installed tools/viewers). Empty when nothing matches — no clutter.
+  //   - "launcher" tools: the launch_url is the resolve endpoint
+  //     (GET /api/analysis-viewer/{uid}/launch) — fetch, then open the
+  //     returned {"url": ...} in a new tab (mirrors static/walkthrough.js's
+  //     `_launchViewer`).
+  //   - everything else (embed-explorer, embed-3d, deep-links): launch_url
+  //     is already the concrete page to open — a plain new-tab link.
+  function toolsCell(row) {
+    var tools = (row && row.matched_tools) || [];
+    if (!tools.length) return "";
+    return tools.map(function (t) {
+      var label = esc(t.label || t.id || "Tool");
+      var url = t.launch_url || "";
+      if (t.kind === "launcher") {
+        return '<button type="button" class="action-btn js-authoring tool-launch-btn" ' +
+          'data-launch-url="' + esc(url) + '" title="Launch ' + label + '">' + label + " &#8599;</button>";
+      }
+      return '<a class="action-btn js-authoring" title="Open ' + label + '" target="_blank" ' +
+        'rel="noopener" href="' + esc(url) + '" style="text-decoration:none;">' + label + " &#8599;</a>";
+    }).join(" ");
+  }
+
+  // Launch a "launcher"-kind tool chip: fetch the resolve endpoint, then open
+  // the returned URL. Delegated at the document level (capture phase) so it
+  // works for both the global Sim-DB tbody and the per-study renderTable()
+  // mount, and so it can stopPropagation before the row's own click-to-open
+  // handler fires — same pattern as `_onRerunButtonClick` below.
+  function _onToolLaunchClick(e) {
+    var btn = e.target.closest(".tool-launch-btn");
+    if (!btn) return;
+    e.stopPropagation();
+    var url = btn.getAttribute("data-launch-url");
+    if (!url) return;
+    var origLabel = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "…";
+    fetch(url).then(function (r) {
+      return r.text().then(function (t) {
+        var d = {};
+        try { d = t ? JSON.parse(t) : {}; }
+        catch (e2) { d = { error: "server returned " + r.status }; }
+        return { status: r.status, body: d };
+      });
+    }).then(function (res) {
+      btn.disabled = false;
+      btn.textContent = origLabel;
+      var b = res.body || {};
+      if (res.status === 200 && b.url) window.open(b.url, "_blank", "noopener");
+      else {
+        var msg = "Launch failed: " + (b.error || res.status);
+        if (typeof _showToast === "function") _showToast(msg); else alert(msg);
+      }
+    }).catch(function (err) {
+      btn.disabled = false;
+      btn.textContent = origLabel;
+      var msg = "Launch failed: " + err;
+      if (typeof _showToast === "function") _showToast(msg); else alert(msg);
+    });
+  }
+  document.addEventListener("click", _onToolLaunchClick, true);
+
   function _actions(row) {
     var runIdEnc = encodeURIComponent(row.run_id || "");
     var studySlug = study(row);
@@ -241,6 +305,7 @@
     cells += td(emitterPill(row.emitter_type));
     cells += td(esc(fmtTime(row.completed_at || row.started_at)), "color:#6b7280;");
     cells += td(statusChip(row.status));
+    cells += td(toolsCell(row), "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;");
     cells += td(_actions(row), "text-align:center;white-space:nowrap;");
     return '<tr data-run-id="' + esc(runId) + '" style="border-bottom:1px solid #f3f4f6;cursor:pointer;" ' +
       'title="Click to open this run — its study, or the Composite Explorer">' + cells + "</tr>";
@@ -251,7 +316,8 @@
     { label: "Config", key: "config" },
     { label: "Location", key: "location" },
     { label: "Origin", key: "origin" }, { label: "Emitter", key: "emitter" },
-    { label: "Time", key: "time" }, { label: "Status", key: "status" }, { label: "", key: null },
+    { label: "Time", key: "time" }, { label: "Status", key: "status" },
+    { label: "Tools", key: null }, { label: "", key: null },
   ];
 
   function sortValue(row, key) {
@@ -327,7 +393,7 @@
   window.SimTable = {
     esc: esc, statusChip: statusChip, emitterPill: emitterPill, originPill: originPill,
     originLabel: originLabel, fmtTime: fmtTime, location: location, study: study,
-    investigation: investigation, composite: composite,
+    investigation: investigation, composite: composite, toolsCell: toolsCell,
     renderRow: renderRow, renderTable: renderTable,
   };
 })();
