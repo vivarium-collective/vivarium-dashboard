@@ -4,8 +4,12 @@ ROOT = Path(__file__).resolve().parents[1]
 HTML = (ROOT / "vivarium_workbench/templates/study-detail.html").read_text()
 
 
-def test_five_pillar_buttons_present():
-    for p in ["understand", "inquire", "compose", "simulate", "visualize"]:
+def test_pillar_buttons_present():
+    # Top-level study pillars — the `.study-pillars` nav in study-detail.html.
+    # Kept in sync with that markup (restructured in #586: Tests + Decide,
+    # dropped Hypotheses/"inquire").
+    for p in ["understand", "compose", "simulate", "readouts",
+              "visualize", "tests", "decide", "data"]:
         assert f'data-pillar="{p}"' in HTML and f"_setStudyPillar('{p}')" in HTML
 
 
