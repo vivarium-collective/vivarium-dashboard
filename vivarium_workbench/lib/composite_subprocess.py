@@ -132,6 +132,26 @@ def invoke_v2ecoli_workflow(cfg_path, out_dir, ws_root, timeout_s):
              "out_dir": str(out_dir), "steps": 0}, 200)
 
 
+def run_index_slugs_from_db_path(db_file) -> tuple[str | None, str | None]:
+    """(study_slug, investigation_slug) for a run's ``runs.db`` path.
+
+    A study run's db is ``.../studies/<slug>/runs.db`` (root layout) or
+    ``.../investigations/<inv>/studies/<slug>/runs.db`` (nested). Used to tag
+    the run's ``.pbg/runs.jsonl`` index record at write time so the per-study
+    view can find it without a study.yaml cross-reference backfill. Returns
+    ``(None, None)`` for a non-study db (e.g. ``.pbg/composite-runs.db``).
+    """
+    from vivarium_workbench.lib.simulations_index import _study_slug_from_db_path
+    study_slug = _study_slug_from_db_path(str(db_file))
+    inv_slug = None
+    parts = str(db_file).replace("\\", "/").split("/")
+    if "investigations" in parts:
+        i = len(parts) - 1 - parts[::-1].index("investigations")
+        if i + 1 < len(parts):
+            inv_slug = parts[i + 1]
+    return study_slug, inv_slug
+
+
 def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spec_id,
                              label, overrides=None, sim_name=None, timeout=1800,
                              emit_paths=None, study_emitter=None,
@@ -508,12 +528,21 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
 
     conn = cr.connect(db_file)
     try:
+        # Tag the run's JSONL index record with the study (and investigation) it
+        # belongs to, derived from the db_file path (studies/<slug>/runs.db).
+        # Without this the 'started' event logs study_slug=None and the
+        # per-study run list can only find the run via a study.yaml
+        # cross-reference backfill — the root of the "study: None" records in
+        # .pbg/runs.jsonl.
+        _study_slug, _inv_slug = run_index_slugs_from_db_path(db_file)
         try:
             cr.save_metadata(conn, spec_id=spec_id, run_id=run_id,
                              params=overrides, label=label,
                              started_at=time.time(), n_steps=steps,
                              generation_id=_generation_id,
                              workspace=ws_root, emitter=run_emitter_kind,
+                             study_slug=_study_slug,
+                             investigation_slug=_inv_slug,
                              manifest=manifest)
             if sim_name is not None:
                 conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?",
