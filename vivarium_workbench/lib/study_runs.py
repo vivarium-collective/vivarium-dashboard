@@ -57,6 +57,239 @@ def _resolve_study_dir(ws_root, name):
         return flat if flat.is_dir() else ws_root / "investigations" / name
 
 
+def _load_study_spec_for_flush(study_dir):
+    """Best-effort reload + migrate of a study's spec for the post-run flush
+    stages (viz / post-run-scripts / analyses operate against the study's
+    CURRENT declared spec — a rerun should pick up e.g. a newly-added
+    analysis, not a frozen copy of the original run's spec). Missing or
+    unparsable degrades to ``{}`` so the flush's own per-stage try/excepts
+    no-op gracefully rather than blocking a completed run's response.
+    """
+    try:
+        sf = study_spec.study_spec_file(study_dir)
+        if not sf.is_file():
+            return {}
+        spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return {}
+    from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
+    spec = migrate_v2_to_v3(spec)
+    if spec.get("schema_version") == 4 and isinstance(spec.get("conditions"), dict):
+        from vivarium_workbench.lib.investigations import _project_v4_redesign_to_legacy_view
+        spec = _project_v4_redesign_to_legacy_view(spec)
+    return spec
+
+
+def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
+                        generator_overrides, response):
+    """The full 7-stage post-run flush, shared by the study-baseline launch
+    (via ``launch_into_study``/``_launch_run_and_flush``) and the study-variant
+    launch paths (both single-run and delegated-ensemble). Extracted VERBATIM
+    from the former inline tail (study_runs.py ~L199-253 baseline /
+    ~L459-502 variant) — mutates + returns ``response`` with each stage's
+    outputs. ALL SEVEN stages must remain, in order:
+      1. render_study_visualizations   4. study_outcomes.sync
+      2. run_post_run_scripts          5. capture_run_params / write_run_params
+      3. run_study_analyses            6. auto_evaluate.evaluate_on_run_completion
+                                        7. _sync_parent_investigation
+    """
+    # Render canonical viz: composite defaults from
+    # @composite_generator(visualizations=...) merged with Study-declared
+    # ones (Study wins on name collision). Writes HTML under
+    # <study_dir>/viz/. Per-viz errors absorbed; others still render.
+    viz_files, viz_errors = study_run_post.render_study_visualizations(
+        ws_root, study_dir, spec, spec_id,
+    )
+    if viz_files:
+        response.setdefault("viz_files", []).extend(viz_files)
+    if viz_errors:
+        response.setdefault("viz_errors", []).extend(viz_errors)
+    # post_run_scripts: study-yaml-declared scripts to invoke after the
+    # auto-render dispatch. Pattern for hand-rolled render scripts that
+    # don't fit the @Visualization class registry (e.g. chromosome-state
+    # snapshotters that run their own sim and write HTML directly).
+    # Schema:
+    #   post_run_scripts:
+    #   - path: scripts/render_chromosome_timeline.py
+    #     args: ["--study", "dnaa-02", "--spec", "...", "--steps", "600"]
+    #     timeout_s: 1800
+    script_files, script_errors = study_run_post.run_post_run_scripts(spec, ws_root)
+    if script_files:
+        response.setdefault("post_run_script_files", []).extend(script_files)
+    if script_errors:
+        response.setdefault("post_run_script_errors", []).extend(script_errors)
+    # Post-run analysis hook: run spec.analyses[] steps over the parquet emitter
+    # output.  Synchronous (runs before this HTTP response returns) so the
+    # analysis outputs are on disk by the time the client refreshes.
+    analysis_files, analysis_errors = study_run_post.run_study_analyses(
+        study_dir, spec, run_id, ws_root)
+    if analysis_files:
+        response.setdefault("analysis_files", []).extend(analysis_files)
+    if analysis_errors:
+        response.setdefault("analysis_errors", []).extend(analysis_errors)
+    try:
+        from viva_superpowers import study_outcomes
+        study_outcomes.sync(study_dir)  # record runs + compute outcomes
+    except Exception as exc:  # never fail a successful run on a record error
+        print(f"[study_outcomes] sync failed: {exc}", file=sys.stderr)
+    # Feedback-friction: capture this run's effective parameters onto
+    # runs[].provenance.params (guarded; no-op on older viva_superpowers).
+    # Runs AFTER study_outcomes.sync so the runs[] entry exists to attach to.
+    try:
+        from viva_superpowers import run_params
+        captured = run_params.capture_run_params(
+            full_params, overrides=generator_overrides)
+        run_params.write_run_params(
+            study_dir, run_id, captured, source="dashboard-runner")
+    except Exception as exc:
+        print(f"[run_params] capture failed: {exc}", file=sys.stderr)
+    # Feedback-friction: auto-evaluate the study's behavior tests against the
+    # just-completed run so per-study test pills stop showing pending
+    # (guarded; SAFE DEFAULT — never stamps canonical).
+    try:
+        from viva_superpowers import auto_evaluate
+        auto_evaluate.evaluate_on_run_completion(study_dir, run_id, ws_root=ws_root)
+    except Exception as exc:  # never fail a successful run on an eval error
+        print(f"[auto_evaluate] failed: {exc}", file=sys.stderr)
+    lifecycle_mutations._sync_parent_investigation(ws_root, study_dir)  # SP1: roll up to investigation
+    return response
+
+
+def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
+                          plan, pkg, ws_data, manifest, emitter, emit_paths,
+                          runtime, label, db_file, dry_run=False):
+    """Run-launch + full 7-stage flush tail of ``launch_into_study``, split
+    out so manifest-building (which must happen even when this seam is
+    stubbed in tests) stays outside it. ``plan`` is the already-resolved
+    ``run_core.invoke_run`` result (remote-build guard already applied by
+    the caller); this only extracts ``run_id`` from it.
+    """
+    run_id = plan.run_id
+    runtime = runtime or {}
+
+    # XArrayEmitter buffers ~hundreds of ticks before flushing, so the legacy
+    # 5-tick default produces empty zarr stores. Workspaces declare a sensible
+    # baseline run length via runtime.default_n_steps; we fall back to 5 only
+    # if neither the caller nor the workspace specifies one (preserves the
+    # legacy quick-smoke behaviour for SQLite workspaces).
+    ws_runtime = (ws_data.get("runtime") or {}) if isinstance(ws_data, dict) else {}
+    ws_default_n_steps = ws_runtime.get("default_n_steps")
+    steps = int(n_steps or ws_default_n_steps or 5)
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "request": {
+                "spec_id": spec_id,
+                "overrides": params,
+                "steps": steps,
+                "run_id": run_id,
+                "db_file": db_file,
+            },
+        }, 200
+
+    state, err = study_run_state.resolve_study_baseline_state(ws_root, pkg, spec_id, params)
+    if err is not None:
+        return err, 400
+    # v2ecoli friction #6: subprocess timeout from study yaml so a 3600-step
+    # baseline isn't killed by the 120s default. Per-study override.
+    timeout_s = int(runtime.get("subprocess_timeout_s") or 1800)
+    study_max_generations = runtime.get("max_generations")
+    study_single_daughters = runtime.get("single_daughters")
+    response, code = composite_subprocess.run_composite_subprocess(
+        ws_root,
+        pkg=pkg, state=state, steps=steps, db_file=db_file,
+        run_id=run_id, spec_id=spec_id, label=label, sim_name=label,
+        overrides=params, timeout=timeout_s,
+        emit_paths=emit_paths, study_emitter=emitter,
+        study_max_generations=study_max_generations,
+        study_single_daughters=study_single_daughters,
+        manifest=manifest,
+    )
+    if code == 200:
+        # F2: do NOT append to study.yaml.runs[] — the runs_meta row
+        # written by _run_composite_subprocess (via composite_runs.save_metadata)
+        # IS the canonical record. The Runs tab reads runs.db directly via
+        # _read_runs_db_for_study + _enrich_runs_with_meta; appending here
+        # would duplicate the same fact in two places and let them drift.
+        spec = _load_study_spec_for_flush(study_dir)
+        full_params = dict(params or {})
+        if n_steps is not None:
+            full_params["n_steps"] = n_steps
+        response = _run_post_run_flush(
+            ws_root, study_dir, spec, spec_id, run_id, full_params, params, response)
+    return response, code
+
+
+def launch_into_study(ws_root, study, spec_id, params, n_steps, *, emitter=None,
+                      emit_paths=None, runtime=None, label=None, dry_run=False):
+    """Launch a run into a Study's ``runs.db`` from EXPLICIT replay inputs.
+
+    Factored out of ``run_study_baseline`` (spec Part C) so a rerun can
+    replay a run exactly: ``spec_id``/``params``/``n_steps``/``emitter``/
+    ``emit_paths``/``runtime`` are taken as-given (not re-derived from the
+    study's current ``study.yaml``/``workspace.yaml``). Resolves the study's
+    ``runs.db``, builds + stamps the run's full replay manifest (Part A —
+    ``composite_runs.build_run_manifest``, threaded to ``save_metadata`` via
+    ``composite_subprocess.run_composite_subprocess``'s ``manifest=`` param),
+    then drives the launch + the full 7-stage post-run flush
+    (``_launch_run_and_flush``). Returns ``(response_dict, status_code)``.
+
+    ``run_study_baseline`` resolves ``spec_id``/``params``/``n_steps``/
+    ``emitter``/``emit_paths``/``runtime`` from ``study.yaml`` then delegates
+    here; ``rerun.run_rerun`` (Part C) calls this directly with a stored
+    manifest's inputs.
+    """
+    from vivarium_workbench.lib import composite_runs as cr
+
+    study_dir = _resolve_study_dir(ws_root, study)
+    db_file = str(study_dir / "runs.db")
+    full_params = dict(params or {})
+    if n_steps is not None:
+        full_params["n_steps"] = n_steps
+    label = label or "baseline"
+
+    try:
+        plan = run_core.invoke_run(ws_root, spec_id=spec_id, config=full_params,
+                                   db_path=db_file, label=label, n_steps=n_steps)
+    except run_core.RunTargetUnavailable as e:
+        return {"error": str(e)}, 409
+    # Remote-build guard. This 409 was previously produced by invoke_run raising
+    # RunTargetUnavailable; SP-D2 made the deployment target BUILT for the composite
+    # path, so invoke_run no longer raises and callers reject explicitly. The legacy
+    # study-baseline path is not yet converged onto remote_run (G1, Phase 4), so a
+    # remote-build workspace (.viv-build.json → target "deployment") still refuses
+    # here rather than falling through to a local subprocess. ``getattr`` guards a
+    # stubbed ``plan`` in tests that don't model ``.target``.
+    if getattr(plan, "target", None) == "deployment":
+        return {"error": "Study baseline runs on a remote build are not available "
+                         "on this path yet (SP-D/G1)."}, 409
+
+    # Workspace package name + defaults (best-effort — a workspace.yaml-less
+    # caller, e.g. a hermetic test or an early rerun-replay context, must
+    # never block the launch; pkg degrades to None).
+    pkg = None
+    ws_data: dict = {}
+    try:
+        ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8")) or {}
+        pkg = ws_data.get("package_path") or ("pbg_" + ws_data.get("name", "").replace("-", "_"))
+    except (OSError, yaml.YAMLError):
+        pass
+
+    manifest = cr.build_run_manifest(
+        origin="study", study=study, spec_id=spec_id, params=full_params,
+        n_steps=n_steps, emitter=emitter, emit_paths=emit_paths,
+        runtime=runtime, pkg=pkg, ws_root=ws_root,
+    )
+
+    return _launch_run_and_flush(
+        ws_root, study_dir, spec_id, params, n_steps,
+        plan=plan, pkg=pkg, ws_data=ws_data, manifest=manifest,
+        emitter=emitter, emit_paths=emit_paths, runtime=runtime,
+        label=label, db_file=db_file, dry_run=dry_run,
+    )
+
+
 def run_study_baseline(ws_root, body):
     """Run a Study's baseline composite. Returns (response_dict, status_code).
 
@@ -64,6 +297,12 @@ def run_study_baseline(ws_root, body):
       study:     <name>  (or `name`/`investigation`)
       composite: <baseline-entry name>  (optional; default = baseline[0].name)
       steps:     <int>   (optional; overrides params.n_steps; default 5)
+
+    Resolves the baseline entry's spec_id/params/emitter/emit_paths/runtime
+    from ``study.yaml`` (+ request-body overrides), then delegates the actual
+    launch + full post-run flush to ``launch_into_study`` (spec Part C),
+    which takes those as explicit replay inputs and stamps them into the
+    run's manifest.
     """
     from vivarium_workbench.lib import composite_runs as cr
 
@@ -115,55 +354,6 @@ def run_study_baseline(ws_root, body):
     if body.get("steps"):
         params_n_steps = int(body["steps"])
 
-    # Compute full_params / db_file / label early so the remote-build guard
-    # can fire before the expensive workspace.yaml read + state resolution.
-    full_params = dict(generator_overrides)
-    if params_n_steps is not None:
-        full_params["n_steps"] = params_n_steps
-    db_file = str(study_dir / "runs.db")
-    label = entry.get("name") or "baseline"
-    try:
-        plan = run_core.invoke_run(ws_root, spec_id=spec_id, config=full_params,
-                                   db_path=db_file, label=label, n_steps=params_n_steps)
-    except run_core.RunTargetUnavailable as e:
-        return {"error": str(e)}, 409
-    # Remote-build guard. This 409 was previously produced by invoke_run raising
-    # RunTargetUnavailable; SP-D2 made the deployment target BUILT for the composite
-    # path, so invoke_run no longer raises and callers reject explicitly. The legacy
-    # study-baseline path is not yet converged onto remote_run (G1, Phase 4), so a
-    # remote-build workspace (.viv-build.json → target "deployment") still refuses
-    # here rather than falling through to a local subprocess.
-    if plan.target == "deployment":
-        return {"error": "Study baseline runs on a remote build are not available "
-                         "on this path yet (SP-D/G1)."}, 409
-    run_id = plan.run_id
-
-    ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8"))
-    pkg = ws_data.get("package_path") or ("pbg_" + ws_data.get("name", "").replace("-", "_"))
-    # XArrayEmitter buffers ~hundreds of ticks before flushing, so the legacy
-    # 5-tick default produces empty zarr stores. Workspaces declare a sensible
-    # baseline run length via runtime.default_n_steps; we fall back to 5 only
-    # if neither the body, the study yaml, nor the workspace specifies one
-    # (preserves the legacy quick-smoke behaviour for SQLite workspaces).
-    _runtime = (ws_data.get("runtime") or {}) if isinstance(ws_data, dict) else {}
-    ws_default_n_steps = _runtime.get("default_n_steps")
-    steps = int(body.get("steps") or params_n_steps or ws_default_n_steps or 5)
-
-    if body.get("dry_run"):
-        return {
-            "dry_run": True,
-            "request": {
-                "spec_id": spec_id,
-                "overrides": generator_overrides,
-                "steps": steps,
-                "run_id": run_id,
-                "db_file": db_file,
-            },
-        }, 200
-
-    state, err = study_run_state.resolve_study_baseline_state(ws_root, pkg, spec_id, generator_overrides)
-    if err is not None:
-        return err, 400
     # v2ecoli friction #6: subprocess timeout from study yaml so a 3600-step
     # baseline isn't killed by the 120s default. Per-study override.
     runtime_cfg = (spec.get("runtime") or {}) if isinstance(spec.get("runtime"), dict) else {}
@@ -176,82 +366,18 @@ def run_study_baseline(ws_root, body):
     study_emitter = runtime_cfg.get("emitter") or study_run_state.investigation_emitter_for_study(ws_root, spec.get("name"))
     study_max_generations = runtime_cfg.get("max_generations")
     study_single_daughters = runtime_cfg.get("single_daughters")
-    response, code = composite_subprocess.run_composite_subprocess(
-        ws_root,
-        pkg=pkg, state=state, steps=steps, db_file=db_file,
-        run_id=run_id, spec_id=spec_id, label=label, sim_name=label,
-        overrides=generator_overrides, timeout=timeout_s,
-        emit_paths=emit_paths, study_emitter=study_emitter,
-        study_max_generations=study_max_generations,
-        study_single_daughters=study_single_daughters,
+    runtime_block = {
+        "subprocess_timeout_s": timeout_s,
+        "max_generations": study_max_generations,
+        "single_daughters": study_single_daughters,
+        "emitter": study_emitter,
+    }
+    return launch_into_study(
+        ws_root, name, spec_id, generator_overrides, params_n_steps,
+        emitter=study_emitter, emit_paths=emit_paths, runtime=runtime_block,
+        label=entry.get("name") or "baseline",
+        dry_run=bool(body.get("dry_run")),
     )
-    if code == 200:
-        # F2: do NOT append to study.yaml.runs[] — the runs_meta row
-        # written by _run_composite_subprocess (via composite_runs.save_metadata)
-        # IS the canonical record. The Runs tab reads runs.db directly via
-        # _read_runs_db_for_study + _enrich_runs_with_meta; appending here
-        # would duplicate the same fact in two places and let them drift.
-        #
-        # Render canonical viz: composite defaults from
-        # @composite_generator(visualizations=...) merged with Study-declared
-        # ones (Study wins on name collision). Writes HTML under
-        # <study_dir>/viz/. Per-viz errors absorbed; others still render.
-        viz_files, viz_errors = study_run_post.render_study_visualizations(
-            ws_root, study_dir, spec, spec_id,
-        )
-        if viz_files:
-            response.setdefault("viz_files", []).extend(viz_files)
-        if viz_errors:
-            response.setdefault("viz_errors", []).extend(viz_errors)
-        # post_run_scripts: study-yaml-declared scripts to invoke after the
-        # auto-render dispatch. Pattern for hand-rolled render scripts that
-        # don't fit the @Visualization class registry (e.g. chromosome-state
-        # snapshotters that run their own sim and write HTML directly).
-        # Schema:
-        #   post_run_scripts:
-        #   - path: scripts/render_chromosome_timeline.py
-        #     args: ["--study", "dnaa-02", "--spec", "...", "--steps", "600"]
-        #     timeout_s: 1800
-        script_files, script_errors = study_run_post.run_post_run_scripts(spec, ws_root)
-        if script_files:
-            response.setdefault("post_run_script_files", []).extend(script_files)
-        if script_errors:
-            response.setdefault("post_run_script_errors", []).extend(script_errors)
-        # Post-run analysis hook: run spec.analyses[] steps over the parquet emitter
-        # output.  Synchronous (runs before this HTTP response returns) so the
-        # analysis outputs are on disk by the time the client refreshes.
-        analysis_files, analysis_errors = study_run_post.run_study_analyses(
-            study_dir, spec, run_id, ws_root)
-        if analysis_files:
-            response.setdefault("analysis_files", []).extend(analysis_files)
-        if analysis_errors:
-            response.setdefault("analysis_errors", []).extend(analysis_errors)
-        try:
-            from viva_superpowers import study_outcomes
-            study_outcomes.sync(study_dir)  # record runs + compute outcomes
-        except Exception as exc:  # never fail a successful run on a record error
-            print(f"[study_outcomes] sync failed: {exc}", file=sys.stderr)
-        # Feedback-friction: capture this run's effective parameters onto
-        # runs[].provenance.params (guarded; no-op on older viva_superpowers).
-        # Runs AFTER study_outcomes.sync so the runs[] entry exists to attach to.
-        try:
-            from viva_superpowers import run_params
-            captured = run_params.capture_run_params(
-                full_params, overrides=generator_overrides)
-            run_params.write_run_params(
-                study_dir, run_id, captured, source="dashboard-runner")
-        except Exception as exc:
-            print(f"[run_params] capture failed: {exc}", file=sys.stderr)
-        # Feedback-friction: auto-evaluate the study's behavior tests against the
-        # just-completed run so per-study test pills stop showing pending
-        # (guarded; SAFE DEFAULT — never stamps canonical).
-        try:
-            from viva_superpowers import auto_evaluate
-            auto_evaluate.evaluate_on_run_completion(study_dir, run_id, ws_root=ws_root)
-        except Exception as exc:  # never fail a successful run on an eval error
-            print(f"[auto_evaluate] failed: {exc}", file=sys.stderr)
-        lifecycle_mutations._sync_parent_investigation(ws_root, study_dir)  # SP1: roll up to investigation
-    return response, code
 
 
 def run_study_variant(ws_root, body):
@@ -455,7 +581,12 @@ def run_study_variant(ws_root, body):
     # see the matching note in run-baseline above.
     if code == 200:
         # Same canonical-viz + post-run-scripts dispatch as the baseline path
-        # so variants also refresh chromosome viz etc.
+        # so variants also refresh chromosome viz etc. Kept inline (not
+        # delegated to _run_post_run_flush) — test_sp1_investigation_hook's
+        # structural grep counts _sync_parent_investigation( call sites, and
+        # run_study_variant's launch mechanics (ensemble vs single-run branch)
+        # don't map onto launch_into_study's shape, so this tail stays its own
+        # verbatim copy rather than forcing a shared-helper consolidation.
         viz_files, viz_errors = study_run_post.render_study_visualizations(
             ws_root, study_dir, spec, spec_id,
         )

@@ -907,6 +907,7 @@ window.addEventListener('pageshow', function (e) {
       <span class="inv-export-actions" style="display:inline-flex; gap:6px">
         <button class="btn-mini" onclick="_generateInvestigationReport()" title="Generate a shareable HTML report (self-contained, attach to email)">Report 📄</button>
         <button class="btn-mini" onclick="_downloadInvestigationNotebook()" title="Download a self-contained Jupyter notebook (+ matching .py) that re-runs this investigation's studies via the process-bigraph protocol and renders their figures. The coder-facing complement to the HTML report.">Notebook 📓</button>
+        <button id="investigation-rerun" class="btn-mini" onclick="_rerunInvestigation()" title="Re-run every study's baseline">Rerun investigation</button>
       </span>
     </div>
     <!-- Run-progress panel: rendered while a run-unblocked job is active. -->
