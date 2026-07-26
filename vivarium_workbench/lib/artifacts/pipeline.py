@@ -16,6 +16,7 @@ respect to everything except the artifact store's on-disk contents.
 """
 from __future__ import annotations
 
+import graphlib
 import shutil
 import sqlite3
 import tempfile
@@ -25,6 +26,7 @@ import yaml
 
 from vivarium_workbench.lib.artifacts.hashing import artifact_id
 from vivarium_workbench.lib.artifacts.store import ArtifactStore
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib.study_spec import study_interface
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
@@ -65,6 +67,18 @@ def _load_study_spec(ws_root: Path, slug: str) -> dict:
     return yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
 
 
+def _load_investigation_spec(ws_root: Path, inv_slug: str) -> dict:
+    """Load ``investigations/<inv_slug>/investigation.yaml``.
+
+    Split out as its own (monkeypatchable) seam — mirrors ``_load_study_spec``
+    — so ``resolve_investigation`` tests can fake an investigation's member
+    list without needing a real ``investigations/`` dir on disk.
+    """
+    wp = WorkspacePaths.load(ws_root)
+    spec_path = wp.investigations / inv_slug / "investigation.yaml"
+    return yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
+
+
 def _record_pointer(runs_db: Path, stage: str, oid: str) -> None:
     """Upsert ``(stage, artifact_id)`` into ``runs.db``'s ``artifact_pointers``.
 
@@ -92,7 +106,9 @@ def _record_pointer(runs_db: Path, stage: str, oid: str) -> None:
         pass
 
 
-def resolve_study(ws_root, slug: str, *, compute_fn=None, _in_progress=None) -> dict:
+def resolve_study(
+    ws_root, slug: str, *, compute_fn=None, force: bool = False, _in_progress=None,
+) -> dict:
     """Pull-or-compute this study's output artifact, recursing into input
     producers first.
 
@@ -104,6 +120,15 @@ def resolve_study(ws_root, slug: str, *, compute_fn=None, _in_progress=None) -> 
         "cached": <bool>,         # True => store already had it (compute_fn NOT called for this study)
         "inputs": { <from_slug>: <input_artifact_id>, ... },  # resolved producer output ids
       }
+
+    Args:
+      force: when True, bypass the ``store.has(oid)`` short-circuit for THIS
+        study (compute_fn always runs; ``cached`` is reported False). Does
+        NOT propagate to producer resolution — a caller that wants a whole
+        subtree forced (e.g. ``resolve_investigation``) resolves every node
+        explicitly with ``force=True`` in topological order, so a producer
+        is already force-recomputed by the time a dependent's internal
+        recursive call reads it back (a cheap store hit on the same oid).
 
     Raises:
       CyclicDependencyError: a study's ``inputs[].from`` chain re-enters a
@@ -139,7 +164,7 @@ def resolve_study(ws_root, slug: str, *, compute_fn=None, _in_progress=None) -> 
         )
 
         store = ArtifactStore(ws_root)
-        if store.has(oid):
+        if not force and store.has(oid):
             cached = True
         else:
             cached = False
@@ -233,3 +258,111 @@ def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids
     request_path.write_text(json.dumps(request), encoding="utf-8")
     run_runner.execute(request_path)
     return out_dir
+
+
+def resolve_investigation(
+    ws_root, inv_slug: str, *, compute_fn=None, force: bool = False,
+) -> dict:
+    """Topological pull-or-compute over an investigation's member DAG.
+
+    Loads ``investigations/<inv_slug>/investigation.yaml``, reads its member
+    list via ``investigation_member_slugs``, and builds a producer DAG from
+    each member's ``inputs[].from`` (``study_interface``/``_load_study_spec``
+    — the same building blocks ``resolve_study`` uses). A ``from`` producer
+    that isn't itself a declared member (e.g. a shared upstream study like
+    ``parca``) still becomes a node: ``graphlib.TopologicalSorter.add(node,
+    *predecessors)`` implicitly adds any predecessor never explicitly added
+    as a dependency-free leaf, so it naturally slots into the order ahead of
+    its dependents. Each node in the resulting ``static_order()`` is then
+    resolved via ``resolve_study`` in order (NOT recursively re-derived here
+    — ``resolve_study`` already recurses into producers on its own; walking
+    the topo order here just gives each node an explicit, independently
+    reported status).
+
+    Returns:
+      {
+        "order": [slug, ...],      # topological order (members + producers)
+        "nodes": [{"slug", "artifact_id": <id>|None,
+                   "status": "cached"|"computed"|"skipped"|"failed",
+                   "inputs": [from_slug, ...]}, ...],
+        "error": None | str,       # set (only) on a cyclic member DAG
+      }
+
+    Status rules:
+      - Any upstream (``inputs[].from``) already ``failed``/``skipped`` ->
+        this node is ``skipped`` without calling ``resolve_study``.
+      - ``resolve_study`` raising for this node -> ``failed`` (caught here,
+        never propagates), and its descendants become ``skipped``.
+      - A cycle in the member DAG -> ``graphlib.CycleError`` is caught,
+        ``error`` is set, and no nodes are resolved (mirrors
+        ``resolve_study``'s own ``CyclicDependencyError`` guard, but this
+        one is over MEMBERS rather than a single study's producer chain).
+
+    ``force=True`` is passed straight through to every ``resolve_study`` call
+    so every node in the DAG bypasses its cache and recomputes (see
+    ``resolve_study``'s docstring for why this doesn't need to propagate
+    into ``resolve_study``'s own internal producer recursion).
+    """
+    ws_root = Path(ws_root)
+    result: dict = {"order": [], "nodes": [], "error": None}
+
+    try:
+        inv_spec = _load_investigation_spec(ws_root, inv_slug)
+    except Exception as exc:  # noqa: BLE001 — surfaced via result["error"]
+        result["error"] = f"cannot load investigation {inv_slug!r}: {exc}"
+        return result
+
+    member_slugs = investigation_member_slugs(inv_spec)
+
+    # Discover every node (members + any producer they transitively pull
+    # in, even if that producer isn't itself a declared member) and its own
+    # `inputs[].from`, building the sorter as we go.
+    inputs_by_slug: dict[str, list[str]] = {}
+    ts: graphlib.TopologicalSorter = graphlib.TopologicalSorter()
+    seen: set[str] = set()
+    queue = list(member_slugs)
+    while queue:
+        slug = queue.pop()
+        if slug in seen:
+            continue
+        seen.add(slug)
+        try:
+            spec = _load_study_spec(ws_root, slug)
+            froms = [inp["from"] for inp in study_interface(spec)["inputs"]]
+        except Exception:  # noqa: BLE001 — unresolvable producer; resolve_study handles it
+            froms = []
+        inputs_by_slug[slug] = froms
+        ts.add(slug, *froms)
+        queue.extend(froms)
+
+    try:
+        order = list(ts.static_order())
+    except graphlib.CycleError as exc:
+        result["error"] = f"cyclic member dependency in investigation {inv_slug!r}: {exc}"
+        return result
+
+    result["order"] = order
+
+    failed_or_skipped: set[str] = set()
+    for slug in order:
+        froms = inputs_by_slug.get(slug, [])
+        if any(f in failed_or_skipped for f in froms):
+            failed_or_skipped.add(slug)
+            result["nodes"].append(
+                {"slug": slug, "artifact_id": None, "status": "skipped", "inputs": froms}
+            )
+            continue
+        try:
+            r = resolve_study(ws_root, slug, compute_fn=compute_fn, force=force)
+        except Exception:  # noqa: BLE001 — per-node failure isolation
+            failed_or_skipped.add(slug)
+            result["nodes"].append(
+                {"slug": slug, "artifact_id": None, "status": "failed", "inputs": froms}
+            )
+            continue
+        status = "cached" if r["cached"] else "computed"
+        result["nodes"].append(
+            {"slug": slug, "artifact_id": r["artifact_id"], "status": status, "inputs": froms}
+        )
+
+    return result
