@@ -77,3 +77,27 @@ def test_manifest_present_preferred(tmp_path):
     assert t["emitter"] == "parquet"
     assert t["emit_paths"] == ["bulk", "listeners"]
     assert t["runtime"] == {"subprocess_timeout_s": 1800, "emitter": "parquet"}
+
+
+def test_manifest_n_steps_stripped_from_params(tmp_path):
+    # The manifest's params was built as {**params, "n_steps": n_steps} by
+    # launch_into_study, but the ORIGINAL run pops n_steps out of params
+    # before building its generator config. resolve_rerun_target must strip
+    # n_steps back out of params so the replayed config matches — n_steps
+    # only lives in its own field.
+    (tmp_path / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
+    study_dir = tmp_path / "workspace" / "studies" / "s1"
+    study_dir.mkdir(parents=True, exist_ok=True)
+    (study_dir / "study.yaml").write_text("name: s1\n")
+    db = study_dir / "runs.db"
+    manifest = {
+        "version": 1, "spec_id": "v2ecoli.composites.baseline.baseline",
+        "params": {"seed": 0, "n_steps": 200}, "n_steps": 200,
+        "origin": "study", "study": "s1", "pkg": "v2ecoli",
+    }
+    _seed(db, "spec__5__e", "v2ecoli.composites.baseline.baseline",
+          {"seed": 0}, 200, manifest=manifest)
+    t = rerun.resolve_rerun_target(tmp_path, "spec__5__e")
+    assert t["params"] == {"seed": 0}
+    assert "n_steps" not in t["params"]
+    assert t["n_steps"] == 200

@@ -35,23 +35,33 @@ def resolve_rerun_target(ws_root, run_id):
             manifest = None
 
     if manifest:
+        params = dict(manifest.get("params") or {})
+        # n_steps must not leak into the replayed generator params: the
+        # ORIGINAL run (study_runs.run_study_baseline) pops n_steps out of
+        # params before building the generator config, so the manifest's
+        # params (built from full_params = {**params, "n_steps": n_steps})
+        # carries it back in. Strip it here and keep it only in its own
+        # field so the replayed config matches the original run's config.
+        n_steps = int(params.pop("n_steps", None) or manifest.get("n_steps") or row.get("n_steps") or 5)
         return {
             "run_id": run_id,
             "origin": manifest.get("origin") or origin,
             "study": manifest.get("study") if manifest.get("study") is not None else study,
             "spec_id": manifest.get("spec_id") or row.get("spec_id"),
-            "params": dict(manifest.get("params") or {}),
-            "n_steps": int(manifest.get("n_steps") or row.get("n_steps") or 5),
+            "params": params,
+            "n_steps": n_steps,
             "emitter": manifest.get("emitter"),
             "emit_paths": manifest.get("emit_paths"),
             "runtime": manifest.get("runtime"),
         }
 
+    params = dict(row.get("params") or {})
+    n_steps = int(params.pop("n_steps", None) or row.get("n_steps") or 5)
     return {
         "run_id": run_id, "origin": origin, "study": study,
         "spec_id": row.get("spec_id"),
-        "params": dict(row.get("params") or {}),
-        "n_steps": int(row.get("n_steps") or 5),
+        "params": params,
+        "n_steps": n_steps,
         # Uniform shape with the manifest branch above; legacy runs simply
         # have no recorded emitter/emit_paths/runtime to replay.
         "emitter": None, "emit_paths": None, "runtime": None,
