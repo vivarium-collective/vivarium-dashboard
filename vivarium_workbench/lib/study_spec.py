@@ -225,9 +225,18 @@ def study_interface(spec: dict) -> dict:
     raw_outputs = spec.get("outputs") or []
     outputs = [str(o) for o in raw_outputs]
 
+    # Fall back to conditions.baseline for composite and config if not defined
+    # at the top level. This handles Phase 2 migration where models moved under
+    # conditions.baseline.{composite, params}.
+    cond_baseline = ((spec.get("conditions") or {}).get("baseline")) or {}
+    composite = spec.get("composite") or cond_baseline.get("composite")
+    config = spec.get("config")
+    if not config:
+        config = dict(cond_baseline.get("params") or {})
+
     return {
-        "composite": spec.get("composite"),
-        "config": spec.get("config") or {},
+        "composite": composite,
+        "config": config,
         "inputs": inputs,
         "outputs": outputs,
         "emitter": spec.get("emitter"),

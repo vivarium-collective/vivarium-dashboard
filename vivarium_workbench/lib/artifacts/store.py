@@ -11,18 +11,36 @@ Payloads may be a single file (copied to ``artifact.bin``) or a directory
 an artifact is fully written — a partial/interrupted copy is never mistaken
 for a store hit.
 
-``put`` is idempotent: if the id is already present, the existing artifact is
-returned unchanged (store hit wins), regardless of what ``src`` currently
-contains.
+``put`` is idempotent by default: if the id is already present, the existing
+artifact is returned unchanged (store hit wins), regardless of what ``src``
+currently contains. Pass ``overwrite=True`` to force a refresh of an
+already-present id's payload + meta (e.g. a caller that deliberately bypassed
+its own read-cache and recomputed wants the new content actually persisted,
+not silently discarded).
+
+Payload replacement is ATOMIC (mirrors ``atomic_io.atomic_write_text``'s
+write-to-sibling-then-``os.replace`` idiom): the new payload is fully built
+at a sibling ``.new-<unique>`` path first, and only then swapped into place
+via ``os.replace`` — ``dest`` is never removed before its replacement is
+fully written. This matters most for ``overwrite=True``: without it, a
+crash mid-copy would leave ``dest`` deleted (or partially overwritten) while
+``meta.json`` (unchanged, written by an *earlier* successful ``put``) still
+reports ``has() == True`` — a reader would trust a corrupt/missing artifact.
 """
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import uuid
 from pathlib import Path
 
 from vivarium_workbench.lib.atomic_io import atomic_write_text
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+
+def _unique_suffix() -> str:
+    return f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
 
 
 class ArtifactStore:
@@ -47,8 +65,8 @@ class ArtifactStore:
             return file_payload
         return d / "payload"
 
-    def put(self, artifact_id: str, src: Path | str, meta: dict) -> Path:
-        if self.has(artifact_id):
+    def put(self, artifact_id: str, src: Path | str, meta: dict, *, overwrite: bool = False) -> Path:
+        if self.has(artifact_id) and not overwrite:
             return self.path(artifact_id)
 
         src = Path(src)
@@ -57,23 +75,48 @@ class ArtifactStore:
 
         if src.is_dir():
             dest = d / "payload"
-            # Retry-safe: a prior put() may have crashed after copytree
-            # started but before meta.json was written, leaving a partial
-            # dest dir. Since has() is False in that case, clear it before
-            # retrying — copytree raises FileExistsError on an existing dest.
-            if dest.exists():
-                shutil.rmtree(dest)
-            shutil.copytree(src, dest)
+            self._atomic_replace_dir(src, dest)
         else:
             dest = d / "artifact.bin"
-            # copy2 overwrites cleanly, but be explicit/defensive in case
-            # dest is ever a directory left over from some other state.
-            if dest.exists():
-                dest.unlink()
-            shutil.copy2(src, dest)
+            self._atomic_replace_file(src, dest)
 
         atomic_write_text(self._meta_path(artifact_id), json.dumps(meta, indent=2))
         return dest
+
+    @staticmethod
+    def _atomic_replace_dir(src: Path, dest: Path) -> None:
+        """Copy ``src`` to a sibling scratch dir, then atomically swap it
+        into ``dest``. ``os.replace`` can rename directly onto ``dest`` when
+        ``dest`` doesn't yet exist (the common fresh-write case); when
+        ``dest`` already holds a prior payload (the ``overwrite=True`` case),
+        POSIX ``rename`` refuses to replace a non-empty directory, so the old
+        one is renamed aside first (also an atomic, near-instant metadata-only
+        op) and best-effort ``rmtree``'d only after the new payload is
+        already live at ``dest``.
+        """
+        suffix = _unique_suffix()
+        new_dir = dest.parent / f"{dest.name}.new-{suffix}"
+        if new_dir.exists():
+            shutil.rmtree(new_dir)
+        shutil.copytree(src, new_dir)
+
+        if dest.exists():
+            old_dir = dest.parent / f"{dest.name}.old-{suffix}"
+            os.replace(dest, old_dir)
+            os.replace(new_dir, dest)
+            shutil.rmtree(old_dir, ignore_errors=True)
+        else:
+            os.replace(new_dir, dest)
+
+    @staticmethod
+    def _atomic_replace_file(src: Path, dest: Path) -> None:
+        """Copy ``src`` to a sibling scratch file, then atomically swap it
+        into ``dest`` — ``os.replace`` on a file always atomically replaces
+        an existing destination, no separate delete/aside step needed."""
+        suffix = _unique_suffix()
+        new_file = dest.parent / f"{dest.name}.new-{suffix}"
+        shutil.copy2(src, new_file)
+        os.replace(new_file, dest)
 
     def meta(self, artifact_id: str) -> dict:
         return json.loads(self._meta_path(artifact_id).read_text())

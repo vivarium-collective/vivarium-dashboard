@@ -20,6 +20,7 @@ from typing import Any
 import yaml
 
 from vivarium_workbench.lib import study_spec
+from vivarium_workbench.lib.study_spec import study_interface
 
 
 # ---------------------------------------------------------------------------
@@ -215,3 +216,70 @@ class TestLoadStudyDetailSpec:
         assert rcu["standard"]["verdict"] == "drift"
         assert rcu["standard"]["url"].endswith(
             "investigations/cmp/studies/basal/viz/report_card/standard.html")
+
+
+# ---------------------------------------------------------------------------
+# study_interface — reading canonical conditions.baseline
+# ---------------------------------------------------------------------------
+
+class TestStudyInterface:
+    def test_interface_reads_conditions_baseline(self) -> None:
+        """study_interface falls back to conditions.baseline when top-level
+        composite/config are absent (Phase 2 migration case)."""
+        spec = {
+            "conditions": {
+                "baseline": {
+                    "composite": "v2ecoli.composites.ecoli_baseline.ecoli_baseline",
+                    "params": {"condition": "acetate", "seed": 0},
+                }
+            },
+            "inputs": [{"artifact": "sim_data", "from": "parca"}],
+        }
+        iface = study_interface(spec)
+        assert iface["composite"] == "v2ecoli.composites.ecoli_baseline.ecoli_baseline"
+        assert iface["config"] == {"condition": "acetate", "seed": 0}
+        assert iface["inputs"] == [{"artifact": "sim_data", "from": "parca"}]
+
+    def test_interface_top_level_takes_precedence(self) -> None:
+        """Top-level composite/config take precedence over conditions.baseline."""
+        spec = {
+            "composite": "top.c",
+            "config": {"a": 1},
+            "conditions": {
+                "baseline": {"composite": "cond.c", "params": {"b": 2}}
+            },
+        }
+        iface = study_interface(spec)
+        assert iface["composite"] == "top.c"
+        assert iface["config"] == {"a": 1}
+
+    def test_interface_no_models_is_empty(self) -> None:
+        """When neither top-level nor conditions.baseline define a composite,
+        composite is None and config is {}."""
+        iface = study_interface({"name": "parca-like"})
+        assert iface["composite"] is None
+        assert iface["config"] == {}
+
+    def test_interface_conditions_baseline_partial_match(self) -> None:
+        """When top-level config is defined but composite is not, use top-level
+        config even if conditions.baseline has params."""
+        spec = {
+            "config": {"top": True},
+            "conditions": {
+                "baseline": {"composite": "cond.c", "params": {"cond": True}}
+            },
+        }
+        iface = study_interface(spec)
+        assert iface["composite"] == "cond.c"
+        assert iface["config"] == {"top": True}
+
+    def test_interface_conditions_baseline_no_params(self) -> None:
+        """conditions.baseline without params defaults to empty dict."""
+        spec = {
+            "conditions": {
+                "baseline": {"composite": "v2ecoli.composites.baseline"}
+            }
+        }
+        iface = study_interface(spec)
+        assert iface["composite"] == "v2ecoli.composites.baseline"
+        assert iface["config"] == {}

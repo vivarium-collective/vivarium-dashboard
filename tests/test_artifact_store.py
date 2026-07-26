@@ -42,3 +42,27 @@ def test_directory_payload_roundtrip_and_idempotent(tmp_path):
     (src / "a.txt").write_text("CHANGED")
     st.put("cccc000000000000", src, {"kind": "sim_data"})
     assert (st.path("cccc000000000000") / "a.txt").read_text() == "A"
+
+
+def test_put_overwrite_replaces_file_payload(tmp_path):
+    src = tmp_path / "sim_data.bin"; src.write_bytes(b"A")
+    st = ArtifactStore(tmp_path)
+    st.put("dddd000000000000", src, {"v": 1})
+    src.write_bytes(b"B")
+    st.put("dddd000000000000", src, {"v": 2}, overwrite=True)
+    assert st.path("dddd000000000000").read_bytes() == b"B"
+    assert st.meta("dddd000000000000")["v"] == 2
+
+
+def test_put_overwrite_replaces_directory_payload(tmp_path):
+    src = tmp_path / "sim_data_cache"
+    src.mkdir()
+    (src / "a.txt").write_text("A")
+    st = ArtifactStore(tmp_path)
+    st.put("eeee000000000000", src, {"kind": "sim_data"})
+    (src / "a.txt").write_text("CHANGED")
+    (src / "new.txt").write_text("NEW")
+    st.put("eeee000000000000", src, {"kind": "sim_data"}, overwrite=True)
+    p = st.path("eeee000000000000")
+    assert (p / "a.txt").read_text() == "CHANGED"
+    assert (p / "new.txt").read_text() == "NEW"
