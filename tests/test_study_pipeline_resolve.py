@@ -1,3 +1,4 @@
+import json
 import sqlite3
 
 import pytest
@@ -117,3 +118,78 @@ def test_resolve_study_detects_cycle(tmp_path, monkeypatch):
     stub, calls = make_stub()
     with pytest.raises(pipeline.CyclicDependencyError):
         pipeline.resolve_study(tmp_path, "a", compute_fn=stub)
+
+
+def test_default_compute_populates_emit_paths_from_study_readouts(tmp_path, monkeypatch):
+    """Test that _default_compute collects emit_paths from study spec readouts/tests."""
+    from collections import namedtuple
+    from unittest.mock import MagicMock
+
+    # Create a study with readouts and tests that declare observable paths
+    (tmp_path / "studies" / "sim").mkdir(parents=True)
+    spec = {
+        "name": "sim",
+        "composite": "sim_composite",
+        "config": {},
+        "outputs": ["run_result"],
+        "readouts": [
+            {"store_path": "growth_rate"}
+        ],
+        "tests": [
+            {"name": "test_division", "measure": {"path": "division/count"}},
+        ],
+    }
+    (tmp_path / "studies" / "sim" / "study.yaml").write_text(
+        yaml.safe_dump(spec), encoding="utf-8"
+    )
+
+    # Mock run_core.invoke_run to return a minimal plan
+    Plan = namedtuple("Plan", ["run_id", "spec_id", "target"])
+    plan = Plan(run_id="test-run-123", spec_id="sim_composite", target="process_bigraph")
+
+    mock_run_core = MagicMock()
+    mock_run_core.invoke_run = MagicMock(return_value=plan)
+
+    # Capture request.json when run_runner.execute is called
+    captured_requests = []
+
+    def mock_execute(request_path):
+        request_data = json.loads(request_path.read_text(encoding="utf-8"))
+        captured_requests.append(request_data)
+
+    mock_run_runner = MagicMock()
+    mock_run_runner.execute = mock_execute
+
+    # Patch sys.modules to inject our mocks
+    import sys
+    original_run_core = sys.modules.get("vivarium_workbench.lib.run_core")
+    original_run_runner = sys.modules.get("vivarium_workbench.lib.run_runner")
+
+    sys.modules["vivarium_workbench.lib.run_core"] = mock_run_core
+    sys.modules["vivarium_workbench.lib.run_runner"] = mock_run_runner
+
+    try:
+        # Resolve the study with _default_compute
+        resolve_study(tmp_path, "sim")
+
+        # Verify that emit_paths was populated with observables from readouts and tests
+        assert len(captured_requests) == 1, f"Expected 1 request, got {len(captured_requests)}"
+        request = captured_requests[0]
+        assert "emit_paths" in request
+        assert isinstance(request["emit_paths"], list)
+        # Should contain the readout path and test path (with agents/0/ variants too)
+        assert "growth_rate" in request["emit_paths"], f"emit_paths: {request['emit_paths']}"
+        assert "division/count" in request["emit_paths"], f"emit_paths: {request['emit_paths']}"
+        # Verify agent-scoped variants are also present
+        assert "agents/0/growth_rate" in request["emit_paths"], f"emit_paths: {request['emit_paths']}"
+        assert "agents/0/division/count" in request["emit_paths"], f"emit_paths: {request['emit_paths']}"
+    finally:
+        # Restore original modules
+        if original_run_core is not None:
+            sys.modules["vivarium_workbench.lib.run_core"] = original_run_core
+        else:
+            sys.modules.pop("vivarium_workbench.lib.run_core", None)
+        if original_run_runner is not None:
+            sys.modules["vivarium_workbench.lib.run_runner"] = original_run_runner
+        else:
+            sys.modules.pop("vivarium_workbench.lib.run_runner", None)

@@ -26,6 +26,7 @@ import yaml
 
 from vivarium_workbench.lib.artifacts.hashing import artifact_id
 from vivarium_workbench.lib.artifacts.store import ArtifactStore
+from vivarium_workbench.lib.composite_runs import collect_emit_paths_from_spec
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib.study_spec import study_interface
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
@@ -238,12 +239,16 @@ def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids
         ws_root, spec_id=composite or slug, config=config, db_path=db_path,
     )
 
+    # Load study spec and collect emit_paths from declared observables
+    # (readouts, tests, visualizations, etc). Fall back to [] only when
+    # the study declares no observables (run_runner then expands [] to all-store).
+    spec = _load_study_spec(ws_root, slug)
+    emit_paths = collect_emit_paths_from_spec(spec) or []
+
     # NOTE (Task 8 integration): the run-request shape below is the best
     # inference available from run_runner.RunRequest — n_steps/emit_paths
-    # aren't part of the pipeline `interface` contract yet, so `steps`
-    # defaults from config (or a placeholder) and `emit_paths` is left
-    # empty pending however Task 8 wires a study's declared outputs to
-    # emitter paths.
+    # are now wired from the study spec (Task 4), so `steps` defaults
+    # from config (or a placeholder) and `emit_paths` is collected above.
     request = {
         "run_id": plan.run_id,
         "spec_id": plan.spec_id,
@@ -251,7 +256,7 @@ def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids
         "workspace": str(ws_root),
         "overrides": config or {},
         "steps": int((config or {}).get("n_steps") or 1),
-        "emit_paths": [],
+        "emit_paths": emit_paths,
         "db_file": str(db_path),
         "log_path": str(out_dir / "run.log"),
         "target": plan.target,
