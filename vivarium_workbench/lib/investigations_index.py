@@ -24,25 +24,8 @@ from __future__ import annotations
 import re
 import sqlite3
 import sys
-import time
 from pathlib import Path
 from typing import Optional
-
-
-# ---------------------------------------------------------------------------
-# Short-TTL cache: build_investigations loads + migrates every study spec (~3.8s
-# on v2ecoli's 48 studies). At page boot several components fetch it at once,
-# saturating the browser's connection pool and stalling other tabs. A short TTL
-# collapses that burst while keeping edits near-immediate; clear_investigations_
-# cache() invalidates on workspace switch and study/investigation mutations.
-# ---------------------------------------------------------------------------
-_INVESTIGATIONS_CACHE: dict = {}
-_INVESTIGATIONS_TTL = 10.0  # seconds — short, so study edits surface quickly
-
-
-def clear_investigations_cache() -> None:
-    """Invalidate the investigations index cache (workspace switch / mutation)."""
-    _INVESTIGATIONS_CACHE.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -292,12 +275,6 @@ def build_investigations(ws_root: Path) -> dict:
         dict (valid spec) or a minimal ``{name, status: "invalid", error}``
         dict (malformed spec.yaml).
     """
-    _now = time.time()
-    _key = str(ws_root)
-    _slot = _INVESTIGATIONS_CACHE.get(_key)
-    if _slot is not None and _now - _slot["ts"] < _INVESTIGATIONS_TTL:
-        return _slot["data"]
-
     _ws_add_to_sys_path(ws_root)
 
     from vivarium_workbench.lib.investigations import (
@@ -467,11 +444,4 @@ def build_investigations(ws_root: Path) -> dict:
         }
         out.append(frow)
 
-    _payload = {"investigations": out}
-    _INVESTIGATIONS_CACHE[_key] = {"data": _payload, "ts": _now}
-    return _payload
-
-
-# Invalidate the investigations index cache on workspace switch.
-from . import active_workspace as _aw  # noqa: E402
-_aw.register_clear_cb(clear_investigations_cache)
+    return {"investigations": out}
