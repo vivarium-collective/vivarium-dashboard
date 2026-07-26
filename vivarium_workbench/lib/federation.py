@@ -15,6 +15,9 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.composite_lookup import (
+    discover_workspace_composites, load_spec,  # existing helpers
+)
 
 
 @dataclass
@@ -52,4 +55,88 @@ def linked_workspaces(ws_root: Path) -> list[LinkedWorkspace]:
                 continue
             seen.add(root)
             out.append(LinkedWorkspace(repo=_repo_name(root), root=root, layout=layout))
+    return out
+
+
+def _iter_study_specs(lw: LinkedWorkspace):
+    """Yield (study_name, spec_dict) for a linked workspace's studies."""
+    sdir = lw.layout.studies
+    if not sdir.is_dir():
+        return
+    for d in sorted(p for p in sdir.iterdir() if p.is_dir()):
+        f = d / "study.yaml" if (d / "study.yaml").is_file() else d / "spec.yaml"
+        if not f.is_file():
+            continue
+        try:
+            spec = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+        name = spec.get("name") or d.name
+        yield name, spec
+
+
+def federated_studies(ws_root: Path) -> list[dict]:
+    out: list[dict] = []
+    for lw in linked_workspaces(ws_root):
+        try:
+            for name, spec in _iter_study_specs(lw):
+                out.append({
+                    "name": name,
+                    "id": f"{lw.repo}::{name}",
+                    "origin_repo": lw.repo,
+                    "read_only": True,
+                    "spec": spec,
+                })
+        except Exception:
+            continue
+    return out
+
+
+def federated_investigation_sets(ws_root: Path) -> list[dict]:
+    out: list[dict] = []
+    for lw in linked_workspaces(ws_root):
+        idir = lw.layout.investigations
+        if not idir.is_dir():
+            continue
+        for d in sorted(p for p in idir.iterdir() if p.is_dir()):
+            f = d / "investigation.yaml"
+            if not f.is_file():
+                continue
+            try:
+                spec = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
+            except Exception:
+                continue
+            name = spec.get("name") or d.name
+            members = [f"{lw.repo}::{s}" for s in (spec.get("studies") or [])]
+            out.append({
+                "name": name,
+                "id": f"{lw.repo}::{name}",
+                "origin_repo": lw.repo,
+                "read_only": True,
+                "spec": spec,
+                "member_studies": members,
+            })
+    return out
+
+
+def federated_composites(ws_root: Path) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for lw in linked_workspaces(ws_root):
+        pkg = None
+        try:
+            data = yaml.safe_load((lw.root / "workspace.yaml").read_text(encoding="utf-8"))
+            pkg = (data or {}).get("package_path")
+        except Exception:
+            pkg = None
+        if not pkg:
+            continue
+        try:
+            recs = discover_workspace_composites(lw.root, pkg)
+        except Exception:
+            continue
+        for spec_id, rec in recs.items():
+            rec = dict(rec)
+            rec["origin_repo"] = lw.repo
+            rec["read_only"] = True
+            out.setdefault(spec_id, rec)
     return out
