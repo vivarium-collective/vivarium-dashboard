@@ -1,4 +1,4 @@
-// walkthrough.js — v0.7.0: Composites semantic zoom (Table/Cards full-row compact/Loom on-demand embed) + double-click to zoom in; /api/composites now runs in the WARM pooled worker (flake fix). v0.6.9: registry filter now data-driven (works in Table/Cards/Full); middle Cards zoom is full-row with composite/study usage split + details; double-click zooms in centered; select persists across zoom; run panel input ports as per-field form (type + resolved default, auto-grow) + Copy outputs; loom config bar lightened to match workbench palette. v0.6.8: run panel lazy-loads RESOLVED defaults (core.fill via /api/registry/process-template) into a per-field config form + inputs JSON (no more null-heavy templates); loom card restyled as a crisp rectangle. v0.6.7: Registry Full-view interactive runner — editable config + input-port JSON, Run → outputs (POST /api/registry/run-process; env_worker._run_process instantiates + Step.update / Process.update(interval)); loom inputs left / outputs right. v0.6.6: Registry semantic zoom (compact/detailed/full loom-rectangle: inputs left, outputs right, config top) + Cards⇄Table sortable view (_setRegistryZoom/_setRegistryView/_renderRegistryTable); rail pins hover-only + ungrouped back to a collapsible folder. v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.8.0: Registry Full view is now directly runnable — the config bar IS the editable config and the left ports ARE the editable input fields (no "Run this process" dropdown); Run lives in the body, outputs on the right. Middle (grid) zoom shows ports+types inline (no dropdown); double-click a card → runnable Full. Modules table split into Installed-here vs Marketplace sections with a Repos (imported-into) column, GitHub link on the name, and Install/Uninstall in one Action column (n_repos from module_stats federation scan). bigraph-loom: Explore (graph) is the default left tab; the right dock defaults to Processes with Nodes/Inspector collapsed. v0.7.0: Composites semantic zoom (Table/Cards full-row compact/Loom on-demand embed) + double-click to zoom in; /api/composites now runs in the WARM pooled worker (flake fix). v0.6.9: registry filter now data-driven (works in Table/Cards/Full); middle Cards zoom is full-row with composite/study usage split + details; double-click zooms in centered; select persists across zoom; run panel input ports as per-field form (type + resolved default, auto-grow) + Copy outputs; loom config bar lightened to match workbench palette. v0.6.8: run panel lazy-loads RESOLVED defaults (core.fill via /api/registry/process-template) into a per-field config form + inputs JSON (no more null-heavy templates); loom card restyled as a crisp rectangle. v0.6.7: Registry Full-view interactive runner — editable config + input-port JSON, Run → outputs (POST /api/registry/run-process; env_worker._run_process instantiates + Step.update / Process.update(interval)); loom inputs left / outputs right. v0.6.6: Registry semantic zoom (compact/detailed/full loom-rectangle: inputs left, outputs right, config top) + Cards⇄Table sortable view (_setRegistryZoom/_setRegistryView/_renderRegistryTable); rail pins hover-only + ungrouped back to a collapsible folder. v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -1951,8 +1951,29 @@
     return out;
   }
 
-  // Grid card (default zoom): a dense card — name, use, one-line description, and
-  // a "config & ports" dropdown. NO inline ports (those are the Full view).
+  // Inline ports + types for the middle (grid) zoom — read-only detail, always
+  // visible (no dropdown). Double-click a card to reach the runnable Full view.
+  function _regInlinePorts(p) {
+    function col(title, schema) {
+      var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : null;
+      var items;
+      if (keys === null) items = '<span class="reg-ip-na" title="Ports depend on a configured instance.">—</span>';
+      else if (!keys.length) items = '<span class="reg-ip-na">(none)</span>';
+      else items = keys.map(function (k) {
+        var t = _regTypeLabel(schema[k]);
+        return '<span class="reg-ip"><code>' + _esc(k) + '</code>' +
+          (t ? '<span class="reg-ip-type">' + _esc(t) + '</span>' : '') + '</span>';
+      }).join('');
+      return '<div class="reg-ipcol"><span class="reg-ip-title">' + title + '</span>' + items + '</div>';
+    }
+    if (p.inputs === undefined && p.outputs === undefined) return '';
+    return '<div class="reg-inline-ports">' +
+      col('inputs', p.inputs === undefined ? null : p.inputs) +
+      col('outputs', p.outputs === undefined ? null : p.outputs) + '</div>';
+  }
+
+  // Grid card (middle zoom): name, use, one-line description, and the ports+types
+  // shown inline. Double-click zooms to the runnable Full view.
   function _renderRegistryEntryGrid(p) {
     var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
     var esc = _esc, addr = _esc(p.address || '');
@@ -1961,8 +1982,8 @@
       : '';
     var desc = (p.description || '').trim();
     var short = desc ? desc.split('\n')[0] : '';
-    var inN = _nPorts(p.inputs), outN = _nPorts(p.outputs);
-    // Usage split — across composites vs studies — plus the port I/O counts.
+    // Usage split — across composites vs studies. Port counts are dropped here:
+    // the middle zoom shows the actual ports+types inline (see _regInlinePorts).
     function stat(glyph, n, singular, plural, title) {
       return '<span class="reg-stat" title="' + esc(title) + '"><span class="reg-stat-glyph">' + glyph +
         '</span><strong>' + n + '</strong> ' + (n === 1 ? singular : plural) + '</span>';
@@ -1970,9 +1991,7 @@
     var stats = [];
     if (p.composite_uses) stats.push(stat('▦', p.composite_uses, 'composite', 'composites', 'Used in this many composite generators'));
     if (p.study_uses) stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
-    stats.push(stat('⇄', inN, 'input', 'inputs', 'Input ports'));
-    stats.push(stat('⇄', outN, 'output', 'outputs', 'Output ports'));
-    var details = _regDetailsBody(p);
+    var inlinePorts = _regInlinePorts(p);
     var selCls = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
     return '<div class="registry-card' + selCls + '"' + sourceAttr + ' data-address="' + addr + '"' +
         ' onclick="_selectRegistryEntry(\'' + addr + '\')" ondblclick="_zoomInOn(\'' + addr + '\')"' +
@@ -1985,7 +2004,7 @@
         '</div>' +
         '<div class="reg-card-stats">' + stats.join('') + '</div>' +
       '</div>' +
-      (details ? '<details class="reg-card-details"><summary>config &amp; ports</summary>' + details + '</details>' : '') +
+      inlinePorts +
     '</div>';
   }
 
@@ -1995,6 +2014,12 @@
   function _renderRegistryEntryFull(p) {
     var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
     var kind = p.kind || 'process';
+    var runnable = (kind === 'process' || kind === 'step');
+    var desc = (p.description || '').trim();
+    var selClsFull = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
+    var addrAttr = ' data-address="' + _esc(p.address || '') + '" data-kind="' + kind + '"';
+    // Static port column (used for outputs always, and for both sides on
+    // non-runnable kinds). Runnable inputs are rendered as editable fields.
     function ports(schema, side) {
       var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : [];
       if (!keys.length) return '<div class="loom-port loom-port-empty">—</div>';
@@ -2007,50 +2032,84 @@
           '</div>';
       }).join('');
     }
-    var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
-    var cfgTop = cfgKeys.length
-      ? '<div class="loom-config"><span class="loom-config-label">config</span>' +
-        cfgKeys.slice(0, 14).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
-        (cfgKeys.length > 14 ? ' <span class="muted">+' + (cfgKeys.length - 14) + '</span>' : '') + '</div>'
-      : '';
-    var desc = (p.description || '').trim();
-    // Interactive run panel: editable config + inputs, then Run → outputs (or a
-    // validation/run error). Only for runnable kinds (process/step).
-    var runPanel = '';
-    if (kind === 'process' || kind === 'step') {
-      runPanel = '<details class="loom-run" data-address="' + _esc(p.address || '') + '" data-kind="' + kind + '" ontoggle="_loadRunPanel(this)">' +
-        '<summary>Run this ' + kind + '</summary>' +
-        '<div class="loom-run-body"><p class="muted" style="font-size:0.83em;padding:10px 18px 14px">Open to load defaults &amp; run…</p></div>' +
-        '</details>';
+    var bodyHead =
+      '<div class="loom-body-head"><span class="loom-name">' + _esc(p.name) + '</span>' + _regUseBadge(p) + '</div>' +
+      '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
+      (desc ? '<p class="loom-desc">' + _esc(desc) + '</p>' : '');
+
+    if (!runnable) {
+      // Non-runnable kinds (emitter/visualization/analysis/type/report_card):
+      // static loom card — config keys as pills, static ports both sides.
+      var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
+      var cfgTop = cfgKeys.length
+        ? '<div class="loom-config"><span class="loom-config-label">config</span>' +
+          cfgKeys.slice(0, 14).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
+          (cfgKeys.length > 14 ? ' <span class="muted">+' + (cfgKeys.length - 14) + '</span>' : '') + '</div>'
+        : '';
+      return '<div class="registry-entry registry-entry-full' + selClsFull + '"' + sourceAttr + addrAttr + '>' +
+        '<div class="loom-card loom-card-' + kind + '">' + cfgTop +
+          '<div class="loom-row">' +
+            '<div class="loom-ports loom-ports-in">' + ports(p.inputs, 'in') + '</div>' +
+            '<div class="loom-body">' + bodyHead + '</div>' +
+            '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
     }
-    var selClsFull = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
-    return '<div class="registry-entry registry-entry-full' + selClsFull + '"' + sourceAttr + ' data-address="' + _esc(p.address || '') + '">' +
+
+    // Runnable (process/step): the config bar IS the editable config, the left
+    // ports ARE the editable inputs, and Run lives in the body. Fields load
+    // lazily (resolved defaults) when the card scrolls into view.
+    var timestep = (kind === 'process')
+      ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>'
+      : '';
+    return '<div class="registry-entry registry-entry-full loom-runnable' + selClsFull + '"' + sourceAttr + addrAttr + '>' +
       '<div class="loom-card loom-card-' + kind + '">' +
-        cfgTop +
+        '<div class="loom-config loom-config-edit">' +
+          '<span class="loom-config-label">config</span>' +
+          '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
+        '</div>' +
         '<div class="loom-row">' +
-          '<div class="loom-ports loom-ports-in">' + ports(p.inputs, 'in') + '</div>' +
-          '<div class="loom-body">' +
-            '<div class="loom-body-head"><span class="loom-name">' + _esc(p.name) + '</span>' + _regUseBadge(p) + '</div>' +
-            '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
-            (desc ? '<p class="loom-desc">' + _esc(desc) + '</p>' : '') +
+          '<div class="loom-ports loom-ports-in loom-inputs-edit" data-role="inputs"><div class="loom-port loom-port-empty muted loom-load-hint">…</div></div>' +
+          '<div class="loom-body">' + bodyHead +
+            '<div class="loom-run-actions">' + timestep +
+              '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+              '<button class="btn-mini" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+            '</div>' +
           '</div>' +
           '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
         '</div>' +
-        runPanel +
+        '<div class="loom-run-output"></div>' +
       '</div>' +
     '</div>';
   }
 
-  // Lazy-load the run panel on first open: fetch RESOLVED defaults (core.fill,
-  // not null placeholders) and render an editable form.
-  function _loadRunPanel(details) {
-    if (!details || !details.open || details._loaded) return;
-    details._loaded = true;
-    var address = details.getAttribute('data-address');
-    var kind = details.getAttribute('data-kind');
-    var body = details.querySelector('.loom-run-body');
-    if (!body) return;
-    body.innerHTML = '<p class="muted" style="font-size:0.83em;padding:10px 18px">Resolving defaults…</p>';
+  // Populate a runnable Full card's editable config (top) + input fields (left)
+  // from resolved defaults. Shared by lazy-load and Reset.
+  function _fillFullFields(card, config, inputs, inSchema) {
+    var cfgBox = card.querySelector('[data-role="cfg"]');
+    var inBox = card.querySelector('[data-role="inputs"]');
+    if (cfgBox) {
+      var ck = Object.keys(config || {});
+      cfgBox.innerHTML = ck.length
+        ? ck.map(function (k) { return _runField(k, config[k]); }).join('')
+        : '<span class="muted" style="font-size:0.82em">no config parameters</span>';
+    }
+    if (inBox) {
+      var ik = Object.keys(inputs || {});
+      inBox.innerHTML = ik.length
+        ? ik.map(function (k) { return _runInputField(k, inputs[k], (inSchema || {})[k]); }).join('')
+        : '<div class="loom-port loom-port-empty muted">(no input ports)</div>';
+      card.querySelectorAll('textarea.loom-in-field').forEach(_autoGrow);
+    }
+  }
+
+  // Lazy-load a runnable Full card's resolved defaults (core.fill, not null
+  // placeholders) the first time it becomes visible.
+  function _loadFullRunFields(card) {
+    if (!card || card._loaded) return;
+    card._loaded = true;
+    var address = card.getAttribute('data-address');
     var url = (window.DataSource && window.DataSource.apiUrl ? window.DataSource.apiUrl('/api/registry/process-template') : '/api/registry/process-template') +
       '?address=' + encodeURIComponent(address);
     fetch(url)
@@ -2059,13 +2118,23 @@
         var config = (j && j.ok && j.config && typeof j.config === 'object') ? j.config : {};
         var inputs = (j && j.ok && j.inputs && typeof j.inputs === 'object') ? j.inputs : {};
         var inSchema = (j && j.inputs_schema && typeof j.inputs_schema === 'object') ? j.inputs_schema : {};
-        details._defaults = { config: config, inputs: inputs, inputsSchema: inSchema };
-        body.innerHTML = _renderRunForm(kind, config, inputs, inSchema);
-        _autoGrowRunFields(details);
+        card._defaults = { config: config, inputs: inputs, inputsSchema: inSchema };
+        _fillFullFields(card, config, inputs, inSchema);
       })
-      .catch(function () { body.innerHTML = _renderRunForm(kind, {}, {}, {}); });
+      .catch(function () { card._defaults = { config: {}, inputs: {}, inputsSchema: {} }; _fillFullFields(card, {}, {}, {}); });
   }
-  window._loadRunPanel = _loadRunPanel;
+
+  // Load resolved defaults for runnable Full cards as they scroll into view, so
+  // the Full zoom doesn't fire N template fetches for every process at once.
+  function _observeRunnableCards(root) {
+    var cards = (root || document).querySelectorAll('.loom-runnable');
+    if (!cards.length) return;
+    if (!('IntersectionObserver' in window)) { cards.forEach(_loadFullRunFields); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { _loadFullRunFields(e.target); io.unobserve(e.target); } });
+    }, { rootMargin: '250px' });
+    cards.forEach(function (c) { io.observe(c); });
+  }
 
   // One typed config field, chosen from the resolved default's JS type.
   function _runField(key, value) {
@@ -2144,24 +2213,23 @@
   }
 
   function _resetRunPanel(btn) {
-    var details = btn.closest('.loom-run');
-    if (!details) return;
-    var d = details._defaults || { config: {}, inputs: {}, inputsSchema: {} };
-    var body = details.querySelector('.loom-run-body');
-    if (body) { body.innerHTML = _renderRunForm(details.getAttribute('data-kind'), d.config, d.inputs, d.inputsSchema); _autoGrowRunFields(details); }
+    var card = btn.closest('.registry-entry-full');
+    if (!card) return;
+    var d = card._defaults || { config: {}, inputs: {}, inputsSchema: {} };
+    _fillFullFields(card, d.config, d.inputs, d.inputsSchema);
+    var out = card.querySelector('.loom-run-output'); if (out) out.innerHTML = '';
   }
   window._resetRunPanel = _resetRunPanel;
 
-  // Collect the panel's config (per-field) + inputs (JSON), run, show outputs.
+  // Collect the Full card's config (per-field) + inputs (JSON), run, show outputs.
   function _runRegistryProcess(btn) {
-    var form = btn.closest('.loom-run-form');
-    var details = btn.closest('.loom-run');
-    if (!form || !details) return;
-    var out = form.querySelector('.loom-run-output');
-    var address = details.getAttribute('data-address');
+    var card = btn.closest('.registry-entry-full');
+    if (!card) return;
+    var out = card.querySelector('.loom-run-output');
+    var address = card.getAttribute('data-address');
 
     var config = {}, bad = null;
-    form.querySelectorAll('.loom-cfg-field').forEach(function (el) {
+    card.querySelectorAll('.loom-cfg-field').forEach(function (el) {
       if (bad) return;
       var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
       if (vt === 'boolean') v = el.checked;
@@ -2175,7 +2243,7 @@
     if (bad) { out.innerHTML = '<div class="loom-run-err">' + _esc(bad) + '</div>'; return; }
 
     var inputs = {};
-    form.querySelectorAll('.loom-in-field').forEach(function (el) {
+    card.querySelectorAll('.loom-in-field').forEach(function (el) {
       if (bad) return;
       var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
       if (vt === 'boolean') v = el.checked;
@@ -2188,7 +2256,7 @@
     });
     if (bad) { out.innerHTML = '<div class="loom-run-err">' + _esc(bad) + '</div>'; return; }
 
-    var ivEl = form.querySelector('.loom-run-interval');
+    var ivEl = card.querySelector('.loom-run-interval');
     var interval = ivEl ? parseFloat(ivEl.value) : undefined;
     var orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Running…';
@@ -2407,6 +2475,8 @@
     }
 
     el.innerHTML = html;
+    // Full zoom only: lazily resolve+inject each runnable card's config/inputs.
+    if (zoom === 'full') _observeRunnableCards(el);
   }
 
   // Render Analysis classes (v2ecoli ANALYSIS_REGISTRY entries) in the Registry
@@ -3489,46 +3559,66 @@
     '</div>';
   }
 
-  // Modules Table — sortable (Name / Source / Composites / Studies / Used / State).
+  // Modules Table — installed-here and marketplace grouped into separate
+  // sections; sortable (Name / Source / Composites / Repos / Studies / Used);
+  // GitHub link on the name; Install/Uninstall in a single Action column.
   function _renderModulesTable(grid, modules, marketplace) {
-    var sk = window._catalogTableSort || 'name', sd = window._catalogTableDir || 'asc';
+    var sk = window._catalogTableSort || 'used';
+    var sd = window._catalogTableDir || ((sk === 'name' || sk === 'source') ? 'asc' : 'desc');
     var pkg = function (m) { return (m.package || m.name || '').split('.')[0].replace(/_/g, '-'); };
-    var state = function (m) { return m.kind === 'workspace' ? 'first-party' : (m.installed ? (m.install_source || 'installed') : 'available'); };
-    var rows = modules.slice().sort(function (a, b) {
+    function cmp(a, b) {
       var av, bv;
       if (sk === 'source') { av = pkg(a).toLowerCase(); bv = pkg(b).toLowerCase(); }
       else if (sk === 'composites') { av = a.n_composites || 0; bv = b.n_composites || 0; }
+      else if (sk === 'repos') { av = a.n_repos || 0; bv = b.n_repos || 0; }
       else if (sk === 'studies') { av = a.n_studies || 0; bv = b.n_studies || 0; }
       else if (sk === 'used') { av = a.n_used || 0; bv = b.n_used || 0; }
-      else if (sk === 'state') { av = state(a); bv = state(b); }
       else { av = (a.display_name || a.name || '').toLowerCase(); bv = (b.display_name || b.name || '').toLowerCase(); }
-      var c = av < bv ? -1 : (av > bv ? 1 : 0);
+      var c = av < bv ? -1 : (av > bv ? 1 : (a.display_name || a.name || '').localeCompare(b.display_name || b.name || ''));
       return sd === 'desc' ? -c : c;
-    });
+    }
+    var isInstalled = function (m) { return m.kind === 'workspace' || m.installed; };
+    var installed = modules.filter(isInstalled).sort(cmp);
+    var available = modules.filter(function (m) { return !isInstalled(m); }).sort(cmp);
+    function gh(m) {
+      var hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
+      return hp ? ' <a href="' + _esc(hp) + '" target="_blank" class="module-link" onclick="event.stopPropagation()">GitHub &#8599;</a>' : '';
+    }
     function th(key, label, cls) {
       var on = sk === key;
       return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
         '" onclick="_setCatalogTableSort(\'' + key + '\')">' + label + (on ? (sd === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
     }
-    var body = rows.map(function (m) {
+    function row(m) {
       return '<tr class="reg-tr" data-mid="' + _esc(m.name) + '" ondblclick="_zoomInModule(\'' + _esc(m.name) + '\')" title="Double-click to zoom in">' +
-        '<td class="reg-td-name"><strong>' + _esc(m.display_name || m.name) + '</strong></td>' +
+        '<td class="reg-td-name"><strong>' + _esc(m.display_name || m.name) + '</strong>' + gh(m) + '</td>' +
         '<td>' + _esc(m.kind === 'workspace' ? 'workspace' : pkg(m)) + '</td>' +
         '<td class="num">' + (m.n_composites || 0) + '</td>' +
+        '<td class="num" title="Repos in the federated ecosystem that import this module">' + (m.n_repos || 0) + '</td>' +
         '<td class="num">' + (m.n_studies || 0) + '</td>' +
         '<td class="num">' + (m.n_used || 0) + '</td>' +
-        '<td class="reg-td-src">' + _esc(state(m)) + '</td>' +
+        '<td class="reg-td-action">' + _moduleActionFor(m, marketplace) + '</td>' +
       '</tr>';
-    }).join('');
+    }
+    var NCOLS = 7;
+    function section(label, list) {
+      if (!list.length) return '';
+      return '<tr class="module-table-section"><td colspan="' + NCOLS + '"><span>' + label +
+        ' <span class="muted">(' + list.length + ')</span></span></td></tr>' + list.map(row).join('');
+    }
     grid.className = '';
-    grid.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
+    grid.innerHTML = '<div class="registry-table-wrap"><table class="registry-table modules-table"><thead><tr>' +
       th('name', 'Name') + th('source', 'Source') + th('composites', 'Composites', 'num') +
-      th('studies', 'Studies', 'num') + th('used', 'Used', 'num') + th('state', 'State') +
-      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+      th('repos', 'Repos', 'num') + th('studies', 'Studies', 'num') + th('used', 'Used', 'num') +
+      '<th class="reg-th">Action</th>' +
+      '</tr></thead><tbody>' +
+      section('Installed in this workspace', installed) +
+      section('Available in marketplace', available) +
+      '</tbody></table></div>';
   }
   function _setCatalogTableSort(key) {
     if (window._catalogTableSort === key) window._catalogTableDir = (window._catalogTableDir === 'desc') ? 'asc' : 'desc';
-    else { window._catalogTableSort = key; window._catalogTableDir = (key === 'name' || key === 'source' || key === 'state') ? 'asc' : 'desc'; }
+    else { window._catalogTableSort = key; window._catalogTableDir = (key === 'name' || key === 'source') ? 'asc' : 'desc'; }
     _renderCatalog();
   }
   window._setCatalogTableSort = _setCatalogTableSort;

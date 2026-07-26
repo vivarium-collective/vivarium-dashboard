@@ -1565,8 +1565,65 @@ textarea.loom-in-field{
 .loom-run-pre{ margin:4px 0 0; max-height:280px; overflow:auto; background:#f8fafc; border:1px solid #eef2f7; border-radius:6px; padding:8px 10px; }
 .loom-run-trace{ font-size:0.78em; color:#7f1d1d; background:#fef2f2; border-color:#fecaca; }
 
+/* ── Runnable Full card ──────────────────────────────────────────────────
+   The config bar IS the editable config, the left port column IS the editable
+   inputs, and Run lives in the body — one unified runnable card (no dropdown). */
+.loom-config-edit{ padding:9px 16px; }
+.loom-cfg-inline{ display:flex; flex-wrap:wrap; gap:6px 14px; flex:1 1 auto; align-items:center; }
+.loom-cfg-inline .loom-cfg-row{
+  flex:0 0 auto; background:#fff; border:1px solid #e7ecf3; border-radius:7px; padding:3px 8px;
+}
+.loom-cfg-inline .loom-cfg-key{ flex:0 0 auto; max-width:150px; }
+.loom-cfg-inline .loom-cfg-field{ flex:0 0 auto; width:118px; }
+.loom-cfg-inline .loom-cfg-field[type="checkbox"]{ width:16px; }
+.loom-load-hint{ font-size:0.85em; }
+/* Wider left column so editable input fields are usable (static loom cards keep
+   the narrow max-content margin). */
+.loom-runnable .loom-row{ grid-template-columns:300px minmax(0,1fr) max-content; }
+.loom-inputs-edit{ width:100%; gap:9px; }
+.loom-inputs-edit .loom-in-row{ width:100%; }
+.loom-inputs-edit .loom-in-field{ width:100%; }
+.loom-runnable .loom-run-actions{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin-top:12px; padding-top:12px; border-top:1px solid #eef2f7;
+}
+.loom-runnable .loom-run-output{ padding:0 18px 14px; }
+.loom-runnable .loom-run-output:empty{ display:none; }
+
+/* Middle (grid) zoom: ports + types shown inline (read-only), no dropdown. */
+.reg-inline-ports{
+  display:grid; grid-template-columns:1fr 1fr; gap:6px 18px;
+  margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;
+}
+.reg-ipcol{ display:flex; flex-wrap:wrap; gap:5px; align-items:baseline; min-width:0; }
+.reg-ip-title{
+  flex:0 0 100%; text-transform:uppercase; letter-spacing:.06em; font-size:0.68em;
+  font-weight:700; color:#94a3b8; margin-bottom:1px;
+}
+.reg-ip{
+  display:inline-flex; align-items:baseline; gap:5px; background:#f8fafc;
+  border:1px solid #eef2f7; border-radius:6px; padding:2px 7px; max-width:100%;
+}
+.reg-ip code{ color:#1e40af; font-weight:600; font-size:0.8em; }
+.reg-ip-type{
+  color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.72em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;
+}
+.reg-ip-na{ color:#cbd5e1; font-size:0.8em; }
+
 /* Table view. */
 .registry-table-wrap{ overflow-x:auto; }
+/* Modules table: installed-vs-marketplace section header rows + action column. */
+.module-table-section td{
+  background:#f1f5f9; color:#475569; font-weight:700; font-size:0.74em;
+  text-transform:uppercase; letter-spacing:.05em; padding:7px 12px;
+  border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0;
+}
+.module-table-section td .muted{ font-weight:600; letter-spacing:0; text-transform:none; }
+.modules-table .reg-td-action{ white-space:nowrap; text-align:right; }
+.modules-table .reg-td-action .btn-mini,
+.modules-table .reg-td-action .action-btn{ margin:0; }
+.modules-table .reg-td-name .module-link{ font-size:0.8em; margin-left:6px; font-weight:500; }
 .registry-table{ width:100%; border-collapse:collapse; font-size:0.88em; }
 .registry-table th, .registry-table td{ padding:6px 10px; text-align:left; border-bottom:1px solid #f1f5f9; }
 .registry-table th{

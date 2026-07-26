@@ -417,6 +417,31 @@ def module_content_stats(ws_root: Path) -> dict[str, dict]:
     except Exception:
         links = []
 
+    # n_repos: how many repos import each module — this workspace plus every
+    # linked workspace whose workspace.yaml `imports` names it. Answers "how many
+    # repos is this module imported into" across the federated ecosystem.
+    repos_by_norm: dict[str, set[str]] = {}
+
+    def _add_imports(repo_label: str, ws_data: dict | None) -> None:
+        imports = (ws_data or {}).get("imports", {}) or {}
+        keys = imports.keys() if isinstance(imports, dict) else (imports if isinstance(imports, list) else [])
+        rk = _norm(repo_label)
+        for k in keys:
+            nk = _norm(str(k))
+            if nk and rk:
+                repos_by_norm.setdefault(nk, set()).add(rk)
+
+    try:
+        _own = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8")) or {}
+        _add_imports(_own.get("name") or ws_root.name, _own)
+    except Exception:
+        pass
+    for lw in links:
+        try:
+            _add_imports(lw.repo, yaml.safe_load((lw.root / "workspace.yaml").read_text(encoding="utf-8")) or {})
+        except Exception:
+            continue
+
     comps_by_norm: dict[str, set[str]] = {}
     try:
         for spec_id, rec in federated_composites(ws_root).items():
@@ -508,6 +533,7 @@ def module_content_stats(ws_root: Path) -> dict[str, dict]:
         | set(installed_comps_by_norm)
         | set(ref_comps_by_norm)
         | set(used_by_studies)
+        | set(repos_by_norm)
     )
     all_norm_keys.discard("")
 
@@ -521,13 +547,15 @@ def module_content_stats(ws_root: Path) -> dict[str, dict]:
             study_ids = studies_by_norm.get(key, set())
             n_inv = n_investigations_by_norm.get(key, 0)
             n_used = len(used_by_studies.get(key, set()))
-            if not composite_ids and not study_ids and not n_inv and not n_used:
+            n_repos = len(repos_by_norm.get(key, set()))
+            if not composite_ids and not study_ids and not n_inv and not n_used and not n_repos:
                 continue
             stats[key] = {
                 "n_composites": len(composite_ids),
                 "n_investigations": n_inv,
                 "n_studies": len(study_ids),
                 "n_used": n_used,
+                "n_repos": n_repos,
                 "last_updated": last_updated_by_norm.get(key),
             }
         except Exception:

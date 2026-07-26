@@ -710,6 +710,7 @@ def build_catalog(ws_root: Path, full: bool = False) -> dict:
         m["n_investigations"] = s.get("n_investigations", 0)
         m["n_studies"] = s.get("n_studies", 0)
         m["n_used"] = s.get("n_used", 0)
+        m["n_repos"] = s.get("n_repos", 0)
         m["last_updated"] = s.get("last_updated")
         # viva-* display name for the UI. Curated catalog entries carry an
         # explicit `display_name` (from modules.json); modules surfaced from
