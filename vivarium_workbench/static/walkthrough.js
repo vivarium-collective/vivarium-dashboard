@@ -4733,7 +4733,11 @@
     if (document.body.classList.contains('snapshot')) {
       var _snapshotBase = (window.__DASH_CONFIG__ && window.__DASH_CONFIG__.basePath) || "";
       var stateUrl = _snapshotBase + '/api/composite-state/' + encodeURIComponent(ref) + '.json';
-      var loomUrl = _snapshotBase + '/bigraph-loom/index.html?static=1&stateUrl=' + encodeURIComponent(stateUrl);
+      // apiBase lets the loom locate pre-built inner-composite states
+      // (api/composite-inner-state/<key>.json) for the drill-in mini-map in
+      // static mode, where the live /api/composite-inner-state has no backend.
+      var loomUrl = _snapshotBase + '/bigraph-loom/index.html?static=1&apiBase=' +
+        encodeURIComponent(_snapshotBase) + '&stateUrl=' + encodeURIComponent(stateUrl);
       iframe.src = loomUrl;
       iframe.style.display = '';
       // Record the loaded composite so "Pop out" works in snapshot mode. There

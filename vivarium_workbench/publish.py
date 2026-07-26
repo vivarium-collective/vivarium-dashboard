@@ -885,6 +885,61 @@ def _do_build(
             except Exception:
                 pass
 
+    # api/composite-inner-state/<key>.json — pre-built inner-composite states so
+    # the loom's drill-in mini-map works in ?static=1 (read-only) mode, where the
+    # live /api/composite-inner-state endpoint is unavailable. Two sources, in
+    # order: (1) committed reports/composite-inner-state/*.json (heavy composites
+    # whose cells can't be instantiated at publish time — same rationale as the
+    # committed composite-state overrides above); (2) a best-effort live build for
+    # the light composites that DO resolve at publish time. Keys are computed by
+    # composite_inner_states.inner_state_key and matched client-side in loom.
+    inner_dir = api_dir / "composite-inner-state"
+    committed_inner_dir = ws_root / "reports" / "composite-inner-state"
+    _inner_made = False
+    if committed_inner_dir.is_dir():
+        inner_dir.mkdir(parents=True, exist_ok=True)
+        _inner_made = True
+        for f in sorted(committed_inner_dir.glob("*.json")):
+            try:
+                (inner_dir / f.name).write_bytes(f.read_bytes())
+            except Exception:
+                pass
+    try:
+        from vivarium_workbench.lib.composite_inner_states import build_inner_states_for
+        for comp in (composites.get("composites") or []):
+            cid = comp.get("id")
+            if not cid:
+                continue
+            sf = composite_state_dir / f"{cid}.json"
+            if not sf.is_file():
+                continue
+            try:
+                payload = json.loads(sf.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            st = payload.get("state") if isinstance(payload, dict) else None
+            if isinstance(st, dict) and isinstance(st.get("state"), dict):
+                st = st["state"]
+            if not isinstance(st, dict):
+                continue
+            try:
+                built = build_inner_states_for(ws_root, cid, st)
+            except Exception:
+                built = {}
+            if built and not _inner_made:
+                inner_dir.mkdir(parents=True, exist_ok=True)
+                _inner_made = True
+            for key, body in built.items():
+                p = inner_dir / f"{key}.json"
+                if p.exists():
+                    continue  # committed override wins over a live rebuild
+                try:
+                    _write_json(p, body)
+                except Exception:
+                    pass
+    except Exception:
+        pass  # inner-state pre-build is optional; never break the bundle
+
     # Annotate each composite with has_wiring so the viewer can hide the
     # Explore button for composites whose state could not be exported.
     for comp in (composites.get("composites") or []):
