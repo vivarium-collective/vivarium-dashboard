@@ -340,33 +340,55 @@ def resolve_investigation(
         result["error"] = f"cannot load investigation {inv_slug!r}: {exc}"
         return result
 
-    member_slugs = investigation_member_slugs(inv_spec)
+    def _member_slug(item):
+        """Normalize a member-list entry to its slug string.
+
+        `investigation_member_slugs` deliberately does not normalize item
+        shape (see its docstring): real/migrated ``investigation.yaml``
+        files may list members as bare slug strings OR dicts (``{study|
+        slug|name: ...}``). Every consumer must normalize — mirrors the
+        pattern in ``lib/rerun.py`` (~line 123) and ``lib/workspace_paths.py``
+        (~line 228). Returns ``None`` for anything that doesn't normalize to
+        a usable slug (skipped by the caller).
+        """
+        if isinstance(item, str):
+            return item
+        if isinstance(item, dict):
+            return item.get("study") or item.get("slug") or item.get("name")
+        return None
 
     # Discover every node (members + any producer they transitively pull
     # in, even if that producer isn't itself a declared member) and its own
-    # `inputs[].from`, building the sorter as we go.
+    # `inputs[].from`, building the sorter as we go. The whole discovery
+    # pass (including `investigation_member_slugs` itself) is guarded so an
+    # unexpected error here becomes `result["error"]`, never a raise —
+    # consistent with the "never raises" contract this function documents.
     inputs_by_slug: dict[str, list[str]] = {}
     ts: graphlib.TopologicalSorter = graphlib.TopologicalSorter()
     seen: set[str] = set()
-    queue = list(member_slugs)
-    while queue:
-        slug = queue.pop()
-        if slug in seen:
-            continue
-        seen.add(slug)
-        try:
-            spec = _load_study_spec(ws_root, slug)
-            froms = [inp["from"] for inp in study_interface(spec)["inputs"]]
-        except Exception:  # noqa: BLE001 — unresolvable producer; resolve_study handles it
-            froms = []
-        inputs_by_slug[slug] = froms
-        ts.add(slug, *froms)
-        queue.extend(froms)
-
     try:
+        member_slugs = investigation_member_slugs(inv_spec)
+        queue = [s for s in (_member_slug(m) for m in member_slugs) if s]
+        while queue:
+            slug = queue.pop()
+            if slug in seen:
+                continue
+            seen.add(slug)
+            try:
+                spec = _load_study_spec(ws_root, slug)
+                froms = [inp["from"] for inp in study_interface(spec)["inputs"]]
+            except Exception:  # noqa: BLE001 — unresolvable producer; resolve_study handles it
+                froms = []
+            inputs_by_slug[slug] = froms
+            ts.add(slug, *froms)
+            queue.extend(froms)
+
         order = list(ts.static_order())
     except graphlib.CycleError as exc:
         result["error"] = f"cyclic member dependency in investigation {inv_slug!r}: {exc}"
+        return result
+    except Exception as exc:  # noqa: BLE001 — discovery must never raise out of here
+        result["error"] = f"cannot resolve member DAG for investigation {inv_slug!r}: {exc}"
         return result
 
     result["order"] = order

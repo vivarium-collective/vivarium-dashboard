@@ -168,6 +168,55 @@ def test_force_refreshes_stored_content(diamond):
     assert store.path(r2["artifact_id"]).read_bytes() == b"B"
 
 
+def test_dict_form_members_resolve_without_raising(tmp_path):
+    """Real/migrated investigation.yaml files can carry member entries as
+    dicts (`{study: ...}` / `{slug: ...}`) instead of bare slug strings.
+    resolve_investigation must normalize them, not crash with
+    `TypeError: unhashable type: 'dict'`."""
+    _write_study(tmp_path, "parca")
+    _write_study(tmp_path, "a", inputs_from=["parca"])
+    _write_study(tmp_path, "c")
+
+    inv_dir = tmp_path / "investigations" / "inv_dict"
+    inv_dir.mkdir(parents=True, exist_ok=True)
+    (inv_dir / "investigation.yaml").write_text(yaml.safe_dump({
+        "name": "inv_dict",
+        "members": [{"study": "a"}, {"slug": "c"}],
+    }))
+
+    stub, calls = make_stub()
+    result = resolve_investigation(tmp_path, "inv_dict", compute_fn=stub)
+
+    assert result["error"] is None
+    assert "a" in result["order"]
+    assert "c" in result["order"]
+    assert "parca" in result["order"]
+    assert result["order"].index("parca") < result["order"].index("a")
+
+    statuses = {n["slug"]: n["status"] for n in result["nodes"]}
+    assert statuses["a"] == "computed"
+    assert statuses["c"] == "computed"
+    assert statuses["parca"] == "computed"
+
+
+def test_broken_member_spec_returns_error_not_raise(tmp_path, monkeypatch):
+    """An unexpected failure while discovering the member DAG (not just a
+    cycle) must surface as result['error'], never propagate — mirrors the
+    'never raises' contract of resolve_investigation_view."""
+    def boom(spec):
+        raise RuntimeError("corrupt member list")
+
+    monkeypatch.setattr(pipeline, "_load_investigation_spec", lambda ws, slug: {"members": ["a"]})
+    monkeypatch.setattr(pipeline, "investigation_member_slugs", boom)
+
+    stub, calls = make_stub()
+    result = resolve_investigation(tmp_path, "inv_broken", compute_fn=stub)
+
+    assert result["error"] is not None
+    assert result["nodes"] == []
+    assert calls == []
+
+
 def test_non_member_producer_is_discovered_and_ordered(tmp_path):
     """`parca` is a real producer study but is NOT listed in the
     investigation's `members:` — resolve_investigation must still discover
