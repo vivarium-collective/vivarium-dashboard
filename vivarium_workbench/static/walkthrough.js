@@ -278,6 +278,48 @@
   }
   window._fitEmbedToViewport = _fitEmbedToViewport;
 
+  // Auto-grow a SAME-ORIGIN embed iframe to its CONTENT height so the OUTER page
+  // scrolls as one continuous surface (contrast _fitEmbedToViewport, which pins
+  // the frame to one screen with an internal scrollbar). Used by the workspace
+  // study porthole: with the investigation context kept expanded above it, you
+  // can scroll straight up out of the study into the knowledge graph and past it
+  // to the overview. Measures at height:0 first so a study page whose body
+  // stretches to the frame (min-height:100%) can't inflate the reading into a
+  // feedback loop — at 0 height, body.scrollHeight is the true content height.
+  function _fitEmbedToContent(frame, minH) {
+    if (!frame) return;
+    var fit = function () {
+      if (!frame.isConnected) return;
+      var doc;
+      try { doc = frame.contentDocument; } catch (_) { return; }   // cross-origin -> bail
+      if (!doc || !doc.body) return;
+      frame.style.height = '0px';
+      var h = Math.max(
+        doc.body.scrollHeight || 0,
+        doc.documentElement ? doc.documentElement.scrollHeight : 0);
+      frame.style.height = Math.max(minH || 0, h) + 'px';
+    };
+    var onload = function () {
+      fit();
+      try {
+        var doc = frame.contentDocument;
+        if (doc && doc.body && window.ResizeObserver && !frame._roFit) {
+          frame._roFit = new ResizeObserver(function () { fit(); });
+          frame._roFit.observe(doc.body);
+        }
+      } catch (_) { /* cross-origin */ }
+    };
+    frame.addEventListener('load', onload);
+    try {
+      if (frame.contentDocument && frame.contentDocument.readyState === 'complete') onload();
+    } catch (_) {}
+    if (!frame._fitContentBound) {
+      window.addEventListener('resize', fit);
+      frame._fitContentBound = true;
+    }
+  }
+  window._fitEmbedToContent = _fitEmbedToContent;
+
   function _openStudyEmbedded(name) {
     if (!name) return;
     var frame = document.getElementById('study-detail-frame');
@@ -5428,8 +5470,18 @@
       if (tab) href += (href.indexOf('?') >= 0 ? '&' : '?') + 'tab=' + encodeURIComponent(tab);
       frame.src = href;
     }
-    _setInvestigationContextCollapsed(true);    // study active -> context collapses
-    if (typeof _fitEmbedToViewport === 'function') _fitEmbedToViewport(frame, panel, 560);
+    // Keep the investigation context (overview + knowledge graph) EXPANDED above
+    // the study instead of collapsing it to the slim bar, and grow the study
+    // porthole to its content height, so the whole workspace is one continuous
+    // scroll: land on the study, scroll up into the graph and past it to the
+    // overview (user request).
+    _setInvestigationContextCollapsed(false);
+    if (typeof _fitEmbedToContent === 'function') _fitEmbedToContent(frame, 560);
+    else if (typeof _fitEmbedToViewport === 'function') _fitEmbedToViewport(frame, panel, 560);
+    // Land on the study; the context stays above, reachable by scrolling up.
+    if (panel && panel.scrollIntoView) {
+      try { panel.scrollIntoView({behavior: 'smooth', block: 'start'}); } catch (_) {}
+    }
   }
   window._wsOpenStudyTab = _wsOpenStudyTab;
 
