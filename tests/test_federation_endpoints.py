@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from vivarium_workbench.lib.investigations_index import build_investigations
+from vivarium_workbench.lib.investigation_status import build_iset_summary
 
 FIX = Path(__file__).parent / "_fixtures" / "ws_federation_demo"
 
@@ -20,3 +21,11 @@ def test_build_investigations_own_rows_have_null_origin():
     # any own row (if present) carries origin_repo None.
     for r in rows:
         assert "origin_repo" in r
+
+
+def test_iset_summary_includes_federated_investigation():
+    isets = build_iset_summary(FIX, study_has_runs=lambda *a, **k: False)
+    di = next(i for i in isets if i["name"] == "donor_inv")
+    assert di["origin_repo"] == "donor-repo"
+    assert di["read_only"] is True
+    assert "donor_study" in di["studies"]

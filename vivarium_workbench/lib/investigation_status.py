@@ -251,6 +251,28 @@ def build_iset_summary(
             "studies":          study_slugs,
             "lifecycle":        iset_lifecycle(ws_root, spec.get("name", d.name)),
             "current":          (d.name == current_slug),
+            "origin_repo":      None,
+            "read_only":        False,
+        })
+
+    from vivarium_workbench.lib import federation as _fed
+
+    for fi in _fed.federated_investigation_sets(ws_root):
+        fspec = fi.get("spec") or {}
+        out.append({
+            "name":             fi["name"],
+            "title":            fspec.get("title", fi["name"]),
+            "status":           fspec.get("status", "planning"),
+            "effective_status": "federated",
+            "description":      fspec.get("description", ""),
+            "question":         fspec.get("question", ""),
+            "hypothesis":       fspec.get("hypothesis", ""),
+            "n_studies":        len(fi.get("member_studies", [])),
+            "studies":          [m.split("::", 1)[-1] for m in fi.get("member_studies", [])],
+            "lifecycle":        "",
+            "current":          False,
+            "origin_repo":      fi["origin_repo"],
+            "read_only":        True,
         })
     return out
 
