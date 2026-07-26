@@ -150,11 +150,14 @@ def resolve_study(
 
         # Resolve inputs first — recursion IS the pull-or-compute for producers.
         inputs_map: dict[str, str] = {}
+        store = ArtifactStore(ws_root)
+        resolved_inputs: dict[str, str] = {}
         for inp in iface["inputs"]:
             child = resolve_study(
                 ws_root, inp["from"], compute_fn=compute_fn, _in_progress=in_progress,
             )
             inputs_map[inp["from"]] = child["artifact_id"]
+            resolved_inputs[inp["artifact"]] = str(store.path(child["artifact_id"]))
 
         commit = _workspace_commit(ws_root)
         oid = artifact_id(
@@ -164,7 +167,6 @@ def resolve_study(
             commit=commit,
         )
 
-        store = ArtifactStore(ws_root)
         if not force and store.has(oid):
             cached = True
         else:
@@ -194,6 +196,7 @@ def resolve_study(
                     config=iface["config"],
                     input_ids=sorted(inputs_map.values()),
                     out_dir=scratch,
+                    resolved_inputs=resolved_inputs,
                 )
                 store.put(oid, produced, {"slug": slug, "stage": output_name}, overwrite=force)
             finally:
@@ -212,7 +215,10 @@ def resolve_study(
         in_progress.discard(slug)
 
 
-def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir):
+def _default_compute(
+    ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir,
+    resolved_inputs: dict | None = None,
+):
     """Real-engine adapter (Spec-1 Global Constraint: reuse run_core.invoke_run /
     run_runner.execute — do NOT reimplement running). This seam is exercised
     end-to-end in Task 8; Task 5's unit tests inject a stub compute_fn instead.
@@ -224,6 +230,13 @@ def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids
     any rendered viz) as the artifact payload. Imports are lazy so importing
     this module never pulls in the run subsystem, and unit tests (which
     always inject their own ``compute_fn``) never exercise this path.
+
+    ``resolved_inputs`` (artifact name -> producer store path, from
+    ``resolve_study``) is merged into ``overrides`` before the request is
+    built: ``overrides[f"{artifact}_path"] = path`` for every entry, and
+    ``overrides["cache_dir"] = path`` too when ``artifact == "sim_data"``
+    (the v2ecoli convention: ``ecoli_baseline`` reads ParCa sim_data via
+    ``cache_dir``). The caller's ``config`` dict is never mutated in place.
     """
     import json
 
@@ -245,6 +258,14 @@ def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids
     spec = _load_study_spec(ws_root, slug)
     emit_paths = collect_emit_paths_from_spec(spec) or []
 
+    # Forward producer artifact paths into this run's overrides — never
+    # mutate the caller's config dict in place.
+    overrides = dict(config or {})
+    for artifact, path in (resolved_inputs or {}).items():
+        overrides[f"{artifact}_path"] = str(path)
+        if artifact == "sim_data":
+            overrides["cache_dir"] = str(path)
+
     # NOTE (Task 8 integration): the run-request shape below is the best
     # inference available from run_runner.RunRequest — n_steps/emit_paths
     # are now wired from the study spec (Task 4), so `steps` defaults
@@ -254,7 +275,7 @@ def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids
         "spec_id": plan.spec_id,
         "pkg": wp.package.name,
         "workspace": str(ws_root),
-        "overrides": config or {},
+        "overrides": overrides,
         "steps": int((config or {}).get("n_steps") or 1),
         "emit_paths": emit_paths,
         "db_file": str(db_path),

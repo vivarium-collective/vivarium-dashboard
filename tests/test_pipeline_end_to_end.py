@@ -22,7 +22,8 @@ from vivarium_workbench.lib.investigation_graph_views import build_investigation
 def make_stub():
     calls = []
 
-    def stub(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir):
+    def stub(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir,
+             resolved_inputs=None):
         calls.append(slug)
         out_dir.mkdir(parents=True, exist_ok=True)
         p = out_dir / "out.bin"

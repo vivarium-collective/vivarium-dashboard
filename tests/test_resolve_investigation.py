@@ -9,7 +9,8 @@ from vivarium_workbench.lib.artifacts.store import ArtifactStore
 def make_stub(fail_for=()):
     calls = []
 
-    def stub(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir):
+    def stub(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir,
+             resolved_inputs=None):
         calls.append(slug)
         if slug in fail_for:
             raise RuntimeError(f"boom: {slug}")
@@ -150,7 +151,8 @@ def test_force_refreshes_stored_content(diamond):
     by ArtifactStore.put's default idempotent early-return."""
 
     def write_bytes(data):
-        def stub(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir):
+        def stub(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir,
+             resolved_inputs=None):
             out_dir.mkdir(parents=True, exist_ok=True)
             p = out_dir / "out.bin"
             p.write_bytes(data)
