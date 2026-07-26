@@ -807,6 +807,36 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
     from vivarium_workbench.lib.run_commands import study_run_commands
     spec["run_commands"] = study_run_commands(spec, name)
     spec["derived"] = _study_derivations.derived_block(spec)
+    # Spine precedent (mirrors computed_gate_verdict / write_gate_evaluator
+    # above): prefer the PERSISTED conclusion-card verdict — written by
+    # conclusion_card.write_conclusion_card as part of the post-run flush —
+    # over this render's live recompute of `derived.conclusion_verdicts`. Only
+    # each track's computed `result` is taken from the frozen, disk-persisted
+    # card; `basis` (the author's free-text rationale, sourced from
+    # spec["conclusion_verdicts"]) stays the LIVE value so editing it in
+    # study.yaml shows up immediately without needing a rerun. Falls back to
+    # the live recompute entirely when no card has been persisted yet, or on
+    # any read/parse failure — this must never break the study-detail render.
+    try:
+        _cv_path = study_dir(ws_root, name) / "viz" / "report_card" / "conclusion.verdict.json"
+        if _cv_path.is_file():
+            _persisted = _json.loads(_cv_path.read_text(encoding="utf-8"))
+            _ptracks = _persisted.get("tracks") if isinstance(_persisted, dict) else None
+            if isinstance(_ptracks, dict):
+                _live = spec["derived"].get("conclusion_verdicts")
+                _merged = dict(_live) if isinstance(_live, dict) else {}
+                for _track, _pt in _ptracks.items():
+                    if not isinstance(_pt, dict):
+                        continue
+                    _lt = _merged.get(_track) if isinstance(_merged.get(_track), dict) else {}
+                    _merged[_track] = {
+                        "result": _pt.get("result", _lt.get("result", "")),
+                        "basis": _lt.get("basis", _pt.get("basis", "")),
+                    }
+                if _merged:
+                    spec["derived"]["conclusion_verdicts"] = _merged
+    except Exception:  # noqa: BLE001 — render must never break on a bad card
+        pass
     return spec
 
 
@@ -1127,6 +1157,14 @@ def derive_findings_from_report_cards(
     ws_root = Path(ws_root)
     out: list[dict] = []
     for card in sorted(report_card_urls):
+        # Feedback-loop guard: the `conclusion` card (written by
+        # conclusion_card.write_conclusion_card) IS the study's verdict, not
+        # evidence for it — study_derivations.conclusion_verdicts().explanatory_gain
+        # reads findings[].tier == "interpretation", so letting this card feed a
+        # derived finding back into `findings` would let it (indirectly) validate
+        # its own explanatory_gain input on the next compute. Skip it here.
+        if card == "conclusion":
+            continue
         meta = report_card_urls.get(card)
         meta = meta if isinstance(meta, dict) else {}
         url = meta.get("url")

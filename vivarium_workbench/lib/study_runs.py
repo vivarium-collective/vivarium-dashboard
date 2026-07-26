@@ -82,16 +82,18 @@ def _load_study_spec_for_flush(study_dir):
 
 def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
                         generator_overrides, response):
-    """The full 7-stage post-run flush, shared by the study-baseline launch
+    """The full post-run flush, shared by the study-baseline launch
     (via ``launch_into_study``/``_launch_run_and_flush``) and the study-variant
     launch paths (both single-run and delegated-ensemble). Extracted VERBATIM
     from the former inline tail (study_runs.py ~L199-253 baseline /
     ~L459-502 variant) — mutates + returns ``response`` with each stage's
-    outputs. ALL SEVEN stages must remain, in order:
-      1. render_study_visualizations   4. study_outcomes.sync
-      2. run_post_run_scripts          5. capture_run_params / write_run_params
-      3. run_study_analyses            6. auto_evaluate.evaluate_on_run_completion
-                                        7. _sync_parent_investigation
+    outputs. ALL stages must remain, in order:
+      1. render_study_visualizations   5. conclusion_card.write_conclusion_card
+      2. run_post_run_scripts          6. capture_run_params / write_run_params
+      3. run_study_analyses            7. auto_evaluate.evaluate_on_run_completion
+      4. study_outcomes.sync           8. _sync_parent_investigation
+    Stage 5 (the Decide tab's default "conclusion" report card) runs right
+    after stage 4 so outcomes/gate/findings are fresh when it's computed.
     """
     # Render canonical viz: composite defaults from
     # @composite_generator(visualizations=...) merged with Study-declared
@@ -132,6 +134,14 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
         study_outcomes.sync(study_dir)  # record runs + compute outcomes
     except Exception as exc:  # never fail a successful run on a record error
         print(f"[study_outcomes] sync failed: {exc}", file=sys.stderr)
+    # Default "conclusion" report card: the Decide tab's three-track verdict,
+    # computed + persisted as a workflow artifact (mirrors write_gate_evaluator).
+    # Runs AFTER study_outcomes.sync so outcomes/gate/findings are fresh.
+    try:
+        from vivarium_workbench.lib import conclusion_card
+        conclusion_card.write_conclusion_card(study_dir)
+    except Exception as exc:  # never fail a successful run on a report-card error
+        print(f"[conclusion_card] write failed: {exc}", file=sys.stderr)
     # Feedback-friction: capture this run's effective parameters onto
     # runs[].provenance.params (guarded; no-op on older viva_superpowers).
     # Runs AFTER study_outcomes.sync so the runs[] entry exists to attach to.
@@ -611,6 +621,13 @@ def run_study_variant(ws_root, body):
             study_outcomes.sync(study_dir)  # record runs + compute outcomes
         except Exception as exc:  # never fail a successful run on a record error
             print(f"[study_outcomes] sync failed: {exc}", file=sys.stderr)
+        # Default "conclusion" report card — mirrors the baseline-path wiring
+        # above (see _run_post_run_flush). Runs AFTER study_outcomes.sync.
+        try:
+            from vivarium_workbench.lib import conclusion_card
+            conclusion_card.write_conclusion_card(study_dir)
+        except Exception as exc:  # never fail a successful run on a report-card error
+            print(f"[conclusion_card] write failed: {exc}", file=sys.stderr)
         # Feedback-friction: capture this run's effective parameters onto
         # runs[].provenance.params (guarded; no-op on older viva_superpowers).
         # Runs AFTER study_outcomes.sync so the runs[] entry exists to attach to.
