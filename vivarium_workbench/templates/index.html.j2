@@ -460,6 +460,12 @@ window.addEventListener('pageshow', function (e) {
     </a>
     {% endif %}
 
+    <!-- Everything from the Workspace nav down scrolls as ONE region, so a long
+         study list can push the nav (Sources/Registry/…) up and off the top —
+         while the Studies header+search stay pinned (position:sticky) at the top
+         of the scroll region, ChatGPT-sidebar style. -->
+    <div class="viv-rail-scroll">
+
     <!-- Primary nav -->
     <nav class="viv-rail-section" role="tablist">
       <div class="viv-rail-section-label">Workspace</div>
@@ -559,19 +565,25 @@ window.addEventListener('pageshow', function (e) {
 
     <!-- Studies of the active investigation, dependency-ordered. -->
     <div class="viv-rail-section" id="viv-rail-studies-section">
-      <div class="viv-rail-section-label">Studies</div>
-      <!-- Live study search: filters the grouped-by-investigation list below.
-           Lives OUTSIDE #viv-rail-investigations (which is re-rendered on every
-           keystroke) so the input keeps focus. -->
-      <input id="viv-rail-study-search" type="search" placeholder="Search studies…"
-             autocomplete="off" spellcheck="false" aria-label="Search studies"
-             oninput="window._filterRailStudies && window._filterRailStudies(this.value)"
-             style="width:calc(100% - 24px);margin:2px 12px 6px;padding:4px 8px;font-size:0.82em;
-                    color:#374151;border:1px solid #e5e7eb;border-radius:4px;background:#fff;box-sizing:border-box;" />
+      <!-- Sticky header: the label + search stay pinned at the top of the scroll
+           region while the study list scrolls beneath them. -->
+      <div class="viv-rail-studies-head">
+        <div class="viv-rail-section-label">Studies</div>
+        <!-- Live study search: filters the grouped-by-investigation list below.
+             Lives OUTSIDE #viv-rail-investigations (which is re-rendered on every
+             keystroke) so the input keeps focus. -->
+        <input id="viv-rail-study-search" type="search" placeholder="Search studies…"
+               autocomplete="off" spellcheck="false" aria-label="Search studies"
+               oninput="window._filterRailStudies && window._filterRailStudies(this.value)"
+               style="width:calc(100% - 24px);margin:2px 12px 6px;padding:4px 8px;font-size:0.82em;
+                      color:#374151;border:1px solid #e5e7eb;border-radius:4px;background:#fff;box-sizing:border-box;" />
+      </div>
       <div id="viv-rail-investigations">
         <p class="viv-rail-empty" style="font-size:0.85em;color:#9ca3af;padding:4px 12px">Loading…</p>
       </div>
     </div>
+
+    </div><!-- /.viv-rail-scroll -->
 
     <!-- The rail user-identity footer was removed: it added no navigation and
          (in snapshot/screenshot contexts) surfaced a personal GitHub identity.
