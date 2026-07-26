@@ -828,7 +828,8 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
                 for _track, _pt in _ptracks.items():
                     if not isinstance(_pt, dict):
                         continue
-                    _lt = _merged.get(_track) if isinstance(_merged.get(_track), dict) else {}
+                    _lt_raw = _merged.get(_track)
+                    _lt = _lt_raw if isinstance(_lt_raw, dict) else {}
                     _merged[_track] = {
                         "result": _pt.get("result", _lt.get("result", "")),
                         "basis": _lt.get("basis", _pt.get("basis", "")),
