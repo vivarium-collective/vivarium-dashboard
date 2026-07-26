@@ -103,6 +103,7 @@ from vivarium_workbench.lib import static_serving as _static_serving
 from vivarium_workbench.lib import study_page as _study_page
 from vivarium_workbench.lib import study_runs as _study_runs
 from vivarium_workbench.lib import rerun as _rerun
+from vivarium_workbench.lib import investigation_resolve_views as _investigation_resolve_views
 from vivarium_workbench.lib import run_unblocked_views as _run_unblocked_views
 from vivarium_workbench.lib import test_run_views as _test_run_views
 from vivarium_workbench.lib import study_spec as _study_spec
@@ -306,6 +307,9 @@ from vivarium_workbench.lib.models import (
     # Task 6: rerun-capability POST request bodies
     RerunRequest,
     InvestigationRerunRequest,
+    # Phase 2 Task 6: investigation-resolve (opt-in topological pull-or-compute)
+    InvestigationResolveRequest,
+    InvestigationResolveResult,
     # Misc POST request bodies
     SuggestRequest,
     StudyReportSingleRequest,
@@ -5251,6 +5255,40 @@ def create_app() -> FastAPI:
         """
         body, status = _rerun.rerun_investigation(ws, req.investigation)
         return JSONResponse(status_code=status, content=body)
+
+    @app.post(
+        "/api/investigation-resolve",
+        response_model=InvestigationResolveResult,
+        tags=["Investigations"],
+        summary="Opt-in topological pull-or-compute resolve for an investigation",
+    )
+    def investigation_resolve(
+        req: InvestigationResolveRequest,
+        ws: Path = Depends(get_workspace),
+    ) -> InvestigationResolveResult:
+        """Content-addressed pull-or-compute over an investigation's member DAG.
+
+        Body: ``{"investigation", "force"?}`` — opt-in alternative to the
+        declared-order ``/api/investigation-rerun`` (untouched by this route):
+        walks the investigation's member studies (plus any discovered
+        upstream producer) in topological order via ``lib.artifacts.pipeline.
+        resolve_investigation``, pulling each node's output artifact from the
+        content-addressed store when a matching id already exists and
+        computing it (once) only on a miss. ``force=True`` bypasses every
+        node's cache. An unresolvable/cyclic investigation is reported via
+        the ``error`` field (still 200), not an HTTP error status.
+
+        This runs the resolve *synchronously* in the request thread — see
+        ``lib.investigation_resolve_views``'s module docstring for why (a
+        detached/job-polling variant is a follow-up, not this increment).
+
+        Always 200: ``{"investigation", "order", "nodes", "error"}``, where
+        each ``nodes[]`` entry is ``{"slug", "artifact_id", "status", "inputs"}``.
+        """
+        body = _investigation_resolve_views.resolve_investigation_view(
+            ws, req.investigation, force=req.force
+        )
+        return InvestigationResolveResult(**body)
 
     @app.post("/api/save-run-as-variant", tags=["Runs"],
               summary="Save a run (composite+config) as a named study variant")
