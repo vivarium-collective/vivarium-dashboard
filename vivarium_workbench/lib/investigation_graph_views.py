@@ -11,7 +11,8 @@ import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.node_store import load_study_nodes
-from vivarium_workbench.lib.investigations import normalize_dag_edges
+from vivarium_workbench.lib.investigations import normalize_dag_edges, InvestigationSpecError
+from vivarium_workbench.lib.study_spec import study_interface
 from vivarium_workbench.lib.chain_derivation import derive_chain_nodes
 from investigation_contracts import validate_chain
 
@@ -66,10 +67,14 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
     except Exception:  # noqa: BLE001
         return {"error": f"unreadable investigation.yaml for {inv_slug!r}"}, 404
 
+    use_members = spec.get("members") is not None
+    member_slugs = spec.get("members") if use_members else (spec.get("studies") or [])
+    member_set = set(member_slugs)
+
     studies_out: list[dict] = []
     study_edges: list[dict] = []
     chains: dict[str, dict] = {}
-    for slug in (spec.get("studies") or []):
+    for slug in member_slugs:
         try:
             sp = wp.study_dir(slug) / "study.yaml"
         except FileNotFoundError:
@@ -83,18 +88,33 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
         studies_out.append({"id": f"study/{slug}", "slug": slug, "type": "study",
                             "label": study_spec.get("title") or study_spec.get("name") or slug,
                             "status": study_spec.get("status", "planned")})
-        # normalize_dag_edges injects a "tests-passed" default condition; the
-        # payload contract treats an unspecified gate as "" (no explicit gate),
-        # so read explicit conditions from the raw prerequisites.
-        pg = study_spec.get("pipeline_gate")
-        prereqs = pg.get("prerequisites") if isinstance(pg, dict) else None
-        explicit = {pr["study"]: pr["condition"]
-                    for pr in (prereqs or [])
-                    if isinstance(pr, dict) and pr.get("study") and "condition" in pr}
-        for pre in normalize_dag_edges(study_spec):
-            study_edges.append({"source": f"study/{pre['study']}", "target": f"study/{slug}",
-                               "rel": "prerequisite",
-                               "condition": explicit.get(pre["study"], "")})
+        if use_members:
+            # New reference model: edges are derived from this member's
+            # declared interface inputs, restricted to other members.
+            try:
+                interface = study_interface(study_spec)
+            except InvestigationSpecError:
+                interface = None
+            if interface is not None:
+                for inp in interface["inputs"]:
+                    src = inp["from"]
+                    if src in member_set:
+                        study_edges.append({"source": f"study/{src}", "target": f"study/{slug}",
+                                           "rel": "input", "artifact": inp["artifact"]})
+        else:
+            # Legacy path: edges from pipeline_gate.prerequisites.
+            # normalize_dag_edges injects a "tests-passed" default condition; the
+            # payload contract treats an unspecified gate as "" (no explicit gate),
+            # so read explicit conditions from the raw prerequisites.
+            pg = study_spec.get("pipeline_gate")
+            prereqs = pg.get("prerequisites") if isinstance(pg, dict) else None
+            explicit = {pr["study"]: pr["condition"]
+                        for pr in (prereqs or [])
+                        if isinstance(pr, dict) and pr.get("study") and "condition" in pr}
+            for pre in normalize_dag_edges(study_spec):
+                study_edges.append({"source": f"study/{pre['study']}", "target": f"study/{slug}",
+                                   "rel": "prerequisite",
+                                   "condition": explicit.get(pre["study"], "")})
         nodes = load_study_nodes(ws_root, slug)
         derived = False
         if not nodes:
