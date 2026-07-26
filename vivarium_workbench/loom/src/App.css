@@ -1687,6 +1687,13 @@ textarea.sr-input {
   color: #b45309; padding: 2px 6px; font-weight: 700;
 }
 
+/* Run-phase indicator dot (pulses while a post-sim stage runs). */
+.sr-phase-dot {
+  width: 8px; height: 8px; border-radius: 50%; background: #3b82f6;
+  flex: 0 0 8px; animation: sr-phase-pulse 1s ease-in-out infinite;
+}
+@keyframes sr-phase-pulse { 0%,100% { opacity: 0.3; } 50% { opacity: 1; } }
+
 /* --- dockable panel zones ------------------------------------------------- */
 .loom-dock-zone { overflow: hidden; }
 .loom-dock-panel { border-bottom: 1px solid #f3f4f6; }

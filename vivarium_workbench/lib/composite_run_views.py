@@ -147,6 +147,9 @@ def build_composite_run_status(ws_root: Path, run_id: str) -> tuple[dict, int]:
         "progress_step": meta.get("progress_step") or 0,
         "n_steps": meta.get("n_steps"),
         "heartbeat_at": meta.get("heartbeat_at"),
+        # Sub-status while status=='running' (simulate / rendering visualizations
+        # / analysis flush) so the UI can announce the current stage.
+        "phase": meta.get("phase") if meta["status"] == "running" else None,
     }
     resp["downloadable"] = False
     if meta["status"] in ("failed", "orphaned"):

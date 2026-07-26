@@ -30,7 +30,7 @@ class RunRequest:
     pkg: str
     workspace: Path
     overrides: dict
-    steps: int
+    steps: float   # a run length in composite time units; fractional for temporal
     emit_paths: list
     db_file: str
     log_path: str
@@ -45,7 +45,9 @@ class RunRequest:
             pkg=data["pkg"],
             workspace=Path(data["workspace"]),
             overrides=data.get("overrides") or {},
-            steps=int(data["steps"]),
+            # float: a temporal composite may run a fractional duration
+            # (e.g. 3.5 time units). int-only truncated the fraction.
+            steps=float(data["steps"]),
             emit_paths=data.get("emit_paths") or [],
             db_file=data["db_file"],
             log_path=data["log_path"],
@@ -651,6 +653,7 @@ def execute(request_path: Path) -> int:
             if time.monotonic() - started > MAX_RUNTIME_SEC:
                 raise _RunTimeout(step)
 
+        cr.set_phase(conn, run_id=req.run_id, phase="simulating")
         try:
             prov = emitters.run_with_emitter(
                 name=name, state=state, run_id=req.run_id, emit_paths=emit_paths,
@@ -677,6 +680,7 @@ def execute(request_path: Path) -> int:
             print(warning, flush=True)
             _write_log(req, warning)
 
+        cr.set_phase(conn, run_id=req.run_id, phase="rendering visualizations")
         _render_viz(
             composite, run_dir,
             spec_id=req.spec_id, db_file=req.db_file, run_id=req.run_id,
@@ -684,6 +688,7 @@ def execute(request_path: Path) -> int:
         )
         try:
             from vivarium_workbench.lib.composite_flush import run_flush
+            cr.set_phase(conn, run_id=req.run_id, phase="analysis flush")
             run_flush(run_dir, req=req, spec_id=req.spec_id,
                       db_file=req.db_file, run_id=req.run_id, core=core)
         except Exception:

@@ -69,6 +69,11 @@ _NEW_COLUMNS = {
     # best-effort code_version. Nullable: legacy runs have NULL and
     # ``rerun.resolve_rerun_target`` falls back to the delta params/n_steps.
     "manifest_json": "TEXT",
+    # Sub-status ("phase") of a run that is still `status='running'`: the
+    # detached executor advances it through simulate → rendering visualizations →
+    # analysis flush so the UI can announce the current stage (the coarse
+    # `status` stays "running" until the whole pipeline finishes). Nullable.
+    "phase": "TEXT",
 }
 
 
@@ -272,7 +277,7 @@ def query_run_meta(conn: sqlite3.Connection, *, run_id: str) -> dict | None:
     row = conn.execute(
         "SELECT run_id, spec_id, label, params_json, started_at, completed_at, "
         "n_steps, status, pid, progress_step, log_path, heartbeat_at, "
-        "generation_id, manifest_json "
+        "generation_id, manifest_json, phase "
         "FROM runs_meta WHERE run_id=?",
         (run_id,),
     ).fetchone()
@@ -300,6 +305,21 @@ def set_pid(conn: sqlite3.Connection, *, run_id: str, pid: int) -> None:
     """Record the detached child PID once it has been spawned."""
     conn.execute("UPDATE runs_meta SET pid=? WHERE run_id=?", (pid, run_id))
     conn.commit()
+
+
+def set_phase(conn: sqlite3.Connection, *, run_id: str, phase: "str | None") -> None:
+    """Set the running run's sub-status ("phase") + heartbeat, so a poller sees
+    which stage (simulate / rendering visualizations / analysis flush) is live.
+    Best-effort: a missing `phase` column (very old DB not yet migrated) is
+    swallowed so a phase update never breaks a run."""
+    try:
+        conn.execute(
+            "UPDATE runs_meta SET phase=?, heartbeat_at=? WHERE run_id=?",
+            (phase, time.time(), run_id),
+        )
+        conn.commit()
+    except Exception:  # noqa: BLE001 — phase is advisory; never fail the run
+        pass
 
 
 def query_all_runs(conn: sqlite3.Connection) -> list[dict]:
