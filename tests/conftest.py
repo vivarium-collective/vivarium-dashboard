@@ -110,7 +110,9 @@ def dashboard_client():
         client = _Client(f"http://127.0.0.1:{port}")
         # serve_fastapi writes server-info before uvicorn binds the port, so wait
         # for the app to actually answer /health — not just for the file to exist.
-        for _ in range(60):
+        # 240 * 0.25s = 60s: CI cold-start + generator discovery can exceed the
+        # old 15s budget, which caused flaky server-fixture TimeoutErrors.
+        for _ in range(240):
             if proc.poll() is not None:  # process died during startup
                 out, err = proc.communicate(timeout=2)
                 pytest.fail(
