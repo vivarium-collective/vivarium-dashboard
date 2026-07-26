@@ -50,3 +50,32 @@ def test_discover_all_composites_tags_federated_origin():
     rec = next(r for r in comps.values() if r.get("name") == "donor_comp")
     assert rec["origin_repo"] == "donor-repo"
     assert rec["read_only"] is True
+
+
+# ---------------------------------------------------------------------------
+# End-to-end: federated content through the LIVE FastAPI server.
+#
+# The tests above exercise the lib builders directly. That misses the
+# pydantic-serialization boundary each route sits behind -- Task 4 caught a
+# real bug there where InvestigationSummary silently dropped origin_repo/
+# read_only because the model had no explicit fields for them and no
+# extra="allow". These tests spin up the real server (dashboard_client
+# fixture -> subprocess -> uvicorn/FastAPI) against ws_federation_demo and
+# hit the routes over HTTP, so a regression at the model boundary fails here
+# even if the lib-level tests above still pass.
+# ---------------------------------------------------------------------------
+
+def test_endpoints_expose_federated_content(dashboard_client):
+    client = dashboard_client(FIX)
+
+    inv = client.get("/api/investigations").json()["investigations"]
+    donor_study = next(r for r in inv if r.get("name") == "donor_study")
+    assert donor_study["origin_repo"] == "donor-repo"
+
+    comps = client.get("/api/composites").json()["composites"]
+    donor_comp = next(c for c in comps if c.get("name") == "donor_comp")
+    assert donor_comp["origin_repo"] == "donor-repo"
+
+    summaries = client.get("/api/investigation-summaries").json()["investigations"]
+    donor_inv = next(i for i in summaries if i.get("name") == "donor_inv")
+    assert donor_inv["origin_repo"] == "donor-repo"
