@@ -32,6 +32,7 @@ catalog/marketplace payload.
 from __future__ import annotations
 
 import datetime
+import re
 import subprocess
 from pathlib import Path
 
@@ -273,6 +274,120 @@ def _own_module_usage(ws_root: Path) -> tuple[dict[str, set[str]], dict[str, set
     return study_refs, study_uses
 
 
+def _installed_module_pkgs(ws_root: Path) -> set[str]:
+    """Normalized package names of every module this workspace has installed --
+    ``workspace.yaml`` imports + ``pyproject.toml`` dependencies. The scan target
+    set for :func:`_deep_module_usage`. Over-inclusion is harmless: a package
+    that isn't a catalog module simply never matches a card."""
+    pkgs: set[str] = set()
+    try:
+        w = yaml.safe_load((Path(ws_root) / "workspace.yaml").read_text(encoding="utf-8")) or {}
+        imp = w.get("imports") or {}
+        if isinstance(imp, dict):
+            for k, v in imp.items():
+                pkgs.add(_norm((v or {}).get("package") if isinstance(v, dict) else None) or _norm(k))
+    except Exception:
+        pass
+    try:
+        import tomllib
+        pp = tomllib.loads((Path(ws_root) / "pyproject.toml").read_text(encoding="utf-8"))
+        for dep in (pp.get("project", {}).get("dependencies") or []):
+            name = re.split(r"[<>=!~;\s\[]", str(dep), 1)[0].strip()
+            if name:
+                pkgs.add(_norm(name))
+    except Exception:
+        pass
+    pkgs.discard("")
+    return pkgs
+
+
+def _composite_source_file(cid: str, ws_root: Path) -> "Path | None":
+    """Best-effort source file for a fully-qualified composite id
+    (``pkg.composites.stem[.Class]``): ``pkg/composites/stem.py`` or
+    ``pkg/composites/stem/__init__.py`` under ``ws_root``. ``None`` for a bare
+    clean-alias id (no ``.composites.``) whose file can't be derived."""
+    if ".composites." not in cid:
+        return None
+    pkg, _, rest = cid.partition(".composites.")
+    stem = rest.split(".")[0]
+    base = Path(ws_root) / pkg.replace(".", "/") / "composites"
+    for cand in (base / (stem + ".py"), base / stem / "__init__.py"):
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
+def _deep_module_usage(ws_root: Path, study_refs: dict[str, set[str]]) -> dict[str, set[str]]:
+    """Deeper study->module usage the composite-id package prefix alone misses:
+
+    1. **Composite-source scan** -- a study's composite generator wires in
+       processes from OTHER modules by import or address string (e.g. the
+       ``ecoli_colony`` composite drives ``viva_munk``'s ``PymunkProcess``).
+       Scan each referenced composite's generator source for any installed
+       module's package name and credit the study.
+    2. **Runtime default emitter** -- every run emits through
+       ``workspace.yaml::runtime.default_emitter`` (the emitter classes live in
+       ``pbg_emitters`` / ``viva-emitters``, a base dep). So the emitter module
+       is used by EVERY study. Credit it to all of them.
+
+    Returns ``used_by_studies``-shaped ``dict[norm] -> set(study_slug)``. Coarse
+    but cheap (static text scan, no build_core); never raises.
+    """
+    out: dict[str, set[str]] = {}
+    try:
+        candidates = _installed_module_pkgs(ws_root)
+    except Exception:
+        candidates = set()
+
+    # (1) composite-source scan, per study.
+    _src_cache: dict[str, set[str]] = {}
+    for slug, cids in (study_refs or {}).items():
+        for cid in cids:
+            hits = _src_cache.get(cid)
+            if hits is None:
+                hits = set()
+                f = _composite_source_file(cid, ws_root)
+                if f is not None:
+                    try:
+                        txt = f.read_text(encoding="utf-8", errors="ignore")
+                    except OSError:
+                        txt = ""
+                    for pkg in candidates:
+                        # pkg is already _norm'd (underscores); source uses the
+                        # importable underscore form.
+                        if pkg and re.search(r"\b" + re.escape(pkg) + r"\b", txt):
+                            hits.add(pkg)
+                _src_cache[cid] = hits
+            for nk in hits:
+                out.setdefault(nk, set()).add(slug)
+
+    # (2) runtime default emitter -> used by every study.
+    try:
+        w = yaml.safe_load((Path(ws_root) / "workspace.yaml").read_text(encoding="utf-8")) or {}
+        default_emitter = ((w.get("runtime") or {}).get("default_emitter") or "").strip()
+    except Exception:
+        default_emitter = ""
+    if default_emitter:
+        all_slugs: set[str] = set(study_refs or {})
+        try:
+            from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+            for sdir in WorkspacePaths.load(ws_root).iter_study_dirs():
+                all_slugs.add(sdir.name)
+        except Exception:
+            pass
+        # The emitter framework module (pbg-emitters / viva-emitters) provides the
+        # default emitter every run uses. Credit whichever emitter package the
+        # workspace actually installed.
+        for emitter_pkg in ("pbg_emitters", "viva_emitters"):
+            if emitter_pkg in candidates and all_slugs:
+                out.setdefault(emitter_pkg, set()).update(all_slugs)
+
+    return out
+
+
 def module_content_stats(ws_root: Path) -> dict[str, dict]:
     """Per-module content counts + this workspace's usage, keyed by
     :func:`_norm` of the module identity (the linked workspace's
@@ -375,6 +490,16 @@ def module_content_stats(ws_root: Path) -> dict[str, dict]:
     for slug, norms in study_uses.items():
         for nk in norms:
             used_by_studies.setdefault(nk, set()).add(slug)
+
+    # Deeper usage: composite-source scan (a composite wiring another module's
+    # processes, e.g. ecoli_colony -> viva_munk) + the runtime default emitter
+    # (pbg-emitters/viva-emitters, used by every run). Merge in.
+    try:
+        for nk, slugs in _deep_module_usage(ws_root, study_refs).items():
+            if nk:
+                used_by_studies.setdefault(nk, set()).update(slugs)
+    except Exception:
+        pass
 
     all_norm_keys = (
         set(comps_by_norm)

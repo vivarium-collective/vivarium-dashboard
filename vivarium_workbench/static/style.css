@@ -2228,33 +2228,40 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
  * =================================================================== */
 .module-stats-row {
   display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin: 5px 0 2px;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 2px;
 }
-.module-stat-chip {
+/* "Used by N studies" — the headline usage signal (replaces the ★ chip). A
+   quiet green pill with a status dot; shown only when actually used. */
+.module-usage {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 0.75em;
-  font-weight: 600;
-  padding: 2px 8px;
+  gap: 7px;
+  align-self: flex-start;
+  font-size: 0.78em;
+  font-weight: 500;
+  padding: 3px 10px 3px 8px;
   border-radius: 9999px;
-  background: #f1f5f9;
-  color: #475569;
-  border: 1px solid #e2e8f0;
-  white-space: nowrap;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
 }
-.module-stat-chip .mstat-glyph { font-weight: 700; opacity: 0.85; }
-.module-stat-chip.mstat-composites { background:#eef2ff; color:#4338ca; border-color:#e0e7ff }
-.module-stat-chip.mstat-studies     { background:#ecfeff; color:#0e7490; border-color:#cffafe }
-.module-stat-chip.mstat-investigations { background:#f5f3ff; color:#6d28d9; border-color:#ede9fe }
-.module-stat-chip.module-stat-used {
-  background: #fffbeb;
-  color: #b45309;
-  border-color: #fde68a;
+.module-usage strong { font-weight: 700; }
+.module-usage-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #10b981; flex: none;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
 }
-.module-stat-chip.module-stat-used .mstat-glyph { color: #f59e0b; opacity: 1; }
+/* What the module PROVIDES — a quiet, evenly-spaced count strip. */
+.module-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.8em;
+  color: #64748b;
+}
+.module-count strong { color: #334155; font-weight: 600; }
 
 /* Installed-card action row: keeps the install-source badge and the
    Uninstall button on one baseline. */

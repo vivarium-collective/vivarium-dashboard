@@ -2773,21 +2773,28 @@
   // the metric is to draw the eye). Renders '' when the module carries no
   // stats at all (wheel-only / available-to-install modules).
   function _moduleStatsRow(m) {
-    function chip(cls, glyph, n, singular, plural) {
-      return '<span class="module-stat-chip ' + cls + '"><span class="mstat-glyph">' + glyph +
-        '</span>' + n + ' ' + (n === 1 ? singular : plural) + '</span>';
-    }
-    var chips = [];
-    if (m.n_composites) chips.push(chip('mstat-composites', '▦', m.n_composites, 'composite', 'composites'));
-    if (m.n_studies) chips.push(chip('mstat-studies', '⌥', m.n_studies, 'study', 'studies'));
-    if (m.n_investigations) chips.push(chip('mstat-investigations', '⌸', m.n_investigations, 'investigation', 'investigations'));
+    // "Used here" — how many of THIS workspace's studies use the module. The
+    // headline signal, so it leads: a filled green bar when used, nothing when
+    // not (rather than a noisy "0"). Replaces the old ★ chip.
+    var usageHtml = '';
     if (m.n_used) {
-      chips.push('<span class="module-stat-chip module-stat-used" ' +
-        'title="Referenced by this workspace\'s own studies / investigations">' +
-        '<span class="mstat-glyph">★</span>' + m.n_used + ' used here</span>');
+      usageHtml = '<div class="module-usage" title="Used by ' + m.n_used +
+        ' of this workspace’s studies">' +
+        '<span class="module-usage-dot"></span>Used by <strong>' + m.n_used +
+        '</strong> stud' + (m.n_used === 1 ? 'y' : 'ies') + '</div>';
     }
-    if (!chips.length) return '';
-    return '<div class="module-stats-row">' + chips.join('') + '</div>';
+    // What the module PROVIDES — a quiet, comma-free count strip.
+    function count(n, singular, plural) {
+      return '<span class="module-count"><strong>' + n + '</strong> ' +
+        (n === 1 ? singular : plural) + '</span>';
+    }
+    var counts = [];
+    if (m.n_composites) counts.push(count(m.n_composites, 'composite', 'composites'));
+    if (m.n_studies) counts.push(count(m.n_studies, 'study', 'studies'));
+    if (m.n_investigations) counts.push(count(m.n_investigations, 'investigation', 'investigations'));
+    var countsHtml = counts.length ? '<div class="module-counts">' + counts.join('') + '</div>' : '';
+    if (!usageHtml && !countsHtml) return '';
+    return '<div class="module-stats-row">' + usageHtml + countsHtml + '</div>';
   }
 
   function _moduleActionFor(m, marketplace) {
