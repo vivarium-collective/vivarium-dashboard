@@ -100,6 +100,30 @@ def serve_fastapi(workspace: Path, port: int, host: str = "127.0.0.1", base_path
     except Exception as e:  # noqa: BLE001
         print(f"warning: run reconcile failed: {e}", file=sys.stderr)
 
+    # Warm the slow read caches (composite discovery ~8s, investigations index
+    # ~4s) in a background thread so the FIRST user navigation isn't stuck paying
+    # the cold cost — which, fired alongside other boot fetches, saturated the
+    # browser connection pool and stalled tabs like Sources ("Loading inputs…").
+    # Best-effort; daemon thread, never blocks boot.
+    try:
+        import threading
+
+        def _warm_read_caches():
+            try:
+                from vivarium_workbench.lib.composites_query import composites_via_subprocess
+                composites_via_subprocess(workspace)
+            except Exception:
+                pass
+            try:
+                from vivarium_workbench.lib.investigations_index import build_investigations
+                build_investigations(workspace)
+            except Exception:
+                pass
+
+        threading.Thread(target=_warm_read_caches, daemon=True, name="cache-warmer").start()
+    except Exception as e:  # noqa: BLE001
+        print(f"warning: cache warm failed to start: {e}", file=sys.stderr)
+
     # Readiness file (parity with the retired stdlib server).
     advertise_host = "127.0.0.1" if host == "0.0.0.0" else host
     try:
