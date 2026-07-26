@@ -49,3 +49,4 @@ def test_discover_all_composites_tags_federated_origin():
     comps = discover_all_composites(FIX, "host")  # host_ws has no own package
     rec = next(r for r in comps.values() if r.get("name") == "donor_comp")
     assert rec["origin_repo"] == "donor-repo"
+    assert rec["read_only"] is True

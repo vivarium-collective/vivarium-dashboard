@@ -176,12 +176,6 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
         if not rec.get("module"):
             rec["module"] = _derive_module_from_spec_id(spec_id)
 
-    # Tag origin: own/installed composites get origin_repo None unless already
-    # set (federated recs already carry a truthy origin_repo).
-    for rec in out.values():
-        rec.setdefault("origin_repo", None)
-        rec.setdefault("read_only", False)
-
     # Merge @composite_generator entries — discovered in the env worker (importing
     # generator modules is workspace Python, kept out of the HTTP process). The
     # workbench keeps the pure FS/YAML spec scan above + the shaping below.
@@ -207,6 +201,15 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
         # so callers inherit the composite's simulation-report panels.
         rec["visualizations"] = list(entry.get("visualizations") or [])
         out[gid] = rec
+
+    # Tag origin: own/installed/generator composites get origin_repo None
+    # unless already set (federated recs already carry a truthy origin_repo).
+    # Runs last so it covers every record, including generator entries merged
+    # above.
+    for rec in out.values():
+        rec.setdefault("origin_repo", None)
+        rec.setdefault("read_only", False)
+
     return out
 
 
