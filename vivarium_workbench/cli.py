@@ -201,6 +201,15 @@ def cmd_migrate_investigations(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_migrate_studies(args: argparse.Namespace) -> int:
+    """CLI handler for the migrate-studies subcommand."""
+    from vivarium_workbench.lib.study_migrate import migrate_studies
+    ws = Path(args.workspace).resolve()
+    result = migrate_studies(ws, dry_run=args.dry_run)
+    print(json.dumps(result, indent=2))
+    return 0
+
+
 def cmd_run_composite_worker(args: argparse.Namespace) -> int:
     """CLI handler for the run-composite subcommand — runs one detached composite."""
     from vivarium_workbench.lib.run_runner import execute
@@ -472,6 +481,14 @@ def main(argv: list[str] | None = None) -> int:
         help="Report what would change without writing anything",
     )
     p_mig.set_defaults(func=cmd_migrate_investigations)
+
+    p_migs = sub.add_parser(
+        "migrate-studies",
+        help="Move nested investigations/<inv>/studies/* into the top-level studies/ registry and rewrite investigations to members: references",
+    )
+    p_migs.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_migs.add_argument("--dry-run", action="store_true", help="Report what would move without touching disk")
+    p_migs.set_defaults(func=cmd_migrate_studies)
 
     p_run = sub.add_parser(
         "run-composite",
