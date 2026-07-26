@@ -26,6 +26,7 @@ import yaml as _yaml
 from vivarium_workbench.lib import study_run_state
 from vivarium_workbench.lib.comparative_viz import render_comparative_time_series
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 def render_investigation_comparative_visualisations(
@@ -58,7 +59,7 @@ def render_investigation_comparative_visualisations(
     label. For baselines this is typically ``<study-slug>-baseline``;
     for variants it's the variant's own name.
     """
-    for member in (iset.get("studies") or []):
+    for member in investigation_member_slugs(iset):
         study_slug = member if isinstance(member, str) else (member or {}).get("study")
         if not study_slug:
             continue

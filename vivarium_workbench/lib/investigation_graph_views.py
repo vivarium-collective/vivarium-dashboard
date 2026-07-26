@@ -13,6 +13,7 @@ from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.node_store import load_study_nodes
 from vivarium_workbench.lib.investigations import normalize_dag_edges
 from vivarium_workbench.lib.chain_derivation import derive_chain_nodes
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from investigation_contracts import validate_chain
 
 
@@ -69,7 +70,7 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
     studies_out: list[dict] = []
     study_edges: list[dict] = []
     chains: dict[str, dict] = {}
-    for slug in (spec.get("studies") or []):
+    for slug in investigation_member_slugs(spec):
         try:
             sp = wp.study_dir(slug) / "study.yaml"
         except FileNotFoundError:

@@ -34,6 +34,8 @@ from typing import Mapping, Optional
 
 import yaml
 
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
+
 # The canonical flat layout — the single source of truth for directory names.
 # Keys are logical names used throughout the codebase; values are the default
 # workspace-root-relative paths. The Python package (`package`) is special: it
@@ -221,7 +223,7 @@ class WorkspacePaths:
                 data = yaml.safe_load(iy.read_text(encoding="utf-8")) or {}
             except Exception:
                 continue
-            for st in (data.get("studies") or []):
+            for st in investigation_member_slugs(data):
                 st_slug = st if isinstance(st, str) else (st or {}).get("study") or (st or {}).get("slug")
                 if st_slug == slug:
                     return inv_dir.name

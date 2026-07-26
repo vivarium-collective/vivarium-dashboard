@@ -35,6 +35,7 @@ from vivarium_workbench.lib.investigations_index import (
 )
 from vivarium_workbench.lib.spec_norm import normalize_requirements as _normalize_requirements
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib import readouts_views as _readouts_views
 from vivarium_workbench.lib import study_derivations as _study_derivations
 
@@ -566,7 +567,7 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
         return normalize_dag_edges(study_spec)
 
     studies_out: list[dict] = []
-    for slug in (spec.get("studies") or []):
+    for slug in investigation_member_slugs(spec):
         try:
             sp = wp.study_dir(slug) / "study.yaml"
         except FileNotFoundError:

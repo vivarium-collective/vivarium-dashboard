@@ -47,6 +47,8 @@ from typing import Any
 
 import yaml
 
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
+
 # ---------------------------------------------------------------------------
 # Workspace + spec loading (light; stdlib + yaml only)
 # ---------------------------------------------------------------------------
@@ -647,7 +649,7 @@ def _outro_blocks(inv: dict) -> list[dict]:
 def _build_blocks(ws_root: Path, layout: dict, inv: dict, slug: str, strat: dict) -> list[dict]:
     blocks = _intro_blocks(inv, slug)
     blocks += _setup_blocks(ws_root, strat)
-    for study_slug in inv.get("studies") or []:
+    for study_slug in investigation_member_slugs(inv):
         blocks += _study_blocks(ws_root, layout, study_slug, strat)
     blocks += _outro_blocks(inv)
     return blocks

@@ -38,6 +38,7 @@ from vivarium_workbench.lib import comparative_runs
 from vivarium_workbench.lib import study_runs
 from vivarium_workbench.lib.run_jobs import enumerate_unblocked, manager
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 def investigation_run_unblocked(ws_root: Path, body: dict) -> tuple[dict, int]:
@@ -85,7 +86,7 @@ def investigation_run_unblocked(ws_root: Path, body: dict) -> tuple[dict, int]:
     # requested subset).
     items: list[dict] = []
     skipped: list[dict] = []
-    for member in (iset.get("studies") or []):
+    for member in investigation_member_slugs(iset):
         member_name = member if isinstance(member, str) else member.get("study")
         if not member_name:
             continue

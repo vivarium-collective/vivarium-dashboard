@@ -20,6 +20,7 @@ from typing import Callable, Iterator
 
 import yaml
 
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
 # Sets used by compute_investigation_status. Module scope so the derivation
@@ -237,7 +238,7 @@ def build_iset_summary(
         # registry + investigations-as-members). Accept either so both the
         # pre- and post-migration schema render (safe superset: `members` is
         # only consulted when `studies` is absent/empty).
-        study_slugs = list(spec.get("studies") or spec.get("members") or [])
+        study_slugs = investigation_member_slugs(spec)
         statuses_and_runs = [
             read_study_status(ws_root, s, study_has_runs=study_has_runs)
             for s in study_slugs

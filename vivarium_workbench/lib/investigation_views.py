@@ -27,6 +27,7 @@ from typing import Optional
 import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 # ---------------------------------------------------------------------------
@@ -255,7 +256,7 @@ def build_investigation_hypotheses(ws_root: Path, name: str) -> dict:
 
     # Member study specs for support-log computation.
     study_specs = []
-    for s in (inv_spec.get("studies") or []):
+    for s in investigation_member_slugs(inv_spec):
         slug: Optional[str] = s.get("name") if isinstance(s, dict) else s
         if not slug:
             continue
