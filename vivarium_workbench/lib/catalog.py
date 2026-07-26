@@ -31,7 +31,7 @@ from pathlib import Path
 
 import yaml
 
-from vivarium_workbench.lib.module_stats import module_content_stats
+from vivarium_workbench.lib.module_stats import _norm, module_content_stats
 from vivarium_workbench.lib.registry import (
     _reexport_map_via_worker,
     _registry_include_pkgs,
@@ -672,9 +672,12 @@ def build_catalog(ws_root: Path, full: bool = False) -> dict:
         modules = _filter_catalog_modules(modules, ws_data) + kept_origins
 
     # Content counts + workspace-usage (module cards): additive fields, merged
-    # by module name. A module with no linked on-disk content (available /
-    # wheel-only, or the workspace's own first-party package) simply isn't a
-    # key in `stats` — default to 0/None so every entry carries the fields.
+    # by module name. `stats` is keyed by _norm(name) — module_content_stats
+    # normalizes dashed/underscored/mixed-case identities (federated repo
+    # names vs installed package names) onto one join key — so look up the
+    # normalized name here too, with a direct-key fallback for safety. A
+    # module with no content from either source simply isn't a key in
+    # `stats` — default to 0/None so every entry carries the fields.
     try:
         stats = module_content_stats(ws_root)
     except Exception:
@@ -682,7 +685,8 @@ def build_catalog(ws_root: Path, full: bool = False) -> dict:
     for m in modules:
         if not isinstance(m, dict):
             continue
-        s = stats.get(m.get("name")) or {}
+        name = m.get("name")
+        s = stats.get(_norm(name)) or stats.get(name) or {}
         m["n_composites"] = s.get("n_composites", 0)
         m["n_investigations"] = s.get("n_investigations", 0)
         m["n_studies"] = s.get("n_studies", 0)
