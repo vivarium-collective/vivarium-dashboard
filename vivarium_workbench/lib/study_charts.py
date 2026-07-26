@@ -508,7 +508,16 @@ def render_v4_test_charts(spec: dict,
 
     Returns [] if neither db has runs or all tests' paths are unresolvable.
     """
-    tests = spec.get("tests") or []
+    # In schema_version 4, `tests` is the pytest-autodiscover config *dict*
+    # (auto_discover/data_source/…) and the behavior-test *list* lives under
+    # `behavior_tests`. Prefer a proper list-of-dicts under `tests` for
+    # back-compat, else fall back to `behavior_tests`. Filter non-dict entries
+    # so iterating never hits the config dict's string keys (which crashed with
+    # `'str' object has no attribute 'get'`).
+    tests = spec.get("tests")
+    if not (isinstance(tests, list) and all(isinstance(t, dict) for t in tests)):
+        tests = spec.get("behavior_tests")
+    tests = [t for t in tests if isinstance(t, dict)] if isinstance(tests, list) else []
     if not tests:
         return []
 
