@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -2674,7 +2674,7 @@
       // Workspace package is exempt from text-search / tag hiding so it always
       // stays pinned as the anchor card at the top of the grid.
       if (search && m.kind !== 'workspace') {
-        var haystack = (m.name + ' ' + (m.description || '') + ' ' + (m.tags || []).join(' ')).toLowerCase();
+        var haystack = (m.name + ' ' + (m.display_name || '') + ' ' + (m.description || '') + ' ' + (m.tags || []).join(' ')).toLowerCase();
         if (haystack.indexOf(search) === -1) return false;
       }
       if (f.installed === 'installed' && !m.installed && m.kind !== 'workspace') return false;
@@ -2707,13 +2707,21 @@
   // the metric is to draw the eye). Renders '' when the module carries no
   // stats at all (wheel-only / available-to-install modules).
   function _moduleStatsRow(m) {
-    var parts = [];
-    if (m.n_composites) parts.push('▦ ' + m.n_composites + ' composite' + (m.n_composites === 1 ? '' : 's'));
-    if (m.n_studies) parts.push('⌥ ' + m.n_studies + ' stud' + (m.n_studies === 1 ? 'y' : 'ies'));
-    if (m.n_investigations) parts.push('⌸ ' + m.n_investigations + ' investigation' + (m.n_investigations === 1 ? '' : 's'));
-    if (m.n_used) parts.push('★ ' + m.n_used + ' used');
-    if (!parts.length) return '';
-    return '<div class="module-stats-row muted" style="font-size:0.82em;margin:4px 0">' + parts.join(' &middot; ') + '</div>';
+    function chip(cls, glyph, n, singular, plural) {
+      return '<span class="module-stat-chip ' + cls + '"><span class="mstat-glyph">' + glyph +
+        '</span>' + n + ' ' + (n === 1 ? singular : plural) + '</span>';
+    }
+    var chips = [];
+    if (m.n_composites) chips.push(chip('mstat-composites', '▦', m.n_composites, 'composite', 'composites'));
+    if (m.n_studies) chips.push(chip('mstat-studies', '⌥', m.n_studies, 'study', 'studies'));
+    if (m.n_investigations) chips.push(chip('mstat-investigations', '⌸', m.n_investigations, 'investigation', 'investigations'));
+    if (m.n_used) {
+      chips.push('<span class="module-stat-chip module-stat-used" ' +
+        'title="Referenced by this workspace\'s own studies / investigations">' +
+        '<span class="mstat-glyph">★</span>' + m.n_used + ' used here</span>');
+    }
+    if (!chips.length) return '';
+    return '<div class="module-stats-row">' + chips.join('') + '</div>';
   }
 
   function _moduleActionFor(m, marketplace) {
@@ -2739,10 +2747,23 @@
       } else {
         srcBadge = '<span class="status-pill installed">installed</span>';
       }
-      return srcBadge;
+      // Transitive venv deps (brought in by another installed package) are NOT
+      // directly uninstallable — removing one would break its parent. Anything
+      // the user explicitly added (imports / pyproject / unmanaged venv) gets
+      // an Uninstall action, gated behind the impact-confirmation modal.
+      var via = (m.installed_via || []);
+      var uninstallBtn = '';
+      if (!(src === 'venv' && via.length > 0)) {
+        uninstallBtn = '<button class="btn-mini module-uninstall-btn js-authoring" ' +
+          'onclick="_uninstallFromCatalog(\'' + _esc(m.name) + '\')" ' +
+          'title="Uninstall this module from the workspace">Uninstall</button>';
+      }
+      return '<span class="module-action-installed">' + srcBadge + uninstallBtn + '</span>';
     }
-    var installFn = marketplace ? '_installFromMarketplace' : '_installFromCatalog';
-    return '<button class="action-btn js-authoring" onclick="' + installFn + '(\'' + _esc(m.name) + '\')">Install</button>';
+    // Merged Modules tab: installing an available module uses the full-repo
+    // (git submodule) path so its composites/studies/investigations land on
+    // disk and federate — same behaviour the Marketplace tab used to force.
+    return '<button class="action-btn js-authoring" onclick="_installFromMarketplace(\'' + _esc(m.name) + '\')">Install</button>';
   }
 
   // Section divider injected at boundaries: workspace → installed → available.
@@ -2781,7 +2802,7 @@
       var ai = a.installed ? 0 : 1;
       var bi = b.installed ? 0 : 1;
       if (ai !== bi) return ai - bi;
-      return (a.name || '').localeCompare(b.name || '');
+      return (a.display_name || a.name || '').localeCompare(b.display_name || b.name || '');
     });
 
     if (!modules.length) {
@@ -2797,7 +2818,7 @@
         var divider = _moduleSectionDivider(prevL, m);
         prevL = m;
         return divider + '<div class="module-list-row' + (m.kind === 'workspace' ? ' module-row-workspace' : '') + '">' +
-          '<span class="name">' + _esc(m.name) + '</span>' +
+          '<span class="name">' + _esc(m.display_name || m.name) + '</span>' +
           '<span class="desc"> ' + _esc(m.description || '') + _moduleStatsRow(m) + _moduleInstalledMeta(m) + '</span>' +
           '<span>' + _moduleActionFor(m, marketplace) + '</span>' +
           '</div>';
@@ -2818,7 +2839,7 @@
         var workspaceCls = (m.kind === 'workspace') ? ' module-card-workspace'
                           : (m.installed ? ' module-card-installed' : '');
         return divider + '<div class="module-card' + workspaceCls + '">' +
-          '<div class="module-card-header"><strong>' + _esc(m.name) + '</strong> ' + homepage + '</div>' +
+          '<div class="module-card-header"><strong>' + _esc(m.display_name || m.name) + '</strong> ' + homepage + '</div>' +
           '<p class="module-desc">' + _esc(m.description) + '</p>' +
           '<div class="module-tags"></div>' +
           _moduleStatsRow(m) +
@@ -2833,94 +2854,19 @@
   function _renderCatalog() {
     var grid = document.getElementById('catalog-modules-grid');
     if (!grid) return;
+    // Full ecosystem: workspace package + installed modules first, then
+    // available-to-install modules under the "Available to install" divider.
+    // The install-state radio (All / Installed / Available) narrows this.
     var modules = _filterModules(window._catalogModules, window._catalogFilter);
-    // The Modules tab shows only what is IN this workspace — the workspace's
-    // own package plus installed modules. Browse-everything (available-to-
-    // install) lives in the Marketplace tab.
-    modules = modules.filter(function (m) { return m.kind === 'workspace' || m.installed; });
     _renderModuleGrid(grid, modules, window._catalogView, false);
   }
   window._renderCatalog = _renderCatalog;
 
-  // -------------------------------------------------------------------------
-  // Marketplace: browse the FULL viva ecosystem (unfiltered by this
-  // workspace's registry.include / registry.modules) and install modules.
-  // Data: /api/marketplace (build_catalog full=True). Reuses the Modules
-  // tab's card rendering + install flow.
-  // -------------------------------------------------------------------------
-  window._marketplaceModules = [];
-  window._marketplaceFilter = { search: '', tags: new Set(), installed: 'all' };
-  window._marketplaceView = 'grid';
-  window._marketplaceSort = 'default';
-  window._marketplaceLoaded = false;
-
-  function _setMarketplaceView(view) {
-    window._marketplaceView = view;
-    document.querySelectorAll('#marketplace-toolbar .view-btn').forEach(function(b) {
-      b.classList.toggle('active', b.getAttribute('data-view') === view);
-    });
-    _renderMarketplace();
-  }
-  window._setMarketplaceView = _setMarketplaceView;
-
-  function _renderMarketplace() {
-    var grid = document.getElementById('marketplace-modules-grid');
-    if (!grid) return;
-    // Marketplace includes available-to-install modules (no installed-only
-    // filter) — that's the whole point of the tab.
-    var modules = _filterModules(window._marketplaceModules, window._marketplaceFilter);
-    _renderModuleGrid(grid, modules, window._marketplaceView, true);
-  }
-  window._renderMarketplace = _renderMarketplace;
-
-  function _loadMarketplace(force) {
-    var grid = document.getElementById('marketplace-modules-grid');
-    if (!grid) return;
-    if (window._marketplaceLoaded && !force) { _renderMarketplace(); return; }
-    fetch('/api/marketplace')
-      .then(function(r) { return r.json(); })
-      .then(function(data) {
-        window._marketplaceModules = data.modules || [];
-        window._marketplaceLoaded = true;
-        // Wire toolbar interactions once.
-        var searchEl = document.getElementById('marketplace-search');
-        if (searchEl && !searchEl._pbgWired) {
-          searchEl._pbgWired = true;
-          searchEl.oninput = function() {
-            window._marketplaceFilter.search = this.value.toLowerCase();
-            _renderMarketplace();
-          };
-        }
-        var radios = document.querySelectorAll('input[name="marketplace-installed-filter"]');
-        radios.forEach(function(r) {
-          if (!r._pbgWired) {
-            r._pbgWired = true;
-            r.onchange = function() {
-              window._marketplaceFilter.installed = this.value;
-              _renderMarketplace();
-            };
-          }
-        });
-        var mktSortEl = document.getElementById('marketplace-sort');
-        if (mktSortEl && !mktSortEl._pbgWired) {
-          mktSortEl._pbgWired = true;
-          mktSortEl.value = window._marketplaceSort || 'default';
-          mktSortEl.onchange = function() {
-            window._marketplaceSort = this.value;
-            _renderMarketplace();
-          };
-        }
-        if (!window._marketplaceModules.length) {
-          grid.innerHTML = '<p class="empty-state">No ecosystem modules available.</p>';
-          return;
-        }
-        _renderMarketplace();
-      })
-      .catch(function(err) {
-        grid.innerHTML = '<p class="empty-state" style="color:#c00">Marketplace load failed: ' + _esc(String(err)) + '</p>';
-      });
-  }
-  window._loadMarketplace = _loadMarketplace;
+  // (The standalone Marketplace sub-tab was merged into the Modules grid above,
+  // which now loads the full ecosystem via /api/marketplace in _loadCatalog and
+  // renders available-to-install modules under the "Available to install"
+  // divider. _setMarketplaceView / _renderMarketplace / _loadMarketplace and
+  // their window._marketplace* state were removed with it.)
 
   // Registry page sub-tab toggle. Two sub-tabs: "modules" (the catalog
   // grid above, where the workspace package + installed modules now
@@ -2941,11 +2887,6 @@
     // unless force=true, so this is cheap when called repeatedly.
     if (name === 'discovered' && typeof _loadRegistry === 'function') {
       _loadRegistry(false);
-    }
-    // Marketplace is lazy-loaded on first open (then cached). _loadMarketplace
-    // re-renders from cache on repeat opens unless force=true.
-    if (name === 'marketplace' && typeof _loadMarketplace === 'function') {
-      _loadMarketplace(false);
     }
   }
   window._setRegistrySubtab = _setRegistrySubtab;
@@ -3084,9 +3025,19 @@
   window._checkSystemDepsForInstalled = _checkSystemDepsForInstalled;
 
   function _loadCatalog() {
-    var _p = window.DataSource
+    // The Modules tab now shows the FULL viva ecosystem (workspace package +
+    // installed modules pinned at top, available-to-install modules below) —
+    // the former standalone Marketplace tab is merged in here. Live mode loads
+    // /api/marketplace (build_catalog full=True); snapshot bundles only publish
+    // the workspace-scoped /api/catalog.json, so fall back to that there (the
+    // Install/Uninstall actions are hidden in read-only mode anyway).
+    var _snapshot = window.DataSource && window.DataSource.config
+      && window.DataSource.config().mode === 'snapshot';
+    var _marketUrl = window.DataSource && window.DataSource.apiUrl
+      ? window.DataSource.apiUrl('/api/marketplace') : '/api/marketplace';
+    var _p = _snapshot
       ? window.DataSource.loadCatalog()
-      : fetch('/api/catalog').then(function(r) { return r.json(); });
+      : fetch(_marketUrl).then(function(r) { return r.json(); });
     _p
       .then(function(data) {
         var grid = document.getElementById('catalog-modules-grid');
@@ -3376,8 +3327,104 @@
   // Catalog uninstall (v0.5.5)
   // -------------------------------------------------------------------------
 
+  // Uninstall flow: fetch the impact report first (the module's own content
+  // that will disappear + this workspace's OWN studies/investigations that
+  // reference it and would be left dangling), show it in a confirmation modal,
+  // and only POST /api/catalog-uninstall on explicit confirm.
   function _uninstallFromCatalog(name) {
-    if (!confirm('Uninstall "' + name + '"? This removes the package from the workspace venv, pyproject.toml, and workspace.yaml imports.')) return;
+    var base = (window.DataSource && window.DataSource.apiUrl)
+      ? window.DataSource.apiUrl('/api/catalog-uninstall-impact')
+      : '/api/catalog-uninstall-impact';
+    fetch(base + '?name=' + encodeURIComponent(name))
+      .then(function(r) { return r.json().then(function(j) { return [r.ok, j]; }); })
+      .then(function(parts) { _showUninstallImpactModal(name, parts[0] ? parts[1] : null); })
+      .catch(function() { _showUninstallImpactModal(name, null); });
+  }
+  window._uninstallFromCatalog = _uninstallFromCatalog;
+
+  function _closeUninstallModal() {
+    var el = document.getElementById('modal-uninstall-impact');
+    if (el && el.parentNode) el.parentNode.removeChild(el);
+  }
+  window._closeUninstallModal = _closeUninstallModal;
+
+  function _showUninstallImpactModal(name, impact) {
+    _closeUninstallModal();
+
+    function _group(title, items, render) {
+      if (!items || !items.length) return '';
+      return '<div class="uninstall-impact-group"><div class="uninstall-impact-group-title">' +
+        _esc(title) + ' <span class="muted">(' + items.length + ')</span></div>' +
+        '<ul class="uninstall-impact-list">' +
+        items.map(function(it) { return '<li>' + render(it) + '</li>'; }).join('') +
+        '</ul></div>';
+    }
+
+    var mc = (impact && impact.module_content) || {};
+    var wr = (impact && impact.workspace_refs) || {};
+    var refStudies = wr.studies || [];
+    var refInvs = wr.investigations || [];
+    var nModule = (mc.composites || []).length + (mc.studies || []).length + (mc.investigations || []).length;
+    var nRefs = refStudies.length + refInvs.length;
+
+    // Section 1: module content that will stop showing up.
+    var removedBody =
+      _group('Composites', mc.composites, function(c) { return '<code>' + _esc(c) + '</code>'; }) +
+      _group('Studies', mc.studies, function(s) { return '<code>' + _esc(s) + '</code>'; }) +
+      _group('Investigations', mc.investigations, function(i) { return '<code>' + _esc(i) + '</code>'; });
+    var removedSection = nModule
+      ? '<h4 class="uninstall-impact-h">Content that will be removed</h4>' + removedBody
+      : (impact
+          ? '<p class="muted">This module contributes no composites, studies, or investigations to this workspace.</p>'
+          : '<p class="muted">Could not compute what this module contributes (impact probe unavailable) — proceed with care.</p>');
+
+    // Section 2: this workspace's own content that references it (the warning).
+    var refSection = '';
+    if (nRefs) {
+      refSection =
+        '<div class="uninstall-impact-warn">' +
+          '<strong>⚠ ' + nRefs + ' of your workspace’s own item' + (nRefs === 1 ? '' : 's') +
+          ' reference this module</strong> and will be left with a dangling reference if you uninstall:' +
+        '</div>' +
+        _group('Your studies → composite', refStudies, function(r) {
+          return '<code>' + _esc(r.study) + '</code> <span class="muted">→</span> <code>' + _esc(r.composite) + '</code>';
+        }) +
+        _group('Your investigations → study', refInvs, function(r) {
+          return '<code>' + _esc(r.investigation) + '</code> <span class="muted">→</span> <code>' + _esc(r.study) + '</code>';
+        });
+    } else if (impact) {
+      refSection = '<p class="muted" style="margin-top:10px;">Nothing in your workspace references this module.</p>';
+    }
+
+    var modal = document.createElement('div');
+    modal.id = 'modal-uninstall-impact';
+    modal.className = 'modal-overlay';
+    modal.style.display = 'flex';
+    modal.innerHTML =
+      '<div class="modal-box" style="max-width:640px;">' +
+        '<button class="modal-close" onclick="_closeUninstallModal()">&times;</button>' +
+        '<h3>Uninstall <code>' + _esc(name) + '</code>?</h3>' +
+        '<p class="muted" style="margin:4px 0 10px;">This removes the package from the workspace venv, ' +
+          'pyproject.toml, and workspace.yaml imports, and commits the change on the active branch.</p>' +
+        '<div class="uninstall-impact-body">' + removedSection + refSection + '</div>' +
+        '<div id="uninstall-error" class="form-error" style="color:#c00;min-height:1em;margin-top:8px;"></div>' +
+        '<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;">' +
+          '<button type="button" class="action-btn danger" id="uninstall-confirm-btn">Uninstall ' + _esc(name) + '</button>' +
+          '<button type="button" class="btn-mini" onclick="_closeUninstallModal()">Cancel</button>' +
+        '</div>' +
+      '</div>';
+    document.body.appendChild(modal);
+
+    var btn = document.getElementById('uninstall-confirm-btn');
+    if (btn) btn.addEventListener('click', function() { _proceedWithUninstall(name); });
+  }
+  window._showUninstallImpactModal = _showUninstallImpactModal;
+
+  function _proceedWithUninstall(name) {
+    var btn = document.getElementById('uninstall-confirm-btn');
+    var errEl = document.getElementById('uninstall-error');
+    if (errEl) errEl.textContent = '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Uninstalling…'; }
     fetch('/api/catalog-uninstall', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -3385,16 +3432,24 @@
     })
       .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, json: j}; }); })
       .then(function(p) {
-        if (!p.ok) { alert('Uninstall failed: ' + (p.json.error || 'unknown')); return; }
+        if (!p.ok) {
+          if (btn) { btn.disabled = false; btn.textContent = 'Uninstall ' + name; }
+          if (errEl) errEl.textContent = 'Uninstall failed: ' + ((p.json && p.json.error) || 'unknown');
+          return;
+        }
+        _closeUninstallModal();
         var msg = p.json.already_uninstalled ? 'Already uninstalled.' : 'Uninstalled ' + name + '.';
         if (p.json.branch) msg += '\n\nBranch: ' + p.json.branch + (p.json.commit ? ' (' + p.json.commit + ')' : '');
         alert(msg);
         if (typeof _loadCatalog === 'function') _loadCatalog();
         if (typeof _loadRegistry === 'function') _loadRegistry(true);
       })
-      .catch(function(e) { alert('Network error: ' + e); });
+      .catch(function(e) {
+        if (btn) { btn.disabled = false; btn.textContent = 'Uninstall ' + name; }
+        if (errEl) errEl.textContent = 'Network error: ' + e;
+      });
   }
-  window._uninstallFromCatalog = _uninstallFromCatalog;
+  window._proceedWithUninstall = _proceedWithUninstall;
 
   // -------------------------------------------------------------------------
   // Simulation CRUD (v0.3.5)

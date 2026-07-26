@@ -704,17 +704,12 @@ window.addEventListener('pageshow', function (e) {
     <button class="registry-subtab" data-subtab="discovered"
             onclick="_setRegistrySubtab('discovered')" role="tab">Discovered registry
       <span class="count-badge muted" id="registry-total-count"></span></button>
-    {# Marketplace: browse the FULL viva ecosystem (unfiltered by this
-       workspace's registry.include) and install modules. Authoring-only —
-       hidden in read-only / snapshot mode via .js-authoring. #}
-    <button class="registry-subtab js-authoring" data-subtab="marketplace"
-            onclick="_setRegistrySubtab('marketplace')" role="tab">Marketplace</button>
   </div>
 
   <!-- Subtab: Modules (catalog grid; workspace + installed entries pinned at top) -->
   <section class="panel registry-subtab-panel active" data-subtab="modules">
     <div class="card-browse-toolbar" id="catalog-toolbar">
-      <input type="search" class="card-browse-search" id="catalog-search" placeholder="Filter modules…">
+      <input type="search" class="card-browse-search" id="catalog-search" placeholder="Search modules…">
       <div class="card-browse-chips" id="catalog-tag-chips"></div>
       <div class="card-browse-options">
         <label><input type="radio" name="catalog-installed-filter" value="all" checked> All</label>
@@ -775,40 +770,9 @@ window.addEventListener('pageshow', function (e) {
     <div class="registry-tab-panel"        data-kind="type"          id="registry-types-container"></div>
   </section>
 
-  <!-- Subtab: Marketplace (full viva ecosystem catalog; install available modules)
-       Data comes from /api/marketplace (build_catalog full=True) — the whole
-       ecosystem registry, NOT filtered by this workspace's registry.include, each
-       entry annotated with this workspace's install state. Reuses the same card
-       rendering + install flow as the Modules grid. -->
-  <section class="panel registry-subtab-panel js-authoring" data-subtab="marketplace">
-    <p class="muted" style="margin:0 0 12px">
-      Browse every module in the viva ecosystem and install any of them into this
-      workspace. Modules already present here are marked <em>installed</em>.
-    </p>
-    <div class="card-browse-toolbar" id="marketplace-toolbar">
-      <input type="search" class="card-browse-search" id="marketplace-search" placeholder="Filter ecosystem modules…">
-      <div class="card-browse-options">
-        <label><input type="radio" name="marketplace-installed-filter" value="all" checked> All</label>
-        <label><input type="radio" name="marketplace-installed-filter" value="installed"> Installed</label>
-        <label><input type="radio" name="marketplace-installed-filter" value="uninstalled"> Available</label>
-        <select class="card-browse-sort" id="marketplace-sort" title="Sort modules">
-          <option value="default" selected>Installed &amp; name</option>
-          <option value="used">Most used</option>
-          <option value="composites"># composites</option>
-          <option value="studies"># studies</option>
-          <option value="investigations"># investigations</option>
-          <option value="updated">Recently updated</option>
-        </select>
-        <span class="card-browse-view-toggle">
-          <button class="view-btn active" data-view="grid" onclick="_setMarketplaceView('grid')" title="Grid view">&#9638;</button>
-          <button class="view-btn" data-view="list" onclick="_setMarketplaceView('list')" title="List view">&#8801;</button>
-        </span>
-      </div>
-    </div>
-    <div id="marketplace-modules-grid" class="module-grid">
-      <p class="empty-state">Loading marketplace&hellip;</p>
-    </div>
-  </section>
+  {# Marketplace subtab removed — merged into the Modules grid above, which now
+     shows the full ecosystem (installed pinned at top, available to install
+     below). #}
 </section>
 
 <!-- ===== PAGE: STUDIES ===== -->

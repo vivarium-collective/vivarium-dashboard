@@ -2141,6 +2141,104 @@ body.focus-mode.focus-composite-explore .page.active{
   border: 1px solid rgba(220, 38, 38, 0.3);
 }
 
+/* ───────────────────────────────────────────────────────────────────
+ * Module content-count chips (composites / studies / investigations /
+ * "used here") + install/uninstall action row. Replaces the old
+ * middot-joined muted text line with scannable, colour-coded chips; the
+ * "used here" chip is emphasized because it answers "do WE depend on this".
+ * =================================================================== */
+.module-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 5px 0 2px;
+}
+.module-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75em;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  white-space: nowrap;
+}
+.module-stat-chip .mstat-glyph { font-weight: 700; opacity: 0.85; }
+.module-stat-chip.mstat-composites { background:#eef2ff; color:#4338ca; border-color:#e0e7ff }
+.module-stat-chip.mstat-studies     { background:#ecfeff; color:#0e7490; border-color:#cffafe }
+.module-stat-chip.mstat-investigations { background:#f5f3ff; color:#6d28d9; border-color:#ede9fe }
+.module-stat-chip.module-stat-used {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+.module-stat-chip.module-stat-used .mstat-glyph { color: #f59e0b; opacity: 1; }
+
+/* Installed-card action row: keeps the install-source badge and the
+   Uninstall button on one baseline. */
+.module-action-installed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.module-uninstall-btn {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.35);
+  background: #fff;
+}
+.module-uninstall-btn:hover {
+  background: #fef2f2;
+  border-color: #b91c1c;
+}
+.action-btn.danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.action-btn.danger:hover { background: #b91c1c; border-color: #b91c1c; }
+.action-btn.danger:disabled { opacity: 0.6; cursor: default; }
+
+/* ───────────────────────────────────────────────────────────────────
+ * Uninstall-impact confirmation modal (reuses .modal-overlay/.modal-box).
+ * =================================================================== */
+.uninstall-impact-h {
+  margin: 12px 0 6px;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+.uninstall-impact-body { max-height: 46vh; overflow-y: auto; }
+.uninstall-impact-group { margin: 6px 0 10px; }
+.uninstall-impact-group-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 3px;
+}
+.uninstall-impact-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+.uninstall-impact-list code { font-size: 0.92em; }
+.uninstall-impact-warn {
+  margin: 12px 0 4px;
+  padding: 9px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 3px solid #f59e0b;
+  border-radius: 6px;
+  color: #92400e;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
 /* Collapsible lead blocks (condense the lead-up to the studies) */
 details.inv-how-to-read > summary, details.inv-bio-story > summary {
   cursor: pointer; font-weight: 600; list-style-position: outside;
