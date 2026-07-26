@@ -688,7 +688,7 @@ body.focus-mode.focus-composite-explore .page.active{
 
 /* Left rail ----------------------------------------------------------------- */
 .viv-rail{
-  width:240px; flex:0 0 240px;
+  width:var(--rail-w, 240px); flex:0 0 var(--rail-w, 240px);
   display:flex; flex-direction:column;
   background:#fafafa; border-right:1px solid #e5e7eb;
   padding:16px 0 8px;
@@ -696,6 +696,19 @@ body.focus-mode.focus-composite-explore .page.active{
   position:relative;
   overflow:hidden;
 }
+/* While actively dragging the resize handle, kill the width transition so the
+   rail tracks the pointer 1:1 instead of lagging behind. */
+.viv-rail.viv-rail-resizing{ transition:none; }
+/* Right-edge drag handle: widen the rail to see full study names/details.
+   Snaps to normal width; dragging narrower snaps to the collapsed bar. */
+.viv-rail-resize-handle{
+  position:absolute; top:0; right:0; bottom:0; width:6px;
+  cursor:col-resize; z-index:6; background:transparent;
+  transition:background .12s ease;
+}
+.viv-rail-resize-handle:hover,
+.viv-rail.viv-rail-resizing .viv-rail-resize-handle{ background:#c7d2fe; }
+body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .viv-rail-header{
   display:flex; align-items:center; gap:10px;
   padding:0 16px 14px;
@@ -873,6 +886,43 @@ body.focus-mode.focus-composite-explore .page.active{
   display:block; font-size:0.74em; color:#9ca3af;
   margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
+
+/* Study-row pin toggle + Pinned strip + flat Ungrouped list -------------- */
+.viv-rail-sublink { position: relative; }
+.viv-rail-sublink:hover { background:#f3f4f6; }
+.viv-rail-pin {
+  flex: none;
+  font-size: 0.82em;
+  line-height: 1;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.22;           /* faint + desaturated until hovered or pinned */
+  transition: opacity .12s ease, filter .12s ease, transform .12s ease;
+}
+.viv-rail-sublink:hover .viv-rail-pin { opacity: 0.55; }
+.viv-rail-pin:hover { opacity: 0.9 !important; transform: scale(1.15); }
+.viv-rail-pin.pinned { filter: none; opacity: 1; }
+
+.viv-rail-section-subheader {
+  font-size: 0.68em;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 6px 14px 2px;
+}
+.viv-rail-pinned-section {
+  background: #fffdf5;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 3px;
+}
+.viv-rail-pinned-section .viv-rail-sublink-pinned { color: #78716c; }
+.viv-rail-ungrouped-divider {
+  height: 1px;
+  background: var(--border, #e2e8f0);
+  margin: 8px 12px 4px;
+}
+.viv-rail-ungrouped-section .viv-rail-sublink { color: #475569; }
 
 /* Focused-study rail state (single-investigation view) -------------------- */
 .viv-rail-focused-study{

@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -3950,13 +3950,85 @@
     var stored = null;
     try { stored = localStorage.getItem('vivarium.rail-collapsed'); } catch (e) {}
     var collapsed = stored === '1';
-    if (collapsed) {
-      var rail = document.getElementById('viv-rail');
-      if (rail) rail.classList.add('viv-rail-collapsed');
+    var rail = document.getElementById('viv-rail');
+    if (rail) {
+      // Apply the saved expanded width (the collapsed rule overrides it via
+      // higher CSS specificity, so this is safe even when collapsed).
+      _vivRailApplyWidth(rail, _vivRailSavedWidth());
+      if (collapsed) rail.classList.add('viv-rail-collapsed');
     }
     _vivSyncRailToggleLabel(collapsed);
   }
   window._vivRestoreRailState = _vivRestoreRailState;
+
+  // ---- Rail resize (drag the right edge to widen; snap to normal; drag
+  //      narrower to snap into the collapsed bar) ----------------------------
+  var _RAIL_NORMAL = 240;      // the "normal" snap width (matches CSS default)
+  var _RAIL_MIN = 240;         // expanded floor — narrower than this collapses
+  var _RAIL_MAX = 560;         // don't let the rail eat the whole viewport
+  var _RAIL_COLLAPSE_AT = 180; // drag below this (px from left edge) → collapse
+  var _RAIL_SNAP = 28;         // within this of normal → snap to exactly normal
+
+  function _vivRailSavedWidth() {
+    var raw = null;
+    try { raw = localStorage.getItem('vivarium.rail-width'); } catch (e) {}
+    var w = parseInt(raw, 10);
+    if (!w || isNaN(w)) return _RAIL_NORMAL;
+    return Math.min(_RAIL_MAX, Math.max(_RAIL_MIN, w));
+  }
+  function _vivRailApplyWidth(rail, w) {
+    rail.style.setProperty('--rail-w', w + 'px');
+  }
+  function _vivRailResizeStart(ev) {
+    ev.preventDefault();
+    var rail = document.getElementById('viv-rail');
+    if (!rail) return;
+    rail.classList.add('viv-rail-resizing');
+    document.body.classList.add('viv-rail-resizing-active');
+    var railLeft = rail.getBoundingClientRect().left;
+    var lastW = _vivRailSavedWidth();
+
+    function _move(e) {
+      var raw = e.clientX - railLeft;         // desired width: left edge → pointer
+      if (raw < _RAIL_COLLAPSE_AT) {          // snap into the collapsed bar look
+        rail.classList.add('viv-rail-collapsed');
+        return;
+      }
+      rail.classList.remove('viv-rail-collapsed');
+      var w = Math.min(_RAIL_MAX, Math.max(_RAIL_MIN, raw));
+      if (Math.abs(w - _RAIL_NORMAL) <= _RAIL_SNAP) w = _RAIL_NORMAL;  // snap to normal
+      lastW = w;
+      _vivRailApplyWidth(rail, w);
+    }
+    function _up() {
+      document.removeEventListener('mousemove', _move);
+      document.removeEventListener('mouseup', _up);
+      rail.classList.remove('viv-rail-resizing');
+      document.body.classList.remove('viv-rail-resizing-active');
+      var collapsed = rail.classList.contains('viv-rail-collapsed');
+      try {
+        localStorage.setItem('vivarium.rail-collapsed', collapsed ? '1' : '0');
+        if (!collapsed) localStorage.setItem('vivarium.rail-width', String(lastW));
+      } catch (e) { /* private mode */ }
+      if (typeof _vivSyncRailToggleLabel === 'function') _vivSyncRailToggleLabel(collapsed);
+    }
+    document.addEventListener('mousemove', _move);
+    document.addEventListener('mouseup', _up);
+  }
+  window._vivRailResizeStart = _vivRailResizeStart;
+
+  function _vivRailResizeReset() {
+    var rail = document.getElementById('viv-rail');
+    if (!rail) return;
+    rail.classList.remove('viv-rail-collapsed');
+    _vivRailApplyWidth(rail, _RAIL_NORMAL);
+    try {
+      localStorage.setItem('vivarium.rail-collapsed', '0');
+      localStorage.setItem('vivarium.rail-width', String(_RAIL_NORMAL));
+    } catch (e) { /* private mode */ }
+    if (typeof _vivSyncRailToggleLabel === 'function') _vivSyncRailToggleLabel(false);
+  }
+  window._vivRailResizeReset = _vivRailResizeReset;
 
   // -------------------------------------------------------------------------
   // Vivarium left rail — Investigations grouping (V4)
@@ -13238,8 +13310,34 @@
     return '#9ca3af';                                                                // gray (planned/unknown)
   }
 
-  // Single-row per study: [dot] name [🔒?]. Full status string in tooltip.
-  // Used by both the flat-list and grouped rail layouts.
+  // Pinned studies: a per-user convenience, kept in localStorage (no workspace
+  // write). A pinned study is duplicated into a "Pinned" strip at the top of the
+  // STUDIES rail for quick access while still appearing in its own group.
+  function _loadPinnedStudies() {
+    try {
+      var raw = window.localStorage.getItem('viv.pinnedStudies');
+      window._pinnedStudies = raw ? JSON.parse(raw) : [];
+    } catch (e) { window._pinnedStudies = []; }
+    if (!Array.isArray(window._pinnedStudies)) window._pinnedStudies = [];
+    return window._pinnedStudies;
+  }
+  function _isStudyPinned(name) {
+    if (!window._pinnedStudies) _loadPinnedStudies();
+    return window._pinnedStudies.indexOf(name) !== -1;
+  }
+  function _toggleStudyPin(name) {
+    if (!window._pinnedStudies) _loadPinnedStudies();
+    var i = window._pinnedStudies.indexOf(name);
+    if (i === -1) window._pinnedStudies.push(name);
+    else window._pinnedStudies.splice(i, 1);
+    try { window.localStorage.setItem('viv.pinnedStudies', JSON.stringify(window._pinnedStudies)); } catch (e) { /* private mode */ }
+    if (typeof _renderRailInvestigationGroups === 'function') _renderRailInvestigationGroups();
+  }
+  window._toggleStudyPin = _toggleStudyPin;
+
+  // Single-row per study: [dot] name [pin]. Full status string in tooltip. The
+  // pin toggle sits at the right; clicking it pins/unpins without opening the
+  // study (stopPropagation). Used by the grouped, pinned, and ungrouped layouts.
   function _railStudyItem(s, opts) {
     opts = opts || {};
     var status = s.status || 'planned';
@@ -13247,13 +13345,19 @@
     var indent = opts.indent ? '28px' : '12px';
     var fontSize = opts.indent ? '0.85em' : '0.86em';
     var nameColor = opts.indent ? '#64748b' : '#374151';
+    var pinned = _isStudyPinned(s.name);
     var tip = _esc(s.name) + ' — ' + _esc(status) + (s.blocked ? ' (blocked)' : '');
-    return '<a class="viv-rail-sublink" data-study-name="' + _esc(s.name) + '" ' +
+    var pinBtn = '<span class="viv-rail-pin' + (pinned ? ' pinned' : '') + '" role="button" tabindex="0" ' +
+           'aria-label="' + (pinned ? 'Unpin study' : 'Pin study to top') + '" ' +
+           'title="' + (pinned ? 'Unpin' : 'Pin to top') + '" ' +
+           'onclick="event.preventDefault();event.stopPropagation();_toggleStudyPin(\'' + _esc(s.name) + '\');return false;">📌</span>';
+    return '<a class="viv-rail-sublink' + (pinned ? ' viv-rail-sublink-pinned' : '') + '" data-study-name="' + _esc(s.name) + '" ' +
            'onclick="event.preventDefault();_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\');return false;" ' +
            'href="#" title="' + tip + '" ' +
            'style="display:flex;align-items:center;gap:8px;padding:4px 14px 4px ' + indent + ';color:' + nameColor + ';text-decoration:none;font-size:' + fontSize + ';">' +
              '<span aria-hidden="true" style="flex:none;width:8px;height:8px;border-radius:50%;background:' + color + ';display:inline-block"></span>' +
              '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">' + _esc(s.name) + '</span>' +
+             pinBtn +
            '</a>';
   }
 
@@ -13311,13 +13415,13 @@
       return da - db || String(a.title || a.name).localeCompare(String(b.title || b.name));
     });
 
-    // Studies not a member of any investigation.
+    // Studies not a member of any investigation. These render as a plain flat
+    // list at the BOTTOM of the rail (no collapsible group wrapper) rather than
+    // inside an "Ungrouped" dropdown, so loose studies are always visible.
     var ungrouped = window._investigations.filter(function(s) { return !seen[s.name]; });
-    if (ungrouped.length) {
-      ungrouped.sort(function(a, b) { return String(a.name).localeCompare(String(b.name)); });
-      ordered.push({ name: '__ungrouped__', title: 'Ungrouped', studies: ungrouped, _ungrouped: true });
-    }
+    ungrouped.sort(function(a, b) { return String(a.name).localeCompare(String(b.name)); });
 
+    if (!window._pinnedStudies) _loadPinnedStudies();
     var hasActive = ordered.some(function(g) { return g.name === currentSlug; });
 
     function _railGroupHtml(g, forceOpen) {
@@ -13359,25 +13463,61 @@
     // AND-first, OR-fallback. Prefer studies matching EVERY token (precise); but
     // if nothing matches all tokens, fall back to matching ANY token so a natural
     // phrase like "basal simulation" still surfaces the `basal` study even when
-    // "simulation" appears in none of its fields.
-    var requireAll = searching && ordered.some(function(g) {
-      return g.studies.some(function(s) { return _studyMatchesQuery(s, g.title, tokens, true); });
-    });
+    // "simulation" appears in none of its fields. Consider grouped + ungrouped.
+    var requireAll = searching && (
+      ordered.some(function(g) {
+        return g.studies.some(function(s) { return _studyMatchesQuery(s, g.title, tokens, true); });
+      }) ||
+      ungrouped.some(function(s) { return _studyMatchesQuery(s, 'Ungrouped', tokens, true); })
+    );
 
-    var html = ordered.map(function(g, i) {
+    // Pinned strip (top): duplicates of pinned studies for quick access. Hidden
+    // while searching so results stay clean. A pinned study still shows in its
+    // own group/ungrouped list below.
+    var pinnedHtml = '';
+    if (!searching && (window._pinnedStudies || []).length) {
+      var pinnedStudies = window._pinnedStudies
+        .map(function(name) {
+          return window._investigations.find(function(s) { return s.name === name; });
+        })
+        .filter(Boolean);
+      if (pinnedStudies.length) {
+        pinnedHtml = '<div class="viv-rail-pinned-section">'
+          + '<div class="viv-rail-section-subheader">Pinned</div>'
+          + pinnedStudies.map(function(s) { return _railStudyItem(s, {}); }).join('')
+          + '</div>';
+      }
+    }
+
+    // Investigation groups (middle).
+    var groupsHtml = ordered.map(function(g, i) {
       var studies = g.studies;
       if (searching) {
         studies = g.studies.filter(function(s) {
           return _studyMatchesQuery(s, g.title, tokens, requireAll);
         });
         if (!studies.length) return '';   // hide groups with no match
-        g = { name: g.name, title: g.title, studies: studies, _ungrouped: g._ungrouped };
+        g = { name: g.name, title: g.title, studies: studies };
       }
       // While searching, force groups open so matches are visible. Otherwise:
       // with no active investigation, open the first group so the rail isn't
       // entirely collapsed on load.
       return _railGroupHtml(g, searching || (!hasActive && i === 0));
     }).join('');
+
+    // Ungrouped studies (bottom): a plain flat list, no collapsible header.
+    var ungroupedList = searching
+      ? ungrouped.filter(function(s) { return _studyMatchesQuery(s, 'Ungrouped', tokens, requireAll); })
+      : ungrouped;
+    var ungroupedHtml = '';
+    if (ungroupedList.length) {
+      ungroupedHtml = '<div class="viv-rail-ungrouped-section">'
+        + (groupsHtml ? '<div class="viv-rail-ungrouped-divider"></div>' : '')
+        + ungroupedList.map(function(s) { return _railStudyItem(s, {}); }).join('')
+        + '</div>';
+    }
+
+    var html = pinnedHtml + groupsHtml + ungroupedHtml;
 
     if (!html && searching) {
       html = '<div class="viv-rail-empty" style="font-size:0.85em;color:#94a3b8;'

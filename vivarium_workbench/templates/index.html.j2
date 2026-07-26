@@ -590,6 +590,15 @@ window.addEventListener('pageshow', function (e) {
          Dropping it also lets the Studies section grow to the rail's full
          height so long study lists scroll instead of clipping. -->
 
+    <!-- Drag handle: resize the rail wider to see full study names/details.
+         Snaps to the normal width; dragging narrower snaps into the collapsed
+         bar. Double-click resets to normal. -->
+    <div class="viv-rail-resize-handle" id="viv-rail-resize-handle"
+         role="separator" aria-orientation="vertical" aria-label="Resize sidebar"
+         title="Drag to resize · double-click to reset"
+         onmousedown="_vivRailResizeStart(event)"
+         ondblclick="_vivRailResizeReset()"></div>
+
   </aside>
 
   <!-- MAIN: topbar + content -->
