@@ -99,6 +99,11 @@ class SimRow(BaseModel):
     investigation_slug: Optional[str] = None
     remote_origin: Optional[RemoteOrigin] = None
     capabilities: list[str] = []  # capability tags advertised by this run
+    # Installed analysis tools whose `requires` is satisfied by `capabilities`,
+    # each reduced to {"id","label","kind","launch_url"} — see
+    # lib/simulations_index.py's `_attach_matched_tools`. Best-effort: []
+    # when no tool matches or tool-matching itself failed.
+    matched_tools: list[dict[str, Any]] = []
 
 
 class SimulationsPayload(BaseModel):

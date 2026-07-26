@@ -16,8 +16,10 @@ import datetime as _dt
 import json
 import shutil
 import sqlite3
+import threading
 import warnings
 from pathlib import Path
+from urllib.parse import quote as _urlquote
 
 import yaml
 from pydantic import ValidationError
@@ -1400,6 +1402,148 @@ def _rec_to_simrow(run_id: str, rec: dict) -> dict:
     return dumped
 
 
+# ---------------------------------------------------------------------------
+# Compatible-tools annotation — Simulations DB "launch into tool" affordance.
+#
+# Each row's `capabilities` list already drives the Analysis Tools tab's
+# capability matching (lib/analysis_tools.py: `set(requires) <= set(caps)`).
+# Here we run that same rule the other way: for one row, which of the
+# workspace's installed tools (built-ins + repo-contributed viewers) match it,
+# and — for the ones that do — what URL actuates them. Attaching this directly
+# to each Simulations-DB row lets the frontend render a launch chip with no
+# further round-trip.
+# ---------------------------------------------------------------------------
+
+# Reentrancy guard. `analysis_tools.build_analysis_tools()` computes its run
+# candidates via `_run_candidates()`, which itself calls
+# `build_simulations_data()` (see lib/analysis_tools.py) — so calling
+# `build_analysis_tools` FROM `build_simulations_data` would recurse forever
+# without this. Thread-local because each request's synchronous call chain
+# runs on one worker thread from uvicorn's threadpool; a nested (inner) call
+# on the SAME thread just skips re-attaching tools (they're irrelevant to that
+# inner call, which only wants the plain sim rows).
+_tools_reentry = threading.local()
+
+
+def _launch_url_for_matched_tool(tool: dict, row: dict) -> "str | None":
+    """The actuation URL for one tool matched to one Simulations-DB row.
+
+    Mirrors the launch resolution in static/walkthrough.js's `_openTool` /
+    `_build3dSrc` / `_launchViewer`, so a chip built from this URL opens the
+    exact same place a user would reach from the Analysis Tools tab:
+
+    - ``embed-explorer`` (built-in Data Explorer): the standalone explorer
+      page for this run.
+    - ``embed-3d`` (built-in Parsimony Viewer): a per-STUDY match — a study
+      either has a 3D pack or it doesn't, so the row's ``study_slug`` selects
+      the tool's matched pack candidate; its hosted ``viewer_url`` wins, else
+      the bundled viewer is pointed at the study's 3D models manifest.
+    - ``launcher`` (repo-contributed viewer): the generic actuation endpoint
+      (``GET /api/analysis-viewer/{uid}/launch``), scoped to this row's study
+      + run — the frontend fetches it and opens the returned ``{"url": ...}``.
+
+    A bare contributed ``embed`` viewer (a custom mounted mini-app with no
+    href/launch semantics) can't be reduced to one URL — returns ``None``, the
+    same as any other tool this can't resolve. Never raises.
+    """
+    kind = tool.get("kind") or "launcher"
+    run_id = row.get("run_id")
+    study = row.get("study_slug")
+
+    if kind == "embed-explorer":
+        if not run_id:
+            return None
+        return f"/assets/explorer.html?run={_urlquote(str(run_id), safe='')}"
+
+    if kind == "embed-3d":
+        matched = tool.get("matched") or []
+        cand = next((m for m in matched if m.get("ref") == study), None) if study else None
+        if cand and cand.get("viewer_url"):
+            return cand["viewer_url"]
+        # Only deep-link when this study is actually one of the tool's matched
+        # candidates (or there's no `matched` list to check at all) — a study
+        # with no 3D pack must not get a dead models.json link.
+        if study and (cand is not None or not matched):
+            models_url = f"/api/study/{_urlquote(str(study), safe='')}/3d/models.json"
+            return f"/parsimony-viewer/index.html?models={_urlquote(models_url, safe='')}"
+        return None
+
+    if kind != "launcher":
+        return None  # unresolvable contributed "embed" viewer — omit
+    uid = tool.get("uid") or tool.get("id")
+    if not uid:
+        return None
+    params = []
+    if study:
+        params.append(f"study={_urlquote(str(study), safe='')}")
+    if run_id:
+        params.append(f"run={_urlquote(str(run_id), safe='')}")
+    qs = ("?" + "&".join(params)) if params else ""
+    return f"/api/analysis-viewer/{_urlquote(str(uid), safe='')}/launch{qs}"
+
+
+def _matched_tool_entry(tool: dict, row: dict) -> "dict | None":
+    """Reduce a matched tool + row pair to the small dict the frontend needs.
+    Returns None (omit) when no concrete launch URL can be resolved."""
+    url = _launch_url_for_matched_tool(tool, row)
+    if not url:
+        return None
+    return {
+        "id": tool.get("uid") or tool.get("id"),
+        "label": tool.get("title") or tool.get("label") or tool.get("id") or "Tool",
+        "kind": tool.get("kind") or "launcher",
+        "launch_url": url,
+    }
+
+
+def _attach_matched_tools(rows: list[dict], ws_root: Path) -> None:
+    """Best-effort: attach ``row["matched_tools"]`` to every row in ``rows``.
+
+    A row's matched tools are the installed analysis tools (built-in +
+    repo-contributed, from ``analysis_tools.build_analysis_tools``) whose
+    ``requires`` is a subset of the row's ``capabilities`` — the same rule
+    ``analysis_tools.match`` applies runs-to-a-tool, inverted here to
+    tools-to-a-run. Mutates ``rows`` in place. Never raises: any failure
+    (a broken tool/viewer, a workspace with no installed tools at all) leaves
+    every row's ``matched_tools`` at ``[]``, so a tool-matching bug can never
+    take down the Simulations DB.
+    """
+    for row in rows:
+        row.setdefault("matched_tools", [])
+
+    if getattr(_tools_reentry, "active", False):
+        return  # nested call building the tools list itself (see guard above)
+
+    try:
+        _tools_reentry.active = True
+        from vivarium_workbench.lib import analysis_tools as _analysis_tools
+        tools = _analysis_tools.build_analysis_tools(ws_root)
+    except Exception:  # noqa: BLE001 — a broken tool/viewer must never break the sim list
+        return
+    finally:
+        _tools_reentry.active = False
+
+    if not tools:
+        return
+
+    for row in rows:
+        caps = set(row.get("capabilities") or [])
+        if not caps:
+            continue
+        try:
+            matched = []
+            for tool in tools:
+                requires = tool.get("requires") or []
+                if not requires or not (set(requires) <= caps):
+                    continue
+                entry = _matched_tool_entry(tool, row)
+                if entry is not None:
+                    matched.append(entry)
+            row["matched_tools"] = matched
+        except Exception:  # noqa: BLE001 — one bad row must not blank the rest
+            row["matched_tools"] = []
+
+
 def build_simulations_data(ws_root: Path) -> dict:
     """Data builder for GET /api/simulations — the ``list_simulations`` rows
     enriched with emitter_type labels + active remote build runs + current slug.
@@ -1435,6 +1579,16 @@ def build_simulations_data(ws_root: Path) -> dict:
               reverse=True)
 
     sims = _append_remote_simulations(sims, ws_root)
+
+    # Capability-matched analysis tools + their launch URLs, per row (Simulations
+    # DB "launch into tool" affordance). Best-effort at every layer already
+    # (_attach_matched_tools never raises), but belt-and-suspenders here too —
+    # this index must never 500 on a tool-matching failure.
+    try:
+        _attach_matched_tools(sims, ws_root)
+    except Exception:  # noqa: BLE001
+        pass
+
     from vivarium_workbench.lib.investigation_status import current_branch_slug
     return {"simulations": sims, "current": current_branch_slug(ws_root)}
 

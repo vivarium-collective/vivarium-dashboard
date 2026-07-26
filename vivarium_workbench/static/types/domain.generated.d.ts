@@ -39,6 +39,7 @@ export interface SimRow {
   investigation_slug: string | null;
   remote_origin: RemoteOrigin | null;
   capabilities: string[];
+  matched_tools: Record<string, any>[];
 }
 
 export interface SimulationsPayload {
