@@ -31,6 +31,7 @@ from pathlib import Path
 
 import yaml
 
+from vivarium_workbench.lib.module_stats import module_content_stats
 from vivarium_workbench.lib.registry import (
     _reexport_map_via_worker,
     _registry_include_pkgs,
@@ -669,5 +670,23 @@ def build_catalog(ws_root: Path, full: bool = False) -> dict:
             m for m in modules if isinstance(m, dict) and m.get("reexport_origin")
         ]
         modules = _filter_catalog_modules(modules, ws_data) + kept_origins
+
+    # Content counts + workspace-usage (module cards): additive fields, merged
+    # by module name. A module with no linked on-disk content (available /
+    # wheel-only, or the workspace's own first-party package) simply isn't a
+    # key in `stats` — default to 0/None so every entry carries the fields.
+    try:
+        stats = module_content_stats(ws_root)
+    except Exception:
+        stats = {}
+    for m in modules:
+        if not isinstance(m, dict):
+            continue
+        s = stats.get(m.get("name")) or {}
+        m["n_composites"] = s.get("n_composites", 0)
+        m["n_investigations"] = s.get("n_investigations", 0)
+        m["n_studies"] = s.get("n_studies", 0)
+        m["n_used"] = s.get("n_used", 0)
+        m["last_updated"] = s.get("last_updated")
 
     return {"modules": modules}

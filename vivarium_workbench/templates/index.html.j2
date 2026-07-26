@@ -720,6 +720,14 @@ window.addEventListener('pageshow', function (e) {
         <label><input type="radio" name="catalog-installed-filter" value="all" checked> All</label>
         <label><input type="radio" name="catalog-installed-filter" value="installed"> Installed</label>
         <label><input type="radio" name="catalog-installed-filter" value="uninstalled"> Available</label>
+        <select class="card-browse-sort" id="catalog-sort" title="Sort modules">
+          <option value="default" selected>Installed &amp; name</option>
+          <option value="used">Most used</option>
+          <option value="composites"># composites</option>
+          <option value="studies"># studies</option>
+          <option value="investigations"># investigations</option>
+          <option value="updated">Recently updated</option>
+        </select>
         <span class="card-browse-view-toggle">
           <button class="view-btn active" data-view="grid" onclick="_setCatalogView('grid')" title="Grid view">&#9638;</button>
           <button class="view-btn" data-view="list" onclick="_setCatalogView('list')" title="List view">&#8801;</button>
@@ -783,6 +791,14 @@ window.addEventListener('pageshow', function (e) {
         <label><input type="radio" name="marketplace-installed-filter" value="all" checked> All</label>
         <label><input type="radio" name="marketplace-installed-filter" value="installed"> Installed</label>
         <label><input type="radio" name="marketplace-installed-filter" value="uninstalled"> Available</label>
+        <select class="card-browse-sort" id="marketplace-sort" title="Sort modules">
+          <option value="default" selected>Installed &amp; name</option>
+          <option value="used">Most used</option>
+          <option value="composites"># composites</option>
+          <option value="studies"># studies</option>
+          <option value="investigations"># investigations</option>
+          <option value="updated">Recently updated</option>
+        </select>
         <span class="card-browse-view-toggle">
           <button class="view-btn active" data-view="grid" onclick="_setMarketplaceView('grid')" title="Grid view">&#9638;</button>
           <button class="view-btn" data-view="list" onclick="_setMarketplaceView('list')" title="List view">&#8801;</button>

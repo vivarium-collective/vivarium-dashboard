@@ -2611,6 +2611,7 @@
   window._catalogModules = [];
   window._catalogFilter = { search: '', tags: new Set(), installed: 'all' };
   window._catalogView = 'grid';
+  window._catalogSort = 'default';
 
   function _buildCatalogChips() {
     var chipsEl = document.getElementById('catalog-tag-chips');
@@ -2679,14 +2680,30 @@
   }
 
   function _moduleInstalledMeta(m) {
-    // Source / ref / path rows surfaced inline on installed cards.
+    // Source / ref / path / last-updated rows surfaced inline on installed cards.
     if (!m.installed && m.kind !== 'workspace') return '';
     var bits = [];
     if (m.source) bits.push('<small class="muted">Source: <code>' + _esc(m.source) + '</code>' +
       (m.ref ? ' @ <code>' + _esc(m.ref) + '</code>' : '') + '</small>');
     var path = m.install_path || m.path;
     if (path) bits.push('<small class="muted">Path: <code>' + _esc(path) + '</code></small>');
+    if (m.last_updated) bits.push('<small class="muted">Updated: ' + _esc(String(m.last_updated).slice(0, 10)) + '</small>');
     return bits.length ? '<div class="module-installed-meta">' + bits.join('<br>') + '</div>' : '';
+  }
+
+  // Compact content-count + workspace-usage row (module cards): "N composites
+  // · N studies · N investigations · ★N used". A zero-count metric is omitted
+  // except "used", which stays visible whenever it's >0 (the whole point of
+  // the metric is to draw the eye). Renders '' when the module carries no
+  // stats at all (wheel-only / available-to-install modules).
+  function _moduleStatsRow(m) {
+    var parts = [];
+    if (m.n_composites) parts.push('▦ ' + m.n_composites + ' composite' + (m.n_composites === 1 ? '' : 's'));
+    if (m.n_studies) parts.push('⌥ ' + m.n_studies + ' stud' + (m.n_studies === 1 ? 'y' : 'ies'));
+    if (m.n_investigations) parts.push('⌸ ' + m.n_investigations + ' investigation' + (m.n_investigations === 1 ? '' : 's'));
+    if (m.n_used) parts.push('★ ' + m.n_used + ' used');
+    if (!parts.length) return '';
+    return '<div class="module-stats-row muted" style="font-size:0.82em;margin:4px 0">' + parts.join(' &middot; ') + '</div>';
   }
 
   function _moduleActionFor(m, marketplace) {
@@ -2729,10 +2746,25 @@
   }
 
   // Render an already-filtered module list into `grid` (grid or list view).
-  // Sort: workspace package first (anchor), then installed (alpha), then
-  // available (alpha) — "what's in your workspace surfaces first".
+  // Sort: a chosen primary key (window._catalogSort / window._marketplaceSort
+  // — 'default' means "no primary key", i.e. skip straight to the tiebreak)
+  // then the original tiebreak: workspace package first (anchor), then
+  // installed (alpha), then available (alpha) — "what's in your workspace
+  // surfaces first".
   function _renderModuleGrid(grid, modules, view, marketplace) {
+    var sortKey = (marketplace ? window._marketplaceSort : window._catalogSort) || 'default';
     modules = modules.slice().sort(function(a, b) {
+      var primary = 0;
+      if (sortKey === 'used') primary = (b.n_used || 0) - (a.n_used || 0);
+      else if (sortKey === 'composites') primary = (b.n_composites || 0) - (a.n_composites || 0);
+      else if (sortKey === 'studies') primary = (b.n_studies || 0) - (a.n_studies || 0);
+      else if (sortKey === 'investigations') primary = (b.n_investigations || 0) - (a.n_investigations || 0);
+      else if (sortKey === 'updated') {
+        var at = a.last_updated ? new Date(a.last_updated).getTime() : -Infinity;
+        var bt = b.last_updated ? new Date(b.last_updated).getTime() : -Infinity;
+        primary = bt - at;
+      }
+      if (primary !== 0) return primary;
       var aw = a.kind === 'workspace' ? 0 : 1;
       var bw = b.kind === 'workspace' ? 0 : 1;
       if (aw !== bw) return aw - bw;
@@ -2756,7 +2788,7 @@
         prevL = m;
         return divider + '<div class="module-list-row' + (m.kind === 'workspace' ? ' module-row-workspace' : '') + '">' +
           '<span class="name">' + _esc(m.name) + '</span>' +
-          '<span class="desc"> ' + _esc(m.description || '') + _moduleInstalledMeta(m) + '</span>' +
+          '<span class="desc"> ' + _esc(m.description || '') + _moduleStatsRow(m) + _moduleInstalledMeta(m) + '</span>' +
           '<span>' + _moduleActionFor(m, marketplace) + '</span>' +
           '</div>';
       });
@@ -2779,6 +2811,7 @@
           '<div class="module-card-header"><strong>' + _esc(m.name) + '</strong> ' + homepage + '</div>' +
           '<p class="module-desc">' + _esc(m.description) + '</p>' +
           '<div class="module-tags"></div>' +
+          _moduleStatsRow(m) +
           _moduleInstalledMeta(m) +
           '<div class="module-action">' + _moduleActionFor(m, marketplace) + '</div>' +
           '</div>';
@@ -2808,6 +2841,7 @@
   window._marketplaceModules = [];
   window._marketplaceFilter = { search: '', tags: new Set(), installed: 'all' };
   window._marketplaceView = 'grid';
+  window._marketplaceSort = 'default';
   window._marketplaceLoaded = false;
 
   function _setMarketplaceView(view) {
@@ -2857,6 +2891,15 @@
             };
           }
         });
+        var mktSortEl = document.getElementById('marketplace-sort');
+        if (mktSortEl && !mktSortEl._pbgWired) {
+          mktSortEl._pbgWired = true;
+          mktSortEl.value = window._marketplaceSort || 'default';
+          mktSortEl.onchange = function() {
+            window._marketplaceSort = this.value;
+            _renderMarketplace();
+          };
+        }
         if (!window._marketplaceModules.length) {
           grid.innerHTML = '<p class="empty-state">No ecosystem modules available.</p>';
           return;
@@ -3065,6 +3108,15 @@
             };
           }
         });
+        var sortEl = document.getElementById('catalog-sort');
+        if (sortEl && !sortEl._pbgWired) {
+          sortEl._pbgWired = true;
+          sortEl.value = window._catalogSort || 'default';
+          sortEl.onchange = function() {
+            window._catalogSort = this.value;
+            _renderCatalog();
+          };
+        }
         _buildCatalogChips();
         _renderCatalog();
         _renderInstalledModules(data.modules);
