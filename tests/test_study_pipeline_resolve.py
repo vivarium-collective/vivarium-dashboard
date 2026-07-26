@@ -101,3 +101,19 @@ def test_producer_output_id_is_stable(ws):
     stub_parca, _ = make_stub()
     r_parca = resolve_study(ws, "parca", compute_fn=stub_parca)
     assert r_parca["artifact_id"] == r["inputs"]["parca"]
+
+
+def test_resolve_study_detects_cycle(tmp_path, monkeypatch):
+    from vivarium_workbench.lib.artifacts import pipeline
+
+    # a -> b -> a
+    specs = {
+        "a": {"composite": "c.a", "config": {}, "outputs": [],
+              "inputs": [{"artifact": "x", "from": "b"}]},
+        "b": {"composite": "c.b", "config": {}, "outputs": [],
+              "inputs": [{"artifact": "x", "from": "a"}]},
+    }
+    monkeypatch.setattr(pipeline, "_load_study_spec", lambda ws, slug: specs[slug])
+    stub, calls = make_stub()
+    with pytest.raises(pipeline.CyclicDependencyError):
+        pipeline.resolve_study(tmp_path, "a", compute_fn=stub)

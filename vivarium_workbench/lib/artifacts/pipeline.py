@@ -46,6 +46,10 @@ def _workspace_commit(ws_root) -> str:
         return ""
 
 
+class CyclicDependencyError(Exception):
+    """Raised when a study's ``inputs[].from`` chain cycles back on itself."""
+
+
 def _load_study_spec(ws_root: Path, slug: str) -> dict:
     """Load ``studies/<slug>/study.yaml`` (nested-first via WorkspacePaths).
 
@@ -88,7 +92,7 @@ def _record_pointer(runs_db: Path, stage: str, oid: str) -> None:
         pass
 
 
-def resolve_study(ws_root, slug: str, *, compute_fn=None) -> dict:
+def resolve_study(ws_root, slug: str, *, compute_fn=None, _in_progress=None) -> dict:
     """Pull-or-compute this study's output artifact, recursing into input
     producers first.
 
@@ -100,69 +104,84 @@ def resolve_study(ws_root, slug: str, *, compute_fn=None) -> dict:
         "cached": <bool>,         # True => store already had it (compute_fn NOT called for this study)
         "inputs": { <from_slug>: <input_artifact_id>, ... },  # resolved producer output ids
       }
+
+    Raises:
+      CyclicDependencyError: a study's ``inputs[].from`` chain re-enters a
+        slug already on the current recursion stack (e.g. a -> b -> a).
+        ``_in_progress`` is the private threading mechanism for that guard —
+        callers should never pass it themselves.
     """
-    ws_root = Path(ws_root)
-    wp = WorkspacePaths.load(ws_root)
-    spec = _load_study_spec(ws_root, slug)
-    iface = study_interface(spec)
-    output_name = iface["outputs"][0] if iface["outputs"] else slug
+    in_progress = set() if _in_progress is None else _in_progress
+    if slug in in_progress:
+        raise CyclicDependencyError(" -> ".join([*in_progress, slug]))
+    in_progress.add(slug)
+    try:
+        ws_root = Path(ws_root)
+        wp = WorkspacePaths.load(ws_root)
+        spec = _load_study_spec(ws_root, slug)
+        iface = study_interface(spec)
+        output_name = iface["outputs"][0] if iface["outputs"] else slug
 
-    # Resolve inputs first — recursion IS the pull-or-compute for producers.
-    inputs_map: dict[str, str] = {}
-    for inp in iface["inputs"]:
-        child = resolve_study(ws_root, inp["from"], compute_fn=compute_fn)
-        inputs_map[inp["from"]] = child["artifact_id"]
-
-    commit = _workspace_commit(ws_root)
-    oid = artifact_id(
-        composite_id=iface["composite"] or slug,
-        config=iface["config"],
-        input_ids=sorted(inputs_map.values()),
-        commit=commit,
-    )
-
-    store = ArtifactStore(ws_root)
-    if store.has(oid):
-        cached = True
-    else:
-        cached = False
-        # Each compute attempt gets its OWN unique scratch dir (never just
-        # `oid`) so two concurrent resolves that both miss the same `oid`
-        # (e.g. two dependents of the same producer, or a double-clicked
-        # rerun in the request-serving dashboard) can't stomp each other —
-        # a shared `oid`-named dir would let one writer's pre-compute
-        # `rmtree` delete another writer's in-flight scratch mid-compute.
-        # The dir name is transient filesystem isolation only: it never
-        # enters `artifact_id` and never affects stored content, so this
-        # stays fully deterministic — `store.put` is idempotent, so if two
-        # attempts race, the first to `put` wins and the second is a no-op
-        # store hit.
-        scratch_root = wp.pbg / "_scratch"
-        scratch_root.mkdir(parents=True, exist_ok=True)
-        scratch = Path(tempfile.mkdtemp(prefix=f"{oid}-", dir=scratch_root))
-        try:
-            fn = compute_fn or _default_compute
-            produced = fn(
-                ws_root, slug,
-                artifact_id=oid,
-                composite=iface["composite"],
-                config=iface["config"],
-                input_ids=sorted(inputs_map.values()),
-                out_dir=scratch,
+        # Resolve inputs first — recursion IS the pull-or-compute for producers.
+        inputs_map: dict[str, str] = {}
+        for inp in iface["inputs"]:
+            child = resolve_study(
+                ws_root, inp["from"], compute_fn=compute_fn, _in_progress=in_progress,
             )
-            store.put(oid, produced, {"slug": slug, "stage": output_name})
-        finally:
-            shutil.rmtree(scratch, ignore_errors=True)
+            inputs_map[inp["from"]] = child["artifact_id"]
 
-    _record_pointer(wp.study_dir(slug) / "runs.db", output_name, oid)
+        commit = _workspace_commit(ws_root)
+        oid = artifact_id(
+            composite_id=iface["composite"] or slug,
+            config=iface["config"],
+            input_ids=sorted(inputs_map.values()),
+            commit=commit,
+        )
 
-    return {
-        "slug": slug,
-        "output": output_name,
-        "artifact_id": oid,
-        "cached": cached,
-        "inputs": inputs_map,
-    }
+        store = ArtifactStore(ws_root)
+        if store.has(oid):
+            cached = True
+        else:
+            cached = False
+            # Each compute attempt gets its OWN unique scratch dir (never just
+            # `oid`) so two concurrent resolves that both miss the same `oid`
+            # (e.g. two dependents of the same producer, or a double-clicked
+            # rerun in the request-serving dashboard) can't stomp each other —
+            # a shared `oid`-named dir would let one writer's pre-compute
+            # `rmtree` delete another writer's in-flight scratch mid-compute.
+            # The dir name is transient filesystem isolation only: it never
+            # enters `artifact_id` and never affects stored content, so this
+            # stays fully deterministic — `store.put` is idempotent, so if two
+            # attempts race, the first to `put` wins and the second is a no-op
+            # store hit.
+            scratch_root = wp.pbg / "_scratch"
+            scratch_root.mkdir(parents=True, exist_ok=True)
+            scratch = Path(tempfile.mkdtemp(prefix=f"{oid}-", dir=scratch_root))
+            try:
+                fn = compute_fn or _default_compute
+                produced = fn(
+                    ws_root, slug,
+                    artifact_id=oid,
+                    composite=iface["composite"],
+                    config=iface["config"],
+                    input_ids=sorted(inputs_map.values()),
+                    out_dir=scratch,
+                )
+                store.put(oid, produced, {"slug": slug, "stage": output_name})
+            finally:
+                shutil.rmtree(scratch, ignore_errors=True)
+
+        _record_pointer(wp.study_dir(slug) / "runs.db", output_name, oid)
+
+        return {
+            "slug": slug,
+            "output": output_name,
+            "artifact_id": oid,
+            "cached": cached,
+            "inputs": inputs_map,
+        }
+    finally:
+        in_progress.discard(slug)
 
 
 def _default_compute(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir):
