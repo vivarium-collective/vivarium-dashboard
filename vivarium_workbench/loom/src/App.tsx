@@ -982,6 +982,17 @@ export default function App() {
   // filtered `nodes` array. Derived from the single `raw` walk above.
   const allNodes = raw.nodes;
 
+  // Run kind: a TEMPORAL composite has ≥1 time-driven Process (runs forward over
+  // time on its own timestep) → Setup&Run offers a Duration. A WORKFLOW composite
+  // is a Step network only (each Step runs when its inputs are ready) → it just
+  // "Run"s once, no duration. Detected from the node inventory; defaults to
+  // temporal when there's nothing to judge yet.
+  const runKind: 'temporal' | 'workflow' = useMemo(() => {
+    const hasProcess = allNodes.some((n) => n.type === 'process');
+    const hasStep = allNodes.some((n) => n.type === 'step');
+    return hasProcess ? 'temporal' : (hasStep ? 'workflow' : 'temporal');
+  }, [allNodes]);
+
   const toggleHidden = useCallback((id: string) => {
     setHidden((prev) => {
       const next = new Set(prev);
@@ -1018,6 +1029,8 @@ export default function App() {
           hidden={hidden}
           onToggleHidden={toggleHidden}
           onShowAll={showAll}
+          rootId={drillHops.length === 0 ? compositeId : rootIdRef.current}
+          hopsPrefix={drillHops}
         />
       ),
     },
@@ -1383,6 +1396,7 @@ export default function App() {
               onCompleted={() => setTab('results')}
               onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
               readOnly={STATIC}
+              runKind={runKind}
             />
           )}
           {tab === 'results' && (

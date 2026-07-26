@@ -110,10 +110,37 @@ export interface InnerCompositeResponse {
   error?: string;
 }
 
+/** Deterministic, filesystem-safe key for a (rootId, hops) inner-composite
+ *  target. MUST match the Python side (composite_inner_states.inner_state_key):
+ *  base64url (no padding) of `rootId + '::' + JSON.stringify(hops)`. Used only
+ *  in static (?static=1) mode to name the pre-built inner-state file. Input is
+ *  ASCII (dotted ids + bigraph path segments), so btoa is safe. */
+export function innerCompositeKey(rootId: string, hops: string[][]): string {
+  const raw = rootId + '::' + JSON.stringify(hops);
+  return btoa(raw).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
 export async function fetchInnerComposite(
   rootId: string,
   hops: string[][],
 ): Promise<InnerCompositeResponse> {
+  // Static (read-only bundle) mode: no live endpoint. Fetch the pre-built inner
+  // state committed by publish under api/composite-inner-state/<key>.json.
+  // `apiBase` prefixes the bundle's subpath (e.g. GitHub Pages project sites).
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('static') === '1') {
+    const apiBase = params.get('apiBase') || '';
+    const url =
+      apiBase + '/api/composite-inner-state/' + innerCompositeKey(rootId, hops) + '.json';
+    const r = await fetch(url);
+    if (!r.ok) {
+      throw new Error(
+        `inner composite not available offline (HTTP ${r.status}) — this ` +
+          `read-only bundle did not pre-build it`,
+      );
+    }
+    return (await r.json()) as InnerCompositeResponse;
+  }
   const q = new URLSearchParams({ ref: rootId, hops: JSON.stringify(hops) });
   const r = await fetch('/api/composite-inner-state?' + q.toString());
   const body = await r.json();
@@ -144,6 +171,9 @@ export interface RunStatus {
   progress_step: number;
   n_steps: number | null;
   heartbeat_at: number | null;
+  /** Sub-status while status==='running' (simulate → rendering visualizations →
+   *  analysis flush) so the UI can announce the current stage. */
+  phase?: string | null;
   error?: string;
   log_path?: string;
   viz_html?: Record<string, { html: string }>;

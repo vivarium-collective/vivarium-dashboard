@@ -127,16 +127,24 @@ def attach_process_docs(doc: Any) -> Any:
     return doc
 
 
-def attach_process_docs_via_worker(ws_root: Any, doc: Any) -> Any:
+def attach_process_docs_via_worker(ws_root: Any, doc: Any, spec_id: Any = None) -> Any:
     """Route :func:`attach_process_docs` decoration to the workspace's env worker,
     so the HTTP process imports no workspace Python to read process docstrings
     (env-worker method ``attach_process_docs{document}``; the workbench passes the
     already-resolved doc inline, §11). **Soft-degrade**: decoration is optional, so
     if the worker is unavailable, return the doc undecorated. ``summarize_large_values``
-    stays a separate in-process call where needed — it is pure (no workspace import)."""
+    stays a separate in-process call where needed — it is pure (no workspace import).
+
+    ``spec_id`` (the generator ref) is optional; when given, the worker builds a
+    core from that spec's ``core_extensions`` so bare registry-name addresses
+    (``local:EcoliWCM``) resolve — needed to flag Composite Processes + read port
+    types on a committed-artifact doc that was not live-built."""
     from vivarium_workbench.lib.env_worker_pool import get_pool
+    params: dict = {"document": doc}
+    if spec_id:
+        params["ref"] = spec_id
     try:
-        r = get_pool().call(ws_root, "attach_process_docs", {"document": doc})
+        r = get_pool().call(ws_root, "attach_process_docs", params)
         return r["document"] if isinstance(r, dict) and "document" in r else doc
     except Exception:  # noqa: BLE001 — decoration is best-effort; never break the request
         return doc
