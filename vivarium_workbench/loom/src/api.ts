@@ -171,6 +171,9 @@ export interface RunStatus {
   progress_step: number;
   n_steps: number | null;
   heartbeat_at: number | null;
+  /** Sub-status while status==='running' (simulate → rendering visualizations →
+   *  analysis flush) so the UI can announce the current stage. */
+  phase?: string | null;
   error?: string;
   log_path?: string;
   viz_html?: Record<string, { html: string }>;

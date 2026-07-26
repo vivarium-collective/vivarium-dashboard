@@ -70,7 +70,9 @@ def composite_test_run(ws_root: Path, body: dict) -> tuple[dict, int]:
 
     spec_id = (body.get("id") or "").strip()
     overrides = body.get("overrides") or {}
-    steps = int(body.get("steps") or 5)
+    # float: a temporal composite may run a fractional duration (e.g. 2.5); an
+    # int here truncated it. A whole number stays whole (JSON 5 → 5.0 → runs 5).
+    steps = float(body.get("steps") or 5)
     label = (body.get("label") or "").strip() or auto_label(overrides)
     emit_paths = body.get("emit_paths") or []
     if not isinstance(emit_paths, list):

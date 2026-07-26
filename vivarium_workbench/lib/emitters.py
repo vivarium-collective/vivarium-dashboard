@@ -326,18 +326,26 @@ def chart_source(
 # and a plain per-tick ``run(1)`` loop exactly as ``run_runner.execute`` did.
 
 
-def _drive(composite, steps: int, progress_cb: "Callable | None") -> None:
-    """Advance ``composite`` one tick at a time, calling ``progress_cb(step)``.
+def _drive(composite, steps: float, progress_cb: "Callable | None") -> None:
+    """Advance ``composite`` by ``steps`` time units, one unit tick at a time,
+    calling ``progress_cb(step)`` each whole tick.
 
-    Plain ``run(1)`` per tick (NOT division-aware) — byte-identical to the loop
-    ``run_runner.execute`` ran before this broker existed. ``progress_cb`` may
+    Plain ``run(1)`` per whole tick (NOT division-aware) — byte-identical to the
+    loop ``run_runner.execute`` ran before this broker existed. A temporal
+    composite may request a FRACTIONAL duration (e.g. 3.5): the whole ticks run
+    first, then a final ``run(frac)`` advances the remainder. ``progress_cb`` may
     raise to abort the run (``run_runner`` uses this for its max-runtime guard);
     the exception propagates so the caller can record a ``failed`` status.
     """
-    for step in range(1, int(steps) + 1):
+    total = float(steps)
+    full = int(total)
+    for step in range(1, full + 1):
         composite.run(1)
         if progress_cb is not None:
             progress_cb(step)
+    frac = total - full
+    if frac > 1e-9:
+        composite.run(frac)   # final partial tick — no progress_cb (fractional)
 
 
 def _flush_step_emitters(composite) -> "tuple[int, list[tuple[object, BaseException]]]":
