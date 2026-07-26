@@ -66,6 +66,20 @@ def composites_via_subprocess(ws_root: Path, *, bypass_cache: bool = False) -> d
     _slot = _COMPOSITES_CACHE.get(ws_root_str)
     if not bypass_cache and _slot is not None and now - _slot["ts"] < _COMPOSITES_TTL:
         return _slot["data"]
+
+    # Prefer the WARM pooled env-worker (build_core + workspace imports amortized,
+    # like the registry) over a fresh subprocess that re-imports everything (~8s
+    # cold — the recurring CI timeout). Fall back to the subprocess if the pool is
+    # unavailable / errors.
+    try:
+        from vivarium_workbench.lib.env_worker_pool import get_pool
+        _pooled = get_pool().call(ws_root, "composites_full")
+        if isinstance(_pooled, dict) and "composites" in _pooled and not _pooled.get("error"):
+            _COMPOSITES_CACHE[ws_root_str] = {"data": _pooled, "ts": now}
+            return _pooled
+    except Exception:
+        pass
+
     script = (
         "import json, sys\n"
         "from pathlib import Path\n"

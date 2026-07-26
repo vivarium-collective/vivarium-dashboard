@@ -651,9 +651,12 @@ window.addEventListener('pageshow', function (e) {
     <div class="card-browse-toolbar" id="composite-toolbar">
       <input type="search" class="card-browse-search" id="composite-search" placeholder="Filter composites…">
       <div class="card-browse-chips" id="composite-tag-chips"></div>
-      <span class="card-browse-view-toggle">
-        <button class="view-btn active" data-view="grid" onclick="_setCompositeView('grid')" title="Grid view">&#9638;</button>
-        <button class="view-btn" data-view="list" onclick="_setCompositeView('list')" title="List view">&#8801;</button>
+      {# Semantic zoom, dense → detailed: Table (sortable) → Cards (full-row) →
+         Loom (the composite's bigraph, embedded on demand per card). #}
+      <span class="registry-zoom" role="group" aria-label="View density" title="View density">
+        <button class="reg-zoom-btn" data-czoom="table" onclick="_setCompositeZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
+        <button class="reg-zoom-btn active" data-czoom="cards" onclick="_setCompositeZoom('cards')" title="Cards — full-row">&#9638;</button>
+        <button class="reg-zoom-btn" data-czoom="loom" onclick="_setCompositeZoom('loom')" title="Loom — the composite bigraph (open per card)">&#9707;</button>
       </span>
       <select id="composites-sort" class="composites-sort-select" onchange="_setCompositesSort(this.value)" title="Sort composites">
         <option value="workspace-first">Sort: Workspace first</option>
@@ -743,9 +746,12 @@ window.addEventListener('pageshow', function (e) {
           <option value="investigations"># investigations</option>
           <option value="updated">Recently updated</option>
         </select>
-        <span class="card-browse-view-toggle">
-          <button class="view-btn active" data-view="grid" onclick="_setCatalogView('grid')" title="Grid view">&#9638;</button>
-          <button class="view-btn" data-view="list" onclick="_setCatalogView('list')" title="List view">&#8801;</button>
+        {# Semantic zoom, dense → detailed: Table (sortable) → Cards (full-row)
+           → Full (high detail). Double-click a module to zoom in. #}
+        <span class="registry-zoom" role="group" aria-label="View density" title="View density">
+          <button class="reg-zoom-btn" data-mzoom="table" onclick="_setCatalogZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
+          <button class="reg-zoom-btn active" data-mzoom="cards" onclick="_setCatalogZoom('cards')" title="Cards — full-row">&#9638;</button>
+          <button class="reg-zoom-btn" data-mzoom="full" onclick="_setCatalogZoom('full')" title="Full — high detail">&#9635;</button>
         </span>
       </div>
     </div>

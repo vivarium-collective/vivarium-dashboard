@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.9: registry filter now data-driven (works in Table/Cards/Full); middle Cards zoom is full-row with composite/study usage split + details; double-click zooms in centered; select persists across zoom; run panel input ports as per-field form (type + resolved default, auto-grow) + Copy outputs; loom config bar lightened to match workbench palette. v0.6.8: run panel lazy-loads RESOLVED defaults (core.fill via /api/registry/process-template) into a per-field config form + inputs JSON (no more null-heavy templates); loom card restyled as a crisp rectangle. v0.6.7: Registry Full-view interactive runner — editable config + input-port JSON, Run → outputs (POST /api/registry/run-process; env_worker._run_process instantiates + Step.update / Process.update(interval)); loom inputs left / outputs right. v0.6.6: Registry semantic zoom (compact/detailed/full loom-rectangle: inputs left, outputs right, config top) + Cards⇄Table sortable view (_setRegistryZoom/_setRegistryView/_renderRegistryTable); rail pins hover-only + ungrouped back to a collapsible folder. v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.7.0: Composites semantic zoom (Table/Cards full-row compact/Loom on-demand embed) + double-click to zoom in; /api/composites now runs in the WARM pooled worker (flake fix). v0.6.9: registry filter now data-driven (works in Table/Cards/Full); middle Cards zoom is full-row with composite/study usage split + details; double-click zooms in centered; select persists across zoom; run panel input ports as per-field form (type + resolved default, auto-grow) + Copy outputs; loom config bar lightened to match workbench palette. v0.6.8: run panel lazy-loads RESOLVED defaults (core.fill via /api/registry/process-template) into a per-field config form + inputs JSON (no more null-heavy templates); loom card restyled as a crisp rectangle. v0.6.7: Registry Full-view interactive runner — editable config + input-port JSON, Run → outputs (POST /api/registry/run-process; env_worker._run_process instantiates + Step.update / Process.update(interval)); loom inputs left / outputs right. v0.6.6: Registry semantic zoom (compact/detailed/full loom-rectangle: inputs left, outputs right, config top) + Cards⇄Table sortable view (_setRegistryZoom/_setRegistryView/_renderRegistryTable); rail pins hover-only + ungrouped back to a collapsible folder. v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -2670,6 +2670,10 @@
   window._composites = [];
   window._compositesFilter = { search: '', tags: new Set() };
   window._compositesView = 'grid';
+  window._compositesZoom = (function () {
+    var z; try { z = localStorage.getItem('viv.compositesZoom'); } catch (e) { z = null; }
+    return (z === 'table' || z === 'cards' || z === 'loom') ? z : 'cards';
+  })();
   // Default sort: workspace-local composites first, then alphabetical.
   // Surfaces the composites the current investigation actually needs
   // ahead of the full list of every installed pbg-* package's composites
@@ -2787,6 +2791,14 @@
       return;
     }
 
+    // Semantic zoom: Table (dense sortable) → Cards (full-row) → Loom (bigraph
+    // embedded on demand per card). The old grid/list toggle is subsumed.
+    var _czoom = window._compositesZoom || 'cards';
+    document.querySelectorAll('#composite-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-czoom') === _czoom);
+    });
+    if (_czoom === 'table') { _renderCompositesTable(container, composites); return; }
+
     function _moduleLine(c) {
       var mod = c.module || '';
       var kind = c.kind || 'spec';
@@ -2843,7 +2855,7 @@
       });
       container.innerHTML = rows.join('');
     } else {
-      container.className = 'ccard-grid';
+      container.className = 'ccard-rows' + (_czoom === 'loom' ? ' ccard-loom' : '');
       var prevG = null;
       var cards = composites.map(function(c) {
         var kind = c.kind || 'spec';
@@ -2935,25 +2947,138 @@
         var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
           ? ''
           : '<button class="ccard-explore" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore &rarr;</button>';
-        return divider + '<div class="ccard' + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '">' +
-          '<div class="ccard-top">' +
-            '<span class="ccard-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span>' +
-            '<span class="ccard-badges">' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</span>' +
+        var _csel = (window._compositesSelected && window._compositesSelected === c.id) ? ' reg-selected' : '';
+        // Compact full-row card: identity | description | stats | actions across
+        // the bar; config/structure/tags collapse into a details strip below.
+        return divider + '<div class="ccard ccard-compact' + _csel + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '"' +
+            ' data-id="' + _esc(c.id) + '" ondblclick="_zoomInComposite(\'' + _esc(c.id) + '\')" title="Double-click to zoom in on this composite">' +
+          '<div class="ccc-grid">' +
+            '<div class="ccc-identity">' +
+              '<div class="ccc-name-row"><span class="ccc-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span> ' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</div>' +
+              '<code class="ccc-addr" title="' + _esc(c.id) + '">' + _esc(c.id) + '</code>' +
+            '</div>' +
+            '<div class="ccc-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</div>' +
+            '<div class="ccc-stats">' + metaRow + trackRow + '</div>' +
+            '<div class="ccc-actions">' + exploreBtn + '</div>' +
           '</div>' +
-          '<div class="ccard-id mono" title="' + _esc(c.id) + '">' + _esc(c.id) + '</div>' +
-          '<p class="ccard-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</p>' +
-          metaRow +
-          trackRow +
-          paramPreview +
-          structRow +
-          tagRow +
-          '<div class="ccard-foot">' + exploreBtn + '</div>' +
+          ((paramPreview || structRow || tagRow) ? '<div class="ccc-details-row">' + paramPreview + structRow + tagRow + '</div>' : '') +
+          (_czoom === 'loom' ? _compositeLoomEmbed(c) : '') +
         '</div>';
       });
       container.innerHTML = cards.join('');
     }
   }
   window._renderComposites = _renderComposites;
+
+  function _setCompositeZoom(z) {
+    window._compositesZoom = z;
+    try { localStorage.setItem('viv.compositesZoom', z); } catch (e) { /* private mode */ }
+    document.querySelectorAll('#composite-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-czoom') === z);
+    });
+    _renderComposites();
+  }
+  window._setCompositeZoom = _setCompositeZoom;
+
+  // Double-click a composite → zoom in one level (table → cards → loom), focused.
+  function _zoomInComposite(id) {
+    var order = ['table', 'cards', 'loom'];
+    var i = order.indexOf(window._compositesZoom || 'cards');
+    window._compositesSelected = id;
+    _setCompositeZoom(order[Math.min(order.length - 1, i + 1)]);
+    setTimeout(function () {
+      var sel = document.querySelector('#composite-cards [data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+      if (sel) { sel.classList.add('reg-selected'); try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ } }
+    }, 60);
+  }
+  window._zoomInComposite = _zoomInComposite;
+
+  // Loom (Full) zoom: an on-demand embed of the composite's bigraph. Resolving a
+  // composite can be ParCa-heavy, so it only loads when the card is expanded —
+  // read-only, via the loom's static stateUrl pointed at live composite-resolve.
+  function _compositeLoomEmbed(c) {
+    if (c.read_only && !c.has_wiring) return '';
+    return '<details class="ccard-loom-embed" data-id="' + _esc(c.id) + '" ontoggle="_openCompositeLoomInline(this)">' +
+      '<summary>Open loom</summary>' +
+      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Expand to resolve &amp; render the bigraph…</p></div>' +
+    '</details>';
+  }
+  window._compositeLoomEmbed = _compositeLoomEmbed;
+
+  function _openCompositeLoomInline(det) {
+    if (!det || !det.open || det._loomLoaded) return;
+    det._loomLoaded = true;
+    var id = det.getAttribute('data-id');
+    var host = det.querySelector('.ccard-loom-frame');
+    if (!host) return;
+    host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Resolving composite (this can take a moment)…</p>';
+    var apiUrl = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    var stateUrl = apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id));
+    var loomUrl = apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(stateUrl);
+    var f = document.createElement('iframe');
+    f.className = 'ccard-loom-iframe';
+    f.setAttribute('title', 'Loom — ' + id);
+    f.src = loomUrl;
+    host.innerHTML = '';
+    host.appendChild(f);
+  }
+  window._openCompositeLoomInline = _openCompositeLoomInline;
+
+  // Composites Table view — sortable (Name / Module / Kind / Params / Steps / Used).
+  function _renderCompositesTable(container, composites) {
+    var sk = window._compositesTableSort || 'workspace';
+    var sd = window._compositesTableDir || (sk === 'workspace' ? 'asc' : 'asc');
+    var mod = function (c) { return (c.module || '').split('.')[0]; };
+    var used = function (c) { return (c.studies && c.studies.studies) ? c.studies.studies : 0; };
+    var nparam = function (c) { return Object.keys(c.parameters || {}).length; };
+    var rows = composites.slice().sort(function (a, b) {
+      var av, bv;
+      // Default view: this-workspace composites on top, then most-used in this
+      // workspace, then alphabetical. Returns directly (direction-agnostic).
+      if (sk === 'workspace') {
+        var aw = a.workspace_local ? 0 : 1, bw = b.workspace_local ? 0 : 1;
+        if (aw !== bw) return aw - bw;
+        var au = used(a), bu = used(b);
+        if (au !== bu) return bu - au;
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      if (sk === 'module') { av = mod(a).toLowerCase(); bv = mod(b).toLowerCase(); }
+      else if (sk === 'kind') { av = (a.kind || ''); bv = (b.kind || ''); }
+      else if (sk === 'params') { av = nparam(a); bv = nparam(b); }
+      else if (sk === 'steps') { av = a.default_n_steps || 0; bv = b.default_n_steps || 0; }
+      else if (sk === 'used') { av = used(a); bv = used(b); }
+      else { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); }
+      var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
+      return sd === 'desc' ? -c : c;
+    });
+    function th(key, label, cls) {
+      var on = sk === key;
+      return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
+        '" onclick="_setCompositesTableSort(\'' + key + '\')">' + label + (on ? (sd === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
+    }
+    var body = rows.map(function (c) {
+      return '<tr class="reg-tr" data-id="' + _esc(c.id || '') + '" ondblclick="_zoomInComposite(\'' + _esc(c.id || '') + '\')" title="Double-click to zoom in">' +
+        '<td class="reg-td-name"><strong>' + _esc(c.name) + '</strong> <code>' + _esc(c.id || '') + '</code></td>' +
+        '<td>' + _esc(mod(c)) + '</td>' +
+        '<td>' + _esc(c.kind || 'spec') + '</td>' +
+        '<td class="num">' + nparam(c) + '</td>' +
+        '<td class="num">' + (c.default_n_steps || '') + '</td>' +
+        '<td class="num">' + used(c) + '</td>' +
+        '<td class="reg-td-src">' + (c.workspace_local ? 'workspace' : _esc(mod(c))) + '</td>' +
+      '</tr>';
+    }).join('');
+    container.className = '';
+    container.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
+      th('name', 'Name') + th('module', 'Module') + th('kind', 'Kind') + th('params', 'Params', 'num') +
+      th('steps', 'Steps', 'num') + th('used', 'Used', 'num') + th('workspace', 'Source') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function _setCompositesTableSort(key) {
+    if (window._compositesTableSort === key) window._compositesTableDir = (window._compositesTableDir === 'desc') ? 'asc' : 'desc';
+    else { window._compositesTableSort = key; window._compositesTableDir = (key === 'name' || key === 'module' || key === 'kind') ? 'asc' : 'desc'; }
+    _renderComposites();
+  }
+  window._setCompositesTableSort = _setCompositesTableSort;
 
   // Lazily fetch a composite's process/store counts when its "structure"
   // <details> is first opened (building a composite can be ParCa-heavy, so this
@@ -3142,6 +3267,33 @@
   }
   window._setCatalogView = _setCatalogView;
 
+  // Modules semantic zoom: Table (dense sortable) → Cards (full-row) → Full (high
+  // detail). Persists; double-click a module zooms in one level.
+  window._catalogZoom = (function () {
+    var z; try { z = localStorage.getItem('viv.catalogZoom'); } catch (e) { z = null; }
+    return (z === 'table' || z === 'cards' || z === 'full') ? z : 'cards';
+  })();
+  function _setCatalogZoom(z) {
+    window._catalogZoom = z;
+    try { localStorage.setItem('viv.catalogZoom', z); } catch (e) { /* private mode */ }
+    document.querySelectorAll('#catalog-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-mzoom') === z);
+    });
+    _renderCatalog();
+  }
+  window._setCatalogZoom = _setCatalogZoom;
+  function _zoomInModule(name) {
+    var order = ['table', 'cards', 'full'];
+    var i = order.indexOf(window._catalogZoom || 'cards');
+    window._catalogSelected = name;
+    _setCatalogZoom(order[Math.min(order.length - 1, i + 1)]);
+    setTimeout(function () {
+      var sel = document.querySelector('#catalog-modules-grid [data-mid="' + (window.CSS && CSS.escape ? CSS.escape(name) : name) + '"]');
+      if (sel) { sel.classList.add('reg-selected'); try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ } }
+    }, 60);
+  }
+  window._zoomInModule = _zoomInModule;
+
   // -------------------------------------------------------------------------
   // Shared module-card rendering (Modules tab + Marketplace tab)
   // -------------------------------------------------------------------------
@@ -3299,45 +3451,87 @@
       return;
     }
 
-    if (view === 'list') {
-      grid.className = 'module-list';
-      var prevL = null;
-      var rows = modules.map(function(m) {
-        var divider = _moduleSectionDivider(prevL, m);
-        prevL = m;
-        return divider + '<div class="module-list-row' + (m.kind === 'workspace' ? ' module-row-workspace' : '') + '">' +
-          '<span class="name">' + _esc(m.display_name || m.name) + '</span>' +
-          '<span class="desc"> ' + _esc(m.description || '') + _moduleStatsRow(m) + _moduleInstalledMeta(m) + '</span>' +
-          '<span>' + _moduleActionFor(m, marketplace) + '</span>' +
-          '</div>';
-      });
-      grid.innerHTML = rows.join('');
-    } else {
-      grid.className = 'module-grid';
-      var prevG = null;
-      var cards = modules.map(function(m) {
-        var divider = _moduleSectionDivider(prevG, m);
-        prevG = m;
-        // Installed-via-imports modules carry their GitHub URL in `source`, not
-        // `homepage`; fall back to a URL-shaped source for the header link.
-        var _hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
-        var homepage = _hp
-          ? '<a href="' + _esc(_hp) + '" target="_blank" class="module-link">GitHub &#8599;</a>'
-          : '';
-        var workspaceCls = (m.kind === 'workspace') ? ' module-card-workspace'
-                          : (m.installed ? ' module-card-installed' : '');
-        return divider + '<div class="module-card' + workspaceCls + '">' +
-          '<div class="module-card-header"><strong>' + _esc(m.display_name || m.name) + '</strong> ' + homepage + '</div>' +
-          '<p class="module-desc">' + _esc(m.description) + '</p>' +
-          '<div class="module-tags"></div>' +
-          _moduleStatsRow(m) +
-          _moduleInstalledMeta(m) +
-          '<div class="module-action">' + _moduleActionFor(m, marketplace) + '</div>' +
-          '</div>';
-      });
-      grid.innerHTML = cards.join('');
-    }
+    // Semantic zoom: Table (dense sortable) → Cards (full-row) → Full (high
+    // detail). Keep the workspace→installed→available section dividers.
+    var zoom = window._catalogZoom || 'cards';
+    document.querySelectorAll('#catalog-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-mzoom') === zoom);
+    });
+    if (zoom === 'table') { _renderModulesTable(grid, modules, marketplace); return; }
+    grid.className = 'mrows' + (zoom === 'full' ? ' mrows-full' : '');
+    var prevG = null;
+    var cards = modules.map(function (m) {
+      var divider = _moduleSectionDivider(prevG, m);
+      prevG = m;
+      return divider + _moduleFullRowCard(m, marketplace, zoom);
+    });
+    grid.innerHTML = cards.join('');
   }
+
+  // Full-row module card — identity | description | stats | install-action, with
+  // source/ref/path detail shown at the Full zoom. Double-click zooms in.
+  function _moduleFullRowCard(m, marketplace, zoom) {
+    var name = _esc(m.display_name || m.name);
+    var _hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
+    var homepage = _hp ? ' <a href="' + _esc(_hp) + '" target="_blank" class="module-link">GitHub &#8599;</a>' : '';
+    var wsCls = (m.kind === 'workspace') ? ' module-card-workspace' : (m.installed ? ' module-card-installed' : '');
+    var sel = (window._catalogSelected && window._catalogSelected === m.name) ? ' reg-selected' : '';
+    var meta = _moduleInstalledMeta(m);
+    return '<div class="module-card mrow' + sel + wsCls + '" data-mid="' + _esc(m.name) + '"' +
+        ' ondblclick="_zoomInModule(\'' + _esc(m.name) + '\')" title="Double-click to zoom in on this module">' +
+      '<div class="mrow-grid">' +
+        '<div class="mrow-identity"><div class="mrow-name"><strong class="mrow-name-text" title="' + _esc(m.display_name || m.name) + '">' + name + '</strong>' + homepage + '</div></div>' +
+        '<div class="mrow-desc">' + _esc(m.description || '') + '</div>' +
+        '<div class="mrow-stats">' + _moduleStatsRow(m) + '</div>' +
+        '<div class="mrow-action">' + _moduleActionFor(m, marketplace) + '</div>' +
+      '</div>' +
+      (zoom === 'full' && meta ? '<div class="mrow-meta">' + meta + '</div>' : '') +
+    '</div>';
+  }
+
+  // Modules Table — sortable (Name / Source / Composites / Studies / Used / State).
+  function _renderModulesTable(grid, modules, marketplace) {
+    var sk = window._catalogTableSort || 'name', sd = window._catalogTableDir || 'asc';
+    var pkg = function (m) { return (m.package || m.name || '').split('.')[0].replace(/_/g, '-'); };
+    var state = function (m) { return m.kind === 'workspace' ? 'first-party' : (m.installed ? (m.install_source || 'installed') : 'available'); };
+    var rows = modules.slice().sort(function (a, b) {
+      var av, bv;
+      if (sk === 'source') { av = pkg(a).toLowerCase(); bv = pkg(b).toLowerCase(); }
+      else if (sk === 'composites') { av = a.n_composites || 0; bv = b.n_composites || 0; }
+      else if (sk === 'studies') { av = a.n_studies || 0; bv = b.n_studies || 0; }
+      else if (sk === 'used') { av = a.n_used || 0; bv = b.n_used || 0; }
+      else if (sk === 'state') { av = state(a); bv = state(b); }
+      else { av = (a.display_name || a.name || '').toLowerCase(); bv = (b.display_name || b.name || '').toLowerCase(); }
+      var c = av < bv ? -1 : (av > bv ? 1 : 0);
+      return sd === 'desc' ? -c : c;
+    });
+    function th(key, label, cls) {
+      var on = sk === key;
+      return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
+        '" onclick="_setCatalogTableSort(\'' + key + '\')">' + label + (on ? (sd === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
+    }
+    var body = rows.map(function (m) {
+      return '<tr class="reg-tr" data-mid="' + _esc(m.name) + '" ondblclick="_zoomInModule(\'' + _esc(m.name) + '\')" title="Double-click to zoom in">' +
+        '<td class="reg-td-name"><strong>' + _esc(m.display_name || m.name) + '</strong></td>' +
+        '<td>' + _esc(m.kind === 'workspace' ? 'workspace' : pkg(m)) + '</td>' +
+        '<td class="num">' + (m.n_composites || 0) + '</td>' +
+        '<td class="num">' + (m.n_studies || 0) + '</td>' +
+        '<td class="num">' + (m.n_used || 0) + '</td>' +
+        '<td class="reg-td-src">' + _esc(state(m)) + '</td>' +
+      '</tr>';
+    }).join('');
+    grid.className = '';
+    grid.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
+      th('name', 'Name') + th('source', 'Source') + th('composites', 'Composites', 'num') +
+      th('studies', 'Studies', 'num') + th('used', 'Used', 'num') + th('state', 'State') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function _setCatalogTableSort(key) {
+    if (window._catalogTableSort === key) window._catalogTableDir = (window._catalogTableDir === 'desc') ? 'asc' : 'desc';
+    else { window._catalogTableSort = key; window._catalogTableDir = (key === 'name' || key === 'source' || key === 'state') ? 'asc' : 'desc'; }
+    _renderCatalog();
+  }
+  window._setCatalogTableSort = _setCatalogTableSort;
 
   function _renderCatalog() {
     var grid = document.getElementById('catalog-modules-grid');

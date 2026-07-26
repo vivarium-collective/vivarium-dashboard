@@ -87,7 +87,7 @@ def _write_frame(sock: socket.socket, obj: dict) -> None:
 _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
                  "run_process", "process_template",
                  "viz_classes", "resolve_composite_state", "observables",
-                 "study_readout_check", "attach_process_docs", "discover_composites",
+                 "study_readout_check", "attach_process_docs", "discover_composites", "composites_full",
                  "validate_generated_visualization", "run_study_analyses", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
 
 _FRAMEWORK_PKGS = {
@@ -1258,6 +1258,23 @@ def _study_readout_check(params: dict) -> dict:
     return {"readouts": results}
 
 
+def _composites_full() -> dict:
+    """The full ``GET /api/composites`` payload (``{"composites": [...]}``) built
+    in the WARM pooled worker, so the workspace package + build_core imports are
+    paid ONCE and reused — instead of a fresh per-request subprocess that
+    re-imports everything (~8s cold, and the source of the recurring CI timeout).
+    Best-effort; a build failure returns ``{"composites": [], "error": ...}``."""
+    if _workspace and _workspace not in sys.path:
+        sys.path.insert(0, _workspace)
+    _import_workspace_package(_workspace)
+    try:
+        from pathlib import Path as _Path
+        from vivarium_workbench.lib.composite_lookup import composites_data
+        return composites_data(_Path(_workspace))
+    except Exception as e:  # noqa: BLE001
+        return {"composites": [], "error": f"composites_data failed: {e}"}
+
+
 def _discover_composites() -> dict:
     """Generator composite entries for this environment (spec §11).
 
@@ -2281,6 +2298,8 @@ def _handle(method: str, params: dict) -> dict:
         return _attach_process_docs_method(params)
     if method == "discover_composites":
         return _discover_composites()
+    if method == "composites_full":
+        return _composites_full()
     if method == "validate_generated_visualization":
         return _validate_generated_visualization(params)
     if method == "run_study_analyses":

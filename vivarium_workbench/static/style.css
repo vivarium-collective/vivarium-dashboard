@@ -237,6 +237,33 @@ img{max-width:100%}
   display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));
   gap:14px; margin:8px 0;
 }
+/* Semantic-zoom module rows (Cards / Full): full-row cards, content across the
+   bar — identity | description | stats | install-action. */
+.mrows{ display:flex; flex-direction:column; gap:9px; margin:8px 0; }
+.module-card.mrow{ width:100%; padding:11px 15px; gap:0; }
+.module-card.mrow.reg-selected{ border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,0.22); }
+.mrow-grid{
+  display:grid; grid-template-columns:minmax(160px,1fr) minmax(0,2.2fr) minmax(150px,1fr) auto;
+  gap:20px; align-items:center;
+}
+@media (max-width:900px){ .mrow-grid{ grid-template-columns:1fr; gap:6px; } }
+.mrow-identity{ min-width:0; }
+/* Name truncates; the GitHub link stays visible (flex:none) instead of being
+   clipped along with a long name. */
+.mrow-name{ display:flex; align-items:baseline; gap:6px; min-width:0; }
+.mrow-name-text{
+  font-size:1.0em; color:#0f172a; font-weight:700; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.mrow-name .module-link{ flex:none; white-space:nowrap; }
+.mrow-desc{
+  color:#475569; font-size:0.86em; line-height:1.45; min-width:0;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.mrow-stats{ min-width:0; }
+.mrow-stats .module-stats-row{ margin:0; }
+.mrow-action{ display:flex; align-items:center; justify-content:flex-end; }
+.mrow-meta{ margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9; }
 .module-card{
   background:#fff; border:1px solid #e5e7eb; border-radius:10px;
   padding:14px 16px; display:flex; flex-direction:column; gap:9px;
@@ -2352,6 +2379,16 @@ textarea.loom-in-field{
   background: none; border-radius: 0; box-shadow: none; }
 .registry-subtab-panel.active { display: block; }
 
+/* Sources, Composites, and Analysis Tools wrapped their whole page in a bordered
+   `.panel` card, leaving a buffer margin around the operating space. Registry and
+   Investigations fill the pane flush — match that by stripping the card chrome
+   from these pages' outermost panel (nested panels keep their chrome). */
+#page-workspace-inputs > .panel,
+#page-simulation-setup > .panel,
+#page-visualizations > .panel {
+  background: none; border: none; border-radius: 0; padding: 0; margin: 0;
+}
+
 /* ───────────────────────────────────────────────────────────────────
  * Catalog grid — workspace-package + installed-first chrome.
  *
@@ -3027,6 +3064,57 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   gap: 12px;
   align-items: start;
 }
+/* Semantic-zoom Cards / Loom: full-row composite cards (one per row). */
+.ccard-rows { display: flex; flex-direction: column; gap: 10px; }
+.ccard-rows .ccard { width: 100%; }
+/* Compact full-row card: content distributed across the bar into subareas, so
+   each card is short. identity | description | stats | actions. */
+.ccard-compact { padding: 10px 14px; gap: 0; }
+.ccard-compact.reg-selected { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.22); }
+.ccc-grid {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(0, 2.4fr) minmax(150px, 1fr) auto;
+  gap: 20px; align-items: start;
+}
+@media (max-width: 900px) { .ccc-grid { grid-template-columns: 1fr; gap: 6px; } }
+.ccc-identity { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ccc-name-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.ccc-name { font-weight: 700; color: #0f172a; font-size: 1.0em; }
+.ccc-addr {
+  font-family: ui-monospace, Menlo, monospace; font-size: 0.74em; color: #94a3b8;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ccc-desc {
+  color: #475569; font-size: 0.86em; line-height: 1.45; min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ccc-stats { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ccc-stats .ccard-meta { margin: 0; font-size: 0.78em; }
+.ccc-stats .ccard-track { margin: 2px 0 0; }
+.ccc-stats .ccard-bar { height: 5px; }
+.ccc-actions { display: flex; align-items: flex-start; justify-content: flex-end; }
+/* Config / structure / tags collapse into a short strip under the grid. */
+.ccc-details-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;
+}
+.ccc-details-row > details { margin: 0; }
+.ccc-details-row > details > summary { font-size: 0.82em; }
+.ccc-details-row .ccard-tags { margin: 0; }
+/* Loom (Full) zoom: an inline, on-demand bigraph embed per composite card. */
+.ccard-loom-embed { border-top: 1px solid #f1f5f9; margin-top: 4px; }
+.ccard-loom-embed > summary {
+  cursor: pointer; user-select: none; color: #4338ca; font-weight: 600;
+  font-size: 0.85em; padding: 6px 0 2px; list-style: none;
+}
+.ccard-loom-embed > summary::-webkit-details-marker { display: none; }
+.ccard-loom-embed > summary::before { content: '▸ '; }
+.ccard-loom-embed[open] > summary::before { content: '▾ '; }
+.ccard-loom-frame {
+  border: 1px solid #cbd5e1; border-radius: 0; background: #fbfcfe;
+  margin: 6px 0 2px; overflow: hidden;
+}
+.ccard-loom-iframe { width: 100%; height: 460px; border: 0; display: block; }
 .ccard {
   display: flex; flex-direction: column; gap: 7px;
   border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;
