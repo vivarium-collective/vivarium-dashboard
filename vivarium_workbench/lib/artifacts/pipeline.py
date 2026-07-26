@@ -176,9 +176,11 @@ def resolve_study(
             # `rmtree` delete another writer's in-flight scratch mid-compute.
             # The dir name is transient filesystem isolation only: it never
             # enters `artifact_id` and never affects stored content, so this
-            # stays fully deterministic — `store.put` is idempotent, so if two
-            # attempts race, the first to `put` wins and the second is a no-op
-            # store hit.
+            # stays fully deterministic — `store.put` is idempotent by default,
+            # so if two attempts race, the first to `put` wins and the second
+            # is a no-op store hit (force=True passes overwrite=True below,
+            # which trades that race-safety for actually refreshing a forced
+            # recompute's content instead of discarding it).
             scratch_root = wp.pbg / "_scratch"
             scratch_root.mkdir(parents=True, exist_ok=True)
             scratch = Path(tempfile.mkdtemp(prefix=f"{oid}-", dir=scratch_root))
@@ -192,7 +194,7 @@ def resolve_study(
                     input_ids=sorted(inputs_map.values()),
                     out_dir=scratch,
                 )
-                store.put(oid, produced, {"slug": slug, "stage": output_name})
+                store.put(oid, produced, {"slug": slug, "stage": output_name}, overwrite=force)
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
 

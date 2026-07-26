@@ -11,9 +11,12 @@ Payloads may be a single file (copied to ``artifact.bin``) or a directory
 an artifact is fully written — a partial/interrupted copy is never mistaken
 for a store hit.
 
-``put`` is idempotent: if the id is already present, the existing artifact is
-returned unchanged (store hit wins), regardless of what ``src`` currently
-contains.
+``put`` is idempotent by default: if the id is already present, the existing
+artifact is returned unchanged (store hit wins), regardless of what ``src``
+currently contains. Pass ``overwrite=True`` to force a refresh of an
+already-present id's payload + meta (e.g. a caller that deliberately bypassed
+its own read-cache and recomputed wants the new content actually persisted,
+not silently discarded).
 """
 from __future__ import annotations
 
@@ -47,8 +50,8 @@ class ArtifactStore:
             return file_payload
         return d / "payload"
 
-    def put(self, artifact_id: str, src: Path | str, meta: dict) -> Path:
-        if self.has(artifact_id):
+    def put(self, artifact_id: str, src: Path | str, meta: dict, *, overwrite: bool = False) -> Path:
+        if self.has(artifact_id) and not overwrite:
             return self.path(artifact_id)
 
         src = Path(src)

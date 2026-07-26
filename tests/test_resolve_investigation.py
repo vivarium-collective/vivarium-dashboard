@@ -3,6 +3,7 @@ import yaml
 
 from vivarium_workbench.lib.artifacts import pipeline
 from vivarium_workbench.lib.artifacts.pipeline import resolve_investigation
+from vivarium_workbench.lib.artifacts.store import ArtifactStore
 
 
 def make_stub(fail_for=()):
@@ -141,3 +142,54 @@ def test_force_bypasses_cache(diamond):
     assert set(calls2) == {"parca", "a", "b", "c"}
     statuses = {n["slug"]: n["status"] for n in result["nodes"]}
     assert all(s == "computed" for s in statuses.values())
+
+
+def test_force_refreshes_stored_content(diamond):
+    """force=True must not just relabel status "computed" — the newly
+    recomputed payload has to actually land in the store, not be discarded
+    by ArtifactStore.put's default idempotent early-return."""
+
+    def write_bytes(data):
+        def stub(ws_root, slug, *, artifact_id, composite, config, input_ids, out_dir):
+            out_dir.mkdir(parents=True, exist_ok=True)
+            p = out_dir / "out.bin"
+            p.write_bytes(data)
+            return p
+        return stub
+
+    r1 = pipeline.resolve_study(diamond, "parca", compute_fn=write_bytes(b"A"))
+    store = ArtifactStore(diamond)
+    assert store.path(r1["artifact_id"]).read_bytes() == b"A"
+
+    r2 = pipeline.resolve_study(diamond, "parca", compute_fn=write_bytes(b"B"), force=True)
+    assert r2["artifact_id"] == r1["artifact_id"]
+    assert store.path(r2["artifact_id"]).read_bytes() == b"B"
+
+
+def test_non_member_producer_is_discovered_and_ordered(tmp_path):
+    """`parca` is a real producer study but is NOT listed in the
+    investigation's `members:` — resolve_investigation must still discover
+    it (via `a`'s inputs.from), order it ahead of `a`, and resolve without
+    crashing."""
+    _write_study(tmp_path, "parca")
+    _write_study(tmp_path, "a", inputs_from=["parca"])
+    _write_study(tmp_path, "c")
+
+    inv_dir = tmp_path / "investigations" / "inv2"
+    inv_dir.mkdir(parents=True, exist_ok=True)
+    (inv_dir / "investigation.yaml").write_text(yaml.safe_dump({
+        "name": "inv2",
+        "members": ["a", "c"],
+    }))
+
+    stub, calls = make_stub()
+    result = resolve_investigation(tmp_path, "inv2", compute_fn=stub)
+
+    assert result["error"] is None
+    assert "parca" in result["order"]
+    assert result["order"].index("parca") < result["order"].index("a")
+
+    statuses = {n["slug"]: n["status"] for n in result["nodes"]}
+    assert statuses["parca"] == "computed"
+    assert statuses["a"] == "computed"
+    assert statuses["c"] == "computed"
