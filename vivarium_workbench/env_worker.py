@@ -85,6 +85,7 @@ def _write_frame(sock: socket.socket, obj: dict) -> None:
 
 
 _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
+                 "run_process", "process_template",
                  "viz_classes", "resolve_composite_state", "observables",
                  "study_readout_check", "attach_process_docs", "discover_composites",
                  "validate_generated_visualization", "run_study_analyses", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
@@ -2065,6 +2066,185 @@ def _list_generators() -> dict:
     return {"generators": sorted(_REGISTRY.keys())}
 
 
+_WS_CORE: dict = {}
+
+
+def _get_workspace_core():
+    """Build (once, cached) the workspace's core — reused across run-process calls."""
+    if "c" in _WS_CORE:
+        return _WS_CORE["c"]
+    if _workspace and _workspace not in sys.path:
+        sys.path.insert(0, _workspace)
+    package_name, _pkgs, _ws = _workspace_meta(_workspace)
+    mod = __import__(f"{package_name}.core", fromlist=["build_core"])
+    _WS_CORE["c"] = mod.build_core()
+    return _WS_CORE["c"]
+
+
+def _json_safe(obj):
+    """Coerce update() outputs (numpy arrays/scalars, sets, nested) to JSON."""
+    try:
+        import numpy as _np
+    except Exception:
+        _np = None
+    if _np is not None:
+        if isinstance(obj, _np.ndarray):
+            return obj.tolist()
+        if isinstance(obj, _np.generic):
+            return obj.item()
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, set)):
+        return [_json_safe(v) for v in obj]
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+    return str(obj)
+
+
+def _resolve_registry_class(core, address: str):
+    """Find a registered class by full address (preferred) or short name."""
+    short = address.split(".")[-1]
+    found = None
+    for n, c in (getattr(core, "link_registry", {}) or {}).items():
+        if not isinstance(c, type):
+            continue
+        addr = f"{getattr(c, '__module__', '')}.{getattr(c, '__qualname__', '')}"
+        if addr == address:
+            return c
+        if found is None and (n == address or getattr(c, "__qualname__", "") == short):
+            found = c
+    return found
+
+
+def _class_is_step(cls) -> bool:
+    for anc in getattr(cls, "__mro__", []):
+        if anc.__name__ in ("Process", "ProcessEnsemble"):
+            return False
+        if anc.__name__ == "Step":
+            return True
+    return False
+
+
+def _process_template(params: dict) -> dict:
+    """Resolved default config + input-port VALUES for a process/step, via
+    ``core.fill(schema, {})`` — real defaults (paths, numbers, nested stores),
+    not the null-heavy client-side ``_default`` template. Prefills the run panel."""
+    p = params or {}
+    address = p.get("address") or ""
+    try:
+        core = _get_workspace_core()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"build_core failed: {e}"}
+    if core is None:
+        return {"ok": False, "error": "workspace core unavailable"}
+    cls = _resolve_registry_class(core, address)
+    if cls is None:
+        return {"ok": False, "error": f"class not found: {address}"}
+    is_step = _class_is_step(cls)
+
+    config = {}
+    try:
+        cs = getattr(cls, "config_schema", {}) or {}
+        config = core.fill(cs, {}) if hasattr(core, "fill") else {}
+    except Exception:
+        config = {}
+
+    inputs = {}
+    inputs_schema = {}
+    try:
+        inst = cls(config if isinstance(config, dict) else {}, core)
+        in_schema = inst.inputs()
+        if isinstance(in_schema, dict):
+            inputs_schema = _json_safe(in_schema)
+            inputs = core.fill(in_schema, {}) if hasattr(core, "fill") else {}
+    except Exception:
+        inputs = {}
+
+    return {
+        "ok": True,
+        "kind": "step" if is_step else "process",
+        "config": _json_safe(config) if isinstance(config, dict) else {},
+        "inputs": _json_safe(inputs) if isinstance(inputs, dict) else {},
+        "inputs_schema": inputs_schema if isinstance(inputs_schema, dict) else {},
+    }
+
+
+def _run_process(params: dict) -> dict:
+    """Instantiate a registry Process/Step with the given config, validate + fill
+    the provided input-port values, and run one update() — returning outputs.
+
+    Steps run as ``update(state)``; Processes as ``update(state, interval)``.
+    Any failure (missing sim_data, bad config, un-fillable ports) degrades to a
+    structured ``{ok: False, stage, error}`` rather than raising."""
+    import traceback as _tb
+    p = params or {}
+    address = p.get("address") or ""
+    config = p.get("config") if isinstance(p.get("config"), dict) else {}
+    inputs = p.get("inputs") if isinstance(p.get("inputs"), dict) else {}
+    interval = p.get("interval")
+
+    try:
+        core = _get_workspace_core()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "stage": "core", "error": f"build_core failed: {e}"}
+    if core is None:
+        return {"ok": False, "stage": "core", "error": "workspace core unavailable"}
+
+    # Resolve the class by full address (preferred) or short name.
+    cls = None
+    short = address.split(".")[-1]
+    for n, c in (getattr(core, "link_registry", {}) or {}).items():
+        if not isinstance(c, type):
+            continue
+        addr = f"{getattr(c, '__module__', '')}.{getattr(c, '__qualname__', '')}"
+        if addr == address:
+            cls = c
+            break
+        if cls is None and (n == address or getattr(c, "__qualname__", "") == short):
+            cls = c
+    if cls is None:
+        return {"ok": False, "stage": "resolve", "error": f"class not found: {address}"}
+
+    is_step = False
+    for anc in getattr(cls, "__mro__", []):
+        if anc.__name__ in ("Process", "ProcessEnsemble"):
+            is_step = False
+            break
+        if anc.__name__ == "Step":
+            is_step = True
+            break
+
+    try:
+        inst = cls(config, core)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "stage": "config", "error": str(e), "trace": _tb.format_exc()[-1200:]}
+
+    try:
+        in_schema = inst.inputs()
+    except Exception:
+        in_schema = {}
+    state = inputs
+    if isinstance(in_schema, dict) and hasattr(core, "fill"):
+        try:
+            state = core.fill(in_schema, inputs)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "stage": "inputs", "error": f"input validation failed: {e}"}
+
+    try:
+        if is_step:
+            out = inst.update(state)
+        else:
+            try:
+                iv = float(interval)
+            except Exception:
+                iv = 1.0
+            out = inst.update(state, iv)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "stage": "run", "error": str(e), "trace": _tb.format_exc()[-1200:]}
+
+    return {"ok": True, "kind": "step" if is_step else "process", "outputs": _json_safe(out)}
+
+
 def _handle(method: str, params: dict) -> dict:
     """Dispatch one method (spec §11)."""
     if method == "ping":
@@ -2083,6 +2263,10 @@ def _handle(method: str, params: dict) -> dict:
         return _list_generators()
     if method == "registry_catalog":
         return _registry_catalog()
+    if method == "run_process":
+        return _run_process(params)
+    if method == "process_template":
+        return _process_template(params)
     if method == "viz_classes":
         return _list_visualizations()
     if method == "resolve_composite_state":

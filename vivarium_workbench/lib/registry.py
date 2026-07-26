@@ -286,37 +286,48 @@ def _annotate_use_counts(data: dict, ws_root: "Path") -> None:
     ws_root = _Path(ws_root)
     _SKIP = ("/.venv/", "/node_modules/", "/.git/", "/out/", "/build-cache/",
              "/__pycache__/", "/.pbg/")
-    texts: list[str] = []
-    seen: set[str] = set()
-    # Composite generators (where processes are wired) + runner scripts.
-    for pat in ("*/composites/*.py", "*/composites/**/*.py",
-                "**/composites/*.py", "scripts/**/*.py", "workspace/**/scripts/*.py"):
-        try:
-            for f in ws_root.glob(pat):
-                sp = str(f)
-                if sp in seen or any(s in sp for s in _SKIP):
-                    continue
-                seen.add(sp)
-                try:
-                    texts.append(f.read_text(encoding="utf-8", errors="ignore"))
-                except OSError:
-                    continue
-        except Exception:
-            continue
-    if not texts:
-        for p in procs:
-            p["use_count"] = 0
-        return
+
+    def _collect(patterns):
+        out: list[str] = []
+        seen: set[str] = set()
+        for pat in patterns:
+            try:
+                for f in ws_root.glob(pat):
+                    sp = str(f)
+                    if sp in seen or any(s in sp for s in _SKIP):
+                        continue
+                    seen.add(sp)
+                    try:
+                        out.append(f.read_text(encoding="utf-8", errors="ignore"))
+                    except OSError:
+                        continue
+            except Exception:
+                continue
+        return out
+
+    # Split the scan so we can report usage-across-composites vs usage-across-
+    # studies separately: composite generator sources vs study runner scripts.
+    composite_texts = _collect(("*/composites/*.py", "*/composites/**/*.py", "**/composites/*.py"))
+    study_texts = _collect(("scripts/**/*.py", "workspace/**/scripts/*.py",
+                            "workspace/studies/**/*.py", "studies/**/*.py"))
 
     for p in procs:
         addr = (p.get("address") or "")
         cname = addr.rsplit(".", 1)[-1] if addr else (p.get("name") or "")
         namere = _re.compile(r"\b" + _re.escape(cname) + r"\b") if cname else None
-        count = 0
-        for txt in texts:
-            if (addr and addr in txt) or (namere and namere.search(txt)):
-                count += 1
-        p["use_count"] = count
+
+        def _count(texts):
+            n = 0
+            for txt in texts:
+                if (addr and addr in txt) or (namere and namere.search(txt)):
+                    n += 1
+            return n
+
+        comp_uses = _count(composite_texts)
+        study_uses = _count(study_texts)
+        p["composite_uses"] = comp_uses
+        p["study_uses"] = study_uses
+        p["use_count"] = comp_uses + study_uses
 
 
 def _registry_imports_meta(ws_data: dict | None) -> list[dict]:
