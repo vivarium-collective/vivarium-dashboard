@@ -268,6 +268,68 @@ def _mark_default_emitter(data: dict, ws_data: dict | None) -> None:
     data["default_emitter"] = default_emitter or None
 
 
+def _annotate_use_counts(data: dict, ws_root: "Path") -> None:
+    """Set ``use_count`` on each registry process/step: the number of this
+    workspace's composite generators + runner scripts that reference the class
+    (by full address or class name). A cheap source-scan proxy for "how used is
+    this process" so the Registry can sort most-used first — no composite builds.
+
+    Best-effort: never raises; a class we can't count just gets ``use_count`` 0.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    procs = data.get("processes") or []
+    if not procs:
+        return
+
+    ws_root = _Path(ws_root)
+    _SKIP = ("/.venv/", "/node_modules/", "/.git/", "/out/", "/build-cache/",
+             "/__pycache__/", "/.pbg/")
+
+    def _collect(patterns):
+        out: list[str] = []
+        seen: set[str] = set()
+        for pat in patterns:
+            try:
+                for f in ws_root.glob(pat):
+                    sp = str(f)
+                    if sp in seen or any(s in sp for s in _SKIP):
+                        continue
+                    seen.add(sp)
+                    try:
+                        out.append(f.read_text(encoding="utf-8", errors="ignore"))
+                    except OSError:
+                        continue
+            except Exception:
+                continue
+        return out
+
+    # Split the scan so we can report usage-across-composites vs usage-across-
+    # studies separately: composite generator sources vs study runner scripts.
+    composite_texts = _collect(("*/composites/*.py", "*/composites/**/*.py", "**/composites/*.py"))
+    study_texts = _collect(("scripts/**/*.py", "workspace/**/scripts/*.py",
+                            "workspace/studies/**/*.py", "studies/**/*.py"))
+
+    for p in procs:
+        addr = (p.get("address") or "")
+        cname = addr.rsplit(".", 1)[-1] if addr else (p.get("name") or "")
+        namere = _re.compile(r"\b" + _re.escape(cname) + r"\b") if cname else None
+
+        def _count(texts):
+            n = 0
+            for txt in texts:
+                if (addr and addr in txt) or (namere and namere.search(txt)):
+                    n += 1
+            return n
+
+        comp_uses = _count(composite_texts)
+        study_uses = _count(study_texts)
+        p["composite_uses"] = comp_uses
+        p["study_uses"] = study_uses
+        p["use_count"] = comp_uses + study_uses
+
+
 def _registry_imports_meta(ws_data: dict | None) -> list[dict]:
     """Return per-imported-repository metadata from ``workspace.yaml::imports``.
 
@@ -459,6 +521,10 @@ def build_registry(ws_root: Path, *, bypass_cache: bool = False) -> dict:
         # treat the emitter-name match permissively (case-insensitive substring
         # against the class name, e.g. 'parquet' → ParquetEmitter).
         _mark_default_emitter(data, ws_data)
+        # Per-class use count: how many composite generators / runner scripts in
+        # this workspace reference each process/step (so the Registry can sort
+        # most-used first). Source-scan heuristic — cheap, no composite builds.
+        _annotate_use_counts(data, ws_root)
         # Optional display-only allow-list: workspace.yaml::dashboard.registry.include.
         # When set, the Registry tab shows ONLY classes whose originating package
         # is in the list (discovery is unchanged). No-op when unset → current

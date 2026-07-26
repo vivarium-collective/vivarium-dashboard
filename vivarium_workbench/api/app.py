@@ -971,6 +971,45 @@ def create_app() -> FastAPI:
         """
         return RegistryPayload.model_validate(build_registry(ws))
 
+    @app.post(
+        "/api/registry/run-process",
+        tags=["Registry & catalog"],
+        summary="Instantiate a registry process/step and run one update()",
+    )
+    def registry_run_process(
+        payload: dict = Body(default={}), ws: Path = Depends(get_workspace)
+    ) -> dict:
+        """Instantiate the class at ``payload.address`` with ``payload.config``,
+        fill/validate ``payload.inputs`` against its input ports, and run one
+        ``update()`` — Steps as ``update(state)``, Processes as
+        ``update(state, payload.interval)``. Returns ``{ok, kind, outputs}`` or a
+        structured ``{ok: False, stage, error}``. Runs in the warm env-worker so
+        it uses the workspace's own core; heavy/ParCa-dependent processes fail
+        gracefully at the config stage rather than hanging the server.
+        """
+        from vivarium_workbench.lib.env_worker_pool import get_pool
+        try:
+            return get_pool().call(ws, "run_process", payload)
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "stage": "worker", "error": str(e)}
+
+    @app.get(
+        "/api/registry/process-template",
+        tags=["Registry & catalog"],
+        summary="Resolved default config + input-port values for a process/step",
+    )
+    def registry_process_template(
+        address: str, ws: Path = Depends(get_workspace)
+    ) -> dict:
+        """Resolved default ``config`` + ``inputs`` (via the core's ``fill``) for
+        the class at ``address`` — real defaults to prefill the run panel instead
+        of null placeholders. Best-effort (never 500s)."""
+        from vivarium_workbench.lib.env_worker_pool import get_pool
+        try:
+            return get_pool().call(ws, "process_template", {"address": address})
+        except Exception as e:  # noqa: BLE001
+            return {"ok": False, "error": str(e)}
+
     @app.get(
         "/api/composites",
         response_model=CompositesPayload,

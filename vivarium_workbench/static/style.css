@@ -896,12 +896,14 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   line-height: 1;
   cursor: pointer;
   filter: grayscale(1);
-  opacity: 0.22;           /* faint + desaturated until hovered or pinned */
+  opacity: 0;              /* hidden by default — only appears on row hover */
   transition: opacity .12s ease, filter .12s ease, transform .12s ease;
 }
-.viv-rail-sublink:hover .viv-rail-pin { opacity: 0.55; }
+.viv-rail-sublink:hover .viv-rail-pin { opacity: 0.5; }
 .viv-rail-pin:hover { opacity: 0.9 !important; transform: scale(1.15); }
+/* A pinned study keeps its pin visible even when not hovering. */
 .viv-rail-pin.pinned { filter: none; opacity: 1; }
+.viv-rail-sublink:hover .viv-rail-pin.pinned { opacity: 1; }
 
 .viv-rail-section-subheader {
   font-size: 0.68em;
@@ -1333,7 +1335,224 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 
 /* Rich registry entry: description + ports (contract) + config schema, a more
    accessible take on the loom composite viewer's process view. */
-.reg-entry-head{ margin-bottom:2px }
+.reg-entry-head{
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap:10px; margin-bottom:2px;
+}
+.reg-entry-name{ min-width:0 }
+.registry-use-badge{
+  flex:none;
+  font-size:0.72em; font-weight:600;
+  padding:2px 9px; border-radius:9999px;
+  background:#eef2ff; color:#4338ca; border:1px solid #e0e7ff;
+  white-space:nowrap;
+}
+
+/* ── Registry semantic zoom + view mode ─────────────────────────────────── */
+.registry-view-toolbar{ display:flex; align-items:center; gap:10px; margin:0 0 6px; flex-wrap:wrap; }
+.registry-view-toolbar .registry-search{ flex:1 1 220px; margin:0; }
+.registry-zoom, .registry-viewmode{
+  display:inline-flex; border:1px solid #e5e7eb; border-radius:6px; overflow:hidden; flex:none;
+}
+.reg-zoom-btn, .reg-view-btn{
+  border:none; background:#fff; color:#64748b; cursor:pointer;
+  padding:5px 11px; font-size:0.85em; border-right:1px solid #e5e7eb; line-height:1.2;
+}
+.reg-zoom-btn:last-child, .reg-view-btn:last-child{ border-right:none; }
+.reg-zoom-btn.active, .reg-view-btn.active{ background:#eef2ff; color:#4338ca; font-weight:600; }
+.reg-zoom-btn:hover, .reg-view-btn:hover{ background:#f8fafc; }
+.registry-view-toolbar.view-table .registry-zoom{ opacity:0.4; pointer-events:none; }
+
+/* Card containers: both middle (Cards) and Full span a full row now. */
+.reg-cards-grid{ display:flex; flex-direction:column; gap:10px; padding:4px 0; }
+.reg-cards-full{ display:flex; flex-direction:column; gap:14px; padding:4px 0; }
+
+/* Middle card: full-row — identity + description on the left, usage stats on the
+   right, config/ports one click down. Denser than Full, richer than the table. */
+.registry-card{
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  padding:12px 15px; display:flex; flex-direction:column; gap:8px; min-width:0;
+  transition:border-color .12s ease, box-shadow .12s ease;
+}
+.registry-card:hover{ border-color:#c7d2fe; box-shadow:0 3px 12px -6px rgba(30,41,59,.18); }
+.reg-card-row{ display:flex; align-items:flex-start; gap:18px; }
+.reg-card-main{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.reg-card-stats{
+  flex:none; display:flex; flex-wrap:wrap; gap:5px 14px; align-items:center;
+  justify-content:flex-end; max-width:360px;
+}
+.reg-stat{ font-size:0.8em; color:#64748b; white-space:nowrap; }
+.reg-stat-glyph{ opacity:0.6; margin-right:4px; }
+.reg-stat strong{ color:#334155; font-weight:600; }
+.reg-card-head{ display:flex; align-items:baseline; gap:8px; }
+.reg-card-name{ font-size:1.02em; color:#0f172a; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.reg-card-addr{
+  color:#94a3b8; font-size:0.78em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.reg-card-desc{
+  margin:2px 0 0; color:#475569; font-size:0.87em; line-height:1.5;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+
+/* Selection (click a row/card) — highlighted, and re-focused on zoom change. */
+.registry-card.reg-selected{ border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,0.25); }
+.registry-entry-full.reg-selected .loom-card{ box-shadow:0 0 0 2px #6366f1, 0 1px 3px rgba(15,23,42,0.06); }
+.registry-table tr.reg-selected, .registry-table tr.reg-selected td{ background:#eef2ff; }
+.reg-card-details{ margin-top:3px; }
+.reg-card-details > summary{
+  cursor:pointer; user-select:none; color:#64748b; font-size:0.8em; list-style:none;
+}
+.reg-card-details > summary::-webkit-details-marker{ display:none; }
+.reg-card-details > summary::before{ content:'▸ '; color:#94a3b8; }
+.reg-card-details[open] > summary::before{ content:'▾ '; }
+.reg-card-ports-meta{ color:#94a3b8; font-weight:400; }
+.reg-card-portsonly{ color:#94a3b8; font-size:0.8em; }
+.reg-card-cfg{ margin:6px 0 0; max-height:200px; overflow:auto; }
+.reg-ports-compact{ margin:6px 0 2px; }
+
+/* Full zoom: loom-style process view — inputs in the left margin, outputs in the
+   right margin (with types), a rich middle taking the full row. */
+.registry-entry-full{ min-width:0; }
+/* Process node — a clean rectangle (no rounded corners) with a kind-colored top
+   rule, matching the workbench's soft-gray + indigo palette (process-bigraph /
+   loom aesthetic) rather than a heavy dark bar. */
+.loom-card{
+  --loom-accent:#6366f1;
+  background:#fff; border:1px solid #cbd5e1; border-radius:0; overflow:hidden;
+  border-top:2.5px solid var(--loom-accent);
+  box-shadow:0 1px 3px rgba(15,23,42,0.06);
+  transition:box-shadow .14s ease, border-color .14s ease;
+}
+.loom-card:hover{ border-color:#94a3b8; box-shadow:0 4px 14px -4px rgba(15,23,42,0.14); }
+.loom-card-emitter{ --loom-accent:#f97316; }
+.loom-card-visualization{ --loom-accent:#a855f7; }
+.loom-card-step{ --loom-accent:#14b8a6; }
+.loom-card-report_card{ --loom-accent:#f59e0b; }
+.loom-config{
+  display:flex; flex-wrap:wrap; gap:5px; align-items:center;
+  padding:8px 16px; background:#f8fafc; border-bottom:1px solid #eef2f7; font-size:0.74em;
+}
+.loom-config-label{
+  text-transform:uppercase; letter-spacing:.08em; font-weight:700;
+  color:#94a3b8; font-size:0.85em; margin-right:4px;
+}
+.loom-config code{
+  background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:5px;
+  font-size:0.94em; border:1px solid #e0e7ff;
+}
+.loom-config .muted{ color:#94a3b8; }
+.loom-row{
+  display:grid; grid-template-columns:max-content minmax(0,1fr) max-content;
+  align-items:start; gap:22px; padding:16px 18px;
+}
+.loom-ports{ display:flex; flex-direction:column; gap:7px; min-width:0; padding-top:4px; }
+/* Inputs hug the LEFT edge (dot then name); outputs hug the RIGHT edge (name
+   then dot) — like the port handles on a loom process rectangle. */
+.loom-ports-in{ align-items:flex-start; text-align:left; }
+.loom-ports-out{ align-items:flex-end; text-align:right; }
+.loom-port{ display:inline-flex; align-items:center; gap:7px; font-size:0.82em; max-width:260px; }
+.loom-ports-out .loom-port{ flex-direction:row-reverse; }
+.loom-port-dot{ width:7px; height:7px; border-radius:50%; background:#6366f1; flex:none; }
+.loom-ports-out .loom-port-dot{ background:#10b981; }
+.loom-port-name{ font-weight:600; color:#1e40af; white-space:nowrap; }
+.loom-port-type{
+  color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.85em;
+  max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.loom-port-empty{ color:#cbd5e1; font-size:0.82em; }
+.loom-body{ text-align:left; min-width:0; }
+.loom-body-head{ display:flex; align-items:baseline; gap:10px; }
+.loom-name{ font-weight:700; color:#0f172a; font-size:1.12em; }
+.loom-body .loom-addr{ display:block; margin:3px 0 0; color:#94a3b8; font-size:0.8em; }
+.loom-desc{
+  margin:8px 0 0; color:#475569; font-size:0.9em; line-height:1.55; white-space:pre-line;
+}
+
+/* Interactive run panel (Full card): editable config + inputs → Run → outputs. */
+.loom-run{ border-top:1px solid #eef2f7; }
+.loom-run > summary{
+  cursor:pointer; user-select:none; padding:8px 18px; font-size:0.85em; color:#4338ca;
+  font-weight:600; list-style:none; background:#f8fafc;
+}
+.loom-run > summary::-webkit-details-marker{ display:none; }
+.loom-run > summary::before{ content:'▸ '; }
+.loom-run[open] > summary::before{ content:'▾ '; }
+.loom-run-form{ display:flex; flex-direction:column; gap:12px; padding:12px 18px 16px; }
+.loom-run-section{ display:flex; flex-direction:column; gap:6px; }
+.loom-run-legend{
+  font-size:0.72em; text-transform:uppercase; letter-spacing:0.06em;
+  font-weight:700; color:#94a3b8;
+}
+/* Config as a per-field form (typed from the resolved defaults). */
+.loom-cfg-fields{
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:6px 14px;
+}
+.loom-cfg-row{ display:flex; align-items:center; gap:8px; font-size:0.82em; min-width:0; }
+.loom-cfg-key{
+  flex:0 0 40%; color:#334155; font-weight:600; font-family:ui-monospace,Menlo,monospace;
+  font-size:0.92em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.loom-cfg-field{
+  flex:1 1 auto; min-width:0; padding:4px 8px; border:1px solid #e2e8f0; border-radius:6px;
+  font-size:0.95em; color:#1e293b; background:#fff;
+}
+.loom-cfg-field[type="checkbox"]{ flex:none; width:16px; height:16px; }
+/* Input ports: one row each — name + expected TYPE, then an editable default.
+   Nested/complex values get an auto-growing box (no scrollbar). */
+.loom-in-fields{ display:flex; flex-direction:column; gap:8px; }
+.loom-in-row{ display:flex; flex-direction:column; gap:3px; }
+.loom-in-head{ display:flex; align-items:baseline; gap:8px; }
+.loom-in-key{ color:#1e40af; font-weight:600; font-family:ui-monospace,Menlo,monospace; font-size:0.85em; }
+.loom-in-type{
+  color:#64748b; font-size:0.76em; font-family:ui-monospace,Menlo,monospace;
+  background:#f1f5f9; padding:1px 6px; border-radius:4px;
+}
+.loom-in-field{
+  padding:5px 9px; border:1px solid #e2e8f0; border-radius:6px; font-size:0.85em;
+  color:#1e293b; background:#fff; width:100%;
+}
+textarea.loom-in-field{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.82em; line-height:1.4;
+  resize:none; overflow:hidden; min-height:30px;
+}
+.loom-in-field[type="checkbox"]{ width:16px; height:16px; }
+.loom-copy-btn{ margin-left:10px; font-weight:500; }
+.loom-run-field{ display:flex; flex-direction:column; gap:4px; font-size:0.78em; color:#64748b; font-weight:600; }
+.loom-run-field textarea{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.82em; line-height:1.4;
+  padding:8px 10px; border:1px solid #e2e8f0; border-radius:6px; resize:vertical;
+  color:#1e293b; background:#fff; font-weight:400;
+}
+.loom-run-interval-field{ flex-direction:row; align-items:center; gap:8px; }
+.loom-run-interval-field input{
+  width:90px; padding:4px 8px; border:1px solid #e2e8f0; border-radius:6px; font-weight:400;
+}
+.loom-run-actions{ margin-top:2px; }
+.loom-run-actions .action-btn{ margin-top:0; }
+.loom-run-output{ margin-top:4px; }
+.loom-run-ok{ color:#047857; font-size:0.85em; font-weight:600; margin-bottom:4px; }
+.loom-run-err{
+  color:#b91c1c; font-size:0.85em; font-weight:600;
+  background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:8px 10px;
+}
+.loom-run-pre{ margin:4px 0 0; max-height:280px; overflow:auto; background:#f8fafc; border:1px solid #eef2f7; border-radius:6px; padding:8px 10px; }
+.loom-run-trace{ font-size:0.78em; color:#7f1d1d; background:#fef2f2; border-color:#fecaca; }
+
+/* Table view. */
+.registry-table-wrap{ overflow-x:auto; }
+.registry-table{ width:100%; border-collapse:collapse; font-size:0.88em; }
+.registry-table th, .registry-table td{ padding:6px 10px; text-align:left; border-bottom:1px solid #f1f5f9; }
+.registry-table th{
+  position:sticky; top:0; z-index:1; background:#fff; color:#475569; font-weight:600;
+  cursor:pointer; user-select:none; white-space:nowrap;
+}
+.registry-table th.num, .registry-table td.num{ text-align:right; }
+.registry-table th.active{ color:#4338ca; }
+.registry-table th:hover{ background:#f8fafc; }
+.registry-table tbody tr:hover{ background:#f8fafc; }
+.registry-table .reg-td-name code{ color:#94a3b8; font-size:0.85em; }
+.registry-table .reg-td-src{ color:#94a3b8; font-size:0.9em; }
+.registry-table tr[data-source="environment_only"]{ opacity:0.6; }
 .reg-entry-desc{
   margin:6px 0 8px; color:#475569; font-size:0.92em; line-height:1.5;
   white-space:pre-line; max-height:8.5em; overflow:auto;
@@ -1353,11 +1572,21 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .reg-port-list{ margin:0; padding:0; list-style:none }
 .reg-port-list li{
   display:flex; align-items:baseline; gap:6px; padding:1px 0;
-  font-size:0.86em; line-height:1.4;
+  font-size:0.86em; line-height:1.4; flex-wrap:wrap;
 }
-.reg-port-name{ color:#1e40af; font-weight:600; word-break:break-word }
-.reg-port-type{ color:#64748b; font-size:0.92em; font-family:ui-monospace,Menlo,monospace }
+/* Port names are single tokens (external_concentrations) — never break them
+   letter-by-letter; wrap the whole name to the next line when it can't fit. */
+.reg-port-name{ color:#1e40af; font-weight:600; word-break:normal; overflow-wrap:normal; }
+.reg-port-type{ color:#64748b; font-size:0.92em; font-family:ui-monospace,Menlo,monospace; word-break:break-word; min-width:0; }
 .reg-port-na{ color:#cbd5e1; font-size:0.86em }
+
+/* Compact ports (grid card's "config & ports" dropdown): stack Inputs then
+   Outputs in ONE column so each port gets the full card width — the 2-column
+   layout squeezed names into vertical letter-stacks in a narrow grid card. */
+.reg-ports.reg-ports-compact{ grid-template-columns:1fr; gap:8px; }
+.reg-ports-compact .reg-port-type{
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
 .reg-config summary{ cursor:pointer; user-select:none; color:#64748b; font-size:0.85em; margin-top:2px }
 
 /* ===== Study Detail — 5-tab redesign (Plan 3) ===== */
