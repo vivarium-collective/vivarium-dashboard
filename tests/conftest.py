@@ -66,7 +66,7 @@ class _Client:
         headers = {"Content-Type": "application/json"} if data else {}
         req = urllib.request.Request(url, data=data, headers=headers, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(req, timeout=60) as r:
                 return _Response(r.status, r.read(), headers=r.headers)
         except urllib.error.HTTPError as e:
             return _Response(e.code, e.read(), headers=e.headers)
