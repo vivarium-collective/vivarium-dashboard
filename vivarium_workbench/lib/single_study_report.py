@@ -1875,6 +1875,9 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
                  *, investigation_slug: Optional[str], generated_at: str,
                  composite_doc: Optional[dict] = None,
                  skeptic: bool = False,
+                 # Each entry is either a bare ref string (legacy — no
+                 # suggestion to offer) or a {"ref": ..., "suggestion": ...}
+                 # dict (see unresolved_study_composite_refs callers below).
                  unresolved_composites: Optional[list] = None) -> str:
     rep = study_spec.get("report") or {}
     # Authored ``report:`` fields win; absent ones are DERIVED from real study
@@ -2096,10 +2099,19 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
     # 2–4). Rendered prominently right under the header; hidden when all resolve.
     composite_lint_html = ""
     if unresolved_composites:
-        _rows = "".join(
-            f'<div>⚠ composite not found in registry: <code>{_h(str(r))}</code></div>'
-            for r in unresolved_composites
-        )
+        def _lint_row(r):
+            # Accept both the legacy bare-ref strings (still used by callers/
+            # tests that don't have a suggestion to offer) and the richer
+            # {"ref":..., "suggestion":...} dicts.
+            if isinstance(r, dict):
+                ref, suggestion = r.get("ref"), r.get("suggestion")
+            else:
+                ref, suggestion = r, None
+            row = f'⚠ composite not found in registry: <code>{_h(str(ref))}</code>'
+            if suggestion:
+                row += f' — did you mean <code>{_h(str(suggestion))}</code>?'
+            return f'<div>{row}</div>'
+        _rows = "".join(_lint_row(r) for r in unresolved_composites)
         composite_lint_html = (
             '<div class="composite-lint-banner" role="alert" '
             'style="margin:14px 0;padding:10px 14px;background:#fffbeb;'
@@ -2220,13 +2232,20 @@ def render_single_study_report(
     composite_doc = _resolve_composite_doc(ws_root, study_spec)
     # Composite-resolution lint (framework-emitters): declared composite refs
     # that don't resolve against the live registry. Best-effort; empty on failure.
-    unresolved_composites: list[str] = []
+    unresolved_composites: list[dict] = []
     try:
         from vivarium_workbench.lib.composite_lookup import (
-            known_composite_ids, unresolved_study_composite_refs,
+            known_composite_ids, suggest_composite_ref,
+            unresolved_study_composite_refs,
         )
-        unresolved_composites = unresolved_study_composite_refs(
-            study_spec, known_composite_ids(ws_root)) or []
+        known = known_composite_ids(ws_root)
+        refs = unresolved_study_composite_refs(study_spec, known) or []
+        for ref in refs:
+            try:
+                suggestion = suggest_composite_ref(ref, known)
+            except Exception:
+                suggestion = None
+            unresolved_composites.append({"ref": ref, "suggestion": suggestion})
     except Exception:
         unresolved_composites = []
     html = _render_html(

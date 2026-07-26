@@ -13,13 +13,14 @@ The latter is what makes `pbg-caspule`, `pbg-tellurium`, etc. surface their
 demo composites in any workspace that has them installed.
 """
 from __future__ import annotations
+import difflib
 import importlib.metadata as metadata
 import importlib.util
 import json
 import re
 import sys
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import yaml
 
@@ -343,14 +344,61 @@ def _study_composite_refs(spec: dict) -> list[str]:
 def _ref_resolves(ref: str, known_ids: set[str]) -> bool:
     """A declared ref resolves if it's a known spec id, OR shares the trailing
     ``.composites.<slug>`` segment with one (so a short ``slug`` alias matches
-    a dotted ``pkg.composites.slug`` id)."""
+    a dotted ``pkg.composites.slug`` id), OR its final dotted segment is a
+    UNIQUE match against a known id's final dotted segment.
+
+    The last rule exists because generator ids have the shape
+    ``<pkg>.composites.<module>.<name>`` — a bare/short ref (e.g. just the
+    generator ``name``, or ``pkg.composites.name`` without the module) only
+    has that trailing ``<name>`` in common with the registered id, not a full
+    ``.composites.`` tail. It's deliberately unique-only: if two or more
+    known ids share the same final segment, resolving on that basis would be
+    a guess, so we leave it unresolved (ambiguous) rather than risk a false
+    positive.
+    """
     if ref in known_ids:
         return True
     tail = ref.rsplit(".composites.", 1)[-1]
     for kid in known_ids:
         if kid == ref or kid.rsplit(".composites.", 1)[-1] == tail:
             return True
-    return False
+    final = ref.rsplit(".", 1)[-1]
+    matches = [kid for kid in known_ids if kid.rsplit(".", 1)[-1] == final]
+    return len(matches) == 1
+
+
+def suggest_composite_ref(ref: str, known_ids) -> Optional[str]:
+    """Return the single closest known composite id to a non-resolving
+    ``ref``, or ``None`` if nothing is reasonably close.
+
+    Tries a full-string :func:`difflib.get_close_matches` first (catches
+    near-typos of a full id). When that comes up empty, falls back to
+    matching on the final dotted segment only (catches e.g. a Python
+    function name — ``build_glucose_biomodel_do`` — copied in place of the
+    registered generator ``name`` — ``glucose-biomodel-do``, which the
+    full-string comparison scores too low to surface). Deterministic
+    (inputs sorted); never raises.
+    """
+    try:
+        ids_sorted = sorted(known_ids)
+        matches = difflib.get_close_matches(ref, ids_sorted, n=1, cutoff=0.5)
+        if matches:
+            return matches[0]
+        final = ref.rsplit(".", 1)[-1]
+        # Map each known id's final segment back to one id (first, in sorted
+        # order, wins) so the fallback match is deterministic even when
+        # several ids share a final segment.
+        final_to_id: dict[str, str] = {}
+        for kid in ids_sorted:
+            key = kid.rsplit(".", 1)[-1]
+            final_to_id.setdefault(key, kid)
+        final_matches = difflib.get_close_matches(
+            final, sorted(final_to_id), n=1, cutoff=0.5)
+        if final_matches:
+            return final_to_id[final_matches[0]]
+        return None
+    except Exception:  # noqa: BLE001 — suggestion is best-effort, never fatal
+        return None
 
 
 def annotate_composite_registered(sims: list[dict], known_ids: set[str]) -> None:
