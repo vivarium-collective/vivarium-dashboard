@@ -26,6 +26,7 @@ import yaml
 
 from vivarium_workbench.lib.study_spec import load_study_detail_spec
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +85,7 @@ def build_investigation_rigor(ws_root: Path, investigation: Optional[str]) -> di
     except Exception as e:  # noqa: BLE001
         return {"error": f"unreadable investigation.yaml: {e}"}
     member_specs = []
-    for s in (inv_spec.get("studies") or []):
+    for s in investigation_member_slugs(inv_spec):
         slug_s = s if isinstance(s, str) else (
             (s.get("slug") or s.get("study")) if isinstance(s, dict) else None)
         if not slug_s:

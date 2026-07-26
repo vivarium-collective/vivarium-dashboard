@@ -191,6 +191,8 @@ class InvestigationSummary(BaseModel):
     lifecycle: Any = None
     current: Optional[bool] = None
     error: Optional[str] = None
+    origin_repo: Optional[str] = None
+    read_only: Optional[bool] = None
 
 
 class InvestigationSummariesPayload(BaseModel):
@@ -428,6 +430,9 @@ class InvestigationRow(BaseModel):
     n_simulations: Optional[int] = None
     description: Optional[str] = None
     error: Optional[str] = None
+    origin_repo: Optional[str] = None
+    read_only: bool = False
+    investigations: list[str] = []
 
 
 class InvestigationsPayload(BaseModel):

@@ -227,6 +227,50 @@ class TestGitSubmoduleInstall:
         assert saved["imports"]["foo"]["package"] == "pbg_foo"
         assert saved["imports"]["foo"]["installed"] is True
 
+    def test_full_repo_forces_git_path_over_pypi(self, tmp_path, monkeypatch):
+        # Catalog entry has BOTH pypi_name and a git source. Without
+        # full_repo, install would take the PyPI path (see
+        # TestPyPiInstall.test_happy_pypi_200_mutates_and_clears). With
+        # full_repo=True (as sent by the Marketplace tab), it must take the
+        # git-submodule path instead so studies/investigations land under
+        # external/<name>/ for federation.
+        entry = {
+            "name": "foo",
+            "source": "https://example.com/foo.git",
+            "ref": "main",
+            "description": "git+pypi foo",
+            "package": "pbg_foo",
+            "pypi_name": "foo-pkg",
+        }
+        _write_ws(tmp_path, {"name": "ws", "imports": {}})
+        _make_venv_pip(tmp_path)
+        # Pre-create external/foo so the submodule-add step is skipped — only
+        # the editable pip install subprocess runs.
+        (tmp_path / "external" / "foo").mkdir(parents=True)
+        monkeypatch.setattr(workspace_deps_views, "module_registry", lambda ws: [entry])
+        monkeypatch.setattr(views.shutil, "which", lambda x: None)
+
+        cmds = []
+        monkeypatch.setattr(
+            views.subprocess, "run",
+            lambda cmd, **kw: cmds.append(cmd)
+            or subprocess.CompletedProcess(cmd, 0, stdout="editable install ok", stderr=""))
+        _patch_yaml_io(monkeypatch)
+        _patch_pyproject_noops(monkeypatch)
+        monkeypatch.setattr(registry, "clear_registry_cache", lambda: None)
+
+        body, status = views.catalog_install(tmp_path, {"name": "foo", "full_repo": True})
+        assert status == 200
+        assert body["install_mode"] == "git"
+        # Only the editable pip install ran (submodule add skipped); NOT
+        # `uv pip install foo-pkg` / `pip install foo-pkg`.
+        assert len(cmds) == 1
+        assert cmds[0][:3] == [str(tmp_path / ".venv" / "bin" / "pip"), "install", "-e"]
+        assert cmds[0][-1] == str((tmp_path / "external" / "foo").resolve())
+        saved = yaml.safe_load((tmp_path / "workspace.yaml").read_text())
+        assert saved["imports"]["foo"]["mode"] == "reference"
+        assert saved["imports"]["foo"]["path"] == "external/foo"
+
     def test_git_runs_submodule_add_when_absent(self, tmp_path, monkeypatch):
         entry = {
             "name": "foo", "source": "https://example.com/foo.git", "ref": "main",

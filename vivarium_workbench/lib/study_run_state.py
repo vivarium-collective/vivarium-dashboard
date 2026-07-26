@@ -27,6 +27,7 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib import run_store
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 def investigation_emitter_for_study(ws_root, study_name: str | None) -> str | None:
@@ -51,7 +52,7 @@ def investigation_emitter_for_study(ws_root, study_name: str | None) -> str | No
                 inv = yaml.safe_load(invf.read_text(encoding="utf-8")) or {}
             except Exception:
                 continue
-            studies = inv.get("studies") or []
+            studies = investigation_member_slugs(inv)
             names = [s if isinstance(s, str) else (s or {}).get("study")
                      for s in studies]
             if study_name in names:

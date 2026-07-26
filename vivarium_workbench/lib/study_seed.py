@@ -24,6 +24,7 @@ from pathlib import Path
 import yaml
 
 from .workspace_paths import WorkspacePaths
+from .investigation_members import investigation_member_slugs
 
 
 def _slugify(text: str, max_len: int = 60) -> str:
@@ -474,8 +475,15 @@ def _add_to_parent_investigations(workspace: Path, parent_name: str,
             spec = yaml.safe_load(text) or {}
         except Exception:
             continue
-        studies = spec.get("studies") or []
-        if not isinstance(studies, list) or parent_name not in studies:
+        # Membership check accepts either schema (safe superset). The
+        # text-surgery below still targets the `studies:` block specifically
+        # — a `members:`-only investigation.yaml is correctly recognized as
+        # already containing parent_name here, but (since it has no
+        # `studies:` block to anchor on) is left untouched rather than
+        # corrupted; propagating new studies into `members:`-schema specs is
+        # a separate write-path change, not covered by this read-compat fix.
+        studies = investigation_member_slugs(spec)
+        if not studies or parent_name not in studies:
             continue
         if new_study_name in studies:
             continue   # already there (idempotent)

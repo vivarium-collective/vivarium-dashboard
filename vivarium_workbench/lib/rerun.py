@@ -7,6 +7,7 @@ from pathlib import Path
 
 from vivarium_workbench.lib import cli_runs, study_runs
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 def resolve_rerun_target(ws_root, run_id):
@@ -118,7 +119,7 @@ def _investigation_studies(ws_root, investigation):
     if not isinstance(spec, dict):
         return []
     out = []
-    for member in (spec.get("studies") or []):
+    for member in investigation_member_slugs(spec):
         if isinstance(member, str):
             out.append(member)
         elif isinstance(member, dict):

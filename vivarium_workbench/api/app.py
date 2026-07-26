@@ -1226,6 +1226,23 @@ def create_app() -> FastAPI:
         """
         return CatalogPayload.model_validate(build_catalog(ws))
 
+    @app.get(
+        "/api/marketplace",
+        response_model=CatalogPayload,
+        tags=["Registry & catalog"],
+        summary="Full viva ecosystem catalog with per-workspace install state",
+    )
+    def marketplace(ws: Path = Depends(get_workspace)) -> CatalogPayload:
+        """Full ecosystem catalog for the **Marketplace** tab.
+
+        Same payload shape as ``/api/catalog`` but built with ``full=True``:
+        the entire viva-ecosystem module registry, bypassing this workspace's
+        ``registry.include`` allow-list and ``registry.modules`` override, each
+        entry annotated with this workspace's install state so the UI can offer
+        an Install action for available modules.  Best-effort (never 500s).
+        """
+        return CatalogPayload.model_validate(build_catalog(ws, full=True))
+
     # -----------------------------------------------------------------------
     # Git & branches routes
     # -----------------------------------------------------------------------

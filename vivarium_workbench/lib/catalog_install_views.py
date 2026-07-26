@@ -120,6 +120,14 @@ def catalog_install(ws_root: Path, body: dict) -> tuple[dict, int]:
 
     pypi_name = entry.get("pypi_name")  # optional; if set, install from PyPI
 
+    # ``full_repo`` (set by the Marketplace tab) forces the git-submodule
+    # full-repo path even when the catalog entry also carries a `pypi_name`,
+    # so the module's top-level `studies/`/`investigations/` land on disk
+    # under `external/<name>/` and can be federated. Modules with no git
+    # `source` still fall back to PyPI (composites-only federation).
+    full_repo = bool(body.get("full_repo"))
+    use_pypi = bool(pypi_name) and not (full_repo and entry.get("source"))
+
     target_path = f"external/{name}"
     abs_target = (ws_root / target_path).resolve()
 
@@ -128,7 +136,7 @@ def catalog_install(ws_root: Path, body: dict) -> tuple[dict, int]:
     venv_py = ws_root / ".venv" / "bin" / "python3"
     uv_path = shutil.which("uv")
 
-    if pypi_name:
+    if use_pypi:
         # PyPI path: use uv exclusively (faster, no submodule needed).
         if uv_path and venv_py.exists():
             pypi_install_cmd = [uv_path, "pip", "install", "--python", str(venv_py), pypi_name]
@@ -151,7 +159,7 @@ def catalog_install(ws_root: Path, body: dict) -> tuple[dict, int]:
     install_mode_holder: list[str] = []
 
     def action():
-        if pypi_name:
+        if use_pypi:
             # ---- PyPI install path ----
             install_mode_holder.append("pypi")
 
@@ -278,7 +286,7 @@ def catalog_install(ws_root: Path, body: dict) -> tuple[dict, int]:
     # branch). Here the commit is DEFERRED — run ``action`` directly. A raised
     # ``action`` maps to the live ``_commit_or_run`` no-commit fallback
     # ``{"error": f"action failed: {inner}"}, 500``; success maps to code 200.
-    install_mode = "pypi" if pypi_name else "git"
+    install_mode = "pypi" if use_pypi else "git"
     try:
         action()
     except Exception as inner:

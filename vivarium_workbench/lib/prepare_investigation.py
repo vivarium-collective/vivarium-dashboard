@@ -29,6 +29,7 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 def _dashboard_url(ws: Path, override: str | None = None) -> str:
@@ -76,7 +77,7 @@ def _study_slugs(ws: Path, inv_slug: str) -> list[str]:
     spec = yaml.safe_load((WorkspacePaths.load(ws).investigations / inv_slug
                            / "investigation.yaml").read_text(encoding="utf-8")) or {}
     out = []
-    for s in (spec.get("studies") or []):
+    for s in investigation_member_slugs(spec):
         out.append(s if isinstance(s, str) else (s.get("study") or s.get("name")))
     return [s for s in out if s]
 

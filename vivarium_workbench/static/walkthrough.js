@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -1330,6 +1330,14 @@
     });
   }
 
+  // Origin-repo provenance badge. Empty string for own (null) content.
+  function _originBadge(repo) {
+    if (!repo) return '';
+    return '<span class="origin-badge" title="From installed module ' +
+      _esc(repo) + '">📦 ' + _esc(repo) + '</span>';
+  }
+  window._originBadge = _originBadge;
+
   // Coerce a value to an Array. Use everywhere a YAML/JSON field is
   // SUPPOSED to be a list but a caller might supply a dict (e.g. a
   // grouped/nested shape). Prevents
@@ -2331,11 +2339,11 @@
         }).join('');
         var divider = _maybeDivider(prevC, c);
         prevC = c;
-        var exploreBtn = (_isSnapshot && !c.has_wiring)
+        var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
           ? ''
           : '<button class="action-btn" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore</button>';
-        return divider + '<div class="composite-list-row">' +
-          '<span class="name">' + _esc(c.name) + ' ' + _wsTag(c) + '</span>' +
+        return divider + '<div class="composite-list-row' + (c.read_only ? ' federated-readonly' : '') + '">' +
+          '<span class="name">' + _esc(c.name) + ' ' + _wsTag(c) + _originBadge(c.origin_repo) + '</span>' +
           '<span class="desc">' + tagPills + ' ' + _esc(c.description || '(no description)') +
             _moduleLine(c) +
           '</span>' +
@@ -2433,13 +2441,13 @@
         }
         var divider = _maybeDivider(prevG, c);
         prevG = c;
-        var exploreBtn = (_isSnapshot && !c.has_wiring)
+        var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
           ? ''
           : '<button class="ccard-explore" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore &rarr;</button>';
-        return divider + '<div class="ccard' + (c.workspace_local ? ' ccard-ws-card' : '') + '">' +
+        return divider + '<div class="ccard' + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '">' +
           '<div class="ccard-top">' +
             '<span class="ccard-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span>' +
-            '<span class="ccard-badges">' + kindPill + srcBadge + '</span>' +
+            '<span class="ccard-badges">' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</span>' +
           '</div>' +
           '<div class="ccard-id mono" title="' + _esc(c.id) + '">' + _esc(c.id) + '</div>' +
           '<p class="ccard-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</p>' +
@@ -2603,6 +2611,7 @@
   window._catalogModules = [];
   window._catalogFilter = { search: '', tags: new Set(), installed: 'all' };
   window._catalogView = 'grid';
+  window._catalogSort = 'default';
 
   function _buildCatalogChips() {
     var chipsEl = document.getElementById('catalog-tag-chips');
@@ -2642,32 +2651,24 @@
   }
   window._setCatalogView = _setCatalogView;
 
-  function _renderCatalog() {
-    var grid = document.getElementById('catalog-modules-grid');
-    if (!grid) return;
-    var f = window._catalogFilter;
-    var search = f.search.toLowerCase();
-    var activeTags = f.tags;
-    var modules = window._catalogModules.filter(function(m) {
-      // The workspace's own first-party package (kind === 'workspace')
-      // used to be filtered out here because it had its own dedicated
-      // row in the now-removed "Installed modules" table. After the
-      // page-reorg (separate Installed panel folded into this catalog
-      // grid), it gets pinned at the very top instead — see the
-      // installed-first sort below.
-      // Search filter — workspace package is exempt from text-search
-      // hiding (it should always show as the pinned "your workspace"
-      // card so users have a stable anchor at the top of the grid).
+  // -------------------------------------------------------------------------
+  // Shared module-card rendering (Modules tab + Marketplace tab)
+  // -------------------------------------------------------------------------
+
+  // Search / installed / tag filter. `f` is a {search, installed, tags} state
+  // object (window._catalogFilter or window._marketplaceFilter).
+  function _filterModules(list, f) {
+    var search = (f.search || '').toLowerCase();
+    var activeTags = f.tags || new Set();
+    return (list || []).filter(function(m) {
+      // Workspace package is exempt from text-search / tag hiding so it always
+      // stays pinned as the anchor card at the top of the grid.
       if (search && m.kind !== 'workspace') {
         var haystack = (m.name + ' ' + (m.description || '') + ' ' + (m.tags || []).join(' ')).toLowerCase();
         if (haystack.indexOf(search) === -1) return false;
       }
-      // Installed filter — workspace package always passes (it's
-      // structurally installed).
       if (f.installed === 'installed' && !m.installed && m.kind !== 'workspace') return false;
       if (f.installed === 'uninstalled' && (m.installed || m.kind === 'workspace')) return false;
-      // Tag chip filter (OR within: pass if any selected tag matches).
-      // Workspace package is exempt (no tags).
       if (activeTags.size > 0 && m.kind !== 'workspace') {
         var mTags = m.tags || [];
         var match = false;
@@ -2676,20 +2677,94 @@
       }
       return true;
     });
+  }
 
-    // Registry shows only what is IN this workspace — the workspace's own
-    // package plus installed modules. The browse-everything "Available to
-    // install" catalog is intentionally not shown.
-    modules = modules.filter(function (m) {
-      return m.kind === 'workspace' || m.installed;
-    });
+  function _moduleInstalledMeta(m) {
+    // Source / ref / path / last-updated rows surfaced inline on installed cards.
+    if (!m.installed && m.kind !== 'workspace') return '';
+    var bits = [];
+    if (m.source) bits.push('<small class="muted">Source: <code>' + _esc(m.source) + '</code>' +
+      (m.ref ? ' @ <code>' + _esc(m.ref) + '</code>' : '') + '</small>');
+    var path = m.install_path || m.path;
+    if (path) bits.push('<small class="muted">Path: <code>' + _esc(path) + '</code></small>');
+    if (m.last_updated) bits.push('<small class="muted">Updated: ' + _esc(String(m.last_updated).slice(0, 10)) + '</small>');
+    return bits.length ? '<div class="module-installed-meta">' + bits.join('<br>') + '</div>' : '';
+  }
 
-    // Sort: workspace package first (anchor), then installed modules
-    // (alphabetical), then everything else (alphabetical). This is the
-    // visible expression of "what's in your workspace surfaces first;
-    // browse-everything is secondary" — the same pattern the Composites
-    // tab adopted (workspace-first sort) for the same reason.
-    modules.sort(function(a, b) {
+  // Compact content-count + workspace-usage row (module cards): "N composites
+  // · N studies · N investigations · ★N used". A zero-count metric is omitted
+  // except "used", which stays visible whenever it's >0 (the whole point of
+  // the metric is to draw the eye). Renders '' when the module carries no
+  // stats at all (wheel-only / available-to-install modules).
+  function _moduleStatsRow(m) {
+    var parts = [];
+    if (m.n_composites) parts.push('▦ ' + m.n_composites + ' composite' + (m.n_composites === 1 ? '' : 's'));
+    if (m.n_studies) parts.push('⌥ ' + m.n_studies + ' stud' + (m.n_studies === 1 ? 'y' : 'ies'));
+    if (m.n_investigations) parts.push('⌸ ' + m.n_investigations + ' investigation' + (m.n_investigations === 1 ? '' : 's'));
+    if (m.n_used) parts.push('★ ' + m.n_used + ' used');
+    if (!parts.length) return '';
+    return '<div class="module-stats-row muted" style="font-size:0.82em;margin:4px 0">' + parts.join(' &middot; ') + '</div>';
+  }
+
+  function _moduleActionFor(m, marketplace) {
+    // Workspace's own first-party package is not uninstallable — show a
+    // "first-party" pill. Installed modules show an install-source badge.
+    // Available modules show an Install button (authoring-only).
+    if (m.kind === 'workspace') {
+      return '<span class="status-pill installed" title="The workspace\'s own first-party package. Always present; cannot be uninstalled.">first-party</span>';
+    }
+    if (m.installed) {
+      var src = m.install_source || 'imports';
+      var srcBadge = '';
+      if (src === 'venv') {
+        var via = (m.installed_via || []);
+        if (via.length === 0) {
+          srcBadge = '<span class="install-src-pill install-src-unmanaged" title="Installed in the venv but not declared in workspace.yaml.imports and not required by any installed package.">📦 unmanaged</span>';
+        } else {
+          var viaText = 'via ' + via.slice(0, 3).map(_esc).join(', ') + (via.length > 3 ? ' +' + (via.length - 3) : '');
+          srcBadge = '<span class="install-src-pill install-src-venv" title="Brought in by another installed package.">📦 ' + viaText + '</span>';
+        }
+      } else if (src === 'pyproject') {
+        srcBadge = '<span class="install-src-pill install-src-pyproject" title="Declared in pyproject.toml [project.dependencies].">📋 via pyproject</span>';
+      } else {
+        srcBadge = '<span class="status-pill installed">installed</span>';
+      }
+      return srcBadge;
+    }
+    var installFn = marketplace ? '_installFromMarketplace' : '_installFromCatalog';
+    return '<button class="action-btn js-authoring" onclick="' + installFn + '(\'' + _esc(m.name) + '\')">Install</button>';
+  }
+
+  // Section divider injected at boundaries: workspace → installed → available.
+  function _moduleSectionDivider(prev, cur) {
+    if (!prev || !cur) return '';
+    var prevSection = prev.kind === 'workspace' ? 0 : (prev.installed ? 1 : 2);
+    var curSection  = cur.kind  === 'workspace' ? 0 : (cur.installed  ? 1 : 2);
+    if (prevSection === curSection) return '';
+    var label = (curSection === 1) ? 'Installed in this workspace' : 'Available to install';
+    return '<div class="module-section-divider"><span>' + label + '</span></div>';
+  }
+
+  // Render an already-filtered module list into `grid` (grid or list view).
+  // Sort: a chosen primary key (window._catalogSort / window._marketplaceSort
+  // — 'default' means "no primary key", i.e. skip straight to the tiebreak)
+  // then the original tiebreak: workspace package first (anchor), then
+  // installed (alpha), then available (alpha) — "what's in your workspace
+  // surfaces first".
+  function _renderModuleGrid(grid, modules, view, marketplace) {
+    var sortKey = (marketplace ? window._marketplaceSort : window._catalogSort) || 'default';
+    modules = modules.slice().sort(function(a, b) {
+      var primary = 0;
+      if (sortKey === 'used') primary = (b.n_used || 0) - (a.n_used || 0);
+      else if (sortKey === 'composites') primary = (b.n_composites || 0) - (a.n_composites || 0);
+      else if (sortKey === 'studies') primary = (b.n_studies || 0) - (a.n_studies || 0);
+      else if (sortKey === 'investigations') primary = (b.n_investigations || 0) - (a.n_investigations || 0);
+      else if (sortKey === 'updated') {
+        var at = a.last_updated ? new Date(a.last_updated).getTime() : -Infinity;
+        var bt = b.last_updated ? new Date(b.last_updated).getTime() : -Infinity;
+        primary = bt - at;
+      }
+      if (primary !== 0) return primary;
       var aw = a.kind === 'workspace' ? 0 : 1;
       var bw = b.kind === 'workspace' ? 0 : 1;
       if (aw !== bw) return aw - bw;
@@ -2705,83 +2780,16 @@
       return;
     }
 
-    function _installedMeta(m) {
-      // Source / ref / path rows that used to live in the now-removed
-      // "Installed modules" table. Surface them inline on installed
-      // cards so the info isn't lost.
-      if (!m.installed && m.kind !== 'workspace') return '';
-      var bits = [];
-      if (m.source) bits.push('<small class="muted">Source: <code>' + _esc(m.source) + '</code>' +
-        (m.ref ? ' @ <code>' + _esc(m.ref) + '</code>' : '') + '</small>');
-      var path = m.install_path || m.path;
-      if (path) bits.push('<small class="muted">Path: <code>' + _esc(path) + '</code></small>');
-      return bits.length ? '<div class="module-installed-meta">' + bits.join('<br>') + '</div>' : '';
-    }
-
-    function _actionFor(m) {
-      // Workspace's own first-party package is not uninstallable — show
-      // a "first-party" pill. Otherwise: Install or Uninstall.
-      if (m.kind === 'workspace') {
-        return '<span class="status-pill installed" title="The workspace\'s own first-party package. Always present; cannot be uninstalled.">first-party</span>';
-      }
-      if (m.installed) {
-        // Render the install-source badge + a context-appropriate action.
-        // Three install-source layers (see server.py:_get_catalog):
-        //   imports   — workspace.yaml.imports declared it; uninstall is
-        //               the simple two-file edit (workspace.yaml + pyproject)
-        //   pyproject — declared in pyproject.toml only; uninstall flow
-        //               still works (drops the dep + re-locks the venv)
-        //   venv      — present in venv via another package's transitive
-        //               dep; cannot be uninstalled directly (the user has
-        //               to remove the parent). Show "via X, Y" hint instead.
-        // Uninstall from the dashboard is intentionally NOT offered — module
-        // removal is a workspace/venv edit best done deliberately outside the
-        // UI. Installed cards show only their install-source badge.
-        var src = m.install_source || 'imports';
-        var srcBadge = '';
-        if (src === 'venv') {
-          var via = (m.installed_via || []);
-          if (via.length === 0) {
-            srcBadge = '<span class="install-src-pill install-src-unmanaged" title="Installed in the venv but not declared in workspace.yaml.imports and not required by any installed package.">📦 unmanaged</span>';
-          } else {
-            var viaText = 'via ' + via.slice(0, 3).map(_esc).join(', ') + (via.length > 3 ? ' +' + (via.length - 3) : '');
-            srcBadge = '<span class="install-src-pill install-src-venv" title="Brought in by another installed package.">📦 ' + viaText + '</span>';
-          }
-        } else if (src === 'pyproject') {
-          srcBadge = '<span class="install-src-pill install-src-pyproject" title="Declared in pyproject.toml [project.dependencies].">📋 via pyproject</span>';
-        } else {
-          srcBadge = '<span class="status-pill installed">installed</span>';
-        }
-        return srcBadge;
-      }
-      return '<button class="action-btn js-authoring" onclick="_installFromCatalog(\'' + _esc(m.name) + '\')">Install</button>';
-    }
-
-    // Section divider injected at boundaries: workspace → installed →
-    // available. Spans all grid columns; styled in style.css under
-    // .module-section-divider.
-    function _maybeSectionDivider(prev, cur) {
-      if (!prev || !cur) return '';
-      var prevSection = prev.kind === 'workspace' ? 0 : (prev.installed ? 1 : 2);
-      var curSection  = cur.kind  === 'workspace' ? 0 : (cur.installed  ? 1 : 2);
-      if (prevSection === curSection) return '';
-      var label = (curSection === 1)
-        ? 'Installed in this workspace'
-        : 'Available to install';
-      return '<div class="module-section-divider"><span>' + label + '</span></div>';
-    }
-
-    if (window._catalogView === 'list') {
+    if (view === 'list') {
       grid.className = 'module-list';
       var prevL = null;
       var rows = modules.map(function(m) {
-        var divider = _maybeSectionDivider(prevL, m);
+        var divider = _moduleSectionDivider(prevL, m);
         prevL = m;
-        var tagPills = ''; // tag pills hidden
         return divider + '<div class="module-list-row' + (m.kind === 'workspace' ? ' module-row-workspace' : '') + '">' +
           '<span class="name">' + _esc(m.name) + '</span>' +
-          '<span class="desc">' + tagPills + ' ' + _esc(m.description || '') + _installedMeta(m) + '</span>' +
-          '<span>' + _actionFor(m) + '</span>' +
+          '<span class="desc"> ' + _esc(m.description || '') + _moduleStatsRow(m) + _moduleInstalledMeta(m) + '</span>' +
+          '<span>' + _moduleActionFor(m, marketplace) + '</span>' +
           '</div>';
       });
       grid.innerHTML = rows.join('');
@@ -2789,12 +2797,10 @@
       grid.className = 'module-grid';
       var prevG = null;
       var cards = modules.map(function(m) {
-        var divider = _maybeSectionDivider(prevG, m);
+        var divider = _moduleSectionDivider(prevG, m);
         prevG = m;
-        var tags = ''; // tag pills hidden
         // Installed-via-imports modules carry their GitHub URL in `source`, not
-        // `homepage` (which only the curated catalog populates) — fall back to a
-        // URL-shaped source so they get the same "GitHub" header link.
+        // `homepage`; fall back to a URL-shaped source for the header link.
         var _hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
         var homepage = _hp
           ? '<a href="' + _esc(_hp) + '" target="_blank" class="module-link">GitHub &#8599;</a>'
@@ -2804,15 +2810,107 @@
         return divider + '<div class="module-card' + workspaceCls + '">' +
           '<div class="module-card-header"><strong>' + _esc(m.name) + '</strong> ' + homepage + '</div>' +
           '<p class="module-desc">' + _esc(m.description) + '</p>' +
-          '<div class="module-tags">' + tags + '</div>' +
-          _installedMeta(m) +
-          '<div class="module-action">' + _actionFor(m) + '</div>' +
+          '<div class="module-tags"></div>' +
+          _moduleStatsRow(m) +
+          _moduleInstalledMeta(m) +
+          '<div class="module-action">' + _moduleActionFor(m, marketplace) + '</div>' +
           '</div>';
       });
       grid.innerHTML = cards.join('');
     }
   }
+
+  function _renderCatalog() {
+    var grid = document.getElementById('catalog-modules-grid');
+    if (!grid) return;
+    var modules = _filterModules(window._catalogModules, window._catalogFilter);
+    // The Modules tab shows only what is IN this workspace — the workspace's
+    // own package plus installed modules. Browse-everything (available-to-
+    // install) lives in the Marketplace tab.
+    modules = modules.filter(function (m) { return m.kind === 'workspace' || m.installed; });
+    _renderModuleGrid(grid, modules, window._catalogView, false);
+  }
   window._renderCatalog = _renderCatalog;
+
+  // -------------------------------------------------------------------------
+  // Marketplace: browse the FULL viva ecosystem (unfiltered by this
+  // workspace's registry.include / registry.modules) and install modules.
+  // Data: /api/marketplace (build_catalog full=True). Reuses the Modules
+  // tab's card rendering + install flow.
+  // -------------------------------------------------------------------------
+  window._marketplaceModules = [];
+  window._marketplaceFilter = { search: '', tags: new Set(), installed: 'all' };
+  window._marketplaceView = 'grid';
+  window._marketplaceSort = 'default';
+  window._marketplaceLoaded = false;
+
+  function _setMarketplaceView(view) {
+    window._marketplaceView = view;
+    document.querySelectorAll('#marketplace-toolbar .view-btn').forEach(function(b) {
+      b.classList.toggle('active', b.getAttribute('data-view') === view);
+    });
+    _renderMarketplace();
+  }
+  window._setMarketplaceView = _setMarketplaceView;
+
+  function _renderMarketplace() {
+    var grid = document.getElementById('marketplace-modules-grid');
+    if (!grid) return;
+    // Marketplace includes available-to-install modules (no installed-only
+    // filter) — that's the whole point of the tab.
+    var modules = _filterModules(window._marketplaceModules, window._marketplaceFilter);
+    _renderModuleGrid(grid, modules, window._marketplaceView, true);
+  }
+  window._renderMarketplace = _renderMarketplace;
+
+  function _loadMarketplace(force) {
+    var grid = document.getElementById('marketplace-modules-grid');
+    if (!grid) return;
+    if (window._marketplaceLoaded && !force) { _renderMarketplace(); return; }
+    fetch('/api/marketplace')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        window._marketplaceModules = data.modules || [];
+        window._marketplaceLoaded = true;
+        // Wire toolbar interactions once.
+        var searchEl = document.getElementById('marketplace-search');
+        if (searchEl && !searchEl._pbgWired) {
+          searchEl._pbgWired = true;
+          searchEl.oninput = function() {
+            window._marketplaceFilter.search = this.value.toLowerCase();
+            _renderMarketplace();
+          };
+        }
+        var radios = document.querySelectorAll('input[name="marketplace-installed-filter"]');
+        radios.forEach(function(r) {
+          if (!r._pbgWired) {
+            r._pbgWired = true;
+            r.onchange = function() {
+              window._marketplaceFilter.installed = this.value;
+              _renderMarketplace();
+            };
+          }
+        });
+        var mktSortEl = document.getElementById('marketplace-sort');
+        if (mktSortEl && !mktSortEl._pbgWired) {
+          mktSortEl._pbgWired = true;
+          mktSortEl.value = window._marketplaceSort || 'default';
+          mktSortEl.onchange = function() {
+            window._marketplaceSort = this.value;
+            _renderMarketplace();
+          };
+        }
+        if (!window._marketplaceModules.length) {
+          grid.innerHTML = '<p class="empty-state">No ecosystem modules available.</p>';
+          return;
+        }
+        _renderMarketplace();
+      })
+      .catch(function(err) {
+        grid.innerHTML = '<p class="empty-state" style="color:#c00">Marketplace load failed: ' + _esc(String(err)) + '</p>';
+      });
+  }
+  window._loadMarketplace = _loadMarketplace;
 
   // Registry page sub-tab toggle. Two sub-tabs: "modules" (the catalog
   // grid above, where the workspace package + installed modules now
@@ -2833,6 +2931,11 @@
     // unless force=true, so this is cheap when called repeatedly.
     if (name === 'discovered' && typeof _loadRegistry === 'function') {
       _loadRegistry(false);
+    }
+    // Marketplace is lazy-loaded on first open (then cached). _loadMarketplace
+    // re-renders from cache on repeat opens unless force=true.
+    if (name === 'marketplace' && typeof _loadMarketplace === 'function') {
+      _loadMarketplace(false);
     }
   }
   window._setRegistrySubtab = _setRegistrySubtab;
@@ -3005,6 +3108,15 @@
             };
           }
         });
+        var sortEl = document.getElementById('catalog-sort');
+        if (sortEl && !sortEl._pbgWired) {
+          sortEl._pbgWired = true;
+          sortEl.value = window._catalogSort || 'default';
+          sortEl.onchange = function() {
+            window._catalogSort = this.value;
+            _renderCatalog();
+          };
+        }
         _buildCatalogChips();
         _renderCatalog();
         _renderInstalledModules(data.modules);
@@ -3034,7 +3146,7 @@
     return "Install failed:\n" + (json.error || 'unknown') + "\n\n" + (json.log || '').slice(0, 500);
   }
 
-  function _installFromCatalog(name) {
+  function _installFromCatalog(name, opts) {
     // First check whether the catalog entry declares any native/system
     // dependencies and, if so, that they're satisfied in the workspace venv.
     // If anything is missing, show the consent modal instead of jumping
@@ -3047,21 +3159,30 @@
         if (!rOk || !j || !j.checks || !j.checks.length || j.ok) {
           // No checks declared, all green, or the check endpoint itself
           // errored — fall through to the existing install flow.
-          return _proceedWithCatalogInstall(name);
+          return _proceedWithCatalogInstall(name, opts);
         }
-        _showSystemDepsModal(name, j);
+        _showSystemDepsModal(name, j, opts);
       })
       .catch(function() {
         // Network/parse error: don't block the user — let the install try.
-        _proceedWithCatalogInstall(name);
+        _proceedWithCatalogInstall(name, opts);
       });
   }
   window._installFromCatalog = _installFromCatalog;
+
+  // Marketplace-tab installs must force the full-repo git-submodule path
+  // (not the lightweight PyPI wheel) so the module's top-level studies/ and
+  // investigations/ land on disk under external/<name>/ and can federate.
+  function _installFromMarketplace(name) {
+    _installFromCatalog(name, {full_repo: true});
+  }
+  window._installFromMarketplace = _installFromMarketplace;
 
   function _proceedWithCatalogInstall(name, opts) {
     if (!confirm("Install '" + name + "' on the active investigation branch?\n\nThis adds a submodule, pip installs the package, and appends it to pyproject.toml. Requires an active investigation branch.")) return;
     var body = {name: name};
     if (opts && opts.skip_system_deps_check) body.skip_system_deps_check = true;
+    if (opts && opts.full_repo) body.full_repo = true;
     fetch('/api/catalog-install', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
@@ -3085,7 +3206,7 @@
                   install: m.install, notes: m.notes,
                 };
               }),
-            });
+            }, opts);
             return;
           }
           alert(_renderInstallError(json));
@@ -3114,7 +3235,7 @@
   }
   window._closeSystemDepsModal = _closeSystemDepsModal;
 
-  function _showSystemDepsModal(name, depsResult) {
+  function _showSystemDepsModal(name, depsResult, opts) {
     _closeSystemDepsModal();
     var checks = (depsResult && depsResult.checks) || [];
     var missing = checks.filter(function(c) { return !c.ok; });
@@ -3187,7 +3308,7 @@
     var installBtnEl = document.getElementById('sysdeps-install-btn');
     if (installBtnEl) {
       installBtnEl.addEventListener('click', function() {
-        _installSystemDeps(name, installableNames);
+        _installSystemDeps(name, installableNames, opts);
       });
     }
     var skipBtnEl = document.getElementById('sysdeps-skip-btn');
@@ -3195,13 +3316,15 @@
       skipBtnEl.addEventListener('click', function() {
         if (!confirm("Skip system-deps check and install '" + name + "' anyway?\n\nThis is unsafe — the install will likely succeed at the pip step but fail with a native-library error at first Run.")) return;
         _closeSystemDepsModal();
-        _proceedWithCatalogInstall(name, {skip_system_deps_check: true});
+        var skipOpts = {skip_system_deps_check: true};
+        if (opts && opts.full_repo) skipOpts.full_repo = true;
+        _proceedWithCatalogInstall(name, skipOpts);
       });
     }
   }
   window._showSystemDepsModal = _showSystemDepsModal;
 
-  function _installSystemDeps(name, checkNames) {
+  function _installSystemDeps(name, checkNames, opts) {
     var errEl = document.getElementById('sysdeps-error');
     var btn = document.getElementById('sysdeps-install-btn');
     if (errEl) errEl.textContent = '';
@@ -3223,7 +3346,7 @@
         var stillFailing = (j.recheck || []).filter(function(r) { return !r.ok; });
         if (stillFailing.length === 0) {
           _closeSystemDepsModal();
-          _proceedWithCatalogInstall(name);
+          _proceedWithCatalogInstall(name, opts);
           return;
         }
         // Surface the remaining failures so the user can decide what to do.
@@ -5242,7 +5365,7 @@
       var lifeChip = iset.lifecycle && iset.lifecycle !== 'active'
         ? '<span style="font-size:0.72em;color:#64748b;background:#f1f5f9;border-radius:9999px;padding:1px 8px">' + _esc(iset.lifecycle) + '</span>' : '';
 
-      return '<div class="investigation-set-card" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ' +
+      return '<div class="investigation-set-card' + (iset.read_only ? ' federated-readonly' : '') + '" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ' +
              'title="' + _esc(iset.name) + '" ' +
              'data-iset-title="' + _esc(String(iset.title || iset.name).toLowerCase()) + '" ' +
              'data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" ' +
@@ -5252,6 +5375,7 @@
           '<strong style="font-size:1.05em;flex:1">' + _esc(iset.title || iset.name) + '</strong>' +
           currentPill +
           statusPill +
+          _originBadge(iset.origin_repo) +
         '</div>' +
         qLine +
         (breakdown ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:0.82em;color:#64748b;margin:0 0 8px">' + breakdown + (lifeChip ? '<span style="margin-left:auto">' + lifeChip + '</span>' : '') + '</div>' : '') +
@@ -5668,7 +5792,10 @@
     var nRuns = (s.n_runs !== undefined) ? s.n_runs
               : (s.n_simulations !== undefined ? s.n_simulations : 0);
     var cardStyle = 'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.1s,border-color 0.1s;';
-    return '<div class="investigation-set-card" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ' +
+    var partOf = (s.investigations && s.investigations.length)
+      ? '<div style="font-size:0.78em;color:#94a3b8;margin:0 0 6px">part of: ' + _esc(s.investigations.join(', ')) + '</div>'
+      : '';
+    return '<div class="investigation-set-card' + (s.read_only ? ' federated-readonly' : '') + '" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ' +
            'title="' + _esc(s.name) + '" ' +
            'data-iset-title="' + _esc(String(s.title || s.name).toLowerCase()) + '" ' +
            'data-iset-slug="' + _esc(String(s.name).toLowerCase()) + '" ' +
@@ -5678,8 +5805,10 @@
         '<strong style="font-size:1.02em;flex:1">' + _esc(s.title || s.name) + '</strong>' +
         '<span style="font-size:0.72em;border-radius:9999px;padding:1px 9px;white-space:nowrap;' +
           'background:' + m[0] + '22;color:' + m[0] + ';border:1px solid ' + m[0] + '55">' + _esc(m[1]) + '</span>' +
+        _originBadge(s.origin_repo) +
       '</div>' +
       (inv ? '<div style="font-size:0.78em;color:#94a3b8;margin:0 0 6px"><span style="color:#cbd5e1">▪</span> ' + _esc(inv) + '</div>' : '') +
+      partOf +
       (q ? '<p style="margin:0 0 8px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(String(q).split('\n')[0].slice(0, 180)) + '</p>' : '') +
       '<div style="display:flex;align-items:center;gap:12px;font-size:0.85em;color:#64748b">' +
         '<span style="flex:1"><strong>' + nRuns + '</strong> run' + (nRuns === 1 ? '' : 's') + '</span>' +

@@ -19,7 +19,7 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
@@ -88,34 +88,68 @@ def discover_workspace_composites(ws_root: Path, package_path: str) -> dict[str,
                                 package_path, ws_root)
 
 
-def discover_installed_pbg_composites() -> dict[str, dict]:
-    """Scan every installed pbg-* distribution's <package>/composites/ directory.
+def _discover_installed_composites(
+    name_predicate: Callable[[str], bool] | None = None,
+) -> dict[str, dict]:
+    """Scan installed distributions' <package>/composites/ directory.
 
-    Strategy: enumerate installed distributions whose Name starts with `pbg-`,
-    derive the canonical Python package name (`pbg-foo` → `pbg_foo`), then
-    `importlib.util.find_spec` to resolve the on-disk package directory. The
-    `dist.files` shape varies between regular and editable installs, so name
-    derivation is more robust.
+    Strategy: enumerate installed distributions (optionally filtered by
+    `name_predicate` on the dist's raw `Name`), derive the canonical Python
+    package name (`pbg-foo` → `pbg_foo`), then `importlib.util.find_spec` to
+    resolve the on-disk package directory. The `dist.files` shape varies
+    between regular and editable installs, so name derivation is more robust.
+
+    Best-effort: any single distribution that errors during resolution/scan
+    is skipped, never raising.
     """
     out: dict[str, dict] = {}
     seen_pkgs: set[str] = set()
     for dist in metadata.distributions():
-        name = (dist.metadata.get("Name") or "").strip()
-        if not name.startswith("pbg-"):
-            continue
-        pkg_name = name.replace("-", "_")
-        if pkg_name in seen_pkgs:
-            continue  # Same package may appear twice (regular + editable shim)
-        seen_pkgs.add(pkg_name)
         try:
-            spec = importlib.util.find_spec(pkg_name)
-        except (ImportError, ValueError):
+            name = (dist.metadata.get("Name") or "").strip()
+            if not name:
+                continue
+            if name_predicate is not None and not name_predicate(name):
+                continue
+            pkg_name = name.replace("-", "_")
+            if pkg_name in seen_pkgs:
+                continue  # Same package may appear twice (regular + editable shim)
+            seen_pkgs.add(pkg_name)
+            try:
+                spec = importlib.util.find_spec(pkg_name)
+            except (ImportError, ValueError):
+                continue
+            if not spec or not spec.submodule_search_locations:
+                continue
+            for loc in spec.submodule_search_locations:
+                out.update(_scan_composites_dir(Path(loc) / "composites", pkg_name, None))
+        except Exception:
             continue
-        if not spec or not spec.submodule_search_locations:
-            continue
-        for loc in spec.submodule_search_locations:
-            out.update(_scan_composites_dir(Path(loc) / "composites", pkg_name, None))
     return out
+
+
+def discover_installed_pbg_composites() -> dict[str, dict]:
+    """Scan every installed pbg-* distribution's <package>/composites/ directory.
+
+    Public, pbg-only behavior preserved for existing callers (the Composites
+    tab / composite resolution). See :func:`discover_installed_composites_all`
+    for the generalized (all-distributions) variant used by module content
+    stats, which need to count packaged composites for ANY wheel-installed
+    module, not just the `pbg-` naming convention.
+    """
+    return _discover_installed_composites(lambda n: n.startswith("pbg-"))
+
+
+def discover_installed_composites_all() -> dict[str, dict]:
+    """Scan EVERY installed distribution's <package>/composites/ directory.
+
+    Generalization of :func:`discover_installed_pbg_composites` with no name
+    filter -- so wheel-installed modules that don't follow the `pbg-` naming
+    convention (or the post-rebrand `viva-` one) still surface their packaged
+    composites. Best-effort throughout (skips a distribution on any error;
+    never raises) since this runs over the whole installed environment.
+    """
+    return _discover_installed_composites(None)
 
 
 def _derive_module_from_spec_id(spec_id: str) -> str:
@@ -165,6 +199,11 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
         if spec_id not in out:
             out[spec_id] = rec
 
+    # Federated composites from linked workspaces under external/ (read-only).
+    from vivarium_workbench.lib import federation as _fed
+    for spec_id, rec in _fed.federated_composites(ws_root).items():
+        out.setdefault(spec_id, rec)
+
     # Tag every spec entry with kind + derived module (idempotent).
     for spec_id, rec in out.items():
         rec.setdefault("kind", "spec")
@@ -196,6 +235,15 @@ def discover_all_composites(ws_root: Path, package_path: str) -> dict[str, dict]
         # so callers inherit the composite's simulation-report panels.
         rec["visualizations"] = list(entry.get("visualizations") or [])
         out[gid] = rec
+
+    # Tag origin: own/installed/generator composites get origin_repo None
+    # unless already set (federated recs already carry a truthy origin_repo).
+    # Runs last so it covers every record, including generator entries merged
+    # above.
+    for rec in out.values():
+        rec.setdefault("origin_repo", None)
+        rec.setdefault("read_only", False)
+
     return out
 
 

@@ -27,6 +27,7 @@ from vivarium_workbench.lib.investigation_status import (
 from vivarium_workbench.lib.investigations_index import _count_runs_for_study
 from vivarium_workbench.lib.report_views import _coerce_list_field
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 _MULTIAXIS_STATUS_FIELDS = (
@@ -111,7 +112,7 @@ def _build_iset_detail_for_test(ws_root: Path, name: str) -> tuple[dict, int]:
     studies_out = []
     statuses = []
     has_runs = []
-    for slug in (spec.get("studies") or []):
+    for slug in investigation_member_slugs(spec):
         status, runs = read_study_status(ws_root, slug, study_has_runs=has_runs_fn)
         statuses.append(status)
         has_runs.append(runs)

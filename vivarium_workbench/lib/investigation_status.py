@@ -20,6 +20,7 @@ from typing import Callable, Iterator
 
 import yaml
 
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
 # Sets used by compute_investigation_status. Module scope so the derivation
@@ -232,7 +233,12 @@ def build_iset_summary(
         except Exception as e:
             out.append({"name": d.name, "error": f"parse failed: {e}"})
             continue
-        study_slugs = list(spec.get("studies") or [])
+        # `study-registry-migration` moved an investigation's member-study list
+        # from the `studies:` key to `members:` (nested studies -> top-level
+        # registry + investigations-as-members). Accept either so both the
+        # pre- and post-migration schema render (safe superset: `members` is
+        # only consulted when `studies` is absent/empty).
+        study_slugs = investigation_member_slugs(spec)
         statuses_and_runs = [
             read_study_status(ws_root, s, study_has_runs=study_has_runs)
             for s in study_slugs
@@ -251,6 +257,28 @@ def build_iset_summary(
             "studies":          study_slugs,
             "lifecycle":        iset_lifecycle(ws_root, spec.get("name", d.name)),
             "current":          (d.name == current_slug),
+            "origin_repo":      None,
+            "read_only":        False,
+        })
+
+    from vivarium_workbench.lib import federation as _fed
+
+    for fi in _fed.federated_investigation_sets(ws_root):
+        fspec = fi.get("spec") or {}
+        out.append({
+            "name":             fi["name"],
+            "title":            fspec.get("title", fi["name"]),
+            "status":           fspec.get("status", "planning"),
+            "effective_status": "federated",
+            "description":      fspec.get("description", ""),
+            "question":         fspec.get("question", ""),
+            "hypothesis":       fspec.get("hypothesis", ""),
+            "n_studies":        len(fi.get("member_studies", [])),
+            "studies":          [m.split("::", 1)[-1] for m in fi.get("member_studies", [])],
+            "lifecycle":        "",
+            "current":          False,
+            "origin_repo":      fi["origin_repo"],
+            "read_only":        True,
         })
     return out
 

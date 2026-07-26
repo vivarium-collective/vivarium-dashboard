@@ -31,6 +31,7 @@ from pathlib import Path
 
 import yaml
 
+from vivarium_workbench.lib.module_stats import _norm, module_content_stats
 from vivarium_workbench.lib.registry import (
     _reexport_map_via_worker,
     _registry_include_pkgs,
@@ -460,8 +461,16 @@ def _read_workspace_pyproject_deps(ws_root: Path) -> set[str]:
 # Main builder
 # ---------------------------------------------------------------------------
 
-def build_catalog(ws_root: Path) -> dict:
+def build_catalog(ws_root: Path, full: bool = False) -> dict:
     """Pure data builder for ``GET /api/catalog`` — returns ``{"modules": [...]}`` dict.
+
+    ``full=True`` powers the **Marketplace** tab (``GET /api/marketplace``): it
+    browses the *entire* viva ecosystem registry, bypassing both the workspace's
+    ``dashboard.registry.include`` allow-list and its ``dashboard.registry.modules``
+    override (both are per-workspace curation knobs the marketplace deliberately
+    ignores). Install-state annotation, the workspace-self card, and imported-module
+    surfacing all still apply, so each ecosystem module shows its correct
+    installed/available state for *this* workspace.
 
     Called by the FastAPI seam (``api/app.py``) and, via the thin
     ``_catalog_data`` wrapper, by the stdlib handler and ``publish.build_bundle``.
@@ -495,7 +504,11 @@ def build_catalog(ws_root: Path) -> dict:
             default_modules = []
 
     override = _registry_modules_override(ws_data)
-    if override is not None:
+    if full:
+        # Marketplace: always browse the canonical ecosystem registry, ignoring
+        # the workspace's registry.modules override (a curation knob).
+        modules = default_modules
+    elif override is not None:
         modules = _build_override_catalog(override, default_modules)
     else:
         modules = default_modules
@@ -649,10 +662,35 @@ def build_catalog(ws_root: Path) -> dict:
                 ws_self["out_of_sync_reason"] = sync_reason
             modules = [ws_self] + modules
 
-    if override is None:
+    if full:
+        # Marketplace: no registry.include filter — surface the whole ecosystem.
+        pass
+    elif override is None:
         kept_origins = [
             m for m in modules if isinstance(m, dict) and m.get("reexport_origin")
         ]
         modules = _filter_catalog_modules(modules, ws_data) + kept_origins
+
+    # Content counts + workspace-usage (module cards): additive fields, merged
+    # by module name. `stats` is keyed by _norm(name) — module_content_stats
+    # normalizes dashed/underscored/mixed-case identities (federated repo
+    # names vs installed package names) onto one join key — so look up the
+    # normalized name here too, with a direct-key fallback for safety. A
+    # module with no content from either source simply isn't a key in
+    # `stats` — default to 0/None so every entry carries the fields.
+    try:
+        stats = module_content_stats(ws_root)
+    except Exception:
+        stats = {}
+    for m in modules:
+        if not isinstance(m, dict):
+            continue
+        name = m.get("name")
+        s = stats.get(_norm(name)) or stats.get(name) or {}
+        m["n_composites"] = s.get("n_composites", 0)
+        m["n_investigations"] = s.get("n_investigations", 0)
+        m["n_studies"] = s.get("n_studies", 0)
+        m["n_used"] = s.get("n_used", 0)
+        m["last_updated"] = s.get("last_updated")
 
     return {"modules": modules}

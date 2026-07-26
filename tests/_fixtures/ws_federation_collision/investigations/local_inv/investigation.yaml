@@ -1,0 +1,3 @@
+name: local_inv
+description: Local investigation owning the local "shared" study.
+studies: [shared]

@@ -1,0 +1,4 @@
+name: donor_study
+description: A donor study.
+baseline:
+  - {name: base, composite: donor.composites.donor}
