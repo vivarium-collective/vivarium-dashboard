@@ -17,7 +17,6 @@ import yaml
 
 from vivarium_workbench.lib.artifacts.pipeline import resolve_study
 from vivarium_workbench.lib.investigation_graph_views import build_investigation_graph
-from tests.test_no_nested_studies_guard import find_nested_studies
 
 
 def make_stub():
@@ -118,4 +117,8 @@ def test_both_investigations_show_shared_node(tmp_path):
 
 def test_fixture_is_registry_clean(tmp_path):
     ws = build_fixture(tmp_path)
-    assert find_nested_studies(ws) == []
+    # Inline the registry-clean scan (mirrors tests/test_no_nested_studies_guard.
+    # find_nested_studies) rather than importing across test modules: a top-level
+    # `tests` package shipped in site-packages shadows the repo's tests/ under CI.
+    nested = sorted((ws / "investigations").rglob("study.yaml"))
+    assert nested == []
