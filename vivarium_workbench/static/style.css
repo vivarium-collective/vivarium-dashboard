@@ -740,9 +740,13 @@ body.focus-mode.focus-composite-explore .page.active{
 }
 .viv-workspace-switcher .viv-ws-caret{ color:#9ca3af; font-size:0.78em }
 
+/* The single scroll region: everything from the Workspace nav down lives here
+   and scrolls as one, so a long study list pushes the nav up off the top rather
+   than clipping. Only the brand + workspace chip above stay fixed. */
 .viv-rail-scroll{
-  flex:1 1 auto; overflow-y:auto; overflow-x:hidden;
-  padding:8px 0 4px;
+  flex:1 1 auto; min-height:0;
+  overflow-y:auto; overflow-x:hidden;
+  padding:0;
 }
 
 .viv-rail-section{
@@ -751,18 +755,20 @@ body.focus-mode.focus-composite-explore .page.active{
 .viv-rail-section + .viv-rail-section{
   border-top:1px solid #ececec; margin-top:4px;
 }
-/* Studies fill the rail's remaining height and scroll on their own, so a long
-   study list (many investigations) never clips below the rail's bottom edge.
-   The nav above stays fixed; only this section scrolls. min-height:0 is what
-   lets a flex child shrink below its content height and actually overflow. */
+/* Studies flow naturally within the shared scroll region (no inner scrollbar).
+   Its header (label + search) is sticky so it pins to the top of the scroll
+   region as the study list scrolls beneath — ChatGPT-sidebar style. */
 #viv-rail-studies-section{
-  flex:1 1 auto; min-height:0;
   display:flex; flex-direction:column;
-  overflow:hidden;
+}
+.viv-rail-studies-head{
+  position:sticky; top:0; z-index:5;
+  background:#fafafa;
+  padding-top:4px;
+  box-shadow:0 1px 0 #ececec;
 }
 #viv-rail-investigations{
-  flex:1 1 auto; min-height:0;
-  overflow-y:auto; overflow-x:hidden;
+  overflow-x:hidden;
 }
 
 /* Clickable "Needs attention" items — hover affordance so it reads as a link
