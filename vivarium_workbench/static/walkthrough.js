@@ -293,11 +293,21 @@
       var doc;
       try { doc = frame.contentDocument; } catch (_) { return; }   // cross-origin -> bail
       if (!doc || !doc.body) return;
+      // Preserve the page scroll across the height:0 measurement. Reading
+      // scrollHeight at height:0 forces a reflow with the porthole collapsed;
+      // when the frame sits above the fold (user has scrolled up toward the
+      // investigation graph), that momentary shrink clamps window.scrollY and,
+      // once we restore the height, leaves the viewport yanked upward — the
+      // "jumps all the way back up to the investigation" glitch. The measure +
+      // restore below is synchronous, so the 0px state never paints; we just
+      // put the scroll position back where the user left it.
+      var prevY = window.pageYOffset;
       frame.style.height = '0px';
       var h = Math.max(
         doc.body.scrollHeight || 0,
         doc.documentElement ? doc.documentElement.scrollHeight : 0);
       frame.style.height = Math.max(minH || 0, h) + 'px';
+      if (window.pageYOffset !== prevY) window.scrollTo(0, prevY);
     };
     var onload = function () {
       fit();
