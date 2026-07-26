@@ -382,6 +382,51 @@ def build_investigations(ws_root: Path) -> dict:
             "parent_studies": parents,
             "blocked": len(blocked_by) > 0,
             "blocked_by": blocked_by,
+            "origin_repo": None,
+            "read_only": False,
         }
         out.append(row)
+
+    from vivarium_workbench.lib import federation as _fed
+
+    # --- membership: study name -> set of investigation-set names that list it ---
+    membership: dict[str, set[str]] = {}
+    # local isets
+    from vivarium_workbench.lib.investigation_status import build_iset_summary
+    try:
+        for iset in build_iset_summary(ws_root, study_has_runs=lambda *a, **k: False) or []:
+            for sname in (iset.get("studies") or []):
+                membership.setdefault(str(sname), set()).add(iset.get("name") or "")
+    except Exception:
+        pass
+    # federated isets (member ids are "<repo>::<study>"; strip for display membership)
+    for iset in _fed.federated_investigation_sets(ws_root):
+        for mid in iset.get("member_studies", []):
+            sname = mid.split("::", 1)[-1]
+            membership.setdefault(sname, set()).add(iset["name"])
+
+    for row in out:
+        row["investigations"] = sorted(x for x in membership.get(row["name"], ()) if x)
+
+    # --- append federated study rows ---
+    for fs in _fed.federated_studies(ws_root):
+        spec = fs["spec"]
+        frow = {
+            "name": fs["name"],
+            "composite": "",
+            "composites": [],
+            "description": spec.get("description", ""),
+            "topic": spec.get("topic", ""),
+            "tags": spec.get("tags") or [],
+            "status": spec.get("status", "planned"),
+            "phase": spec.get("phase"),
+            "n_simulations": 0,
+            "n_runs": 0,
+            "n_baseline": len(spec.get("baseline") or []),
+            "origin_repo": fs["origin_repo"],
+            "read_only": True,
+            "investigations": sorted(x for x in membership.get(fs["name"], ()) if x),
+        }
+        out.append(frow)
+
     return {"investigations": out}

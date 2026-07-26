@@ -428,6 +428,9 @@ class InvestigationRow(BaseModel):
     n_simulations: Optional[int] = None
     description: Optional[str] = None
     error: Optional[str] = None
+    origin_repo: Optional[str] = None
+    read_only: bool = False
+    investigations: list[str] = []
 
 
 class InvestigationsPayload(BaseModel):

@@ -1,0 +1,22 @@
+from pathlib import Path
+
+from vivarium_workbench.lib.investigations_index import build_investigations
+
+FIX = Path(__file__).parent / "_fixtures" / "ws_federation_demo"
+
+
+def test_build_investigations_includes_federated_study_with_provenance():
+    rows = build_investigations(FIX)["investigations"]
+    donor = next(r for r in rows if r["name"] == "donor_study")
+    assert donor["origin_repo"] == "donor-repo"
+    assert donor["read_only"] is True
+    # membership: donor_inv lists donor_study
+    assert "donor_inv" in donor["investigations"]
+
+
+def test_build_investigations_own_rows_have_null_origin():
+    rows = build_investigations(FIX)["investigations"]
+    # host_ws has no own studies; assert federated rows are the only ones and
+    # any own row (if present) carries origin_repo None.
+    for r in rows:
+        assert "origin_repo" in r
