@@ -5478,9 +5478,19 @@
     _setInvestigationContextCollapsed(false);
     if (typeof _fitEmbedToContent === 'function') _fitEmbedToContent(frame, 560);
     else if (typeof _fitEmbedToViewport === 'function') _fitEmbedToViewport(frame, panel, 560);
-    // Land on the study; the context stays above, reachable by scrolling up.
+    // Gracefully scroll down to the study AFTER its porthole has loaded + sized,
+    // so the smooth scroll targets the study's final position (scrolling before
+    // load lands on the pre-load height and misses). The context stays above,
+    // reachable by scrolling back up.
     if (panel && panel.scrollIntoView) {
-      try { panel.scrollIntoView({behavior: 'smooth', block: 'start'}); } catch (_) {}
+      var _landed = false;
+      var _land = function () {
+        if (_landed || !panel.isConnected) return;
+        _landed = true;
+        try { panel.scrollIntoView({behavior: 'smooth', block: 'start'}); } catch (_) {}
+      };
+      if (frame) frame.addEventListener('load', function () { setTimeout(_land, 80); }, { once: true });
+      setTimeout(_land, 600);   // fallback if load already fired or never fires
     }
   }
   window._wsOpenStudyTab = _wsOpenStudyTab;
@@ -6833,7 +6843,13 @@
               (claim ? _esc(claim) : '<em style="color:#94a3b8">pending evidence</em>') +
             '</div>'
           : '') +
-        (_opts.finds && moreN ? '<div style="font-size:0.72em;margin-top:2px;color:#94a3b8">+' + moreN + ' more</div>' : '') +
+        (_opts.finds && moreN
+          ? '<div title="' + _esc(findings.slice(1).map(function (f) {
+                return '• ' + ((f.summary || f.statement || f.id || '').replace(/\s+/g, ' ').trim());
+              }).join('\n')) + '" ' +
+            'style="font-size:0.72em;margin-top:2px;color:#94a3b8;cursor:help">+' + moreN +
+            ' more finding' + (moreN === 1 ? '' : 's') + '</div>'
+          : '') +
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
           ? window._chainBlockHtml(chainsBySlug[s.name]) : '');
