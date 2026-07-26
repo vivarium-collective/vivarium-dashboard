@@ -233,7 +233,11 @@ def resolve_composite(
             # Per-process docstrings via the env worker (no in-process workspace
             # import); best-effort — decoration never fails the resolve.
             from vivarium_workbench.lib.process_docs import attach_process_docs_via_worker
-            state = attach_process_docs_via_worker(ws_root, state)
+            # Pass spec_id so the worker can build the composite's core from its
+            # core_extensions and resolve bare registry-name addresses
+            # (local:EcoliWCM) — otherwise Composite Processes in a committed
+            # artifact never get flagged (no inner-composite drill-in mini-map).
+            state = attach_process_docs_via_worker(ws_root, state, spec_id=spec_id)
             # Embed the declared emit-all paths INSIDE `state` (not as a
             # sibling of it): the dashboard glue (walkthrough.js) and loom's
             # popup/static hydration paths all forward only `payload.state`

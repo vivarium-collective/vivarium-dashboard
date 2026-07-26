@@ -818,15 +818,65 @@ def _attach_process_docs(doc, get_core=None):
     return doc
 
 
+def _lazy_core_for_ref(ref):
+    """Zero-arg callable building generator ``ref``'s core from its
+    ``core_extensions`` (which register the composite's local process classes,
+    e.g. ``EcoliWCM``), or ``None`` when ``ref`` is falsy/unregistered.
+
+    Lazily built + cached, so a doc with no bare registry-name address never
+    pays for a core. Mirrors the ``_get_core`` closure the live-build method
+    already uses — it exists so the *attach* path can resolve bare addresses
+    (``local:EcoliWCM``) on a committed-artifact doc that was NOT live-built."""
+    if not ref:
+        return None
+    try:
+        from viva_superpowers.composite_generator import (
+            _REGISTRY, apply_core_extensions, discover_generators,
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    _import_workspace_package(_workspace)
+    if not _REGISTRY:
+        try:
+            discover_generators()
+        except Exception:  # noqa: BLE001
+            return None
+    entry = _REGISTRY.get(ref)
+    if entry is None:
+        return None
+    _core_cache: dict = {}
+
+    def _get_core():
+        if "c" not in _core_cache:
+            try:
+                from bigraph_schema import allocate_core
+                _core_cache["c"] = apply_core_extensions(entry, allocate_core())
+            except Exception:  # noqa: BLE001
+                _core_cache["c"] = None
+        return _core_cache["c"]
+
+    return _get_core
+
+
 def _attach_process_docs_method(params: dict) -> dict:
     """Attach per-process docstrings to an already-resolved state ``document``
     passed inline (spec §11 ``{document}``). Read-shaped: the workbench owns the
     science file, hands us the doc, and we import the process classes to read
     their descriptions — so the HTTP process imports no workspace Python for the
-    composite-state static-fallback / spec branches."""
+    composite-state static-fallback / spec branches.
+
+    When a generator ``ref`` is supplied, a lazy core is built from its
+    ``core_extensions`` so bare registry-name addresses (``local:EcoliWCM``)
+    resolve for Composite-Process flagging + port-type reads. Without it the
+    committed-artifact resolve path (``GET /api/composite-resolve`` serving
+    ``reports/composite-state/<id>.json``) never sets ``is_composite_process``,
+    so the Explorer's inner-composite drill-in mini-map silently disappears —
+    even though the live-built study path shows it."""
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
-    return {"document": _attach_process_docs((params or {}).get("document"))}
+    p = params or {}
+    get_core = _lazy_core_for_ref(p.get("ref"))
+    return {"document": _attach_process_docs(p.get("document"), get_core=get_core)}
 
 
 def _render_port_schemas(doc):
