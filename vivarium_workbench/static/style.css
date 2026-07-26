@@ -2703,3 +2703,11 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .ccard-struct > summary::before { content: '▸ '; color: #94a3b8; }
 .ccard-struct[open] > summary::before { content: '▾ '; }
 .ccard-struct-body { font-size: 11px; color: #475569; padding: 3px 0 1px 2px; }
+
+/* Federated (foreign-module) content — origin-repo provenance badge +
+   read-only treatment on composite / study / investigation-set cards. */
+.origin-badge{display:inline-block;font-size:0.72em;font-weight:600;color:#5b21b6;
+  background:#ede9fe;border:1px solid #ddd6fe;border-radius:10px;padding:1px 7px;
+  margin-left:6px;vertical-align:middle;white-space:nowrap}
+.federated-readonly{opacity:0.92}
+.federated-readonly .action-btn,.federated-readonly .btn-mini{display:none}

@@ -1330,6 +1330,14 @@
     });
   }
 
+  // Origin-repo provenance badge. Empty string for own (null) content.
+  function _originBadge(repo) {
+    if (!repo) return '';
+    return '<span class="origin-badge" title="From installed module ' +
+      _esc(repo) + '">📦 ' + _esc(repo) + '</span>';
+  }
+  window._originBadge = _originBadge;
+
   // Coerce a value to an Array. Use everywhere a YAML/JSON field is
   // SUPPOSED to be a list but a caller might supply a dict (e.g. a
   // grouped/nested shape). Prevents
@@ -2331,11 +2339,11 @@
         }).join('');
         var divider = _maybeDivider(prevC, c);
         prevC = c;
-        var exploreBtn = (_isSnapshot && !c.has_wiring)
+        var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
           ? ''
           : '<button class="action-btn" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore</button>';
-        return divider + '<div class="composite-list-row">' +
-          '<span class="name">' + _esc(c.name) + ' ' + _wsTag(c) + '</span>' +
+        return divider + '<div class="composite-list-row' + (c.read_only ? ' federated-readonly' : '') + '">' +
+          '<span class="name">' + _esc(c.name) + ' ' + _wsTag(c) + _originBadge(c.origin_repo) + '</span>' +
           '<span class="desc">' + tagPills + ' ' + _esc(c.description || '(no description)') +
             _moduleLine(c) +
           '</span>' +
@@ -2433,13 +2441,13 @@
         }
         var divider = _maybeDivider(prevG, c);
         prevG = c;
-        var exploreBtn = (_isSnapshot && !c.has_wiring)
+        var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
           ? ''
           : '<button class="ccard-explore" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore &rarr;</button>';
-        return divider + '<div class="ccard' + (c.workspace_local ? ' ccard-ws-card' : '') + '">' +
+        return divider + '<div class="ccard' + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '">' +
           '<div class="ccard-top">' +
             '<span class="ccard-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span>' +
-            '<span class="ccard-badges">' + kindPill + srcBadge + '</span>' +
+            '<span class="ccard-badges">' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</span>' +
           '</div>' +
           '<div class="ccard-id mono" title="' + _esc(c.id) + '">' + _esc(c.id) + '</div>' +
           '<p class="ccard-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</p>' +
@@ -5288,7 +5296,7 @@
       var lifeChip = iset.lifecycle && iset.lifecycle !== 'active'
         ? '<span style="font-size:0.72em;color:#64748b;background:#f1f5f9;border-radius:9999px;padding:1px 8px">' + _esc(iset.lifecycle) + '</span>' : '';
 
-      return '<div class="investigation-set-card" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ' +
+      return '<div class="investigation-set-card' + (iset.read_only ? ' federated-readonly' : '') + '" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ' +
              'title="' + _esc(iset.name) + '" ' +
              'data-iset-title="' + _esc(String(iset.title || iset.name).toLowerCase()) + '" ' +
              'data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" ' +
@@ -5298,6 +5306,7 @@
           '<strong style="font-size:1.05em;flex:1">' + _esc(iset.title || iset.name) + '</strong>' +
           currentPill +
           statusPill +
+          _originBadge(iset.origin_repo) +
         '</div>' +
         qLine +
         (breakdown ? '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:0.82em;color:#64748b;margin:0 0 8px">' + breakdown + (lifeChip ? '<span style="margin-left:auto">' + lifeChip + '</span>' : '') + '</div>' : '') +
@@ -5714,7 +5723,10 @@
     var nRuns = (s.n_runs !== undefined) ? s.n_runs
               : (s.n_simulations !== undefined ? s.n_simulations : 0);
     var cardStyle = 'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.1s,border-color 0.1s;';
-    return '<div class="investigation-set-card" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ' +
+    var partOf = (s.investigations && s.investigations.length)
+      ? '<div style="font-size:0.78em;color:#94a3b8;margin:0 0 6px">part of: ' + _esc(s.investigations.join(', ')) + '</div>'
+      : '';
+    return '<div class="investigation-set-card' + (s.read_only ? ' federated-readonly' : '') + '" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ' +
            'title="' + _esc(s.name) + '" ' +
            'data-iset-title="' + _esc(String(s.title || s.name).toLowerCase()) + '" ' +
            'data-iset-slug="' + _esc(String(s.name).toLowerCase()) + '" ' +
@@ -5724,8 +5736,10 @@
         '<strong style="font-size:1.02em;flex:1">' + _esc(s.title || s.name) + '</strong>' +
         '<span style="font-size:0.72em;border-radius:9999px;padding:1px 9px;white-space:nowrap;' +
           'background:' + m[0] + '22;color:' + m[0] + ';border:1px solid ' + m[0] + '55">' + _esc(m[1]) + '</span>' +
+        _originBadge(s.origin_repo) +
       '</div>' +
       (inv ? '<div style="font-size:0.78em;color:#94a3b8;margin:0 0 6px"><span style="color:#cbd5e1">▪</span> ' + _esc(inv) + '</div>' : '') +
+      partOf +
       (q ? '<p style="margin:0 0 8px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(String(q).split('\n')[0].slice(0, 180)) + '</p>' : '') +
       '<div style="display:flex;align-items:center;gap:12px;font-size:0.85em;color:#64748b">' +
         '<span style="flex:1"><strong>' + nRuns + '</strong> run' + (nRuns === 1 ? '' : 's') + '</span>' +
