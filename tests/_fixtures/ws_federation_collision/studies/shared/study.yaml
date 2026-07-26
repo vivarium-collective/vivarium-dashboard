@@ -1,0 +1,3 @@
+name: shared
+description: A local study named shared.
+composite: local.composites.shared

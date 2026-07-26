@@ -1,0 +1,3 @@
+name: donor_inv
+description: Donor investigation owning the donor "shared" study.
+studies: [shared]

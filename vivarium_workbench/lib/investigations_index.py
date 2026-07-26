@@ -389,30 +389,43 @@ def build_investigations(ws_root: Path) -> dict:
 
     from vivarium_workbench.lib import federation as _fed
 
-    # --- membership: study name -> set of investigation-set names that list it ---
-    membership: dict[str, set[str]] = {}
-    # local isets
+    # --- membership, scoped by origin so a local/federated name collision
+    # (e.g. both a local and a donor study named "baseline") never lets a
+    # local study claim membership in a foreign (donor) investigation, or
+    # vice versa. ---
+    # local: bare study name -> set of LOCAL investigation-set names.
+    # build_iset_summary already merges in federated investigation-sets of
+    # its own (tagged with origin_repo) -- skip those here so a federated
+    # iset can never leak into local membership; local ones have
+    # origin_repo None.
+    local_membership: dict[str, set[str]] = {}
     from vivarium_workbench.lib.investigation_status import build_iset_summary
     try:
         for iset in build_iset_summary(ws_root, study_has_runs=lambda *a, **k: False) or []:
+            if iset.get("origin_repo") is not None:
+                continue
             for sname in (iset.get("studies") or []):
-                membership.setdefault(str(sname), set()).add(iset.get("name") or "")
+                local_membership.setdefault(str(sname), set()).add(iset.get("name") or "")
     except Exception:
         pass
-    # federated isets (member ids are "<repo>::<study>"; strip for display membership)
+    # federated: (origin_repo, bare study name) -> set of FEDERATED
+    # investigation-set names. member_studies are already "<repo>::<study>".
+    fed_membership: dict[tuple[str, str], set[str]] = {}
     for iset in _fed.federated_investigation_sets(ws_root):
+        repo = iset.get("origin_repo") or ""
         for mid in iset.get("member_studies", []):
             sname = mid.split("::", 1)[-1]
-            membership.setdefault(sname, set()).add(iset["name"])
+            fed_membership.setdefault((repo, sname), set()).add(iset["name"])
 
     for row in out:
-        row["investigations"] = sorted(x for x in membership.get(row["name"], ()) if x)
+        row["investigations"] = sorted(x for x in local_membership.get(row["name"], ()) if x)
 
     # --- append federated study rows ---
     for fs in _fed.federated_studies(ws_root):
         spec = fs["spec"]
         frow = {
             "name": fs["name"],
+            "id": fs["id"],
             "composite": "",
             "composites": [],
             "description": spec.get("description", ""),
@@ -425,7 +438,9 @@ def build_investigations(ws_root: Path) -> dict:
             "n_baseline": len(spec.get("baseline") or []),
             "origin_repo": fs["origin_repo"],
             "read_only": True,
-            "investigations": sorted(x for x in membership.get(fs["name"], ()) if x),
+            "investigations": sorted(
+                x for x in fed_membership.get((fs["origin_repo"], fs["name"]), ()) if x
+            ),
         }
         out.append(frow)
 

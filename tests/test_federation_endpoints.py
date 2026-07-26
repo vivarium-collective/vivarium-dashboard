@@ -6,6 +6,7 @@ from vivarium_workbench.lib.models import InvestigationSummary
 from vivarium_workbench.lib.composite_lookup import discover_all_composites
 
 FIX = Path(__file__).parent / "_fixtures" / "ws_federation_demo"
+FIX_COLLISION = Path(__file__).parent / "_fixtures" / "ws_federation_collision"
 
 
 def test_build_investigations_includes_federated_study_with_provenance():
@@ -23,6 +24,22 @@ def test_build_investigations_own_rows_have_null_origin():
     # any own row (if present) carries origin_repo None.
     for r in rows:
         assert "origin_repo" in r
+
+
+def test_build_investigations_scopes_membership_by_origin_on_name_collision():
+    """A local study and a federated (donor) study sharing the name "shared"
+    must NOT cross-contaminate investigation membership: the local row stays
+    scoped to the local investigation, and the donor row stays scoped to the
+    donor investigation."""
+    rows = build_investigations(FIX_COLLISION)["investigations"]
+    shared_rows = [r for r in rows if r["name"] == "shared"]
+    assert len(shared_rows) == 2  # one own row, one federated row -- no dedup
+
+    local_row = next(r for r in shared_rows if r["origin_repo"] is None)
+    donor_row = next(r for r in shared_rows if r["origin_repo"] == "donor-repo")
+
+    assert local_row["investigations"] == ["local_inv"]
+    assert donor_row["investigations"] == ["donor_inv"]
 
 
 def test_iset_summary_includes_federated_investigation():
