@@ -23,6 +23,10 @@ tests/test_composites_kind_module.py::test_get_composite_doc_handles_generator_e
 # passes locally (~9s). Failed identically across PRs #604/#605 with unrelated
 # diffs. Quarantine until the discovery path is warmed/pooled like the registry.
 tests/test_composites_kind_module.py::test_get_composites_includes_kind_and_module
+# Same flaky class: another live-server /api/composites test that times out
+# under CI load (cold composite-discovery subprocess ~8s x parallel shards);
+# passes locally. Root fix = pool/warm composite discovery like the registry.
+tests/test_composite_explorer_api.py::test_api_composites_includes_default_n_steps
 tests/test_investigation_run_e2e.py::test_detail_after_run
 tests/test_registry_source_tagging.py::test_registry_environment_packages_not_in_workspace
 tests/test_remote_run_panel.py::test_view_run_button_routes_to_visualizations_not_dead_route
