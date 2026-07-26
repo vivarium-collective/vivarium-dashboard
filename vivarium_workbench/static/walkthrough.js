@@ -6970,13 +6970,17 @@
           '</button>';
       }
       node.innerHTML =
-        '<div style="display:flex;align-items:flex-start;gap:6px">' +
-          '<span style="color:' + ss.color + ';font-size:1.05em;line-height:1.1;flex:none">' + ss.icon + '</span>' +
-          '<strong style="font-size:0.85em;line-height:1.25;color:#1e293b;flex:1">' + _esc(prettyTitle) + '</strong>' +
+        // Meta row: icon (left) + status badge (right). The badge is alone on
+        // this row with space-between, so a nowrap label can never overflow the
+        // card. The title then spans the FULL card width on its own line below
+        // (no longer squeezed into a thin flex column beside the badge).
+        '<div style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px">' +
+          '<span style="color:' + ss.color + ';font-size:1.05em;line-height:1;flex:none">' + ss.icon + '</span>' +
           '<span class="aig-status-badge" role="button" tabindex="0" title="Why: open this study\'s finding & evidence" ' +
-            'style="font-size:0.62em;font-weight:700;color:' + ss.color + ';white-space:nowrap;margin-top:1px;cursor:pointer;text-decoration:underline dotted">' +
+            'style="font-size:0.62em;font-weight:700;color:' + ss.color + ';white-space:nowrap;cursor:pointer;text-decoration:underline dotted;flex:none">' +
             _esc(confidence) + '</span>' +
         '</div>' +
+        '<strong style="display:block;font-size:0.85em;line-height:1.3;color:#1e293b">' + _esc(prettyTitle) + '</strong>' +
         (_opts.asks && asks
           ? '<div style="font-size:0.72em;margin-top:7px;line-height:1.35;color:#64748b;' + _clamp(2) + '">' +
               '<span style="font-weight:600;color:#475569">Asks:</span> ' + _esc(asks) + '</div>'
