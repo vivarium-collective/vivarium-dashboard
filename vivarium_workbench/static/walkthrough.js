@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -1901,6 +1901,12 @@
     var defaultBadge = p.is_workspace_default
       ? ' <span class="count-badge" style="background:#1f7a36;color:#fff;font-size:0.7em;padding:1px 6px;border-radius:3px;margin-left:6px;vertical-align:middle" title="Workspace default per runtime.default_emitter in workspace.yaml">DEFAULT</span>'
       : '';
+    // Use count: how many composites/runners reference this class.
+    var useBadge = (p.use_count)
+      ? '<span class="registry-use-badge" title="Referenced by ' + p.use_count +
+        ' composite(s) / runner script(s) in this workspace">' + p.use_count +
+        ' use' + (p.use_count === 1 ? '' : 's') + '</span>'
+      : '';
     // Description (pbg `description` attr or docstring).
     var desc = (p.description || '').trim();
     var descHtml = desc
@@ -1928,7 +1934,7 @@
       ? '<details class="reg-config"><summary>config schema</summary><pre class="json-tree">' + _esc(cfgBody) + '</pre></details>'
       : '';
     return '<div class="registry-entry"' + sourceAttr + '>' +
-      '<div class="reg-entry-head"><strong>' + _esc(p.name) + '</strong>' + defaultBadge + aliases + '</div>' +
+      '<div class="reg-entry-head"><span class="reg-entry-name"><strong>' + _esc(p.name) + '</strong>' + defaultBadge + aliases + '</span>' + useBadge + '</div>' +
       '<small><code>' + _esc(p.address) + '</code></small>' +
       descHtml + portsHtml + cfgHtml +
     '</div>';
@@ -2014,8 +2020,12 @@
 
     var html = '';
 
-    // In-workspace and framework entries render normally.
-    var primary = inWs.concat(framework);
+    // In-workspace and framework entries render normally, sorted by USE
+    // (most-referenced across composites/runners first), then name.
+    var primary = inWs.concat(framework).sort(function(a, b) {
+      return (b.use_count || 0) - (a.use_count || 0) ||
+             String(a.name || '').localeCompare(String(b.name || ''));
+    });
     if (primary.length) {
       html += primary.map(_renderRegistryEntry).join('');
     } else {
