@@ -464,6 +464,7 @@ class CatalogModule(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     name: str
+    display_name: Optional[str] = None
     installed: bool = False
     install_source: Optional[str] = None
     module: Optional[str] = None

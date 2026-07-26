@@ -114,6 +114,7 @@ from vivarium_workbench.lib import workspace_manifest_views as _workspace_manife
 from vivarium_workbench.lib import install_views as _install_views
 from vivarium_workbench.lib import catalog_install_views as _catalog_install_views
 from vivarium_workbench.lib import catalog_uninstall_views as _catalog_uninstall_views
+from vivarium_workbench.lib.catalog_uninstall_impact import module_uninstall_impact
 from vivarium_workbench.lib import finding_views as _finding_views
 from vivarium_workbench.lib import investigation_graph_views as _ig_views
 from vivarium_workbench.lib import chain_views as _chain_views
@@ -1242,6 +1243,23 @@ def create_app() -> FastAPI:
         an Install action for available modules.  Best-effort (never 500s).
         """
         return CatalogPayload.model_validate(build_catalog(ws, full=True))
+
+    @app.get(
+        "/api/catalog-uninstall-impact",
+        tags=["Registry & catalog"],
+        summary="What uninstalling a module would remove/break in this workspace",
+    )
+    def catalog_uninstall_impact(
+        name: str, ws: Path = Depends(get_workspace)
+    ) -> dict:
+        """Pre-uninstall impact report for catalog module ``name``.
+
+        Returns the module's own composites/studies/investigations that would
+        stop showing up, plus this workspace's OWN studies/investigations that
+        reference them (and would be left with a dangling reference). Powers the
+        Modules-tab uninstall confirmation. Best-effort (never 500s).
+        """
+        return module_uninstall_impact(ws, name)
 
     # -----------------------------------------------------------------------
     # Git & branches routes
