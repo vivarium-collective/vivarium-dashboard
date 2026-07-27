@@ -4481,6 +4481,15 @@
       return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
     };
 
+    // Provenance is per REPO: an artifact is "workspace" only if it belongs to
+    // the workspace's OWN package; everything else (imported dependency repos
+    // like viva-munk / pbg-*) is "external" so it surfaces under "Other repos".
+    var wsNorm = _marketRepoNorm(window._workspaceName || '');
+    var _originOf = function (repo, workspaceLocal) {
+      if (workspaceLocal) return 'workspace';
+      return (_marketRepoNorm(repo) === wsNorm && wsNorm) ? 'workspace' : 'external';
+    };
+
     // The single-worker server hangs on CONCURRENT env_worker-backed requests
     // (composites + registry), so fetch strictly SEQUENTIALLY — light/file
     // endpoints first for a fast first paint, the heavy build_core() registry
@@ -4507,7 +4516,7 @@
       window._marketByType.composite = carr.map(function (c) {
         var repo = _marketRepoOf(c.origin_repo || c.module);
         return { type: 'composite', name: c.name, repo: repo,
-          origin: (c.workspace_local || repo === 'v2ecoli' || c.source === 'workspace') ? 'workspace' : 'external',
+          origin: _originOf(repo, c.workspace_local || c.source === 'workspace'),
           desc: c.description || '', requires: ((c.requires || {}).processes) || [],
           nParams: (c.parameters || []).length, nSteps: c.default_n_steps || 0, use: 0 };
       });
@@ -4519,8 +4528,8 @@
         return p.kind === 'process' || p.kind === 'step';   // emitters live on the Modules page
       }).map(function (p) {
         var repo = _marketRepoOf(p.address || p.source);
-        var inWs = p.source === 'in_workspace' || wpkgs.indexOf((p.address || '').split('.')[0]) !== -1;
-        return { type: 'process', kind: p.kind || 'process', name: p.name, repo: repo, origin: inWs ? 'workspace' : 'external',
+        return { type: 'process', kind: p.kind || 'process', name: p.name, repo: repo,
+          origin: _originOf(repo, p.source === 'in_workspace'),
           desc: p.description || '', address: p.address || '',
           usage: { comp: p.composite_uses || 0, study: p.study_uses || 0, total: p.use_count || 0 },
           use: p.use_count || 0,
