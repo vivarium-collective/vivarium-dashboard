@@ -25,10 +25,14 @@ def test_add_dashboard_writes_valid_files(tmp_path):
     assert "--no-deps" in body, "install must not abort on unresolved workspace sim-deps"
     assert "vivarium-workbench.git@main" in body, "must install workbench from main"
     assert "--orphan gh-pages" in body, "must create gh-pages if absent"
+    # New workbenches publish under /workbench with a /dashboard → /workbench
+    # redirect so legacy links keep working.
+    assert "mkdir -p workbench" in body, "deploys to the workbench/ subdir"
+    assert "url=../workbench/" in body, "leaves a /dashboard redirect to /workbench"
 
     # Script carries the per-repo base-path + interactive-url.
     script = sh.read_text()
-    assert 'BASE_PATH="/viva-demo/dashboard"' in script
+    assert 'BASE_PATH="/viva-demo/workbench"' in script
     assert 'INTERACTIVE_URL="https://github.com/vivarium-collective/viva-demo"' in script
 
 

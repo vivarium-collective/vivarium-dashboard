@@ -661,13 +661,7 @@ jobs:
           # publish dir IS dashboard, i.e. a repo hasn't migrated yet).
           if [ "{PUBLISH_DIR}" != "dashboard" ]; then
             mkdir -p dashboard
-            cat > dashboard/index.html <<'HTML'
-<!doctype html><html><head><meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=../{PUBLISH_DIR}/">
-<link rel="canonical" href="../{PUBLISH_DIR}/">
-<title>Moved to /{PUBLISH_DIR}/</title></head>
-<body>This read-only workbench moved to <a href="../{PUBLISH_DIR}/">../{PUBLISH_DIR}/</a>.</body></html>
-HTML
+            printf '%s' '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=../{PUBLISH_DIR}/"><link rel="canonical" href="../{PUBLISH_DIR}/"><title>Moved to /{PUBLISH_DIR}/</title><p>This read-only workbench moved to <a href="../{PUBLISH_DIR}/">/{PUBLISH_DIR}/</a>.</p>' > dashboard/index.html
           fi
           git add -A
           if git diff --cached --quiet; then
