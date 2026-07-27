@@ -437,6 +437,53 @@ def cmd_prepare_investigation(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Run the L0-L5 reproducibility audit and print / export the result."""
+    ws = Path(args.workspace).resolve()
+    if not (ws / "workspace.yaml").is_file():
+        print(f"ERROR: not a workspace (no workspace.yaml): {ws}", file=sys.stderr)
+        return 2
+    from vivarium_workbench.lib.audit_views import build_audit
+    report, _ = build_audit(ws)
+
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    if args.html:
+        from datetime import datetime, timezone
+        from vivarium_workbench.lib.audit_report import render_audit_html
+        out = Path(args.html)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+        out.write_text(render_audit_html(ws, generated_at=now), encoding="utf-8")
+        print(f"wrote audit report -> {out}")
+        return 0
+
+    summ = report.get("summary", {})
+    print(f"Reproducibility audit — {summ.get('n_studies', 0)} studies, "
+          f"{summ.get('n_investigations', 0)} investigations")
+    dist = summ.get("grade_distribution", {})
+    if dist:
+        print("  grade: " + "   ".join(f"{k} {dist[k]}"
+              for k in ["L5", "L4", "L3", "L2", "L1", "L0", "—"] if dist.get(k)))
+    if report.get("error"):
+        print(f"  (degraded: {report['error']})")
+    print()
+
+    def _rows(items):
+        for it in items:
+            g = it.get("grade") or {}
+            b = g.get("blocked_by")
+            tail = f"blocked: {b['level']} {b['name']}" if b else "full L5"
+            print(f"  {g.get('label', '—'):>3}  {it.get('slug', ''):42} {tail}")
+
+    _rows(report.get("studies", []))
+    if report.get("investigations"):
+        print()
+        _rows(report.get("investigations", []))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vivarium-workbench")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -615,6 +662,16 @@ def main(argv: list[str] | None = None) -> int:
     plog.add_argument("--follow", action="store_true")
     _add_common(plog)
     plog.set_defaults(func=cmd_logs)
+
+    p_audit = sub.add_parser(
+        "audit",
+        help="Run the L0-L5 reproducibility audit over the workspace's studies + investigations",
+    )
+    p_audit.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_audit.add_argument("--json", action="store_true", help="emit the raw audit report as JSON")
+    p_audit.add_argument("--html", default=None, metavar="PATH",
+                         help="write a self-contained HTML audit report to PATH")
+    p_audit.set_defaults(func=cmd_audit)
 
     args = parser.parse_args(argv)
     return args.func(args)

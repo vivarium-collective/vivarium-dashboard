@@ -863,8 +863,20 @@ window.addEventListener('pageshow', function (e) {
     <button class="iset-browse-tab" data-browse="studies" role="tab"
             onclick="_setIsetBrowseTab('studies')"
             style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Studies <span id="iset-tab-study-count" style="color:#94a3b8;font-weight:600"></span></button>
-    <button id="iset-browse-create" class="action-btn" onclick="_openBrowseCreate()"
-            style="margin-left:auto;align-self:center;margin-bottom:6px">+ Investigation</button>
+    <span class="iset-hdr-actions" style="margin-left:auto;align-self:center;margin-bottom:6px;display:inline-flex;gap:6px">
+      <button class="action-btn iset-hdr-btn" onclick="_openBrowseCreate('investigation')" title="Create a new investigation">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true">
+          <rect x="2.5" y="9" width="6" height="6"/><rect x="16" y="3" width="5.5" height="4"/><rect x="16" y="10" width="5.5" height="4"/><rect x="16" y="17" width="5.5" height="4"/><path d="M8.5 12 16 5"/><path d="M8.5 12h7.5"/><path d="M8.5 12 16 19"/>
+        </svg>+ Investigation</button>
+      <button class="action-btn iset-hdr-btn" onclick="_openBrowseCreate('study')" title="Create a new study">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true">
+          <path d="M9 3h6"/><path d="M10 3v6l-4.3 8.4A1.5 1.5 0 0 0 7 20h10a1.5 1.5 0 0 0 1.3-2.6L14 9V3"/><path d="M8 15h8"/>
+        </svg>+ Study</button>
+      <button class="action-btn iset-hdr-btn" onclick="_openAuditReport()" title="Open the reproducibility audit report (L0–L5) — latest, or re-run">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true">
+          <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/><rect x="4.5" y="4" width="15" height="17" rx="1.5"/><path d="M8.5 12.5l2 2 4-4.5"/>
+        </svg>Audit Report</button>
+    </span>
   </div>
   <!-- Prominent unified search: matches investigations AND their studies (same
        engine as the side-rail studies search — see _filterInvestigations). -->

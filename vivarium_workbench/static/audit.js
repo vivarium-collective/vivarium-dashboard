@@ -18,6 +18,21 @@
     fail: { glyph: '✗', color: '#e11d48', label: 'fail' },
   };
 
+  // L0 (red) → L5 (green) reproducibility ramp; '—' (ungraded) = gray.
+  var GRADE_COLORS = ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e', '#16a34a'];
+  function _gradeColor(level) {
+    return (typeof level === 'number' && level >= 0 && level <= 5) ? GRADE_COLORS[level] : '#94a3b8';
+  }
+  function _gradeBadge(grade) {
+    if (!grade) return '';
+    var title = grade.blocked_by
+      ? 'reproducibility ' + grade.label + ' — blocked at ' + grade.blocked_by.level + ': ' + grade.blocked_by.name
+      : 'reproducibility ' + grade.label + ' — fully rebuildable';
+    return '<span title="' + _esc(title) + '" style="flex:none;font-weight:700;font-size:0.8em;' +
+      'padding:1px 9px;border-radius:9999px;letter-spacing:0.03em;background:' + _gradeColor(grade.level) +
+      ';color:#fff">' + _esc(grade.label) + '</span>';
+  }
+
   function _esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
       return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
@@ -41,15 +56,41 @@
   }
 
   function _auditBlockHtml(kind, audit) {
+    var grade = audit.grade;
+    var structural = (audit.checks || []);
     var worst = STATUS[audit.worst] || { glyph: '?', color: '#94a3b8', label: audit.worst };
-    var checks = (audit.checks || []).map(_checkRowHtml).join('');
+
+    // Body: the L0-L5 reproducibility ladder (studies carry grade.checks); an
+    // investigation shows a member/blocked summary. Structural checks (when the
+    // upstream audit is present) follow.
+    var body;
+    if (grade && grade.checks && grade.checks.length) {
+      body = grade.checks.map(_checkRowHtml).join('');
+    } else if (grade) {
+      var members = (grade.n_members != null)
+        ? _esc(grade.n_members) + ' member' + (grade.n_members === 1 ? '' : 's') + ' · ' : '';
+      var status = grade.blocked_by
+        ? 'blocked at ' + _esc(grade.blocked_by.level) + ' — ' + _esc(grade.blocked_by.name)
+        : 'fully rebuildable (L5)';
+      body = '<div style="font-size:0.83em;color:#64748b;margin:2px 0">' + members + status + '</div>';
+    } else {
+      body = '';
+    }
+    body += structural.map(_checkRowHtml).join('');
+
+    // Header: grade badge (headline) + slug + kind; the structural worst-pill
+    // only appears when there IS a structural audit to summarize.
+    var worstPill = structural.length
+      ? '<span style="flex:none;color:' + worst.color + ';font-weight:700">' + worst.glyph + '</span>' +
+        '<span style="flex:none;font-size:0.8em;padding:0 8px;border-radius:9999px;background:' + worst.color + ';color:#fff">' + _esc(worst.label) + '</span>'
+      : '';
     return '<div style="border:1px solid #e5e7eb;border-radius:6px;padding:10px 12px;margin:8px 0;background:#fff">' +
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:6px">' +
-      '<span style="flex:none;color:' + worst.color + ';font-weight:700">' + worst.glyph + '</span>' +
+      _gradeBadge(grade) +
       '<span style="flex:1;font-weight:600;color:#1e293b">' + _esc(audit.slug) + '</span>' +
       '<span style="flex:none;font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8">' + _esc(kind) + '</span>' +
-      '<span style="flex:none;font-size:0.8em;padding:0 8px;border-radius:9999px;background:' + worst.color + ';color:#fff">' + _esc(worst.label) + '</span>' +
-      '</div>' + checks + '</div>';
+      worstPill +
+      '</div>' + body + '</div>';
   }
 
   function _summaryHtml(report) {
@@ -58,12 +99,27 @@
     var nInv = summary.n_investigations != null ? summary.n_investigations : (report.investigations || []).length;
     var nHard = summary.hard_failures || 0;
     var hardColor = nHard > 0 ? STATUS.fail.color : STATUS.pass.color;
+
+    // L0-L5 grade histogram (highest → lowest), colored by level.
+    var dist = summary.grade_distribution || {};
+    var chips = ['L5', 'L4', 'L3', 'L2', 'L1', 'L0', '—'].filter(function (k) { return dist[k]; })
+      .map(function (k) {
+        var lvl = k === '—' ? -1 : parseInt(k.slice(1), 10);
+        return '<span title="' + _esc(k) + ': ' + dist[k] + '" style="font-size:0.8em;font-weight:600;padding:1px 8px;' +
+          'border-radius:9999px;background:' + _gradeColor(lvl) + ';color:#fff">' + _esc(k) + ' ' + dist[k] + '</span>';
+      }).join('');
+    var histo = chips
+      ? '<div style="display:flex;gap:5px;align-items:center;flex-wrap:wrap"><span style="color:#94a3b8;font-size:0.78em;' +
+        'text-transform:uppercase;letter-spacing:0.05em">grade</span>' + chips + '</div>'
+      : '';
+
     return '<div style="display:flex;gap:24px;align-items:baseline;flex-wrap:wrap;padding:12px 14px;' +
       'border:1px solid #e5e7eb;border-radius:6px;background:#f8fafc;margin-bottom:12px">' +
       '<div style="font-weight:700;font-size:1.05em;color:#1e293b">Reproducibility audit</div>' +
       '<div style="color:#475569"><strong>' + nStudies + '</strong> studies</div>' +
       '<div style="color:#475569"><strong>' + nInv + '</strong> investigations</div>' +
-      '<div style="color:' + hardColor + '"><strong>' + nHard + '</strong> hard failure' + (nHard === 1 ? '' : 's') + '</div>' +
+      (nHard ? '<div style="color:' + hardColor + '"><strong>' + nHard + '</strong> hard failure' + (nHard === 1 ? '' : 's') + '</div>' : '') +
+      histo +
       '</div>';
   }
 
