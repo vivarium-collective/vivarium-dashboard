@@ -185,7 +185,7 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
             pkg_version = None
 
     return {
-        "version": 1,
+        "version": 2,
         "spec_id": spec_id,
         "params": dict(params or {}),
         "n_steps": int(n_steps) if n_steps is not None else None,
@@ -197,6 +197,15 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         "pkg": pkg,
         "generation_id": generation_id,
         "code_version": {"git_sha": git_sha, "package": pkg_version},
+        # v2 keys (reproducible-rerun-spine Task 1): filled in by later tasks
+        # (Task 2 = env, Task 3 = fingerprint_fields/result_fingerprint, Task
+        # 4 = first-class seed). Present as null here so a manifest's shape
+        # is stable across the migration and consumers can rely on the keys
+        # existing rather than probing for them.
+        "env": None,
+        "seed": None,
+        "fingerprint_fields": None,
+        "result_fingerprint": None,
     }
 
 

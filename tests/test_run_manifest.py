@@ -37,6 +37,19 @@ def test_build_run_manifest_shape():
         assert k in m
 
 
+def test_build_run_manifest_is_version_2_with_null_placeholders():
+    # reproducible-rerun-spine Task 1: manifest schema bumped to v2 with new
+    # keys filled in by later tasks (env=Task 2, fingerprint=Task 3,
+    # seed=Task 4) — present as null now, not yet computed.
+    m = cr.build_run_manifest(spec_id="s", params={"seed": 0}, n_steps=100,
+                              emitter="parquet", emit_paths=["bulk"], runtime={"x": 1},
+                              origin="study", study="s1", pkg="v2ecoli", generation_id=None)
+    assert m["version"] == 2
+    for k in ("env", "seed", "fingerprint_fields", "result_fingerprint"):
+        assert k in m
+        assert m[k] is None
+
+
 def test_build_run_manifest_code_version_best_effort_ok_without_ws_root():
     # No ws_root / unresolvable pkg → code_version degrades to Nones, never raises.
     m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
