@@ -714,6 +714,9 @@
     if (pageId === 'workspace-inputs') {
       _loadInputs();
     }
+    if (pageId === 'audit' && typeof window._loadAudit === 'function') {
+      _loadAudit();
+    }
   }
 
   function _initMenuNav() {
@@ -724,8 +727,8 @@
     if (focus) {
       var _snapshot = document.body.classList.contains('snapshot');
       var validPages = _snapshot
-        ? ['workspace-inputs', 'simulation-setup', 'registry', 'investigations', 'simulations', 'visualizations', 'composite-explore', 'github']
-        : ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'studies', 'simulations', 'composite-explore', 'github'];
+        ? ['workspace-inputs', 'simulation-setup', 'registry', 'investigations', 'simulations', 'visualizations', 'audit', 'composite-explore', 'github']
+        : ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'studies', 'simulations', 'audit', 'composite-explore', 'github'];
       if (validPages.indexOf(focus) >= 0) {
         document.body.classList.add('focus-mode', 'focus-' + focus);
         _switchPage(focus);
@@ -742,8 +745,8 @@
         var h = (window.location.hash || '').replace(/^#/, '');
         var _snap = document.body.classList.contains('snapshot');
         var validPages = _snap
-          ? ['workspace-inputs', 'registry', 'simulation-setup', 'investigations', 'simulations', 'visualizations', 'composite-explore', 'github']
-          : ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'studies', 'simulations', 'composite-explore', 'github'];
+          ? ['workspace-inputs', 'registry', 'simulation-setup', 'investigations', 'simulations', 'visualizations', 'audit', 'composite-explore', 'github']
+          : ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'studies', 'simulations', 'audit', 'composite-explore', 'github'];
         _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
       }
       window.addEventListener('hashchange', fromHash);

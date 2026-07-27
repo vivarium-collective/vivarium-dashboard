@@ -569,6 +569,18 @@ window.addEventListener('pageshow', function (e) {
         </span>
         <span class="viv-rail-link-label">Analysis Tools</span>
       </a>
+      <!-- Audit: read-only L0-L5 reproducibility report. Clipboard-with-check
+           icon reads as "checklist / verification" at rail-icon size. -->
+      <a href="#audit"             class="viv-rail-link menu-link" data-page="audit">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/>
+            <rect x="4.5" y="4" width="15" height="17" rx="1.5"/>
+            <path d="M8.5 12.5l2 2 4-4.5"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">Audit</span>
+      </a>
       <!-- The Branch page (#github) is no longer a rail item — it's reached by
            clicking the workspace source display at the top of the rail (see
            #viv-workspace-switcher). Hash route #github kept for back-compat. -->
@@ -640,6 +652,15 @@ window.addEventListener('pageshow', function (e) {
     <p class="muted" style="font-style:italic">Loading inputs…</p>
   </div>
 
+</section>
+
+<!-- ===== PAGE: AUDIT (read-only L0-L5 reproducibility report) ===== -->
+<section id="page-audit" class="page" data-page="audit">
+  <!-- Rendered client-side from /api/audit by audit.js on first activation.
+       Read-only companion to the CI reproducibility gate — informational only. -->
+  <div id="audit-render" class="panel">
+    <p class="muted" style="font-style:italic">Loading audit…</p>
+  </div>
 </section>
 
 <!-- ===== PAGE: SIMULATION SETUP ===== -->
@@ -1781,6 +1802,7 @@ Nothing on <code id="pr-base-display-2">main</code> changes until someone presse
 <script src="assets/render-helpers.js"></script>
 <script src="assets/client.js" onerror="/* live mode unavailable */"></script>
 <script src="assets/aig-graph.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* aig-graph unavailable */"></script>
+<script src="assets/audit.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* audit view unavailable */"></script>
 <script src="assets/sim-table.js{% if asset_version %}?v={{ asset_version }}{% endif %}"></script>
 <script src="assets/walkthrough.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* walkthrough unavailable */"></script>
 <script src="assets/explorer.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* explorer unavailable */"></script>
