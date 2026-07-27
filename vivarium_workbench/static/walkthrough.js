@@ -653,11 +653,12 @@
     var link = document.querySelector('.menu-link[data-page="' + pageId + '"]');
     if (page) page.classList.add('active');
     if (link) link.classList.add('active');
-    // Lazy-load catalog + registry on switch to Registry, Simulation Setup, or Visualizations page.
-    if (pageId === 'registry') {
-      _loadCatalog();
+    // Load the faceted Market on switch, and the build_core() registry on
+    // Modules / Simulation Setup / Visualizations.
+    if (pageId === 'market') {
+      _loadMarket();
     }
-    if (pageId === 'registry' || pageId === 'simulation-setup' || pageId === 'visualizations') {
+    if (pageId === 'modules' || pageId === 'simulation-setup' || pageId === 'visualizations') {
       if (!window._registryLoaded) {
         window._registryLoaded = true;
         _loadRegistry(false);
@@ -724,8 +725,8 @@
     if (focus) {
       var _snapshot = document.body.classList.contains('snapshot');
       var validPages = _snapshot
-        ? ['workspace-inputs', 'simulation-setup', 'registry', 'investigations', 'simulations', 'visualizations', 'composite-explore', 'github']
-        : ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'studies', 'simulations', 'composite-explore', 'github'];
+        ? ['workspace-inputs', 'simulation-setup', 'modules', 'market', 'investigations', 'simulations', 'visualizations', 'composite-explore', 'github']
+        : ['workspace-inputs', 'simulation-setup', 'visualizations', 'modules', 'market', 'investigations', 'studies', 'simulations', 'composite-explore', 'github'];
       if (validPages.indexOf(focus) >= 0) {
         document.body.classList.add('focus-mode', 'focus-' + focus);
         _switchPage(focus);
@@ -742,8 +743,8 @@
         var h = (window.location.hash || '').replace(/^#/, '');
         var _snap = document.body.classList.contains('snapshot');
         var validPages = _snap
-          ? ['workspace-inputs', 'registry', 'simulation-setup', 'investigations', 'simulations', 'visualizations', 'composite-explore', 'github']
-          : ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'studies', 'simulations', 'composite-explore', 'github'];
+          ? ['workspace-inputs', 'modules', 'market', 'simulation-setup', 'investigations', 'simulations', 'visualizations', 'composite-explore', 'github']
+          : ['workspace-inputs', 'modules', 'market', 'simulation-setup', 'visualizations', 'investigations', 'studies', 'simulations', 'composite-explore', 'github'];
         _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
       }
       window.addEventListener('hashchange', fromHash);
@@ -4091,6 +4092,7 @@
         else alert(msg);
         // Refresh catalog (which now also refreshes the Installed list via _renderInstalledModules)
         if (typeof _loadCatalog === 'function') _loadCatalog();
+        if (typeof _loadMarket === 'function') _loadMarket(true);
         if (typeof _loadRegistry === 'function') _loadRegistry(true);
       })
       .catch(function(err) {
@@ -4187,6 +4189,357 @@
       });
   }
   window._loadCatalog = _loadCatalog;
+
+  // ── Market: faceted browser over the ecosystem's artifacts ────────────────
+  // Search processes, composites, studies and investigations from the
+  // workspace + every installed module (which span the public repos), with
+  // three zoom levels (List → Cards → Detail) surfacing how much each is used
+  // and what for. Uninstalled repos' individual artifacts are out of scope
+  // (only counts are available without an ecosystem index).
+  window._marketItems = null;
+  window._marketFacet = 'all';
+  window._marketZoom = 'cards';
+  // The Registry is for discovering artifacts from OTHER repos to import, so it
+  // defaults to external; 'workspace' (Ours) and 'all' are opt-in.
+  window._marketOrigin = 'external';
+  try { var _mz = localStorage.getItem('viv.market-zoom'); if (_mz) window._marketZoom = _mz; } catch (e) {}
+  try { var _mo = localStorage.getItem('viv.market-origin'); if (_mo) window._marketOrigin = _mo; } catch (e) {}
+
+  var _MARKET_TYPES = [
+    { key: 'process',       label: 'Processes',      ico: '⚙' },
+    { key: 'composite',     label: 'Composites',     ico: '▩' },
+    { key: 'study',         label: 'Studies',        ico: '▤' },
+    { key: 'investigation', label: 'Investigations', ico: '❖' }
+  ];
+  function _marketIco(t) {
+    for (var i = 0; i < _MARKET_TYPES.length; i++) if (_MARKET_TYPES[i].key === t) return _MARKET_TYPES[i].ico;
+    return '•';
+  }
+  // 'viva_munk.processes.x.Y' / 'pbg_copasi.composites' → display repo 'viva-munk'
+  function _marketRepoOf(s) {
+    if (!s) return '';
+    return String(s).split('.')[0].replace(/_/g, '-');
+  }
+
+  // Load incrementally: the composites/studies/investigations endpoints answer
+  // in 1-4s, but the build_core() registry (processes) can take ~45s cold, so
+  // each source renders as it arrives instead of blocking on the slowest.
+  function _loadMarket(force) {
+    // Load once: re-navigations just re-render the cache; install/uninstall
+    // pass force=true. A guard stops redundant concurrent loads (which reset the
+    // accumulator mid-flight and made the first paint flaky).
+    if (!force && window._marketItems && window._marketItems.length) { _renderMarket(); return; }
+    if (window._marketLoading) return;
+    window._marketLoading = true;
+    var host = document.getElementById('market-results');
+    if (host) host.innerHTML = '<p class="empty-state">Loading&hellip;</p>';
+    window._marketByType = { composite: [], study: [], investigation: [], process: [] };
+    window._marketItems = [];
+    var rebuild = function () {
+      var t = window._marketByType;
+      window._marketItems = [].concat(t.process, t.composite, t.study, t.investigation);
+      _renderMarket();
+    };
+    var J = function (u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); };
+
+    // The single-worker server hangs on CONCURRENT env_worker-backed requests
+    // (composites + registry), so fetch strictly SEQUENTIALLY — light/file
+    // endpoints first for a fast first paint, the heavy build_core() registry
+    // (~45s cold) last. Each step renders as it lands.
+    J('/api/investigation-summaries').then(function (isets) {
+      window._marketByType.investigation = ((isets || {}).investigations || []).map(function (iv) {
+        return { type: 'investigation', name: iv.name, title: iv.title || iv.name,
+          repo: _marketRepoOf(iv.origin_repo) || 'workspace', origin: iv.origin_repo ? 'external' : 'workspace',
+          desc: iv.description || '', status: iv.status || '', nStudies: iv.n_studies || 0 };
+      });
+      rebuild();
+      return J('/api/investigations');
+    }).then(function (studies) {
+      window._marketByType.study = ((studies || {}).investigations || []).map(function (s) {
+        return { type: 'study', name: s.name, repo: _marketRepoOf(s.origin_repo) || 'workspace',
+          origin: s.origin_repo ? 'external' : 'workspace', desc: s.description || '',
+          status: s.status || '', composite: s.composite || '',
+          nBeh: s.n_behaviors || 0, nRuns: s.n_runs || 0, nSims: s.n_simulations || 0, use: s.n_runs || 0 };
+      });
+      rebuild();
+      return J('/api/composites');
+    }).then(function (comps) {
+      var carr = Array.isArray(comps) ? comps : (comps && comps.composites) || [];
+      window._marketByType.composite = carr.map(function (c) {
+        var repo = _marketRepoOf(c.origin_repo || c.module);
+        return { type: 'composite', name: c.name, repo: repo,
+          origin: (c.workspace_local || repo === 'v2ecoli' || c.source === 'workspace') ? 'workspace' : 'external',
+          desc: c.description || '', requires: ((c.requires || {}).processes) || [],
+          nParams: (c.parameters || []).length, nSteps: c.default_n_steps || 0, use: 0 };
+      });
+      rebuild();
+      return J('/api/registry');
+    }).then(function (reg) {
+      var wpkgs = (reg && reg.workspace_pkgs) || [];
+      window._marketByType.process = ((reg || {}).processes || []).filter(function (p) {
+        return p.kind === 'process';   // steps/emitters live on the Modules page
+      }).map(function (p) {
+        var repo = _marketRepoOf(p.address || p.source);
+        var inWs = p.source === 'in_workspace' || wpkgs.indexOf((p.address || '').split('.')[0]) !== -1;
+        return { type: 'process', name: p.name, repo: repo, origin: inWs ? 'workspace' : 'external',
+          desc: p.description || '', address: p.address || '',
+          usage: { comp: p.composite_uses || 0, study: p.study_uses || 0, total: p.use_count || 0 },
+          use: p.use_count || 0,
+          ports: { in: (p.inputs || []).length, out: (p.outputs || []).length,
+                   config: Object.keys(p.config_schema || {}).length } };
+      });
+      rebuild();
+      window._marketLoading = false;
+    }).catch(function () { window._marketLoading = false; });
+  }
+  window._loadMarket = _loadMarket;
+
+  function _setMarketFacet(f) {
+    window._marketFacet = f || 'all';
+    document.querySelectorAll('.market-facet').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.facet === window._marketFacet);
+    });
+    _renderMarket();
+  }
+  window._setMarketFacet = _setMarketFacet;
+
+  function _setMarketZoom(z) {
+    window._marketZoom = z || 'cards';
+    try { localStorage.setItem('viv.market-zoom', window._marketZoom); } catch (e) {}
+    document.querySelectorAll('[data-mkzoom]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.mkzoom === window._marketZoom);
+    });
+    _renderMarket();
+  }
+  window._setMarketZoom = _setMarketZoom;
+
+  function _setMarketOrigin(o) {
+    window._marketOrigin = o || 'all';
+    try { localStorage.setItem('viv.market-origin', window._marketOrigin); } catch (e) {}
+    document.querySelectorAll('.market-origin-chip').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.origin === window._marketOrigin);
+    });
+    _renderMarket();
+  }
+  window._setMarketOrigin = _setMarketOrigin;
+
+  // Open an artifact where it lives: navigate to the owning page and filter to it.
+  function _marketOpen(type, name) {
+    if (type === 'investigation') {
+      _switchPage('investigations');
+      if (typeof _showInvestigationWorkspace === 'function') _showInvestigationWorkspace(name);
+      return;
+    }
+    if (type === 'study') {
+      _switchPage('studies');
+      var si = document.getElementById('investigations-search');
+      if (si) { si.value = name; si.dispatchEvent(new Event('input', { bubbles: true })); }
+      return;
+    }
+    if (type === 'composite') {
+      _switchPage('simulation-setup');
+      var ci = document.getElementById('composite-search');
+      if (ci) { ci.value = name; ci.dispatchEvent(new Event('input', { bubbles: true })); }
+      return;
+    }
+    if (type === 'process') {
+      _switchPage('modules');
+      var ri = document.getElementById('registry-search');
+      if (ri) { ri.value = name; if (typeof _filterRegistry === 'function') _filterRegistry(name); }
+      return;
+    }
+  }
+  window._marketOpen = _marketOpen;
+
+  // Usage summary — how much an artifact is used ("used for" surfaced in detail).
+  function _marketUsage(it) {
+    var p = [];
+    if (it.type === 'process') {
+      if (it.usage.comp) p.push(it.usage.comp + ' composite' + (it.usage.comp > 1 ? 's' : ''));
+      if (it.usage.study) p.push(it.usage.study + ' stud' + (it.usage.study > 1 ? 'ies' : 'y'));
+      return p.length ? 'used by ' + p.join(' · ') : 'unused';
+    }
+    if (it.type === 'composite') {
+      if (it.requires.length) p.push('needs ' + it.requires.length + ' process' + (it.requires.length > 1 ? 'es' : ''));
+      if (it.nSteps) p.push(it.nSteps + ' steps');
+      if (it.nParams) p.push(it.nParams + ' param' + (it.nParams > 1 ? 's' : ''));
+      return p.join(' · ');
+    }
+    if (it.type === 'study') {
+      if (it.status) p.push(it.status);
+      if (it.nBeh) p.push(it.nBeh + ' behavior' + (it.nBeh > 1 ? 's' : ''));
+      if (it.nRuns) p.push(it.nRuns + ' run' + (it.nRuns > 1 ? 's' : ''));
+      return p.join(' · ');
+    }
+    if (it.type === 'investigation') {
+      if (it.status) p.push(it.status);
+      if (it.nStudies) p.push(it.nStudies + ' stud' + (it.nStudies > 1 ? 'ies' : 'y'));
+      return p.join(' · ');
+    }
+    return '';
+  }
+
+  function _marketHead(it) {
+    return '<span class="market-type-ico" title="' + it.type + '">' + _marketIco(it.type) + '</span>'
+      + '<span class="market-name">' + _esc(it.title || it.name) + '</span>'
+      + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
+  }
+  function _marketOpenBtn(it) {
+    return '<button class="btn-mini market-open" data-open-type="' + it.type +
+      '" data-open-name="' + _esc(it.name) + '">Open ↗</button>';
+  }
+
+  // List (dense): one row per artifact.
+  function _marketRow(it) {
+    var u = _marketUsage(it);
+    return '<div class="market-row market-type-' + it.type + '">'
+      + '<div class="market-row-main">' + _marketHead(it)
+      +   (it.desc ? '<span class="market-row-desc">' + _esc(it.desc) + '</span>' : '') + '</div>'
+      + '<span class="market-usage">' + _esc(u) + '</span>'
+      + _marketOpenBtn(it) + '</div>';
+  }
+
+  // Cards: current card + a usage line.
+  function _marketCard(it) {
+    var u = _marketUsage(it);
+    return '<div class="market-card market-type-' + it.type + '">'
+      + '<div class="market-card-head">' + _marketHead(it) + '</div>'
+      + (it.desc ? '<div class="market-desc">' + _esc(it.desc) + '</div>' : '')
+      + '<div class="market-card-foot">'
+      +   '<span class="market-usage">' + _esc(u) + '</span>' + _marketOpenBtn(it) + '</div>'
+      + '</div>';
+  }
+
+  // Detail (full): description + a usage/attributes table.
+  function _marketDetail(it) {
+    var rows = [];
+    var R = function (k, v) { if (v) rows.push('<div class="market-dl-k">' + k + '</div><div class="market-dl-v">' + v + '</div>'); };
+    if (it.type === 'process') {
+      R('Address', '<code>' + _esc(it.address || it.name) + '</code>');
+      R('Used by', it.usage.total
+        ? _esc((it.usage.comp || 0) + ' composite' + (it.usage.comp === 1 ? '' : 's') + ' · ' + (it.usage.study || 0) + ' stud' + (it.usage.study === 1 ? 'y' : 'ies'))
+        : 'not yet used');
+      R('Ports', _esc(it.ports.in + ' in · ' + it.ports.out + ' out · ' + it.ports.config + ' config'));
+    } else if (it.type === 'composite') {
+      if (it.requires.length) R('Requires', it.requires.slice(0, 12).map(function (p) { return '<code>' + _esc(p) + '</code>'; }).join(' '));
+      R('Structure', _esc(it.nSteps + ' steps · ' + it.nParams + ' parameters'));
+    } else if (it.type === 'study') {
+      R('Status', _esc(it.status || '—'));
+      if (it.composite) R('Composite', '<code>' + _esc(it.composite) + '</code>');
+      R('Activity', _esc((it.nBeh || 0) + ' behavior' + (it.nBeh === 1 ? '' : 's') + ' · ' + (it.nRuns || 0) + ' run' + (it.nRuns === 1 ? '' : 's') + ' · ' + (it.nSims || 0) + ' sim' + (it.nSims === 1 ? '' : 's')));
+    } else if (it.type === 'investigation') {
+      R('Status', _esc(it.status || '—'));
+      R('Studies', _esc(String(it.nStudies || 0)));
+    }
+    return '<div class="market-card market-detail market-type-' + it.type + '">'
+      + '<div class="market-card-head">' + _marketHead(it) + _marketOpenBtn(it) + '</div>'
+      + (it.desc ? '<div class="market-desc market-desc-full">' + _esc(it.desc) + '</div>' : '')
+      + (rows.length ? '<div class="market-dl">' + rows.join('') + '</div>' : '')
+      + '</div>';
+  }
+
+  // List (minimized) zoom = a sortable table: info rolls up into columns
+  // instead of overflowing to the right. Sort by name, repo, location, or use.
+  window._marketSort = { key: 'name', dir: 1 };
+  function _marketUseNum(it) {
+    if (it.type === 'process') return (it.usage || {}).total || 0;
+    if (it.type === 'study') return it.nRuns || 0;
+    if (it.type === 'investigation') return it.nStudies || 0;
+    return 0;   // composites carry no usage count
+  }
+  var _MARKET_COLS = [
+    { key: 'type',   label: 'Type',     get: function (it) { return it.type; }, w: '92px' },
+    { key: 'name',   label: 'Name',     get: function (it) { return it.title || it.name; } },
+    { key: 'repo',   label: 'Repo',     get: function (it) { return it.repo || ''; }, w: '150px' },
+    { key: 'origin', label: 'Location', get: function (it) { return it.origin === 'workspace' ? 'Ours' : 'External'; }, w: '110px' },
+    { key: 'use',    label: 'Use',      get: _marketUseNum, num: true, w: '70px' }
+  ];
+  function _setMarketSort(key) {
+    var s = window._marketSort;
+    if (s.key === key) s.dir = -s.dir; else { s.key = key; s.dir = 1; }
+    _renderMarket();
+  }
+  window._setMarketSort = _setMarketSort;
+  function _marketTable(items, showType) {
+    var s = window._marketSort;
+    var cols = _MARKET_COLS.filter(function (c) { return c.key !== 'type' || showType; });
+    var col = null; _MARKET_COLS.forEach(function (c) { if (c.key === s.key) col = c; });
+    if (!col) col = _MARKET_COLS[1];
+    var sorted = items.slice().sort(function (a, b) {
+      var av = col.get(a), bv = col.get(b);
+      if (col.num) return ((+av || 0) - (+bv || 0)) * s.dir;
+      return String(av).toLowerCase().localeCompare(String(bv).toLowerCase()) * s.dir;
+    });
+    var head = cols.map(function (c) {
+      var arrow = s.key === c.key ? (s.dir > 0 ? ' ▲' : ' ▼') : '';
+      return '<th class="market-th' + (s.key === c.key ? ' sorted' : '') + '" data-sort="' + c.key + '"'
+        + (c.w ? ' style="width:' + c.w + '"' : '') + '>' + c.label + arrow + '</th>';
+    }).join('');
+    var body = sorted.map(function (it) {
+      var tds = cols.map(function (c) {
+        if (c.key === 'type') return '<td class="market-td-type"><span class="market-type-ico" title="' + it.type + '">' + _marketIco(it.type) + '</span></td>';
+        if (c.key === 'name') return '<td class="market-td-name">' + _esc(it.title || it.name)
+          + (it.desc ? '<span class="market-td-desc">' + _esc(it.desc) + '</span>' : '') + '</td>';
+        if (c.key === 'origin') return '<td><span class="market-origin market-origin-' + it.origin + '">'
+          + (it.origin === 'workspace' ? 'Ours' : 'External') + '</span></td>';
+        if (c.key === 'use') { var u = _marketUseNum(it); return '<td class="market-td-use">' + (u || '—') + '</td>'; }
+        return '<td>' + _esc(String(c.get(it))) + '</td>';
+      }).join('');
+      return '<tr class="market-tr" data-open-type="' + it.type + '" data-open-name="' + _esc(it.name) + '">' + tds + '</tr>';
+    }).join('');
+    return '<table class="market-table"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+  }
+
+  function _renderMarket() {
+    var host = document.getElementById('market-results');
+    if (!host) return;
+    if (!host._marketWired) {   // delegate clicks once (survives re-renders)
+      host._marketWired = true;
+      host.addEventListener('click', function (e) {
+        var th = e.target.closest('.market-th'); if (th) { _setMarketSort(th.dataset.sort); return; }
+        var tr = e.target.closest('.market-tr'); if (tr) { _marketOpen(tr.dataset.openType, tr.dataset.openName); return; }
+        var b = e.target.closest('.market-open'); if (b) _marketOpen(b.dataset.openType, b.dataset.openName);
+      });
+    }
+    var items = window._marketItems || [];
+    var q = ((document.getElementById('market-search') || {}).value || '').trim().toLowerCase();
+    var facet = window._marketFacet || 'all';
+    var zoom = window._marketZoom || 'cards';
+    var origin = window._marketOrigin || 'all';
+    document.querySelectorAll('[data-mkzoom]').forEach(function (b) { b.classList.toggle('active', b.dataset.mkzoom === zoom); });
+    document.querySelectorAll('.market-origin-chip').forEach(function (b) { b.classList.toggle('active', b.dataset.origin === origin); });
+    var match = function (it) {
+      if (facet !== 'all' && it.type !== facet) return false;
+      if (origin !== 'all' && it.origin !== origin) return false;
+      if (!q) return true;
+      return (it.name + ' ' + (it.title || '') + ' ' + it.desc + ' ' + it.repo).toLowerCase().indexOf(q) !== -1;
+    };
+    var filtered = items.filter(match);
+    if (!filtered.length) {
+      host.innerHTML = items.length ? '<p class="empty-state">No matches.</p>' : '<p class="empty-state">Loading&hellip;</p>';
+      return;
+    }
+    var html = '';
+    if (zoom === 'list') {
+      // One sortable table; a Type column appears only in the All facet.
+      html = _marketTable(filtered, facet === 'all');
+    } else {
+      var render = zoom === 'detail' ? _marketDetail : _marketCard;
+      var wrap = function (arr) { return '<div class="market-grid market-grid-' + zoom + '">' + arr.map(render).join('') + '</div>'; };
+      if (facet === 'all') {
+        _MARKET_TYPES.forEach(function (t) {
+          var group = filtered.filter(function (it) { return it.type === t.key; });
+          if (!group.length) return;
+          html += '<div class="market-group"><div class="market-group-head">' + t.label
+            + ' <span class="market-count">' + group.length + '</span></div>' + wrap(group) + '</div>';
+        });
+      } else {
+        html = wrap(filtered);
+      }
+    }
+    host.innerHTML = html;
+  }
+  window._renderMarket = _renderMarket;
 
   // -------------------------------------------------------------------------
   // Install error rendering (v0.4.5)
@@ -4540,6 +4893,7 @@
         if (p.json.branch) msg += '\n\nBranch: ' + p.json.branch + (p.json.commit ? ' (' + p.json.commit + ')' : '');
         alert(msg);
         if (typeof _loadCatalog === 'function') _loadCatalog();
+        if (typeof _loadMarket === 'function') _loadMarket(true);
         if (typeof _loadRegistry === 'function') _loadRegistry(true);
       })
       .catch(function(e) {
@@ -4624,7 +4978,7 @@
         // Drop registry cache, switch to Registry tab so user sees the change.
         window._registryLoaded = false;
         fetch('/api/render', {method: 'POST'}).finally(function() {
-          location.hash = '#registry';
+          location.hash = '#modules';
           location.reload();
         });
       })
@@ -5062,9 +5416,9 @@
   // ---- Rail resize (drag the right edge to widen; snap to normal; drag
   //      narrower to snap into the collapsed bar) ----------------------------
   var _RAIL_NORMAL = 240;      // the "normal" snap width (matches CSS default)
-  var _RAIL_MIN = 240;         // expanded floor — narrower than this collapses
+  var _RAIL_MIN = 160;         // expanded floor (~2/3 of normal) — narrower than this collapses
   var _RAIL_MAX = 560;         // don't let the rail eat the whole viewport
-  var _RAIL_COLLAPSE_AT = 180; // drag below this (px from left edge) → collapse
+  var _RAIL_COLLAPSE_AT = 140; // drag below this (px from left edge) → collapse
   var _RAIL_SNAP = 28;         // within this of normal → snap to exactly normal
 
   function _vivRailSavedWidth() {
@@ -7614,7 +7968,8 @@
     var leadProse = (d.lead || d.description || '').trim();
     var bio       = (d.biological_story || '').trim();
     var glossary  = Array.isArray(d.glossary) ? d.glossary : [];
-    var howto     = Array.isArray(d.how_to_read) ? d.how_to_read : [];
+    var howto     = d.how_to_read;  // string (prose) or array (tips) — both render.
+    var hasHowto  = Array.isArray(howto) ? howto.length : String(howto || '').trim().length;
 
     // Legacy investigations with no structured content fall back to the lead.
     if (!whatIs && !verdict && !q && !hyp) {
@@ -7663,11 +8018,12 @@
 
     // Depth — one flat tab strip; only tabs with content are shown.
     var tabs = [];
-    if (howto.length)
-      tabs.push({ id:'howto', label:'How to read', html:
-        '<ol class="inv-brief-howto">' + howto.map(function(x) {
-          return '<li>' + _escInv(typeof x === 'string' ? x : (x.text || x.tip || '')) + '</li>';
-        }).join('') + '</ol>' });
+    if (hasHowto)
+      tabs.push({ id:'howto', label:'How to read', html: Array.isArray(howto)
+        ? '<ol class="inv-brief-howto">' + howto.map(function(x) {
+            return '<li>' + _renderInvLeadMarkdown(String(typeof x === 'string' ? x : (x.text || x.tip || ''))).replace(/^<p>|<\/p>$/g, '') + '</li>';
+          }).join('') + '</ol>'
+        : '<div class="inv-brief-prose">' + _renderInvLeadMarkdown(String(howto)) + '</div>' });
     if (bio)
       tabs.push({ id:'biology', label:'Biology', html:
         '<div class="inv-brief-prose">' + _renderInvLeadMarkdown(bio) + '</div>' });
