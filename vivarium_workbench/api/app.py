@@ -1292,6 +1292,26 @@ def create_app() -> FastAPI:
         return CatalogPayload.model_validate(build_catalog(ws, full=True))
 
     @app.get(
+        "/api/ecosystem-index",
+        tags=["Registry & catalog"],
+        summary="Aggregated per-repo artifact index across the whole ecosystem",
+    )
+    def ecosystem_index() -> dict:
+        """The viva-marketplace ecosystem ledger: every repo's processes / steps /
+        composites / studies / investigations (name + description), so the
+        Registry can surface artifacts from repos that aren't installed here.
+
+        Served from the installed ``viva_marketplace`` package (best-effort —
+        returns an empty index when it isn't installed). Server-side so the live
+        workbench dodges the cross-origin fetch to github.io.
+        """
+        try:
+            import viva_marketplace  # noqa: PLC0415
+            return viva_marketplace.load_ecosystem_index()
+        except Exception:  # noqa: BLE001
+            return {"repos": []}
+
+    @app.get(
         "/api/catalog-uninstall-impact",
         tags=["Registry & catalog"],
         summary="What uninstalling a module would remove/break in this workspace",

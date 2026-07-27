@@ -4470,9 +4470,11 @@
       // The marketplace payload (full ecosystem incl. available-to-install) has
       // no DataSource loader; resolve it snapshot-aware here (static .json in a
       // published bundle, live endpoint otherwise).
-      if (which === 'marketplace') {
+      if (which === 'marketplace' || which === 'ecoindex') {
         var snap = DS && DS.config && DS.config().mode === 'snapshot';
-        var mu = snap ? (DS.basePath() + '/api/marketplace.json') : ((DS && DS.apiUrl) ? DS.apiUrl('/api/marketplace') : '/api/marketplace');
+        var leaf = which === 'ecoindex' ? 'ecosystem-index' : 'marketplace';
+        var mu = snap ? (DS.basePath() + '/api/' + leaf + '.json')
+                      : ((DS && DS.apiUrl) ? DS.apiUrl('/api/' + leaf) : '/api/' + leaf);
         return fetch(mu).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
       }
       var path = { isets: '/api/investigation-summaries', studies: '/api/investigations',
@@ -4552,10 +4554,75 @@
     }).then(function (mkt) {
       var mods = (mkt && mkt.modules) || (Array.isArray(mkt) ? mkt : []);
       if (mods.length) { window._marketCatalog = mods; if (window._marketFacet === 'repo') _renderMarket(); }
+      // Finally, fold in the viva-marketplace ecosystem index so artifacts from
+      // OTHER repos (incl. ones not installed here) show in every facet.
+      return J('ecoindex');
+    }).then(function (eco) {
+      _mergeEcosystemIndex(eco);
+      _renderMarket();
       window._marketLoading = false;
     }).catch(function () { window._marketLoading = false; });
   }
   window._loadMarket = _loadMarket;
+
+  // Fold the viva-marketplace ecosystem index (per-repo artifact lists) into the
+  // facet buckets, so processes/steps/composites/studies/investigations from
+  // OTHER repos appear under "Other repos" — tagged `available` when their repo
+  // isn't installed here (browse now, install the repo to use). Deduped against
+  // artifacts already loaded from the local registry.
+  function _mergeEcosystemIndex(eco) {
+    var repos = (eco && eco.repos) || [];
+    if (!repos.length) return;
+    var installed = {};
+    (window._marketCatalog || []).forEach(function (m) {
+      if (m && m.installed !== false) installed[_marketRepoNorm(m.name || m.package)] = true;
+    });
+    var seen = {};
+    var TYPES = ['process', 'composite', 'study', 'investigation'];
+    TYPES.forEach(function (t) {
+      (window._marketByType[t] || []).forEach(function (it) {
+        seen[t + '|' + _marketRepoNorm(it.repo) + '|' + it.name] = true;
+      });
+    });
+    var add = { process: [], composite: [], study: [], investigation: [] };
+    repos.forEach(function (r) {
+      var repo = _marketRepoNorm(r.repo || r.name);
+      if (!repo) return;
+      var avail = !installed[repo];
+      var push = function (arr, type, kind) {
+        (arr || []).forEach(function (a) {
+          var nm = a && a.name; if (!nm) return;
+          var key = type + '|' + repo + '|' + nm;
+          if (seen[key]) return; seen[key] = true;
+          var it = { type: type, name: nm, repo: repo, origin: 'external',
+            desc: (a.description || ''), available: avail, ecosystem: true, use: 0 };
+          if (type === 'process') {
+            it.kind = kind; it.address = '';
+            it.usage = { comp: 0, study: 0, total: 0 };
+            it.ports = { in: 0, out: 0, config: 0 };
+          } else if (type === 'composite') {
+            it.requires = []; it.nParams = 0; it.nSteps = 0;
+          } else if (type === 'study') {
+            it.status = ''; it.composite = ''; it.nBeh = 0; it.nRuns = 0; it.nSims = 0;
+          } else if (type === 'investigation') {
+            it.title = a.title || nm; it.status = ''; it.nStudies = 0;
+          }
+          add[type].push(it);
+        });
+      };
+      push(r.processes, 'process', 'process');
+      push(r.steps, 'process', 'step');
+      push(r.composites, 'composite');
+      push(r.studies, 'study');
+      push(r.investigations, 'investigation');
+    });
+    TYPES.forEach(function (t) {
+      if (add[t].length) window._marketByType[t] = (window._marketByType[t] || []).concat(add[t]);
+    });
+    // Rebuild the flat list from the (now-augmented) per-type buckets.
+    var t = window._marketByType;
+    window._marketItems = [].concat(t.process, t.composite, t.study, t.investigation);
+  }
 
   function _setMarketFacet(f) {
     window._marketFacet = f || 'all';
@@ -4646,6 +4713,7 @@
     return '<span class="market-type-ico" title="' + (it.kind || it.type) + '">' + _marketIco(it.type) + '</span>'
       + '<span class="market-name">' + _esc(it.title || it.name) + '</span>'
       + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
+      + (it.available ? '<span class="market-avail" title="From a repo not installed here — install the repo to use it">available</span>' : '')
       + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
   }
   function _marketOpenBtn(it) {

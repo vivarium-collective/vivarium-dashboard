@@ -879,6 +879,17 @@ def _do_build(
             _m.pop("out_of_sync_reason", None)
     _write_json(api_dir / "marketplace.json", marketplace)
 
+    # api/ecosystem-index.json — the viva-marketplace aggregated artifact index
+    # (per-repo processes/steps/composites/studies/investigations). Lets the
+    # published Registry surface artifacts from repos not installed here. Sourced
+    # from the installed viva_marketplace package; best-effort empty index if not.
+    try:
+        import viva_marketplace  # noqa: PLC0415
+        eco_index = viva_marketplace.load_ecosystem_index()
+    except Exception:  # noqa: BLE001
+        eco_index = {"repos": []}
+    _write_json(api_dir / "ecosystem-index.json", eco_index)
+
     # api/audit.json — read-only L0-L5 reproducibility audit (GET /api/audit).
     # Tolerant: build_audit never raises (returns a 200-shaped dict on error), so
     # the Audit tab works in the static bundle. Routed through the same
