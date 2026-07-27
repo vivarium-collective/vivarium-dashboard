@@ -78,17 +78,102 @@
     return "ready";
   }
 
+  // ── Failed-state panel (slice 3c: "nothing silently disappears") ─────────────
+  // When materialization fails, the favicon alone can't say WHY. Render a
+  // dismissible panel with the reason + the uv/git tail the backend already
+  // returns (session_env._map_job → {error, tail}), and a Retry that re-triggers
+  // the SAME managed materialization via the existing POST /api/source/materialize-
+  // repo (no new endpoint). A non-managed (in-place) failure has no repo/ref, so
+  // Retry falls back to reloading the tab (which re-runs the bind).
+  var PANEL_ID = "viv-session-failure";
+
+  function clearFailure() {
+    var p = document.getElementById(PANEL_ID);
+    if (p && p.parentNode) p.parentNode.removeChild(p);
+  }
+
+  function retry(d) {
+    clearFailure();
+    if (d && d.repo && d.ref) {
+      apply("materializing");
+      fetch("/api/source/materialize-repo", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repo: d.repo, ref: d.ref }),
+      }).then(function () { setTimeout(poll, POLL_MS); })
+        .catch(function () { apply("failed"); });
+    } else if (typeof location !== "undefined" && location.reload) {
+      location.reload();
+    }
+  }
+
+  function renderFailure(d) {
+    clearFailure();
+    d = d || {};
+    var panel = document.createElement("div");
+    panel.id = PANEL_ID;
+    panel.setAttribute("role", "alert");
+    panel.style.cssText = "position:fixed; right:16px; bottom:16px; z-index:2147483000;" +
+      " max-width:min(92vw,440px); background:#1b1420; color:#f3e7ea;" +
+      " border:1px solid #5a2530; border-left:3px solid #ff5d6c; border-radius:10px;" +
+      " padding:13px 15px; font:13px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;" +
+      " box-shadow:0 10px 34px rgba(0,0,0,.5)";
+
+    var h = document.createElement("div");
+    h.style.cssText = "font-weight:700; color:#ff8a95; margin-bottom:5px";
+    h.textContent = "Workspace failed to prepare";
+    panel.appendChild(h);
+
+    var msg = document.createElement("div");
+    msg.className = "viv-sf-error";
+    msg.textContent = d.error || "materialization failed (no reason reported)";
+    panel.appendChild(msg);
+
+    if (d.tail) {
+      var pre = document.createElement("pre");
+      pre.className = "viv-sf-tail";
+      pre.style.cssText = "margin:8px 0 0; max-height:160px; overflow:auto; white-space:pre-wrap;" +
+        " background:#0f0a12; border:1px solid #3a2530; border-radius:6px; padding:8px;" +
+        " font:11.5px/1.45 ui-monospace,Menlo,monospace; color:#c9b8bd";
+      pre.textContent = d.tail;
+      panel.appendChild(pre);
+    }
+
+    var actions = document.createElement("div");
+    actions.style.cssText = "margin-top:10px; display:flex; gap:8px";
+    var retryBtn = document.createElement("button");
+    retryBtn.className = "viv-sf-retry";
+    retryBtn.textContent = "Retry";
+    retryBtn.style.cssText = "cursor:pointer; border:1px solid #5a2530; background:#2a1319;" +
+      " color:#ff8a95; border-radius:6px; padding:5px 12px; font-weight:600";
+    retryBtn.addEventListener("click", function () { retry(d); });
+    actions.appendChild(retryBtn);
+    var dismissBtn = document.createElement("button");
+    dismissBtn.className = "viv-sf-dismiss";
+    dismissBtn.textContent = "Dismiss";
+    dismissBtn.style.cssText = "cursor:pointer; border:1px solid #3a2f3a; background:transparent;" +
+      " color:#93a1b5; border-radius:6px; padding:5px 12px";
+    dismissBtn.addEventListener("click", clearFailure);
+    actions.appendChild(dismissBtn);
+    panel.appendChild(actions);
+
+    (document.body || document.documentElement).appendChild(panel);
+    return panel;
+  }
+
   function poll() {
     fetch("/api/source/materialization")
       .then(function (r) { return r && r.ok ? r.json() : null; })
       .then(function (d) {
         var state = apply((d && d.status) || "ready");
+        if (state === "failed") renderFailure(d || {});
+        else clearFailure();
         if (state === "preparing") setTimeout(poll, POLL_MS);
       })
       .catch(function () { apply("ready"); });
   }
 
-  var api = { apply: apply, poll: poll, svgDataUri: svgDataUri, FAVICONS: FAVICONS };
+  var api = { apply: apply, poll: poll, renderFailure: renderFailure,
+              clearFailure: clearFailure, svgDataUri: svgDataUri, FAVICONS: FAVICONS };
 
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;                 // Node (tests): no auto-run
