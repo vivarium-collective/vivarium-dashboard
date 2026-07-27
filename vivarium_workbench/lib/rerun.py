@@ -362,26 +362,124 @@ def _investigation_studies(ws_root, investigation):
     return out
 
 
-def rerun_investigation(ws_root, investigation):
-    """Rerun every member study of an investigation's baseline (force).
+def _investigation_execution_order(ws_root, investigation, studies):
+    """Best-effort topological execution order of ``studies`` (this
+    investigation's own declared members) over the ``inputs.from`` DAG
+    (reproducible-rerun-spine Task 7 / G2).
 
-    Iterates the investigation's declared studies and re-launches each
-    one's baseline via ``study_runs.run_study_baseline`` (ignoring any
-    unblocked-gate — this is an explicit rerun, not gated batch enumeration).
+    Delegates the toposort to ``viva_superpowers.study_audit.
+    investigation_execution_order`` — the SAME DAG-building the L5 audit
+    already checks (``_member_slugs`` + ``_study_inputs_from`` + graphlib),
+    single-sourced there so this and the audit can never disagree. That
+    helper itself degrades to the declared member order on a DAG cycle; this
+    wrapper degrades the same way on any import/read failure (viva_superpowers
+    absent, ``investigation.yaml`` missing/malformed) — a toposort failure
+    must never 500 an investigation rerun.
+
+    Restricted to ``studies``: the pbg helper's order may include a producer
+    that is not a declared member of THIS investigation (an external
+    upstream study) — that must never be launched as if it were a member, so
+    it's filtered out here. Any declared member the order happens to omit
+    (e.g. it isn't reachable in the DAG at all) is appended at the end, in
+    declared order, so nothing in ``studies`` is ever dropped.
+    """
+    try:
+        import yaml
+        from viva_superpowers import study_audit
+        from viva_superpowers.workspace_paths import WorkspacePaths as PbgWorkspacePaths
+
+        wp = PbgWorkspacePaths.load(Path(ws_root))
+        inv_yaml = wp.investigations / str(investigation) / "investigation.yaml"
+        inv_spec = {}
+        if inv_yaml.is_file():
+            inv_spec = yaml.safe_load(inv_yaml.read_text(encoding="utf-8")) or {}
+        order = study_audit.investigation_execution_order(wp, inv_spec)
+    except Exception:  # noqa: BLE001 — best-effort; degrade to declared order
+        return list(studies)
+
+    member_set = set(studies)
+    filtered = [s for s in order if s in member_set]
+    missing = [s for s in studies if s not in filtered]
+    return filtered + missing
+
+
+def _study_upstreams(ws_root, slug) -> list:
+    """Best-effort read of study ``slug``'s declared ``inputs[].from``
+    upstream producer slugs — used only for the rerun-batch gating in
+    ``rerun_investigation`` below (Task 7 / G2). Mirrors the shape
+    ``viva_superpowers.study_audit._study_inputs_from`` reads but stays
+    local: both packages already agree on the on-disk shape
+    (``inputs: [{from: <slug>}, ...]``), so there's no need to reach into a
+    pbg-private symbol for it. Never raises — a missing/malformed
+    ``study.yaml`` degrades to no upstreams (nothing to gate on).
+    """
+    try:
+        import yaml
+        sd = study_spec.study_dir(Path(ws_root), slug)
+        spec_file = study_spec.study_spec_file(sd)
+        if not spec_file.is_file():
+            return []
+        spec = yaml.safe_load(spec_file.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — best-effort; never block a rerun
+        return []
+    if not isinstance(spec, dict):
+        return []
+    out = []
+    inputs = spec.get("inputs")
+    for e in (inputs if isinstance(inputs, list) else []):
+        if isinstance(e, dict) and e.get("from"):
+            out.append(str(e["from"]))
+    return out
+
+
+def rerun_investigation(ws_root, investigation):
+    """Rerun every member study of an investigation's baseline (force),
+    executing them in TOPOLOGICAL order over the ``inputs.from`` DAG rather
+    than a flat fan-out in declared order (reproducible-rerun-spine Task 7 /
+    G2) — a study that consumes another member's output is never launched
+    before its producer.
+
+    Order comes from ``_investigation_execution_order`` (best-effort;
+    degrades to the investigation's declared member order on any DAG/import
+    failure — never 500s the rerun).
+
+    GATING: before launching a study, if any of its declared ``inputs.from``
+    upstreams FAILED or was itself SKIPPED earlier in this same batch, the
+    study is NOT launched — it's recorded in ``skipped`` with the blocking
+    upstream slug(s) instead (this also skips transitively: a study whose
+    upstream was skipped is itself recorded as skipped). An upstream outside
+    this batch — not a member, or a member this rerun never attempted —
+    never blocks; gating only ever looks at what actually happened in this
+    run, never at prior history.
+
     One bad study's exception or non-2xx response is recorded in ``errors``
-    rather than aborting the rest of the batch.
+    rather than aborting the rest of the batch (the original flat fan-out's
+    per-study try/except, preserved unchanged).
     """
     studies = _investigation_studies(ws_root, investigation)
-    launched, errors = [], []
-    for s in studies:
+    order = _investigation_execution_order(ws_root, investigation, studies)
+
+    launched, skipped, errors = [], [], []
+    ok: dict = {}  # slug -> True (launched this batch) / False (failed or skipped)
+
+    for s in order:
+        blockers = [u for u in _study_upstreams(ws_root, s) if ok.get(u) is False]
+        if blockers:
+            skipped.append({"study": s, "blocked_by": blockers})
+            ok[s] = False
+            continue
         try:
             resp, status = study_runs.run_study_baseline(ws_root, {"study": s})
         except Exception as e:  # noqa: BLE001 — one bad study must not abort the batch
             errors.append({"study": s, "error": str(e)})
+            ok[s] = False
             continue
         if status < 300 and (resp or {}).get("run_id"):
             launched.append({"study": s, "run_id": resp["run_id"]})
+            ok[s] = True
         else:
             errors.append({"study": s, "error": (resp or {}).get("error", status)})
-    return {"investigation": investigation, "launched": launched, "errors": errors,
-            "count": len(launched)}, 200
+            ok[s] = False
+
+    return {"investigation": investigation, "order": order, "launched": launched,
+            "skipped": skipped, "errors": errors, "count": len(launched)}, 200

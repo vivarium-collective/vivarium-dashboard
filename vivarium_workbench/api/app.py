@@ -5295,14 +5295,20 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         """Rerun every member study of an investigation's baseline (force).
 
-        Body: ``{"investigation"}`` — iterates the investigation's declared
-        studies and re-launches each one's baseline (``lib.rerun.
-        rerun_investigation``), ignoring the unblocked-gate. One bad study's
-        exception or non-2xx response is recorded in ``errors`` rather than
-        aborting the rest of the batch.
+        Body: ``{"investigation"}`` — re-launches each member study's
+        baseline (``lib.rerun.rerun_investigation``), ignoring the
+        unblocked-gate, in TOPOLOGICAL order over the investigation's
+        ``inputs.from`` DAG (reproducible-rerun-spine Task 7 / G2) rather
+        than a flat fan-out in declared order — a study is never launched
+        before a member it consumes. If a study's upstream failed or was
+        itself skipped earlier in the batch, the study is skipped (not
+        launched) rather than run against a possibly-stale upstream. One bad
+        study's exception or non-2xx response is recorded in ``errors``
+        rather than aborting the rest of the batch.
 
-        Always 200: ``{"investigation", "launched", "errors", "count"}``, even
-        when the investigation has no (or no known) member studies.
+        Always 200: ``{"investigation", "order", "launched", "skipped",
+        "errors", "count"}``, even when the investigation has no (or no
+        known) member studies.
         """
         body, status = _rerun.rerun_investigation(ws, req.investigation)
         return JSONResponse(status_code=status, content=body)
@@ -5319,9 +5325,11 @@ def create_app() -> FastAPI:
     ) -> InvestigationResolveResult:
         """Content-addressed pull-or-compute over an investigation's member DAG.
 
-        Body: ``{"investigation", "force"?}`` — opt-in alternative to the
-        declared-order ``/api/investigation-rerun`` (untouched by this route):
-        walks the investigation's member studies (plus any discovered
+        Body: ``{"investigation", "force"?}`` — opt-in alternative to
+        ``/api/investigation-rerun`` (which reruns via the study-run launcher,
+        not this content-addressed pull-or-compute path; both now walk the
+        member DAG in topological order, untouched by this route): walks the
+        investigation's member studies (plus any discovered
         upstream producer) in topological order via ``lib.artifacts.pipeline.
         resolve_investigation``, pulling each node's output artifact from the
         content-addressed store when a matching id already exists and

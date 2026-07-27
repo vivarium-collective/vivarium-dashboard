@@ -2670,14 +2670,18 @@ class InvestigationRerunRequest(BaseModel):
 
 class InvestigationRerunResult(BaseModel):
     """Result of ``POST /api/investigation-rerun`` — the batch outcome across
-    an investigation's member studies: which launched, which errored, and how
-    many succeeded.
+    an investigation's member studies: the topological execution ``order``
+    computed over the ``inputs.from`` DAG (reproducible-rerun-spine Task 7 /
+    G2), which launched, which were ``skipped`` because an upstream failed or
+    was itself skipped, which errored, and how many succeeded.
     """
 
     model_config = ConfigDict(extra="allow")
 
     investigation: Optional[str] = None
+    order: Optional[list] = None
     launched: Optional[list] = None
+    skipped: Optional[list] = None
     errors: Optional[list] = None
     count: Optional[int] = None
 
