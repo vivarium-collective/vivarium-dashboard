@@ -368,6 +368,12 @@ def test_reproduce_retrieves_saved_run_without_launching(tmp_path, monkeypatch):
     calls = {"n": 0}
 
     def _fake_run(cmd, **kwargs):
+        # The spy patches the shared ``subprocess`` module, so it also sees
+        # Spine A's best-effort ``git rev-parse HEAD`` helpers (env_fingerprint
+        # + code_version). Those are NOT composite launches — return a benign
+        # sha and don't count them; count only the real composite subprocess.
+        if isinstance(cmd, (list, tuple)) and cmd and str(cmd[0]) == "git":
+            return types.SimpleNamespace(returncode=0, stdout="0" * 40 + "\n", stderr="")
         calls["n"] += 1
         payload = {"results": {}, "viz_html": {}}
         return types.SimpleNamespace(
