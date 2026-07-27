@@ -22,10 +22,22 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Build toolchain for v2ecoli's vendored Cython extensions + git for the git-main
 # deps + Node/npm to build the vendored bigraph-loom bundle (Task 8; see the
 # "vendored bigraph-loom" step below).
+#
+# NodeSource's legacy `curl setup_20.x | bash -` piped installer was deprecated and
+# now no-ops silently on some runners, leaving `apt-get install nodejs` to resolve
+# Debian bookworm's nodejs — which ships WITHOUT npm (a separate package) → the loom
+# build later died on `npm: command not found`. Use NodeSource's supported keyring +
+# apt-repo method instead (stable, node 20 WITH npm), and assert node+npm exist at
+# build time so a future regression fails loudly here, not 60 layers later.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential git ca-certificates curl \
- && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
- && apt-get install -y --no-install-recommends nodejs \
+        build-essential git ca-certificates curl gnupg \
+ && mkdir -p /etc/apt/keyrings \
+ && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+ && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+      > /etc/apt/sources.list.d/nodesource.list \
+ && apt-get update && apt-get install -y --no-install-recommends nodejs \
+ && node --version && npm --version \
  && rm -rf /var/lib/apt/lists/*
 
 # Self-contained venv (real wheel copies, not links into the BuildKit cache mount).
