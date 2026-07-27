@@ -658,6 +658,7 @@ window.addEventListener('pageshow', function (e) {
         <button class="reg-zoom-btn active" data-czoom="cards" onclick="_setCompositeZoom('cards')" title="Cards — full-row">&#9638;</button>
         <button class="reg-zoom-btn" data-czoom="loom" onclick="_setCompositeZoom('loom')" title="Loom — the composite bigraph (open per card)">&#9707;</button>
       </span>
+      <span class="cols-ctl-slot" data-cols-surface="composites" title="Cards columns"></span>
       <select id="composites-sort" class="composites-sort-select" onchange="_setCompositesSort(this.value)" title="Sort composites">
         <option value="workspace-first">Sort: Workspace first</option>
         <option value="passrate">Sort: Pass rate</option>
@@ -753,6 +754,7 @@ window.addEventListener('pageshow', function (e) {
           <button class="reg-zoom-btn active" data-mzoom="cards" onclick="_setCatalogZoom('cards')" title="Cards — full-row">&#9638;</button>
           <button class="reg-zoom-btn" data-mzoom="full" onclick="_setCatalogZoom('full')" title="Full — high detail">&#9635;</button>
         </span>
+        <span class="cols-ctl-slot" data-cols-surface="modules" title="Cards columns"></span>
       </div>
     </div>
     <div id="catalog-modules-grid" class="module-grid">
@@ -786,14 +788,13 @@ window.addEventListener('pageshow', function (e) {
 
     <div class="registry-view-toolbar">
       <input type="search" class="registry-search" id="registry-search" placeholder="Filter&hellip;" oninput="_filterRegistry(this.value)">
-      {# Semantic zoom, most-dense → most-detailed: Table (sortable) → Cards grid
-         (config/ports on expand) → Full loom process view (inputs left margin,
-         outputs right margin, rich middle). #}
+      {# Two zoom levels: Table (sortable) and Cards (multi-column grid). The
+         runnable Full view is reached by double-clicking a process card. #}
       <div class="registry-zoom" role="group" aria-label="View density" title="View density">
         <button class="reg-zoom-btn" data-zoom="table" onclick="_setRegistryZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-        <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — grid; config &amp; ports on expand">&#9638;</button>
-        <button class="reg-zoom-btn" data-zoom="full" onclick="_setRegistryZoom('full')" title="Full — loom process view with ports">&#9707;</button>
+        <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — multi-column grid; double-click a card to run it">&#9638;</button>
       </div>
+      <span class="cols-ctl-slot" data-cols-surface="registry" title="Cards columns"></span>
     </div>
 
     <div class="registry-tab-panel active" data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>

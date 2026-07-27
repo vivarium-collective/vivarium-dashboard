@@ -1895,8 +1895,63 @@
   // Persists in localStorage.
   window._registryZoom = (function () {
     var z; try { z = localStorage.getItem('viv.registryZoom'); } catch (e) { z = null; }
-    return (z === 'table' || z === 'grid' || z === 'full') ? z : 'grid';
+    // Registry now has TWO zoom levels — Table + Cards (Full is reached by
+    // double-clicking a card). A stored 'full' resolves to the Cards default.
+    return (z === 'table' || z === 'grid') ? z : 'grid';
   })();
+
+  // ── Cards-grid column control (shared: registry / composites / modules) ──
+  // The middle "Cards" view is a multi-column grid. Default is 'auto' (fit
+  // columns to width, auto-fill); a slider overrides with a fixed count.
+  window._cardCols = (function () {
+    var d = {};
+    ['registry', 'composites', 'modules'].forEach(function (s) {
+      var v; try { v = localStorage.getItem('viv.cols.' + s); } catch (e) { v = null; }
+      d[s] = (v && v !== 'auto' && !isNaN(+v)) ? Math.max(1, Math.min(8, +v)) : 'auto';
+    });
+    return d;
+  })();
+  function _applyCardCols(container, surface) {
+    if (!container) return;
+    container.classList.add('cards-grid-cols');
+    var v = window._cardCols[surface];
+    container.style.gridTemplateColumns = (v === 'auto')
+      ? 'repeat(auto-fill, minmax(300px, 1fr))'
+      : 'repeat(' + v + ', minmax(0, 1fr))';
+  }
+  function _cardContainersFor(surface) {
+    var sel = surface === 'registry' ? '.reg-cards-grid'
+      : (surface === 'composites' ? '.ccard-rows' : '.mrows');
+    return Array.prototype.slice.call(document.querySelectorAll(sel));
+  }
+  function _colsControl(surface) {
+    var v = window._cardCols[surface], isAuto = (v === 'auto');
+    return '<button class="cols-auto-btn' + (isAuto ? ' active' : '') +
+        '" title="Fit columns to width" onclick="_setCardCols(\'' + surface + '\',\'auto\')">Auto</button>' +
+      '<input type="range" min="1" max="6" value="' + (isAuto ? 3 : v) +
+        '" class="cols-slider" title="Number of columns" oninput="_setCardCols(\'' + surface + '\', this.value)">' +
+      '<span class="cols-count">' + (isAuto ? 'auto' : v) + '</span>';
+  }
+  function _syncColsControls() {
+    document.querySelectorAll('.cols-ctl-slot').forEach(function (slot) {
+      var s = slot.getAttribute('data-cols-surface');
+      if (s && !slot.innerHTML.trim()) slot.innerHTML = _colsControl(s);
+    });
+  }
+  window._syncColsControls = _syncColsControls;
+  function _setCardCols(surface, value) {
+    var v = (value === 'auto') ? 'auto' : Math.max(1, Math.min(8, parseInt(value, 10) || 3));
+    window._cardCols[surface] = v;
+    try { localStorage.setItem('viv.cols.' + surface, String(v)); } catch (e) { /* private mode */ }
+    // Update the control label + Auto state in place (do NOT rebuild the slider
+    // mid-drag), then re-apply the grid to the visible cards containers.
+    document.querySelectorAll('.cols-ctl-slot[data-cols-surface="' + surface + '"]').forEach(function (slot) {
+      var cnt = slot.querySelector('.cols-count'); if (cnt) cnt.textContent = (v === 'auto') ? 'auto' : v;
+      var ab = slot.querySelector('.cols-auto-btn'); if (ab) ab.classList.toggle('active', v === 'auto');
+    });
+    _cardContainersFor(surface).forEach(function (c) { _applyCardCols(c, surface); });
+  }
+  window._setCardCols = _setCardCols;
 
   function _syncRegistryToolbar() {
     document.querySelectorAll('.reg-zoom-btn').forEach(function (b) {
@@ -2610,6 +2665,11 @@
     el.innerHTML = html;
     // Full zoom only: lazily resolve+inject each runnable card's config/inputs.
     if (zoom === 'full') _observeRunnableCards(el);
+    // Cards (grid) zoom: apply the multi-column layout + sync the column control.
+    if (zoom === 'grid') {
+      _syncColsControls();
+      el.querySelectorAll('.reg-cards-grid').forEach(function (c) { _applyCardCols(c, 'registry'); });
+    }
   }
 
   // Render Analysis classes (v2ecoli ANALYSIS_REGISTRY entries) in the Registry
@@ -3169,6 +3229,10 @@
         '</div>';
       });
       container.innerHTML = cards.join('');
+      // Cards zoom (not loom): multi-column grid + column control.
+      _syncColsControls();
+      if (_czoom === 'cards') _applyCardCols(container, 'composites');
+      else { container.classList.remove('cards-grid-cols'); container.style.gridTemplateColumns = ''; }
     }
   }
   window._renderComposites = _renderComposites;
@@ -3669,6 +3733,10 @@
       return divider + _moduleFullRowCard(m, marketplace, zoom);
     });
     grid.innerHTML = cards.join('');
+    // Cards zoom: multi-column grid + column control (Full stays single-column).
+    _syncColsControls();
+    if (zoom === 'cards') _applyCardCols(grid, 'modules');
+    else { grid.classList.remove('cards-grid-cols'); grid.style.gridTemplateColumns = ''; }
   }
 
   // Full-row module card — identity | description | stats | install-action, with

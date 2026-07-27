@@ -1394,6 +1394,28 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .reg-cards-grid{ display:flex; flex-direction:column; gap:10px; padding:4px 0; }
 .reg-cards-full{ display:flex; flex-direction:column; gap:14px; padding:4px 0; }
 
+/* ── Multi-column cards grid (shared: registry / composites / modules) ──
+   Applied inline (grid-template-columns) by _applyCardCols; default is 'auto'
+   (auto-fill to width), overridable with the toolbar column slider. In a
+   narrow grid cell the cards' horizontal internal layouts stack vertically. */
+.cards-grid-cols{ display:grid !important; gap:12px; align-items:start; padding:4px 0; }
+.cards-grid-cols .reg-card-row{ flex-direction:column; gap:8px; }
+.cards-grid-cols .reg-card-stats{ flex-flow:row wrap; gap:6px; }
+.cards-grid-cols .ccc-grid{ grid-template-columns:1fr !important; gap:6px; }
+.cards-grid-cols .ccard.ccard-compact{ width:auto; }
+.cards-grid-cols .mrow-grid{ grid-template-columns:1fr !important; gap:6px; }
+.cards-grid-cols .module-card.mrow{ width:auto; }
+
+/* Column control: Auto toggle + slider + count. */
+.cols-ctl-slot{ display:inline-flex; align-items:center; gap:6px; margin-left:8px; }
+.cols-auto-btn{
+  border:1px solid #e2e8f0; background:#fff; color:#475569; border-radius:5px;
+  padding:2px 9px; cursor:pointer; font-size:0.8em; font-weight:600;
+}
+.cols-auto-btn.active{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
+.cols-slider{ width:84px; accent-color:#6366f1; cursor:pointer; }
+.cols-count{ min-width:30px; text-align:center; font-size:0.76em; color:#64748b; font-variant-numeric:tabular-nums; }
+
 /* Middle card: full-row — identity + description on the left, usage stats on the
    right, config/ports one click down. Denser than Full, richer than the table. */
 .registry-card{
