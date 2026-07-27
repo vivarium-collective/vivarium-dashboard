@@ -2471,6 +2471,35 @@ def create_app() -> FastAPI:
         )
 
     @app.get(
+        "/api/composite-run/{run_id}/artifact/{name}",
+        tags=["Composites"],
+        summary="Serve one of a run's output artifacts (viz/report/analyses/verdict)",
+        response_class=Response,
+    )
+    def composite_run_artifact_route(
+        run_id: str,
+        name: str,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Serve a completed run's named output artifact for the Runs tab's
+        per-run retrieval buttons.
+
+        ``viz`` renders the run's ``viz.json`` into a viewable HTML page (the
+        colony GIF / plots open directly); ``report`` serves ``report.html``;
+        ``analyses``/``verdict`` serve the raw JSON as a download. Works for the
+        ad-hoc composite-test-runs too. 400 unknown name, 404 absent.
+        """
+        content, media_type, download_name, code = _cr_views.build_run_artifact(ws, run_id, name)
+        if code != 200:
+            msg = {400: f"unknown artifact: {name}",
+                   404: f"artifact not found for run {run_id}: {name}"}.get(code, "unavailable")
+            return JSONResponse(status_code=code, content={"error": msg})
+        headers = {}
+        if download_name:
+            headers["Content-Disposition"] = f'attachment; filename="{download_name}"'
+        return Response(content=content, media_type=media_type, headers=headers)
+
+    @app.get(
         "/api/simulation-run-download",
         tags=["Runs"],
         summary="Download a run's raw emitter data as a zip",
