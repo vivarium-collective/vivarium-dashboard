@@ -2,15 +2,26 @@
 Thin orchestration over the run subsystem; never overwrites — always a new run."""
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from vivarium_workbench.lib import cli_runs, study_runs, env_fingerprint, study_spec
+from vivarium_workbench.lib import run_index
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
 
 def resolve_rerun_target(ws_root, run_id):
+    """Resolve everything a replay of ``run_id`` needs: origin/study,
+    spec_id, the effective (params, n_steps, seed) to launch with, and any
+    recorded emitter/emit_paths/runtime.
+
+    ``params``/``n_steps``/``seed`` come from ``run_index.replay_params``/
+    ``run_index.row_seed`` — review round 1 (Finding 2) factored this
+    derivation out of a byte-for-byte duplicate here so that what a replay
+    actually launches with and what ``run_index.find_matching_run`` treats
+    as "the same replay key" can never silently drift apart; they are
+    LITERALLY the same function call now, not two hand-kept copies.
+    """
     db_file, row = cli_runs.find_run(ws_root, run_id)
     if row is None:
         return None
@@ -26,24 +37,13 @@ def resolve_rerun_target(ws_root, run_id):
     # FULL effective params (not the delta) plus emitter/emit_paths/runtime,
     # so a rerun reproduces exactly what this run used instead of whatever
     # study.yaml/workspace.yaml currently say. Legacy runs (no manifest) fall
-    # back to the delta params_json/n_steps below.
-    manifest = None
-    manifest_json = row.get("manifest_json")
-    if manifest_json:
-        try:
-            manifest = json.loads(manifest_json)
-        except (json.JSONDecodeError, TypeError):
-            manifest = None
+    # back to the delta params_json/n_steps — both handled uniformly by
+    # replay_params/row_seed below.
+    manifest = run_index._parse_manifest(row)
+    params, n_steps = run_index.replay_params(row)
+    seed = run_index.row_seed(row)
 
     if manifest:
-        params = dict(manifest.get("params") or {})
-        # n_steps must not leak into the replayed generator params: the
-        # ORIGINAL run (study_runs.run_study_baseline) pops n_steps out of
-        # params before building the generator config, so the manifest's
-        # params (built from full_params = {**params, "n_steps": n_steps})
-        # carries it back in. Strip it here and keep it only in its own
-        # field so the replayed config matches the original run's config.
-        n_steps = int(params.pop("n_steps", None) or manifest.get("n_steps") or row.get("n_steps") or 5)
         return {
             "run_id": run_id,
             "origin": manifest.get("origin") or origin,
@@ -54,26 +54,18 @@ def resolve_rerun_target(ws_root, run_id):
             "emitter": manifest.get("emitter"),
             "emit_paths": manifest.get("emit_paths"),
             "runtime": manifest.get("runtime"),
-            # reproducible-rerun-spine Task 4: the manifest's first-class
-            # ``seed`` (populated for every run built since Task 4 landed;
-            # falls back to params["seed"] for a manifest built before this
-            # task, same convention build_run_manifest itself uses).
-            "seed": manifest.get("seed") if manifest.get("seed") is not None
-                    else params.get("seed"),
+            "seed": seed,
         }
 
-    params = dict(row.get("params") or {})
-    n_steps = int(params.pop("n_steps", None) or row.get("n_steps") or 5)
     return {
         "run_id": run_id, "origin": origin, "study": study,
         "spec_id": row.get("spec_id"),
         "params": params,
         "n_steps": n_steps,
         # Uniform shape with the manifest branch above; legacy runs simply
-        # have no recorded emitter/emit_paths/runtime to replay. seed falls
-        # back to the legacy params["seed"] convention.
+        # have no recorded emitter/emit_paths/runtime to replay.
         "emitter": None, "emit_paths": None, "runtime": None,
-        "seed": params.get("seed"),
+        "seed": seed,
     }
 
 
@@ -128,9 +120,12 @@ def run_rerun(ws_root, run_id):
     current_env_id = _current_env_id(ws_root)
     if current_env_id:
         try:
-            from vivarium_workbench.lib import run_index
+            # review round 1 (Finding 1): scope the lookup to THIS run's own
+            # owning DB (origin/study) — never a sibling study's, even if its
+            # spec_id/config/seed/env_id happen to coincide.
             match = run_index.find_matching_run(
-                ws_root, t["spec_id"], t["params"], t.get("seed"), current_env_id)
+                ws_root, t["spec_id"], t["params"], t.get("seed"), current_env_id,
+                origin=t["origin"], study=t.get("study"))
         except Exception:  # noqa: BLE001 — best-effort; a lookup failure -> recompute
             match = None
         if match:
@@ -246,19 +241,12 @@ def _flag_env_drift(ws_root, *, original_run_id, new_run_id, study=None) -> None
 
 def _row_seed(row):
     """A ``runs_meta`` row's first-class replay seed (reproducible-rerun-
-    spine Task 4). Prefers the recorded manifest's ``seed`` key; falls back
-    to ``params["seed"]`` for a row whose manifest predates Task 4 (or has
-    none at all), matching ``build_run_manifest``'s own params-sniffing
-    fallback so pre- and post-Task-4 rows compare on the same basis."""
-    manifest_json = row.get("manifest_json")
-    if manifest_json:
-        try:
-            manifest = json.loads(manifest_json)
-        except (json.JSONDecodeError, TypeError):
-            manifest = None
-        if manifest and manifest.get("seed") is not None:
-            return manifest.get("seed")
-    return (row.get("params") or {}).get("seed")
+    spine Task 4). Thin alias for ``run_index.row_seed`` — the single
+    shared derivation (review round 1, Finding 2) also used by
+    ``resolve_rerun_target`` and ``run_index.find_matching_run`` — kept
+    under this name so existing callers/tests of ``rerun._row_seed`` (e.g.
+    ``verify_reproduction`` below) don't need to change."""
+    return run_index.row_seed(row)
 
 
 def verify_reproduction(ws_root, original_run_id, new_run_id) -> dict:

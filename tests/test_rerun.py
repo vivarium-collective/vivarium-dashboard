@@ -5,7 +5,7 @@ import json
 
 import yaml
 
-from vivarium_workbench.lib import rerun, composite_runs as cr
+from vivarium_workbench.lib import rerun, composite_runs as cr, study_runs, cli_runs
 
 
 def _seed_run(db_path, run_id, *, spec_id="s", params=None, env_id=None,
@@ -487,3 +487,151 @@ def test_run_rerun_retrieve_before_recompute_composite_origin(tmp_path, monkeypa
     assert resp2["retrieved"] is False
     assert resp2["simulation_id"] == "new-run-id"
     assert calls["n"] == 1
+
+
+# ---------------------------------------------------------------------------
+# reproducible-rerun-spine Task 6, review round 1, Finding 1 — retrieval must
+# be scoped to the run's OWN owning study DB, never a sibling study's, even
+# when a sibling has a byte-for-byte identical completed match.
+# ---------------------------------------------------------------------------
+
+def test_run_rerun_does_not_retrieve_a_match_from_a_different_study(tmp_path, monkeypatch):
+    """s1 and s2 both declare the same baseline composite with the same
+    default params/seed. s2 already ran it (completed, intact artifact,
+    same env). Reproducing s1's OWN run must NOT retrieve s2's run — s1 has
+    no completed run of its own yet, so this must fall through and compute
+    (launching exactly once), never silently returning s2's foreign
+    run_id (which would be invisible in s1's own Simulations tab/API)."""
+    from vivarium_workbench.lib import env_fingerprint
+    from vivarium_workbench.lib import result_fingerprint as rfp
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    ws = tmp_path
+    (ws / "workspace.yaml").write_text("name: ws\n")
+
+    manifest = {"spec_id": "spec.a", "params": {"X": 1, "seed": 7, "n_steps": 3},
+               "n_steps": 3, "seed": 7, "origin": "study", "study": "s2"}
+    for slug in ("s1", "s2"):
+        sd = ws / "studies" / slug
+        sd.mkdir(parents=True)
+        (sd / "study.yaml").write_text(f"name: {slug}\n")
+
+    # s2 already has a completed, intact, matching run.
+    db2 = ws / "studies" / "s2" / "runs.db"
+    _seed_run(db2, "s2-run", spec_id="spec.a",
+              params={"X": 1, "seed": 7, "n_steps": 3},
+              env_id="env-A", result_fingerprint="fp1")
+    conn = cr.connect(db2)
+    conn.execute("UPDATE runs_meta SET manifest_json=? WHERE run_id=?",
+                 (json.dumps(manifest), "s2-run"))
+    conn.commit()
+    conn.close()
+    wp = WorkspacePaths.load(ws)
+    rfp.write_snapshot(wp.pbg / "runs" / "s2-run", {}, [])
+
+    # s1 has its OWN, identically-configured run — this is the one being
+    # reproduced. It has NOT itself completed with a saved artifact yet
+    # (simulating: s1's run is either still pending or its artifact isn't
+    # what's being asked about) — so a correct retrieve must come up empty
+    # for s1 and fall through to compute, NOT silently return s2's run.
+    db1 = ws / "studies" / "s1" / "runs.db"
+    manifest1 = {"spec_id": "spec.a", "params": {"X": 1, "seed": 7, "n_steps": 3},
+                "n_steps": 3, "seed": 7, "origin": "study", "study": "s1"}
+    _seed_run(db1, "s1-run", spec_id="spec.a",
+              params={"X": 1, "seed": 7, "n_steps": 3},
+              env_id="env-A", result_fingerprint="fp2", status="running")
+    conn = cr.connect(db1)
+    conn.execute("UPDATE runs_meta SET manifest_json=? WHERE run_id=?",
+                 (json.dumps(manifest1), "s1-run"))
+    conn.commit()
+    conn.close()
+
+    monkeypatch.setattr(env_fingerprint, "env_id", lambda env: "env-A")
+    calls = {"n": 0}
+
+    def _fake_launch_into_study(*a, **k):
+        calls["n"] += 1
+        return {"simulation_id": "s1-new-run"}, 200
+    monkeypatch.setattr(study_runs, "launch_into_study", _fake_launch_into_study)
+
+    resp, status = rerun.run_rerun(ws, "s1-run")
+
+    assert status == 200
+    assert resp["retrieved"] is False  # NOT s2's foreign run
+    assert resp["simulation_id"] == "s1-new-run"
+    assert calls["n"] == 1
+
+
+def test_run_rerun_retrieves_from_the_correct_study_when_both_match(tmp_path, monkeypatch):
+    """Both s1 and s2 have their OWN completed, intact, matching run.
+    Reproducing s1's run must retrieve s1's OWN run_id, never s2's."""
+    from vivarium_workbench.lib import env_fingerprint
+    from vivarium_workbench.lib import result_fingerprint as rfp
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    ws = tmp_path
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    wp = WorkspacePaths.load(ws)
+
+    for slug, run_id in (("s1", "s1-run"), ("s2", "s2-run")):
+        sd = ws / "studies" / slug
+        sd.mkdir(parents=True)
+        (sd / "study.yaml").write_text(f"name: {slug}\n")
+        db = sd / "runs.db"
+        manifest = {"spec_id": "spec.a", "params": {"X": 1, "seed": 7, "n_steps": 3},
+                   "n_steps": 3, "seed": 7, "origin": "study", "study": slug}
+        _seed_run(db, run_id, spec_id="spec.a",
+                  params={"X": 1, "seed": 7, "n_steps": 3},
+                  env_id="env-A", result_fingerprint="fp1")
+        conn = cr.connect(db)
+        conn.execute("UPDATE runs_meta SET manifest_json=? WHERE run_id=?",
+                     (json.dumps(manifest), run_id))
+        conn.commit()
+        conn.close()
+        rfp.write_snapshot(wp.pbg / "runs" / run_id, {}, [])
+
+    monkeypatch.setattr(env_fingerprint, "env_id", lambda env: "env-A")
+
+    resp, status = rerun.run_rerun(ws, "s1-run")
+
+    assert status == 200
+    assert resp["retrieved"] is True
+    assert resp["run_id"] == "s1-run"  # s1's OWN run, never s2's
+
+
+# ---------------------------------------------------------------------------
+# reproducible-rerun-spine Task 6, review round 1, Finding 2 — the replay key
+# find_matching_run compares against and the actual replay inputs
+# resolve_rerun_target hands to a launch must come from the SAME derivation
+# (run_index.replay_params / run_index.row_seed), not two independently
+# hand-kept copies that could silently drift apart.
+# ---------------------------------------------------------------------------
+
+def test_resolve_rerun_target_and_find_matching_run_share_one_replay_key(tmp_path):
+    from vivarium_workbench.lib import run_index
+
+    ws = tmp_path
+    (ws / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
+    db = ws / ".pbg" / "composite-runs.db"
+    manifest = {"spec_id": "spec.a", "params": {"X": 1, "seed": 7, "n_steps": 3},
+               "n_steps": 3, "seed": 7, "origin": "composite"}
+    _seed_run(db, "orig", spec_id="spec.a", params={"X": 1, "seed": 7, "n_steps": 3},
+              env_id="env-A", result_fingerprint="fp1")
+    conn = cr.connect(db)
+    conn.execute("UPDATE runs_meta SET manifest_json=? WHERE run_id=?",
+                 (json.dumps(manifest), "orig"))
+    conn.commit()
+    conn.close()
+
+    t = rerun.resolve_rerun_target(ws, "orig")
+
+    _db, row = cli_runs.find_run(ws, "orig")
+    expected_params, expected_n_steps = run_index.replay_params(row)
+    expected_seed = run_index.row_seed(row)
+
+    # The replay key resolve_rerun_target hands to an actual launch is
+    # LITERALLY the same value find_matching_run's match key would compute
+    # for this row — not a second, independently-derived copy.
+    assert t["params"] == expected_params
+    assert t["n_steps"] == expected_n_steps
+    assert t["seed"] == expected_seed
