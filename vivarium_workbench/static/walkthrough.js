@@ -2004,7 +2004,18 @@
     }
     var stats = [];
     if (p.composite_uses) stats.push(stat('▦', p.composite_uses, 'composite', 'composites', 'Used in this many composite generators'));
-    if (p.study_uses) stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
+    var sp = p.study_participation;
+    if (sp && sp.studies) {
+      var succ = (sp.success_pct != null && sp.total)
+        ? ' <span class="reg-succ-inline ' + (sp.success_pct >= 80 ? 'reg-succ-hi' : (sp.success_pct >= 50 ? 'reg-succ-mid' : 'reg-succ-lo')) + '">' + sp.success_pct + '%</span>'
+        : '';
+      stats.push('<span class="reg-stat reg-stat-part" title="Participates in ' + sp.studies +
+        ' stud' + (sp.studies === 1 ? 'y' : 'ies') + ' (via the composites that contain it); ' +
+        sp.pass + '/' + sp.total + ' report-card outcomes passed"><span class="reg-stat-glyph">◆</span><strong>' +
+        sp.studies + '</strong> stud' + (sp.studies === 1 ? 'y' : 'ies') + succ + '</span>');
+    } else if (p.study_uses) {
+      stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
+    }
     var inlinePorts = _regInlinePorts(p);
     var selCls = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
     return '<div class="registry-card' + selCls + '"' + sourceAttr + ' data-address="' + addr + '"' +
@@ -2077,26 +2088,25 @@
     var timestep = (kind === 'process')
       ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>'
       : '';
+    // Vertical stack: description/info on top, then config, then input ports,
+    // then run controls, then outputs (ports + collapsible run JSON) at the
+    // bottom. Fields load lazily (resolved defaults) when the card is visible.
     return '<div class="registry-entry registry-entry-full loom-runnable' + selClsFull + '"' + sourceAttr + addrAttr + '>' +
-      '<div class="loom-card loom-card-' + kind + '">' +
-        '<div class="loom-config loom-config-edit">' +
-          '<span class="loom-config-label">config</span>' +
+      '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
+        '<div class="loom-info">' + bodyHead + '</div>' +
+        '<div class="loom-sec"><div class="loom-sec-label">config</div>' +
           '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
         '</div>' +
-        '<div class="loom-row">' +
-          '<div class="loom-ports loom-ports-in loom-inputs-edit" data-role="inputs"><div class="loom-port loom-port-empty muted loom-load-hint">…</div></div>' +
-          '<div class="loom-body">' + bodyHead +
-            '<div class="loom-run-actions">' + timestep +
-              '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
-              '<button class="btn-mini" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
-            '</div>' +
-          '</div>' +
-          // Right panel: static output ports on top, run results (collapsible
-          // JSON viewer) render below them here — outputs stay on the right.
-          '<div class="loom-out-panel">' +
-            '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
-            '<div class="loom-run-output"></div>' +
-          '</div>' +
+        '<div class="loom-sec"><div class="loom-sec-label">input ports</div>' +
+          '<div class="loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
+        '</div>' +
+        '<div class="loom-run-actions">' + timestep +
+          '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+          '<button class="btn-mini" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+        '</div>' +
+        '<div class="loom-sec loom-sec-out"><div class="loom-sec-label">outputs</div>' +
+          '<div class="loom-out-ports">' + ports(p.outputs, 'out') + '</div>' +
+          '<div class="loom-run-output"></div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -2419,6 +2429,11 @@
       else if (sortKey === 'module') { av = mod(a).toLowerCase(); bv = mod(b).toLowerCase(); }
       else if (sortKey === 'in') { av = _nPorts(a.inputs); bv = _nPorts(b.inputs); }
       else if (sortKey === 'out') { av = _nPorts(a.outputs); bv = _nPorts(b.outputs); }
+      else if (sortKey === 'studies') { av = (a.study_participation || {}).studies || 0; bv = (b.study_participation || {}).studies || 0; }
+      else if (sortKey === 'success') {
+        av = (a.study_participation || {}).success_pct; av = (av == null ? -1 : av);
+        bv = (b.study_participation || {}).success_pct; bv = (bv == null ? -1 : bv);
+      }
       else if (sortKey === 'source') { av = a.source || ''; bv = b.source || ''; }
       else { av = a.use_count || 0; bv = b.use_count || 0; }
       var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
@@ -2438,6 +2453,8 @@
         '<td class="reg-td-name"><strong>' + _esc(p.name) + '</strong> <code>' + _esc(p.address || '') + '</code></td>' +
         '<td>' + _esc(mod(p)) + '</td>' +
         '<td class="num">' + (p.use_count || 0) + '</td>' +
+        '<td class="num">' + ((p.study_participation || {}).studies || 0) + '</td>' +
+        '<td class="num">' + _successCell(p.study_participation) + '</td>' +
         '<td class="num">' + _nPorts(p.inputs) + '</td>' +
         '<td class="num">' + _nPorts(p.outputs) + '</td>' +
         '<td class="reg-td-src">' + _esc(p.source || '') + '</td>' +
@@ -2445,8 +2462,19 @@
     }).join('');
     el.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
       th('name', 'Name') + th('module', 'Module') + th('use', 'Uses', 'num') +
+      th('studies', 'Studies', 'num') + th('success', 'Success', 'num') +
       th('in', 'In', 'num') + th('out', 'Out', 'num') + th('source', 'Source') +
       '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+
+  // Percent-success cell/chip from a study_participation stat (pass/total of
+  // report-card outcomes across participating studies). '—' when none ran.
+  function _successCell(sp) {
+    if (!sp || sp.success_pct == null || !sp.total) return '<span class="muted">—</span>';
+    var pct = sp.success_pct;
+    var cls = pct >= 80 ? 'reg-succ-hi' : (pct >= 50 ? 'reg-succ-mid' : 'reg-succ-lo');
+    return '<span class="reg-succ ' + cls + '" title="' + sp.pass + ' / ' + sp.total +
+      ' report-card outcomes passed across participating studies">' + pct + '%</span>';
   }
   function _setRegistryTableSort(key) {
     if (window._registryTableSort === key) {

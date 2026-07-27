@@ -329,6 +329,29 @@ def _annotate_use_counts(data: dict, ws_root: "Path") -> None:
         p["study_uses"] = study_uses
         p["use_count"] = comp_uses + study_uses
 
+    # Per-process cross-study track record: how many studies participate this
+    # process (via the composites that contain it) + a pass/inconclusive/fail
+    # tally of their outcomes, so the Registry can show studies + percent
+    # success like the Composites page. Best-effort; never fails the build.
+    try:
+        from vivarium_workbench.lib.process_study_stats import process_study_stats
+        _pstats = process_study_stats(ws_root, procs)
+        for p in procs:
+            s = _pstats.get(p.get("address") or "")
+            if s:
+                total = s.get("total", 0)
+                pct = round(100.0 * s.get("pass", 0) / total) if total else None
+                p["study_participation"] = {
+                    "studies": s.get("studies", 0),
+                    "pass": s.get("pass", 0),
+                    "inconclusive": s.get("inconclusive", 0),
+                    "fail": s.get("fail", 0),
+                    "total": total,
+                    "success_pct": pct,
+                }
+    except Exception:  # noqa: BLE001
+        pass
+
 
 def _registry_imports_meta(ws_data: dict | None) -> list[dict]:
     """Return per-imported-repository metadata from ``workspace.yaml::imports``.
