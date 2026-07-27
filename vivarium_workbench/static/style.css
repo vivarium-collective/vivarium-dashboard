@@ -2283,6 +2283,12 @@ textarea.loom-in-field{
 .iset-hdr-btn { display: inline-flex; align-items: center; gap: 5px; }
 .iset-hdr-btn svg { flex: none; }
 .market-results { margin-top: 14px; }
+/* Keep the Registry results full-width and vertically reserved so switching
+   facets or waiting on a slow load doesn't reflow the card columns or bounce
+   the page height (the "Loading…" state occupies the same box as the grid). */
+#page-market.active .market-results { width: 100% !important; min-height: 62vh; }
+.market-grid { align-content: start; }
+#page-market.active .market-results > .empty-state { padding: 24px 2px; }
 
 /* List (dense) zoom */
 .market-list { display: flex; flex-direction: column; }
