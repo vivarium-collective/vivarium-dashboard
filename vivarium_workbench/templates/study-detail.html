@@ -86,8 +86,7 @@
 {% for _k, _ in _axes %}{% if study[_k] %}{% set _ns.any_set = true %}{% endif %}{% endfor %}
 {% if _ns.any_set %}
 <style>
-.status-detail-panel{margin:8px 0 14px 0;padding:8px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:0.88em}
-.status-detail-panel h2{margin:0 0 6px 0;font-size:0.82em;text-transform:uppercase;letter-spacing:0.05em;color:#475569;font-weight:600}
+.status-detail-panel{margin:8px 0 12px 0;padding:6px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:0.88em}
 .status-detail-row{display:flex;align-items:center;gap:8px;padding:3px 0}
 .status-detail-axis{min-width:140px;color:#475569;font-size:0.9em}
 .status-chip{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;background:#e2e8f0;color:#334155;font-family:ui-monospace,monospace}
@@ -98,17 +97,46 @@
 .gate-status-failed           { background:#fee2e2; color:#991b1b }
 .gate-status-stale            { background:#ede9fe; color:#5b21b6 }
 .status-pill.gate-status{font-weight:500}
+/* Redesign: compact one-line lifecycle stepper; full per-axis rows behind the expander. */
+.status-detail-panel > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.status-detail-panel > summary::-webkit-details-marker{display:none}
+.status-stepper{display:flex;gap:13px;flex-wrap:wrap;align-items:center;flex:1}
+.status-step{display:inline-flex;align-items:center;gap:5px;font-size:0.82em;color:#94a3b8;white-space:nowrap}
+.status-step .dot{width:9px;height:9px;border-radius:50%;background:#cbd5e1;box-shadow:inset 0 0 0 1px #b6c2cf}
+.status-step.set{color:#334155}
+.status-step.set .dot{background:#10b981;box-shadow:none}
+.status-step .step-val{font-family:ui-monospace,monospace;font-size:0.92em;color:#64748b}
+.status-step.gate-status-blocked .dot{background:#9ca3af;box-shadow:none}
+.status-step.gate-status-needs_calibration .dot{background:#f59e0b;box-shadow:none}
+.status-step.gate-status-passed .dot{background:#10b981;box-shadow:none}
+.status-step.gate-status-failed .dot{background:#ef4444;box-shadow:none}
+.status-step.gate-status-stale .dot{background:#8b5cf6;box-shadow:none}
+.status-stepper-more{font-size:0.76em;color:#64748b;white-space:nowrap}
+.status-detail-panel[open] .status-stepper-more::after{content:" \25be"}
+.status-detail-panel:not([open]) .status-stepper-more::after{content:" \25b8"}
+.status-stepper-body{margin-top:6px;padding-top:6px;border-top:1px solid #eef2f6}
 </style>
-<details class="status-detail-panel" aria-label="Multi-axis status detail" open>
-  <summary class="study-fold-summary">Status detail (Pass A multi-axis)</summary>
-  {% for _key, _label in _axes %}
-  {% if study[_key] %}
-  <div class="status-detail-row">
-    <span class="status-detail-axis">{{ _label }}</span>
-    <span class="status-chip {% if _key == 'gate_status' %}gate-status-{{ study[_key] }}{% endif %}">{{ study[_key] }}</span>
+<details class="status-detail-panel" aria-label="Multi-axis lifecycle status">
+  <summary>
+    <span class="status-stepper">
+      {% for _key, _label in _axes %}
+      <span class="status-step axis-{{ _key }}{% if study[_key] %} set{% endif %}{% if _key == 'gate_status' and study[_key] %} gate-status-{{ study[_key] }}{% endif %}">
+        <span class="dot"></span>{{ _label }}{% if study[_key] %}<span class="step-val">{{ study[_key] }}</span>{% endif %}
+      </span>
+      {% endfor %}
+    </span>
+    <span class="status-stepper-more">details</span>
+  </summary>
+  <div class="status-stepper-body">
+    {% for _key, _label in _axes %}
+    {% if study[_key] %}
+    <div class="status-detail-row">
+      <span class="status-detail-axis">{{ _label }}</span>
+      <span class="status-chip {% if _key == 'gate_status' %}gate-status-{{ study[_key] }}{% endif %}">{{ study[_key] }}</span>
+    </div>
+    {% endif %}
+    {% endfor %}
   </div>
-  {% endif %}
-  {% endfor %}
 </details>
 {% endif %}
 
@@ -265,80 +293,53 @@
 .di-chip{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}
 </style>
 
+<style>
+/* ── Study Overview redesign: narrative order + progressive disclosure ── */
+.is-hidden{display:none !important}
+.narrative-field{margin:6px 0}
+.add-field-btn{background:none;border:1px dashed #cbd5e1;color:#64748b;font-size:0.82em;
+  padding:4px 12px;border-radius:6px;cursor:pointer;transition:border-color .12s,color .12s,background .12s}
+.add-field-btn:hover{border-color:#3b82f6;color:#3b82f6;background:#eff6ff}
+.conclusion-block{border-top:2px solid #e2e8f0;padding-top:14px;margin-top:22px}
+.conclusion-insight{font-size:1.02em;line-height:1.55;color:#1e293b;margin:2px 0 12px;font-weight:500}
+.computed-tag{display:inline-block;font-size:0.68em;font-weight:600;text-transform:uppercase;
+  letter-spacing:0.04em;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;
+  padding:1px 7px;border-radius:9999px;margin-left:8px;vertical-align:middle}
+.conclusion-tags{display:flex;gap:18px;flex-wrap:wrap;margin-top:12px;align-items:center}
+.tag-control{display:inline-flex;align-items:center;gap:6px}
+.tag-k{font-size:0.72em;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;font-weight:600}
+.tag-select,.tag-input{font-size:0.85em;padding:3px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff}
+.tag-input{min-width:220px}
+</style>
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
   <div class="study-overview">
 
-    {# ─── Group 1: Summary ─────────────────────────────────────────────── #}
-    {# v4 narrative-spine: executive `report` card + always-rendered
-       biological_summary. Each field is editable in-place via
-       /api/study-narrative-set; Verdict + main insight are computed. #}
+    {# ─── v4 narrative spine. Reading order: Question → Biology → Findings
+       → Debts → Conclusion. Every field edits in place and saves via
+       /api/study-narrative-set; empty optional fields collapse to a quiet
+       "+ Add …" affordance (progressive disclosure). Verdict + readiness are
+       shown once, in the header pill + spine-at-a-glance strip above — not
+       repeated here. #}
     {% set _report = study.report or {} %}
-    <div class="overview-section narrative-card" data-narrative-card="report">
-      <h2 class="overview-label">📋 Summary</h2>
-      <div class="narrative-grid">
-        {% set _f0 = (study.findings or [])[0] if study.findings else None %}
-        <label class="narrative-row">
-          <span class="narrative-label">Verdict</span>
-          <span class="narrative-input verdict-badge-computed"
-                title="Computed from the gate evaluator (read-only)"
-                style="display:inline-block;padding:2px 12px;border-radius:9999px;font-weight:700;font-size:0.85em;background:#f1f5f9;color:#475569">{{ (study.computed_gate_verdict or {}).result or _report.verdict or 'not-yet-run' }}</span>
-          <span class="muted small" style="margin-left:6px">computed from gate evaluator</span>
-        </label>
-        <label class="narrative-row">
-          <span class="narrative-label">Confidence</span>
-          <select class="narrative-input" data-narrative-path="report.confidence">
-            <option value="">(unset)</option>
-            <option value="high" {% if _report.confidence == 'high' %}selected{% endif %}>high</option>
-            <option value="medium" {% if _report.confidence == 'medium' %}selected{% endif %}>medium</option>
-            <option value="low" {% if _report.confidence == 'low' %}selected{% endif %}>low</option>
-          </select>
-        </label>
-        <label class="narrative-row">
-          <span class="narrative-label">Evidence quality</span>
-          <input type="text" class="narrative-input" data-narrative-path="report.evidence_quality"
-                 value="{{ _report.evidence_quality or '' }}"
-                 placeholder="e.g. calibrated | literature-matched | aspirational | regression-only">
-        </label>
-        <div class="narrative-row narrative-row-wide">
-          <span class="narrative-label">Main insight</span>
-          <span class="narrative-input" style="background:transparent;border:0;color:#334155">{{ _report.main_insight or (_f0.statement if _f0 else '') or '(computed from findings in the report)' }}
-            <span class="muted small">— computed from findings</span></span>
-        </div>
-        <label class="narrative-row narrative-row-wide">
-          <span class="narrative-label">Caveat</span>
-          <textarea class="narrative-input narrative-textarea" rows="2"
-                    data-narrative-path="report.caveat"
-                    placeholder="One sentence: the headline limitation a reviewer needs to know.">{{ _report.caveat or '' }}</textarea>
-        </label>
-        <label class="narrative-row narrative-row-wide">
-          <span class="narrative-label">Conclusion</span>
-          <textarea class="narrative-input narrative-textarea" rows="3"
-                    data-narrative-path="report.conclusion"
-                    placeholder="Multi-sentence: what the runs + tests demonstrated.">{{ _report.conclusion or '' }}</textarea>
-        </label>
-      </div>
-    </div>
+    {% set _f0 = (study.findings or [])[0] if study.findings else None %}
 
-    {# Always-render biological_summary: empty-state textarea encourages
-       the user to start writing immediately. #}
-    <div class="overview-section biology-summary-callout">
-      <h2 class="biology-glance-label">Biology — what this study is about</h2>
-      <textarea class="biology-prose narrative-input narrative-textarea" rows="4"
-                data-narrative-path="biological_summary"
-                placeholder="Multi-paragraph plain-English mechanism narrative — the 'textbook write-up' a non-modeler would read.">{{ study.biological_summary or '' }}</textarea>
-      {% if not study.biological_summary and study.findings %}
-      <div class="biology-derived-preview muted small" style="margin-top:6px;padding:8px 12px;background:#f8fafc;border-left:3px solid #cbd5e1;border-radius:4px">
-        <em>Derived from findings (shown in the report when no override is set):</em>
-        {% for _bf in study.findings %}{% if _bf.statement or _bf.summary %}<p style="margin:4px 0 0">{{ _bf.statement or _bf.summary }}</p>{% endif %}{% endfor %}
-      </div>
-      {% endif %}
+    {# Progressive-disclosure editable prose field: filled → editor; empty →
+       a "+ Add …" button that reveals the (already save-bound) editor. #}
+    {% macro edit_field(label, path, value, rows=3, placeholder='') %}
+    <div class="narrative-field">
+      <button type="button" class="add-field-btn{% if value %} is-hidden{% endif %}" data-reveal-field="{{ path }}">+ Add {{ label|lower }}</button>
+      <label class="narrative-row narrative-row-wide{% if not value %} is-hidden{% endif %}" data-field-editor="{{ path }}">
+        <span class="narrative-label">{{ label }}</span>
+        <textarea class="narrative-input narrative-textarea" rows="{{ rows }}"
+                  data-narrative-path="{{ path }}" placeholder="{{ placeholder }}">{{ value or '' }}</textarea>
+      </label>
     </div>
+    {% endmacro %}
 
-    {# ─── Group 2: Question & approach ────────────────────────────────── #}
+    {# ─── Question & approach — the framing comes first ───────────────── #}
+    {% set _has_purpose = study.purpose and (study.purpose.question or study.purpose.expected_outcome or study.purpose.mechanism) %}
     <h2 class="overview-label">Question &amp; approach</h2>
-
-    {% if study.purpose %}
-    {# Spine C1c: purpose is spine-critical — promoted to a visible block. #}
+    {% if _has_purpose %}
     <div class="overview-section">
       {% if study.purpose.question %}
       <div class="purpose-callout" style="background:#eff6ff;border-left:4px solid #3b82f6">
@@ -357,21 +358,37 @@
       {% endif %}
     </div>
     {% else %}
-    {# Fallback: old narrative fields — each rendered exactly once #}
+    {# Legacy narrative fields — each id rendered exactly once; empty ones show
+       their placeholder (contenteditable) so they double as "+ Add" affordances. #}
     <div class="overview-section">
-      <div id="question-text" class="overview-prose" data-editable="true"
-           data-field="question"
-           data-placeholder="(what research question is this study asking?)">{{ study.question or '' }}</div>
-    </div>
-    <div class="overview-section">
-      <div id="hypothesis-text" class="overview-prose" data-editable="true"
-           data-field="hypothesis"
+      <div id="question-text" class="overview-prose" data-editable="true" data-field="question"
+           data-placeholder="+ Add the research question this study asks">{{ study.question or '' }}</div>
+      <div id="hypothesis-text" class="overview-prose" data-editable="true" data-field="hypothesis"
            data-placeholder="(predicted outcome)">{{ study.hypothesis or '' }}</div>
-    </div>
-    <div class="overview-section">
       <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective or '' }}</div>
     </div>
     {% endif %}
+
+    {# ─── Biology — what this study is about ──────────────────────────── #}
+    <div class="overview-section biology-summary-callout">
+      <h2 class="biology-glance-label">Biology — what this study is about</h2>
+      {% if study.biological_summary %}
+      <textarea class="biology-prose narrative-input narrative-textarea" rows="4"
+                data-narrative-path="biological_summary"
+                placeholder="Plain-English mechanism narrative.">{{ study.biological_summary }}</textarea>
+      {% else %}
+      {% if study.findings %}
+      <div class="biology-derived-preview muted small" style="margin-top:2px;padding:8px 12px;background:#f8fafc;border-left:3px solid #cbd5e1;border-radius:4px">
+        <em>Derived from findings (shown until you write an override):</em>
+        {% for _bf in study.findings %}{% if _bf.statement or _bf.summary %}<p style="margin:4px 0 0">{{ _bf.statement or _bf.summary }}</p>{% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      <button type="button" class="add-field-btn" data-reveal-field="biological_summary" style="margin-top:8px">+ Add biology narrative</button>
+      <textarea class="biology-prose narrative-input narrative-textarea is-hidden" rows="4"
+                data-narrative-path="biological_summary" data-field-editor="biological_summary"
+                placeholder="Plain-English mechanism narrative — the 'textbook write-up' a non-modeler would read."></textarea>
+      {% endif %}
+    </div>
 
     {# ─── Group 3: Findings & open debts ─────────────────────────────── #}
     {% if study.findings %}
@@ -463,6 +480,29 @@
       </div>
     </div>
     {% endif %}
+
+    {# ─── Conclusion — headline insight, caveat, calibration (at the end) ─ #}
+    {% set _insight = _report.main_insight or (_f0.statement if _f0 else '') %}
+    <div class="overview-section conclusion-block">
+      <h2 class="overview-label">Conclusion</h2>
+      {% if _insight %}
+      <p class="conclusion-insight">{{ _insight }}<span class="computed-tag">computed from findings</span></p>
+      {% endif %}
+      {{ edit_field('Conclusion', 'report.conclusion', _report.conclusion, 3, 'What the runs + tests demonstrated.') }}
+      {{ edit_field('Caveat', 'report.caveat', _report.caveat, 2, 'The headline limitation a reviewer needs to know.') }}
+      <div class="conclusion-tags">
+        <label class="tag-control"><span class="tag-k">confidence</span>
+          <select class="narrative-input tag-select" data-narrative-path="report.confidence">
+            <option value="">—</option>
+            <option value="high" {% if _report.confidence == 'high' %}selected{% endif %}>high</option>
+            <option value="medium" {% if _report.confidence == 'medium' %}selected{% endif %}>medium</option>
+            <option value="low" {% if _report.confidence == 'low' %}selected{% endif %}>low</option>
+          </select></label>
+        <label class="tag-control"><span class="tag-k">evidence</span>
+          <input type="text" class="narrative-input tag-input" data-narrative-path="report.evidence_quality"
+                 value="{{ _report.evidence_quality or '' }}" placeholder="calibrated | literature-matched | …"></label>
+      </div>
+    </div>
 
     {# ─── Group 4: Plan & provenance (collapsed) ─────────────────────── #}
     <details class="overview-section">
