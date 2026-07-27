@@ -2265,6 +2265,10 @@ textarea.loom-in-field{
 .market-meta { font-size: 0.78em; color: #94a3b8; }
 .market-usage { font-size: 0.78em; color: #94a3b8; }
 .market-open { flex: none; }
+
+/* Studies-overview header action cluster: + Investigation / + Study / Audit Report */
+.iset-hdr-btn { display: inline-flex; align-items: center; gap: 5px; }
+.iset-hdr-btn svg { flex: none; }
 .market-results { margin-top: 14px; }
 
 /* List (dense) zoom */

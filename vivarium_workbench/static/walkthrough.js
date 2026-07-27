@@ -7331,8 +7331,17 @@
 
   // Prompt-first create: a free-text description scaffolds a real investigation /
   // study seeded with that as the question, name auto-derived (editable).
-  function _openBrowseCreate() {
-    var isStudy = window._isetBrowseTab === 'studies';
+  // Open the reproducibility audit report (latest cached; the page itself has a
+  // "Re-run audit" link → ?rerun=1). New tab so it doesn't disturb the SPA.
+  function _openAuditReport() {
+    window.open('/api/audit-report', '_blank', 'noopener');
+  }
+  window._openAuditReport = _openAuditReport;
+
+  // mode: 'investigation' | 'study' (explicit from the header cluster); falls
+  // back to the active browse tab when omitted.
+  function _openBrowseCreate(mode) {
+    var isStudy = mode ? (mode === 'study') : (window._isetBrowseTab === 'studies');
     window._browseCreateMode = isStudy ? 'study' : 'investigation';
     document.getElementById('browse-create-title').textContent = isStudy ? 'New study' : 'New investigation';
     document.getElementById('browse-create-submit').textContent = isStudy ? 'Create study' : 'Create investigation';

@@ -2071,6 +2071,20 @@ def create_app() -> FastAPI:
         body, status = _audit_views.build_audit(ws)
         return JSONResponse(status_code=status, content=body)
 
+    @app.get(
+        "/api/audit-report",
+        tags=["Data, inputs & references"],
+        summary="Reproducibility audit as a standalone HTML page (latest, or re-run)",
+    )
+    def audit_report(ws: Path = Depends(get_workspace), rerun: int = 0):
+        """Return the L0-L5 reproducibility audit as a self-contained HTML page.
+        Serves the most-recent cached report (``.pbg/audit/report.html``);
+        ``?rerun=1`` regenerates a fresh one. The page carries its own
+        generated-at stamp and a re-run link."""
+        from vivarium_workbench.lib.audit_report import get_or_build_report
+        return Response(content=get_or_build_report(ws, rerun=bool(rerun)),
+                        media_type="text/html")
+
     # -----------------------------------------------------------------------
     # Observables / never-fabricate guard + linkage-index routes
     # -----------------------------------------------------------------------
