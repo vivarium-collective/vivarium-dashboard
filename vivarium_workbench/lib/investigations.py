@@ -1001,6 +1001,28 @@ def gather_results(spec: dict, db_path: Path) -> dict:
 # Visualization v2 — emitter-driven, composite-dispatched
 # ----------------------------------------------------------------------------
 
+def _flatten_numeric_leaves(node, *, prefix: str, max_depth: int, _depth: int = 1):
+    """Yield ``(dotted_path, value)`` for every scalar numeric leaf under ``node``,
+    recursing into nested dicts up to ``max_depth`` levels below ``prefix``.
+
+    Used to surface a nested composite's per-leaf metrics (e.g. the colony's
+    ``cells.<agent>.mass``) as plottable observables. Bounded depth keeps a deep
+    sub-store (e.g. a whole-cell model nested inside a colony agent) from
+    exploding the observable set; non-numeric leaves (strings, tuples/lists,
+    booleans) are skipped — only ``int``/``float`` scalars are emitted."""
+    if not isinstance(node, dict):
+        return
+    for k, v in node.items():
+        path = f"{prefix}.{k}"
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, (int, float)):
+            yield path, v
+        elif isinstance(v, dict) and _depth < max_depth:
+            yield from _flatten_numeric_leaves(
+                v, prefix=path, max_depth=max_depth, _depth=_depth + 1)
+
+
 def gather_emitter_outputs(db_path: Path) -> dict:
     """Flatten runs.db into per-observable trajectories + emitter schemas.
 
@@ -1064,6 +1086,17 @@ def gather_emitter_outputs(db_path: Path) -> dict:
                         continue
                     for k, v in state.items():
                         observables.setdefault(k, []).append(v)
+                        # Robust flush: a composite whose outputs are NESTED (e.g.
+                        # the colony's ``cells: {a_0: {mass, length, ...}}``) exposes
+                        # no numeric top-level observable, so the standard
+                        # ``TimeSeriesFromObservables`` figure finds nothing to plot
+                        # ("no observables emitted"). Additionally surface each nested
+                        # NUMERIC leaf as a dotted observable (``cells.a_0.mass``),
+                        # bounded depth so a whole-cell sub-store can't explode the
+                        # set; the top-level entry above is untouched.
+                        if isinstance(v, dict):
+                            for fk, fv in _flatten_numeric_leaves(v, prefix=k, max_depth=2):
+                                observables.setdefault(fk, []).append(fv)
                     # Only fall back to global_time if state doesn't carry a "time" key
                     if "time" not in state:
                         observables.setdefault("time", []).append(row["global_time"])
