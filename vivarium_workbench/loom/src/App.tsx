@@ -122,7 +122,7 @@ export default function App() {
   // drawn-edge seam (drawFocus / culls) still reads it; focusing a process still
   // reveals its hub wires on demand.
   const showHubWires = false;
-  const [tab, setTab] = useState<TabId>('setup');
+  const [tab, setTab] = useState<TabId>('wiring');
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
     const p = new URLSearchParams(window.location.search);
@@ -1020,7 +1020,7 @@ export default function App() {
     {
       id: 'process',
       title: 'Processes',
-      defaultSide: 'left',
+      defaultSide: 'right',
       render: () => (
         <ProcessPanel
           nodes={allNodes}
@@ -1038,6 +1038,7 @@ export default function App() {
       id: 'inspector',
       title: 'Inspector',
       defaultSide: 'right',
+      defaultCollapsed: true,
       render: () => (
         <InspectorPanel
           selection={selection}
@@ -1051,6 +1052,7 @@ export default function App() {
       id: 'nodes',
       title: 'Nodes',
       defaultSide: 'right',
+      defaultCollapsed: true,
       render: () => (
         <NodesPanel
           nodes={allNodes}
@@ -1088,7 +1090,8 @@ export default function App() {
   // All tabs are available in static mode too. Setup & Run renders read-only
   // (form visible, Run/Preview disabled); Results/Visualizations show a
   // read-only empty state (no run data in the snapshot).
-  const tabs: TabId[] = ['setup', 'results', 'visualizations', 'wiring', 'document'];
+  // Explore (the interactive graph) leads and is the default landing tab.
+  const tabs: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
 
   // Display label map: ids that need a human-readable label different from the
   // capitalized id. E.g. 'setup' → 'Setup & Run'.

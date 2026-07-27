@@ -237,6 +237,33 @@ img{max-width:100%}
   display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));
   gap:14px; margin:8px 0;
 }
+/* Semantic-zoom module rows (Cards / Full): full-row cards, content across the
+   bar — identity | description | stats | install-action. */
+.mrows{ display:flex; flex-direction:column; gap:9px; margin:8px 0; }
+.module-card.mrow{ width:100%; padding:11px 15px; gap:0; }
+.module-card.mrow.reg-selected{ border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,0.22); }
+.mrow-grid{
+  display:grid; grid-template-columns:minmax(160px,1fr) minmax(0,2.2fr) minmax(150px,1fr) auto;
+  gap:20px; align-items:center;
+}
+@media (max-width:900px){ .mrow-grid{ grid-template-columns:1fr; gap:6px; } }
+.mrow-identity{ min-width:0; }
+/* Name truncates; the GitHub link stays visible (flex:none) instead of being
+   clipped along with a long name. */
+.mrow-name{ display:flex; align-items:baseline; gap:6px; min-width:0; }
+.mrow-name-text{
+  font-size:1.0em; color:#0f172a; font-weight:700; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.mrow-name .module-link{ flex:none; white-space:nowrap; }
+.mrow-desc{
+  color:#475569; font-size:0.86em; line-height:1.45; min-width:0;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.mrow-stats{ min-width:0; }
+.mrow-stats .module-stats-row{ margin:0; }
+.mrow-action{ display:flex; align-items:center; justify-content:flex-end; }
+.mrow-meta{ margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9; }
 .module-card{
   background:#fff; border:1px solid #e5e7eb; border-radius:10px;
   padding:14px 16px; display:flex; flex-direction:column; gap:9px;
@@ -496,6 +523,14 @@ body.focus-mode.focus-composite-explore .page.active{
   margin:0 0 12px; padding:10px 12px;
   background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px;
 }
+/* Two-row variant: search + zoom pinned to the top row (zoom stays fixed at
+   the top-right in every zoom setting); chips + sort wrap on row two. */
+.card-browse-toolbar.cbt-2row{ flex-direction:column; align-items:stretch; gap:10px; }
+.cbt-top{ display:flex; align-items:center; gap:10px; }
+.cbt-top .card-browse-search{ flex:1 1 auto; max-width:none; }
+.cbt-top .registry-zoom{ flex:none; }
+.cbt-bottom{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.cbt-bottom .card-browse-chips{ flex:1 1 auto; }
 .card-browse-search{
   flex:1 1 220px; min-width:200px; max-width:380px;
   padding:6px 10px; border:1px solid #cbd5e1; border-radius:4px;
@@ -715,13 +750,21 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   border-bottom:1px solid #ececec;
   position:relative;   /* positioning context for the collapse toggle */
 }
+/* Logo + brand link to vivariumlab.com (collapse toggle stays separate). */
+.viv-rail-brand-link{
+  display:flex; align-items:center; gap:10px;
+  flex:1 1 auto; min-width:0; text-decoration:none; color:inherit;
+}
+.viv-rail-brand-link:hover .viv-rail-brand strong{ text-decoration:underline; }
 .viv-rail-logo{
-  width:36px; height:36px; flex:0 0 36px;
-  border-radius:6px;
+  width:46px; height:46px; flex:0 0 46px;
+  border-radius:8px;
   display:block;
   object-fit:contain;
   background:#fff;
 }
+/* Dark logo art has its own dark background — no white plate behind it. */
+:root[data-theme="dark"] .viv-rail-logo{ background:transparent; }
 .viv-rail-logo[role="presentation"]{
   /* Fallback emoji rendering when no img is provided */
   display:flex; align-items:center; justify-content:center;
@@ -796,6 +839,19 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   font-size:0.68em; font-weight:600; letter-spacing:0.08em;
   text-transform:uppercase; color:#9ca3af;
 }
+/* STUDIES section header — clickable → Studies overview. Aligned to the
+   WORKSPACE nav items (same left inset, icon slot, and gap). */
+.viv-rail-studies-link{
+  display:flex; align-items:center; gap:12px; width:100%;
+  margin:0 0 2px; padding:8px 16px;
+  background:none; border:none; border-left:3px solid transparent; cursor:pointer;
+  font-family:inherit; color:#374151; text-align:left; font-size:0.92em;
+  transition:background 0.12s, color 0.12s;
+}
+.viv-rail-studies-link:hover{ background:#eef2ff; color:#4338ca; }
+.viv-rail-studies-ico{ width:20px; height:20px; flex:0 0 20px; color:#6b7280; }
+.viv-rail-studies-link:hover .viv-rail-studies-ico{ color:#4338ca; }
+.viv-rail-studies-txt{ flex:1 1 auto; font-size:1em; font-weight:400; letter-spacing:0; text-transform:none; }
 .viv-rail-link{
   display:flex; align-items:center; gap:12px;
   padding:8px 16px;
@@ -1367,6 +1423,28 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .reg-cards-grid{ display:flex; flex-direction:column; gap:10px; padding:4px 0; }
 .reg-cards-full{ display:flex; flex-direction:column; gap:14px; padding:4px 0; }
 
+/* ── Multi-column cards grid (shared: registry / composites / modules) ──
+   Applied inline (grid-template-columns) by _applyCardCols; default is 'auto'
+   (auto-fill to width), overridable with the toolbar column slider. In a
+   narrow grid cell the cards' horizontal internal layouts stack vertically. */
+.cards-grid-cols{ display:grid !important; gap:12px; align-items:start; padding:4px 0; }
+.cards-grid-cols .reg-card-row{ flex-direction:column; gap:8px; }
+.cards-grid-cols .reg-card-stats{ flex-flow:row wrap; gap:6px; }
+.cards-grid-cols .ccc-grid{ grid-template-columns:1fr !important; gap:6px; }
+.cards-grid-cols .ccard.ccard-compact{ width:auto; }
+.cards-grid-cols .mrow-grid{ grid-template-columns:1fr !important; gap:6px; }
+.cards-grid-cols .module-card.mrow{ width:auto; }
+
+/* Column control: Auto toggle + slider + count. */
+.cols-ctl-slot{ display:inline-flex; align-items:center; gap:6px; margin-right:10px; }
+.cols-auto-btn{
+  border:1px solid #e2e8f0; background:#fff; color:#475569; border-radius:5px;
+  padding:2px 9px; cursor:pointer; font-size:0.8em; font-weight:600;
+}
+.cols-auto-btn.active{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
+.cols-slider{ width:84px; accent-color:#6366f1; cursor:pointer; }
+.cols-count{ min-width:30px; text-align:center; font-size:0.76em; color:#64748b; font-variant-numeric:tabular-nums; }
+
 /* Middle card: full-row — identity + description on the left, usage stats on the
    right, config/ports one click down. Denser than Full, richer than the table. */
 .registry-card{
@@ -1538,8 +1616,169 @@ textarea.loom-in-field{
 .loom-run-pre{ margin:4px 0 0; max-height:280px; overflow:auto; background:#f8fafc; border:1px solid #eef2f7; border-radius:6px; padding:8px 10px; }
 .loom-run-trace{ font-size:0.78em; color:#7f1d1d; background:#fef2f2; border-color:#fecaca; }
 
+/* ── Runnable Full card ──────────────────────────────────────────────────
+   The config bar IS the editable config, the left port column IS the editable
+   inputs, and Run lives in the body — one unified runnable card (no dropdown). */
+.loom-config-edit{ padding:9px 16px; }
+.loom-cfg-inline{ display:flex; flex-wrap:wrap; gap:6px 14px; flex:1 1 auto; align-items:center; }
+.loom-cfg-inline .loom-cfg-row{
+  flex:0 0 auto; background:#fff; border:1px solid #e7ecf3; border-radius:7px; padding:3px 8px;
+}
+.loom-cfg-inline .loom-cfg-key{ flex:0 0 auto; max-width:150px; }
+.loom-cfg-inline .loom-cfg-field{ flex:0 0 auto; width:118px; }
+.loom-cfg-inline .loom-cfg-field[type="checkbox"]{ width:16px; }
+.loom-load-hint{ font-size:0.85em; }
+/* Wider left column so editable input fields are usable (static loom cards keep
+   the narrow max-content margin). */
+/* Runnable card: editable inputs left, body center, and a wider RIGHT panel
+   holding the output ports + the run results (collapsible JSON viewer). */
+.loom-runnable .loom-row{ grid-template-columns:280px minmax(0,1fr) minmax(300px,0.95fr); }
+.loom-inputs-edit{ width:100%; gap:9px; }
+.loom-inputs-edit .loom-in-row{ width:100%; }
+.loom-inputs-edit .loom-in-field{ width:100%; }
+.loom-runnable .loom-run-actions{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin-top:12px; padding-top:12px; border-top:1px solid #eef2f7;
+}
+/* Runnable Full card as a vertical stack: info → config → inputs → run →
+   outputs (ports + collapsible JSON) at the bottom. */
+.loom-card-stack{ display:flex; flex-direction:column; }
+.loom-card-stack .loom-info{ padding:14px 18px 12px; }
+.loom-card-stack .loom-info .loom-addr{ display:block; margin:3px 0 0; }
+.loom-card-stack .loom-sec{ padding:12px 18px; border-top:1px solid #eef2f7; }
+.loom-card-stack .loom-sec-label{
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.66em;
+  font-weight:700; color:#94a3b8; margin-bottom:9px;
+}
+.loom-card-stack .loom-cfg-inline{ display:flex; flex-wrap:wrap; gap:7px 16px; }
+.loom-inputs-stack{ display:flex; flex-wrap:wrap; gap:10px 18px; width:auto; }
+.loom-inputs-stack .loom-in-row{ flex:1 1 240px; min-width:0; max-width:380px; }
+.loom-inputs-stack .loom-in-field{ width:100%; }
+.loom-card-stack .loom-run-actions{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:12px 18px; border-top:1px solid #eef2f7; margin:0;
+}
+.loom-card-stack .loom-run-actions .action-btn{ margin-top:0; }
+.loom-sec-out{ background:#fbfcfe; }
+.loom-out-ports{ display:flex; flex-wrap:wrap; gap:6px 10px; }
+.loom-out-ports:empty{ display:none; }
+.loom-out-ports .loom-port{
+  background:#f8fafc; border:1px solid #eef2f7; border-radius:5px;
+  padding:2px 8px; font-size:0.8em;
+}
+.loom-out-ports .loom-port-dot{ background:#10b981; }
+.loom-card-stack .loom-run-output:empty{ display:none; }
+.loom-card-stack .loom-run-output{ margin-top:10px; }
+
+.loom-out-panel{ min-width:0; display:flex; flex-direction:column; gap:10px; }
+.loom-out-panel .loom-run-output:empty{ display:none; }
+.loom-out-panel .loom-run-output{
+  border-top:1px solid #eef2f7; padding-top:10px; min-width:0;
+}
+
+/* Collapsible JSON viewer for run outputs. */
+.loom-run-ok{ display:flex; align-items:center; gap:10px; color:#047857; font-size:0.85em; font-weight:600; margin-bottom:6px; }
+.json-viewer{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.8em; line-height:1.55;
+  max-height:320px; overflow:auto; background:#f8fafc; border:1px solid #eef2f7;
+  border-radius:6px; padding:8px 10px;
+}
+.json-viewer .jt-row{ white-space:pre-wrap; word-break:break-word; padding-left:14px; }
+.json-viewer .jt-branch{ }
+.json-viewer .jt-branch > summary{
+  cursor:pointer; list-style:none; white-space:nowrap;
+}
+.json-viewer .jt-branch > summary::-webkit-details-marker{ display:none; }
+.json-viewer .jt-branch > summary::before{ content:'▸'; color:#94a3b8; display:inline-block; width:12px; }
+.json-viewer .jt-branch[open] > summary::before{ content:'▾'; }
+.json-viewer .jt-children{ border-left:1px solid #e5e7eb; margin-left:5px; padding-left:6px; }
+.jt-key{ color:#0369a1; }
+.jt-colon{ color:#94a3b8; }
+.jt-punct{ color:#94a3b8; }
+.jt-count{ color:#cbd5e1; font-size:0.85em; margin:0 2px; }
+.jt-str{ color:#15803d; }
+.jt-num{ color:#b45309; }
+.jt-bool{ color:#7c3aed; }
+.jt-null{ color:#9ca3af; font-style:italic; }
+.loom-copy-btn{ margin-left:auto; }
+
+/* Per-process cross-study track record: studies participated + percent success. */
+.reg-succ, .reg-succ-inline{ font-weight:700; border-radius:4px; padding:0 5px; font-size:0.9em; }
+.reg-succ-inline{ margin-left:2px; font-size:0.82em; }
+.reg-succ-hi{ color:#047857; background:#ecfdf5; }
+.reg-succ-mid{ color:#b45309; background:#fffbeb; }
+.reg-succ-lo{ color:#b91c1c; background:#fef2f2; }
+.reg-stat-part .reg-stat-glyph{ color:#6366f1; }
+
+/* Middle (grid) zoom: config + ports collapsed behind a click-to-expand summary. */
+.reg-mid-details{ margin-top:8px; border-top:1px solid #f1f5f9; }
+.reg-mid-details > summary{
+  cursor:pointer; list-style:none; padding:7px 0 2px; display:flex; align-items:center; gap:8px;
+  font-size:0.72em; text-transform:uppercase; letter-spacing:.05em; font-weight:700; color:#94a3b8;
+}
+.reg-mid-details > summary::-webkit-details-marker{ display:none; }
+.reg-mid-details > summary::before{ content:'▸'; color:#cbd5e1; font-size:1.15em; }
+.reg-mid-details[open] > summary::before{ content:'▾'; }
+.reg-mid-details > summary:hover{ color:#64748b; }
+.reg-mid-sum{ text-transform:none; letter-spacing:0; font-weight:500; color:#cbd5e1; font-size:0.95em; }
+.reg-mid-details .reg-mid{ margin-top:2px; border-top:none; padding-top:2px; }
+:root[data-theme="dark"] .reg-mid-details{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .reg-mid-details > summary{ color:var(--text-muted); }
+:root[data-theme="dark"] .reg-mid-sum{ color:#8494a8; }
+
+/* Middle (grid) zoom: compact bigraph-loom-style node — config strip on top,
+   input ports down the left, output ports down the right (read-only). */
+.reg-mid{
+  margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;
+  display:flex; flex-direction:column; gap:7px;
+}
+.reg-mid-config{ display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.reg-mid-label{
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.62em;
+  font-weight:700; color:#94a3b8; margin-right:3px;
+}
+.reg-mid-config code{
+  background:#eef2ff; color:#3730a3; border:1px solid #e0e7ff; border-radius:4px;
+  padding:1px 6px; font-size:0.72em;
+}
+.reg-mid-ports{ display:flex; gap:24px; align-items:flex-start; }
+.reg-mid-col{
+  flex:1 1 0; min-width:0; display:flex; flex-wrap:wrap; gap:4px;
+  align-items:baseline; align-content:flex-start;
+}
+.reg-mid-out{ justify-content:flex-end; }
+.reg-ip-title{
+  flex:0 0 100%; text-transform:uppercase; letter-spacing:.06em; font-size:0.62em;
+  font-weight:700; color:#94a3b8; margin-bottom:1px;
+}
+.reg-mid-out .reg-ip-title{ text-align:right; }
+.reg-ip{
+  display:inline-flex; align-items:center; gap:4px; background:#f8fafc;
+  border:1px solid #eef2f7; border-radius:5px; padding:1px 6px; max-width:100%;
+  font-size:0.75em;
+}
+.reg-ip-dot{ width:6px; height:6px; border-radius:50%; background:#6366f1; flex:none; }
+.reg-ip-out .reg-ip-dot{ background:#10b981; }
+.reg-ip code{ color:#1e40af; font-weight:600; font-size:0.95em; }
+.reg-ip-type{
+  color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.82em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;
+}
+.reg-ip-na{ color:#cbd5e1; font-size:0.75em; }
+
 /* Table view. */
 .registry-table-wrap{ overflow-x:auto; }
+/* Modules table: installed-vs-marketplace section header rows + action column. */
+.module-table-section td{
+  background:#f1f5f9; color:#475569; font-weight:700; font-size:0.74em;
+  text-transform:uppercase; letter-spacing:.05em; padding:7px 12px;
+  border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0;
+}
+.module-table-section td .muted{ font-weight:600; letter-spacing:0; text-transform:none; }
+.modules-table .reg-td-action{ white-space:nowrap; text-align:right; }
+.modules-table .reg-td-action .btn-mini,
+.modules-table .reg-td-action .action-btn{ margin:0; }
+.modules-table .reg-td-name .module-link{ font-size:0.8em; margin-left:6px; font-weight:500; }
 .registry-table{ width:100%; border-collapse:collapse; font-size:0.88em; }
 .registry-table th, .registry-table td{ padding:6px 10px; text-align:left; border-bottom:1px solid #f1f5f9; }
 .registry-table th{
@@ -1889,6 +2128,199 @@ textarea.loom-in-field{
 .inv-lead ul, .inv-lead ol { margin: 6px 0 10px 22px; padding: 0; }
 .inv-lead li { margin: 2px 0; }
 .inv-lead strong { color: #0f172a; }
+
+/* ── Inquiry brief — the redesigned investigation opening ──────────────────
+   Question headline → verdict answer line → meta → flat tab strip. One level
+   of hierarchy, no nested boxes. Verdict-status colour is carried on the
+   .inv-vs-* container as --vs / --vs-bg / --vs-fg custom properties. */
+.inv-brief { margin: 0 0 8px; }
+.inv-brief-q {
+  font-family: 'Charter', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 1.55em; line-height: 1.28; font-weight: 600; letter-spacing: -0.01em;
+  color: #0f172a; margin: 2px 0 14px;
+}
+.inv-brief-verdict {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  border-left: 4px solid var(--vs, #64748b);
+  background: #f8fafc; border-radius: 0 8px 8px 0;
+  padding: 11px 16px; margin: 0 0 14px;
+  font-size: 0.95em; line-height: 1.55; color: #334155;
+}
+.inv-vs-pill {
+  display: inline-block; font-size: 0.66em; font-weight: 700; letter-spacing: 0.05em;
+  background: var(--vs-bg, #e2e8f0); color: var(--vs-fg, #475569);
+  padding: 2px 9px; border-radius: 9999px; margin-right: 8px; vertical-align: 1px;
+}
+.inv-brief-verdict-label { font-weight: 700; color: #1e293b; }
+.inv-brief-framing {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.9em; line-height: 1.55; color: #64748b; margin: 0 0 12px;
+}
+.inv-brief-meta {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.9em; line-height: 1.55; color: #475569; margin: 0 0 16px;
+}
+.inv-brief-meta-item em { font-style: normal; font-weight: 700; color: #334155; margin-right: 5px; }
+.inv-brief-meta-item + .inv-brief-meta-item::before { content: "·"; margin: 0 9px; color: #cbd5e1; }
+.inv-brief-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  border-bottom: 1px solid #e2e8f0; margin: 0 0 14px;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+.inv-brief-tab {
+  appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; padding: 6px 13px; font-size: 0.87em; font-weight: 600;
+  color: #64748b; cursor: pointer; border-radius: 6px 6px 0 0;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.inv-brief-tab:hover { color: #334155; background: #f8fafc; }
+.inv-brief-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+.inv-brief-panels { font-family: -apple-system, "Segoe UI", sans-serif; }
+.inv-brief-prose { font-size: 0.95em; line-height: 1.62; color: #334155; }
+.inv-brief-prose p { margin: 0 0 10px; }
+.inv-brief-prose p:last-child { margin-bottom: 0; }
+.inv-brief-howto { margin: 0 0 4px 20px; padding: 0; font-size: 0.92em; line-height: 1.5; color: #334155; }
+.inv-brief-howto li { margin: 3px 0; }
+.inv-brief-glossary { margin: 0; font-size: 0.92em; }
+.inv-brief-glossary dt { font-weight: 700; color: #1e293b; margin-top: 9px; }
+.inv-brief-glossary dt:first-child { margin-top: 0; }
+.inv-brief-glossary dd { margin: 2px 0 0; color: #475569; line-height: 1.5; }
+/* Verdict-status palettes (light). --vs is the accent rule; -bg/-fg the pill. */
+.inv-brief.inv-vs-passed   { --vs: #16a34a; --vs-bg: #dcfce7; --vs-fg: #166534; }
+.inv-brief.inv-vs-progress { --vs: #d97706; --vs-bg: #fef9c3; --vs-fg: #854d0e; }
+.inv-brief.inv-vs-blocked  { --vs: #dc2626; --vs-bg: #fee2e2; --vs-fg: #991b1b; }
+.inv-brief.inv-vs-planning { --vs: #2563eb; --vs-bg: #dbeafe; --vs-fg: #1e40af; }
+.inv-brief.inv-vs-default  { --vs: #64748b; --vs-bg: #e2e8f0; --vs-fg: #475569; }
+
+/* ── Market — faceted artifact browser (processes / composites / studies /
+   investigations / modules) ─────────────────────────────────────────────── */
+.market-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.market-search { flex: 1 1 auto; box-sizing: border-box; font-size: 0.95em; padding: 8px 12px; }
+.market-zoom { flex: none; }
+.market-facets {
+  display: flex; flex-wrap: wrap; gap: 4px;
+  border-bottom: 1px solid #e2e8f0; margin: 0; padding-bottom: 0;
+}
+.market-facet {
+  appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; padding: 7px 14px; font-size: 0.9em; font-weight: 600;
+  color: #64748b; cursor: pointer; border-radius: 6px 6px 0 0;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.market-facet:hover { color: #334155; background: #f8fafc; }
+.market-facet.active { color: #2563eb; border-bottom-color: #2563eb; }
+.market-origin-filter { margin-left: auto; display: inline-flex; gap: 3px; align-self: center; padding-bottom: 4px; }
+.market-origin-chip {
+  appearance: none; border: 1px solid #e2e8f0; background: #fff; cursor: pointer;
+  font-size: 0.78em; font-weight: 600; color: #64748b; padding: 3px 10px; border-radius: 9999px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.market-origin-chip:hover { color: #334155; border-color: #cbd5e1; }
+.market-origin-chip.active { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+.market-group { margin: 0 0 22px; }
+.market-group-head {
+  font-size: 0.78em; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: #94a3b8; margin: 0 0 10px; display: flex; align-items: center; gap: 8px;
+}
+.market-count {
+  font-weight: 600; letter-spacing: 0; font-size: 0.92em;
+  background: #eef1f5; color: #64748b; border-radius: 9999px; padding: 0 8px;
+}
+.market-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;
+}
+.market-card {
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; background: #fff;
+  border-left: 3px solid #cbd5e1; transition: box-shadow 0.12s, border-color 0.12s;
+}
+.market-card:hover { box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08); }
+.market-card.market-type-process      { border-left-color: #6366f1; }
+.market-card.market-type-composite    { border-left-color: #0ea5e9; }
+.market-card.market-type-study        { border-left-color: #10b981; }
+.market-card.market-type-investigation{ border-left-color: #f59e0b; }
+.market-card.market-type-module       { border-left-color: #8b5cf6; }
+.market-card-head { display: flex; align-items: center; gap: 8px; }
+.market-type-ico { font-size: 0.95em; opacity: 0.75; flex: none; }
+.market-name {
+  font-weight: 650; color: #1e293b; font-size: 0.96em; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
+}
+.market-repo {
+  flex: none; font-size: 0.72em; font-weight: 600; color: #475569;
+  background: #f1f5f9; border-radius: 9999px; padding: 1px 8px; white-space: nowrap;
+}
+.market-desc {
+  font-size: 0.85em; line-height: 1.45; color: #64748b;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.market-card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; padding-top: 4px;
+}
+.market-meta { font-size: 0.78em; color: #94a3b8; }
+.market-usage { font-size: 0.78em; color: #94a3b8; }
+.market-open { flex: none; }
+.market-results { margin-top: 14px; }
+
+/* List (dense) zoom */
+.market-list { display: flex; flex-direction: column; }
+.market-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 7px 10px; border-left: 3px solid #cbd5e1;
+  border-bottom: 1px solid #eef1f5;
+}
+.market-row:hover { background: #f8fafc; }
+.market-row.market-type-process       { border-left-color: #6366f1; }
+.market-row.market-type-composite     { border-left-color: #0ea5e9; }
+.market-row.market-type-study         { border-left-color: #10b981; }
+.market-row.market-type-investigation { border-left-color: #f59e0b; }
+.market-row-main { display: flex; align-items: baseline; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.market-row-main .market-name { flex: 0 1 auto; }
+.market-row-desc {
+  color: #94a3b8; font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.market-row .market-usage { flex: none; white-space: nowrap; }
+
+/* Detail (full) zoom */
+.market-grid-detail { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+.market-desc-full { -webkit-line-clamp: unset; display: block; }
+.market-detail .market-card-head .market-open { margin-left: auto; }
+.market-dl {
+  display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px;
+  margin-top: 4px; font-size: 0.85em; align-items: baseline;
+}
+.market-dl-k { color: #94a3b8; font-weight: 600; white-space: nowrap; }
+.market-dl-v { color: #475569; }
+.market-dl-v code, .market-desc code {
+  background: #f1f5f9; border-radius: 3px; padding: 1px 5px; font-size: 0.92em; color: #334155;
+}
+
+/* List (minimized) zoom = sortable table — columns roll up, no horizontal scroll */
+.market-table { width: 100%; border-collapse: collapse; font-size: 0.88em; table-layout: fixed; }
+.market-table th, .market-table td {
+  text-align: left; padding: 6px 10px; border-bottom: 1px solid #eef1f5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.market-th {
+  position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none;
+  font-size: 0.82em; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  color: #64748b; background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+}
+.market-th:hover { color: #334155; background: #eef2ff; }
+.market-th.sorted { color: #2563eb; }
+.market-tr { cursor: pointer; }
+.market-tr:hover { background: #f8fafc; }
+.market-td-type { text-align: center; }
+.market-td-type .market-type-ico { opacity: 0.7; }
+.market-td-name { font-weight: 600; color: #1e293b; }
+.market-td-desc { color: #94a3b8; font-weight: 400; margin-left: 8px; font-size: 0.92em; }
+.market-td-use { text-align: right; color: #64748b; font-variant-numeric: tabular-nums; }
+.market-origin {
+  font-size: 0.82em; font-weight: 600; border-radius: 9999px; padding: 1px 9px;
+}
+.market-origin-workspace { background: #e0e7ff; color: #4338ca; }
+.market-origin-external { background: #dcfce7; color: #166534; }
 
 .inv-at-a-glance {
   display: grid;
@@ -2355,6 +2787,16 @@ textarea.loom-in-field{
 .registry-subtab-panel { display: none; padding: 0; margin: 0; border: none;
   background: none; border-radius: 0; box-shadow: none; }
 .registry-subtab-panel.active { display: block; }
+
+/* Sources, Composites, and Analysis Tools wrapped their whole page in a bordered
+   `.panel` card, leaving a buffer margin around the operating space. Registry and
+   Investigations fill the pane flush — match that by stripping the card chrome
+   from these pages' outermost panel (nested panels keep their chrome). */
+#page-workspace-inputs > .panel,
+#page-simulation-setup > .panel,
+#page-visualizations > .panel {
+  background: none; border: none; border-radius: 0; padding: 0; margin: 0;
+}
 
 /* ───────────────────────────────────────────────────────────────────
  * Catalog grid — workspace-package + installed-first chrome.
@@ -2976,20 +3418,34 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   width:100% !important; max-width:none !important;
 }
 .viv-content > #page-registry.active,
-#page-registry.active{
+#page-modules.active, #page-market.active{
   max-width:none !important; width:100% !important; margin:0 !important;
   box-sizing:border-box;
 }
-#page-registry.active .registry-subtabs,
-#page-registry.active .registry-subtab-panel.active,
-#page-registry.active .registry-tabs,
-#page-registry.active .registry-tab-panel,
-#page-registry.active .card-browse-toolbar,
-#page-registry.active .module-grid,
-#page-registry.active .registry-search{
+#page-modules.active .registry-tabs,
+#page-modules.active .registry-tab-panel,
+#page-modules.active .registry-view-toolbar,
+#page-modules.active .registry-search,
+#page-modules.active .registry-sticky,
+#page-modules.active .page-fill,
+#page-market.active .page-fill,
+#page-market.active .market-sticky,
+#page-market.active .market-facets,
+#page-market.active .market-results,
+#page-market.active .market-toolbar{
   width:100% !important; max-width:none !important;
   margin-left:0 !important; margin-right:0 !important;
   box-sizing:border-box;
+}
+/* Pin the header (tabs/facets + filter/zoom) to the top of the scroll area so
+   the long list scrolls beneath it. The pages carry no panel box, so the sticky
+   header sits on the page background and spans the content width. */
+#page-modules .registry-sticky,
+#page-market .market-sticky{
+  position:sticky; top:0; z-index:20;
+  background:var(--bg);
+  margin:0 0 10px; padding:8px 0 4px;
+  border-bottom:1px solid var(--border);
 }
 /* ── Investigation DAG semantic zoom slider ────────────────────────────────── */
 #aig-zoom-slider {
@@ -3031,6 +3487,57 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   gap: 12px;
   align-items: start;
 }
+/* Semantic-zoom Cards / Loom: full-row composite cards (one per row). */
+.ccard-rows { display: flex; flex-direction: column; gap: 10px; }
+.ccard-rows .ccard { width: 100%; }
+/* Compact full-row card: content distributed across the bar into subareas, so
+   each card is short. identity | description | stats | actions. */
+.ccard-compact { padding: 10px 14px; gap: 0; }
+.ccard-compact.reg-selected { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.22); }
+.ccc-grid {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(0, 2.4fr) minmax(150px, 1fr) auto;
+  gap: 20px; align-items: start;
+}
+@media (max-width: 900px) { .ccc-grid { grid-template-columns: 1fr; gap: 6px; } }
+.ccc-identity { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ccc-name-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.ccc-name { font-weight: 700; color: #0f172a; font-size: 1.0em; }
+.ccc-addr {
+  font-family: ui-monospace, Menlo, monospace; font-size: 0.74em; color: #94a3b8;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ccc-desc {
+  color: #475569; font-size: 0.86em; line-height: 1.45; min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ccc-stats { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ccc-stats .ccard-meta { margin: 0; font-size: 0.78em; }
+.ccc-stats .ccard-track { margin: 2px 0 0; }
+.ccc-stats .ccard-bar { height: 5px; }
+.ccc-actions { display: flex; align-items: flex-start; justify-content: flex-end; }
+/* Config / structure / tags collapse into a short strip under the grid. */
+.ccc-details-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;
+}
+.ccc-details-row > details { margin: 0; }
+.ccc-details-row > details > summary { font-size: 0.82em; }
+.ccc-details-row .ccard-tags { margin: 0; }
+/* Loom (Full) zoom: an inline, on-demand bigraph embed per composite card. */
+.ccard-loom-embed { border-top: 1px solid #f1f5f9; margin-top: 4px; }
+.ccard-loom-embed > summary {
+  cursor: pointer; user-select: none; color: #4338ca; font-weight: 600;
+  font-size: 0.85em; padding: 6px 0 2px; list-style: none;
+}
+.ccard-loom-embed > summary::-webkit-details-marker { display: none; }
+.ccard-loom-embed > summary::before { content: '▸ '; }
+.ccard-loom-embed[open] > summary::before { content: '▾ '; }
+.ccard-loom-frame {
+  border: 1px solid #cbd5e1; border-radius: 0; background: #fbfcfe;
+  margin: 6px 0 2px; overflow: hidden;
+}
+.ccard-loom-iframe { width: 100%; height: 460px; border: 0; display: block; }
 .ccard {
   display: flex; flex-direction: column; gap: 7px;
   border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;
@@ -3128,3 +3635,328 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   margin-left:6px;vertical-align:middle;white-space:nowrap}
 .federated-readonly{opacity:0.92}
 .federated-readonly .action-btn,.federated-readonly .btn-mini{display:none}
+
+/* ═══════════════ Light / dark theme ═══════════════ */
+/* Rail toggle switch (sun ↔ moon sliding pill). */
+.viv-rail-footer{ padding:10px 16px; border-top:1px solid #ececec; display:flex; }
+.viv-rail.viv-rail-collapsed .viv-rail-footer{ justify-content:center; padding:10px 4px; }
+.viv-theme-toggle{
+  position:relative; display:inline-flex; align-items:center; justify-content:space-between;
+  width:56px; height:26px; padding:0 7px; border-radius:14px;
+  border:1px solid #d8dee6; background:#eef1f5; cursor:pointer;
+}
+.viv-theme-ico{ display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; z-index:1; }
+.viv-theme-ico svg{ width:13px; height:13px; display:block; }
+.viv-theme-sun{ color:#f59e0b; }
+.viv-theme-moon{ color:#94a3b8; }
+.viv-theme-thumb{
+  position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.28); transition:left .18s ease;
+}
+
+/* ── Dark theme (dark-blue) ──────────────────────────────────────────────
+   The whole palette lives in the variables below — tweak the look from one
+   place. Rules below reference them. The workbench has many INLINE styles
+   (background:#fff;, color:#334155, …), so a final block retargets those by
+   substring with !important; colored status pills are left as readable badges. */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0b1220;          /* page background (darkest) */
+  --rail:#0f1728;        /* rail, header, STUDIES head */
+  --surface:#18233c;     /* cards / panels — a bit brighter so they stand out */
+  --field:#0d1526;       /* inputs / config+port fields — darker, recede below the card */
+  --surface-2:#12203a;   /* subtle sections: code, config bar, outputs, toolbars */
+  --surface-3:#1c2946;   /* small buttons, chips */
+  --border:#26324c;
+  --border-2:#2c3a58;    /* input borders */
+  --border-faint:#1e2b44;/* table rows, rail dividers */
+  --hover:#182339;
+  --active:#20304f;
+  --text:#d3ddeb;
+  --text-muted:#93a3b6;
+  --heading:#eef2f8;
+  --link:#8ab4ff;
+  --accent:#6366f1;
+  /* map the light-mode var names so existing var(--panel)/var(--gray) rules follow */
+  --panel:var(--surface); --gray:var(--text-muted);
+}
+:root[data-theme="dark"] body{ color:var(--text); background:var(--bg); }
+:root[data-theme="dark"] a{ color:var(--link); }
+:root[data-theme="dark"] .viv-theme-toggle{ background:#22304a; border-color:var(--border-2); }
+:root[data-theme="dark"] .viv-theme-thumb{ left:32px; background:var(--bg); }
+:root[data-theme="dark"] .viv-theme-moon{ color:#c7d2fe; }
+:root[data-theme="dark"] .viv-theme-sun{ color:#64748b; }
+
+/* Chrome + content */
+:root[data-theme="dark"] .viv-rail,
+:root[data-theme="dark"] header,
+:root[data-theme="dark"] .viv-rail-studies-head{ background:var(--rail) !important; border-color:var(--border-faint) !important; color:var(--text); }
+:root[data-theme="dark"] .viv-content,
+:root[data-theme="dark"] .page{ background:var(--bg); }
+:root[data-theme="dark"] .viv-rail-section-label{ color:#7788a0; }
+:root[data-theme="dark"] .viv-rail-studies-link{ color:var(--text); }
+:root[data-theme="dark"] .viv-rail-studies-link:hover{ background:var(--active); color:var(--link); }
+
+/* Rail nav + study lists */
+:root[data-theme="dark"] .viv-rail-link,
+:root[data-theme="dark"] .viv-rail-investigations-group-header,
+:root[data-theme="dark"] .viv-rail-investigations-group-name,
+:root[data-theme="dark"] .viv-rail-investigations-group-items .viv-rail-link,
+:root[data-theme="dark"] .viv-rail-ungrouped-section .viv-rail-sublink,
+:root[data-theme="dark"] .viv-rail-pinned-section{ background:var(--surface-2) !important; border-bottom-color:var(--border) !important; }
+:root[data-theme="dark"] .viv-rail-pinned-section .viv-rail-sublink-pinned{ color:#c6d1e0; }
+:root[data-theme="dark"] .viv-rail-link:hover,
+:root[data-theme="dark"] .viv-rail-investigations-group-header:hover,
+:root[data-theme="dark"] .viv-rail-sublink:hover{ background:var(--hover); }
+:root[data-theme="dark"] .viv-rail-link.active,
+:root[data-theme="dark"] .viv-rail-investigations-group-items .viv-rail-link.active{ background:var(--active); color:#eaf1ff; }
+:root[data-theme="dark"] .viv-rail-investigations-group-items .viv-rail-link-sub,
+:root[data-theme="dark"] .count-badge,
+:root[data-theme="dark"] .muted,
+:root[data-theme="dark"] .reg-ip-type, :root[data-theme="dark"] .loom-port-type,
+:root[data-theme="dark"] .cols-count, :root[data-theme="dark"] .page-lead,
+:root[data-theme="dark"] .card-browse-options{ color:var(--text-muted); }
+:root[data-theme="dark"] .viv-rail-investigations-group-count{ background:var(--border); color:#c3cfdd; }
+:root[data-theme="dark"] .viv-rail-investigations-group.rail-iset-active{ background:#161f38; border-left-color:#818cf8; }
+:root[data-theme="dark"] .viv-rail-investigations-group.rail-iset-active .viv-rail-investigations-group-count{ background:var(--accent); color:#fff; }
+
+/* Surfaces: cards, panels, tables, code, toolbars, buttons */
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .registry-card,
+:root[data-theme="dark"] .ccard,
+:root[data-theme="dark"] .module-card,
+:root[data-theme="dark"] .registry-table,
+:root[data-theme="dark"] .loom-card,
+:root[data-theme="dark"] .investigation-card,
+:root[data-theme="dark"] .analyses-card,
+:root[data-theme="dark"] .tool-card{ background:var(--surface); border-color:var(--border); color:var(--text); }
+:root[data-theme="dark"] .loom-config,
+:root[data-theme="dark"] .loom-sec-out,
+:root[data-theme="dark"] .reg-ip,
+:root[data-theme="dark"] .json-viewer,
+:root[data-theme="dark"] .card-browse-toolbar,
+:root[data-theme="dark"] pre, :root[data-theme="dark"] code,
+:root[data-theme="dark"] th, :root[data-theme="dark"] .reg-th{ background:var(--surface-2); border-color:var(--border); color:#c8d4e4; }
+:root[data-theme="dark"] td{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .reg-tr:hover{ background:#16223a; }
+:root[data-theme="dark"] .cols-auto-btn,
+:root[data-theme="dark"] .reg-zoom-btn,
+:root[data-theme="dark"] .btn-mini,
+:root[data-theme="dark"] .action-btn,
+:root[data-theme="dark"] .card-browse-chip{ background:var(--surface-3); border-color:var(--border-2); color:#cdd9e8; }
+:root[data-theme="dark"] .card-browse-chip.active{ background:#3b82f6; border-color:#3b82f6; color:#fff; }
+:root[data-theme="dark"] .registry-zoom,
+:root[data-theme="dark"] .registry-viewmode{ border-color:var(--border-2); }
+/* Neutral chrome badges + icon buttons (colored status pills stay as-is). */
+:root[data-theme="dark"] .registry-tab .count-badge{ background:var(--surface-3); color:#c6d1e0; }
+:root[data-theme="dark"] .icon-btn,
+:root[data-theme="dark"] .viv-icon-btn{ background:var(--surface-3); border-color:var(--border-2); color:#c6d1e0; }
+:root[data-theme="dark"] .icon-btn:hover,
+:root[data-theme="dark"] .viv-icon-btn:hover{ background:var(--hover); color:var(--heading); }
+:root[data-theme="dark"] .install-src-pill,
+:root[data-theme="dark"] .install-src-venv,
+:root[data-theme="dark"] .install-src-pyproject,
+:root[data-theme="dark"] .install-src-unmanaged{ background:var(--surface-3) !important; border-color:var(--border-2) !important; color:#c6d1e0 !important; }
+
+/* Headings + card names (class-colored, not inline) */
+:root[data-theme="dark"] h1, :root[data-theme="dark"] h2, :root[data-theme="dark"] h3,
+:root[data-theme="dark"] h4, :root[data-theme="dark"] .page-title,
+:root[data-theme="dark"] .reg-card-name, :root[data-theme="dark"] .loom-name,
+:root[data-theme="dark"] .mrow-name-text, :root[data-theme="dark"] .ccard-name,
+:root[data-theme="dark"] .ccc-name{ color:var(--heading); }
+:root[data-theme="dark"] .mrow-desc,
+:root[data-theme="dark"] .ccard-desc{ color:#a9b6c6; }
+/* Investigation card titles were dark-on-dark (strong inherits, no inline color). */
+:root[data-theme="dark"] .investigation-set-card strong,
+:root[data-theme="dark"] .investigation-card .name{ color:var(--heading); }
+
+/* Registry Full runnable card: config-field chips had a white surround and the
+   port type badges (map[millimolar], string, …) were light. */
+:root[data-theme="dark"] .loom-cfg-inline .loom-cfg-row{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .loom-in-type,
+:root[data-theme="dark"] .reg-mid-config code{ background:var(--surface-3); color:#aeb9c8; }
+:root[data-theme="dark"] .loom-cfg-key{ color:#aeb9c8; }
+:root[data-theme="dark"] .loom-in-key{ color:#9db4e6; }
+:root[data-theme="dark"] .loom-out-ports .loom-port{ background:var(--surface-3); border-color:var(--border-2); }
+:root[data-theme="dark"] .loom-port-name{ color:#9db4e6; }
+
+/* Investigation view: biology story, graph canvas, and study-DAG node cards. */
+:root[data-theme="dark"] .inv-bio-story{ background:var(--surface-2) !important; border-color:var(--border) !important; color:var(--text); }
+:root[data-theme="dark"] .aig-zoom-mid,
+:root[data-theme="dark"] .aig-graph,
+:root[data-theme="dark"] .aig-orient-lr,
+:root[data-theme="dark"] .aig-orient-tb{ background:var(--bg) !important; }
+:root[data-theme="dark"] .iset-dag-node{ background:var(--surface) !important; border-color:var(--border) !important; color:var(--text); }
+:root[data-theme="dark"] .iset-dag-node .aig-claim-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] #investigation-dag-lead{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] #investigation-dag-lead strong{ color:var(--text) !important; }
+:root[data-theme="dark"] .inv-lead-details summary{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] .viv-info-chip{ background:var(--surface-3) !important; color:var(--text-muted) !important; border-color:var(--border) !important; }
+/* Inquiry brief (investigation opening) — dark. Accent --vs keeps its vivid
+   colour; the pill bg/fg get dark-tinted variants. */
+:root[data-theme="dark"] .inv-brief-q{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-verdict{ background:var(--surface-2); color:var(--text); }
+:root[data-theme="dark"] .inv-brief-verdict-label{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-framing{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-meta{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-meta-item em{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-meta-item + .inv-brief-meta-item::before{ color:var(--border-2); }
+:root[data-theme="dark"] .inv-brief-tabs{ border-bottom-color:var(--border); }
+:root[data-theme="dark"] .inv-brief-tab{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-tab:hover{ color:var(--text); background:var(--hover); }
+:root[data-theme="dark"] .inv-brief-tab.active{ color:var(--link); border-bottom-color:var(--link); }
+:root[data-theme="dark"] .inv-brief-prose{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-howto{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-glossary dt{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-glossary dd{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief.inv-vs-passed   { --vs-bg:#12351f; --vs-fg:#86efac; }
+:root[data-theme="dark"] .inv-brief.inv-vs-progress { --vs-bg:#2a2113; --vs-fg:#fcd34d; }
+:root[data-theme="dark"] .inv-brief.inv-vs-blocked  { --vs-bg:#3a1518; --vs-fg:#fca5a5; }
+:root[data-theme="dark"] .inv-brief.inv-vs-planning { --vs-bg:#14243f; --vs-fg:#93c5fd; }
+:root[data-theme="dark"] .inv-brief.inv-vs-default  { --vs-bg:var(--surface-3); --vs-fg:var(--text); }
+/* Market (faceted artifact browser) — dark. */
+:root[data-theme="dark"] .market-facets{ border-bottom-color:var(--border); }
+:root[data-theme="dark"] .market-facet{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-facet:hover{ color:var(--text); background:var(--hover); }
+:root[data-theme="dark"] .market-facet.active{ color:var(--link); border-bottom-color:var(--link); }
+:root[data-theme="dark"] .market-origin-chip{ background:var(--surface-3); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .market-origin-chip:hover{ color:var(--text); border-color:var(--border-2); }
+:root[data-theme="dark"] .market-origin-chip.active{ background:var(--active); color:var(--link); border-color:var(--border-2); }
+:root[data-theme="dark"] .market-group-head{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-count{ background:var(--surface-3); color:var(--text-muted); }
+:root[data-theme="dark"] .market-card{ background:var(--surface); border-color:var(--border); }
+:root[data-theme="dark"] .market-card:hover{ box-shadow:0 2px 12px rgba(0,0,0,0.45); }
+:root[data-theme="dark"] .market-name{ color:var(--heading); }
+:root[data-theme="dark"] .market-repo{ background:var(--surface-3); color:var(--text-muted); }
+:root[data-theme="dark"] .market-desc{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-meta{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-usage{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-row{ border-bottom-color:var(--border-faint); }
+:root[data-theme="dark"] .market-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] .market-row-desc{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-dl-k{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-dl-v{ color:var(--text); }
+:root[data-theme="dark"] .market-dl-v code,
+:root[data-theme="dark"] .market-desc code{ background:var(--surface-3); color:var(--text); }
+:root[data-theme="dark"] .market-table th,
+:root[data-theme="dark"] .market-table td{ border-bottom-color:var(--border-faint); }
+:root[data-theme="dark"] .market-th{ color:var(--text-muted); background:var(--surface-2); border-bottom-color:var(--border); }
+:root[data-theme="dark"] .market-th:hover{ color:var(--text); background:var(--active); }
+:root[data-theme="dark"] .market-th.sorted{ color:var(--link); }
+:root[data-theme="dark"] .market-tr:hover{ background:var(--hover); }
+:root[data-theme="dark"] .market-td-name{ color:var(--heading); }
+:root[data-theme="dark"] .market-td-use{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-origin-workspace{ background:#1e2547; color:#a5b4fc; }
+:root[data-theme="dark"] .market-origin-external{ background:#12351f; color:#86efac; }
+/* Modals → dark surface (base .modal-box ships background:#fff). */
+:root[data-theme="dark"] .modal-box{ background:var(--surface) !important; color:var(--text) !important; box-shadow:0 8px 32px rgba(0,0,0,0.6) !important; border:1px solid var(--border); }
+:root[data-theme="dark"] .modal-box h1,
+:root[data-theme="dark"] .modal-box h2,
+:root[data-theme="dark"] .modal-box h3,
+:root[data-theme="dark"] .modal-box h4,
+:root[data-theme="dark"] .modal-box label{ color:var(--heading) !important; }
+:root[data-theme="dark"] .modal-close{ color:var(--text-muted) !important; }
+
+/* ── Study-detail page (loaded in the study/investigation iframe) ──────────
+   Comprehensive dark pass: neutral containers → surface tokens, dark text →
+   text tokens. Small colored/gray badges (status/classification/finding-kind
+   pills, finding-id, status chips) are left as readable badges. */
+:root[data-theme="dark"] .study-tabs,
+:root[data-theme="dark"] .finding-card{ background:var(--surface) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .spine-summary,
+:root[data-theme="dark"] .status-detail,
+:root[data-theme="dark"] .status-detail-panel,
+:root[data-theme="dark"] .overview-section,
+:root[data-theme="dark"] .findings-section,
+:root[data-theme="dark"] .purpose-callout,
+:root[data-theme="dark"] .finding-evidence,
+:root[data-theme="dark"] .finding-expected,
+:root[data-theme="dark"] .finding-exp-summary{ background:var(--surface-2) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .finding-next{ background:#0f2417 !important; border-color:#1c3a28 !important; }
+/* Container text → tokens (small pills keep their own colors). */
+:root[data-theme="dark"] .study-name,
+:root[data-theme="dark"] .spine-val,
+:root[data-theme="dark"] .study-pillar,
+:root[data-theme="dark"] .finding-statement,
+:root[data-theme="dark"] .finding-explanation,
+:root[data-theme="dark"] .finding-title,
+:root[data-theme="dark"] .overview-section h2,
+:root[data-theme="dark"] .overview-section h3,
+:root[data-theme="dark"] .spine-at-glance-head{ color:var(--heading) !important; }
+:root[data-theme="dark"] .status-detail-axis,
+:root[data-theme="dark"] .spine-summary-head,
+:root[data-theme="dark"] .spine-key,
+:root[data-theme="dark"] .narrative-label,
+:root[data-theme="dark"] .finding-evidence,
+:root[data-theme="dark"] .finding-expected,
+:root[data-theme="dark"] .finding-exp-summary,
+:root[data-theme="dark"] .finding-evidence .em,
+:root[data-theme="dark"] .finding-meta{ color:var(--text-muted) !important; }
+/* Badges → dark-tinted pills (dark bg + light coloured text) so semantic
+   colour survives on a dark surface without the light pill glare. */
+:root[data-theme="dark"] .status-chip,
+:root[data-theme="dark"] .finding-id{ background:var(--surface-3) !important; color:var(--text) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .phase-pill.phase-decide,
+:root[data-theme="dark"] .status-pill.gate-status-passed,
+:root[data-theme="dark"] .status-chip.gate-status-passed{ background:#12351f !important; color:#86efac !important; border-color:#1c4a2c !important; }
+:root[data-theme="dark"] .finding-kind{ background:#1e2547 !important; color:#a5b4fc !important; border-color:#2c3566 !important; }
+:root[data-theme="dark"] .classification-pill.classification-primary{ background:#3a1518 !important; color:#fca5a5 !important; border-color:#5a2226 !important; }
+:root[data-theme="dark"] .classification-pill.classification-supporting{ background:#14243f !important; color:#93c5fd !important; border-color:#22375c !important; }
+:root[data-theme="dark"] .readiness-banner{ background:#2a2113 !important; color:#fcd34d !important; border-color:#3d3418 !important; }
+:root[data-theme="dark"] .finding-next,
+:root[data-theme="dark"] .finding-next strong,
+:root[data-theme="dark"] .finding-next *{ color:#86efac !important; }
+:root[data-theme="dark"] .sim-status-pill.sim-status-ready{ color:#86efac !important; }
+:root[data-theme="dark"] .finding-explanation em{ color:var(--text-muted) !important; }
+/* Inline-styled severity/result pills (background baked into the element
+   style). Templates use both spaced (`background: #x`) and unspaced forms. */
+:root[data-theme="dark"] [style*="background:#fee2e2"],
+:root[data-theme="dark"] [style*="background: #fee2e2"]{ background:#3a1518 !important; color:#fca5a5 !important; }
+:root[data-theme="dark"] [style*="background:#fef3c7"],
+:root[data-theme="dark"] [style*="background: #fef3c7"]{ background:#2a2113 !important; color:#fcd34d !important; }
+:root[data-theme="dark"] [style*="background:#dcfce7"],
+:root[data-theme="dark"] [style*="background: #dcfce7"]{ background:#12351f !important; color:#86efac !important; }
+:root[data-theme="dark"] [style*="background:#dbeafe"],
+:root[data-theme="dark"] [style*="background: #dbeafe"]{ background:#14243f !important; color:#93c5fd !important; }
+:root[data-theme="dark"] [style*="background:#f1f5f9"],
+:root[data-theme="dark"] [style*="background: #f1f5f9"]{ background:var(--surface-3) !important; color:var(--text-muted) !important; }
+:root[data-theme="dark"] [style*="background:#f3f4f6"],
+:root[data-theme="dark"] [style*="background: #f3f4f6"]{ background:var(--surface-3) !important; color:var(--text) !important; }
+
+/* Form controls: native dark rendering + explicit dark (beats inline #fff;
+   appearance:none so WebKit search inputs honor the background). */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .card-browse-search{
+  -webkit-appearance:none; appearance:none; color-scheme:dark;
+  background:var(--field) !important; color:var(--text) !important; border-color:var(--border-2) !important;
+}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder{ color:#6c7c90 !important; }
+
+/* Inline-style retargeting (semicolon-anchored so amber pills like #fffbeb
+   aren't caught by the #fff prefix). */
+:root[data-theme="dark"] [style*="background:#fff;"],
+:root[data-theme="dark"] [style*="background: #fff;"],
+:root[data-theme="dark"] [style*="background:#ffffff"],
+:root[data-theme="dark"] [style*="background:white"]{ background:var(--surface) !important; }
+:root[data-theme="dark"] [style*="background:#f8fafc"],
+:root[data-theme="dark"] [style*="background:#f1f5f9"],
+:root[data-theme="dark"] [style*="background:#fafafa"],
+:root[data-theme="dark"] [style*="background:#f9fafb"]{ background:var(--surface-2) !important; }
+:root[data-theme="dark"] [style*="color:#0f172a"],
+:root[data-theme="dark"] [style*="color:#111827"],
+:root[data-theme="dark"] [style*="color:#1e293b"],
+:root[data-theme="dark"] [style*="color:#334155"],
+:root[data-theme="dark"] [style*="color:#374151"],
+:root[data-theme="dark"] [style*="color:#475569"]{ color:#cdd8e6 !important; }
+:root[data-theme="dark"] [style*="color:#64748b"],
+:root[data-theme="dark"] [style*="color:#6b7280"],
+:root[data-theme="dark"] [style*="color:#94a3b8"],
+:root[data-theme="dark"] [style*="color:#9ca3af"]{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] [style*="solid #e5e7eb"],
+:root[data-theme="dark"] [style*="solid #e2e8f0"],
+:root[data-theme="dark"] [style*="solid #d1d5db"],
+:root[data-theme="dark"] [style*="solid #eee"],
+:root[data-theme="dark"] [style*="solid #f1f5f9"]{ border-color:var(--border) !important; }

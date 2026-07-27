@@ -1,4 +1,4 @@
-// walkthrough.js — v0.6.9: registry filter now data-driven (works in Table/Cards/Full); middle Cards zoom is full-row with composite/study usage split + details; double-click zooms in centered; select persists across zoom; run panel input ports as per-field form (type + resolved default, auto-grow) + Copy outputs; loom config bar lightened to match workbench palette. v0.6.8: run panel lazy-loads RESOLVED defaults (core.fill via /api/registry/process-template) into a per-field config form + inputs JSON (no more null-heavy templates); loom card restyled as a crisp rectangle. v0.6.7: Registry Full-view interactive runner — editable config + input-port JSON, Run → outputs (POST /api/registry/run-process; env_worker._run_process instantiates + Step.update / Process.update(interval)); loom inputs left / outputs right. v0.6.6: Registry semantic zoom (compact/detailed/full loom-rectangle: inputs left, outputs right, config top) + Cards⇄Table sortable view (_setRegistryZoom/_setRegistryView/_renderRegistryTable); rail pins hover-only + ungrouped back to a collapsible folder. v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
+// walkthrough.js — v0.8.0: Registry Full view is now directly runnable — the config bar IS the editable config and the left ports ARE the editable input fields (no "Run this process" dropdown); Run lives in the body, outputs on the right. Middle (grid) zoom shows ports+types inline (no dropdown); double-click a card → runnable Full. Modules table split into Installed-here vs Marketplace sections with a Repos (imported-into) column, GitHub link on the name, and Install/Uninstall in one Action column (n_repos from module_stats federation scan). bigraph-loom: Explore (graph) is the default left tab; the right dock defaults to Processes with Nodes/Inspector collapsed. v0.7.0: Composites semantic zoom (Table/Cards full-row compact/Loom on-demand embed) + double-click to zoom in; /api/composites now runs in the WARM pooled worker (flake fix). v0.6.9: registry filter now data-driven (works in Table/Cards/Full); middle Cards zoom is full-row with composite/study usage split + details; double-click zooms in centered; select persists across zoom; run panel input ports as per-field form (type + resolved default, auto-grow) + Copy outputs; loom config bar lightened to match workbench palette. v0.6.8: run panel lazy-loads RESOLVED defaults (core.fill via /api/registry/process-template) into a per-field config form + inputs JSON (no more null-heavy templates); loom card restyled as a crisp rectangle. v0.6.7: Registry Full-view interactive runner — editable config + input-port JSON, Run → outputs (POST /api/registry/run-process; env_worker._run_process instantiates + Step.update / Process.update(interval)); loom inputs left / outputs right. v0.6.6: Registry semantic zoom (compact/detailed/full loom-rectangle: inputs left, outputs right, config top) + Cards⇄Table sortable view (_setRegistryZoom/_setRegistryView/_renderRegistryTable); rail pins hover-only + ungrouped back to a collapsible folder. v0.6.5: Registry processes sorted by USE (most-referenced across composites/runners first) with a use-count badge (build_registry._annotate_use_counts source-scan). v0.6.4: Registry page — "Discovered registry"→"Registry" (main tab), "Modules"→"Marketplace"; rich registry entries (description + inputs/outputs ports/contract + full config schema, loom-like) and a new Report Cards tab (_renderRegistryEntry/_regPortColumn). v0.6.3: STUDIES rail — per-study pin toggle (localStorage) with a "Pinned" strip at the top for quick access, and ungrouped studies rendered as a flat list at the bottom instead of a collapsible dropdown (_toggleStudyPin/_loadPinnedStudies; _railStudyItem + _renderRailInvestigationGroups). v0.6.2: Marketplace merged into the Modules tab — Modules grid loads the FULL ecosystem via /api/marketplace (available modules under the "Available to install" divider), installed cards gain an Uninstall action gated by an impact-confirmation modal (_showUninstallImpactModal via /api/catalog-uninstall-impact), viva-* display names + stat chips. v0.6.1: Marketplace sub-tab — browse the FULL viva ecosystem (unfiltered by registry.include) + install (_loadMarketplace/_renderMarketplace via /api/marketplace; shared _renderModuleGrid/_moduleActionFor with the Modules tab). v0.6.0: system-deps awareness — pre-install check + consent modal (_installFromCatalog → _showSystemDepsModal; new _checkSystemDepsForInstalled on Registry rows); v0.5.3: investigation detail panel — Spec/Runs/Visualizations tabs + Run button + Delete; v0.5.2: composite explorer UX fixes (no focus-mode hijack, one-row-per-param layout, lazy-load composite cache); v0.5.1: composite explorer page (bigraph-viz + test run + promote to simulation); v0.4.14: Available Composites picker + Emitter Use feedback + drop process multi-select; v0.4.5: _renderInstallError structured diagnosis; v0.4.1: _loadCatalog + _installFromCatalog; v0.4.0b: active-branch workstream strip; v0.3.7-A: _installImport; v0.3.6: Registry tab; v0.1.9: drag-drop uploads; v0.1.7: interactive forms.
 (function () {
   "use strict";
 
@@ -653,11 +653,12 @@
     var link = document.querySelector('.menu-link[data-page="' + pageId + '"]');
     if (page) page.classList.add('active');
     if (link) link.classList.add('active');
-    // Lazy-load catalog + registry on switch to Registry, Simulation Setup, or Visualizations page.
-    if (pageId === 'registry') {
-      _loadCatalog();
+    // Load the faceted Market on switch, and the build_core() registry on
+    // Modules / Simulation Setup / Visualizations.
+    if (pageId === 'market') {
+      _loadMarket();
     }
-    if (pageId === 'registry' || pageId === 'simulation-setup' || pageId === 'visualizations') {
+    if (pageId === 'modules' || pageId === 'simulation-setup' || pageId === 'visualizations') {
       if (!window._registryLoaded) {
         window._registryLoaded = true;
         _loadRegistry(false);
@@ -727,8 +728,8 @@
     if (focus) {
       var _snapshot = document.body.classList.contains('snapshot');
       var validPages = _snapshot
-        ? ['workspace-inputs', 'simulation-setup', 'registry', 'investigations', 'simulations', 'visualizations', 'audit', 'composite-explore', 'github']
-        : ['workspace-inputs', 'simulation-setup', 'visualizations', 'registry', 'investigations', 'studies', 'simulations', 'audit', 'composite-explore', 'github'];
+        ? ['workspace-inputs', 'simulation-setup', 'modules', 'market', 'investigations', 'simulations', 'visualizations', 'audit', 'composite-explore', 'github']
+        : ['workspace-inputs', 'simulation-setup', 'visualizations', 'modules', 'market', 'investigations', 'studies', 'simulations', 'audit', 'composite-explore', 'github'];
       if (validPages.indexOf(focus) >= 0) {
         document.body.classList.add('focus-mode', 'focus-' + focus);
         _switchPage(focus);
@@ -745,8 +746,8 @@
         var h = (window.location.hash || '').replace(/^#/, '');
         var _snap = document.body.classList.contains('snapshot');
         var validPages = _snap
-          ? ['workspace-inputs', 'registry', 'simulation-setup', 'investigations', 'simulations', 'visualizations', 'audit', 'composite-explore', 'github']
-          : ['workspace-inputs', 'registry', 'simulation-setup', 'visualizations', 'investigations', 'studies', 'simulations', 'audit', 'composite-explore', 'github'];
+          ? ['workspace-inputs', 'modules', 'market', 'simulation-setup', 'investigations', 'simulations', 'visualizations', 'audit', 'composite-explore', 'github']
+          : ['workspace-inputs', 'modules', 'market', 'simulation-setup', 'visualizations', 'investigations', 'studies', 'simulations', 'audit', 'composite-explore', 'github'];
         _switchPage(validPages.indexOf(h) >= 0 ? h : 'workspace-inputs');
       }
       window.addEventListener('hashchange', fromHash);
@@ -1969,6 +1970,106 @@
     return (z === 'table' || z === 'grid' || z === 'full') ? z : 'grid';
   })();
 
+  // ── Cards-grid column control (shared: registry / composites / modules) ──
+  // The middle "Cards" view is a multi-column grid. Default is 'auto' (fit
+  // columns to width, auto-fill); a slider overrides with a fixed count.
+  window._cardCols = (function () {
+    var d = {};
+    ['registry', 'composites', 'modules'].forEach(function (s) {
+      var v; try { v = localStorage.getItem('viv.cols.' + s); } catch (e) { v = null; }
+      d[s] = (v && v !== 'auto' && !isNaN(+v)) ? Math.max(1, Math.min(8, +v)) : 'auto';
+    });
+    return d;
+  })();
+  function _applyCardCols(container, surface) {
+    if (!container) return;
+    container.classList.add('cards-grid-cols');
+    var v = window._cardCols[surface];
+    container.style.gridTemplateColumns = (v === 'auto')
+      ? 'repeat(auto-fill, minmax(300px, 1fr))'
+      : 'repeat(' + v + ', minmax(0, 1fr))';
+  }
+  function _cardContainersFor(surface) {
+    var sel = surface === 'registry' ? '.reg-cards-grid'
+      : (surface === 'composites' ? '.ccard-rows' : '.mrows');
+    return Array.prototype.slice.call(document.querySelectorAll(sel));
+  }
+  function _colsControl(surface) {
+    var v = window._cardCols[surface], isAuto = (v === 'auto');
+    return '<button class="cols-auto-btn' + (isAuto ? ' active' : '') +
+        '" title="Fit columns to width" onclick="_setCardCols(\'' + surface + '\',\'auto\')">Auto</button>' +
+      '<input type="range" min="1" max="6" value="' + (isAuto ? 3 : v) +
+        '" class="cols-slider" title="Number of columns" oninput="_setCardCols(\'' + surface + '\', this.value)">' +
+      '<span class="cols-count">' + (isAuto ? 'auto' : v) + '</span>';
+  }
+  // The column control only makes sense in the multi-column Cards zoom — hide
+  // it in Table / Full so it doesn't read as a stray slider elsewhere.
+  function _updateColsSlotVisibility() {
+    var show = {
+      registry: (window._registryZoom === 'grid'),
+      composites: ((window._compositesZoom || 'cards') === 'cards'),
+      modules: ((window._catalogZoom || 'cards') === 'cards'),
+    };
+    Object.keys(show).forEach(function (s) {
+      var slot = document.querySelector('.cols-ctl-slot[data-cols-surface="' + s + '"]');
+      if (slot) slot.style.display = show[s] ? '' : 'none';
+    });
+  }
+  function _syncColsControls() {
+    document.querySelectorAll('.cols-ctl-slot').forEach(function (slot) {
+      var s = slot.getAttribute('data-cols-surface');
+      if (s && !slot.innerHTML.trim()) slot.innerHTML = _colsControl(s);
+    });
+    _updateColsSlotVisibility();
+  }
+  window._syncColsControls = _syncColsControls;
+  function _setCardCols(surface, value) {
+    var v = (value === 'auto') ? 'auto' : Math.max(1, Math.min(8, parseInt(value, 10) || 3));
+    window._cardCols[surface] = v;
+    try { localStorage.setItem('viv.cols.' + surface, String(v)); } catch (e) { /* private mode */ }
+    // Update the control label + Auto state in place (do NOT rebuild the slider
+    // mid-drag), then re-apply the grid to the visible cards containers.
+    document.querySelectorAll('.cols-ctl-slot[data-cols-surface="' + surface + '"]').forEach(function (slot) {
+      var cnt = slot.querySelector('.cols-count'); if (cnt) cnt.textContent = (v === 'auto') ? 'auto' : v;
+      var ab = slot.querySelector('.cols-auto-btn'); if (ab) ab.classList.toggle('active', v === 'auto');
+    });
+    _cardContainersFor(surface).forEach(function (c) { _applyCardCols(c, surface); });
+  }
+  window._setCardCols = _setCardCols;
+
+  // ── Light / dark theme toggle ──────────────────────────────────────────
+  // The theme is applied to <html data-theme> before first paint by a small
+  // inline script in <head> (no flash); this drives the toggle + persistence.
+  function _syncThemeLogo() {
+    var img = document.querySelector('.viv-rail-logo');
+    if (!img || !img.dataset) return;
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var next = dark ? img.dataset.darkSrc : img.dataset.lightSrc;
+    if (next && img.getAttribute('src') !== next) img.src = next;
+  }
+  function _setTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('viv.theme', t); } catch (e) { /* private mode */ }
+    var b = document.getElementById('viv-theme-toggle');
+    if (b) b.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false');
+    _syncThemeLogo();
+  }
+  function _toggleTheme() {
+    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    _setTheme(cur === 'dark' ? 'light' : 'dark');
+  }
+  window._toggleTheme = _toggleTheme;
+  window._setTheme = _setTheme;
+  (function () {
+    var sync = function () {
+      var b = document.getElementById('viv-theme-toggle');
+      if (b) b.setAttribute('aria-checked', document.documentElement.getAttribute('data-theme') === 'dark' ? 'true' : 'false');
+      _syncThemeLogo();
+    };
+    if (document.readyState !== 'loading') sync();
+    else document.addEventListener('DOMContentLoaded', sync);
+  })();
+
   function _syncRegistryToolbar() {
     document.querySelectorAll('.reg-zoom-btn').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-zoom') === window._registryZoom);
@@ -1982,6 +2083,7 @@
     window._registryZoom = z;
     try { localStorage.setItem('viv.registryZoom', z); } catch (e) { /* private mode */ }
     _syncRegistryToolbar(); _rerenderRegistryKinds();
+    _updateColsSlotVisibility();   // slider only in Cards zoom (table returns early)
     _refocusRegistrySelection();   // keep the selected process in focus on zoom
   }
   window._setRegistryZoom = _setRegistryZoom;
@@ -2022,8 +2124,43 @@
     return out;
   }
 
-  // Grid card (default zoom): a dense card — name, use, one-line description, and
-  // a "config & ports" dropdown. NO inline ports (those are the Full view).
+  // Inline ports + types for the middle (grid) zoom — read-only detail, always
+  // visible (no dropdown). Double-click a card to reach the runnable Full view.
+  function _regInlinePorts(p) {
+    // Compact bigraph-loom-style layout: config strip on top, input ports down
+    // the left, output ports down the right — small chips with a port dot.
+    function ports(schema, side) {
+      var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : null;
+      if (keys === null) return '<span class="reg-ip-na" title="Ports depend on a configured instance.">—</span>';
+      if (!keys.length) return '<span class="reg-ip-na">(none)</span>';
+      return keys.map(function (k) {
+        var t = _regTypeLabel(schema[k]);
+        return '<span class="reg-ip reg-ip-' + side + '"><span class="reg-ip-dot"></span>' +
+          '<code>' + _esc(k) + '</code>' +
+          (t ? '<span class="reg-ip-type">' + _esc(t) + '</span>' : '') + '</span>';
+      }).join('');
+    }
+    var hasPorts = !(p.inputs === undefined && p.outputs === undefined);
+    var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
+    if (!hasPorts && !cfgKeys.length) return '';
+    var cfg = cfgKeys.length
+      ? '<div class="reg-mid-config"><span class="reg-mid-label">config</span>' +
+        cfgKeys.slice(0, 16).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
+        (cfgKeys.length > 16 ? ' <span class="reg-ip-na">+' + (cfgKeys.length - 16) + '</span>' : '') + '</div>'
+      : '';
+    var portsRow = hasPorts
+      ? '<div class="reg-mid-ports">' +
+          '<div class="reg-mid-col reg-mid-in"><span class="reg-ip-title">inputs</span>' +
+            ports(p.inputs === undefined ? null : p.inputs, 'in') + '</div>' +
+          '<div class="reg-mid-col reg-mid-out"><span class="reg-ip-title">outputs</span>' +
+            ports(p.outputs === undefined ? null : p.outputs, 'out') + '</div>' +
+        '</div>'
+      : '';
+    return '<div class="reg-mid">' + cfg + portsRow + '</div>';
+  }
+
+  // Grid card (middle zoom): name, use, one-line description, and the ports+types
+  // shown inline. Double-click zooms to the runnable Full view.
   function _renderRegistryEntryGrid(p) {
     var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
     var esc = _esc, addr = _esc(p.address || '');
@@ -2032,18 +2169,36 @@
       : '';
     var desc = (p.description || '').trim();
     var short = desc ? desc.split('\n')[0] : '';
-    var inN = _nPorts(p.inputs), outN = _nPorts(p.outputs);
-    // Usage split — across composites vs studies — plus the port I/O counts.
+    // Usage split — across composites vs studies. Port counts are dropped here:
+    // the middle zoom shows the actual ports+types inline (see _regInlinePorts).
     function stat(glyph, n, singular, plural, title) {
       return '<span class="reg-stat" title="' + esc(title) + '"><span class="reg-stat-glyph">' + glyph +
         '</span><strong>' + n + '</strong> ' + (n === 1 ? singular : plural) + '</span>';
     }
     var stats = [];
     if (p.composite_uses) stats.push(stat('▦', p.composite_uses, 'composite', 'composites', 'Used in this many composite generators'));
-    if (p.study_uses) stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
-    stats.push(stat('⇄', inN, 'input', 'inputs', 'Input ports'));
-    stats.push(stat('⇄', outN, 'output', 'outputs', 'Output ports'));
-    var details = _regDetailsBody(p);
+    var sp = p.study_participation;
+    if (sp && sp.studies) {
+      var succ = (sp.success_pct != null && sp.total)
+        ? ' <span class="reg-succ-inline ' + (sp.success_pct >= 80 ? 'reg-succ-hi' : (sp.success_pct >= 50 ? 'reg-succ-mid' : 'reg-succ-lo')) + '">' + sp.success_pct + '%</span>'
+        : '';
+      stats.push('<span class="reg-stat reg-stat-part" title="Participates in ' + sp.studies +
+        ' stud' + (sp.studies === 1 ? 'y' : 'ies') + ' (via the composites that contain it); ' +
+        sp.pass + '/' + sp.total + ' report-card outcomes passed"><span class="reg-stat-glyph">◆</span><strong>' +
+        sp.studies + '</strong> stud' + (sp.studies === 1 ? 'y' : 'ies') + succ + '</span>');
+    } else if (p.study_uses) {
+      stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
+    }
+    var inlinePorts = _regInlinePorts(p);
+    // Collapsed by default: config + input/output ports live behind a click-to-
+    // expand <details> so the middle card stays compact. stopPropagation so the
+    // toggle doesn't select/zoom the card.
+    var _cfgN = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema).length : 0;
+    var _detail = inlinePorts
+      ? '<details class="reg-mid-details" onclick="event.stopPropagation()"><summary>config &amp; ports' +
+        ' <span class="reg-mid-sum">' + _cfgN + ' config · ' + _nPorts(p.inputs) + ' in · ' + _nPorts(p.outputs) + ' out</span></summary>' +
+        inlinePorts + '</details>'
+      : '';
     var selCls = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
     return '<div class="registry-card' + selCls + '"' + sourceAttr + ' data-address="' + addr + '"' +
         ' onclick="_selectRegistryEntry(\'' + addr + '\')" ondblclick="_zoomInOn(\'' + addr + '\')"' +
@@ -2056,7 +2211,7 @@
         '</div>' +
         '<div class="reg-card-stats">' + stats.join('') + '</div>' +
       '</div>' +
-      (details ? '<details class="reg-card-details"><summary>config &amp; ports</summary>' + details + '</details>' : '') +
+      _detail +
     '</div>';
   }
 
@@ -2066,6 +2221,12 @@
   function _renderRegistryEntryFull(p) {
     var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
     var kind = p.kind || 'process';
+    var runnable = (kind === 'process' || kind === 'step');
+    var desc = (p.description || '').trim();
+    var selClsFull = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
+    var addrAttr = ' data-address="' + _esc(p.address || '') + '" data-kind="' + kind + '"';
+    // Static port column (used for outputs always, and for both sides on
+    // non-runnable kinds). Runnable inputs are rendered as editable fields.
     function ports(schema, side) {
       var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : [];
       if (!keys.length) return '<div class="loom-port loom-port-empty">—</div>';
@@ -2078,65 +2239,166 @@
           '</div>';
       }).join('');
     }
-    var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
-    var cfgTop = cfgKeys.length
-      ? '<div class="loom-config"><span class="loom-config-label">config</span>' +
-        cfgKeys.slice(0, 14).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
-        (cfgKeys.length > 14 ? ' <span class="muted">+' + (cfgKeys.length - 14) + '</span>' : '') + '</div>'
-      : '';
-    var desc = (p.description || '').trim();
-    // Interactive run panel: editable config + inputs, then Run → outputs (or a
-    // validation/run error). Only for runnable kinds (process/step).
-    var runPanel = '';
-    if (kind === 'process' || kind === 'step') {
-      runPanel = '<details class="loom-run" data-address="' + _esc(p.address || '') + '" data-kind="' + kind + '" ontoggle="_loadRunPanel(this)">' +
-        '<summary>Run this ' + kind + '</summary>' +
-        '<div class="loom-run-body"><p class="muted" style="font-size:0.83em;padding:10px 18px 14px">Open to load defaults &amp; run…</p></div>' +
-        '</details>';
-    }
-    var selClsFull = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
-    return '<div class="registry-entry registry-entry-full' + selClsFull + '"' + sourceAttr + ' data-address="' + _esc(p.address || '') + '">' +
-      '<div class="loom-card loom-card-' + kind + '">' +
-        cfgTop +
-        '<div class="loom-row">' +
-          '<div class="loom-ports loom-ports-in">' + ports(p.inputs, 'in') + '</div>' +
-          '<div class="loom-body">' +
-            '<div class="loom-body-head"><span class="loom-name">' + _esc(p.name) + '</span>' + _regUseBadge(p) + '</div>' +
-            '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
-            (desc ? '<p class="loom-desc">' + _esc(desc) + '</p>' : '') +
+    var bodyHead =
+      '<div class="loom-body-head"><span class="loom-name">' + _esc(p.name) + '</span>' + _regUseBadge(p) + '</div>' +
+      '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
+      (desc ? '<p class="loom-desc">' + _esc(desc) + '</p>' : '');
+
+    if (!runnable) {
+      // Non-runnable kinds (emitter/visualization/analysis/type/report_card):
+      // static loom card — config keys as pills, static ports both sides.
+      var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
+      var cfgTop = cfgKeys.length
+        ? '<div class="loom-config"><span class="loom-config-label">config</span>' +
+          cfgKeys.slice(0, 14).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
+          (cfgKeys.length > 14 ? ' <span class="muted">+' + (cfgKeys.length - 14) + '</span>' : '') + '</div>'
+        : '';
+      return '<div class="registry-entry registry-entry-full' + selClsFull + '"' + sourceAttr + addrAttr + '>' +
+        '<div class="loom-card loom-card-' + kind + '">' + cfgTop +
+          '<div class="loom-row">' +
+            '<div class="loom-ports loom-ports-in">' + ports(p.inputs, 'in') + '</div>' +
+            '<div class="loom-body">' + bodyHead + '</div>' +
+            '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
           '</div>' +
-          '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
         '</div>' +
-        runPanel +
+      '</div>';
+    }
+
+    // Runnable (process/step): the config bar IS the editable config, the left
+    // ports ARE the editable inputs, and Run lives in the body. Fields load
+    // lazily (resolved defaults) when the card scrolls into view.
+    var timestep = (kind === 'process')
+      ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>'
+      : '';
+    // Vertical stack: description/info on top, then config, then input ports,
+    // then run controls, then outputs (ports + collapsible run JSON) at the
+    // bottom. Fields load lazily (resolved defaults) when the card is visible.
+    return '<div class="registry-entry registry-entry-full loom-runnable' + selClsFull + '"' + sourceAttr + addrAttr + '>' +
+      '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
+        '<div class="loom-info">' + bodyHead + '</div>' +
+        '<div class="loom-sec"><div class="loom-sec-label">config</div>' +
+          '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
+        '</div>' +
+        '<div class="loom-sec"><div class="loom-sec-label">input ports</div>' +
+          '<div class="loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
+        '</div>' +
+        '<div class="loom-run-actions">' + timestep +
+          '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+          '<button class="btn-mini" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+        '</div>' +
+        '<div class="loom-sec loom-sec-out"><div class="loom-sec-label">outputs</div>' +
+          '<div class="loom-out-ports">' + ports(p.outputs, 'out') + '</div>' +
+          '<div class="loom-run-output"></div>' +
+        '</div>' +
       '</div>' +
     '</div>';
   }
 
-  // Lazy-load the run panel on first open: fetch RESOLVED defaults (core.fill,
-  // not null placeholders) and render an editable form.
-  function _loadRunPanel(details) {
-    if (!details || !details.open || details._loaded) return;
-    details._loaded = true;
-    var address = details.getAttribute('data-address');
-    var kind = details.getAttribute('data-kind');
-    var body = details.querySelector('.loom-run-body');
-    if (!body) return;
-    body.innerHTML = '<p class="muted" style="font-size:0.83em;padding:10px 18px">Resolving defaults…</p>';
+  // Populate a runnable Full card's editable config (top) + input fields (left)
+  // from resolved defaults. Shared by lazy-load and Reset.
+  function _fillFullFields(card, config, inputs, inSchema) {
+    var cfgBox = card.querySelector('[data-role="cfg"]');
+    var inBox = card.querySelector('[data-role="inputs"]');
+    if (cfgBox) {
+      var ck = Object.keys(config || {});
+      cfgBox.innerHTML = ck.length
+        ? ck.map(function (k) { return _runField(k, config[k]); }).join('')
+        : '<span class="muted" style="font-size:0.82em">no config parameters</span>';
+    }
+    if (inBox) {
+      var ik = Object.keys(inputs || {});
+      inBox.innerHTML = ik.length
+        ? ik.map(function (k) { return _runInputField(k, inputs[k], (inSchema || {})[k]); }).join('')
+        : '<div class="loom-port loom-port-empty muted">(no input ports)</div>';
+      card.querySelectorAll('textarea.loom-in-field').forEach(_autoGrow);
+    }
+  }
+
+  // The registry entry for an address (config_schema/inputs live here — the
+  // authoritative contract, independent of whether the class can be
+  // instantiated with an empty config).
+  function _registryEntryByAddress(address) {
+    var m = window._registryByKind || {};
+    var kinds = Object.keys(m);
+    for (var i = 0; i < kinds.length; i++) {
+      var arr = m[kinds[i]] || [];
+      for (var j = 0; j < arr.length; j++) {
+        if (arr[j] && arr[j].address === address) return arr[j];
+      }
+    }
+    return null;
+  }
+
+  // A sensible editable default for a port/config type schema (used when the
+  // instantiation-based template can't resolve a value).
+  function _defaultForSchema(s) {
+    if (s && typeof s === 'object' && !Array.isArray(s) && ('_default' in s)) return s._default;
+    var t = String(_regTypeLabel(s) || '').toLowerCase();
+    if (/(^|\b)(map|tree|dict|node|inplace)/.test(t)) return {};
+    if (/(^|\b)(list|array|tuple|set)/.test(t)) return [];
+    if (t.indexOf('int') >= 0 || t.indexOf('float') >= 0 || t.indexOf('number') >= 0) return 0;
+    if (t.indexOf('bool') >= 0) return false;
+    if (t.indexOf('string') >= 0) return '';
+    return null;
+  }
+
+  // Field set = the STATIC schema's keys (the real contract), each valued from
+  // the template when it resolved one, else a type-based default.
+  function _mergeSchemaDefaults(schema, template) {
+    schema = schema || {}; template = template || {};
+    var keys = Object.keys(schema);
+    if (!keys.length) keys = Object.keys(template);
+    var out = {};
+    keys.forEach(function (k) {
+      out[k] = (k in template) ? template[k] : _defaultForSchema(schema[k]);
+    });
+    return out;
+  }
+
+  // Populate a runnable Full card's config + input fields. The field SET comes
+  // from the entry's static config_schema/inputs (always present); the template
+  // (core.fill via instantiation) only refines default VALUES — heavy Steps
+  // like Metabolism can't be instantiated with an empty config, so the template
+  // returns empty and we must not blank the contract.
+  function _loadFullRunFields(card) {
+    if (!card || card._loaded) return;
+    card._loaded = true;
+    var address = card.getAttribute('data-address');
+    var entry = _registryEntryByAddress(address) || {};
+    var cfgSchema = (entry.config_schema && typeof entry.config_schema === 'object') ? entry.config_schema : {};
+    var inSchemaStatic = (entry.inputs && typeof entry.inputs === 'object') ? entry.inputs : {};
     var url = (window.DataSource && window.DataSource.apiUrl ? window.DataSource.apiUrl('/api/registry/process-template') : '/api/registry/process-template') +
       '?address=' + encodeURIComponent(address);
+    var apply = function (tCfg, tIn, tInSchema) {
+      var config = _mergeSchemaDefaults(cfgSchema, tCfg);
+      var inputs = _mergeSchemaDefaults(inSchemaStatic, tIn);
+      var inputsSchema = (tInSchema && Object.keys(tInSchema).length) ? tInSchema : inSchemaStatic;
+      card._defaults = { config: config, inputs: inputs, inputsSchema: inputsSchema };
+      _fillFullFields(card, config, inputs, inputsSchema);
+    };
     fetch(url)
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        var config = (j && j.ok && j.config && typeof j.config === 'object') ? j.config : {};
-        var inputs = (j && j.ok && j.inputs && typeof j.inputs === 'object') ? j.inputs : {};
-        var inSchema = (j && j.inputs_schema && typeof j.inputs_schema === 'object') ? j.inputs_schema : {};
-        details._defaults = { config: config, inputs: inputs, inputsSchema: inSchema };
-        body.innerHTML = _renderRunForm(kind, config, inputs, inSchema);
-        _autoGrowRunFields(details);
+        apply(
+          (j && j.ok && j.config && typeof j.config === 'object') ? j.config : {},
+          (j && j.ok && j.inputs && typeof j.inputs === 'object') ? j.inputs : {},
+          (j && j.inputs_schema && typeof j.inputs_schema === 'object') ? j.inputs_schema : {}
+        );
       })
-      .catch(function () { body.innerHTML = _renderRunForm(kind, {}, {}, {}); });
+      .catch(function () { apply({}, {}, {}); });
   }
-  window._loadRunPanel = _loadRunPanel;
+
+  // Load resolved defaults for runnable Full cards as they scroll into view, so
+  // the Full zoom doesn't fire N template fetches for every process at once.
+  function _observeRunnableCards(root) {
+    var cards = (root || document).querySelectorAll('.loom-runnable');
+    if (!cards.length) return;
+    if (!('IntersectionObserver' in window)) { cards.forEach(_loadFullRunFields); return; }
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) { if (e.isIntersecting) { _loadFullRunFields(e.target); io.unobserve(e.target); } });
+    }, { rootMargin: '250px' });
+    cards.forEach(function (c) { io.observe(c); });
+  }
 
   // One typed config field, chosen from the resolved default's JS type.
   function _runField(key, value) {
@@ -2215,24 +2477,23 @@
   }
 
   function _resetRunPanel(btn) {
-    var details = btn.closest('.loom-run');
-    if (!details) return;
-    var d = details._defaults || { config: {}, inputs: {}, inputsSchema: {} };
-    var body = details.querySelector('.loom-run-body');
-    if (body) { body.innerHTML = _renderRunForm(details.getAttribute('data-kind'), d.config, d.inputs, d.inputsSchema); _autoGrowRunFields(details); }
+    var card = btn.closest('.registry-entry-full');
+    if (!card) return;
+    var d = card._defaults || { config: {}, inputs: {}, inputsSchema: {} };
+    _fillFullFields(card, d.config, d.inputs, d.inputsSchema);
+    var out = card.querySelector('.loom-run-output'); if (out) out.innerHTML = '';
   }
   window._resetRunPanel = _resetRunPanel;
 
-  // Collect the panel's config (per-field) + inputs (JSON), run, show outputs.
+  // Collect the Full card's config (per-field) + inputs (JSON), run, show outputs.
   function _runRegistryProcess(btn) {
-    var form = btn.closest('.loom-run-form');
-    var details = btn.closest('.loom-run');
-    if (!form || !details) return;
-    var out = form.querySelector('.loom-run-output');
-    var address = details.getAttribute('data-address');
+    var card = btn.closest('.registry-entry-full');
+    if (!card) return;
+    var out = card.querySelector('.loom-run-output');
+    var address = card.getAttribute('data-address');
 
     var config = {}, bad = null;
-    form.querySelectorAll('.loom-cfg-field').forEach(function (el) {
+    card.querySelectorAll('.loom-cfg-field').forEach(function (el) {
       if (bad) return;
       var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
       if (vt === 'boolean') v = el.checked;
@@ -2246,7 +2507,7 @@
     if (bad) { out.innerHTML = '<div class="loom-run-err">' + _esc(bad) + '</div>'; return; }
 
     var inputs = {};
-    form.querySelectorAll('.loom-in-field').forEach(function (el) {
+    card.querySelectorAll('.loom-in-field').forEach(function (el) {
       if (bad) return;
       var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
       if (vt === 'boolean') v = el.checked;
@@ -2259,7 +2520,7 @@
     });
     if (bad) { out.innerHTML = '<div class="loom-run-err">' + _esc(bad) + '</div>'; return; }
 
-    var ivEl = form.querySelector('.loom-run-interval');
+    var ivEl = card.querySelector('.loom-run-interval');
     var interval = ivEl ? parseFloat(ivEl.value) : undefined;
     var orig = btn.textContent;
     btn.disabled = true; btn.textContent = 'Running…';
@@ -2272,9 +2533,10 @@
       .then(function (j) {
         btn.disabled = false; btn.textContent = orig;
         if (j && j.ok) {
-          out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs:' +
+          out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs' +
             '<button class="btn-mini loom-copy-btn" onclick="_copyRunOutput(this)" title="Copy outputs JSON">⧉ Copy</button></div>' +
-            '<pre class="json-tree loom-run-pre">' + _esc(JSON.stringify(j.outputs, null, 2)) + '</pre>';
+            _jsonViewer(j.outputs) +
+            '<pre class="loom-run-raw" hidden>' + _esc(JSON.stringify(j.outputs, null, 2)) + '</pre>';
         } else {
           var stage = (j && j.stage) ? '[' + j.stage + '] ' : '';
           out.innerHTML = '<div class="loom-run-err">✗ ' + _esc(stage) + _esc((j && j.error) || 'run failed') + '</div>' +
@@ -2289,9 +2551,41 @@
   window._runRegistryProcess = _runRegistryProcess;
 
   // Copy the run output's JSON to the clipboard.
+  // Collapsible JSON viewer — objects/arrays are <details> nodes (top two
+  // levels open); scalars are typed leaves. Big/nested run outputs stay
+  // navigable instead of a wall of pretty-printed text.
+  function _jsonNode(key, val, depth) {
+    var keyHtml = (key !== null) ? '<span class="jt-key">' + _esc(key) + '</span><span class="jt-colon">:</span> ' : '';
+    if (val === null) return '<div class="jt-row">' + keyHtml + '<span class="jt-null">null</span></div>';
+    if (Array.isArray(val)) {
+      if (!val.length) return '<div class="jt-row">' + keyHtml + '<span class="jt-punct">[ ]</span></div>';
+      var ob = depth < 2 ? ' open' : '';
+      var ab = val.map(function (v, i) { return _jsonNode(String(i), v, depth + 1); }).join('');
+      return '<details class="jt-branch"' + ob + '><summary>' + keyHtml +
+        '<span class="jt-punct">[</span><span class="jt-count">' + val.length + '</span><span class="jt-punct">]</span></summary>' +
+        '<div class="jt-children">' + ab + '</div></details>';
+    }
+    if (typeof val === 'object') {
+      var keys = Object.keys(val);
+      if (!keys.length) return '<div class="jt-row">' + keyHtml + '<span class="jt-punct">{ }</span></div>';
+      var oo = depth < 2 ? ' open' : '';
+      var ob2 = keys.map(function (k) { return _jsonNode(k, val[k], depth + 1); }).join('');
+      return '<details class="jt-branch"' + oo + '><summary>' + keyHtml +
+        '<span class="jt-punct">{</span><span class="jt-count">' + keys.length + '</span><span class="jt-punct">}</span></summary>' +
+        '<div class="jt-children">' + ob2 + '</div></details>';
+    }
+    var t = typeof val;
+    var cls = t === 'number' ? 'jt-num' : (t === 'boolean' ? 'jt-bool' : 'jt-str');
+    var disp = t === 'string' ? '"' + _esc(val) + '"' : _esc(String(val));
+    return '<div class="jt-row">' + keyHtml + '<span class="' + cls + '">' + disp + '</span></div>';
+  }
+  function _jsonViewer(value) {
+    return '<div class="json-viewer">' + _jsonNode(null, value, 0) + '</div>';
+  }
+
   function _copyRunOutput(btn) {
     var out = btn.closest('.loom-run-output');
-    var pre = out ? out.querySelector('.loom-run-pre') : null;
+    var pre = out ? out.querySelector('.loom-run-raw') : null;
     if (!pre) return;
     var text = pre.textContent || '';
     var done = function () { var o = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(function () { btn.textContent = o; }, 1200); };
@@ -2317,6 +2611,11 @@
       else if (sortKey === 'module') { av = mod(a).toLowerCase(); bv = mod(b).toLowerCase(); }
       else if (sortKey === 'in') { av = _nPorts(a.inputs); bv = _nPorts(b.inputs); }
       else if (sortKey === 'out') { av = _nPorts(a.outputs); bv = _nPorts(b.outputs); }
+      else if (sortKey === 'studies') { av = (a.study_participation || {}).studies || 0; bv = (b.study_participation || {}).studies || 0; }
+      else if (sortKey === 'success') {
+        av = (a.study_participation || {}).success_pct; av = (av == null ? -1 : av);
+        bv = (b.study_participation || {}).success_pct; bv = (bv == null ? -1 : bv);
+      }
       else if (sortKey === 'source') { av = a.source || ''; bv = b.source || ''; }
       else { av = a.use_count || 0; bv = b.use_count || 0; }
       var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
@@ -2336,6 +2635,8 @@
         '<td class="reg-td-name"><strong>' + _esc(p.name) + '</strong> <code>' + _esc(p.address || '') + '</code></td>' +
         '<td>' + _esc(mod(p)) + '</td>' +
         '<td class="num">' + (p.use_count || 0) + '</td>' +
+        '<td class="num">' + ((p.study_participation || {}).studies || 0) + '</td>' +
+        '<td class="num">' + _successCell(p.study_participation) + '</td>' +
         '<td class="num">' + _nPorts(p.inputs) + '</td>' +
         '<td class="num">' + _nPorts(p.outputs) + '</td>' +
         '<td class="reg-td-src">' + _esc(p.source || '') + '</td>' +
@@ -2343,8 +2644,19 @@
     }).join('');
     el.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
       th('name', 'Name') + th('module', 'Module') + th('use', 'Uses', 'num') +
+      th('studies', 'Studies', 'num') + th('success', 'Success', 'num') +
       th('in', 'In', 'num') + th('out', 'Out', 'num') + th('source', 'Source') +
       '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+
+  // Percent-success cell/chip from a study_participation stat (pass/total of
+  // report-card outcomes across participating studies). '—' when none ran.
+  function _successCell(sp) {
+    if (!sp || sp.success_pct == null || !sp.total) return '<span class="muted">—</span>';
+    var pct = sp.success_pct;
+    var cls = pct >= 80 ? 'reg-succ-hi' : (pct >= 50 ? 'reg-succ-mid' : 'reg-succ-lo');
+    return '<span class="reg-succ ' + cls + '" title="' + sp.pass + ' / ' + sp.total +
+      ' report-card outcomes passed across participating studies">' + pct + '%</span>';
   }
   function _setRegistryTableSort(key) {
     if (window._registryTableSort === key) {
@@ -2478,6 +2790,12 @@
     }
 
     el.innerHTML = html;
+    // Full zoom only: lazily resolve+inject each runnable card's config/inputs.
+    if (zoom === 'full') _observeRunnableCards(el);
+    // Sync the column control (visible only in Cards zoom); apply the
+    // multi-column layout when in Cards.
+    _syncColsControls();
+    if (zoom === 'grid') el.querySelectorAll('.reg-cards-grid').forEach(function (c) { _applyCardCols(c, 'registry'); });
   }
 
   // Render Analysis classes (v2ecoli ANALYSIS_REGISTRY entries) in the Registry
@@ -2741,6 +3059,10 @@
   window._composites = [];
   window._compositesFilter = { search: '', tags: new Set() };
   window._compositesView = 'grid';
+  window._compositesZoom = (function () {
+    var z; try { z = localStorage.getItem('viv.compositesZoom'); } catch (e) { z = null; }
+    return (z === 'table' || z === 'cards' || z === 'loom') ? z : 'cards';
+  })();
   // Default sort: workspace-local composites first, then alphabetical.
   // Surfaces the composites the current investigation actually needs
   // ahead of the full list of every installed pbg-* package's composites
@@ -2858,6 +3180,14 @@
       return;
     }
 
+    // Semantic zoom: Table (dense sortable) → Cards (full-row) → Loom (bigraph
+    // embedded on demand per card). The old grid/list toggle is subsumed.
+    var _czoom = window._compositesZoom || 'cards';
+    document.querySelectorAll('#composite-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-czoom') === _czoom);
+    });
+    if (_czoom === 'table') { _renderCompositesTable(container, composites); return; }
+
     function _moduleLine(c) {
       var mod = c.module || '';
       var kind = c.kind || 'spec';
@@ -2914,7 +3244,7 @@
       });
       container.innerHTML = rows.join('');
     } else {
-      container.className = 'ccard-grid';
+      container.className = 'ccard-rows' + (_czoom === 'loom' ? ' ccard-loom' : '');
       var prevG = null;
       var cards = composites.map(function(c) {
         var kind = c.kind || 'spec';
@@ -3006,25 +3336,143 @@
         var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
           ? ''
           : '<button class="ccard-explore" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore &rarr;</button>';
-        return divider + '<div class="ccard' + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '">' +
-          '<div class="ccard-top">' +
-            '<span class="ccard-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span>' +
-            '<span class="ccard-badges">' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</span>' +
+        var _csel = (window._compositesSelected && window._compositesSelected === c.id) ? ' reg-selected' : '';
+        // Compact full-row card: identity | description | stats | actions across
+        // the bar; config/structure/tags collapse into a details strip below.
+        return divider + '<div class="ccard ccard-compact' + _csel + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '"' +
+            ' data-id="' + _esc(c.id) + '" ondblclick="_zoomInComposite(\'' + _esc(c.id) + '\')" title="Double-click to zoom in on this composite">' +
+          '<div class="ccc-grid">' +
+            '<div class="ccc-identity">' +
+              '<div class="ccc-name-row"><span class="ccc-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span> ' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</div>' +
+              '<code class="ccc-addr" title="' + _esc(c.id) + '">' + _esc(c.id) + '</code>' +
+            '</div>' +
+            '<div class="ccc-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</div>' +
+            '<div class="ccc-stats">' + metaRow + trackRow + '</div>' +
+            '<div class="ccc-actions">' + exploreBtn + '</div>' +
           '</div>' +
-          '<div class="ccard-id mono" title="' + _esc(c.id) + '">' + _esc(c.id) + '</div>' +
-          '<p class="ccard-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</p>' +
-          metaRow +
-          trackRow +
-          paramPreview +
-          structRow +
-          tagRow +
-          '<div class="ccard-foot">' + exploreBtn + '</div>' +
+          ((paramPreview || structRow || tagRow) ? '<div class="ccc-details-row">' + paramPreview + structRow + tagRow + '</div>' : '') +
+          (_czoom === 'loom' ? _compositeLoomEmbed(c) : '') +
         '</div>';
       });
       container.innerHTML = cards.join('');
+      // Cards zoom (not loom): multi-column grid + column control.
+      _syncColsControls();
+      if (_czoom === 'cards') _applyCardCols(container, 'composites');
+      else { container.classList.remove('cards-grid-cols'); container.style.gridTemplateColumns = ''; }
     }
   }
   window._renderComposites = _renderComposites;
+
+  function _setCompositeZoom(z) {
+    window._compositesZoom = z;
+    try { localStorage.setItem('viv.compositesZoom', z); } catch (e) { /* private mode */ }
+    document.querySelectorAll('#composite-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-czoom') === z);
+    });
+    _renderComposites();
+    _updateColsSlotVisibility();   // slider only in Cards zoom (table/loom hidden)
+  }
+  window._setCompositeZoom = _setCompositeZoom;
+
+  // Double-click a composite → zoom in one level (table → cards → loom), focused.
+  function _zoomInComposite(id) {
+    var order = ['table', 'cards', 'loom'];
+    var i = order.indexOf(window._compositesZoom || 'cards');
+    window._compositesSelected = id;
+    _setCompositeZoom(order[Math.min(order.length - 1, i + 1)]);
+    setTimeout(function () {
+      var sel = document.querySelector('#composite-cards [data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
+      if (sel) { sel.classList.add('reg-selected'); try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ } }
+    }, 60);
+  }
+  window._zoomInComposite = _zoomInComposite;
+
+  // Loom (Full) zoom: an on-demand embed of the composite's bigraph. Resolving a
+  // composite can be ParCa-heavy, so it only loads when the card is expanded —
+  // read-only, via the loom's static stateUrl pointed at live composite-resolve.
+  function _compositeLoomEmbed(c) {
+    if (c.read_only && !c.has_wiring) return '';
+    return '<details class="ccard-loom-embed" data-id="' + _esc(c.id) + '" ontoggle="_openCompositeLoomInline(this)">' +
+      '<summary>Open loom</summary>' +
+      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Expand to resolve &amp; render the bigraph…</p></div>' +
+    '</details>';
+  }
+  window._compositeLoomEmbed = _compositeLoomEmbed;
+
+  function _openCompositeLoomInline(det) {
+    if (!det || !det.open || det._loomLoaded) return;
+    det._loomLoaded = true;
+    var id = det.getAttribute('data-id');
+    var host = det.querySelector('.ccard-loom-frame');
+    if (!host) return;
+    host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Resolving composite (this can take a moment)…</p>';
+    var apiUrl = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    var stateUrl = apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id));
+    var loomUrl = apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(stateUrl);
+    var f = document.createElement('iframe');
+    f.className = 'ccard-loom-iframe';
+    f.setAttribute('title', 'Loom — ' + id);
+    f.src = loomUrl;
+    host.innerHTML = '';
+    host.appendChild(f);
+  }
+  window._openCompositeLoomInline = _openCompositeLoomInline;
+
+  // Composites Table view — sortable (Name / Module / Kind / Params / Steps / Used).
+  function _renderCompositesTable(container, composites) {
+    var sk = window._compositesTableSort || 'workspace';
+    var sd = window._compositesTableDir || (sk === 'workspace' ? 'asc' : 'asc');
+    var mod = function (c) { return (c.module || '').split('.')[0]; };
+    var used = function (c) { return (c.studies && c.studies.studies) ? c.studies.studies : 0; };
+    var nparam = function (c) { return Object.keys(c.parameters || {}).length; };
+    var rows = composites.slice().sort(function (a, b) {
+      var av, bv;
+      // Default view: this-workspace composites on top, then most-used in this
+      // workspace, then alphabetical. Returns directly (direction-agnostic).
+      if (sk === 'workspace') {
+        var aw = a.workspace_local ? 0 : 1, bw = b.workspace_local ? 0 : 1;
+        if (aw !== bw) return aw - bw;
+        var au = used(a), bu = used(b);
+        if (au !== bu) return bu - au;
+        return (a.name || '').localeCompare(b.name || '');
+      }
+      if (sk === 'module') { av = mod(a).toLowerCase(); bv = mod(b).toLowerCase(); }
+      else if (sk === 'kind') { av = (a.kind || ''); bv = (b.kind || ''); }
+      else if (sk === 'params') { av = nparam(a); bv = nparam(b); }
+      else if (sk === 'steps') { av = a.default_n_steps || 0; bv = b.default_n_steps || 0; }
+      else if (sk === 'used') { av = used(a); bv = used(b); }
+      else { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); }
+      var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
+      return sd === 'desc' ? -c : c;
+    });
+    function th(key, label, cls) {
+      var on = sk === key;
+      return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
+        '" onclick="_setCompositesTableSort(\'' + key + '\')">' + label + (on ? (sd === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
+    }
+    var body = rows.map(function (c) {
+      return '<tr class="reg-tr" data-id="' + _esc(c.id || '') + '" ondblclick="_zoomInComposite(\'' + _esc(c.id || '') + '\')" title="Double-click to zoom in">' +
+        '<td class="reg-td-name"><strong>' + _esc(c.name) + '</strong> <code>' + _esc(c.id || '') + '</code></td>' +
+        '<td>' + _esc(mod(c)) + '</td>' +
+        '<td>' + _esc(c.kind || 'spec') + '</td>' +
+        '<td class="num">' + nparam(c) + '</td>' +
+        '<td class="num">' + (c.default_n_steps || '') + '</td>' +
+        '<td class="num">' + used(c) + '</td>' +
+        '<td class="reg-td-src">' + (c.workspace_local ? 'workspace' : _esc(mod(c))) + '</td>' +
+      '</tr>';
+    }).join('');
+    container.className = '';
+    container.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
+      th('name', 'Name') + th('module', 'Module') + th('kind', 'Kind') + th('params', 'Params', 'num') +
+      th('steps', 'Steps', 'num') + th('used', 'Used', 'num') + th('workspace', 'Source') +
+      '</tr></thead><tbody>' + body + '</tbody></table></div>';
+  }
+  function _setCompositesTableSort(key) {
+    if (window._compositesTableSort === key) window._compositesTableDir = (window._compositesTableDir === 'desc') ? 'asc' : 'desc';
+    else { window._compositesTableSort = key; window._compositesTableDir = (key === 'name' || key === 'module' || key === 'kind') ? 'asc' : 'desc'; }
+    _renderComposites();
+  }
+  window._setCompositesTableSort = _setCompositesTableSort;
 
   // Lazily fetch a composite's process/store counts when its "structure"
   // <details> is first opened (building a composite can be ParCa-heavy, so this
@@ -3213,6 +3661,35 @@
   }
   window._setCatalogView = _setCatalogView;
 
+  // Modules has TWO zoom levels: Table (dense sortable) → Cards (multi-column
+  // grid). Persists; double-click a module zooms in one level. A stored 'full'
+  // (the removed high-detail level) resolves to Cards.
+  window._catalogZoom = (function () {
+    var z; try { z = localStorage.getItem('viv.catalogZoom'); } catch (e) { z = null; }
+    return (z === 'table' || z === 'cards') ? z : 'cards';
+  })();
+  function _setCatalogZoom(z) {
+    window._catalogZoom = z;
+    try { localStorage.setItem('viv.catalogZoom', z); } catch (e) { /* private mode */ }
+    document.querySelectorAll('#catalog-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-mzoom') === z);
+    });
+    _renderCatalog();
+    _updateColsSlotVisibility();   // slider only in Cards zoom (table hidden)
+  }
+  window._setCatalogZoom = _setCatalogZoom;
+  function _zoomInModule(name) {
+    var order = ['table', 'cards'];
+    var i = order.indexOf(window._catalogZoom || 'cards');
+    window._catalogSelected = name;
+    _setCatalogZoom(order[Math.min(order.length - 1, i + 1)]);
+    setTimeout(function () {
+      var sel = document.querySelector('#catalog-modules-grid [data-mid="' + (window.CSS && CSS.escape ? CSS.escape(name) : name) + '"]');
+      if (sel) { sel.classList.add('reg-selected'); try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ } }
+    }, 60);
+  }
+  window._zoomInModule = _zoomInModule;
+
   // -------------------------------------------------------------------------
   // Shared module-card rendering (Modules tab + Marketplace tab)
   // -------------------------------------------------------------------------
@@ -3370,45 +3847,111 @@
       return;
     }
 
-    if (view === 'list') {
-      grid.className = 'module-list';
-      var prevL = null;
-      var rows = modules.map(function(m) {
-        var divider = _moduleSectionDivider(prevL, m);
-        prevL = m;
-        return divider + '<div class="module-list-row' + (m.kind === 'workspace' ? ' module-row-workspace' : '') + '">' +
-          '<span class="name">' + _esc(m.display_name || m.name) + '</span>' +
-          '<span class="desc"> ' + _esc(m.description || '') + _moduleStatsRow(m) + _moduleInstalledMeta(m) + '</span>' +
-          '<span>' + _moduleActionFor(m, marketplace) + '</span>' +
-          '</div>';
-      });
-      grid.innerHTML = rows.join('');
-    } else {
-      grid.className = 'module-grid';
-      var prevG = null;
-      var cards = modules.map(function(m) {
-        var divider = _moduleSectionDivider(prevG, m);
-        prevG = m;
-        // Installed-via-imports modules carry their GitHub URL in `source`, not
-        // `homepage`; fall back to a URL-shaped source for the header link.
-        var _hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
-        var homepage = _hp
-          ? '<a href="' + _esc(_hp) + '" target="_blank" class="module-link">GitHub &#8599;</a>'
-          : '';
-        var workspaceCls = (m.kind === 'workspace') ? ' module-card-workspace'
-                          : (m.installed ? ' module-card-installed' : '');
-        return divider + '<div class="module-card' + workspaceCls + '">' +
-          '<div class="module-card-header"><strong>' + _esc(m.display_name || m.name) + '</strong> ' + homepage + '</div>' +
-          '<p class="module-desc">' + _esc(m.description) + '</p>' +
-          '<div class="module-tags"></div>' +
-          _moduleStatsRow(m) +
-          _moduleInstalledMeta(m) +
-          '<div class="module-action">' + _moduleActionFor(m, marketplace) + '</div>' +
-          '</div>';
-      });
-      grid.innerHTML = cards.join('');
-    }
+    // Semantic zoom: Table (dense sortable) → Cards (full-row) → Full (high
+    // detail). Keep the workspace→installed→available section dividers.
+    var zoom = window._catalogZoom || 'cards';
+    document.querySelectorAll('#catalog-toolbar .reg-zoom-btn').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-mzoom') === zoom);
+    });
+    if (zoom === 'table') { _renderModulesTable(grid, modules, marketplace); return; }
+    grid.className = 'mrows' + (zoom === 'full' ? ' mrows-full' : '');
+    var prevG = null;
+    var cards = modules.map(function (m) {
+      var divider = _moduleSectionDivider(prevG, m);
+      prevG = m;
+      return divider + _moduleFullRowCard(m, marketplace, zoom);
+    });
+    grid.innerHTML = cards.join('');
+    // Cards zoom: multi-column grid + column control (Full stays single-column).
+    _syncColsControls();
+    if (zoom === 'cards') _applyCardCols(grid, 'modules');
+    else { grid.classList.remove('cards-grid-cols'); grid.style.gridTemplateColumns = ''; }
   }
+
+  // Full-row module card — identity | description | stats | install-action, with
+  // source/ref/path detail shown at the Full zoom. Double-click zooms in.
+  function _moduleFullRowCard(m, marketplace, zoom) {
+    var name = _esc(m.display_name || m.name);
+    var _hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
+    var homepage = _hp ? ' <a href="' + _esc(_hp) + '" target="_blank" class="module-link">GitHub &#8599;</a>' : '';
+    var wsCls = (m.kind === 'workspace') ? ' module-card-workspace' : (m.installed ? ' module-card-installed' : '');
+    var sel = (window._catalogSelected && window._catalogSelected === m.name) ? ' reg-selected' : '';
+    var meta = _moduleInstalledMeta(m);
+    return '<div class="module-card mrow' + sel + wsCls + '" data-mid="' + _esc(m.name) + '"' +
+        ' ondblclick="_zoomInModule(\'' + _esc(m.name) + '\')" title="Double-click to zoom in on this module">' +
+      '<div class="mrow-grid">' +
+        '<div class="mrow-identity"><div class="mrow-name"><strong class="mrow-name-text" title="' + _esc(m.display_name || m.name) + '">' + name + '</strong>' + homepage + '</div></div>' +
+        '<div class="mrow-desc">' + _esc(m.description || '') + '</div>' +
+        '<div class="mrow-stats">' + _moduleStatsRow(m) + '</div>' +
+        '<div class="mrow-action">' + _moduleActionFor(m, marketplace) + '</div>' +
+      '</div>' +
+      (zoom === 'full' && meta ? '<div class="mrow-meta">' + meta + '</div>' : '') +
+    '</div>';
+  }
+
+  // Modules Table — installed-here and marketplace grouped into separate
+  // sections; sortable (Name / Source / Composites / Repos / Studies / Used);
+  // GitHub link on the name; Install/Uninstall in a single Action column.
+  function _renderModulesTable(grid, modules, marketplace) {
+    var sk = window._catalogTableSort || 'used';
+    var sd = window._catalogTableDir || ((sk === 'name' || sk === 'source') ? 'asc' : 'desc');
+    var pkg = function (m) { return (m.package || m.name || '').split('.')[0].replace(/_/g, '-'); };
+    function cmp(a, b) {
+      var av, bv;
+      if (sk === 'source') { av = pkg(a).toLowerCase(); bv = pkg(b).toLowerCase(); }
+      else if (sk === 'composites') { av = a.n_composites || 0; bv = b.n_composites || 0; }
+      else if (sk === 'repos') { av = a.n_repos || 0; bv = b.n_repos || 0; }
+      else if (sk === 'studies') { av = a.n_studies || 0; bv = b.n_studies || 0; }
+      else if (sk === 'used') { av = a.n_used || 0; bv = b.n_used || 0; }
+      else { av = (a.display_name || a.name || '').toLowerCase(); bv = (b.display_name || b.name || '').toLowerCase(); }
+      var c = av < bv ? -1 : (av > bv ? 1 : (a.display_name || a.name || '').localeCompare(b.display_name || b.name || ''));
+      return sd === 'desc' ? -c : c;
+    }
+    var isInstalled = function (m) { return m.kind === 'workspace' || m.installed; };
+    var installed = modules.filter(isInstalled).sort(cmp);
+    var available = modules.filter(function (m) { return !isInstalled(m); }).sort(cmp);
+    function gh(m) {
+      var hp = m.homepage || (/^https?:\/\//.test(m.source || '') ? m.source : '');
+      return hp ? ' <a href="' + _esc(hp) + '" target="_blank" class="module-link" onclick="event.stopPropagation()">GitHub &#8599;</a>' : '';
+    }
+    function th(key, label, cls) {
+      var on = sk === key;
+      return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
+        '" onclick="_setCatalogTableSort(\'' + key + '\')">' + label + (on ? (sd === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
+    }
+    function row(m) {
+      return '<tr class="reg-tr" data-mid="' + _esc(m.name) + '" ondblclick="_zoomInModule(\'' + _esc(m.name) + '\')" title="Double-click to zoom in">' +
+        '<td class="reg-td-name"><strong>' + _esc(m.display_name || m.name) + '</strong>' + gh(m) + '</td>' +
+        '<td>' + _esc(m.kind === 'workspace' ? 'workspace' : pkg(m)) + '</td>' +
+        '<td class="num">' + (m.n_composites || 0) + '</td>' +
+        '<td class="num" title="Repos in the federated ecosystem that import this module">' + (m.n_repos || 0) + '</td>' +
+        '<td class="num">' + (m.n_studies || 0) + '</td>' +
+        '<td class="num">' + (m.n_used || 0) + '</td>' +
+        '<td class="reg-td-action">' + _moduleActionFor(m, marketplace) + '</td>' +
+      '</tr>';
+    }
+    var NCOLS = 7;
+    function section(label, list) {
+      if (!list.length) return '';
+      return '<tr class="module-table-section"><td colspan="' + NCOLS + '"><span>' + label +
+        ' <span class="muted">(' + list.length + ')</span></span></td></tr>' + list.map(row).join('');
+    }
+    grid.className = '';
+    grid.innerHTML = '<div class="registry-table-wrap"><table class="registry-table modules-table"><thead><tr>' +
+      th('name', 'Name') + th('source', 'Source') + th('composites', 'Composites', 'num') +
+      th('repos', 'Repos', 'num') + th('studies', 'Studies', 'num') + th('used', 'Used', 'num') +
+      '<th class="reg-th">Action</th>' +
+      '</tr></thead><tbody>' +
+      section('Installed in this workspace', installed) +
+      section('Available in marketplace', available) +
+      '</tbody></table></div>';
+  }
+  function _setCatalogTableSort(key) {
+    if (window._catalogTableSort === key) window._catalogTableDir = (window._catalogTableDir === 'desc') ? 'asc' : 'desc';
+    else { window._catalogTableSort = key; window._catalogTableDir = (key === 'name' || key === 'source') ? 'asc' : 'desc'; }
+    _renderCatalog();
+  }
+  window._setCatalogTableSort = _setCatalogTableSort;
 
   function _renderCatalog() {
     var grid = document.getElementById('catalog-modules-grid');
@@ -3552,6 +4095,7 @@
         else alert(msg);
         // Refresh catalog (which now also refreshes the Installed list via _renderInstalledModules)
         if (typeof _loadCatalog === 'function') _loadCatalog();
+        if (typeof _loadMarket === 'function') _loadMarket(true);
         if (typeof _loadRegistry === 'function') _loadRegistry(true);
       })
       .catch(function(err) {
@@ -3648,6 +4192,357 @@
       });
   }
   window._loadCatalog = _loadCatalog;
+
+  // ── Market: faceted browser over the ecosystem's artifacts ────────────────
+  // Search processes, composites, studies and investigations from the
+  // workspace + every installed module (which span the public repos), with
+  // three zoom levels (List → Cards → Detail) surfacing how much each is used
+  // and what for. Uninstalled repos' individual artifacts are out of scope
+  // (only counts are available without an ecosystem index).
+  window._marketItems = null;
+  window._marketFacet = 'all';
+  window._marketZoom = 'cards';
+  // The Registry is for discovering artifacts from OTHER repos to import, so it
+  // defaults to external; 'workspace' (Ours) and 'all' are opt-in.
+  window._marketOrigin = 'external';
+  try { var _mz = localStorage.getItem('viv.market-zoom'); if (_mz) window._marketZoom = _mz; } catch (e) {}
+  try { var _mo = localStorage.getItem('viv.market-origin'); if (_mo) window._marketOrigin = _mo; } catch (e) {}
+
+  var _MARKET_TYPES = [
+    { key: 'process',       label: 'Processes',      ico: '⚙' },
+    { key: 'composite',     label: 'Composites',     ico: '▩' },
+    { key: 'study',         label: 'Studies',        ico: '▤' },
+    { key: 'investigation', label: 'Investigations', ico: '❖' }
+  ];
+  function _marketIco(t) {
+    for (var i = 0; i < _MARKET_TYPES.length; i++) if (_MARKET_TYPES[i].key === t) return _MARKET_TYPES[i].ico;
+    return '•';
+  }
+  // 'viva_munk.processes.x.Y' / 'pbg_copasi.composites' → display repo 'viva-munk'
+  function _marketRepoOf(s) {
+    if (!s) return '';
+    return String(s).split('.')[0].replace(/_/g, '-');
+  }
+
+  // Load incrementally: the composites/studies/investigations endpoints answer
+  // in 1-4s, but the build_core() registry (processes) can take ~45s cold, so
+  // each source renders as it arrives instead of blocking on the slowest.
+  function _loadMarket(force) {
+    // Load once: re-navigations just re-render the cache; install/uninstall
+    // pass force=true. A guard stops redundant concurrent loads (which reset the
+    // accumulator mid-flight and made the first paint flaky).
+    if (!force && window._marketItems && window._marketItems.length) { _renderMarket(); return; }
+    if (window._marketLoading) return;
+    window._marketLoading = true;
+    var host = document.getElementById('market-results');
+    if (host) host.innerHTML = '<p class="empty-state">Loading&hellip;</p>';
+    window._marketByType = { composite: [], study: [], investigation: [], process: [] };
+    window._marketItems = [];
+    var rebuild = function () {
+      var t = window._marketByType;
+      window._marketItems = [].concat(t.process, t.composite, t.study, t.investigation);
+      _renderMarket();
+    };
+    var J = function (u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); };
+
+    // The single-worker server hangs on CONCURRENT env_worker-backed requests
+    // (composites + registry), so fetch strictly SEQUENTIALLY — light/file
+    // endpoints first for a fast first paint, the heavy build_core() registry
+    // (~45s cold) last. Each step renders as it lands.
+    J('/api/investigation-summaries').then(function (isets) {
+      window._marketByType.investigation = ((isets || {}).investigations || []).map(function (iv) {
+        return { type: 'investigation', name: iv.name, title: iv.title || iv.name,
+          repo: _marketRepoOf(iv.origin_repo) || 'workspace', origin: iv.origin_repo ? 'external' : 'workspace',
+          desc: iv.description || '', status: iv.status || '', nStudies: iv.n_studies || 0 };
+      });
+      rebuild();
+      return J('/api/investigations');
+    }).then(function (studies) {
+      window._marketByType.study = ((studies || {}).investigations || []).map(function (s) {
+        return { type: 'study', name: s.name, repo: _marketRepoOf(s.origin_repo) || 'workspace',
+          origin: s.origin_repo ? 'external' : 'workspace', desc: s.description || '',
+          status: s.status || '', composite: s.composite || '',
+          nBeh: s.n_behaviors || 0, nRuns: s.n_runs || 0, nSims: s.n_simulations || 0, use: s.n_runs || 0 };
+      });
+      rebuild();
+      return J('/api/composites');
+    }).then(function (comps) {
+      var carr = Array.isArray(comps) ? comps : (comps && comps.composites) || [];
+      window._marketByType.composite = carr.map(function (c) {
+        var repo = _marketRepoOf(c.origin_repo || c.module);
+        return { type: 'composite', name: c.name, repo: repo,
+          origin: (c.workspace_local || repo === 'v2ecoli' || c.source === 'workspace') ? 'workspace' : 'external',
+          desc: c.description || '', requires: ((c.requires || {}).processes) || [],
+          nParams: (c.parameters || []).length, nSteps: c.default_n_steps || 0, use: 0 };
+      });
+      rebuild();
+      return J('/api/registry');
+    }).then(function (reg) {
+      var wpkgs = (reg && reg.workspace_pkgs) || [];
+      window._marketByType.process = ((reg || {}).processes || []).filter(function (p) {
+        return p.kind === 'process';   // steps/emitters live on the Modules page
+      }).map(function (p) {
+        var repo = _marketRepoOf(p.address || p.source);
+        var inWs = p.source === 'in_workspace' || wpkgs.indexOf((p.address || '').split('.')[0]) !== -1;
+        return { type: 'process', name: p.name, repo: repo, origin: inWs ? 'workspace' : 'external',
+          desc: p.description || '', address: p.address || '',
+          usage: { comp: p.composite_uses || 0, study: p.study_uses || 0, total: p.use_count || 0 },
+          use: p.use_count || 0,
+          ports: { in: (p.inputs || []).length, out: (p.outputs || []).length,
+                   config: Object.keys(p.config_schema || {}).length } };
+      });
+      rebuild();
+      window._marketLoading = false;
+    }).catch(function () { window._marketLoading = false; });
+  }
+  window._loadMarket = _loadMarket;
+
+  function _setMarketFacet(f) {
+    window._marketFacet = f || 'all';
+    document.querySelectorAll('.market-facet').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.facet === window._marketFacet);
+    });
+    _renderMarket();
+  }
+  window._setMarketFacet = _setMarketFacet;
+
+  function _setMarketZoom(z) {
+    window._marketZoom = z || 'cards';
+    try { localStorage.setItem('viv.market-zoom', window._marketZoom); } catch (e) {}
+    document.querySelectorAll('[data-mkzoom]').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.mkzoom === window._marketZoom);
+    });
+    _renderMarket();
+  }
+  window._setMarketZoom = _setMarketZoom;
+
+  function _setMarketOrigin(o) {
+    window._marketOrigin = o || 'all';
+    try { localStorage.setItem('viv.market-origin', window._marketOrigin); } catch (e) {}
+    document.querySelectorAll('.market-origin-chip').forEach(function (b) {
+      b.classList.toggle('active', b.dataset.origin === window._marketOrigin);
+    });
+    _renderMarket();
+  }
+  window._setMarketOrigin = _setMarketOrigin;
+
+  // Open an artifact where it lives: navigate to the owning page and filter to it.
+  function _marketOpen(type, name) {
+    if (type === 'investigation') {
+      _switchPage('investigations');
+      if (typeof _showInvestigationWorkspace === 'function') _showInvestigationWorkspace(name);
+      return;
+    }
+    if (type === 'study') {
+      _switchPage('studies');
+      var si = document.getElementById('investigations-search');
+      if (si) { si.value = name; si.dispatchEvent(new Event('input', { bubbles: true })); }
+      return;
+    }
+    if (type === 'composite') {
+      _switchPage('simulation-setup');
+      var ci = document.getElementById('composite-search');
+      if (ci) { ci.value = name; ci.dispatchEvent(new Event('input', { bubbles: true })); }
+      return;
+    }
+    if (type === 'process') {
+      _switchPage('modules');
+      var ri = document.getElementById('registry-search');
+      if (ri) { ri.value = name; if (typeof _filterRegistry === 'function') _filterRegistry(name); }
+      return;
+    }
+  }
+  window._marketOpen = _marketOpen;
+
+  // Usage summary — how much an artifact is used ("used for" surfaced in detail).
+  function _marketUsage(it) {
+    var p = [];
+    if (it.type === 'process') {
+      if (it.usage.comp) p.push(it.usage.comp + ' composite' + (it.usage.comp > 1 ? 's' : ''));
+      if (it.usage.study) p.push(it.usage.study + ' stud' + (it.usage.study > 1 ? 'ies' : 'y'));
+      return p.length ? 'used by ' + p.join(' · ') : 'unused';
+    }
+    if (it.type === 'composite') {
+      if (it.requires.length) p.push('needs ' + it.requires.length + ' process' + (it.requires.length > 1 ? 'es' : ''));
+      if (it.nSteps) p.push(it.nSteps + ' steps');
+      if (it.nParams) p.push(it.nParams + ' param' + (it.nParams > 1 ? 's' : ''));
+      return p.join(' · ');
+    }
+    if (it.type === 'study') {
+      if (it.status) p.push(it.status);
+      if (it.nBeh) p.push(it.nBeh + ' behavior' + (it.nBeh > 1 ? 's' : ''));
+      if (it.nRuns) p.push(it.nRuns + ' run' + (it.nRuns > 1 ? 's' : ''));
+      return p.join(' · ');
+    }
+    if (it.type === 'investigation') {
+      if (it.status) p.push(it.status);
+      if (it.nStudies) p.push(it.nStudies + ' stud' + (it.nStudies > 1 ? 'ies' : 'y'));
+      return p.join(' · ');
+    }
+    return '';
+  }
+
+  function _marketHead(it) {
+    return '<span class="market-type-ico" title="' + it.type + '">' + _marketIco(it.type) + '</span>'
+      + '<span class="market-name">' + _esc(it.title || it.name) + '</span>'
+      + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
+  }
+  function _marketOpenBtn(it) {
+    return '<button class="btn-mini market-open" data-open-type="' + it.type +
+      '" data-open-name="' + _esc(it.name) + '">Open ↗</button>';
+  }
+
+  // List (dense): one row per artifact.
+  function _marketRow(it) {
+    var u = _marketUsage(it);
+    return '<div class="market-row market-type-' + it.type + '">'
+      + '<div class="market-row-main">' + _marketHead(it)
+      +   (it.desc ? '<span class="market-row-desc">' + _esc(it.desc) + '</span>' : '') + '</div>'
+      + '<span class="market-usage">' + _esc(u) + '</span>'
+      + _marketOpenBtn(it) + '</div>';
+  }
+
+  // Cards: current card + a usage line.
+  function _marketCard(it) {
+    var u = _marketUsage(it);
+    return '<div class="market-card market-type-' + it.type + '">'
+      + '<div class="market-card-head">' + _marketHead(it) + '</div>'
+      + (it.desc ? '<div class="market-desc">' + _esc(it.desc) + '</div>' : '')
+      + '<div class="market-card-foot">'
+      +   '<span class="market-usage">' + _esc(u) + '</span>' + _marketOpenBtn(it) + '</div>'
+      + '</div>';
+  }
+
+  // Detail (full): description + a usage/attributes table.
+  function _marketDetail(it) {
+    var rows = [];
+    var R = function (k, v) { if (v) rows.push('<div class="market-dl-k">' + k + '</div><div class="market-dl-v">' + v + '</div>'); };
+    if (it.type === 'process') {
+      R('Address', '<code>' + _esc(it.address || it.name) + '</code>');
+      R('Used by', it.usage.total
+        ? _esc((it.usage.comp || 0) + ' composite' + (it.usage.comp === 1 ? '' : 's') + ' · ' + (it.usage.study || 0) + ' stud' + (it.usage.study === 1 ? 'y' : 'ies'))
+        : 'not yet used');
+      R('Ports', _esc(it.ports.in + ' in · ' + it.ports.out + ' out · ' + it.ports.config + ' config'));
+    } else if (it.type === 'composite') {
+      if (it.requires.length) R('Requires', it.requires.slice(0, 12).map(function (p) { return '<code>' + _esc(p) + '</code>'; }).join(' '));
+      R('Structure', _esc(it.nSteps + ' steps · ' + it.nParams + ' parameters'));
+    } else if (it.type === 'study') {
+      R('Status', _esc(it.status || '—'));
+      if (it.composite) R('Composite', '<code>' + _esc(it.composite) + '</code>');
+      R('Activity', _esc((it.nBeh || 0) + ' behavior' + (it.nBeh === 1 ? '' : 's') + ' · ' + (it.nRuns || 0) + ' run' + (it.nRuns === 1 ? '' : 's') + ' · ' + (it.nSims || 0) + ' sim' + (it.nSims === 1 ? '' : 's')));
+    } else if (it.type === 'investigation') {
+      R('Status', _esc(it.status || '—'));
+      R('Studies', _esc(String(it.nStudies || 0)));
+    }
+    return '<div class="market-card market-detail market-type-' + it.type + '">'
+      + '<div class="market-card-head">' + _marketHead(it) + _marketOpenBtn(it) + '</div>'
+      + (it.desc ? '<div class="market-desc market-desc-full">' + _esc(it.desc) + '</div>' : '')
+      + (rows.length ? '<div class="market-dl">' + rows.join('') + '</div>' : '')
+      + '</div>';
+  }
+
+  // List (minimized) zoom = a sortable table: info rolls up into columns
+  // instead of overflowing to the right. Sort by name, repo, location, or use.
+  window._marketSort = { key: 'name', dir: 1 };
+  function _marketUseNum(it) {
+    if (it.type === 'process') return (it.usage || {}).total || 0;
+    if (it.type === 'study') return it.nRuns || 0;
+    if (it.type === 'investigation') return it.nStudies || 0;
+    return 0;   // composites carry no usage count
+  }
+  var _MARKET_COLS = [
+    { key: 'type',   label: 'Type',     get: function (it) { return it.type; }, w: '92px' },
+    { key: 'name',   label: 'Name',     get: function (it) { return it.title || it.name; } },
+    { key: 'repo',   label: 'Repo',     get: function (it) { return it.repo || ''; }, w: '150px' },
+    { key: 'origin', label: 'Location', get: function (it) { return it.origin === 'workspace' ? 'Ours' : 'External'; }, w: '110px' },
+    { key: 'use',    label: 'Use',      get: _marketUseNum, num: true, w: '70px' }
+  ];
+  function _setMarketSort(key) {
+    var s = window._marketSort;
+    if (s.key === key) s.dir = -s.dir; else { s.key = key; s.dir = 1; }
+    _renderMarket();
+  }
+  window._setMarketSort = _setMarketSort;
+  function _marketTable(items, showType) {
+    var s = window._marketSort;
+    var cols = _MARKET_COLS.filter(function (c) { return c.key !== 'type' || showType; });
+    var col = null; _MARKET_COLS.forEach(function (c) { if (c.key === s.key) col = c; });
+    if (!col) col = _MARKET_COLS[1];
+    var sorted = items.slice().sort(function (a, b) {
+      var av = col.get(a), bv = col.get(b);
+      if (col.num) return ((+av || 0) - (+bv || 0)) * s.dir;
+      return String(av).toLowerCase().localeCompare(String(bv).toLowerCase()) * s.dir;
+    });
+    var head = cols.map(function (c) {
+      var arrow = s.key === c.key ? (s.dir > 0 ? ' ▲' : ' ▼') : '';
+      return '<th class="market-th' + (s.key === c.key ? ' sorted' : '') + '" data-sort="' + c.key + '"'
+        + (c.w ? ' style="width:' + c.w + '"' : '') + '>' + c.label + arrow + '</th>';
+    }).join('');
+    var body = sorted.map(function (it) {
+      var tds = cols.map(function (c) {
+        if (c.key === 'type') return '<td class="market-td-type"><span class="market-type-ico" title="' + it.type + '">' + _marketIco(it.type) + '</span></td>';
+        if (c.key === 'name') return '<td class="market-td-name">' + _esc(it.title || it.name)
+          + (it.desc ? '<span class="market-td-desc">' + _esc(it.desc) + '</span>' : '') + '</td>';
+        if (c.key === 'origin') return '<td><span class="market-origin market-origin-' + it.origin + '">'
+          + (it.origin === 'workspace' ? 'Ours' : 'External') + '</span></td>';
+        if (c.key === 'use') { var u = _marketUseNum(it); return '<td class="market-td-use">' + (u || '—') + '</td>'; }
+        return '<td>' + _esc(String(c.get(it))) + '</td>';
+      }).join('');
+      return '<tr class="market-tr" data-open-type="' + it.type + '" data-open-name="' + _esc(it.name) + '">' + tds + '</tr>';
+    }).join('');
+    return '<table class="market-table"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
+  }
+
+  function _renderMarket() {
+    var host = document.getElementById('market-results');
+    if (!host) return;
+    if (!host._marketWired) {   // delegate clicks once (survives re-renders)
+      host._marketWired = true;
+      host.addEventListener('click', function (e) {
+        var th = e.target.closest('.market-th'); if (th) { _setMarketSort(th.dataset.sort); return; }
+        var tr = e.target.closest('.market-tr'); if (tr) { _marketOpen(tr.dataset.openType, tr.dataset.openName); return; }
+        var b = e.target.closest('.market-open'); if (b) _marketOpen(b.dataset.openType, b.dataset.openName);
+      });
+    }
+    var items = window._marketItems || [];
+    var q = ((document.getElementById('market-search') || {}).value || '').trim().toLowerCase();
+    var facet = window._marketFacet || 'all';
+    var zoom = window._marketZoom || 'cards';
+    var origin = window._marketOrigin || 'all';
+    document.querySelectorAll('[data-mkzoom]').forEach(function (b) { b.classList.toggle('active', b.dataset.mkzoom === zoom); });
+    document.querySelectorAll('.market-origin-chip').forEach(function (b) { b.classList.toggle('active', b.dataset.origin === origin); });
+    var match = function (it) {
+      if (facet !== 'all' && it.type !== facet) return false;
+      if (origin !== 'all' && it.origin !== origin) return false;
+      if (!q) return true;
+      return (it.name + ' ' + (it.title || '') + ' ' + it.desc + ' ' + it.repo).toLowerCase().indexOf(q) !== -1;
+    };
+    var filtered = items.filter(match);
+    if (!filtered.length) {
+      host.innerHTML = items.length ? '<p class="empty-state">No matches.</p>' : '<p class="empty-state">Loading&hellip;</p>';
+      return;
+    }
+    var html = '';
+    if (zoom === 'list') {
+      // One sortable table; a Type column appears only in the All facet.
+      html = _marketTable(filtered, facet === 'all');
+    } else {
+      var render = zoom === 'detail' ? _marketDetail : _marketCard;
+      var wrap = function (arr) { return '<div class="market-grid market-grid-' + zoom + '">' + arr.map(render).join('') + '</div>'; };
+      if (facet === 'all') {
+        _MARKET_TYPES.forEach(function (t) {
+          var group = filtered.filter(function (it) { return it.type === t.key; });
+          if (!group.length) return;
+          html += '<div class="market-group"><div class="market-group-head">' + t.label
+            + ' <span class="market-count">' + group.length + '</span></div>' + wrap(group) + '</div>';
+        });
+      } else {
+        html = wrap(filtered);
+      }
+    }
+    host.innerHTML = html;
+  }
+  window._renderMarket = _renderMarket;
 
   // -------------------------------------------------------------------------
   // Install error rendering (v0.4.5)
@@ -4001,6 +4896,7 @@
         if (p.json.branch) msg += '\n\nBranch: ' + p.json.branch + (p.json.commit ? ' (' + p.json.commit + ')' : '');
         alert(msg);
         if (typeof _loadCatalog === 'function') _loadCatalog();
+        if (typeof _loadMarket === 'function') _loadMarket(true);
         if (typeof _loadRegistry === 'function') _loadRegistry(true);
       })
       .catch(function(e) {
@@ -4085,7 +4981,7 @@
         // Drop registry cache, switch to Registry tab so user sees the change.
         window._registryLoaded = false;
         fetch('/api/render', {method: 'POST'}).finally(function() {
-          location.hash = '#registry';
+          location.hash = '#modules';
           location.reload();
         });
       })
@@ -4523,9 +5419,9 @@
   // ---- Rail resize (drag the right edge to widen; snap to normal; drag
   //      narrower to snap into the collapsed bar) ----------------------------
   var _RAIL_NORMAL = 240;      // the "normal" snap width (matches CSS default)
-  var _RAIL_MIN = 240;         // expanded floor — narrower than this collapses
+  var _RAIL_MIN = 160;         // expanded floor (~2/3 of normal) — narrower than this collapses
   var _RAIL_MAX = 560;         // don't let the rail eat the whole viewport
-  var _RAIL_COLLAPSE_AT = 180; // drag below this (px from left edge) → collapse
+  var _RAIL_COLLAPSE_AT = 140; // drag below this (px from left edge) → collapse
   var _RAIL_SNAP = 28;         // within this of normal → snap to exactly normal
 
   function _vivRailSavedWidth() {
@@ -7059,6 +7955,10 @@
   // report's "Executive summary": both read the SAME canonical investigation.yaml
   // fields (executive.{what_is_this,verdict,verdict_status} + question + hypothesis).
   // The free-form `lead` ("replaces prior work…") is demoted to a Background fold.
+  // Inquiry brief: an investigation IS a question, so lead with it as the
+  // headline; the verdict answers it as a colored status line (not a box); depth
+  // (how-to-read / biology / background / glossary) lives in one flat tab strip.
+  // Reads the SAME canonical fields as the downloaded report's executive summary.
   function _renderInvOpening(d) {
     d = d || {};
     var ex = d.executive || {};
@@ -7069,35 +7969,100 @@
     var q   = oneline(d.question);
     var hyp = oneline(d.hypothesis);
     var leadProse = (d.lead || d.description || '').trim();
+    var bio       = (d.biological_story || '').trim();
+    var glossary  = Array.isArray(d.glossary) ? d.glossary : [];
+    var howto     = d.how_to_read;  // string (prose) or array (tips) — both render.
+    var hasHowto  = Array.isArray(howto) ? howto.length : String(howto || '').trim().length;
 
-    // Legacy investigations with no executive content fall back to the lead.
+    // Legacy investigations with no structured content fall back to the lead.
     if (!whatIs && !verdict && !q && !hyp) {
-      return leadProse ? _renderInvLeadMarkdown(leadProse) : '';
+      return leadProse
+        ? '<div class="inv-brief"><div class="inv-brief-prose">' + _renderInvLeadMarkdown(leadProse) + '</div></div>'
+        : '';
     }
 
     var key = String(vs).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    var vColor = ({ 'passed':'#166534','complete':'#166534','in-progress':'#854d0e',
-                    'blocked':'#991b1b','failed':'#991b1b','planning':'#1e40af' })[key] || '#475569';
-    var vBg = ({ 'passed':'#dcfce7','complete':'#dcfce7','in-progress':'#fef9c3',
-                 'blocked':'#fee2e2','failed':'#fee2e2','planning':'#dbeafe' })[key] || '#e2e8f0';
+    var vsClass = ({ 'passed':'passed','complete':'passed','in-progress':'progress',
+                     'blocked':'blocked','failed':'blocked','planning':'planning' })[key] || 'default';
 
-    var out = '';
-    if (whatIs)
-      out += '<div style="margin:2px 0 10px;color:#334155;line-height:1.5">' + _renderInvLeadMarkdown(whatIs) + '</div>';
-    if (verdict)
-      out += '<div style="background:#f8fafc;border-left:5px solid ' + vColor + ';border-radius:8px;padding:10px 14px;margin:10px 0">' +
-        '<span style="display:inline-block;font-size:0.7em;font-weight:700;letter-spacing:0.03em;background:' + vBg +
-          ';color:' + vColor + ';padding:2px 9px;border-radius:9999px;margin-right:8px">' + _esc(vs.toUpperCase()) + '</span>' +
-        '<strong style="color:#1e293b">Current verdict.</strong> <span style="color:#334155">' + _esc(verdict) + '</span></div>';
-    if (q)
-      out += '<p style="margin:8px 0;color:#334155;line-height:1.5"><strong style="color:#1e293b">Question.</strong> ' + _esc(q) + '</p>';
-    if (hyp)
-      out += '<p style="margin:8px 0;color:#475569;line-height:1.5"><strong style="color:#1e293b">Hypothesis.</strong> ' + _esc(hyp) + '</p>';
+    // The question/framing fields run long — keep the headline to the opening
+    // sentence (through the first "?" for questions, else the first period) and
+    // demote the remainder to a muted framing line.
+    var headlineOf = function(t) {
+      t = oneline(t);
+      var qi = t.indexOf('?');
+      if (qi !== -1) return t.slice(0, qi + 1);
+      var m = t.match(/^.*?[.!](?=\s)/);
+      return m ? m[0] : t;
+    };
+    var primary  = whatIs || q;
+    var headline = primary ? headlineOf(primary) : (d.title || d.name || '');
+    var framing  = primary ? oneline(primary).slice(headlineOf(primary).length).trim() : '';
+
+    var H = [];
+    H.push('<div class="inv-brief inv-vs-' + vsClass + '">');
+
+    // Headline — the driving question, kept to one line.
+    if (headline) H.push('<h2 class="inv-brief-q">' + _esc(headline) + '</h2>');
+
+    // Verdict — answers the question, as a colored status line.
+    if (verdict) {
+      H.push('<div class="inv-brief-verdict">' +
+        '<span class="inv-vs-pill">' + _esc(vs.toUpperCase()) + '</span>' +
+        '<span class="inv-brief-verdict-label">Current verdict</span> ' +
+        '<span class="inv-brief-verdict-text">' + _esc(verdict) + '</span></div>');
+    }
+
+    // Framing — the rest of the opening sentence(s), muted.
+    if (framing) H.push('<p class="inv-brief-framing">' + _esc(framing) + '</p>');
+
+    // Meta — hypothesis.
+    if (hyp) H.push('<div class="inv-brief-meta"><span class="inv-brief-meta-item"><em>Hypothesis</em> ' + _esc(hyp) + '</span></div>');
+
+    // Depth — one flat tab strip; only tabs with content are shown.
+    var tabs = [];
+    if (hasHowto)
+      tabs.push({ id:'howto', label:'How to read', html: Array.isArray(howto)
+        ? '<ol class="inv-brief-howto">' + howto.map(function(x) {
+            return '<li>' + _renderInvLeadMarkdown(String(typeof x === 'string' ? x : (x.text || x.tip || ''))).replace(/^<p>|<\/p>$/g, '') + '</li>';
+          }).join('') + '</ol>'
+        : '<div class="inv-brief-prose">' + _renderInvLeadMarkdown(String(howto)) + '</div>' });
+    if (bio)
+      tabs.push({ id:'biology', label:'Biology', html:
+        '<div class="inv-brief-prose">' + _renderInvLeadMarkdown(bio) + '</div>' });
     if (leadProse)
-      out += '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:0.88em;color:#64748b">Background &amp; context</summary>' +
-        '<div style="margin-top:6px;color:#475569;line-height:1.5">' + _renderInvLeadMarkdown(leadProse) + '</div></details>';
-    return out;
+      tabs.push({ id:'background', label:'Background', html:
+        '<div class="inv-brief-prose">' + _renderInvLeadMarkdown(leadProse) + '</div>' });
+    if (glossary.length)
+      tabs.push({ id:'glossary', label:'Glossary', html:
+        '<dl class="inv-brief-glossary">' + glossary.map(function(g) {
+          return '<dt>' + _escInv(g.term || g.name || '') + '</dt><dd>' + _escInv(g.definition || g.def || '') + '</dd>';
+        }).join('') + '</dl>' });
+
+    if (tabs.length) {
+      H.push('<div class="inv-brief-tabs" role="tablist">' + tabs.map(function(t, i) {
+        return '<button type="button" class="inv-brief-tab' + (i === 0 ? ' active' : '') +
+          '" onclick="_invBriefTab(this,\'' + t.id + '\')">' + _esc(t.label) + '</button>';
+      }).join('') + '</div>');
+      H.push('<div class="inv-brief-panels">' + tabs.map(function(t, i) {
+        return '<div class="inv-brief-panel" data-panel="' + t.id + '"' + (i === 0 ? '' : ' style="display:none"') + '>' + t.html + '</div>';
+      }).join('') + '</div>');
+    }
+
+    H.push('</div>');
+    return H.join('');
   }
+
+  // Flat tab switcher for the inquiry brief (scoped to the clicked brief).
+  function _invBriefTab(btn, id) {
+    var brief = btn.closest('.inv-brief');
+    if (!brief) return;
+    brief.querySelectorAll('.inv-brief-tab').forEach(function(b) { b.classList.toggle('active', b === btn); });
+    brief.querySelectorAll('.inv-brief-panel').forEach(function(p) {
+      p.style.display = (p.getAttribute('data-panel') === id) ? '' : 'none';
+    });
+  }
+  window._invBriefTab = _invBriefTab;
 
   function _openInvestigationDetail(name) {
     window._currentIset = name;
@@ -7149,33 +8114,10 @@
         // Lead paragraph: render lead (preferred) or fall back to description.
         // Light markdown: paragraph splits, * bullets, `code`, **bold**.
         var leadEl = document.getElementById('investigation-detail-description');
+        // The inquiry brief renders the full opening — headline, verdict, meta,
+        // and the how-to-read / biology / background / glossary tabs — from `d`.
         leadEl.innerHTML = _renderInvOpening(d);
 
-        // How to read: yaml-driven list of evaluator tips. Hidden if absent.
-        _renderInvHowToRead(d.how_to_read);
-
-        // Glossary: yaml-driven list of {term, definition}. Hidden if absent.
-        _renderInvGlossary(d.glossary);
-
-        // Biology-story banner: populated only when investigation.yaml
-        // declares `biological_story:`. Hidden otherwise.
-        var storyBox = document.getElementById('investigation-biology-story');
-        var storyText = document.getElementById('investigation-biology-story-text');
-        if (storyBox && storyText) {
-          var story = (d.biological_story || '').trim();
-          if (story) {
-            // Render as reflowing paragraphs (split on blank lines, collapse
-            // intra-paragraph hard newlines to spaces) so the text uses the full
-            // width instead of breaking at the YAML's source newlines.
-            storyText.innerHTML = story.split(/\n\s*\n/).map(function(para) {
-              return '<p>' + _esc(para.replace(/\s*\n\s*/g, ' ').trim()) + '</p>';
-            }).join('');
-            storyBox.style.display = '';
-          } else {
-            storyText.textContent = '';
-            storyBox.style.display = 'none';
-          }
-        }
         // Phase B4: render today's study graph (unchanged), then layer each
         // study's typed evidence chain into its card. Falls back to the plain
         // study graph on any fetch failure (graceful — identical to before).

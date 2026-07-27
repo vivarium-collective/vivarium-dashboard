@@ -18,12 +18,10 @@ def test_dag_card_opens_full_study_not_drawer():
     assert "stopPropagation" in js          # row clicks don't double-trigger the card
 
 
-def test_intro_description_collapsed_by_default():
+def test_intro_is_inquiry_brief():
     html = (ROOT / "vivarium_workbench/templates/index.html.j2").read_text()
-    # the long description is wrapped in a collapsed <details> with a summary
-    assert 'id="investigation-intro-details"' in html
-    # the description container id is preserved (JS still targets it)
+    # The opening is no longer a collapsed <details>; it's an always-visible
+    # inquiry brief rendered by JS into #investigation-detail-description.
+    assert 'id="investigation-intro-details"' not in html
     assert 'id="investigation-detail-description"' in html
-    i = html.index('id="investigation-intro-details"')
-    j = html.index('id="investigation-detail-description"')
-    assert i < j  # description lives inside the details wrapper
+    assert 'inv-brief-host' in html  # the brief's mount point
