@@ -500,6 +500,13 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       <svg width="16" height="16"><use href="#viv-gh-mark"/></svg>
     </a>
     {% endif %}
+    <script>
+      /* The workspace's own repo identity — the Registry's Repositories facet
+         uses these to merge workspace-local artifacts under one repo card and
+         to link it to its real GitHub URL. */
+      window._workspaceName = {{ workspace_name|tojson }};
+      window._workspaceRepoUrl = {{ (repo_url or '')|tojson }};
+    </script>
 
     <!-- Everything from the Workspace nav down scrolls as ONE region, so a long
          study list can push the nav (Sources/Registry/…) up and off the top —
@@ -808,8 +815,8 @@ a.viv-bs-commit:hover { text-decoration: underline; }
          composites, studies and investigations come from the workspace + every
          installed module across the public repos. #}
       <div class="market-facets" id="market-facets" role="tablist">
-        <button class="market-facet active" data-facet="all"           onclick="_setMarketFacet('all')" role="tab">All</button>
-        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes</button>
+        <button class="market-facet active" data-facet="repo"          onclick="_setMarketFacet('repo')" role="tab" title="Browse whole repositories in the ecosystem">Repositories</button>
+        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes &amp; Steps</button>
         <button class="market-facet"        data-facet="composite"     onclick="_setMarketFacet('composite')" role="tab">Composites</button>
         <button class="market-facet"        data-facet="study"         onclick="_setMarketFacet('study')" role="tab">Studies</button>
         <button class="market-facet"        data-facet="investigation" onclick="_setMarketFacet('investigation')" role="tab">Investigations</button>

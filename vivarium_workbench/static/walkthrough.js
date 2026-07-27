@@ -4405,7 +4405,7 @@
   // and what for. Uninstalled repos' individual artifacts are out of scope
   // (only counts are available without an ecosystem index).
   window._marketItems = null;
-  window._marketFacet = 'all';
+  window._marketFacet = 'repo';   // land on the Repositories overview
   window._marketZoom = 'cards';
   // The Registry defaults to THIS repository's own artifacts ('workspace',
   // shown as "Repository"); 'external' ("Other repos") is opt-in. The legacy
@@ -4416,7 +4416,7 @@
   try { var _mo = localStorage.getItem('viv.market-origin'); if (_mo === 'workspace' || _mo === 'external') window._marketOrigin = _mo; } catch (e) {}
 
   var _MARKET_TYPES = [
-    { key: 'process',       label: 'Processes',      ico: '⚙' },
+    { key: 'process',       label: 'Processes & Steps', ico: '⚙' },
     { key: 'composite',     label: 'Composites',     ico: '▩' },
     { key: 'study',         label: 'Studies',        ico: '▤' },
     { key: 'investigation', label: 'Investigations', ico: '❖' }
@@ -4487,11 +4487,11 @@
     }).then(function (reg) {
       var wpkgs = (reg && reg.workspace_pkgs) || [];
       window._marketByType.process = ((reg || {}).processes || []).filter(function (p) {
-        return p.kind === 'process';   // steps/emitters live on the Modules page
+        return p.kind === 'process' || p.kind === 'step';   // emitters live on the Modules page
       }).map(function (p) {
         var repo = _marketRepoOf(p.address || p.source);
         var inWs = p.source === 'in_workspace' || wpkgs.indexOf((p.address || '').split('.')[0]) !== -1;
-        return { type: 'process', name: p.name, repo: repo, origin: inWs ? 'workspace' : 'external',
+        return { type: 'process', kind: p.kind || 'process', name: p.name, repo: repo, origin: inWs ? 'workspace' : 'external',
           desc: p.description || '', address: p.address || '',
           usage: { comp: p.composite_uses || 0, study: p.study_uses || 0, total: p.use_count || 0 },
           use: p.use_count || 0,
@@ -4590,8 +4590,9 @@
   }
 
   function _marketHead(it) {
-    return '<span class="market-type-ico" title="' + it.type + '">' + _marketIco(it.type) + '</span>'
+    return '<span class="market-type-ico" title="' + (it.kind || it.type) + '">' + _marketIco(it.type) + '</span>'
       + '<span class="market-name">' + _esc(it.title || it.name) + '</span>'
+      + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
       + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
   }
   function _marketOpenBtn(it) {
@@ -4700,6 +4701,77 @@
     return '<table class="market-table"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
   }
 
+  // ── Repositories facet ────────────────────────────────────────────────────
+  // Aggregate every loaded artifact by its owning repo into one card per repo:
+  // a GitHub link, per-type counts, and a hint of what the repo contains. The
+  // ecosystem lives under the vivarium-collective org, so repo → URL is direct.
+  // Workspace-local artifacts arrive under mixed repo labels — processes carry
+  // their package name (e.g. 'v2ecoli'), studies fall back to 'workspace'. Fold
+  // both onto the workspace's real name so one repo card covers the workspace.
+  function _marketRepoCanon(r) {
+    var ws = window._workspaceName || '';
+    if (!r || r === 'workspace') return ws || 'workspace';
+    return r;
+  }
+  function _marketRepoUrl(repo) {
+    if (window._workspaceName && repo === window._workspaceName && window._workspaceRepoUrl) {
+      return window._workspaceRepoUrl;
+    }
+    return 'https://github.com/vivarium-collective/' + repo;
+  }
+  function _marketReposHtml(items) {
+    var byRepo = {};
+    items.forEach(function (it) {
+      var r = _marketRepoCanon(it.repo);
+      var b = byRepo[r] || (byRepo[r] = {
+        repo: r, origin: it.origin, total: 0, use: 0,
+        process: 0, composite: 0, study: 0, investigation: 0, composites: []
+      });
+      if (typeof b[it.type] === 'number') b[it.type]++;
+      b.total++;
+      b.use += _marketUseNum(it);
+      if (it.origin === 'workspace') b.origin = 'workspace';
+      if (it.type === 'composite') b.composites.push(it.title || it.name);
+    });
+    var repos = Object.keys(byRepo).map(function (k) { return byRepo[k]; }).sort(function (a, b) {
+      if ((a.origin === 'workspace') !== (b.origin === 'workspace')) return a.origin === 'workspace' ? -1 : 1;
+      if (b.total !== a.total) return b.total - a.total;
+      return a.repo.localeCompare(b.repo);
+    });
+    if (!repos.length) return '<p class="empty-state">No repositories.</p>';
+    return '<div class="market-grid market-grid-cards">' + repos.map(_marketRepoCard).join('') + '</div>';
+  }
+  function _marketRepoCard(b) {
+    var stats = [
+      ['⚙', b.process, 'processes & steps'],
+      ['▩', b.composite, 'composites'],
+      ['▤', b.study, 'studies'],
+      ['❖', b.investigation, 'investigations']
+    ].map(function (s) {
+      return '<span class="market-repo-stat' + (s[1] ? '' : ' zero') + '" title="' + s[2] + '">'
+        + s[0] + ' <b>' + s[1] + '</b></span>';
+    }).join('');
+    var hint = b.composites.length
+      ? _esc(b.composites.slice(0, 3).join(', ')) + (b.composites.length > 3 ? ', +' + (b.composites.length - 3) + ' more' : '')
+      : '';
+    return '<div class="market-card market-repo-card">'
+      + '<div class="market-card-head">'
+      +   '<span class="market-repo-ico">📦</span>'
+      +   '<span class="market-name">' + _esc(b.repo) + '</span>'
+      +   '<span class="market-origin market-origin-' + b.origin + '">'
+      +     (b.origin === 'workspace' ? 'This workspace' : 'External') + '</span>'
+      + '</div>'
+      + (hint ? '<div class="market-desc">' + hint + '</div>' : '')
+      + '<div class="market-repo-stats">' + stats + '</div>'
+      + '<div class="market-card-foot">'
+      +   '<span class="market-usage">' + b.total + ' artifact' + (b.total === 1 ? '' : 's')
+      +     (b.use ? ' · ' + b.use + ' use' + (b.use === 1 ? '' : 's') : '') + '</span>'
+      +   '<a class="btn-mini market-repo-link" href="' + _marketRepoUrl(b.repo)
+      +     '" target="_blank" rel="noopener">GitHub ↗</a>'
+      + '</div>'
+      + '</div>';
+  }
+
   function _renderMarket() {
     var host = document.getElementById('market-results');
     if (!host) return;
@@ -4716,9 +4788,17 @@
     var facet = window._marketFacet || 'all';
     var zoom = window._marketZoom || 'cards';
     var origin = window._marketOrigin || 'workspace';
+    // The Repositories facet browses whole repos, so it ignores the artifact
+    // provenance filter (which is hidden via .market-facet-repo on the page).
+    var pageMarket = document.getElementById('page-market');
+    if (pageMarket) pageMarket.classList.toggle('market-facet-repo', facet === 'repo');
     document.querySelectorAll('[data-mkzoom]').forEach(function (b) { b.classList.toggle('active', b.dataset.mkzoom === zoom); });
     document.querySelectorAll('.market-origin-chip').forEach(function (b) { b.classList.toggle('active', b.dataset.origin === origin); });
     var match = function (it) {
+      if (facet === 'repo') {
+        if (!q) return true;
+        return (it.name + ' ' + (it.title || '') + ' ' + it.desc + ' ' + it.repo).toLowerCase().indexOf(q) !== -1;
+      }
       if (facet !== 'all' && it.type !== facet) return false;
       if (origin !== 'all' && it.origin !== origin) return false;
       if (!q) return true;
@@ -4729,6 +4809,7 @@
       host.innerHTML = items.length ? '<p class="empty-state">No matches.</p>' : '<p class="empty-state">Loading&hellip;</p>';
       return;
     }
+    if (facet === 'repo') { host.innerHTML = _marketReposHtml(filtered); return; }
     var html = '';
     if (zoom === 'list') {
       // One sortable table; a Type column appears only in the All facet.
