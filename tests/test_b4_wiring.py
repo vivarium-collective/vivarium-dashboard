@@ -14,7 +14,7 @@ def test_walkthrough_overlays_chains_as_superset_with_fallback():
     # fetches the typed graph
     assert "/api/investigation-graph?investigation=" in js
     # EXTENDS the legacy renderer (superset) rather than replacing it
-    assert "function _renderInvestigationDag(studies, chainsBySlug)" in js
+    assert "function _renderInvestigationDag(studies, chainsBySlug, studyEdges)" in js
     assert "_chainBlockHtml" in js
     # legacy renderer + its export preserved (no regression; fallback path present)
     assert "_renderInvestigationDag(d.studies || [])" in js
