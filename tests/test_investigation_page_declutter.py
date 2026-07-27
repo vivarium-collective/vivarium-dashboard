@@ -25,21 +25,19 @@ def test_header_export_cluster_and_icon_refresh():
     assert 'id="investigation-detail-refresh"' in dv, "refresh button id lost"
 
 
-def test_one_about_disclosure_with_demoted_subblocks():
+def test_intro_is_inquiry_brief_host():
     dv = detail_view()
-    # Exactly one <summary> remains in the detail view: the About disclosure.
-    assert dv.count('<summary>') == 1, f"expected 1 <summary>, got {dv.count('<summary>')}"
-    assert '<summary>About this investigation</summary>' in dv
-    # Standalone collapsibles gone; ids preserved as plain blocks.
-    assert '<summary>How to read this</summary>' not in dv
-    assert '<summary>Glossary</summary>' not in dv
-    for id_ in ['investigation-detail-description', 'investigation-how-to-read',
+    # The opening is now an always-visible inquiry brief rendered by JS into
+    # #investigation-detail-description — the old "About this investigation"
+    # disclosure and its demoted how-to-read / glossary / biology sub-blocks
+    # are gone (they moved into the brief's flat tab strip).
+    assert '<summary>About this investigation</summary>' not in dv
+    assert 'inv-brief-host' in dv, "inquiry-brief host class missing"
+    assert 'id="investigation-detail-description"' in dv, "brief host id lost"
+    for id_ in ['investigation-intro-details', 'investigation-how-to-read',
                 'investigation-glossary', 'investigation-biology-story',
                 'investigation-biology-story-text']:
-        assert f'id="{id_}"' in dv, f"lost id {id_}"
-    # About open by default.
-    about_start = dv.index('id="investigation-intro-details"')
-    assert ' open' in dv[about_start:about_start + 120], "About disclosure not open by default"
+        assert f'id="{id_}"' not in dv, f"stale block {id_} still present"
 
 
 def test_needs_attention_elevated_above_intro():
