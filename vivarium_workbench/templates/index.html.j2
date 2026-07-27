@@ -487,32 +487,19 @@ window.addEventListener('pageshow', function (e) {
     <!-- Primary nav -->
     <nav class="viv-rail-section" role="tablist">
       <div class="viv-rail-section-label">Workspace</div>
-      <!-- Resources: a document being taken into the workspace (import arrow) -->
+      <!-- Resources: a page with an arrow pointing out to the right — a source
+           document feeding out into the workspace. -->
       <a href="#workspace-inputs"  class="viv-rail-link menu-link" data-page="workspace-inputs">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="6" y="3" width="12" height="13" rx="1.5"/>
-            <line x1="9" y1="8" x2="15" y2="8"/>
-            <line x1="9" y1="11" x2="15" y2="11"/>
-            <path d="M12 15v6"/>
-            <path d="M9 18l3 3 3-3"/>
+            <rect x="4" y="3" width="9" height="18" rx="1.5"/>
+            <line x1="7" y1="8" x2="10.5" y2="8"/>
+            <line x1="7" y1="11" x2="10.5" y2="11"/>
+            <path d="M13 15h8"/>
+            <path d="M18 12l3 3-3 3"/>
           </svg>
         </span>
         <span class="viv-rail-link-label">Resources</span>
-      </a>
-      <!-- Processes: a process rectangle with one input arrow (left) and one
-           output arrow (right) — the canonical process glyph. -->
-      <a href="#modules"           class="viv-rail-link menu-link" data-page="modules">
-        <span class="viv-rail-link-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="8" y="7.5" width="8" height="9" rx="1.5"/>
-            <path d="M1 12h7"/>
-            <path d="M5.5 9.5 8 12l-2.5 2.5"/>
-            <path d="M16 12h7"/>
-            <path d="M20.5 9.5 23 12l-2.5 2.5"/>
-          </svg>
-        </span>
-        <span class="viv-rail-link-label">Processes</span>
       </a>
       <!-- Registry: 3×2 grid of stores — the type catalog. A row of circles
            (continuous-type stores) over a row of squares (discrete/struct
@@ -530,6 +517,21 @@ window.addEventListener('pageshow', function (e) {
           </svg>
         </span>
         <span class="viv-rail-link-label">Registry</span>
+      </a>
+      <!-- Processes: a process rectangle with one input arrow (left) and one
+           output arrow (right) — the canonical process glyph. Sits under
+           Registry (its artifacts are discovered there). -->
+      <a href="#modules"           class="viv-rail-link menu-link" data-page="modules">
+        <span class="viv-rail-link-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
+            <rect x="8" y="7.5" width="8" height="9" rx="1.5"/>
+            <path d="M1 12h7"/>
+            <path d="M5.5 9.5 8 12l-2.5 2.5"/>
+            <path d="M16 12h7"/>
+            <path d="M20.5 9.5 23 12l-2.5 2.5"/>
+          </svg>
+        </span>
+        <span class="viv-rail-link-label">Processes</span>
       </a>
       <!-- Composites: composite-as-process — outer boundary containing a process rectangle wired to a store -->
       <a href="#simulation-setup"  class="viv-rail-link menu-link" data-page="simulation-setup">
@@ -577,17 +579,22 @@ window.addEventListener('pageshow', function (e) {
         </span>
         <span class="viv-rail-link-label">Analysis</span>
       </a>
-      <!-- Audit: read-only L0-L5 reproducibility report. Clipboard-with-check
-           icon reads as "checklist / verification" at rail-icon size. -->
-      <a href="#audit"             class="viv-rail-link menu-link" data-page="audit">
+      <!-- Studies: the investigations overview. A continuous nav item (also
+           shown in the collapsed rail); the per-investigation study list lives
+           in the search section directly below. Branching-fan (DAG) icon. -->
+      <a href="#investigations"    class="viv-rail-link menu-link" data-page="investigations">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <path d="M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1z"/>
-            <rect x="4.5" y="4" width="15" height="17" rx="1.5"/>
-            <path d="M8.5 12.5l2 2 4-4.5"/>
+            <rect x="2.5" y="9" width="6" height="6"/>
+            <rect x="16" y="3" width="5.5" height="4"/>
+            <rect x="16" y="10" width="5.5" height="4"/>
+            <rect x="16" y="17" width="5.5" height="4"/>
+            <path d="M8.5 12L16 5"/>
+            <path d="M8.5 12h7.5"/>
+            <path d="M8.5 12L16 19"/>
           </svg>
         </span>
-        <span class="viv-rail-link-label">Audit</span>
+        <span class="viv-rail-link-label">Studies</span>
       </a>
       <!-- The Branch page (#github) is no longer a rail item — it's reached by
            clicking the workspace source display at the top of the rail (see
@@ -599,18 +606,6 @@ window.addEventListener('pageshow', function (e) {
       <!-- Sticky header: the label + search stay pinned at the top of the scroll
            region while the study list scrolls beneath them. -->
       <div class="viv-rail-studies-head">
-        <button type="button" class="viv-rail-studies-link" onclick="_switchPage('investigations')"
-                title="Open the Studies overview">
-          <svg class="viv-rail-studies-ico" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <rect x="2.5" y="9" width="6" height="6"/>
-            <rect x="16" y="3" width="5.5" height="4"/>
-            <rect x="16" y="10" width="5.5" height="4"/>
-            <rect x="16" y="17" width="5.5" height="4"/>
-            <path d="M8.5 12L16 5"/>
-            <path d="M8.5 12h7.5"/>
-            <path d="M8.5 12L16 19"/>
-          </svg>
-          <span class="viv-rail-studies-txt">Studies</span></button>
         <!-- Live study search: filters the grouped-by-investigation list below.
              Lives OUTSIDE #viv-rail-investigations (which is re-rendered on every
              keystroke) so the input keeps focus. -->
@@ -695,9 +690,9 @@ window.addEventListener('pageshow', function (e) {
 <!-- ===== PAGE: SIMULATION SETUP ===== -->
 <section id="page-simulation-setup" class="page" data-page="simulation-setup">
 
-  <!-- Available Composites (workspace-local discovery) -->
+  <!-- Available Composites (workspace-local discovery). No heading — the count
+       lives in the search placeholder ("Filter N composites…"). -->
   <div class="panel">
-    <h3>Available Composites <span id="composite-count" class="count-badge"></span></h3>
     {# Two-row toolbar: search + zoom controls pinned to the TOP row (zoom stays
        fixed top-right in every zoom setting); tag chips + sort wrap on row 2. #}
     <div class="card-browse-toolbar cbt-2row" id="composite-toolbar">

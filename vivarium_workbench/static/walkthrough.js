@@ -3520,6 +3520,9 @@
         window._compositesById = {};
         composites.forEach(function(c) { window._compositesById[c.id] = c; });
         if (countBadge) countBadge.textContent = '(' + composites.length + ')';
+        // Count lives in the search placeholder now (the heading was removed).
+        var _cSearch = document.getElementById('composite-search');
+        if (_cSearch) _cSearch.placeholder = 'Filter ' + composites.length + ' composites…';
         if (!composites.length) {
           container.innerHTML =
             '<p class="empty-state">No composite specs found yet. Add a <code>*.composite.yaml</code> file under ' +
