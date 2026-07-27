@@ -902,6 +902,12 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   cursor:pointer; user-select:none;
 }
 .viv-rail-investigations-group-header:hover{ background:#f3f4f6 }
+/* Investigation pin: hover-reveal in the group header (mirrors the study pins). */
+.viv-rail-investigations-group-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.viv-rail-inv-pin{ opacity:0; flex:none; font-size:0.82em; }
+.viv-rail-investigations-group-header:hover .viv-rail-inv-pin{ opacity:0.5; }
+.viv-rail-inv-pin:hover{ opacity:0.95 !important; transform:scale(1.15); }
+.viv-rail-inv-pin.pinned{ opacity:1 !important; }
 .viv-rail-investigations-group-arrow{
   display:inline-block; width:10px; color:#9ca3af; font-size:0.78em;
   transition:transform 0.15s ease;

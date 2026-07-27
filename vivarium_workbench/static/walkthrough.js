@@ -6153,7 +6153,44 @@
   // page. Activates the Investigations page directly rather than via
   // _switchPage('investigations') — that path calls _loadInvestigationSets(),
   // which async-re-renders the LIST over the detail we just opened.
+  // ── Investigations rail: most-recently-opened ordering + pinning ──────────
+  // Per-user convenience kept in localStorage (no workspace write). MRU keeps the
+  // rail reliable — the investigation you just opened floats to the top; pins
+  // override MRU and sit above everything.
+  function _loadInvMru() {
+    if (!window._invMru || typeof window._invMru !== 'object') {
+      try { window._invMru = JSON.parse(window.localStorage.getItem('viv.invMru') || '{}') || {}; }
+      catch (e) { window._invMru = {}; }
+      if (!window._invMru || typeof window._invMru !== 'object') window._invMru = {};
+    }
+    return window._invMru;
+  }
+  function _recordInvOpen(name) {
+    if (!name) return;
+    var mru = _loadInvMru();
+    mru[name] = new Date().getTime();
+    try { window.localStorage.setItem('viv.invMru', JSON.stringify(mru)); } catch (e) { /* private mode */ }
+  }
+  function _loadPinnedInvestigations() {
+    if (!Array.isArray(window._pinnedInvestigations)) {
+      try { window._pinnedInvestigations = JSON.parse(window.localStorage.getItem('viv.pinnedInvestigations') || '[]'); }
+      catch (e) { window._pinnedInvestigations = []; }
+      if (!Array.isArray(window._pinnedInvestigations)) window._pinnedInvestigations = [];
+    }
+    return window._pinnedInvestigations;
+  }
+  function _isInvestigationPinned(name) { return _loadPinnedInvestigations().indexOf(name) !== -1; }
+  function _toggleInvestigationPin(name) {
+    var pins = _loadPinnedInvestigations();
+    var i = pins.indexOf(name);
+    if (i === -1) pins.push(name); else pins.splice(i, 1);
+    try { window.localStorage.setItem('viv.pinnedInvestigations', JSON.stringify(pins)); } catch (e) { /* private mode */ }
+    if (typeof _renderRailInvestigationGroups === 'function') _renderRailInvestigationGroups();
+  }
+  window._toggleInvestigationPin = _toggleInvestigationPin;
+
   window._railOpenInvestigationDetail = function (name) {
+    _recordInvOpen(name);
     document.querySelectorAll('.page').forEach(function (s) { s.classList.remove('active'); });
     document.querySelectorAll('.menu-link').forEach(function (a) { a.classList.remove('active'); });
     var page = document.getElementById('page-investigations');
@@ -15609,10 +15646,18 @@
     var currentSlug = window._currentIsetSlug || '';
     var railDepthMap = window._investigationsDepth || {};
 
-    // Active investigation first; the rest by topological depth then title.
+    // Order: pinned first (in pin order), then most-recently-opened, then the
+    // never-opened rest by topological depth then title. The active
+    // investigation was just opened so MRU floats it to the top of the unpinned.
+    var _mru = _loadInvMru();
+    var _pins = _loadPinnedInvestigations();
     var ordered = groups.slice().sort(function(a, b) {
-      if (a.name === currentSlug) return -1;
-      if (b.name === currentSlug) return 1;
+      var ap = _pins.indexOf(a.name), bp = _pins.indexOf(b.name);
+      var aP = ap !== -1, bP = bp !== -1;
+      if (aP !== bP) return aP ? -1 : 1;
+      if (aP && bP) return ap - bp;
+      var am = _mru[a.name] || 0, bm = _mru[b.name] || 0;
+      if (am !== bm) return bm - am;   // most-recently-opened first
       var da = railDepthMap[a.name] || 0, db = railDepthMap[b.name] || 0;
       return da - db || String(a.title || a.name).localeCompare(String(b.title || b.name));
     });
@@ -15642,6 +15687,11 @@
         + '<span class="viv-rail-investigations-group-arrow viv-arrow">▾</span>'
         + '<span class="viv-rail-investigations-group-name" style="' + nameStyle + '"' + clickName + '>'
         + _esc(g.title || g.name) + '</span>'
+        + (g._ungrouped ? '' :
+            '<span class="viv-rail-pin viv-rail-inv-pin' + (_isInvestigationPinned(g.name) ? ' pinned' : '') + '"'
+            + ' role="button" tabindex="0"'
+            + ' title="' + (_isInvestigationPinned(g.name) ? 'Unpin investigation' : 'Pin investigation to top') + '"'
+            + ' onclick="event.preventDefault();event.stopPropagation();_toggleInvestigationPin(\'' + _esc(g.name) + '\');return false;">📌</span>')
         + '<span class="viv-rail-investigations-group-count">' + g.studies.length + '</span>'
         + '</div>'
         + '<div class="viv-rail-investigations-group-items">'
