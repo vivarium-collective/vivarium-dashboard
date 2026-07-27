@@ -4407,11 +4407,13 @@
   window._marketItems = null;
   window._marketFacet = 'all';
   window._marketZoom = 'cards';
-  // The Registry is for discovering artifacts from OTHER repos to import, so it
-  // defaults to external; 'workspace' (Ours) and 'all' are opt-in.
-  window._marketOrigin = 'external';
+  // The Registry defaults to THIS repository's own artifacts ('workspace',
+  // shown as "Repository"); 'external' ("Other repos") is opt-in. The legacy
+  // 'all' scope was retired, so only the two valid values are honored from
+  // storage (anything else — incl. a stored 'all' — falls back to the default).
+  window._marketOrigin = 'workspace';
   try { var _mz = localStorage.getItem('viv.market-zoom'); if (_mz) window._marketZoom = _mz; } catch (e) {}
-  try { var _mo = localStorage.getItem('viv.market-origin'); if (_mo) window._marketOrigin = _mo; } catch (e) {}
+  try { var _mo = localStorage.getItem('viv.market-origin'); if (_mo === 'workspace' || _mo === 'external') window._marketOrigin = _mo; } catch (e) {}
 
   var _MARKET_TYPES = [
     { key: 'process',       label: 'Processes',      ico: '⚙' },
@@ -4522,7 +4524,7 @@
   window._setMarketZoom = _setMarketZoom;
 
   function _setMarketOrigin(o) {
-    window._marketOrigin = o || 'all';
+    window._marketOrigin = o || 'workspace';
     try { localStorage.setItem('viv.market-origin', window._marketOrigin); } catch (e) {}
     document.querySelectorAll('.market-origin-chip').forEach(function (b) {
       b.classList.toggle('active', b.dataset.origin === window._marketOrigin);
@@ -4659,7 +4661,7 @@
     { key: 'type',   label: 'Type',     get: function (it) { return it.type; }, w: '92px' },
     { key: 'name',   label: 'Name',     get: function (it) { return it.title || it.name; } },
     { key: 'repo',   label: 'Repo',     get: function (it) { return it.repo || ''; }, w: '150px' },
-    { key: 'origin', label: 'Location', get: function (it) { return it.origin === 'workspace' ? 'Ours' : 'External'; }, w: '110px' },
+    { key: 'origin', label: 'Location', get: function (it) { return it.origin === 'workspace' ? 'Repository' : 'External'; }, w: '110px' },
     { key: 'use',    label: 'Use',      get: _marketUseNum, num: true, w: '70px' }
   ];
   function _setMarketSort(key) {
@@ -4689,7 +4691,7 @@
         if (c.key === 'name') return '<td class="market-td-name">' + _esc(it.title || it.name)
           + (it.desc ? '<span class="market-td-desc">' + _esc(it.desc) + '</span>' : '') + '</td>';
         if (c.key === 'origin') return '<td><span class="market-origin market-origin-' + it.origin + '">'
-          + (it.origin === 'workspace' ? 'Ours' : 'External') + '</span></td>';
+          + (it.origin === 'workspace' ? 'Repository' : 'External') + '</span></td>';
         if (c.key === 'use') { var u = _marketUseNum(it); return '<td class="market-td-use">' + (u || '—') + '</td>'; }
         return '<td>' + _esc(String(c.get(it))) + '</td>';
       }).join('');
@@ -4713,7 +4715,7 @@
     var q = ((document.getElementById('market-search') || {}).value || '').trim().toLowerCase();
     var facet = window._marketFacet || 'all';
     var zoom = window._marketZoom || 'cards';
-    var origin = window._marketOrigin || 'all';
+    var origin = window._marketOrigin || 'workspace';
     document.querySelectorAll('[data-mkzoom]').forEach(function (b) { b.classList.toggle('active', b.dataset.mkzoom === zoom); });
     document.querySelectorAll('.market-origin-chip').forEach(function (b) { b.classList.toggle('active', b.dataset.origin === origin); });
     var match = function (it) {

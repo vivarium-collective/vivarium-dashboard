@@ -813,12 +813,11 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         <button class="market-facet"        data-facet="composite"     onclick="_setMarketFacet('composite')" role="tab">Composites</button>
         <button class="market-facet"        data-facet="study"         onclick="_setMarketFacet('study')" role="tab">Studies</button>
         <button class="market-facet"        data-facet="investigation" onclick="_setMarketFacet('investigation')" role="tab">Investigations</button>
-        {# Provenance: the Registry is for importing from OTHER repos, so it
-           defaults to external; "Ours" and "All" are opt-in. #}
+        {# Provenance: default to THIS repository's own artifacts; "Other
+           repos" (dependency / federated content) is opt-in. #}
         <span class="market-origin-filter">
-          <button class="market-origin-chip active" data-origin="external"  onclick="_setMarketOrigin('external')"  title="Artifacts from other repos — candidates to import">Other repos</button>
-          <button class="market-origin-chip"        data-origin="workspace" onclick="_setMarketOrigin('workspace')" title="Artifacts already in this workspace">Ours</button>
-          <button class="market-origin-chip"        data-origin="all"       onclick="_setMarketOrigin('all')"       title="Both">All</button>
+          <button class="market-origin-chip active" data-origin="workspace" onclick="_setMarketOrigin('workspace')" title="Artifacts defined in this repository">Repository</button>
+          <button class="market-origin-chip"        data-origin="external"  onclick="_setMarketOrigin('external')"  title="Artifacts from other repos — candidates to import">Other repos</button>
         </span>
       </div>
     </div>
