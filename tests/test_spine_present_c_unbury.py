@@ -28,12 +28,18 @@ def test_behavioral_tests_summary_is_not_collapsed_by_default():
     assert '<summary class="overview-label">Behavioral tests</summary>' not in _HTML
 
 
-def test_multi_axis_status_is_open_by_default():
-    # The status panel keeps its <details> toggle but is open by default.
+def test_multi_axis_status_stepper_visible_by_default():
+    # Overview redesign: the six-axis status is a compact one-line lifecycle
+    # stepper whose <summary> lists every axis (with its value) inline — so the
+    # spine-critical status stays UN-BURIED at a glance — while only the verbose
+    # per-axis rows sit behind the expander. (Supersedes the earlier
+    # "open by default" rule from C1c; the un-bury intent is preserved.)
     assert 'class="status-detail-panel"' in _HTML
     idx = _HTML.index('class="status-detail-panel"')
-    # The opening tag (within ~120 chars) carries the `open` attribute.
-    assert ' open' in _HTML[idx:idx + 120]
+    seg = _HTML[idx:idx + 400]
+    # the axis stepper lives inside the <summary>, visible without expanding.
+    assert '<summary>' in seg
+    assert 'status-stepper' in seg
 
 
 def test_discovery_implications_elevated_above_conclusion_text():

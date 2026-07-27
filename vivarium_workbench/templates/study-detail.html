@@ -338,7 +338,6 @@
 
     {# ─── Question & approach — the framing comes first ───────────────── #}
     {% set _has_purpose = study.purpose and (study.purpose.question or study.purpose.expected_outcome or study.purpose.mechanism) %}
-    {% set _has_legacy_q = study.question or study.hypothesis or study.objective %}
     <h2 class="overview-label">Question &amp; approach</h2>
     {% if _has_purpose %}
     <div class="overview-section">
@@ -358,18 +357,15 @@
       </div>
       {% endif %}
     </div>
-    {% elif _has_legacy_q %}
+    {% else %}
+    {# Legacy narrative fields — each id rendered exactly once; empty ones show
+       their placeholder (contenteditable) so they double as "+ Add" affordances. #}
     <div class="overview-section">
       <div id="question-text" class="overview-prose" data-editable="true" data-field="question"
-           data-placeholder="(what research question is this study asking?)">{{ study.question or '' }}</div>
+           data-placeholder="+ Add the research question this study asks">{{ study.question or '' }}</div>
       <div id="hypothesis-text" class="overview-prose" data-editable="true" data-field="hypothesis"
            data-placeholder="(predicted outcome)">{{ study.hypothesis or '' }}</div>
       <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective or '' }}</div>
-    </div>
-    {% else %}
-    <div class="overview-section">
-      <div id="question-text" class="overview-prose" data-editable="true" data-field="question"
-           data-placeholder="+ Add the research question this study asks"></div>
     </div>
     {% endif %}
 
