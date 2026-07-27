@@ -4903,8 +4903,13 @@
     }).join('');
     return '<table class="market-table repo-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
   }
-  function _renderMarketRepos(zoom, q) {
+  function _renderMarketRepos(zoom, q, origin) {
     var repos = _marketRepoList();
+    // The provenance toggle splits the ecosystem: "Repository" = repos installed
+    // in this workspace (the workspace's own + imported deps); "Other repos" =
+    // available-to-install repos from the marketplace.
+    if (origin === 'workspace') repos = repos.filter(function (b) { return b.installed !== false; });
+    else if (origin === 'external') repos = repos.filter(function (b) { return b.installed === false; });
     if (q) repos = repos.filter(function (b) {
       return (b.repo + ' ' + b.desc + ' ' + b.composites.join(' ')).toLowerCase().indexOf(q) !== -1;
     });
@@ -4934,15 +4939,14 @@
     var facet = window._marketFacet || 'all';
     var zoom = window._marketZoom || 'cards';
     var origin = window._marketOrigin || 'workspace';
-    // The Repositories facet browses whole repos, so it ignores the artifact
-    // provenance filter (which is hidden via .market-facet-repo on the page).
     var pageMarket = document.getElementById('page-market');
     if (pageMarket) pageMarket.classList.toggle('market-facet-repo', facet === 'repo');
     document.querySelectorAll('[data-mkzoom]').forEach(function (b) { b.classList.toggle('active', b.dataset.mkzoom === zoom); });
     document.querySelectorAll('.market-origin-chip').forEach(function (b) { b.classList.toggle('active', b.dataset.origin === origin); });
     // Repositories facet: whole-ecosystem repo browse with its own List/Cards/
-    // Detail zoom. Rendered before the per-artifact filtering below.
-    if (facet === 'repo') { host.innerHTML = _renderMarketRepos(zoom, q); return; }
+    // Detail zoom, filtered by the Repository (installed) / Other repos
+    // (available) toggle. Rendered before the per-artifact filtering below.
+    if (facet === 'repo') { host.innerHTML = _renderMarketRepos(zoom, q, origin); return; }
     var match = function (it) {
       if (facet !== 'all' && it.type !== facet) return false;
       if (origin !== 'all' && it.origin !== origin) return false;

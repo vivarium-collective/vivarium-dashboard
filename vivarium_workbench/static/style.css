@@ -3543,9 +3543,8 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 }
 #page-modules .registry-sticky,
 #page-market .market-sticky{ padding-top:16px; }
-/* Hide the artifact-provenance chips on the Repositories facet — they don't
-   apply when browsing whole repos. */
-#page-market.market-facet-repo .market-origin-filter{ display:none; }
+/* On the Repositories facet the provenance chips filter installed ("Repository")
+   vs available-to-install ("Other repos") repos — see _renderMarketRepos. */
 /* ── Investigation DAG semantic zoom slider ────────────────────────────────── */
 #aig-zoom-slider {
   cursor: pointer;
