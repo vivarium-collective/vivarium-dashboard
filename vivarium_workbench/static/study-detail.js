@@ -751,6 +751,26 @@
     document.querySelectorAll('.narrative-textarea').forEach(_autoGrow);
   });
 
+  // Progressive disclosure: an empty optional narrative field renders a quiet
+  // "+ Add …" button plus its editor pre-hidden (and already save-bound via the
+  // [data-narrative-path] pass above). Clicking the button reveals the editor,
+  // focuses it, and hides itself. No re-binding needed — the editor was always
+  // in the DOM.
+  document.querySelectorAll('.add-field-btn[data-reveal-field]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var path = btn.dataset.revealField;
+      var ed = document.querySelector('[data-field-editor="' + path + '"]');
+      if (!ed) return;
+      ed.classList.remove('is-hidden');
+      btn.classList.add('is-hidden');
+      var field = ed.matches('textarea,input,select') ? ed : ed.querySelector('textarea,input,select');
+      if (field) {
+        field.focus();
+        if ((field.tagName || '').toLowerCase() === 'textarea') _autoGrow(field);
+      }
+    });
+  });
+
   var statusSel = document.getElementById('status-select');
   if (statusSel) {
     statusSel.addEventListener('change', function() {

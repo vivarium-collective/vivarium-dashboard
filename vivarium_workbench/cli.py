@@ -446,6 +446,249 @@ def cmd_prepare_investigation(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gen_readme(args: argparse.Namespace) -> int:
+    """Regenerate (or --check) a workspace README's generated composite +
+    investigation tables from the workspace itself."""
+    ws = Path(args.workspace).resolve()
+    if not (ws / "workspace.yaml").is_file():
+        print(f"error: not a workspace (no workspace.yaml): {ws}", file=sys.stderr)
+        return 2
+    from vivarium_workbench.gen_readme import generate
+
+    return generate(ws, check=args.check, readme=args.readme)
+
+
+def cmd_audit(args: argparse.Namespace) -> int:
+    """Run the L0-L5 reproducibility audit and print / export the result."""
+    ws = Path(args.workspace).resolve()
+    if not (ws / "workspace.yaml").is_file():
+        print(f"ERROR: not a workspace (no workspace.yaml): {ws}", file=sys.stderr)
+        return 2
+    from vivarium_workbench.lib.audit_views import build_audit
+    report, _ = build_audit(ws)
+
+    if args.json:
+        print(json.dumps(report, indent=2, default=str))
+        return 0
+    if args.html:
+        from datetime import datetime, timezone
+        from vivarium_workbench.lib.audit_report import render_audit_html
+        out = Path(args.html)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        now = datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M")
+        out.write_text(render_audit_html(ws, generated_at=now), encoding="utf-8")
+        print(f"wrote audit report -> {out}")
+        return 0
+
+    summ = report.get("summary", {})
+    print(f"Reproducibility audit — {summ.get('n_studies', 0)} studies, "
+          f"{summ.get('n_investigations', 0)} investigations")
+    dist = summ.get("grade_distribution", {})
+    if dist:
+        print("  grade: " + "   ".join(f"{k} {dist[k]}"
+              for k in ["L5", "L4", "L3", "L2", "L1", "L0", "—"] if dist.get(k)))
+    if report.get("error"):
+        print(f"  (degraded: {report['error']})")
+    print()
+
+    def _rows(items):
+        for it in items:
+            g = it.get("grade") or {}
+            b = g.get("blocked_by")
+            tail = f"blocked: {b['level']} {b['name']}" if b else "full L5"
+            print(f"  {g.get('label', '—'):>3}  {it.get('slug', ''):42} {tail}")
+
+    _rows(report.get("studies", []))
+    if report.get("investigations"):
+        print()
+        _rows(report.get("investigations", []))
+    return 0
+
+
+# ----------------------------------------------------------------------------
+# add-dashboard: scaffold a robust read-only-dashboard publish for any workspace
+# ----------------------------------------------------------------------------
+# The workflow is deliberately ROBUST: the static dashboard build needs only
+# vivarium-workbench + the workspace's OWN package importable for composite
+# specs, NOT the sibling process-packages a workspace may declare by relative
+# path (those don't resolve on a clean CI runner). So it installs the workbench
+# from main and the workspace with --no-deps, and creates the gh-pages branch if
+# it doesn't exist yet — so `add-dashboard` works on a fresh repo.
+_DASHBOARD_WORKFLOW = r"""name: Publish read-only dashboard
+
+# Build this workspace into a self-contained static SPA and publish it to the
+# gh-pages branch at dashboard/ (served at
+# https://{ORG}.github.io{BASE_PATH}/). A read-only mirror of every
+# investigation + study on main, browsable with no server.
+#
+# Scaffolded by `vivarium-workbench add-dashboard`. DEPLOY job (post-merge), not
+# a PR gate; it only ever writes dashboard/ on gh-pages.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'workspace/**'
+      - 'investigations/**'
+      - 'studies/**'
+      - 'workspace.yaml'
+      - 'reports/figures/**'
+      - 'scripts/publish_dashboard.sh'
+      - '.github/workflows/publish-dashboard.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: publish-dashboard
+  cancel-in-progress: true
+
+permissions:
+  contents: write   # push to the gh-pages branch
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      VIVARIUM_WORKBENCH_REQUIRE_LOOM: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12.9
+
+      - name: Install vivarium-workbench (robust — skip workspace sim-deps)
+        # Only vivarium-workbench + this workspace's own package are needed to
+        # render composite specs statically. The workspace's sibling
+        # process-packages (often relative-path deps) do NOT resolve on a clean
+        # runner and are NOT needed for the static build, so install the
+        # workspace with --no-deps: a missing sim-dep degrades to an unresolved
+        # composite in the dashboard rather than aborting the whole publish.
+        run: |
+          uv venv
+          uv pip install "vivarium-workbench @ git+https://github.com/vivarium-collective/vivarium-workbench.git@main"
+          uv pip install -e . --no-deps || echo "workspace has no installable build; composites render from spec only"
+
+      - name: Build dashboard snapshot
+        run: |
+          source .venv/bin/activate
+          bash scripts/publish_dashboard.sh reports/published/dashboard
+
+      - name: Publish to gh-pages (create the branch if absent)
+        run: |
+          set -euo pipefail
+          if [ ! -f reports/published/dashboard/index.html ]; then
+            echo "::error::build produced no bundle (no index.html); nothing to publish"
+            exit 1
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin gh-pages 2>/dev/null || true
+          git worktree add --detach /tmp/ghp HEAD
+          cd /tmp/ghp
+          if git rev-parse --verify origin/gh-pages >/dev/null 2>&1; then
+            git checkout -B gh-pages origin/gh-pages
+          else
+            git checkout --orphan gh-pages
+            git rm -rf . >/dev/null 2>&1 || true
+            touch .nojekyll
+          fi
+          rm -rf dashboard && mkdir -p dashboard
+          cp -R "$GITHUB_WORKSPACE/reports/published/dashboard/." dashboard/
+          git add -A
+          if git diff --cached --quiet; then
+            echo "dashboard snapshot unchanged; skipping commit"
+          else
+            git commit -m "gh-pages: republish read-only dashboard (automated, ${GITHUB_SHA::7})"
+            git push origin gh-pages
+            echo "published read-only dashboard to gh-pages:dashboard/"
+          fi
+"""
+
+_DASHBOARD_SCRIPT = r"""#!/usr/bin/env bash
+# Build the read-only dashboard SPA for this workspace (see the companion
+# .github/workflows/publish-dashboard.yml). Scaffolded by
+# `vivarium-workbench add-dashboard`; run it locally to preview the bundle.
+set -euo pipefail
+WS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+OUT="${1:-$WS_ROOT/reports/published/dashboard}"
+BASE_PATH="{BASE_PATH}"
+INTERACTIVE_URL="{INTERACTIVE_URL}"
+rm -rf "$OUT"
+PYTHONPATH="$WS_ROOT${PYTHONPATH:+:$PYTHONPATH}" \
+  vivarium-workbench-publish \
+    --workspace "$WS_ROOT" \
+    --out "$OUT" \
+    --base-path "$BASE_PATH" \
+    --interactive-url "$INTERACTIVE_URL"
+find "$OUT" -name '*.map' -delete
+touch "$OUT/.nojekyll"
+echo "built read-only dashboard bundle at $OUT ($(du -sh "$OUT" | cut -f1))"
+"""
+
+
+def cmd_add_dashboard(args: argparse.Namespace) -> int:
+    import re
+    import stat
+    import subprocess
+
+    ws = Path(args.workspace).resolve()
+    if not (ws / "workspace.yaml").is_file():
+        print(f"error: {ws} is not a workbench workspace (no workspace.yaml)", file=sys.stderr)
+        return 2
+
+    org, repo = args.org, args.repo
+    if not (org and repo):
+        try:
+            url = subprocess.check_output(
+                ["git", "-C", str(ws), "remote", "get-url", "origin"], text=True
+            ).strip()
+            m = re.search(r"github\.com[:/]+([^/]+)/([^/]+?)(?:\.git)?$", url)
+            if m:
+                org = org or m.group(1)
+                repo = repo or m.group(2)
+        except Exception:
+            pass
+    if not repo:
+        print("error: could not infer the repo name from git remote; pass --repo (and --org)",
+              file=sys.stderr)
+        return 2
+    org = org or "vivarium-collective"
+    base_path = args.base_path or f"/{repo}/dashboard"
+    interactive_url = args.interactive_url or f"https://github.com/{org}/{repo}"
+
+    wf_path = ws / ".github" / "workflows" / "publish-dashboard.yml"
+    sh_path = ws / "scripts" / "publish_dashboard.sh"
+    for p in (wf_path, sh_path):
+        if p.exists() and not args.force:
+            print(f"error: {p.relative_to(ws)} already exists (use --force to overwrite)",
+                  file=sys.stderr)
+            return 2
+    wf_path.parent.mkdir(parents=True, exist_ok=True)
+    sh_path.parent.mkdir(parents=True, exist_ok=True)
+
+    wf_path.write_text(
+        _DASHBOARD_WORKFLOW.replace("{ORG}", org).replace("{REPO}", repo).replace("{BASE_PATH}", base_path)
+    )
+    sh_path.write_text(
+        _DASHBOARD_SCRIPT.replace("{BASE_PATH}", base_path).replace("{INTERACTIVE_URL}", interactive_url)
+    )
+    sh_path.chmod(sh_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
+
+    print(f"✓ wrote {wf_path.relative_to(ws)}")
+    print(f"✓ wrote {sh_path.relative_to(ws)}")
+    print(f"  base-path={base_path}  interactive-url={interactive_url}")
+    print("\nNext:")
+    print("  1. commit + push to main (or: gh workflow run publish-dashboard.yml)")
+    print("  2. enable GitHub Pages for the repo with source = gh-pages branch")
+    print("  3. dashboard lands at https://%s.github.io%s/" % (org, base_path))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vivarium-workbench")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -624,6 +867,42 @@ def main(argv: list[str] | None = None) -> int:
     plog.add_argument("--follow", action="store_true")
     _add_common(plog)
     plog.set_defaults(func=cmd_logs)
+
+    p_genrdm = sub.add_parser(
+        "gen-readme",
+        help="Regenerate the workspace README's composite + investigation tables (between "
+             "<!-- BEGIN/END --> markers) from the workspace itself",
+    )
+    p_genrdm.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_genrdm.add_argument("--check", action="store_true",
+                          help="exit 1 if the README is stale instead of rewriting it (CI)")
+    p_genrdm.add_argument("--readme", default=None, metavar="PATH",
+                          help="README path (default: <workspace>/README.md)")
+    p_genrdm.set_defaults(func=cmd_gen_readme)
+
+    p_audit = sub.add_parser(
+        "audit",
+        help="Run the L0-L5 reproducibility audit over the workspace's studies + investigations",
+    )
+    p_audit.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_audit.add_argument("--json", action="store_true", help="emit the raw audit report as JSON")
+    p_audit.add_argument("--html", default=None, metavar="PATH",
+                         help="write a self-contained HTML audit report to PATH")
+    p_audit.set_defaults(func=cmd_audit)
+
+    p_dash = sub.add_parser(
+        "add-dashboard",
+        help="Scaffold a robust read-only-dashboard publish workflow into a workspace",
+    )
+    p_dash.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_dash.add_argument("--org", default=None, help="GitHub org (default: inferred from git remote)")
+    p_dash.add_argument("--repo", default=None, help="GitHub repo name (default: inferred from git remote)")
+    p_dash.add_argument("--base-path", default=None,
+                        help="Pages base path (default: /<repo>/dashboard)")
+    p_dash.add_argument("--interactive-url", default=None,
+                        help="Link back to the source repo (default: https://github.com/<org>/<repo>)")
+    p_dash.add_argument("--force", action="store_true", help="Overwrite existing files")
+    p_dash.set_defaults(func=cmd_add_dashboard)
 
     args = parser.parse_args(argv)
     return args.func(args)

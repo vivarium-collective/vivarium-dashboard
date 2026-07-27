@@ -38,6 +38,8 @@ import { ProcessPanel } from './panels/ProcessPanel';
 import { NodesPanel } from './panels/NodesPanel';
 import { InspectorPanel } from './panels/InspectorPanel';
 import { SetupRunPanel } from './panels/SetupRunPanel';
+import { ConfigPanel } from './panels/ConfigPanel';
+import { ExploreRunBar } from './panels/ExploreRunBar';
 import { ResultsPanel } from './panels/ResultsPanel';
 import { VisualizationsPanel } from './panels/VisualizationsPanel';
 import { DocumentPanel } from './panels/DocumentPanel';
@@ -1018,6 +1020,29 @@ export default function App() {
   // those inputs change identity — the DockContainer just calls render().
   const dockPanels: DockPanelSpec[] = useMemo(() => [
     {
+      id: 'config',
+      title: 'Config',
+      defaultSide: 'left',
+      headerAction: (
+        <button
+          type="button"
+          className="loom-dock-btn cfg-full-btn"
+          title="Open the full-window Setup & Run view"
+          aria-label="Expand config to full window"
+          onClick={() => setTab('setup')}
+        >⤢ Full</button>
+      ),
+      render: () => (
+        <ConfigPanel
+          compositeId={compositeId}
+          parameters={parameters}
+          overrides={overrides}
+          readOnly={STATIC}
+          onApplied={handleApplied}
+        />
+      ),
+    },
+    {
       id: 'process',
       title: 'Processes',
       defaultSide: 'right',
@@ -1062,7 +1087,8 @@ export default function App() {
         />
       ),
     },
-  ], [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection]);
+  ], [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection,
+      compositeId, parameters, overrides, handleApplied, STATIC]);
 
   if (!state) {
     return (
@@ -1095,7 +1121,7 @@ export default function App() {
 
   // Display label map: ids that need a human-readable label different from the
   // capitalized id. E.g. 'setup' → 'Setup & Run'.
-  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Setup & Run', wiring: 'Explore' };
+  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Configure', wiring: 'Explore' };
 
   return (
     <ReactFlowProvider>
@@ -1188,12 +1214,13 @@ export default function App() {
           <div style={{
             position: 'absolute', inset: 0,
             display: tab === 'wiring' ? 'flex' : 'none',
-            flexDirection: 'row',
+            flexDirection: 'column',
           }}>
             <EmitContext.Provider value={emitSet}>
-              {/* Three dockable panels (Process / Inspector / Nodes) flank the
-                  canvas — each collapsible + dockable left/right. The canvas
-                  fills the center. */}
+              {/* Dock row (flex:1) holds the Config/Process/Inspector/Nodes panels
+                  flanking the canvas; a slim run bar is pinned along the bottom so
+                  the composite can be run without leaving the graph. */}
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'row' }}>
               <DockContainer
                 panels={dockPanels}
                 expandRequest={{ id: 'inspector', nonce: inspectorReveal }}
@@ -1383,6 +1410,20 @@ export default function App() {
                 </ReactFlow>
               </div>
               </DockContainer>
+              </div>
+              <ExploreRunBar
+                compositeId={compositeId}
+                overrides={overrides}
+                emitSet={emitSet}
+                runContext={runContext}
+                defaultSteps={defaultSteps}
+                runKind={runKind}
+                readOnly={STATIC}
+                onTrajectory={setTrajectory}
+                onVizHtml={setVizHtml}
+                onCompleted={() => setTab('results')}
+                onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
+              />
             </EmitContext.Provider>
           </div>
           {tab === 'setup' && (

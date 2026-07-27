@@ -226,3 +226,78 @@ def build_composite_run_zip(ws_root, run_id: str) -> tuple[bytes, str, int]:
             if src.is_file() and src.name != "request.json":
                 zf.write(src, str(src.relative_to(run_dir)))
     return buf.getvalue(), fname, 200
+
+
+# Per-run retrievable artifacts (Runs-tab "Visualizations / Analyses / Report
+# cards / Results" buttons). Each run dir under .pbg/runs/<run_id>/ writes these
+# on completion; this serves them by name — including for the ad-hoc
+# composite-test-runs (ecoli_colony, ecoli_baseline), which have no study.
+#
+#   name    → source file            served as
+#   ------    -------------------      ----------------------------------------
+#   viz     → viz.json               a rendered HTML page (GIF + plots inline)
+#   report  → report.html            HTML (view)
+#   analyses→ analyses.json          JSON (download)
+#   verdict → verdict.json           JSON (view/download)
+_RUN_ARTIFACTS = {
+    "viz":      ("viz.json",      "text/html"),
+    "report":   ("report.html",   "text/html"),
+    "analyses": ("analyses.json", "application/json"),
+    "verdict":  ("verdict.json",  "application/json"),
+}
+
+
+def run_artifacts_present(ws_root, run_id: str) -> dict:
+    """Return ``{name: bool}`` for each retrievable artifact of a run — so the
+    Runs table only renders a button when the artifact actually exists."""
+    run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
+    if not run_dir.is_dir():
+        return {k: False for k in _RUN_ARTIFACTS}
+    present = {k: (run_dir / f).is_file() for k, (f, _mt) in _RUN_ARTIFACTS.items()}
+    # "results" = the emitter store dir (native zarr/parquet) or an sqlite db.
+    present["results"] = any(run_dir.glob("*.zarr")) or any(run_dir.glob("*.db")) \
+        or any(run_dir.glob("*.sqlite*")) or any(run_dir.glob("*parquet*"))
+    return present
+
+
+def build_run_artifact(ws_root, run_id: str, name: str) -> tuple[bytes, str, "str | None", int]:
+    """Serve one named run artifact. Returns ``(content, media_type, download_name, status)``.
+
+    ``viz`` is rendered into a standalone HTML page embedding each declared
+    visualization's html (so the colony GIF / plots open directly in a tab);
+    ``report`` is the run's report.html; ``analyses``/``verdict`` are the raw
+    JSON (downloadable). 400 on an unknown name, 404 when the file is absent.
+    """
+    spec = _RUN_ARTIFACTS.get(name)
+    if spec is None:
+        return b"", "application/json", None, 400
+    filename, media_type = spec
+    run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
+    path = run_dir / filename
+    if not path.is_file():
+        return b"", media_type, None, 404
+    raw = path.read_bytes()
+    if name == "viz":
+        # viz.json is {viz_name: html_string}; wrap into a viewable page.
+        import html as _html
+        try:
+            viz = json.loads(raw.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            viz = {}
+        sections = []
+        for vname, vhtml in (viz.items() if isinstance(viz, dict) else []):
+            sections.append(
+                f'<section style="margin:18px 0"><h3 style="font-family:system-ui;'
+                f'color:#111827">{_html.escape(str(vname))}</h3>{vhtml}</section>'
+            )
+        body = "".join(sections) or '<p style="color:#6b7280">No visualizations were rendered for this run.</p>'
+        page = (
+            f'<!doctype html><meta charset="utf-8"><title>Run visualizations — {_html.escape(run_id)}</title>'
+            f'<body style="max-width:1100px;margin:24px auto;padding:0 16px;font-family:system-ui">'
+            f'<h2 style="color:#111827">Visualizations</h2>'
+            f'<p style="color:#6b7280;font-size:13px"><code>{_html.escape(run_id)}</code></p>{body}</body>'
+        )
+        return page.encode("utf-8"), "text/html", None, 200
+    if name in ("analyses", "verdict"):
+        return raw, media_type, f"{name}_{run_id}.json", 200
+    return raw, media_type, None, 200

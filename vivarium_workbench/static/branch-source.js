@@ -423,11 +423,85 @@
   // workspaces. No scope toggle, no push/build/PR, no live in-process switch —
   // "Switch" navigates to the chosen bundle. "Sync to local" is kept (it's the
   // round-trip: clone this exact repo@commit locally via `vivarium-dashboard sync`).
+  // The reproducibility card for THIS published workspace: GitHub repo link,
+  // commit sha (linked to the commit page), branch, pinned environment (uv.lock
+  // hash), build time, and the one-liner to clone + reproduce it locally. Data
+  // comes from __DASH_CONFIG__.provenance, injected by publish.py. No live
+  // backend needed — this is the whole point of surfacing it in read-only mode.
+  function _renderProvenance(host) {
+    var p = (window.__DASH_CONFIG__ || {}).provenance;
+    if (!p || (!p.repo_url && !p.commit)) return;
+    var card = _el("div", "viv-bs-provenance");
+
+    if (p.repo_url) {
+      var repoRow = _el("div", "viv-bs-row");
+      repoRow.appendChild(_el("label", "viv-bs-key", "Repository"));
+      var a = _el("a", "viv-bs-prov-repo");
+      a.href = p.repo_url; a.target = "_blank"; a.rel = "noopener";
+      a.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><use href="#viv-gh-mark"/></svg>';
+      a.appendChild(document.createTextNode(p.repo_slug || p.repo_url));
+      repoRow.appendChild(a);
+      card.appendChild(repoRow);
+    }
+    if (p.branch) {
+      var brRow = _el("div", "viv-bs-row");
+      brRow.appendChild(_el("label", "viv-bs-key", "Branch"));
+      brRow.appendChild(_el("span", "viv-bs-commit", p.branch));
+      card.appendChild(brRow);
+    }
+    if (p.commit) {
+      var cRow = _el("div", "viv-bs-row");
+      cRow.appendChild(_el("label", "viv-bs-key", "Commit"));
+      var cVal;
+      if (p.commit_url) {
+        cVal = _el("a", "viv-bs-commit"); cVal.href = p.commit_url;
+        cVal.target = "_blank"; cVal.rel = "noopener";
+        cVal.title = "View this commit on GitHub";
+      } else {
+        cVal = _el("span", "viv-bs-commit");
+      }
+      cVal.textContent = _short(p.commit);
+      cRow.appendChild(cVal);
+      card.appendChild(cRow);
+    }
+    if (p.lockfile) {
+      var eRow = _el("div", "viv-bs-row");
+      eRow.appendChild(_el("label", "viv-bs-key", "Environment"));
+      var ev = _el("span", "viv-bs-prov-env", p.lockfile);
+      ev.title = "Locked dependency set — reproduce with `uv sync` against this uv.lock";
+      eRow.appendChild(ev);
+      card.appendChild(eRow);
+    }
+    if (p.generated_at) {
+      var gRow = _el("div", "viv-bs-row");
+      gRow.appendChild(_el("label", "viv-bs-key", "Published"));
+      gRow.appendChild(_el("span", "viv-bs-prov-env", p.generated_at));
+      card.appendChild(gRow);
+    }
+
+    // Reproduce-locally one-liner (clone this exact repo@commit + verify lock).
+    var repro = _el("div", "viv-bs-prov-repro");
+    var dir = (window.location.origin + window.location.pathname).replace(/[^/]*$/, "");
+    var cmd = "vivarium-workbench sync " + dir.replace(/\/$/, "");
+    var lead = _el("div", "viv-bs-key");
+    lead.style.width = "auto";
+    lead.textContent = "Reproduce this workspace locally:";
+    repro.appendChild(lead);
+    var code = _el("code", "viv-bs-prov-cmd", cmd);
+    code.title = "Click to select · clones this repo@commit and verifies " + (p.lockfile || "uv.lock");
+    repro.appendChild(code);
+    card.appendChild(repro);
+
+    host.appendChild(card);
+  }
+
   function _renderSnapshot() {
     var host = document.getElementById("viv-branch-source");
     if (!host) return;
     host.innerHTML = "";
     host.appendChild(_el("h3", "viv-bs-title", "Source"));
+
+    _renderProvenance(host);
 
     var entries = state.entries || [];
     var names = entries.map(function (e) { return e.repo; });
@@ -435,9 +509,13 @@
       state.selected = state.current || entries[0] || null;
     }
     if (!entries.length) {
-      host.appendChild(_el("p", "viv-bs-note", "No other published workspaces found."));
+      // The provenance card above is the primary content; only add the
+      // sibling-workspaces note when there genuinely could have been more.
+      host.appendChild(_el("p", "viv-bs-note viv-bs-note-siblings",
+        "No other published workspaces linked from this one."));
       return;
     }
+    host.appendChild(_el("div", "viv-bs-prov-head", "Other published workspaces"));
     host.appendChild(_selectRow("Repo", "viv-bs-repo", names,
       state.selected ? state.selected.repo : null, function (v) {
         state.selected = entries.filter(function (e) { return e.repo === v; })[0] || null;

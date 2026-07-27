@@ -1331,6 +1331,35 @@ def discover_report_card_urls(ws_root: Path, slug: str) -> dict:
     return promoted if isinstance(promoted, dict) else rc_urls
 
 
+def has_graded_report_cards(ws_root: Path, slug: str) -> bool:
+    """True only if a study carries a COMPLETED, graded report-card evaluation.
+
+    Distinguishes a finalized-but-unpromoted study (e.g. metabolism_redux: 8
+    per-card ``viz/report_card/*.verdict.json`` with graded overalls like
+    ``drift``/``within_tol``) from an unrun/decision study whose only artifact is
+    a placeholder ``tests.verdict.json`` with ``overall: ungraded``. Used by the
+    investigation status safeguard so it never promotes a genuinely pre-eval
+    study to "evaluated". Never raises.
+    """
+    import json as _json
+    _UNGRADED = {"", "ungraded", "pending", "planned", "not_run", "n/a", "none"}
+    try:
+        from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+        rc_dir = WorkspacePaths(ws_root).study_dir(slug) / "viz" / "report_card"
+    except Exception:  # noqa: BLE001
+        return False
+    if not rc_dir.is_dir():
+        return False
+    for vj in rc_dir.glob("*.verdict.json"):
+        try:
+            overall = str((_json.loads(vj.read_text(encoding="utf-8")) or {}).get("overall") or "").strip().lower()
+        except Exception:  # noqa: BLE001
+            continue
+        if overall and overall not in _UNGRADED:
+            return True
+    return False
+
+
 def report_card_findings_for_study(ws_root: Path, slug: str, existing_findings=None):
     """Discover a study's report cards and derive findings when none are authored.
 

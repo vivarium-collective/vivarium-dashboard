@@ -2073,6 +2073,20 @@ def create_app() -> FastAPI:
         body, status = _audit_views.build_audit(ws)
         return JSONResponse(status_code=status, content=body)
 
+    @app.get(
+        "/api/audit-report",
+        tags=["Data, inputs & references"],
+        summary="Reproducibility audit as a standalone HTML page (latest, or re-run)",
+    )
+    def audit_report(ws: Path = Depends(get_workspace), rerun: int = 0):
+        """Return the L0-L5 reproducibility audit as a self-contained HTML page.
+        Serves the most-recent cached report (``.pbg/audit/report.html``);
+        ``?rerun=1`` regenerates a fresh one. The page carries its own
+        generated-at stamp and a re-run link."""
+        from vivarium_workbench.lib.audit_report import get_or_build_report
+        return Response(content=get_or_build_report(ws, rerun=bool(rerun)),
+                        media_type="text/html")
+
     # -----------------------------------------------------------------------
     # Observables / never-fabricate guard + linkage-index routes
     # -----------------------------------------------------------------------
@@ -2457,6 +2471,35 @@ def create_app() -> FastAPI:
             media_type="application/zip",
             headers={"Content-Disposition": f'attachment; filename="{fname}"'},
         )
+
+    @app.get(
+        "/api/composite-run/{run_id}/artifact/{name}",
+        tags=["Composites"],
+        summary="Serve one of a run's output artifacts (viz/report/analyses/verdict)",
+        response_class=Response,
+    )
+    def composite_run_artifact_route(
+        run_id: str,
+        name: str,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Serve a completed run's named output artifact for the Runs tab's
+        per-run retrieval buttons.
+
+        ``viz`` renders the run's ``viz.json`` into a viewable HTML page (the
+        colony GIF / plots open directly); ``report`` serves ``report.html``;
+        ``analyses``/``verdict`` serve the raw JSON as a download. Works for the
+        ad-hoc composite-test-runs too. 400 unknown name, 404 absent.
+        """
+        content, media_type, download_name, code = _cr_views.build_run_artifact(ws, run_id, name)
+        if code != 200:
+            msg = {400: f"unknown artifact: {name}",
+                   404: f"artifact not found for run {run_id}: {name}"}.get(code, "unavailable")
+            return JSONResponse(status_code=code, content={"error": msg})
+        headers = {}
+        if download_name:
+            headers["Content-Disposition"] = f'attachment; filename="{download_name}"'
+        return Response(content=content, media_type=media_type, headers=headers)
 
     @app.get(
         "/api/simulation-run-download",

@@ -53,6 +53,11 @@ vivarium-workbench-publish --workspace /path/to/workspace --out /tmp/bundle
 
 # One-shot legacy migration (investigations/<name>/spec.yaml → studies/, v2→v3)
 vivarium-workbench migrate-investigations --workspace /path/to/ws [--dry-run]
+
+# Regenerate a workspace README's composite + investigation tables from the
+# workspace itself (between <!-- BEGIN:composites/investigations --> markers).
+# --check exits 1 if stale (wire into the workspace's CI).
+vivarium-workbench gen-readme --workspace /path/to/ws [--check]
 ```
 
 There is no separate build step (pure Python + static assets) and no linter

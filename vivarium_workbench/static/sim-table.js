@@ -183,12 +183,26 @@
   function _actions(row) {
     var runIdEnc = encodeURIComponent(row.run_id || "");
     var studySlug = study(row);
+    // Per-run output retrieval — Visualizations / Report card / Analyses /
+    // Results — for ANY completed run, including the ad-hoc composite-test-runs
+    // (ecoli_colony, ecoli_baseline) that have no study. Every run writes these
+    // under .pbg/runs/<run_id>/ (viz.json / report.html / analyses.json / the
+    // emitter store); the artifact endpoint serves them by name.
+    var completed = String(row.status || "").toLowerCase() === "completed";
+    var hasRun = !!row.run_id;
+    function _art(name, label, title, download) {
+      return '<a class="action-btn js-authoring" title="' + title + '" ' +
+        (download ? 'download ' : 'target="_blank" rel="noopener" ') +
+        'href="/api/composite-run/' + runIdEnc + '/artifact/' + name +
+        '" style="text-decoration:none;">' + label + '</a>';
+    }
+    var viz    = (completed && hasRun) ? _art("viz",    "📊 Viz",      "Open this run's visualizations (GIF + plots)", false) : "";
+    var report = (completed && hasRun) ? _art("report", "📋 Report",   "Open this run's report card", false) : "";
+    var analyses = (completed && hasRun) ? _art("analyses", "⬇ Analyses",   "Download this run's analyses (JSON)", true) : "";
     var data = (row.run_id && (row.store_path || row.db_path))
-      ? '<a class="action-btn js-authoring" title="Download this run\'s raw emitter data (.zip)" ' +
-        'href="/api/simulation-run-download?run_id=' + runIdEnc + '" download style="text-decoration:none;">⬇ Data</a>' : "";
-    var analysis = studySlug
-      ? '<a class="action-btn js-authoring" title="Download the analysis-flush output for this run\'s study (.zip)" ' +
-        'href="/api/study-analysis-zip?study=' + encodeURIComponent(studySlug) + '" download style="text-decoration:none;">⬇ Analysis</a>' : "";
+      ? '<a class="action-btn js-authoring" title="Download this run\'s results / raw emitter data (.zip)" ' +
+        'href="/api/simulation-run-download?run_id=' + runIdEnc + '" download style="text-decoration:none;">⬇ Results</a>' : "";
+    var analysis = "";
     // Rerun — REPRODUCES this run (replays its recorded manifest verbatim —
     // params/seed/emitter/emit_paths/runtime exactly as launched, ignoring
     // whatever the study's spec currently says) via POST /api/study-reproduce
@@ -209,7 +223,7 @@
     var rerun = (row.run_id && !isSnapshot)
       ? '<button type="button" class="action-btn js-authoring rerun-btn" ' +
         'title="Reproduce this run — replays its recorded manifest exactly, as a brand-new run">↻ Rerun</button>' : "";
-    var parts = [data, analysis, rerun].filter(function (h) { return !!h; });
+    var parts = [viz, report, analyses, data, analysis, rerun].filter(function (h) { return !!h; });
     return parts.join(" ");
   }
 

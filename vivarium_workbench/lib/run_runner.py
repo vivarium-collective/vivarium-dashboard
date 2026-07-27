@@ -630,6 +630,19 @@ def execute(request_path: Path) -> int:
         core_mod = __import__(f"{req.pkg}.core", fromlist=["build_core"])
         core = core_mod.build_core()
 
+        # A generator may register custom types/processes via ``core_extensions``
+        # (e.g. the colony composite's ``pymunk_agent`` type). The workspace's
+        # ``build_core`` does not know these, so realizing the Composite fails on
+        # ``map[pymunk_agent]``. Apply the generator's declared extensions to the
+        # run core before the Composite is realized. Never block the run on this.
+        try:
+            _gen_entry = _generator_entry(req.spec_id)
+            if _gen_entry is not None:
+                from viva_superpowers.composite_generator import apply_core_extensions
+                core = apply_core_extensions(_gen_entry, core) or core
+        except Exception as _ext_exc:  # noqa: BLE001
+            _write_log(req, f"note: could not apply generator core_extensions: {_ext_exc}")
+
         # Uniform write path: pick the emitter NAME, then let the broker inject
         # it as a Step, build the Composite, run, and flush. A static spec that
         # declares an `emitters:` default sink still routes to the parquet

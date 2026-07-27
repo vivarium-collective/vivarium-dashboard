@@ -2265,6 +2265,10 @@ textarea.loom-in-field{
 .market-meta { font-size: 0.78em; color: #94a3b8; }
 .market-usage { font-size: 0.78em; color: #94a3b8; }
 .market-open { flex: none; }
+
+/* Studies-overview header action cluster: + Investigation / + Study / Audit Report */
+.iset-hdr-btn { display: inline-flex; align-items: center; gap: 5px; }
+.iset-hdr-btn svg { flex: none; }
 .market-results { margin-top: 14px; }
 
 /* List (dense) zoom */
@@ -3540,8 +3544,39 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .ccard-loom-frame {
   border: 1px solid #cbd5e1; border-radius: 0; background: #fbfcfe;
   margin: 6px 0 2px; overflow: hidden;
+  display: flex; flex-direction: column;
+  height: 460px; min-height: 220px; max-height: 92vh;
 }
-.ccard-loom-iframe { width: 100%; height: 460px; border: 0; display: block; }
+.ccard-loom-iframe { width: 100%; flex: 1 1 auto; height: auto; min-height: 0; border: 0; display: block; }
+/* Inline-loom mode bar: read-only preview ⇄ "Enable running" (live). */
+.ccard-loom-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 4px 8px; border: 1px solid #cbd5e1; border-bottom: 0; background: #f8fafc;
+  font-size: 12px; margin: 6px 0 0;
+}
+.ccard-loom-bar + .ccard-loom-frame { margin-top: 0; }
+.ccard-loom-mode { color: #64748b; }
+.ccard-loom-mode.live { color: #047857; font-weight: 600; }
+.ccard-loom-live-btn {
+  font-size: 12px; color: #fff; background: #059669; border: 1px solid #059669;
+  border-radius: 5px; padding: 3px 11px; cursor: pointer;
+}
+.ccard-loom-live-btn:hover { background: #047857; }
+/* Drag-to-resize grip at the bottom of an embedded loom — grow/shrink the panel
+   (and the card with it). Full-width bar so the gesture is obvious. */
+.ccard-loom-resize {
+  flex: 0 0 11px; cursor: ns-resize; background: #eef2f7;
+  border-top: 1px solid #d5dde8; position: relative; touch-action: none;
+  user-select: none;
+}
+.ccard-loom-resize::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 34px; height: 3px; margin: -1.5px 0 0 -17px; border-radius: 2px;
+  background: #9aa7b8;
+}
+.ccard-loom-resize:hover { background: #e2e8f2; }
+.ccard-loom-resize:hover::before { background: #6b7a90; }
+.ccard-loom-frame.is-resizing { user-select: none; }
 .ccard {
   display: flex; flex-direction: column; gap: 7px;
   border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;
@@ -3590,6 +3625,33 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   border-radius: 5px; padding: 3px 12px; cursor: pointer; transition: background .12s;
 }
 .ccard-explore:hover { background: #eff6ff; }
+/* View — the primary card action (opens the loom inline at full detail). Filled
+   to read as primary next to the outline "Pop out ↗". */
+.ccard-view {
+  font-size: 12px; color: #fff; background: #2563eb; border: 1px solid #2563eb;
+  border-radius: 5px; padding: 3px 14px; cursor: pointer; transition: background .12s;
+  margin-right: 6px;
+}
+.ccard-view:hover { background: #1d4ed8; }
+/* The inline loom is now opened via the card's "View" action, so its own
+   "Open loom" disclosure summary is redundant — hide it (the embed still
+   toggles open/closed programmatically). */
+.ccard-loom-embed > summary { display: none; }
+/* Pin-to-top toggle — hover-revealed on each card/row; stays lit once pinned. */
+.ccard-pin {
+  border: 0; background: transparent; cursor: pointer; font-size: 13px; line-height: 1;
+  padding: 2px 5px; margin-right: 2px; border-radius: 4px;
+  opacity: 0; filter: grayscale(1) opacity(0.55); transition: opacity .12s, filter .12s, background .12s;
+}
+.ccard:hover .ccard-pin,
+.composite-list-row:hover .ccard-pin,
+.reg-tr:hover .ccard-pin { opacity: 1; }
+.ccard-pin:hover { background: #f1f5f9; }
+.ccard-pin.pinned { opacity: 1; filter: none; }
+/* Composites table: narrow leading pin column. */
+.reg-th-pin { width: 26px; padding: 0 !important; }
+.reg-td-pin { width: 26px; text-align: center; padding: 0 !important; }
+.reg-td-pin .ccard-pin { margin: 0; padding: 2px; }
 /* Composite card — expandable config (param · type · default · description). */
 .ccard-cfg { font-size: 11px; }
 .ccard-cfg > summary {
@@ -3644,6 +3706,18 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 /* Rail toggle switch (sun ↔ moon sliding pill). */
 .viv-rail-footer{ padding:10px 16px; border-top:1px solid #ececec; display:flex; }
 .viv-rail.viv-rail-collapsed .viv-rail-footer{ justify-content:center; padding:10px 4px; }
+/* Theme-toggle footer only: a compact, low-key corner. The pill is invisible
+   until the corner is hovered (or keyboard-focused), so it's unobtrusive and
+   gives the studies list more room. Its own class so the shared .viv-rail-footer
+   (reused by the GitHub account chip) is untouched. */
+.viv-rail-theme-footer{ padding:0 16px 6px; border-top:none; align-items:center; }
+.viv-rail.viv-rail-collapsed .viv-rail-theme-footer{ padding:0 4px 6px; }
+.viv-rail-theme-footer .viv-theme-toggle{
+  opacity:0; transform:scale(0.94); transform-origin:left center;
+  transition:opacity .16s ease, transform .16s ease;
+}
+.viv-rail-theme-footer:hover .viv-theme-toggle,
+.viv-rail-theme-footer:focus-within .viv-theme-toggle{ opacity:1; transform:none; }
 .viv-theme-toggle{
   position:relative; display:inline-flex; align-items:center; justify-content:space-between;
   width:56px; height:26px; padding:0 7px; border-radius:14px;

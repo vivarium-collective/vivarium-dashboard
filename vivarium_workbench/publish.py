@@ -572,6 +572,7 @@ def _set_snapshot_config(
     interactive_url: str = "",
     base_path: str = "",
     inputs_download_base: str = "",
+    provenance: dict | None = None,
 ) -> str:
     """Swap the ``__DASH_CONFIG__`` mode from *local-server* to *snapshot*.
 
@@ -586,6 +587,10 @@ def _set_snapshot_config(
       links them to the committed source-repo file instead of a bundle-relative
       path that 404s on GitHub Pages (see :func:`_inputs_download_base`). Only
       injected when non-empty.
+    - ``provenance`` — the source repo/commit/branch/lockfile + build time, so
+      the read-only Source panel can show a reproducibility card (GitHub link,
+      commit sha, `sync` command) even with no live backend. Only injected when
+      non-empty.
     """
     import json as _json
     config_js = 'window.__DASH_CONFIG__ = { mode: "snapshot"'
@@ -595,11 +600,48 @@ def _set_snapshot_config(
         config_js += ', basePath: ' + _json.dumps(base_path)
     if inputs_download_base:
         config_js += ', inputsDownloadBase: ' + _json.dumps(inputs_download_base)
+    if provenance:
+        prov = {k: v for k, v in provenance.items() if v}
+        if prov:
+            config_js += ', provenance: ' + _json.dumps(prov)
     config_js += ' };'
     return html.replace(
         'window.__DASH_CONFIG__ = { mode: "local-server" };',
         config_js,
     )
+
+
+def _snapshot_provenance(ws_root: Path) -> dict:
+    """Assemble the reproducibility facts surfaced in the published Source panel:
+    repo slug + GitHub URLs, commit sha (+ commit page URL), branch, uv.lock
+    hash, and the build timestamp. Tolerates non-git / partial workspaces —
+    every field is best-effort and omitted when unknown (see
+    :func:`_set_snapshot_config`, which drops empty values)."""
+    from datetime import datetime, timezone
+
+    commit, remote, branch = _git_info(ws_root)
+    try:
+        from vivarium_workbench.lib.report import _detect_github_repo
+        slug = _detect_github_repo(ws_root) or ""
+    except Exception:  # noqa: BLE001
+        slug = ""
+    repo_url = f"https://github.com/{slug}" if slug else (remote or "")
+    commit = commit or ""
+    commit_url = f"{repo_url}/commit/{commit}" if (repo_url and commit and slug) else ""
+    try:
+        from vivarium_workbench.lib.provenance_manifest import lockfile_hash
+        lockfile = lockfile_hash(ws_root) or ""
+    except Exception:  # noqa: BLE001
+        lockfile = ""
+    return {
+        "repo_slug": slug,
+        "repo_url": repo_url,
+        "commit": commit,
+        "commit_url": commit_url,
+        "branch": branch or "",
+        "lockfile": lockfile,
+        "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+    }
 
 
 def _render_home_html(ws_root: Path) -> str:
@@ -1142,12 +1184,13 @@ def _do_build(
     # Input downloads (expert docs / datasets) aren't staged in the bundle;
     # link them to the committed file in the GitHub source repo.
     inputs_download_base = _inputs_download_base(ws_root)
+    provenance = _snapshot_provenance(ws_root)
     home_html = _render_home_html(ws_root)
     home_html = _normalize_asset_urls(home_html)
     home_html = _apply_base_path(home_html, base_path)
     home_html = _set_snapshot_config(
         home_html, interactive_url=interactive_url, base_path=base_path,
-        inputs_download_base=inputs_download_base,
+        inputs_download_base=inputs_download_base, provenance=provenance,
     )
     (out_dir / "index.html").write_text(home_html, encoding="utf-8")
 
@@ -1176,7 +1219,7 @@ def _do_build(
             study_html = _apply_base_path(study_html, base_path)
             study_html = _set_snapshot_config(
                 study_html, interactive_url=interactive_url, base_path=base_path,
-                inputs_download_base=inputs_download_base,
+                inputs_download_base=inputs_download_base, provenance=provenance,
             )
         except Exception as exc:  # noqa: BLE001 — one bad study must not abort the whole publish
             print(f"  warn: study-shell render failed for {slug!r}: {exc}")

@@ -4,9 +4,13 @@ TPL = Path("vivarium_workbench/templates/study-detail.html").read_text(encoding=
 
 
 def test_group_headers_present():
-    assert "Summary" in TPL
+    # Redesign: narrative order Question -> Biology -> Findings -> Debts ->
+    # Conclusion. The old "Summary" card was removed (verdict is shown once, in
+    # the header pill + spine-at-a-glance), and a Conclusion block closes it out.
     assert "Question &amp; approach" in TPL or "Question & approach" in TPL
+    assert "Biology" in TPL
     assert "Findings" in TPL
+    assert ">Conclusion</h2>" in TPL
     assert "Plan &amp; provenance" in TPL or "Plan & provenance" in TPL
 
 
@@ -41,7 +45,9 @@ def test_feedback_tracked_panel_present():
 
 
 def test_report_conclusion_present():
-    assert 'data-narrative-path="report.conclusion"' in TPL
+    # The conclusion field is wired through the progressive-disclosure edit_field
+    # macro (data-narrative-path="{{ path }}"), so assert the path is referenced.
+    assert "report.conclusion" in TPL
 
 
 def test_biological_summary_present():
