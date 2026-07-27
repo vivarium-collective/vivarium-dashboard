@@ -90,25 +90,40 @@
 
   async function _switchRemote(simulatorId, btn) {
     if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
-    // First materialization downloads the build's workspace (~hundreds of MB,
-    // up to a few minutes); cached builds switch instantly. Show a note so a
-    // long download doesn't look stuck.
-    _setBusy("Loading build " + simulatorId + " — downloading its workspace on first use (cached builds are instant)…");
+    // First materialization downloads the build's workspace (~hundreds of MB, up
+    // to a few minutes); cached builds switch instantly. A ticking counter + Cancel
+    // + a client-side timeout matching the server's 600s download cap mean a long
+    // download reads as progress, never a dead spinner (hardening for external users).
+    var controller = new AbortController();
+    var t0 = Date.now();
+    function _msg() {
+      var s = Math.round((Date.now() - t0) / 1000);
+      return "Loading build " + simulatorId + " — downloading its workspace (" + s + "s; cached builds are instant)…";
+    }
+    _setBusy(_msg(), function () { controller.abort(); });
+    var ticker = setInterval(function () { _setBusy(_msg(), function () { controller.abort(); }); }, 1000);
+    var deadline = setTimeout(function () { controller.abort(); }, 610000);  // 600s server cap + buffer
+    function _cleanup() { clearInterval(ticker); clearTimeout(deadline); }
     try {
       var r = await fetch("/api/source/switch-build", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ simulator_id: Number(simulatorId) }),
+        signal: controller.signal,
       });
     } catch (e) {
-      _setBusy(""); if (btn) { btn.disabled = false; btn.textContent = "Switch"; }
-      alert("Switch failed: network error"); return;
+      _cleanup(); _setBusy(""); if (btn) { btn.disabled = false; btn.textContent = "Switch"; }
+      alert(e && e.name === "AbortError"
+        ? "Switch cancelled or timed out — the workspace download took too long. The remote endpoint may be slow or unreachable."
+        : "Switch failed: network error");
+      return;
     }
+    _cleanup();
     if (btn) { btn.disabled = false; btn.textContent = "Switch"; }
     if (!r.ok) _setBusy("");
     _afterSwitch(r);
   }
 
-  function _setBusy(msg) {
+  function _setBusy(msg, onCancel) {
     var el = document.getElementById("viv-bs-busy");
     if (!el) {
       var host = document.getElementById("viv-branch-source");
@@ -116,7 +131,16 @@
       el = _el("div", "viv-bs-busy"); el.id = "viv-bs-busy";
       host.appendChild(el);
     }
-    el.textContent = msg || "";
+    el.innerHTML = "";
+    if (msg) {
+      el.appendChild(_el("span", "viv-bs-busy-msg", msg));
+      if (typeof onCancel === "function") {
+        var c = _el("button", "viv-bs-cancel", "Cancel");
+        c.style.cssText = "margin-left:10px";
+        c.addEventListener("click", onCancel);
+        el.appendChild(c);
+      }
+    }
     el.style.display = msg ? "block" : "none";
   }
 
