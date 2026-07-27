@@ -868,8 +868,10 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         {# Provenance: default to THIS repository's own artifacts; "Other
            repos" (dependency / federated content) is opt-in. #}
         <span class="market-origin-filter">
-          <button class="market-origin-chip active" data-origin="workspace" onclick="_setMarketOrigin('workspace')" title="Artifacts defined in this repository">Repository</button>
-          <button class="market-origin-chip"        data-origin="external"  onclick="_setMarketOrigin('external')"  title="Artifacts from other repos — candidates to import">Other repos</button>
+          <button class="market-origin-chip active" data-origin="all"       onclick="_setMarketOrigin('all')"       title="Everything, grouped by category">All</button>
+          <button class="market-origin-chip"        data-origin="workspace" onclick="_setMarketOrigin('workspace')" title="Defined in this workspace's own package">Workspace</button>
+          <button class="market-origin-chip"        data-origin="imported"  onclick="_setMarketOrigin('imported')"  title="From dependency repos installed here">Imported</button>
+          <button class="market-origin-chip"        data-origin="available" onclick="_setMarketOrigin('available')" title="From ecosystem repos not installed here — available to install">Available</button>
         </span>
       </div>
     </div>
