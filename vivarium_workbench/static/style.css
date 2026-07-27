@@ -1697,6 +1697,22 @@ textarea.loom-in-field{
 .reg-succ-lo{ color:#b91c1c; background:#fef2f2; }
 .reg-stat-part .reg-stat-glyph{ color:#6366f1; }
 
+/* Middle (grid) zoom: config + ports collapsed behind a click-to-expand summary. */
+.reg-mid-details{ margin-top:8px; border-top:1px solid #f1f5f9; }
+.reg-mid-details > summary{
+  cursor:pointer; list-style:none; padding:7px 0 2px; display:flex; align-items:center; gap:8px;
+  font-size:0.72em; text-transform:uppercase; letter-spacing:.05em; font-weight:700; color:#94a3b8;
+}
+.reg-mid-details > summary::-webkit-details-marker{ display:none; }
+.reg-mid-details > summary::before{ content:'▸'; color:#cbd5e1; font-size:1.15em; }
+.reg-mid-details[open] > summary::before{ content:'▾'; }
+.reg-mid-details > summary:hover{ color:#64748b; }
+.reg-mid-sum{ text-transform:none; letter-spacing:0; font-weight:500; color:#cbd5e1; font-size:0.95em; }
+.reg-mid-details .reg-mid{ margin-top:2px; border-top:none; padding-top:2px; }
+:root[data-theme="dark"] .reg-mid-details{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .reg-mid-details > summary{ color:var(--text-muted); }
+:root[data-theme="dark"] .reg-mid-sum{ color:#8494a8; }
+
 /* Middle (grid) zoom: compact bigraph-loom-style node — config strip on top,
    input ports down the left, output ports down the right (read-only). */
 .reg-mid{

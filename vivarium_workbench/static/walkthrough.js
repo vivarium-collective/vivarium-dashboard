@@ -2186,6 +2186,15 @@
       stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
     }
     var inlinePorts = _regInlinePorts(p);
+    // Collapsed by default: config + input/output ports live behind a click-to-
+    // expand <details> so the middle card stays compact. stopPropagation so the
+    // toggle doesn't select/zoom the card.
+    var _cfgN = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema).length : 0;
+    var _detail = inlinePorts
+      ? '<details class="reg-mid-details" onclick="event.stopPropagation()"><summary>config &amp; ports' +
+        ' <span class="reg-mid-sum">' + _cfgN + ' config · ' + _nPorts(p.inputs) + ' in · ' + _nPorts(p.outputs) + ' out</span></summary>' +
+        inlinePorts + '</details>'
+      : '';
     var selCls = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
     return '<div class="registry-card' + selCls + '"' + sourceAttr + ' data-address="' + addr + '"' +
         ' onclick="_selectRegistryEntry(\'' + addr + '\')" ondblclick="_zoomInOn(\'' + addr + '\')"' +
@@ -2198,7 +2207,7 @@
         '</div>' +
         '<div class="reg-card-stats">' + stats.join('') + '</div>' +
       '</div>' +
-      inlinePorts +
+      _detail +
     '</div>';
   }
 
