@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from vivarium_workbench.lib import run_log
+from vivarium_workbench.lib import env_fingerprint
 
 
 _SCHEMA_RUNS_META = """
@@ -74,6 +75,13 @@ _NEW_COLUMNS = {
     # analysis flush so the UI can announce the current stage (the coarse
     # `status` stays "running" until the whole pipeline finishes). Nullable.
     "phase": "TEXT",
+    # Reconstructable environment id (reproducible-rerun-spine Task 2 / G1):
+    # a 16-hex sha256 digest of the run's ``manifest["env"]`` dict (see
+    # lib/env_fingerprint.env_id) — workspace commit, sim package versions/
+    # SHAs, uv.lock hash, python/platform, cache fingerprint. Lets two runs'
+    # environments be compared with a single string equality check. Nullable:
+    # runs predating this column, or whose manifest lacks an env, have NULL.
+    "env_id": "TEXT",
 }
 
 
@@ -150,7 +158,8 @@ def generate_run_id(spec_id: str, params: dict | None = None,
 
 def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
                        runtime, origin, study=None, pkg=None,
-                       generation_id=None, ws_root=None) -> dict:
+                       generation_id=None, ws_root=None,
+                       cache_fingerprint=None) -> dict:
     """Assemble the canonical per-run replay manifest (spec Part A).
 
     A complete, self-contained record of everything a rerun needs to
@@ -163,6 +172,15 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
     ``pkg`` version lookup, each independently wrapped so a failure (no git
     repo, package not installed/importable, etc.) degrades to ``None``
     rather than raising — this must never block a run from being recorded.
+
+    ``env`` (reproducible-rerun-spine Task 2) is a best-effort
+    :func:`env_fingerprint.compute_env` snapshot — never raises, so a
+    lookup failure never blocks a run from being recorded. ``cache_fingerprint``
+    is threaded through explicitly when the caller already computed one (e.g.
+    a bespoke runner script); otherwise it's sniffed from
+    ``params["cache_fingerprint"]`` when that's a plain string (v2ecoli's
+    ``run_condition_multigen_parquet.cache_fingerprint()`` short hash lands
+    there), so callers don't have to pass it separately from ``params``.
     """
     git_sha = None
     if ws_root is not None:
@@ -184,6 +202,16 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
             pkg_version = None
 
+    cf = cache_fingerprint
+    if cf is None:
+        sniffed = (params or {}).get("cache_fingerprint")
+        if isinstance(sniffed, str):
+            cf = sniffed
+    try:
+        env = env_fingerprint.compute_env(ws_root=ws_root, cache_fingerprint=cf)
+    except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
+        env = None
+
     return {
         "version": 2,
         "spec_id": spec_id,
@@ -198,11 +226,12 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         "generation_id": generation_id,
         "code_version": {"git_sha": git_sha, "package": pkg_version},
         # v2 keys (reproducible-rerun-spine Task 1): filled in by later tasks
-        # (Task 2 = env, Task 3 = fingerprint_fields/result_fingerprint, Task
-        # 4 = first-class seed). Present as null here so a manifest's shape
-        # is stable across the migration and consumers can rely on the keys
+        # (Task 2 = env [now populated above], Task 3 =
+        # fingerprint_fields/result_fingerprint, Task 4 = first-class seed).
+        # The still-pending ones are present as null so a manifest's shape is
+        # stable across the migration and consumers can rely on the keys
         # existing rather than probing for them.
-        "env": None,
+        "env": env,
         "seed": None,
         "fingerprint_fields": None,
         "result_fingerprint": None,
@@ -220,15 +249,26 @@ def save_metadata(conn, *, spec_id, run_id, params, label, started_at,
     :func:`build_run_manifest`; stored verbatim as JSON in ``manifest_json``
     so ``rerun.resolve_rerun_target`` can replay this run exactly rather than
     reconstructing it from the override-delta ``params_json``/``n_steps``.
+
+    ``env_id`` (reproducible-rerun-spine Task 2) is derived from
+    ``manifest["env"]`` via :func:`env_fingerprint.env_id` and stored
+    alongside — best-effort: a manifest with no ``env`` (legacy caller) or a
+    digest failure leaves the column ``NULL`` rather than raising.
     """
+    env_id_val = None
+    if manifest and manifest.get("env") is not None:
+        try:
+            env_id_val = env_fingerprint.env_id(manifest["env"])
+        except Exception:  # noqa: BLE001 — best-effort, never block a run
+            env_id_val = None
     conn.execute(
         "INSERT INTO runs_meta "
         "(run_id, spec_id, label, params_json, started_at, status, "
-        " n_steps, log_path, progress_step, generation_id, manifest_json) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        " n_steps, log_path, progress_step, generation_id, manifest_json, env_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
         (run_id, spec_id, label, json.dumps(params or {}),
          started_at, "running", n_steps, log_path, generation_id,
-         json.dumps(manifest) if manifest else None),
+         json.dumps(manifest) if manifest else None, env_id_val),
     )
     conn.commit()
     if workspace is not None:
