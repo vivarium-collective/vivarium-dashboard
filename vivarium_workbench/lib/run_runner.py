@@ -693,6 +693,38 @@ def execute(request_path: Path) -> int:
                       db_file=req.db_file, run_id=req.run_id, core=core)
         except Exception:
             traceback.print_exc()   # flush must never fail the run
+
+        # reproducible-rerun-spine Task 3 (G4): compute + store a
+        # result_fingerprint over this run's declared fields so a rerun can be
+        # verified byte-for-byte rather than eyeballed. fingerprint_fields
+        # comes from the manifest this run was launched with (Task 3 resolves
+        # it at launch, defaulting to emit_paths — see
+        # composite_runs.build_run_manifest); a legacy manifest-less run
+        # falls back to this run's own resolved emit_paths directly. The
+        # snapshot is read from `composite.state` (the just-completed run's
+        # final state tree) rather than re-reading the emitter store, so it
+        # works uniformly regardless of which emitter (sqlite/parquet/zarr)
+        # persisted the run. Best-effort throughout: any failure here leaves
+        # result_fingerprint NULL rather than failing an otherwise-successful
+        # run.
+        try:
+            from vivarium_workbench.lib import result_fingerprint as rfp
+            meta_row = cr.query_run_meta(conn, run_id=req.run_id)
+            fields = None
+            if meta_row and meta_row.get("manifest_json"):
+                try:
+                    fields = json.loads(meta_row["manifest_json"]).get("fingerprint_fields")
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    fields = None
+            if not fields:
+                fields = emit_paths
+            state = getattr(composite, "state", None) or {}
+            rfp.write_snapshot(run_dir, state, fields)
+            fingerprint = rfp.fingerprint_run(run_dir, fields)
+            cr.set_result_fingerprint(conn, run_id=req.run_id, fingerprint=fingerprint)
+        except Exception:
+            traceback.print_exc()
+
         cr.complete_metadata(conn, run_id=req.run_id, n_steps=req.steps,
                              status="completed", workspace=req.workspace)
         print(f"run {req.run_id} completed: {req.steps} steps", flush=True)
