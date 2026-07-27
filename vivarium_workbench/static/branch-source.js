@@ -381,7 +381,7 @@
     syncBtn.addEventListener("click", function () {
       fetch("/api/source/manifest").then(function (r) { return r.json(); }).then(function (m) {
         var base = window.location.origin;
-        var cmd = "vivarium-dashboard sync " + base;
+        var cmd = "vivarium-workbench sync " + base;
         var note = "Reproduce " + (m.repo || "") + " @ " + String(m.commit || "").slice(0, 7) +
                    "\n  " + cmd + "\n(verifies uv.lock " + (m.lockfile || "—") + ")";
         window.prompt("Run this locally to sync + reproduce:", cmd);
@@ -553,6 +553,17 @@
     var code = _el("code", "viv-bs-prov-cmd", cmd);
     code.title = "Click to select · clones this repo@commit and verifies " + (p.lockfile || "uv.lock");
     repro.appendChild(code);
+    // Spell out exactly which commit + environment `sync` reproduces, so the
+    // reader knows what they'll land without decoding the manifest behind the URL.
+    if (p.commit || p.lockfile) {
+      var pin = _el("div", "viv-bs-prov-pin");
+      var bits = [];
+      if (p.repo_slug || p.commit) bits.push("→ " + (p.repo_slug || "repo") + "@" + _short(p.commit || ""));
+      if (p.lockfile) bits.push(p.lockfile);
+      pin.textContent = bits.join(" · ");
+      pin.title = "sync resolves the manifest at this URL, which pins this commit + locked environment";
+      repro.appendChild(pin);
+    }
     card.appendChild(repro);
 
     host.appendChild(card);
@@ -609,7 +620,7 @@
     syncBtn.title = "Reproduce this exact repo@commit on your machine";
     syncBtn.addEventListener("click", function () {
       var dir = (window.location.origin + window.location.pathname).replace(/[^/]*$/, "");
-      var cmd = "vivarium-dashboard sync " + dir.replace(/\/$/, "");
+      var cmd = "vivarium-workbench sync " + dir.replace(/\/$/, "");
       window.prompt("Run this locally to clone + reproduce this workspace:", cmd);
     });
     actions.appendChild(syncBtn);

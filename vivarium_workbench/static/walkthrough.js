@@ -4450,20 +4450,40 @@
       window._marketItems = [].concat(t.process, t.composite, t.study, t.investigation);
       _renderMarket();
     };
-    var J = function (u) { return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; }); };
+    // Route through DataSource so the SNAPSHOT (read-only) bundle reads the
+    // static api/*.json files (with the bundle's base path) instead of hitting
+    // live /api/* endpoints that don't exist offline — that mismatch left the
+    // published Registry stuck on "Loading…". Each call degrades to null on
+    // error so one missing payload can't blank the whole page. Live mode is
+    // unchanged: the same endpoints, just via the shared loader.
+    var DS = window.DataSource;
+    var J = function (which) {
+      try {
+        if (DS) {
+          if (which === 'isets')   return DS.loadIsetList().catch(function () { return null; });
+          if (which === 'studies') return DS.loadInvestigationsFlat().catch(function () { return null; });
+          if (which === 'comps')   return DS.loadComposites().catch(function () { return null; });
+          if (which === 'reg')     return DS.loadRegistry().catch(function () { return null; });
+        }
+      } catch (e) { /* fall through to raw fetch */ }
+      var path = { isets: '/api/investigation-summaries', studies: '/api/investigations',
+                   comps: '/api/composites', reg: '/api/registry' }[which] || which;
+      var u = (DS && DS.apiUrl) ? DS.apiUrl(path) : path;
+      return fetch(u).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+    };
 
     // The single-worker server hangs on CONCURRENT env_worker-backed requests
     // (composites + registry), so fetch strictly SEQUENTIALLY — light/file
     // endpoints first for a fast first paint, the heavy build_core() registry
     // (~45s cold) last. Each step renders as it lands.
-    J('/api/investigation-summaries').then(function (isets) {
+    J('isets').then(function (isets) {
       window._marketByType.investigation = ((isets || {}).investigations || []).map(function (iv) {
         return { type: 'investigation', name: iv.name, title: iv.title || iv.name,
           repo: _marketRepoOf(iv.origin_repo) || 'workspace', origin: iv.origin_repo ? 'external' : 'workspace',
           desc: iv.description || '', status: iv.status || '', nStudies: iv.n_studies || 0 };
       });
       rebuild();
-      return J('/api/investigations');
+      return J('studies');
     }).then(function (studies) {
       window._marketByType.study = ((studies || {}).investigations || []).map(function (s) {
         return { type: 'study', name: s.name, repo: _marketRepoOf(s.origin_repo) || 'workspace',
@@ -4472,7 +4492,7 @@
           nBeh: s.n_behaviors || 0, nRuns: s.n_runs || 0, nSims: s.n_simulations || 0, use: s.n_runs || 0 };
       });
       rebuild();
-      return J('/api/composites');
+      return J('comps');
     }).then(function (comps) {
       var carr = Array.isArray(comps) ? comps : (comps && comps.composites) || [];
       window._marketByType.composite = carr.map(function (c) {
@@ -4483,7 +4503,7 @@
           nParams: (c.parameters || []).length, nSteps: c.default_n_steps || 0, use: 0 };
       });
       rebuild();
-      return J('/api/registry');
+      return J('reg');
     }).then(function (reg) {
       var wpkgs = (reg && reg.workspace_pkgs) || [];
       window._marketByType.process = ((reg || {}).processes || []).filter(function (p) {
