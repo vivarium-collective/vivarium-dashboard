@@ -151,13 +151,16 @@ def resolve_study(
         # Resolve inputs first — recursion IS the pull-or-compute for producers.
         inputs_map: dict[str, str] = {}
         store = ArtifactStore(ws_root)
-        resolved_inputs: dict[str, str] = {}
+        resolved_inputs: dict[str, dict] = {}
         for inp in iface["inputs"]:
             child = resolve_study(
                 ws_root, inp["from"], compute_fn=compute_fn, _in_progress=in_progress,
             )
             inputs_map[inp["from"]] = child["artifact_id"]
-            resolved_inputs[inp["artifact"]] = str(store.path(child["artifact_id"]))
+            resolved_inputs[inp["artifact"]] = {
+                "path": str(store.path(child["artifact_id"])),
+                "into": inp.get("into") or None,
+            }
 
         commit = _workspace_commit(ws_root)
         oid = artifact_id(
@@ -237,12 +240,20 @@ def _default_compute(
     this module never pulls in the run subsystem, and unit tests (which
     always inject their own ``compute_fn``) never exercise this path.
 
-    ``resolved_inputs`` (artifact name -> producer store path, from
-    ``resolve_study``) is merged into ``overrides`` before the request is
-    built: ``overrides[f"{artifact}_path"] = path`` for every entry, and
-    ``overrides["cache_dir"] = path`` too when ``artifact == "sim_data"``
-    (the v2ecoli convention: ``ecoli_baseline`` reads ParCa sim_data via
-    ``cache_dir``). The caller's ``config`` dict is never mutated in place.
+    ``resolved_inputs`` (artifact name -> ``{"path": producer store path,
+    "into": consumer config key | None}``, from ``resolve_study``, sourced
+    from the input edge's declared ``into:`` in ``study.yaml``) is merged
+    into ``overrides`` before the request is built: ``overrides[f"{artifact}
+    _path"] = path`` for every entry (generic, always set), and
+    ``overrides[into] = path`` too when ``into`` is set. ``into`` is the
+    general mechanism now — a study author declares e.g. ``into: cache_dir``
+    on the input edge to route a producer's path into whatever config key its
+    generator expects. When an entry has no ``into`` at all AND its artifact
+    is named ``sim_data``, ``cache_dir`` is used as a DOCUMENTED BACK-COMPAT
+    DEFAULT (the v2ecoli convention: ``ecoli_baseline`` reads ParCa sim_data
+    via ``cache_dir``) — removable once workspaces declare ``into: cache_dir``
+    explicitly on that edge. The caller's ``config`` dict is never mutated in
+    place.
     """
     import json
 
@@ -272,10 +283,12 @@ def _default_compute(
     # overrides so build_generator does not reject them as unknown parameters.
     for _run_control_key in _RUN_CONTROL_KEYS:
         overrides.pop(_run_control_key, None)
-    for artifact, path in (resolved_inputs or {}).items():
+    for artifact, info in (resolved_inputs or {}).items():
+        path = info["path"]
         overrides[f"{artifact}_path"] = str(path)
-        if artifact == "sim_data":
-            overrides["cache_dir"] = str(path)
+        target = info.get("into") or ("cache_dir" if artifact == "sim_data" else None)
+        if target:
+            overrides[target] = str(path)
 
     # NOTE (Task 8 integration): the run-request shape below is the best
     # inference available from run_runner.RunRequest — n_steps/emit_paths
@@ -295,8 +308,52 @@ def _default_compute(
     }
     request_path = out_dir / "request.json"
     request_path.write_text(json.dumps(request), encoding="utf-8")
-    run_runner.execute(request_path)
+    rc = run_runner.execute(request_path)
+    if rc != 0:
+        raise RuntimeError(
+            f"study {slug!r} run failed (exit {rc}); see {out_dir / 'run.log'}"
+        )
+
+    # Belt-and-suspenders: `run_runner.execute` returning 0 is the primary
+    # success signal, but a run can still leave its own `runs_meta.status`
+    # non-`completed` (e.g. a post-run step that caught its own exception and
+    # wrote a terminal `failed`/`orphaned` status without propagating a
+    # non-zero return). Read the SAME `db_path` this run's request pointed
+    # `db_file` at (NOT `lib/composite_run_views.build_composite_run_status`'s
+    # `.pbg/composite-runs.db` — that's the workspace-wide db for
+    # dashboard-launched runs; this compute's run writes its own scratch
+    # `runs.db`, which is what ends up bundled into the returned artifact) —
+    # best-effort: an unreadable db / missing table / no matching row is
+    # INCONCLUSIVE (never crashes this check), only a definitively
+    # non-completed status raises.
+    status = _run_terminal_status(db_path, plan.run_id)
+    if status is not None and status != "completed":
+        raise RuntimeError(
+            f"study {slug!r} run failed (status={status!r}); "
+            f"see {out_dir / 'run.log'}"
+        )
     return out_dir
+
+
+def _run_terminal_status(db_path: Path, run_id: str) -> str | None:
+    """Best-effort read of ``runs_meta.status`` for ``run_id`` from ``db_path``.
+
+    Returns the status string, or ``None`` when it can't be determined (db
+    file / table / matching row absent, or any read error) — this probe must
+    never itself raise; ``_default_compute`` only raises on a definitively
+    non-``completed`` status, never on ``None`` (inconclusive).
+    """
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True, timeout=1.0)
+        try:
+            row = conn.execute(
+                "SELECT status FROM runs_meta WHERE run_id = ?", (run_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0] if row else None
+    except Exception:  # noqa: BLE001 — best-effort status probe
+        return None
 
 
 def resolve_investigation(
