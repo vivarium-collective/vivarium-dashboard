@@ -69,14 +69,40 @@ def resolve_rerun_target(ws_root, run_id):
     }
 
 
-def _current_env_id(ws_root):
+def _sniff_cache_fingerprint(params):
+    """Best-effort sniff of a run's ``cache_fingerprint`` from its params —
+    the SAME source and contract ``composite_runs.build_run_manifest`` uses
+    at stamp time (``params["cache_fingerprint"]`` when it's a plain
+    string; ``None`` otherwise or on any failure). Recompute sites
+    (``_current_env_id``, ``_flag_env_drift``) must sniff it the same way
+    stamp time did, or the recomputed env_id silently diverges from the
+    stamped one for any run whose params carry a cache_fingerprint (e.g. a
+    v2ecoli/ParCa run) — see reproducible-rerun-spine final review."""
+    try:
+        sniffed = (params or {}).get("cache_fingerprint")
+        if isinstance(sniffed, str):
+            return sniffed
+    except Exception:  # noqa: BLE001 — best-effort; degrade to no cache_fingerprint
+        pass
+    return None
+
+
+def _current_env_id(ws_root, params=None):
     """Best-effort: the env_id a NEW launch would be stamped with right now
     — the same ``env_fingerprint.env_id(env_fingerprint.compute_env(...))``
     call ``_flag_env_drift`` makes post-hoc, computed here pre-launch for
     the retrieve-before-recompute check. Never raises; a failure degrades
-    to ``None`` (retrieval is simply skipped — falls through to compute)."""
+    to ``None`` (retrieval is simply skipped — falls through to compute).
+
+    ``params`` — the resolved rerun target's params — is sniffed for
+    ``cache_fingerprint`` (see ``_sniff_cache_fingerprint``) and threaded
+    into ``compute_env`` so this reconstructs the SAME env_id stamp time
+    computed for the original run, rather than one missing the
+    cache_fingerprint dimension entirely."""
+    cf = _sniff_cache_fingerprint(params)
     try:
-        return env_fingerprint.env_id(env_fingerprint.compute_env(ws_root=ws_root))
+        return env_fingerprint.env_id(
+            env_fingerprint.compute_env(ws_root=ws_root, cache_fingerprint=cf))
     except Exception:  # noqa: BLE001 — best-effort; no env_id -> skip retrieval
         return None
 
@@ -117,7 +143,7 @@ def run_rerun(ws_root, run_id):
     if t is None:
         return {"error": f"run not found: {run_id}"}, 404
 
-    current_env_id = _current_env_id(ws_root)
+    current_env_id = _current_env_id(ws_root, t.get("params"))
     if current_env_id:
         try:
             # review round 1 (Finding 1): scope the lookup to THIS run's own
@@ -149,7 +175,8 @@ def run_rerun(ws_root, run_id):
             emit_paths=t.get("emit_paths") or [], detach=True)
 
     new_run_id = (resp.get("simulation_id") or resp.get("run_id")) if isinstance(resp, dict) else None
-    _flag_env_drift(ws_root, original_run_id=run_id, new_run_id=new_run_id, study=t.get("study"))
+    _flag_env_drift(ws_root, original_run_id=run_id, new_run_id=new_run_id, study=t.get("study"),
+                     params=t.get("params"))
 
     if isinstance(resp, dict):
         resp = {**resp, "origin": t["origin"], "reran": run_id, "retrieved": False}
@@ -181,17 +208,24 @@ def _pinned_env_for_study(ws_root, study) -> "str | None":
         return None
 
 
-def _flag_env_drift(ws_root, *, original_run_id, new_run_id, study=None) -> None:
+def _flag_env_drift(ws_root, *, original_run_id, new_run_id, study=None, params=None) -> None:
     """Best-effort env-drift pre-check (reproducible-rerun-spine Task 5 / G3).
 
     Diffs the ORIGINAL run's recorded ``env_id`` against the CURRENT
     environment — freshly computed via ``env_fingerprint.compute_env`` +
     ``env_fingerprint.env_id``, i.e. the environment the replay just
-    executed under. When they differ, the new run's ``provenance_status``
-    is set to ``'env_stale'`` via the same ``composite_runs.set_provenance_
-    status`` helper ``verify_reproduction`` uses — UNLESS the study's
-    ``study.yaml`` declares a ``pinned_env:`` matching the ORIGINAL run's
-    ``env_id`` (an accepted/pinned drift; suppressed).
+    executed under. ``params`` (the resolved rerun target's params) is
+    sniffed for ``cache_fingerprint`` the same way stamp time did (see
+    ``_sniff_cache_fingerprint``) and threaded into ``compute_env`` so this
+    reconstructs the SAME env_id stamp time would have computed, instead of
+    one missing the cache_fingerprint dimension — otherwise any run whose
+    params carry a cache_fingerprint would false-positive as drifted here
+    even in an identical environment. When they differ, the new run's
+    ``provenance_status`` is set to ``'env_stale'`` via the same
+    ``composite_runs.set_provenance_status`` helper ``verify_reproduction``
+    uses — UNLESS the study's ``study.yaml`` declares a ``pinned_env:``
+    matching the ORIGINAL run's ``env_id`` (an accepted/pinned drift;
+    suppressed).
 
     This is the pre-check counterpart to ``verify_reproduction`` (run later,
     on the completion tail): that comparison is only ever conclusive when
@@ -216,7 +250,9 @@ def _flag_env_drift(ws_root, *, original_run_id, new_run_id, study=None) -> None
         if not orig_env:
             return  # pre-Task-2 run with no recorded env_id — nothing to diff
 
-        current_env_id = env_fingerprint.env_id(env_fingerprint.compute_env(ws_root=ws_root))
+        cf = _sniff_cache_fingerprint(params)
+        current_env_id = env_fingerprint.env_id(
+            env_fingerprint.compute_env(ws_root=ws_root, cache_fingerprint=cf))
         if not current_env_id or current_env_id == orig_env:
             return  # no drift
 

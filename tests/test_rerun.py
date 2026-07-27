@@ -635,3 +635,116 @@ def test_resolve_rerun_target_and_find_matching_run_share_one_replay_key(tmp_pat
     assert t["params"] == expected_params
     assert t["n_steps"] == expected_n_steps
     assert t["seed"] == expected_seed
+
+
+# ---------------------------------------------------------------------------
+# Final whole-branch review fix — env_id stamp-vs-recompute asymmetry on
+# ``cache_fingerprint``. At stamp time (``composite_runs.build_run_manifest``)
+# ``env_id`` is derived from ``env_fingerprint.compute_env(ws_root=ws,
+# cache_fingerprint=cf)`` where ``cf`` is sniffed from
+# ``params["cache_fingerprint"]``. Before this fix, the two RECOMPUTE sites
+# (``_current_env_id`` / ``_flag_env_drift``) called ``compute_env`` with NO
+# cache_fingerprint at all — so for ANY run whose params carry one (e.g. a
+# v2ecoli/ParCa run) the recomputed env_id could never match the stamped one,
+# EVEN IN AN IDENTICAL ENVIRONMENT, silently defeating retrieve-before-
+# recompute (G5) and env-drift detection (G3).
+#
+# Unlike the tests above (which fake ``env_fingerprint.env_id`` wholesale —
+# exactly why this bug hid), these leave it UNFAKED: both the "stamp" and
+# "recompute" calls run within this same test process, so every OTHER
+# env_fingerprint field (git sha, package versions, python, platform) is
+# identical between them regardless of environment — cache_fingerprint is
+# the only dimension under test.
+# ---------------------------------------------------------------------------
+
+def test_current_env_id_reconstructs_stamped_env_id_with_cache_fingerprint(tmp_path):
+    """G5: ``_current_env_id`` (the retrieve-before-recompute pre-check) must
+    reconstruct the SAME env_id ``build_run_manifest`` stamped, for a run
+    whose params carry a ``cache_fingerprint``."""
+    from vivarium_workbench.lib import env_fingerprint
+
+    params = {"X": 1, "seed": 7, "cache_fingerprint": "cf-abc123"}
+    manifest = cr.build_run_manifest(
+        spec_id="spec.a", params=params, n_steps=3, emitter=None,
+        emit_paths=[], runtime={}, origin="composite", ws_root=tmp_path)
+    stamped_env_id = env_fingerprint.env_id(manifest["env"])
+
+    recomputed_env_id = rerun._current_env_id(tmp_path, params)
+
+    assert recomputed_env_id == stamped_env_id
+
+
+def test_flag_env_drift_does_not_flag_when_cache_fingerprint_reconstructs_same_env(tmp_path):
+    """G3: ``_flag_env_drift`` must NOT stamp a fresh replay ``env_stale``
+    when the only reason a naive recompute would differ from the original
+    is a missing ``cache_fingerprint`` — reconstructing it from the same
+    params the original was stamped with must make the two env_ids match."""
+    params = {"X": 1, "seed": 7, "cache_fingerprint": "cf-abc123"}
+    manifest = cr.build_run_manifest(
+        spec_id="spec.a", params=params, n_steps=3, emitter=None,
+        emit_paths=[], runtime={}, origin="composite", ws_root=tmp_path)
+
+    from vivarium_workbench.lib import env_fingerprint
+    stamped_env_id = env_fingerprint.env_id(manifest["env"])
+
+    db = tmp_path / ".pbg" / "composite-runs.db"
+    _seed_run(db, "orig", spec_id="spec.a", params=params,
+              env_id=stamped_env_id, result_fingerprint="fp1")
+    _seed_run(db, "new", spec_id="spec.a", params=params,
+              env_id=None, result_fingerprint=None)
+
+    rerun._flag_env_drift(tmp_path, original_run_id="orig", new_run_id="new",
+                          study=None, params=params)
+
+    conn = cr.connect(db)
+    row = cr.query_run_meta(conn, run_id="new")
+    conn.close()
+    assert row.get("provenance_status") != "env_stale"
+
+
+def test_run_rerun_retrieves_run_stamped_with_cache_fingerprint_in_same_env(tmp_path, monkeypatch):
+    """G5 end-to-end via ``rerun.run_rerun``: a run whose params carry a
+    ``cache_fingerprint``, stamped and reproduced in the SAME environment,
+    must be RETRIEVED (``retrieved: True``, no launch) rather than
+    recomputed. Unlike ``test_run_rerun_retrieve_before_recompute_composite_
+    origin`` above, ``env_fingerprint.env_id`` is deliberately left UNFAKED
+    — the whole point is proving the real digest reconstructs identically
+    once cache_fingerprint is threaded through both the stamp and the
+    recompute."""
+    from vivarium_workbench.lib import env_fingerprint, cli_runs
+    from vivarium_workbench.lib import result_fingerprint as rfp
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    ws = tmp_path
+    (ws / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
+    params = {"X": 1, "seed": 7, "n_steps": 3, "cache_fingerprint": "cf-xyz789"}
+    manifest = cr.build_run_manifest(
+        spec_id="spec.a", params=params, n_steps=3, emitter=None,
+        emit_paths=[], runtime={}, origin="composite", ws_root=ws)
+    stamped_env_id = env_fingerprint.env_id(manifest["env"])
+
+    db = ws / ".pbg" / "composite-runs.db"
+    _seed_run(db, "orig", spec_id="spec.a", params=params,
+              env_id=stamped_env_id, result_fingerprint="fp1")
+    conn = cr.connect(db)
+    conn.execute("UPDATE runs_meta SET manifest_json=? WHERE run_id=?",
+                 (json.dumps(manifest), "orig"))
+    conn.commit()
+    conn.close()
+
+    # Simulate "orig"'s on-disk artifact still being intact.
+    wp = WorkspacePaths.load(ws)
+    rfp.write_snapshot(wp.pbg / "runs" / "orig", {}, [])
+
+    calls = {"n": 0}
+
+    def _fake_run_composite(*a, **k):
+        calls["n"] += 1
+        return {"simulation_id": "new-run-id"}, 200
+    monkeypatch.setattr(cli_runs, "run_composite", _fake_run_composite)
+
+    resp, status = rerun.run_rerun(ws, "orig")
+    assert status == 200
+    assert resp["retrieved"] is True
+    assert resp["run_id"] == "orig"
+    assert calls["n"] == 0
