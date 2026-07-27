@@ -192,11 +192,19 @@ def study_spec_path(ws_root: Path, name: str) -> Path:
 def study_interface(spec: dict) -> dict:
     """Normalize a study spec's execution interface.
 
-    Returns ``{composite, config, inputs: [{artifact, from}], outputs: [str],
-    emitter}``. ``inputs``/``outputs`` default to ``[]`` and ``config``
-    defaults to ``{}`` when absent (back-compat with legacy specs that don't
-    declare an interface at all). ``composite``/``emitter`` default to
-    ``None`` when absent.
+    Returns ``{composite, config, inputs: [{artifact, from, into?}],
+    outputs: [str], emitter}``. ``inputs``/``outputs`` default to ``[]`` and
+    ``config`` defaults to ``{}`` when absent (back-compat with legacy specs
+    that don't declare an interface at all). ``composite``/``emitter``
+    default to ``None`` when absent.
+
+    Each ``inputs[]`` entry may optionally carry ``into``: the config key the
+    consumer's generator should receive the producer's store path under (the
+    generic mechanism ``pipeline._default_compute`` merges into
+    ``overrides``). It's optional — an entry with only ``{artifact, from}``
+    is still valid, and ``into`` is simply absent (``None``) from the
+    returned dict; back-compat behavior (the ``sim_data``->``cache_dir``
+    default) lives in ``pipeline._default_compute``, not here.
 
     Later tasks derive investigation-graph edges from ``inputs[].from`` and
     drive the pull-or-compute pipeline from this block, so a malformed
@@ -220,7 +228,11 @@ def study_interface(spec: dict) -> dict:
             raise InvestigationSpecError(
                 f"interface.inputs[{i}] ({artifact!r}) is missing required field 'from'"
             )
-        inputs.append({"artifact": str(artifact), "from": str(source)})
+        into = entry.get("into")
+        item = {"artifact": str(artifact), "from": str(source)}
+        if into is not None:
+            item["into"] = str(into)
+        inputs.append(item)
 
     raw_outputs = spec.get("outputs") or []
     outputs = [str(o) for o in raw_outputs]
