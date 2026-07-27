@@ -574,12 +574,12 @@ def cmd_audit(args: argparse.Namespace) -> int:
 _DASHBOARD_WORKFLOW = r"""name: Publish read-only dashboard
 
 # Build this workspace into a self-contained static SPA and publish it to the
-# gh-pages branch at dashboard/ (served at
+# gh-pages branch at {PUBLISH_DIR}/ (served at
 # https://{ORG}.github.io{BASE_PATH}/). A read-only mirror of every
 # investigation + study on main, browsable with no server.
 #
 # Scaffolded by `vivarium-workbench add-dashboard`. DEPLOY job (post-merge), not
-# a PR gate; it only ever writes dashboard/ on gh-pages.
+# a PR gate; it only writes {PUBLISH_DIR}/ (+ a /dashboard redirect) on gh-pages.
 
 on:
   push:
@@ -630,15 +630,15 @@ jobs:
           uv pip install "vivarium-workbench @ git+https://github.com/vivarium-collective/vivarium-workbench.git@main"
           uv pip install -e . --no-deps || echo "workspace has no installable build; composites render from spec only"
 
-      - name: Build dashboard snapshot
+      - name: Build workbench snapshot
         run: |
           source .venv/bin/activate
-          bash scripts/publish_dashboard.sh reports/published/dashboard
+          bash scripts/publish_dashboard.sh reports/published/{PUBLISH_DIR}
 
       - name: Publish to gh-pages (create the branch if absent)
         run: |
           set -euo pipefail
-          if [ ! -f reports/published/dashboard/index.html ]; then
+          if [ ! -f reports/published/{PUBLISH_DIR}/index.html ]; then
             echo "::error::build produced no bundle (no index.html); nothing to publish"
             exit 1
           fi
@@ -654,15 +654,22 @@ jobs:
             git rm -rf . >/dev/null 2>&1 || true
             touch .nojekyll
           fi
-          rm -rf dashboard && mkdir -p dashboard
-          cp -R "$GITHUB_WORKSPACE/reports/published/dashboard/." dashboard/
+          rm -rf {PUBLISH_DIR} && mkdir -p {PUBLISH_DIR}
+          cp -R "$GITHUB_WORKSPACE/reports/published/{PUBLISH_DIR}/." {PUBLISH_DIR}/
+          # Back-compat: keep the legacy /dashboard URL working by leaving a
+          # redirect stub pointing at the new /{PUBLISH_DIR}/ (skipped when the
+          # publish dir IS dashboard, i.e. a repo hasn't migrated yet).
+          if [ "{PUBLISH_DIR}" != "dashboard" ]; then
+            mkdir -p dashboard
+            printf '%s' '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=../{PUBLISH_DIR}/"><link rel="canonical" href="../{PUBLISH_DIR}/"><title>Moved to /{PUBLISH_DIR}/</title><p>This read-only workbench moved to <a href="../{PUBLISH_DIR}/">/{PUBLISH_DIR}/</a>.</p>' > dashboard/index.html
+          fi
           git add -A
           if git diff --cached --quiet; then
-            echo "dashboard snapshot unchanged; skipping commit"
+            echo "workbench snapshot unchanged; skipping commit"
           else
-            git commit -m "gh-pages: republish read-only dashboard (automated, ${GITHUB_SHA::7})"
+            git commit -m "gh-pages: republish read-only workbench (automated, ${GITHUB_SHA::7})"
             git push origin gh-pages
-            echo "published read-only dashboard to gh-pages:dashboard/"
+            echo "published read-only workbench to gh-pages:{PUBLISH_DIR}/"
           fi
 """
 
@@ -672,7 +679,7 @@ _DASHBOARD_SCRIPT = r"""#!/usr/bin/env bash
 # `vivarium-workbench add-dashboard`; run it locally to preview the bundle.
 set -euo pipefail
 WS_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-OUT="${1:-$WS_ROOT/reports/published/dashboard}"
+OUT="${1:-$WS_ROOT/reports/published/{PUBLISH_DIR}}"
 BASE_PATH="{BASE_PATH}"
 INTERACTIVE_URL="{INTERACTIVE_URL}"
 rm -rf "$OUT"
@@ -715,7 +722,13 @@ def cmd_add_dashboard(args: argparse.Namespace) -> int:
               file=sys.stderr)
         return 2
     org = org or "vivarium-collective"
-    base_path = args.base_path or f"/{repo}/dashboard"
+    # New read-only workbenches publish under /<repo>/workbench (renamed from the
+    # legacy /dashboard). The gh-pages subdir is the base-path's leaf, and the
+    # workflow leaves a /dashboard → /workbench redirect so old links survive.
+    # Existing repos keep /dashboard until they re-run add-dashboard — the
+    # rename rolls out incrementally, one republish at a time.
+    base_path = args.base_path or f"/{repo}/workbench"
+    publish_dir = base_path.rstrip("/").split("/")[-1] or "workbench"
     interactive_url = args.interactive_url or f"https://github.com/{org}/{repo}"
 
     wf_path = ws / ".github" / "workflows" / "publish-dashboard.yml"
@@ -729,10 +742,12 @@ def cmd_add_dashboard(args: argparse.Namespace) -> int:
     sh_path.parent.mkdir(parents=True, exist_ok=True)
 
     wf_path.write_text(
-        _DASHBOARD_WORKFLOW.replace("{ORG}", org).replace("{REPO}", repo).replace("{BASE_PATH}", base_path)
+        _DASHBOARD_WORKFLOW.replace("{ORG}", org).replace("{REPO}", repo)
+        .replace("{BASE_PATH}", base_path).replace("{PUBLISH_DIR}", publish_dir)
     )
     sh_path.write_text(
-        _DASHBOARD_SCRIPT.replace("{BASE_PATH}", base_path).replace("{INTERACTIVE_URL}", interactive_url)
+        _DASHBOARD_SCRIPT.replace("{BASE_PATH}", base_path)
+        .replace("{PUBLISH_DIR}", publish_dir).replace("{INTERACTIVE_URL}", interactive_url)
     )
     sh_path.chmod(sh_path.stat().st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH)
 
