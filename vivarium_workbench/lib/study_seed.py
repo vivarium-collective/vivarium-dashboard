@@ -338,6 +338,12 @@ def _seed_from_proposal(workspace: Path, parent_name: str, parent_spec: dict,
     study_type = proposal.get("study_type") or ""
     targets = proposal.get("target_mechanism_elements") or []
     required_inputs = proposal.get("required_inputs") or []
+    # The proposal's prose fields — the text the reviewer sees on the card. Seed
+    # the child study with them so the new card reflects what was proposed rather
+    # than a bare title + placeholders.
+    motivation = (proposal.get("motivation") or "").strip()
+    proposed_experiment = (proposal.get("proposed_experiment") or "").strip()
+    hypothesized = (proposal.get("hypothesized_mechanism") or "").strip()
 
     base_slug = _slugify(title)
     parent_prefix_match = re.match(r"^([a-z]+-\d+)", parent_name)
@@ -348,12 +354,20 @@ def _seed_from_proposal(workspace: Path, parent_name: str, parent_spec: dict,
     new_dir.mkdir(parents=True, exist_ok=False)
 
     today = datetime.date.today().isoformat()
-    question = (proposal.get("proposed_experiment") or title).strip()
-    mechanism = (
-        f"Discovery-implications follow-up '{title}' (study_type: "
-        f"{study_type or 'unspecified'}). "
-        + (f"Targets mechanism elements: {', '.join(targets)}. " if targets else "")
-        + "Add concrete model_change details before moving past Design.").strip()
+    # Question — prefer the concrete experiment, then the motivation, then title.
+    question = (proposed_experiment or motivation or title).strip()
+    # Mechanism — prefer the proposal's own hypothesized mechanism; otherwise
+    # synthesize a descriptive placeholder from title/study_type/targets.
+    if hypothesized:
+        mechanism = hypothesized
+        if targets:
+            mechanism += f" (targets: {', '.join(targets)})"
+    else:
+        mechanism = (
+            f"Discovery-implications follow-up '{title}' (study_type: "
+            f"{study_type or 'unspecified'}). "
+            + (f"Targets mechanism elements: {', '.join(targets)}. " if targets else "")
+            + "Add concrete model_change details before moving past Design.").strip()
     expected = (proposal.get("expected_information_gain")
                 and f"Expected information gain: {proposal['expected_information_gain']}."
                 or "TBD — populate before exiting Design phase.")
@@ -371,6 +385,7 @@ def _seed_from_proposal(workspace: Path, parent_name: str, parent_spec: dict,
             "proposal_id": proposal.get("id"),
             "proposal_idx": idx,
             "proposal_title": title,
+            "proposal_motivation": motivation or None,
             "source_trigger": proposal.get("source_trigger"),
         },
         "baseline": [{
@@ -434,10 +449,16 @@ def _seed_from_proposal(workspace: Path, parent_name: str, parent_spec: dict,
     child_spec["study_card"] = {
         "goal": title,
         "mechanism": mechanism,
-        "why_before_next": "TBD — explain why this study unblocks downstream work.",
-        "expected_result": "",
+        "why_before_next": motivation
+        or "TBD — explain why this study unblocks downstream work.",
+        "expected_result": expected if proposal.get("expected_information_gain") else "",
         "main_expert_question": "",
     }
+    # Carry the proposal's motivation prose into the narrative so the seeded card
+    # reads like the proposal, not a bare stub.
+    child_spec["biological_summary"] = (
+        motivation or "(TBD — multi-paragraph plain-English mechanism narrative.)"
+    )
 
     new_yaml = new_dir / "study.yaml"
     header = (

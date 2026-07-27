@@ -103,6 +103,37 @@ def test_seed_from_proposal_by_id_sets_leads_to_edge(_ws):
     assert child["phase"] == "Design"
 
 
+def test_seed_from_proposal_carries_motivation_prose(_ws):
+    """The reviewer sees a proposal's title + motivation on the Decide-tab card;
+    seeding must carry that prose into the new study so the card reflects what
+    was proposed rather than a bare title + placeholders."""
+    _write_parent(_ws, "p1", discovery_implications={
+        "followup_study_proposals": [{
+            "id": "fup-bridge",
+            "title": "FBA-bridge interface-statistic validation",
+            "motivation": ("Run the FBA-bridge composite under M9-acetate and "
+                           "M9-glucose+aa and compute per-intermediate W2 vs the "
+                           "Phase-0 ensemble; gate on within-band."),
+            "hypothesized_mechanism": "The bridge preserves per-intermediate flux.",
+        }],
+    })
+    new_name = seed_followup_study(_ws, "p1", proposal_id="fup-bridge")
+    child = yaml.safe_load(
+        (_ws / "studies" / new_name / "study.yaml").read_text())
+
+    mot = ("Run the FBA-bridge composite under M9-acetate and M9-glucose+aa "
+           "and compute per-intermediate W2 vs the Phase-0 ensemble; gate on "
+           "within-band.")
+    # Motivation lands in the question, the study-card rationale, the narrative
+    # summary, and the seeded-from provenance.
+    assert child["purpose"]["question"] == mot
+    assert child["study_card"]["why_before_next"] == mot
+    assert child["biological_summary"] == mot
+    assert child["seeded_from"]["proposal_motivation"] == mot
+    # Hypothesized mechanism drives the mechanism field.
+    assert "preserves per-intermediate flux" in child["purpose"]["mechanism"]
+
+
 def test_seed_from_proposal_by_index(_ws):
     _write_parent(_ws, "p1", discovery_implications={
         "followup_study_proposals": _proposals(),
