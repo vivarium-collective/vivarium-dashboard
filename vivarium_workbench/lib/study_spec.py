@@ -401,6 +401,36 @@ def read_runs_db_for_study(ws_root: Path, name: str) -> list[dict]:
     for _r in _study_yaml_run_rows(ws_root, name):
         rows_by_id.setdefault(_r["run_id"], _r)
 
+    # Consolidation: fold the workspace-wide `.pbg/runs.jsonl` run-index (the
+    # SAME canonical source the Simulations tab reads via
+    # simulations_index.build_simulations_data) and add any runs tagged for this
+    # study that the per-study runs.db / study.yaml didn't already surface —
+    # e.g. bespoke pbg_runner or remote runs that only ever land in the JSONL.
+    # Additive (setdefault): runs.db stays authoritative where both have a row.
+    try:
+        from vivarium_workbench.lib.run_log import fold_runs_jsonl
+        for _rid, _rec in fold_runs_jsonl(ws_root).items():
+            if _rec.get("study_slug") != name or _rid in rows_by_id:
+                continue
+            _params = _rec.get("params") if isinstance(_rec.get("params"), dict) else {}
+            rows_by_id[_rid] = {
+                "run_id":        _rid,
+                "spec_id":       _rec.get("spec_id") or name,
+                "label":         _rec.get("label") or _rec.get("sim_name") or _rid,
+                "sim_name":      _rec.get("sim_name") or _rec.get("label") or _rid,
+                "variant":       _params.get("variant"),
+                "composite":     _params.get("composite") or _rec.get("spec_id"),
+                "params":        _params,
+                "n_steps":       _rec.get("n_steps"),
+                "status":        _rec.get("status") or "completed",
+                "started_at":    _rec.get("started_at"),
+                "completed_at":  _rec.get("completed_at") or _rec.get("started_at"),
+                "generation_id": _rec.get("generation_id"),
+                "source":        "runs.jsonl",
+            }
+    except Exception:  # noqa: BLE001 — the JSONL index is a best-effort overlay
+        pass
+
     def _iso(v):
         if v is None:
             return ""
@@ -573,11 +603,41 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         except Exception:
             db_runs = []
         if db_runs:
-            existing_ids = {(r or {}).get("run_id") for r in (spec.get("runs") or [])}
-            merged = list(spec.get("runs") or [])
+            # Dedup by run_id. study.yaml `runs:` entries key their identity
+            # under `name` (== runs_meta.run_id); db_runs key under `run_id`.
+            # The old merge built existing_ids from `run_id` on the study.yaml
+            # side — which is absent there — so the set collapsed to {None} and
+            # EVERY db_run was appended even when the same run was already
+            # present as a study.yaml entry, producing two rows per run (the
+            # "name vs run_id" duplicate). db_runs is the canonical run-index
+            # (runs.db + study.yaml mechanical + .pbg/runs.jsonl fold), so use it
+            # as the run LIST and graft each study.yaml entry's AUTHORED fields
+            # (outcomes/provenance — which the index doesn't carry) onto the
+            # matching row by run_id.
+            _authored_keys = ("outcomes", "computed_outcomes", "provenance",
+                              "commit", "conclusion", "notes")
+            yaml_by_id: dict = {}
+            for _y in (spec.get("runs") or []):
+                if isinstance(_y, dict):
+                    _yid = _y.get("run_id") or _y.get("name")
+                    if _yid:
+                        yaml_by_id[_yid] = _y
+            merged = []
+            seen = set()
             for r in db_runs:
-                if r.get("run_id") not in existing_ids:
-                    merged.append(r)
+                rid = r.get("run_id")
+                seen.add(rid)
+                _y = yaml_by_id.get(rid)
+                if _y:
+                    for _k in _authored_keys:
+                        if _k in _y and _k not in r:
+                            r[_k] = _y[_k]
+                merged.append(r)
+            # study.yaml-only runs with no run-index row (defensive — normally
+            # covered by _study_yaml_run_rows inside read_runs_db_for_study).
+            for _yid, _y in yaml_by_id.items():
+                if _yid not in seen:
+                    merged.append(_y)
             spec["runs"] = merged
 
         # Reconcile the simulation_set with the actual runs so the Simulations
