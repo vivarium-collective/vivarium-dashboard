@@ -107,6 +107,29 @@ def _record_pointer(runs_db: Path, stage: str, oid: str) -> None:
         pass
 
 
+def _maybe_record_verdict_pointer(db_path: Path, out_dir: Path) -> None:
+    """Content-address a run's computed ``verdict.json`` (Phase 2c).
+
+    When ``out_dir/verdict.json`` exists (written by
+    ``composite_flush.run_flush``), record a ``("verdict", <content-hash>)``
+    pointer into the run's ``runs.db`` ``artifact_pointers`` table. Hashes the
+    verdict bytes directly (``hashing.artifact_id`` keys on composite/config,
+    not on a produced file's content — there is no content-hash primitive to
+    reuse, so a plain sha256 of the bytes is the content id here). No
+    ``verdict.json`` -> no-op, and it must NOT create the db (mirrors the
+    best-effort posture of ``_record_pointer``).
+    """
+    vf = Path(out_dir) / "verdict.json"
+    if not vf.is_file():
+        return
+    import hashlib
+    try:
+        vid = hashlib.sha256(vf.read_bytes()).hexdigest()[:16]
+    except Exception:  # noqa: BLE001 — best-effort
+        return
+    _record_pointer(Path(db_path), "verdict", vid)
+
+
 def resolve_study(
     ws_root, slug: str, *, compute_fn=None, force: bool = False, _in_progress=None,
 ) -> dict:
@@ -332,6 +355,8 @@ def _default_compute(
             f"study {slug!r} run failed (status={status!r}); "
             f"see {out_dir / 'run.log'}"
         )
+    # Phase 2c: content-address the computed verdict the flush wrote (if any).
+    _maybe_record_verdict_pointer(db_path, out_dir)
     return out_dir
 
 

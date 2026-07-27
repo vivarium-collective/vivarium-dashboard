@@ -574,6 +574,24 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
 # The full run-merging study-detail loader
 # ---------------------------------------------------------------------------
 
+def _card_html_stub(html_path, verdict) -> bool:
+    """Whether a report card's HTML is an unrendered stub (Phase 2c).
+
+    A computed verdict (a ``<card>.verdict.json`` was read into ``verdict``)
+    is authoritative: the card has a real, machine-readable result, so it is
+    NOT a stub regardless of the HTML file's size. Only when there is NO
+    computed verdict do we fall back to the ``size < 64`` heuristic (a tiny
+    HTML file with no verdict is a placeholder the frontend should replace
+    with the verdict table). A stat error is treated as a stub.
+    """
+    if verdict is not None:
+        return False
+    try:
+        return html_path.stat().st_size < 64
+    except OSError:
+        return True
+
+
 def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
     """Load a study's spec for the GET /studies/<name> detail page.
 
@@ -839,12 +857,9 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
                     except Exception:  # noqa: BLE001
                         verdict = None
                 # The card HTML is sometimes an unrendered stub (e.g. "<b>card</b>");
-                # flag tiny files so the frontend renders the verdict table rather
-                # than an empty iframe.
-                try:
-                    html_stub = html.stat().st_size < 64
-                except OSError:
-                    html_stub = True
+                # a computed verdict wins, else flag tiny files so the frontend
+                # renders the verdict table rather than an empty iframe.
+                html_stub = _card_html_stub(html, verdict)
                 rc_urls[card] = {"url": "/" + html.relative_to(ws_root).as_posix(),
                                  "verdict": verdict, "groups": groups,
                                  "html_stub": html_stub}
@@ -1299,10 +1314,7 @@ def discover_report_card_urls(ws_root: Path, slug: str) -> dict:
                     groups = _vj.get("groups")
                 except Exception:  # noqa: BLE001
                     verdict = None
-            try:
-                html_stub = html.stat().st_size < 64
-            except OSError:
-                html_stub = True
+            html_stub = _card_html_stub(html, verdict)
             rc_urls[card] = {"url": "/" + html.relative_to(ws_root).as_posix(),
                              "verdict": verdict, "groups": groups,
                              "html_stub": html_stub}
