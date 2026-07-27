@@ -1126,6 +1126,11 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   background:var(--bg);
   overflow:hidden;
 }
+/* The content pane must fill .viv-main's width. Without this it shrink-wrapped
+   to the active page's content and read as centered — invisible on content-rich
+   pages (Studies) but narrow on sparse ones (a Registry facet with few cards).
+   Stretch it so every page renders full-bleed regardless of how much it holds. */
+.viv-content{ align-self:stretch; width:100%; }
 
 /* Slim topbar -------------------------------------------------------------- */
 .viv-topbar{
@@ -2260,6 +2265,12 @@ textarea.loom-in-field{
   flex: none; font-size: 0.72em; font-weight: 600; color: #475569;
   background: #f1f5f9; border-radius: 9999px; padding: 1px 8px; white-space: nowrap;
 }
+.market-avail {
+  flex: none; font-size: 0.68em; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.02em; color: #92400e; background: #fef3c7;
+  border-radius: 6px; padding: 1px 7px; white-space: nowrap;
+}
+:root[data-theme="dark"] .market-avail { color: #fde68a; background: #78350f; }
 .market-desc {
   font-size: 0.85em; line-height: 1.45; color: #64748b;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
@@ -2272,18 +2283,71 @@ textarea.loom-in-field{
 .market-usage { font-size: 0.78em; color: #94a3b8; }
 .market-open { flex: none; }
 
-/* Repositories facet — one card per repo with GitHub link + per-type counts. */
-.market-repo-card .market-repo-ico { font-size: 1.05em; margin-right: 2px; }
-.market-repo-stats {
-  display: flex; flex-wrap: wrap; gap: 6px 14px;
-  margin: 8px 0 4px; font-size: 0.86em;
+/* Repositories facet — whole-ecosystem repo cards (List / Cards / Detail). */
+.repo-card { padding: 14px 16px; gap: 8px; border-left-width: 3px; border-left-color: #cbd5e1; }
+.repo-card-ws { border-left-color: #6366f1; background: linear-gradient(180deg, #fbfbff, #fff); }
+.repo-card-head { display: flex; align-items: center; gap: 8px; }
+.repo-ico { font-size: 1.1em; flex: none; }
+.repo-name {
+  font-weight: 680; color: #1e293b; font-size: 1.02em; letter-spacing: -0.01em;
+  text-decoration: none; flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.market-repo-stat { display: inline-flex; align-items: center; gap: 5px; color: #475569; }
-.market-repo-stat b { color: #0f172a; font-variant-numeric: tabular-nums; }
-.market-repo-stat.zero { opacity: 0.4; }
-.market-repo-link { flex: none; text-decoration: none; }
-:root[data-theme="dark"] .market-repo-stat { color: var(--text-muted); }
-:root[data-theme="dark"] .market-repo-stat b { color: var(--text); }
+.repo-name:hover { color: #4f46e5; text-decoration: underline; }
+.repo-badge {
+  flex: none; font-size: 0.68em; font-weight: 700; letter-spacing: 0.02em;
+  text-transform: uppercase; border-radius: 6px; padding: 2px 8px; white-space: nowrap;
+}
+.repo-badge-ws { color: #4338ca; background: #e0e7ff; }
+.repo-badge-imported { color: #0369a1; background: #e0f2fe; }
+.repo-badge-avail { color: #92400e; background: #fef3c7; }
+.repo-desc {
+  font-size: 0.86em; line-height: 1.45; color: #64748b;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.repo-desc-full { -webkit-line-clamp: unset; display: block; }
+.repo-stats { display: flex; flex-wrap: wrap; gap: 5px 8px; margin: 2px 0; }
+.repo-stat {
+  font-size: 0.78em; color: #475569; background: #f1f5f9;
+  border-radius: 6px; padding: 2px 9px; white-space: nowrap;
+}
+.repo-stat b { color: #0f172a; font-variant-numeric: tabular-nums; font-weight: 700; }
+.repo-stat.zero { color: #94a3b8; background: transparent; padding-left: 0; padding-right: 4px; }
+.repo-stat.zero b { color: #94a3b8; font-weight: 600; }
+.repo-card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; padding-top: 6px; border-top: 1px solid #f1f5f9;
+}
+.repo-meta { font-size: 0.78em; color: #94a3b8; }
+.repo-actions { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.repo-gh { flex: none; text-decoration: none; }
+.repo-install {
+  border-color: #16a34a; color: #166534; background: #f0fdf4; font-weight: 600;
+}
+.repo-install:hover { background: #dcfce7; }
+.repo-td-actions { white-space: nowrap; text-align: right; }
+:root[data-theme="dark"] .repo-install { border-color: #16a34a; color: #86efac; background: #052e16; }
+.repo-sample { font-size: 0.82em; color: #64748b; }
+.repo-sample-lbl { font-weight: 600; color: #475569; margin-right: 2px; }
+.repo-sample code { font-size: 0.92em; }
+/* Repo List (dense table) */
+.repo-table { width: 100%; }
+.repo-th {
+  text-align: left; font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #94a3b8; padding: 4px 10px; border-bottom: 2px solid #e2e8f0;
+}
+.repo-tr:hover { background: #f8fafc; }
+.repo-tr td { padding: 8px 10px; border-bottom: 1px solid #eef1f5; vertical-align: middle; }
+.repo-td-num { text-align: left; font-variant-numeric: tabular-nums; color: #334155; }
+:root[data-theme="dark"] .repo-name { color: var(--text); }
+:root[data-theme="dark"] .repo-desc, :root[data-theme="dark"] .repo-stat { color: var(--text-muted); }
+:root[data-theme="dark"] .repo-stat { background: var(--hover); }
+:root[data-theme="dark"] .repo-stat b { color: var(--text); }
+:root[data-theme="dark"] .repo-badge-ws { color: #c7d2fe; background: #312e81; }
+:root[data-theme="dark"] .repo-badge-imported { color: #bae6fd; background: #0c4a6e; }
+:root[data-theme="dark"] .repo-badge-avail { color: #fde68a; background: #78350f; }
+:root[data-theme="dark"] .repo-card-foot { border-top-color: var(--border); }
+:root[data-theme="dark"] .repo-card-ws { background: var(--panel); }
 
 /* Studies-overview header action cluster: + Investigation / + Study / Audit Report */
 .iset-hdr-btn { display: inline-flex; align-items: center; gap: 5px; }
@@ -3491,9 +3555,8 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 }
 #page-modules .registry-sticky,
 #page-market .market-sticky{ padding-top:16px; }
-/* Hide the artifact-provenance chips on the Repositories facet — they don't
-   apply when browsing whole repos. */
-#page-market.market-facet-repo .market-origin-filter{ display:none; }
+/* On the Repositories facet the provenance chips filter installed ("Repository")
+   vs available-to-install ("Other repos") repos — see _renderMarketRepos. */
 /* ── Investigation DAG semantic zoom slider ────────────────────────────────── */
 #aig-zoom-slider {
   cursor: pointer;
