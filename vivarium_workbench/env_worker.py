@@ -1009,6 +1009,13 @@ def _resolve_composite_state(params: dict) -> dict:
             discover_generators()
         entry = _REGISTRY.get(ref)
         if entry is not None:
+            # Parameter overrides (from the Explore Config panel's Apply) — build
+            # the generator WITH them so the wiring reflects the edited config
+            # (e.g. n_cells=1 → one cell). Filter to declared params so a stray
+            # key can't make build_generator raise.
+            _raw_ov = (params or {}).get("overrides") or {}
+            overrides = ({k: v for k, v in _raw_ov.items() if k in (entry.parameters or {})}
+                         if isinstance(_raw_ov, dict) else {})
             try:
                 declared_emitters = emitter_defaults(entry)
             except Exception:  # noqa: BLE001
@@ -1027,7 +1034,7 @@ def _resolve_composite_state(params: dict) -> dict:
                 return _core_cache["c"]
 
             try:
-                doc = build_generator(entry)
+                doc = build_generator(entry, overrides or None)
                 doc = _summarize_large_values(doc)
                 _attach_process_docs(doc, get_core=_get_core)
                 _render_port_schemas(doc)

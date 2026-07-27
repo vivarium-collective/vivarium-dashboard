@@ -17,7 +17,7 @@ HTML = (ROOT / "vivarium_workbench/templates/index.html.j2").read_text()
 
 def dag_render_fn():
     """The _renderInvestigationDag function body, up to the next top-level fn."""
-    i = JS.index("function _renderInvestigationDag(studies, chainsBySlug)")
+    i = JS.index("function _renderInvestigationDag(studies, chainsBySlug, studyEdges)")
     j = JS.index("window._renderInvestigationDag = _renderInvestigationDag;", i)
     return JS[i:j]
 

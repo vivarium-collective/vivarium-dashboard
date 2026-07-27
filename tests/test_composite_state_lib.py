@@ -29,7 +29,7 @@ def _make_ws(tmp_path: Path) -> Path:
 
 def _patch_subprocess(monkeypatch, result):
     """Force ``composite_state_via_subprocess`` to return ``result``."""
-    monkeypatch.setattr(csv, "composite_state_via_subprocess", lambda ws, ref: result)
+    monkeypatch.setattr(csv, "composite_state_via_subprocess", lambda ws, ref, overrides=None: result)
 
 
 # ---------------------------------------------------------------------------

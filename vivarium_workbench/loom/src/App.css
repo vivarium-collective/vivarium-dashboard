@@ -1543,6 +1543,64 @@ textarea.sr-input {
   cursor: not-allowed;
 }
 
+/* ---- Explore: Config sidebar (left dock panel) --------------------------- */
+.cfg-panel { display: flex; flex-direction: column; height: 100%; overflow: auto; padding: 6px 2px 8px; }
+/* "⤢ Full" lives in the dock header's button bar (headerAction) — keep it in
+   line with the ⇄ / ‹ dock buttons but a touch wider for its label. */
+.cfg-full-btn { width: auto; padding: 0 7px; font-size: 11px; white-space: nowrap; }
+.cfg-note { color: #6b7280; font-size: 12px; padding: 2px 4px 6px; margin: 0; }
+.cfg-fields { display: flex; flex-direction: column; gap: 9px; padding: 0 4px; }
+/* Compact field: a "name (type) ⓘ" head row over the value input. The verbose
+   description is hidden by default (hover title + click ⓘ to expand). */
+.cfg-field { display: flex; flex-direction: column; gap: 2px; }
+.cfg-field-head { display: flex; align-items: baseline; gap: 6px; font-size: 12px; }
+.cfg-name { font-weight: 600; color: #111827; }
+.cfg-type { color: #9aa3b2; font-size: 11px; font-family: ui-monospace, monospace; }
+.cfg-info {
+  margin-left: auto; border: 0; background: transparent; cursor: pointer;
+  color: #9aa3b2; font-size: 12px; line-height: 1; padding: 0 2px;
+}
+.cfg-info:hover, .cfg-info.open { color: #2563eb; }
+.cfg-desc {
+  color: #6b7280; font-size: 11px; line-height: 1.35; padding: 2px 2px 0;
+  border-left: 2px solid #e5e7eb; margin-left: 1px;
+}
+.cfg-input { min-width: 0; width: 100%; box-sizing: border-box; padding: 4px 6px; }
+.cfg-error { color: #b91c1c; font-size: 12px; padding: 6px 4px; }
+.cfg-applied { color: #047857; font-size: 12px; padding: 6px 4px; }
+.cfg-actionbar {
+  position: sticky; bottom: 0; background: #fff; border-top: 1px solid #e5e7eb;
+  margin-top: auto; padding: 8px 4px 2px; display: flex; align-items: center; gap: 8px;
+}
+.cfg-apply-btn { padding: 6px 16px; }
+.cfg-reset-btn {
+  padding: 6px 12px; font-size: 13px; background: #fff; color: #374151;
+  border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer;
+}
+.cfg-reset-btn:hover { background: #f3f4f6; }
+.cfg-reset-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* ---- Explore: bottom run bar --------------------------------------------- */
+.explore-runbar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 7px 14px; background: #f8fafc; border-top: 1px solid #e5e7eb;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05); font-size: 13px; z-index: 5;
+}
+.explore-runbar-dur input { width: 64px; margin-left: 2px; }
+.explore-run-btn { padding: 6px 16px; font-size: 13px; }
+.explore-runbar-status { color: #6b7280; display: inline-flex; align-items: center; gap: 6px; }
+.explore-runbar-progress { display: inline-flex; align-items: center; gap: 8px; }
+.explore-runbar-track { width: 120px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
+.explore-runbar-fill { display: block; height: 100%; background: #3b82f6; }
+.explore-runbar-emit { color: #6b7280; }
+.explore-runbar-done { color: #047857; }
+.explore-runbar-fail { color: #b91c1c; display: inline-flex; align-items: center; gap: 6px; }
+.explore-runbar-why {
+  border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c; cursor: pointer;
+  font-size: 11px; border-radius: 4px; padding: 1px 7px; text-decoration: underline;
+}
+.explore-runbar-why:hover { background: #fee2e2; }
+
 /* Collapsible inspector sections (Description / schemas / Wiring). The caret
    rotates on open; the native disclosure triangle is hidden in its favor. */
 .inspector-section > summary { list-style: none; }

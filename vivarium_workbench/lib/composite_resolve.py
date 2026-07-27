@@ -117,7 +117,7 @@ def _committed_default_state(ws_root, spec_id: str) -> "dict | None":
     return state if isinstance(state, dict) else None
 
 
-def _live_generator_state(ws_root, spec_id: str) -> "dict | None":
+def _live_generator_state(ws_root, spec_id: str, overrides: "dict | None" = None) -> "dict | None":
     """Last-resort default state: BUILD the generator instead of reading a file.
 
     ``spec.default_state()`` only yields state for a generator that declares a
@@ -136,7 +136,11 @@ def _live_generator_state(ws_root, spec_id: str) -> "dict | None":
     """
     try:
         from vivarium_workbench.lib.composite_state_views import build_composite_state
-        body, status = build_composite_state(Path(ws_root), spec_id)
+        # With overrides (Config → Apply), bypass the TTL cache so the freshly
+        # overridden wiring isn't shadowed by a default-params entry.
+        body, status = build_composite_state(
+            Path(ws_root), spec_id, overrides=overrides, fresh=bool(overrides),
+        )
     except Exception:  # noqa: BLE001 — a failed build must never break resolve
         return None
     if status != 200 or not isinstance(body, dict):
@@ -208,10 +212,18 @@ def resolve_composite(
                     spec_id, e,
                     notice=f"composite file could not be parsed: {e}",
                 )
-        try:
-            state = spec.default_state(base_dir=_artifact_base_dir(ws_root, spec))
-        except Exception:
-            state = None
+        state = None
+        # Parameter overrides (Explore Config → Apply) only take effect via a
+        # live build with the overridden params — the declared default_state and
+        # the committed artifact are the CANONICAL (unoverridden) state. So when
+        # overrides are given for a generator, build straight from them.
+        if overrides and allow_build and getattr(spec, "kind", None) == "generator":
+            state = _live_generator_state(ws_root, spec_id, overrides)
+        if state is None:
+            try:
+                state = spec.default_state(base_dir=_artifact_base_dir(ws_root, spec))
+            except Exception:
+                state = None
         if state is None:
             # Generators that declare no default_state_ref still have a committed
             # artifact from the regen script (reports/composite-state/<id>.json) —
