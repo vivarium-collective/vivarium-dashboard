@@ -98,10 +98,47 @@
     return BANDS[b];
   }
 
+  // Auto orientation heuristic for the investigation DAG (_renderInvestigationDag
+  // in walkthrough.js). Pure + unit-testable: given a map of {depth: countAtThatDepth}
+  // (depths 0..N, 0 = roots), pick the orientation that fills the available space
+  // best for the graph's SHAPE rather than always defaulting to one direction.
+  //   - WIDE/SHALLOW graphs (many roots / few depth levels, e.g. a mostly-unlinked
+  //     investigation with 12 studies all at depth 0) go "TB" (top-to-bottom): rows
+  //     stack downward so a wide single row doesn't get squished into one column.
+  //   - DEEP/NARROW graphs (long dependency chains, few studies per depth) go "LR"
+  //     (left-to-right): a long chain reads naturally as a left->right sequence.
+  // A manual per-investigation toggle (persisted in localStorage) overrides this
+  // default entirely — see _getStoredGraphOrientation/_setGraphOrientation in
+  // walkthrough.js.
+  function chooseGraphOrientation(depthCounts) {
+    var counts = depthCounts || {};
+    var levels = Object.keys(counts);
+    var maxDepth = levels.length;               // number of distinct depth levels present
+    var maxBreadth = 0;
+    levels.forEach(function (d) {
+      var n = counts[d] || 0;
+      if (n > maxBreadth) maxBreadth = n;
+    });
+    var nRoots = counts[0] || counts['0'] || 0;  // depth-0 (root) study count
+    // Wide/shallow -> TB: few levels, or some level wider than the graph is deep.
+    if (maxDepth <= 2 || maxBreadth > maxDepth) return 'TB';
+    // Deep/narrow -> LR: more levels than the widest level.
+    if (maxDepth > maxBreadth) return 'LR';
+    // Tie (equally deep and wide, both > 2): more roots reads as a wider overall
+    // shape, so lean TB; otherwise a single long chain reads better as LR.
+    return nRoots > 1 ? 'TB' : 'LR';
+  }
+
   global._chainBlockHtml = _chainBlockHtml;
   global._groupClaims = _groupClaims;
   global._layoutOptsForBand = _layoutOptsForBand;
+  global.chooseGraphOrientation = chooseGraphOrientation;
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { _chainBlockHtml: _chainBlockHtml, _groupClaims: _groupClaims, _layoutOptsForBand: _layoutOptsForBand };
+    module.exports = {
+      _chainBlockHtml: _chainBlockHtml,
+      _groupClaims: _groupClaims,
+      _layoutOptsForBand: _layoutOptsForBand,
+      chooseGraphOrientation: chooseGraphOrientation,
+    };
   }
 })(typeof window !== 'undefined' ? window : globalThis);

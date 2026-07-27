@@ -31,6 +31,50 @@
   var _lastDagArgs = null;         // [studies, chainsBySlug] for re-render on band change
 
   // -------------------------------------------------------------------------
+  // Investigation DAG orientation (LR = left-to-right, TB = top-to-bottom).
+  // Auto-picked per investigation shape (see chooseGraphOrientation in
+  // aig-graph.js) unless the user has manually toggled it, in which case the
+  // choice is persisted per-investigation in localStorage and wins over auto.
+  // -------------------------------------------------------------------------
+  function _graphOrientationKey(name) {
+    return 'aig-orientation:' + (name || 'default');
+  }
+  function _getStoredGraphOrientation(name) {
+    try {
+      var v = window.localStorage.getItem(_graphOrientationKey(name));
+      if (v === 'LR' || v === 'TB') return v;
+    } catch (e) { /* private mode / no localStorage */ }
+    return null;
+  }
+  function _setGraphOrientation(o) {
+    if (o !== 'LR' && o !== 'TB') return;
+    try { window.localStorage.setItem(_graphOrientationKey(window._currentIset), o); } catch (e) { /* ignore */ }
+    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1]);
+  }
+  window._setGraphOrientation = _setGraphOrientation;
+  function _resetGraphOrientation() {
+    try { window.localStorage.removeItem(_graphOrientationKey(window._currentIset)); } catch (e) { /* ignore */ }
+    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1]);
+  }
+  window._resetGraphOrientation = _resetGraphOrientation;
+  // Reflect the active/override state on the toggle control, if present.
+  function _syncGraphOrientToggleUI(orient, isOverride) {
+    var lrBtn = document.getElementById('aig-orient-lr');
+    var tbBtn = document.getElementById('aig-orient-tb');
+    var autoBtn = document.getElementById('aig-orient-auto');
+    function _mark(btn, active) {
+      if (!btn) return;
+      btn.style.background = active ? '#e0e7ff' : 'transparent';
+      btn.style.color = active ? '#3730a3' : '#64748b';
+      btn.style.fontWeight = active ? '700' : '400';
+      btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+    }
+    _mark(lrBtn, orient === 'LR');
+    _mark(tbBtn, orient === 'TB');
+    if (autoBtn) autoBtn.style.visibility = isOverride ? 'visible' : 'hidden';
+  }
+
+  // -------------------------------------------------------------------------
   // Generic modal helpers
   // -------------------------------------------------------------------------
 
@@ -7471,7 +7515,10 @@
   }
 
   // Layout + render the DAG of study nodes for the active investigation.
-  // VERTICAL flow: y = topological depth (top = roots), x = within-depth slot.
+  // Two orientations, chosen by chooseGraphOrientation() (aig-graph.js) or a
+  // manual per-investigation localStorage override:
+  //   LR (left->right): depth -> x (columns), within-depth index -> y (rows).
+  //   TB (top->bottom):  depth -> y (rows),    within-depth index -> x (columns).
   // Cards as absolute-positioned <div>s; edges as SVG cubic-Bezier paths.
   function _renderInvestigationDag(studies, chainsBySlug) {
     _lastDagArgs = [studies, chainsBySlug];
@@ -7534,18 +7581,59 @@
       byDepth[d].sort(function(a, b) { return a.name.localeCompare(b.name); });
     });
 
-    // Horizontal layout (depth flows left->right). Card HEIGHT is NOT fixed:
-    // each card grows to fit its full text. We render once, measure each card,
-    // then stack + center the columns by the measured heights (two passes) so
-    // nothing is clipped.
+    // Orientation: auto-pick from the graph's shape (wide/shallow -> TB,
+    // deep/narrow -> LR) unless the user manually toggled it for this
+    // investigation, in which case the stored choice wins.
+    var depthCounts = {};
+    Object.keys(byDepth).forEach(function(d) { depthCounts[d] = byDepth[d].length; });
+    var _storedOrient = _getStoredGraphOrientation(window._currentIset);
+    var orient = _storedOrient ||
+      (window.chooseGraphOrientation ? window.chooseGraphOrientation(depthCounts) : 'LR');
+    if (shellEl) { shellEl.classList.remove('aig-orient-lr', 'aig-orient-tb'); shellEl.classList.add(orient === 'TB' ? 'aig-orient-tb' : 'aig-orient-lr'); }
+    _syncGraphOrientToggleUI(orient, !!_storedOrient);
+
+    // Card HEIGHT is NOT fixed: each card grows to fit its full text. We render
+    // once, measure each card, then stack + center by the measured heights
+    // (two passes) so nothing is clipped.
+    //   - DEPTH_GAP (semantic-zoom-controlled, _opts.xGap): gap along the
+    //     dependency-depth axis — horizontal columns in LR, vertical rows in TB.
+    //   - BREADTH_GAP (fixed): gap along the same-depth axis — vertical stack in
+    //     LR, horizontal row in TB.
     var CARD_W = _opts.cardW;
-    var X_GAP = _opts.xGap, Y_GAP = 22;
+    var DEPTH_GAP = _opts.xGap, BREADTH_GAP = 22;
     var PAD_X = 24, PAD_Y = 16;
     var svgNS = 'http://www.w3.org/2000/svg';
     var pos = {};
     var depths = Object.keys(byDepth).map(Number).sort(function(a, b) { return a - b; });
 
-    // -- Pass 1: build every card at its column x (top TBD), append, measure --
+    // Breadth index (position within its own depth level, alphabetical order —
+    // same ordering byDepth[d] was already sorted into above).
+    var breadthIndex = {};
+    depths.forEach(function(d) {
+      byDepth[d].forEach(function(s, i) { breadthIndex[s.name] = i; });
+    });
+
+    // TB only: each depth level is a ROW, laid out left->right by breadth index
+    // using the fixed CARD_W (rows don't need measurement to know their width,
+    // unlike their height). Precompute row start-x (centered within the widest
+    // row) so Pass 1 below can place cards immediately, mirroring how LR places
+    // columns immediately from depth alone.
+    var rowStartX = {}, canvasW_TB = 180;
+    if (orient === 'TB') {
+      var rowWidths = {}, maxRowWidth = 0;
+      depths.forEach(function(d) {
+        var n = byDepth[d].length;
+        rowWidths[d] = n > 0 ? n * (CARD_W + BREADTH_GAP) - BREADTH_GAP : 0;
+        if (rowWidths[d] > maxRowWidth) maxRowWidth = rowWidths[d];
+      });
+      canvasW_TB = Math.max(PAD_X * 2 + maxRowWidth, 180);
+      depths.forEach(function(d) {
+        rowStartX[d] = PAD_X + Math.max(0, (canvasW_TB - PAD_X * 2 - rowWidths[d]) / 2);
+      });
+    }
+
+    // -- Pass 1: build every card at its x (LR: by depth; TB: by breadth-in-row),
+    //    top TBD, append, measure --
     studies.forEach(function(s) {
       var liveStatus = s.effective_status || s.status || 'planned';
       // Derive confidence from the spine's gate_status VERDICT first, so the badge
@@ -7599,7 +7687,9 @@
       };
       node.title = s.name + ' — ' + confidence + (claim ? '\n\nFinds: ' + claim : '') +
         '\n\nClick to open the study';
-      var x = PAD_X + depth[s.name] * (CARD_W + X_GAP);
+      var x = (orient === 'TB')
+        ? rowStartX[depth[s.name]] + breadthIndex[s.name] * (CARD_W + BREADTH_GAP)
+        : PAD_X + depth[s.name] * (CARD_W + DEPTH_GAP);
       node.style.cssText =
         'position:absolute;left:' + x + 'px;top:0px;' +
         'width:' + CARD_W + 'px;' +
@@ -7678,25 +7768,57 @@
     // Measure now that content is in the DOM (container is already visible).
     studies.forEach(function(s) { pos[s.name].h = pos[s.name].node.offsetHeight || 120; });
 
-    // -- Pass 2: stack each column vertically by measured height, then center --
-    var colTotals = {};
-    depths.forEach(function(d) {
-      var sum = 0;
-      byDepth[d].forEach(function(s) { sum += pos[s.name].h; });
-      colTotals[d] = sum + Math.max(0, byDepth[d].length - 1) * Y_GAP;
-    });
-    var maxCol = 0;
-    depths.forEach(function(d) { if (colTotals[d] > maxCol) maxCol = colTotals[d]; });
-    var canvasH = Math.max(PAD_Y * 2 + maxCol, 180);
-    depths.forEach(function(d) {
-      var yc = PAD_Y + Math.max(0, (canvasH - PAD_Y * 2 - colTotals[d]) / 2);
-      byDepth[d].forEach(function(s) {
-        pos[s.name].y = yc;
-        pos[s.name].node.style.top = yc + 'px';
-        yc += pos[s.name].h + Y_GAP;
+    // -- Pass 2: position the measured axis, then compute the canvas size --
+    var canvasW, canvasH;
+    if (orient === 'TB') {
+      // Depth is now the ROW (y) axis. A row's height is the tallest card in
+      // it (cards within a row sit side-by-side, not stacked), so rows must
+      // be sequenced top->bottom using DEPTH_GAP between them. Each card is
+      // then vertically centered within its own row's height.
+      var rowHeights = {};
+      depths.forEach(function(d) {
+        var maxH = 0;
+        byDepth[d].forEach(function(s) { if (pos[s.name].h > maxH) maxH = pos[s.name].h; });
+        rowHeights[d] = maxH;
       });
-    });
-    var canvasW = PAD_X * 2 + (depths.length ? depths[depths.length - 1] : 0) * (CARD_W + X_GAP) + CARD_W;
+      var rowY = {};
+      var yc = PAD_Y;
+      depths.forEach(function(d) {
+        rowY[d] = yc;
+        yc += rowHeights[d] + DEPTH_GAP;
+      });
+      canvasH = Math.max(yc - DEPTH_GAP + PAD_Y, 180);
+      depths.forEach(function(d) {
+        byDepth[d].forEach(function(s) {
+          var y = rowY[d] + Math.max(0, (rowHeights[d] - pos[s.name].h) / 2);
+          pos[s.name].y = y;
+          pos[s.name].node.style.top = y + 'px';
+        });
+      });
+      canvasW = canvasW_TB;
+    } else {
+      // Depth is the COLUMN (x) axis (already positioned in Pass 1). Breadth
+      // is the y axis: stack same-depth cards vertically by measured height,
+      // then center each column within the tallest column's total height.
+      var colTotals = {};
+      depths.forEach(function(d) {
+        var sum = 0;
+        byDepth[d].forEach(function(s) { sum += pos[s.name].h; });
+        colTotals[d] = sum + Math.max(0, byDepth[d].length - 1) * BREADTH_GAP;
+      });
+      var maxCol = 0;
+      depths.forEach(function(d) { if (colTotals[d] > maxCol) maxCol = colTotals[d]; });
+      canvasH = Math.max(PAD_Y * 2 + maxCol, 180);
+      depths.forEach(function(d) {
+        var yc2 = PAD_Y + Math.max(0, (canvasH - PAD_Y * 2 - colTotals[d]) / 2);
+        byDepth[d].forEach(function(s) {
+          pos[s.name].y = yc2;
+          pos[s.name].node.style.top = yc2 + 'px';
+          yc2 += pos[s.name].h + BREADTH_GAP;
+        });
+      });
+      canvasW = PAD_X * 2 + (depths.length ? depths[depths.length - 1] : 0) * (CARD_W + DEPTH_GAP) + CARD_W;
+    }
 
     nodesHost.style.width = canvasW + 'px';
     nodesHost.style.height = canvasH + 'px';
@@ -7716,18 +7838,37 @@
       _dagEdges(s).forEach(function(p) {
         var pn = p.study;
         if (!pos[pn] || !pos[s.name]) return;
-        var x1 = pos[pn].x + CARD_W;
-        var y1 = pos[pn].y + pos[pn].h / 2;
-        var x2 = pos[s.name].x;
-        var y2 = pos[s.name].y + pos[s.name].h / 2;
-        var dx = Math.max(28, (x2 - x1) / 2);
+        // Endpoints follow the flow direction: LR connects parent's right edge
+        // to child's left edge (both vertically centered); TB connects
+        // parent's bottom edge to child's top edge (both horizontally
+        // centered). The Bezier control offset is along that same flow axis
+        // so the curve still reads as "leads to" in either orientation.
+        var x1, y1, x2, y2, path_d;
+        if (orient === 'TB') {
+          x1 = pos[pn].x + CARD_W / 2;
+          y1 = pos[pn].y + pos[pn].h;
+          x2 = pos[s.name].x + CARD_W / 2;
+          y2 = pos[s.name].y;
+          var dy = Math.max(28, (y2 - y1) / 2);
+          path_d = 'M ' + x1 + ' ' + y1 +
+                   ' C ' + x1 + ' ' + (y1 + dy) +
+                   ', ' + x2 + ' ' + (y2 - dy) +
+                   ', ' + x2 + ' ' + y2;
+        } else {
+          x1 = pos[pn].x + CARD_W;
+          y1 = pos[pn].y + pos[pn].h / 2;
+          x2 = pos[s.name].x;
+          y2 = pos[s.name].y + pos[s.name].h / 2;
+          var dx = Math.max(28, (x2 - x1) / 2);
+          path_d = 'M ' + x1 + ' ' + y1 +
+                   ' C ' + (x1 + dx) + ' ' + y1 +
+                   ', ' + (x2 - dx) + ' ' + y2 +
+                   ', ' + x2 + ' ' + y2;
+        }
         var rel = p.relation || 'leads-to';
         var st = _dagRelStyle(rel);
         var path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', 'M ' + x1 + ' ' + y1 +
-                              ' C ' + (x1 + dx) + ' ' + y1 +
-                              ', ' + (x2 - dx) + ' ' + y2 +
-                              ', ' + x2 + ' ' + y2);
+        path.setAttribute('d', path_d);
         path.setAttribute('fill', 'none');
         path.setAttribute('stroke', st.color);
         path.setAttribute('stroke-width', '1.5');
@@ -7740,9 +7881,18 @@
           labelText += ' (' + p.outputs_used.join(', ') + ')';
         }
         var label = document.createElementNS(svgNS, 'text');
-        label.setAttribute('x', (x1 + x2) / 2);
-        label.setAttribute('y', (y1 + y2) / 2 - 6);
-        label.setAttribute('text-anchor', 'middle');
+        // Offset the label perpendicular to the flow axis (up for LR's
+        // horizontal flow, sideways for TB's vertical flow) so it doesn't sit
+        // directly on top of the line.
+        if (orient === 'TB') {
+          label.setAttribute('x', (x1 + x2) / 2 + 8);
+          label.setAttribute('y', (y1 + y2) / 2);
+          label.setAttribute('text-anchor', 'start');
+        } else {
+          label.setAttribute('x', (x1 + x2) / 2);
+          label.setAttribute('y', (y1 + y2) / 2 - 6);
+          label.setAttribute('text-anchor', 'middle');
+        }
         label.setAttribute('font-size', '10');
         label.setAttribute('fill', st.color);
         label.textContent = labelText;
