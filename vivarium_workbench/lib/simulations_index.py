@@ -1528,13 +1528,29 @@ def _attach_matched_tools(rows: list[dict], ws_root: Path) -> None:
 
     for row in rows:
         caps = set(row.get("capabilities") or [])
-        if not caps:
-            continue
+        study_slug = row.get("study_slug")
         try:
             matched = []
             for tool in tools:
                 requires = tool.get("requires") or []
-                if not requires or not (set(requires) <= caps):
+                caps_ok = bool(requires) and set(requires) <= caps
+                # embed-3d (Parsimony Viewer) is a per-STUDY tool: 3d_pack is a
+                # property of the run's STUDY (it has viz/3d packs), not of the
+                # run's emitter — so a run never carries the 3d_pack capability
+                # and the capability-subset rule above would never match it.
+                # Match it to any run whose study owns a 3D pack (the tool's
+                # matched candidates are keyed by study `ref`); the launch-url
+                # resolver then selects that study's hosted viewer_url. This is
+                # what lets a run's Simulations-DB row link straight to its 3D
+                # viewer, even when the run itself has no emitter capabilities.
+                study_3d_ok = (
+                    tool.get("kind") == "embed-3d"
+                    and "3d_pack" in requires
+                    and bool(study_slug)
+                    and any(c.get("ref") == study_slug
+                            for c in (tool.get("matched") or []))
+                )
+                if not (caps_ok or study_3d_ok):
                     continue
                 entry = _matched_tool_entry(tool, row)
                 if entry is not None:
