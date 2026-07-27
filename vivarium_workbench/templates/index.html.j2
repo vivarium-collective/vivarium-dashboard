@@ -155,6 +155,50 @@ window.addEventListener('pageshow', function (e) {
 
 /* Workspace switcher (top of the left rail). */
 .viv-workspace-switcher { position: relative; padding: 0; }
+
+/* ── Workspace picker: a self-describing header dropdown ──────────────────── */
+.viv-wsp-trigger {
+  display: flex; align-items: center; gap: 8px; width: calc(100% - 24px);
+  margin: 2px 12px 12px; padding: 7px 10px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 9px;
+  cursor: pointer; font: inherit; color: #0f172a; text-align: left;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, box-shadow .12s;
+}
+.viv-wsp-trigger:hover { border-color: #cbd5e1; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
+.viv-wsp-trigger:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
+.viv-wsp-trigger-label { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
+.viv-wsp-trigger-current { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; font-size: 13px; font-weight: 600; }
+.viv-wsp-trigger-current strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viv-wsp-trigger-caret { color: #94a3b8; font-size: 11px; flex: 0 0 auto; }
+
+.viv-wsp-dot { flex: 0 0 auto; font-size: 11px; line-height: 1; }
+.viv-wsp-ready { color: #16a34a; } .viv-wsp-stopped { color: #94a3b8; }
+.viv-wsp-stale { color: #d97706; } .viv-wsp-missing { color: #dc2626; } .viv-wsp-remote { color: #7c3aed; }
+
+.viv-wsp-menu {
+  position: absolute; left: 12px; right: 12px; top: 100%; z-index: 1200; margin-top: 4px;
+  background: #fff; border: 1px solid #e2e8f0; border-radius: 11px;
+  box-shadow: 0 14px 40px rgba(15,23,42,.16); overflow: hidden;
+  display: flex; flex-direction: column; max-height: min(60vh, 420px);
+}
+.viv-wsp-head { padding: 9px; border-bottom: 1px solid #f1f5f9; }
+.viv-wsp-search {
+  width: 100%; box-sizing: border-box; padding: 7px 10px; font: inherit; font-size: 13px;
+  border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; color: #0f172a;
+}
+.viv-wsp-search:focus { outline: none; border-color: #6366f1; background: #fff; }
+.viv-wsp-list { list-style: none; margin: 0; padding: 5px; overflow-y: auto; flex: 1; }
+.viv-wsp-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; color: #0f172a; }
+.viv-wsp-row.active, .viv-wsp-row:hover { background: #f1f5f9; }
+.viv-wsp-row.is-current { cursor: default; background: #f0fdf4; }
+.viv-wsp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.viv-wsp-tail { flex: 0 0 auto; font-size: 11.5px; color: #64748b; font-weight: 600; }
+.viv-wsp-row.is-current .viv-wsp-tail { color: #16a34a; }
+.viv-wsp-empty { padding: 14px 12px; text-align: center; color: #94a3b8; font-size: 12.5px; }
+.viv-wsp-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 11px; border-top: 1px solid #f1f5f9; background: #fafbfc; font-size: 11px; color: #94a3b8; }
+.viv-wsp-legend b { font-weight: 700; }
+.viv-wsp-settings { color: #6366f1; text-decoration: none; font-weight: 600; }
+.viv-wsp-settings:hover { text-decoration: underline; }
 /* The workspace-name chip is the SOURCE SWITCHER trigger: a small status dot +
    the current source name under the Vivarium brand. Click to switch local
    workspace / remote build (source-switch.js opens a dropdown below it). */
@@ -466,17 +510,15 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       <!-- The workspace-name chip opens the Branch page (#github): source,
            repo/branch/commit, push & build actions. Replaces the old rail
            dropdown and the standalone Branch rail item. -->
-      <div class="viv-workspace-name" role="button" tabindex="0"
-           title="Open Branch: source, repo · branch · commit, push & build"
-           style="cursor:pointer"
-           onclick="window.location.hash='#github'; if(window._switchPage)_switchPage('github');"
-           onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); window.location.hash='#github'; if(window._switchPage)_switchPage('github');}">
-        <span class="viv-workspace-switcher-glyph{% if workspace_is_remote %} viv-glyph-remote{% endif %}">●</span>
-        <span class="viv-ws-text">
-          <strong>{{ workspace_name }}{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}</strong>
-          {% if workspace_branch %}<span class="viv-ws-branch" title="{{ workspace_name }} · branch: {{ workspace_branch }}">{{ workspace_branch }}</span>{% endif %}
+      <button class="viv-wsp-trigger" id="viv-workspace-picker-trigger" type="button"
+              title="Switch workspace — pick from your workspaces">
+        <span class="viv-wsp-trigger-label">Workspace</span>
+        <span class="viv-wsp-trigger-current">
+          <span class="viv-wsp-dot viv-wsp-ready{% if workspace_is_remote %} viv-wsp-remote{% endif %}">●</span>
+          <strong>{{ workspace_name }}</strong>{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}
         </span>
-      </div>
+        <span class="viv-wsp-trigger-caret" aria-hidden="true">▾</span>
+      </button>
     </div>
     <!-- Snapshot mode: static repo label replaces the switcher dropdown. -->
     <div class="viv-repo-label" id="snapshot-repo-label" style="display:none;cursor:pointer"
@@ -1863,6 +1905,7 @@ Nothing on <code id="pr-base-display-2">main</code> changes until someone presse
 <!-- Encode this tab's workspace materialization state in the favicon + title
      (session-per-tab): ready / ⏳ preparing / ⚠️ failed. -->
 <script src="assets/session-status.js{% if asset_version %}?v={{ asset_version }}{% endif %}"></script>
+<script src="assets/workspace-picker.js{% if asset_version %}?v={{ asset_version }}{% endif %}"></script>
 <script>
 // Initialize drop zones once walkthrough.js is loaded.
 document.addEventListener("DOMContentLoaded", function() {
