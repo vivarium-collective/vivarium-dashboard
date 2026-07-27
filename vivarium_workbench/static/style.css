@@ -3648,6 +3648,18 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 /* Rail toggle switch (sun ↔ moon sliding pill). */
 .viv-rail-footer{ padding:10px 16px; border-top:1px solid #ececec; display:flex; }
 .viv-rail.viv-rail-collapsed .viv-rail-footer{ justify-content:center; padding:10px 4px; }
+/* Theme-toggle footer only: a compact, low-key corner. The pill is invisible
+   until the corner is hovered (or keyboard-focused), so it's unobtrusive and
+   gives the studies list more room. Its own class so the shared .viv-rail-footer
+   (reused by the GitHub account chip) is untouched. */
+.viv-rail-theme-footer{ padding:0 16px 6px; border-top:none; align-items:center; }
+.viv-rail.viv-rail-collapsed .viv-rail-theme-footer{ padding:0 4px 6px; }
+.viv-rail-theme-footer .viv-theme-toggle{
+  opacity:0; transform:scale(0.94); transform-origin:left center;
+  transition:opacity .16s ease, transform .16s ease;
+}
+.viv-rail-theme-footer:hover .viv-theme-toggle,
+.viv-rail-theme-footer:focus-within .viv-theme-toggle{ opacity:1; transform:none; }
 .viv-theme-toggle{
   position:relative; display:inline-flex; align-items:center; justify-content:space-between;
   width:56px; height:26px; padding:0 7px; border-radius:14px;
