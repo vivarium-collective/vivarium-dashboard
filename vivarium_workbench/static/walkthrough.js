@@ -4467,6 +4467,14 @@
           if (which === 'catalog') return DS.loadCatalog().catch(function () { return null; });
         }
       } catch (e) { /* fall through to raw fetch */ }
+      // The marketplace payload (full ecosystem incl. available-to-install) has
+      // no DataSource loader; resolve it snapshot-aware here (static .json in a
+      // published bundle, live endpoint otherwise).
+      if (which === 'marketplace') {
+        var snap = DS && DS.config && DS.config().mode === 'snapshot';
+        var mu = snap ? (DS.basePath() + '/api/marketplace.json') : ((DS && DS.apiUrl) ? DS.apiUrl('/api/marketplace') : '/api/marketplace');
+        return fetch(mu).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; });
+      }
       var path = { isets: '/api/investigation-summaries', studies: '/api/investigations',
                    comps: '/api/composites', reg: '/api/registry', catalog: '/api/catalog' }[which] || which;
       var u = (DS && DS.apiUrl) ? DS.apiUrl(path) : path;
@@ -4527,6 +4535,14 @@
     }).then(function (cat) {
       window._marketCatalog = (cat && cat.modules) || (Array.isArray(cat) ? cat : []);
       _renderMarket();
+      // Upgrade to the FULL ecosystem ledger (installed + available-to-install).
+      // Heavier (federation scan live), so it lands after the fast installed-only
+      // catalog; on success it supersedes it and the repo list re-renders with
+      // the "Available" repos + Install actions.
+      return J('marketplace');
+    }).then(function (mkt) {
+      var mods = (mkt && mkt.modules) || (Array.isArray(mkt) ? mkt : []);
+      if (mods.length) { window._marketCatalog = mods; if (window._marketFacet === 'repo') _renderMarket(); }
       window._marketLoading = false;
     }).catch(function () { window._marketLoading = false; });
   }
@@ -4757,16 +4773,18 @@
       if (!r) return null;
       return byRepo[r] || (byRepo[r] = {
         repo: r, isWorkspace: (r === wsName), installed: true, url: '', desc: '',
-        process: 0, composite: 0, study: 0, investigation: 0, total: 0, use: 0,
+        installName: '', process: 0, composite: 0, study: 0, investigation: 0, total: 0, use: 0,
         composites: [], _fromArtifacts: false, _cat: null
       });
     };
-    // 1) Every ecosystem repo from the catalog (incl. repos with no artifacts).
+    // 1) Every ecosystem repo from the catalog/marketplace ledger (incl. repos
+    // with no artifacts AND available-to-install repos not present locally).
     (window._marketCatalog || []).forEach(function (m) {
       var b = get(m.name || m.package); if (!b) return;
       if (m.source && !b.url) b.url = String(m.source).replace(/\.git$/, '');
       if (m.description && !b.desc) b.desc = m.description;
       if (m.installed === false) b.installed = false;
+      if (!b.installName) b.installName = m.name || m.package || '';
       b._cat = m;
     });
     // 2) Per-type counts from the loaded registry/composites/studies/investigations.
@@ -4815,12 +4833,23 @@
     }).filter(Boolean);
     return parts.length ? parts.join('') : '<span class="repo-stat zero">no artifacts yet</span>';
   }
+  // Install action for an available (not-installed) repo. Class js-authoring so
+  // the read-only snapshot auto-suppresses it (browse-only there); live workbench
+  // shows it and _installFromMarketplace runs the submodule + pip install flow.
+  function _repoInstallBtn(b) {
+    if (b.installed !== false) return '';
+    var target = b.installName || b.repo;
+    return '<button class="btn-mini js-authoring repo-install" '
+      + 'onclick="event.preventDefault();event.stopPropagation();_installFromMarketplace(\'' + _esc(target) + '\');return false;">'
+      + '+ Install</button>';
+  }
   function _repoFoot(b) {
     var meta = [];
     if (b.total) meta.push(b.total + ' artifact' + (b.total === 1 ? '' : 's'));
     if (b.use) meta.push(b.use + ' use' + (b.use === 1 ? '' : 's'));
     return '<div class="repo-card-foot"><span class="repo-meta">' + (meta.join(' · ') || '&nbsp;') + '</span>'
-      + '<a class="btn-mini repo-gh" href="' + _esc(b.url) + '" target="_blank" rel="noopener">GitHub ↗</a></div>';
+      + '<span class="repo-actions">' + _repoInstallBtn(b)
+      + '<a class="btn-mini repo-gh" href="' + _esc(b.url) + '" target="_blank" rel="noopener">GitHub ↗</a></span></div>';
   }
   function _marketRepoCard(b) {
     return '<div class="market-card repo-card' + (b.isWorkspace ? ' repo-card-ws' : '') + '">'
@@ -4868,7 +4897,8 @@
         + '<td class="repo-td-num">' + (b.composite || '—') + '</td>'
         + '<td class="repo-td-num">' + (b.study || '—') + '</td>'
         + '<td class="repo-td-num">' + (b.use || '—') + '</td>'
-        + '<td><a class="btn-mini repo-gh" href="' + _esc(b.url) + '" target="_blank" rel="noopener">GitHub ↗</a></td>'
+        + '<td class="repo-td-actions"><span class="repo-actions">' + _repoInstallBtn(b)
+        +   '<a class="btn-mini repo-gh" href="' + _esc(b.url) + '" target="_blank" rel="noopener">GitHub ↗</a></span></td>'
         + '</tr>';
     }).join('');
     return '<table class="market-table repo-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';

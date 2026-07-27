@@ -862,6 +862,23 @@ def _do_build(
             _m.pop("out_of_sync_reason", None)
     _write_json(api_dir / "catalog.json", catalog)
 
+    # api/marketplace.json — the FULL viva ecosystem (GET /api/marketplace,
+    # build_catalog(full=True)): every module including the ones NOT installed
+    # here, so the read-only Registry's Repositories facet can show what's
+    # available to install (browse-only in a snapshot — Install is suppressed
+    # with the other authoring controls). Best-effort; falls back to the
+    # installed-only catalog so the facet still renders if the federation scan
+    # is unavailable at publish time.
+    try:
+        marketplace = build_catalog(ws_root, full=True)
+    except Exception:
+        marketplace = catalog
+    for _m in (marketplace.get("modules") or []):
+        if isinstance(_m, dict):
+            _m.pop("out_of_sync", None)
+            _m.pop("out_of_sync_reason", None)
+    _write_json(api_dir / "marketplace.json", marketplace)
+
     # api/audit.json — read-only L0-L5 reproducibility audit (GET /api/audit).
     # Tolerant: build_audit never raises (returns a 200-shaped dict on error), so
     # the Audit tab works in the static bundle. Routed through the same
