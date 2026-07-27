@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from vivarium_workbench.lib import cli_runs, study_runs
+from vivarium_workbench.lib import cli_runs, study_runs, env_fingerprint, study_spec
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
@@ -108,9 +108,96 @@ def run_rerun(ws_root, run_id):
         resp, status = cli_runs.run_composite(
             ws_root, t["spec_id"], steps=t["n_steps"], params=t["params"],
             emit_paths=t.get("emit_paths") or [], detach=True)
+
+    new_run_id = (resp.get("simulation_id") or resp.get("run_id")) if isinstance(resp, dict) else None
+    _flag_env_drift(ws_root, original_run_id=run_id, new_run_id=new_run_id, study=t.get("study"))
+
     if isinstance(resp, dict):
         resp = {**resp, "origin": t["origin"], "reran": run_id}
     return resp, status
+
+
+def _pinned_env_for_study(ws_root, study) -> "str | None":
+    """Best-effort read of a study's optional ``pinned_env:`` (Task 5 / G3).
+
+    A ``study.yaml`` may declare ``pinned_env: <env_id>`` to accept a known
+    environment drift (e.g. a deliberate package upgrade) without every
+    subsequent Reproduce flagging ``env_stale``. Returns ``None`` for a
+    composite-origin replay (no ``study``), a missing/unreadable
+    ``study.yaml``, or an unset/blank field — never raises."""
+    if not study:
+        return None
+    try:
+        sd = study_spec.study_dir(Path(ws_root), study)
+        spec_file = study_spec.study_spec_file(sd)
+        if not spec_file.is_file():
+            return None
+        import yaml
+        spec = yaml.safe_load(spec_file.read_text(encoding="utf-8")) or {}
+        if not isinstance(spec, dict):
+            return None
+        pinned = spec.get("pinned_env")
+        return pinned if isinstance(pinned, str) and pinned.strip() else None
+    except Exception:  # noqa: BLE001 — best-effort, never block a rerun
+        return None
+
+
+def _flag_env_drift(ws_root, *, original_run_id, new_run_id, study=None) -> None:
+    """Best-effort env-drift pre-check (reproducible-rerun-spine Task 5 / G3).
+
+    Diffs the ORIGINAL run's recorded ``env_id`` against the CURRENT
+    environment — freshly computed via ``env_fingerprint.compute_env`` +
+    ``env_fingerprint.env_id``, i.e. the environment the replay just
+    executed under. When they differ, the new run's ``provenance_status``
+    is set to ``'env_stale'`` via the same ``composite_runs.set_provenance_
+    status`` helper ``verify_reproduction`` uses — UNLESS the study's
+    ``study.yaml`` declares a ``pinned_env:`` matching the ORIGINAL run's
+    ``env_id`` (an accepted/pinned drift; suppressed).
+
+    This is the pre-check counterpart to ``verify_reproduction`` (run later,
+    on the completion tail): that comparison is only ever conclusive when
+    ``env_id`` is IDENTICAL between the two runs, so the two never fire on
+    the same run for the same reason (env differs -> env_stale here; env
+    same but fingerprint differs -> nondeterministic there). As a defensive
+    belt-and-suspenders measure this still refuses to overwrite an already-
+    confirmed ``'nondeterministic'`` verdict.
+
+    Best-effort throughout: a missing run, unreadable study.yaml, or digest
+    failure degrades to a no-op — this must never block or fail a rerun.
+    """
+    if not new_run_id or not original_run_id:
+        return
+    try:
+        from vivarium_workbench.lib import composite_runs as cr
+
+        _orig_db, orig_row = cli_runs.find_run(ws_root, original_run_id)
+        if orig_row is None:
+            return
+        orig_env = orig_row.get("env_id")
+        if not orig_env:
+            return  # pre-Task-2 run with no recorded env_id — nothing to diff
+
+        current_env_id = env_fingerprint.env_id(env_fingerprint.compute_env(ws_root=ws_root))
+        if not current_env_id or current_env_id == orig_env:
+            return  # no drift
+
+        pinned = _pinned_env_for_study(ws_root, study)
+        if pinned and pinned == orig_env:
+            return  # drift accepted/pinned — do not stamp env_stale
+
+        new_db, new_row = cli_runs.find_run(ws_root, new_run_id)
+        if new_row is None:
+            return
+        if new_row.get("provenance_status") == "nondeterministic":
+            return  # never clobber a confirmed nondeterministic verdict
+
+        conn = cr.connect(new_db)
+        try:
+            cr.set_provenance_status(conn, run_id=new_run_id, status="env_stale")
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — best-effort; never block a rerun
+        pass
 
 
 def _row_seed(row):
