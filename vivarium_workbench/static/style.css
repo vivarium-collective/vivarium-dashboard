@@ -811,6 +811,10 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .viv-rail-section + .viv-rail-section{
   border-top:1px solid #ececec; margin-top:4px;
 }
+/* Studies is now a continuous nav item; its search/list section flows straight
+   under the Workspace nav with no divider break. */
+.viv-rail-section + #viv-rail-studies-section{ border-top:none; margin-top:0; }
+:root[data-theme="dark"] .viv-rail-section + #viv-rail-studies-section{ border-top:none; }
 /* Studies flow naturally within the shared scroll region (no inner scrollbar).
    Its header (label + search) is sticky so it pins to the top of the scroll
    region as the study list scrolls beneath — ChatGPT-sidebar style. */
