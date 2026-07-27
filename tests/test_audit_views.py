@@ -94,3 +94,22 @@ def test_api_audit_route(dashboard_client, tmp_path):
     assert r.status_code == 200
     body = r.json()
     assert isinstance(body.get("studies"), list)
+
+
+def test_publish_writes_parseable_audit_json(tmp_path):
+    """Mirror the publish step: build_audit's body, written through publish's
+    strict (`allow_nan=False`) JSON writer, must land on disk and parse back."""
+    from vivarium_workbench.publish import _write_json
+
+    ws = _make_workspace(tmp_path / "ws")
+    body, status = build_audit(ws)
+    assert status == 200
+
+    out = tmp_path / "bundle" / "api" / "audit.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    _write_json(out, body)
+
+    assert out.is_file()
+    parsed = json.loads(out.read_text(encoding="utf-8"))
+    assert isinstance(parsed.get("studies"), list)
+    assert "summary" in parsed
