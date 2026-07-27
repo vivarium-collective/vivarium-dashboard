@@ -1003,6 +1003,17 @@ window.addEventListener('pageshow', function (e) {
                oninput="window._setAigBand(parseInt(this.value,10))" style="width:110px" aria-label="Graph zoom / detail level">
         <span title="Zoom in — full detail">🔍+</span>
       </span>
+      <span class="aig-orient-ctl" style="float:right;display:inline-flex;align-items:center;gap:2px;font-size:0.9em;color:#64748b;margin-right:14px" role="group" aria-label="Graph orientation">
+        <button id="aig-orient-lr" type="button" title="Left → Right" aria-label="Left to right"
+                onclick="window._setGraphOrientation('LR')"
+                style="border:1px solid #e2e8f0;background:transparent;border-radius:5px 0 0 5px;padding:2px 7px;cursor:pointer;font-size:1em;line-height:1.4">⇄</button>
+        <button id="aig-orient-tb" type="button" title="Top → Bottom" aria-label="Top to bottom"
+                onclick="window._setGraphOrientation('TB')"
+                style="border:1px solid #e2e8f0;border-left:none;background:transparent;border-radius:0 5px 5px 0;padding:2px 7px;cursor:pointer;font-size:1em;line-height:1.4">⇅</button>
+        <button id="aig-orient-auto" type="button" title="Reset to automatic orientation" aria-label="Reset to automatic orientation"
+                onclick="window._resetGraphOrientation()"
+                style="border:none;background:transparent;color:#94a3b8;cursor:pointer;font-size:0.85em;margin-left:4px;text-decoration:underline dotted;visibility:hidden">auto</button>
+      </span>
     </div>
     <div id="investigation-dag-shell"
          style="position: relative; border: 1px solid #e2e8f0; border-radius: 6px; background: #fafafa;
