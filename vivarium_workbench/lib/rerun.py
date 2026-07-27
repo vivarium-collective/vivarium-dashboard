@@ -77,15 +77,41 @@ def resolve_rerun_target(ws_root, run_id):
     }
 
 
+def _current_env_id(ws_root):
+    """Best-effort: the env_id a NEW launch would be stamped with right now
+    — the same ``env_fingerprint.env_id(env_fingerprint.compute_env(...))``
+    call ``_flag_env_drift`` makes post-hoc, computed here pre-launch for
+    the retrieve-before-recompute check. Never raises; a failure degrades
+    to ``None`` (retrieval is simply skipped — falls through to compute)."""
+    try:
+        return env_fingerprint.env_id(env_fingerprint.compute_env(ws_root=ws_root))
+    except Exception:  # noqa: BLE001 — best-effort; no env_id -> skip retrieval
+        return None
+
+
 def run_rerun(ws_root, run_id):
-    """Replay a recorded run as a brand-new run, routed by its origin.
+    """Replay a recorded run as a brand-new run, routed by its origin — OR,
+    when we already have one, serve a saved artifact instead of recomputing.
 
     Resolves the replay target (Task 2's ``resolve_rerun_target``, manifest-
-    preferred) and forwards its inputs VERBATIM to the matching launcher —
-    a study-origin run replays via ``study_runs.launch_into_study`` (full
-    manifest: spec_id/params/n_steps/seed/emitter/emit_paths/runtime), a
-    composite-origin run replays via ``cli_runs.run_composite`` (detached
-    subprocess). Never mutates the original run; always produces a new one.
+    preferred). Before launching anything, checks (reproducible-rerun-spine
+    Task 6 / G5) whether a completed run already exists matching the exact
+    replay key (spec_id, config, seed) under the environment THIS replay
+    would execute in right now (``_current_env_id``) — see
+    ``run_index.find_matching_run``. A hit returns ``retrieved: True`` with
+    the EXISTING run_id and launches nothing; this is not an overwrite, it's
+    serving an already-produced result (the user's ask: "we hold onto
+    simulation artifacts ... we may not have to rerun"). A miss (no match,
+    the environment has drifted since any matching run completed, or a
+    matched run's on-disk artifact was deleted) falls through to the normal
+    compute path below, unchanged.
+
+    The compute path forwards the resolved target's inputs VERBATIM to the
+    matching launcher — a study-origin run replays via ``study_runs.
+    launch_into_study`` (full manifest: spec_id/params/n_steps/seed/emitter/
+    emit_paths/runtime), a composite-origin run replays via ``cli_runs.
+    run_composite`` (detached subprocess). Never mutates the original run;
+    always produces a new one.
 
     Study-origin replays also pass ``reran_from=run_id`` (the ORIGINAL run's
     id) so the new run's completion tail can call ``verify_reproduction``
@@ -98,6 +124,24 @@ def run_rerun(ws_root, run_id):
     t = resolve_rerun_target(ws_root, run_id)
     if t is None:
         return {"error": f"run not found: {run_id}"}, 404
+
+    current_env_id = _current_env_id(ws_root)
+    if current_env_id:
+        try:
+            from vivarium_workbench.lib import run_index
+            match = run_index.find_matching_run(
+                ws_root, t["spec_id"], t["params"], t.get("seed"), current_env_id)
+        except Exception:  # noqa: BLE001 — best-effort; a lookup failure -> recompute
+            match = None
+        if match:
+            return {
+                "simulation_id": match["run_id"],
+                "run_id": match["run_id"],
+                "origin": t["origin"],
+                "reran": run_id,
+                "retrieved": True,
+            }, 200
+
     if t["origin"] == "study":
         resp, status = study_runs.launch_into_study(
             ws_root, t["study"], t["spec_id"], t["params"], t["n_steps"],
@@ -113,7 +157,7 @@ def run_rerun(ws_root, run_id):
     _flag_env_drift(ws_root, original_run_id=run_id, new_run_id=new_run_id, study=t.get("study"))
 
     if isinstance(resp, dict):
-        resp = {**resp, "origin": t["origin"], "reran": run_id}
+        resp = {**resp, "origin": t["origin"], "reran": run_id, "retrieved": False}
     return resp, status
 
 

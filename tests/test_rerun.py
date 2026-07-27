@@ -317,3 +317,173 @@ def test_reproduce_pinned_env_suppresses_env_stale(tmp_path, monkeypatch):
     _ws, _orig, _new, row = _reproduce_under_drifting_env(
         tmp_path, monkeypatch, pinned_env="env-A")
     assert row["provenance_status"] != "env_stale"
+
+
+# ---------------------------------------------------------------------------
+# reproducible-rerun-spine Task 6 / G5 — retrieve-before-recompute: a
+# Reproduce of a run we already have a completed, intact, matching saved
+# run for serves that saved artifact instead of launching a subprocess.
+# ---------------------------------------------------------------------------
+
+def test_reproduce_retrieves_saved_run_without_launching(tmp_path, monkeypatch):
+    """The key Task 6 proof. A second Reproduce of a completed run whose
+    on-disk artifact is still intact is served straight from that saved
+    run — no subprocess launch, ``retrieved: True``, same run_id. Then the
+    recorded environment drifts (bump_env equivalent: env_fingerprint.env_id
+    now returns a different digest) — the saved run's env_id no longer
+    matches "what a launch would produce right now", so the NEXT Reproduce
+    MISSES and recomputes — ``retrieved: False``, exactly one new subprocess
+    launch, a brand-new run_id.
+
+    Driven through the real live routes (FastAPI TestClient, in-process),
+    same convention as ``test_reproduce_replays_manifest_not_current_yaml``:
+    the generator registry and the composite's own subprocess are faked, and
+    a call-counting spy on ``composite_subprocess.subprocess.run`` proves
+    the launcher was (or wasn't) invoked. ``env_fingerprint.env_id`` is
+    pinned to a fixed string per phase (rather than Task 5's call-counter
+    fixture) since here it must return the SAME value across the several
+    calls within one phase (save_metadata at launch + this task's own
+    pre-launch retrieval check + _flag_env_drift's post-check).
+
+    Note: the faked ``subprocess.run`` never spawns the real child script,
+    so it never writes the run's ``observables.json`` snapshot — the saved
+    run's artifact is created explicitly below via ``result_fingerprint.
+    write_snapshot`` (simulating "a real run's output is still on disk"),
+    the same way a real completed run's tail would have left it.
+    """
+    import types
+    from fastapi.testclient import TestClient
+    from conftest import register_generator
+    import viva_superpowers.composite_generator as cg
+    from vivarium_workbench.api.app import create_app, get_workspace
+    from vivarium_workbench.lib import composite_subprocess as cs
+    from vivarium_workbench.lib import env_fingerprint
+    from vivarium_workbench.lib import result_fingerprint as rfp
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    spec_id = "test.retrieve.demo"
+    monkeypatch.setattr(cg, "discover_generators", lambda *a, **k: None)
+    register_generator(spec_id, parameters={"X": {}, "seed": {}})
+
+    calls = {"n": 0}
+
+    def _fake_run(cmd, **kwargs):
+        calls["n"] += 1
+        payload = {"results": {}, "viz_html": {}}
+        return types.SimpleNamespace(
+            returncode=0, stdout="@@@RESULTS@@@\n" + json.dumps(payload), stderr="")
+    monkeypatch.setattr(cs.subprocess, "run", _fake_run)
+    monkeypatch.setattr(env_fingerprint, "env_id", lambda env: "env-A")
+
+    ws = tmp_path
+    (ws / "workspace.yaml").write_text(yaml.safe_dump(
+        {"schema_version": 2, "name": "ws", "package_path": "testpkg"}))
+    sd = ws / "studies" / "s1"
+    sd.mkdir(parents=True)
+    spec_file = sd / "study.yaml"
+    spec_file.write_text(yaml.safe_dump({
+        "schema_version": 3, "name": "s1", "created": "2026-07-27",
+        "status": "draft", "objective": "",
+        "baseline": [
+            {"name": "core", "composite": spec_id,
+             "params": {"X": 1, "seed": 7, "n_steps": 1}},
+        ],
+        "variants": [], "runs": [], "visualizations": [], "comparisons": [],
+        "conclusion": None, "parent_studies": [], "interventions": [],
+    }))
+
+    app = create_app()
+    app.dependency_overrides[get_workspace] = lambda: ws
+    client = TestClient(app)
+
+    resp = client.post("/api/study-run-baseline", json={"study": "s1"})
+    assert resp.status_code == 200, resp.text
+    original_run_id = resp.json()["simulation_id"]
+    assert calls["n"] == 1
+
+    # Simulate the completed run's on-disk artifact still being present —
+    # a real (non-faked) run's completion tail writes this.
+    wp = WorkspacePaths.load(ws)
+    rfp.write_snapshot(wp.pbg / "runs" / original_run_id, {}, [])
+
+    # --- Same environment: matching completed run + intact artifact ->
+    # served from the saved run, NO new launch.
+    resp = client.post("/api/study-reproduce",
+                       json={"study": "s1", "run_id": original_run_id})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["retrieved"] is True
+    assert body["run_id"] == original_run_id
+    assert calls["n"] == 1  # unchanged: no subprocess launched
+
+    # --- Environment drifts: the saved run's env_id no longer matches what
+    # a launch would produce now -> MISS -> recompute.
+    monkeypatch.setattr(env_fingerprint, "env_id", lambda env: "env-B")
+    resp = client.post("/api/study-reproduce",
+                       json={"study": "s1", "run_id": original_run_id})
+    assert resp.status_code == 200, resp.text
+    body2 = resp.json()
+    assert body2["retrieved"] is False
+    assert body2["simulation_id"] != original_run_id
+    assert calls["n"] == 2  # exactly one new subprocess launch
+
+
+def test_run_rerun_retrieve_before_recompute_composite_origin(tmp_path, monkeypatch):
+    """Lower-level, environment-independent proof of the same Task 6
+    behavior as ``test_reproduce_retrieves_saved_run_without_launching``:
+    exercises ``rerun.run_rerun`` directly (seeded runs_meta row, no FastAPI
+    TestClient / composite-generator registry / subprocess dance) — the
+    same style ``test_verify_reproduction_match`` etc. already use above,
+    so it runs independent of whether ``viva_superpowers.composite_generator``
+    happens to import cleanly against the environment's pinned
+    process-bigraph version.
+
+    Composite-origin (not study-origin): the seeded row lives in the
+    workspace-level ``.pbg/composite-runs.db``, so ``resolve_rerun_target``
+    resolves ``origin='composite'`` and the compute path (on a miss) is
+    ``cli_runs.run_composite`` — spied on directly rather than faking a
+    subprocess."""
+    from vivarium_workbench.lib import env_fingerprint, cli_runs
+    from vivarium_workbench.lib import result_fingerprint as rfp
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    ws = tmp_path
+    (ws / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
+    db = ws / ".pbg" / "composite-runs.db"
+    manifest = {"spec_id": "spec.a", "params": {"X": 1, "seed": 7, "n_steps": 3},
+               "n_steps": 3, "seed": 7, "origin": "composite"}
+    _seed_run(db, "orig", spec_id="spec.a", params={"X": 1, "seed": 7, "n_steps": 3},
+              env_id="env-A", result_fingerprint="fp1")
+    conn = cr.connect(db)
+    conn.execute("UPDATE runs_meta SET manifest_json=? WHERE run_id=?",
+                 (json.dumps(manifest), "orig"))
+    conn.commit()
+    conn.close()
+
+    # Simulate "orig"'s on-disk artifact still being intact.
+    wp = WorkspacePaths.load(ws)
+    rfp.write_snapshot(wp.pbg / "runs" / "orig", {}, [])
+
+    monkeypatch.setattr(env_fingerprint, "env_id", lambda env: "env-A")
+    calls = {"n": 0}
+
+    def _fake_run_composite(*a, **k):
+        calls["n"] += 1
+        return {"simulation_id": "new-run-id"}, 200
+    monkeypatch.setattr(cli_runs, "run_composite", _fake_run_composite)
+
+    # --- Same environment as the saved run -> retrieved, no launch.
+    resp, status = rerun.run_rerun(ws, "orig")
+    assert status == 200
+    assert resp["retrieved"] is True
+    assert resp["run_id"] == "orig"
+    assert calls["n"] == 0
+
+    # --- Environment drifts -> the saved run no longer matches "what a
+    # launch would produce now" -> MISS -> recompute.
+    monkeypatch.setattr(env_fingerprint, "env_id", lambda env: "env-B")
+    resp2, status2 = rerun.run_rerun(ws, "orig")
+    assert status2 == 200
+    assert resp2["retrieved"] is False
+    assert resp2["simulation_id"] == "new-run-id"
+    assert calls["n"] == 1
