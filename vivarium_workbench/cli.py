@@ -283,10 +283,19 @@ def cmd_run_composite(args) -> int:
 
 
 def cmd_rerun(args) -> int:
-    from vivarium_workbench.lib import cli_runs
-    resp, code = cli_runs.rerun(
-        Path(args.workspace).resolve(), args.run_id,
-        steps=args.steps, detach=args.detach)
+    # Single canonical rerun path (reproducible-rerun-spine Task 1):
+    # lib.rerun.run_rerun replays the recorded manifest verbatim (exact
+    # reproduction, routed to the study or composite launcher by origin).
+    # The legacy `cli_runs.rerun` path (composite-only, delta params, no
+    # manifest) is retired here; --steps/--detach no longer override an
+    # exact replay, so warn rather than silently ignoring them.
+    from vivarium_workbench.lib import rerun as rerun_lib
+    if args.steps is not None or args.detach:
+        print("warning: --steps/--detach are deprecated on `rerun` and have "
+              "no effect — rerun always replays the recorded manifest "
+              "exactly. Use `run study`/`run composite` for a fresh run "
+              "with different parameters.", file=sys.stderr)
+    resp, code = rerun_lib.run_rerun(Path(args.workspace).resolve(), args.run_id)
     _emit(resp, args.json)
     return 0 if code < 400 else 1
 
