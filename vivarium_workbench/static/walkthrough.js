@@ -13909,13 +13909,27 @@
     });
     return iset ? iset.name : '';
   }
+
+  // Is `slug` a member of investigation `invName`? Used so opening a study from
+  // a graph node keeps the investigation you clicked from (a study can belong to
+  // several investigations; _investigationForStudy returns only the FIRST).
+  function _studyInInvestigation(slug, invName) {
+    if (!invName) return false;
+    var iset = (window._isetIndex || []).find(function(i) { return i.name === invName; });
+    return !!(iset && (iset.studies || []).indexOf(slug) !== -1);
+  }
+  window._studyInInvestigation = _studyInInvestigation;
   window._investigationForStudy = _investigationForStudy;
 
   function _openStudyEmbeddedNewTab(name, tab) {
     // Single router: show the study's OWN investigation workspace, then
     // open/focus its study tab. Never the legacy icon view, never full-window nav.
     // Optional `tab` deep-links the porthole to a study sub-tab (e.g. conclusions).
-    var inv = _investigationForStudy(name);
+    // Prefer the investigation you're already viewing if this study belongs to it,
+    // so opening a study from investigation B's graph doesn't reroute to the study's
+    // primary (first) investigation A. Fall back to the first-membership lookup.
+    var _cur = window._wsInvestigation;
+    var inv = _studyInInvestigation(name, _cur) ? _cur : _investigationForStudy(name);
     if (inv) {
       if (window._wsInvestigation !== inv) _showInvestigationWorkspace(inv);
       else _showWorkspace();
