@@ -23,6 +23,11 @@ if TYPE_CHECKING:
 
 # Default poll interval in seconds
 _DEFAULT_POLL_INTERVAL = 10.0
+# Hardening (external users): bound the status-poll loop so a stuck remote run can't
+# hang the poller forever, and tolerate a few *consecutive* transient errors so a
+# single network blip doesn't fail a multi-hour run. Env-tunable for slow links.
+_DEFAULT_POLL_TIMEOUT = 7200.0  # 2 h wall-clock ceiling; <= 0 disables the deadline
+_MAX_CONSECUTIVE_POLL_ERRORS = 5
 
 
 def git_pip_url(ws_root: "Path | str") -> str:
@@ -89,6 +94,7 @@ def run_remote(
     dest: "Path | None" = None,
     n_steps: int = 1,
     overrides: "dict | None" = None,
+    poll_timeout: float = _DEFAULT_POLL_TIMEOUT,
 ) -> Path:
     """Export a composite, submit to sms-api, poll, and land results.zip.
 
@@ -106,6 +112,10 @@ def run_remote(
     dest:
         Directory for the landed ``results.zip``.  Defaults to
         ``<ws_root>/.pbg/remote-results/``.
+    poll_timeout:
+        Wall-clock ceiling (seconds) for the whole poll loop; raises
+        :exc:`TimeoutError` if the run hasn't reached a terminal state by then.
+        Pass ``<= 0`` to disable (wait indefinitely).  Defaults to 2 h.
 
     Returns
     -------
@@ -171,14 +181,9 @@ def run_remote(
     sim_id = client.compose_submit(pbg_bytes, extra_pip_deps=extra_pip_deps, interval_time=float(steps))
     print(f"Submitted. Simulation id: {sim_id}")
 
-    # Poll until terminal state
-    while True:
-        status_data = client.compose_status(sim_id)
-        status = status_data.get("status", "unknown")
-        print(f"  status: {status}")
-        if status in ("completed", "failed", "error", "cancelled"):
-            break
-        time.sleep(poll_interval)
+    # Poll until terminal state — bounded by a wall-clock deadline and tolerant of a
+    # few consecutive transient errors (see _poll_until_terminal).
+    status, status_data = _poll_until_terminal(client, sim_id, poll_interval, poll_timeout)
 
     if status != "completed":
         raise RuntimeError(
@@ -237,6 +242,63 @@ def workspace_pinned_deps(ws_root: "Path | str") -> list[str]:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
+
+# Terminal compose statuses that end the poll loop.
+_TERMINAL_STATUSES = ("completed", "failed", "error", "cancelled")
+
+
+def _poll_until_terminal(
+    client: "SmsApiClient",
+    sim_id: int,
+    poll_interval: float,
+    poll_timeout: float,
+) -> "tuple[str, dict]":
+    """Poll ``client.compose_status(sim_id)`` until a terminal status.
+
+    Hardened for external users: bounded by ``poll_timeout`` (wall-clock ceiling;
+    ``<= 0`` disables) and tolerant of up to ``_MAX_CONSECUTIVE_POLL_ERRORS``
+    *consecutive* transient :class:`SmsApiError`s, so one network blip doesn't fail
+    an otherwise-healthy multi-hour run and a stuck run can't hang the poller forever.
+
+    Returns ``(status, status_data)`` for a terminal status. Raises
+    :exc:`TimeoutError` on deadline and :exc:`RuntimeError` on persistent polling
+    failure.
+    """
+    from vivarium_workbench.lib.sms_api_client import SmsApiError
+
+    deadline = time.monotonic() + poll_timeout if poll_timeout and poll_timeout > 0 else None
+    consecutive_errors = 0
+    while True:
+        try:
+            status_data = client.compose_status(sim_id)
+            consecutive_errors = 0
+        except SmsApiError as exc:
+            consecutive_errors += 1
+            if consecutive_errors > _MAX_CONSECUTIVE_POLL_ERRORS:
+                raise RuntimeError(
+                    f"Remote run {sim_id}: sms-api status polling failed "
+                    f"{consecutive_errors} times in a row (last error: {exc}). "
+                    f"Is the sms-api endpoint ({client.base_url}) still reachable?"
+                ) from exc
+            print(
+                f"  status: (transient poll error "
+                f"{consecutive_errors}/{_MAX_CONSECUTIVE_POLL_ERRORS}: {exc}; retrying)"
+            )
+            time.sleep(poll_interval)
+            continue
+
+        status = status_data.get("status", "unknown")
+        print(f"  status: {status}")
+        if status in _TERMINAL_STATUSES:
+            return status, status_data
+        if deadline is not None and time.monotonic() >= deadline:
+            raise TimeoutError(
+                f"Remote run {sim_id} did not reach a terminal state within "
+                f"{poll_timeout:.0f}s (last status: '{status}'). The run may still be "
+                f"executing on the deployment — check sms-api directly before retrying."
+            )
+        time.sleep(poll_interval)
+
 
 def _git(cwd: Path, *args: str) -> str:
     """Run a git command in *cwd*, return stdout. Raises RuntimeError on failure."""
