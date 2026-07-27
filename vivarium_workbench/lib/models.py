@@ -1212,6 +1212,20 @@ class VisualizationInstances(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class RemoteHealth(BaseModel):
+    """``GET /api/source/remote-health`` payload (lib.workspace_deps_views.remote_health).
+
+    Reachability + config status of the remote sms-api endpoint (``SMS_API_BASE``)
+    for the Source panel's health indicator. Always HTTP 200; never raises.
+    """
+
+    configured: bool
+    base_url: str
+    reachable: bool
+    version: str | None = None
+    error: str | None = None
+
+
 class SourceBuilds(BaseModel):
     """``GET /api/source/builds`` payload (lib.workspace_deps_views.build_source_builds).
 

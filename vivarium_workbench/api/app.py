@@ -174,6 +174,7 @@ from vivarium_workbench.lib.models import (
     SimRow,
     SimulationsPayload,
     ProvenanceManifest,
+    RemoteHealth,
     SourceBuilds,
     StudyChartsPayload,
     SystemDepsCheck,
@@ -2546,6 +2547,19 @@ def create_app() -> FastAPI:
         Library-backed via ``lib.workspace_deps_views.build_source_builds``.
         """
         return SourceBuilds.model_validate(_workspace_deps.build_source_builds())
+
+    @app.get(
+        "/api/source/remote-health",
+        response_model=RemoteHealth,
+        tags=["Workspaces & sources"],
+        summary="Reachability + version of the remote sms-api endpoint (SMS_API_BASE)",
+    )
+    def source_remote_health_route() -> RemoteHealth:
+        """Best-effort probe of the configured sms-api endpoint for the Source
+        panel's health indicator: is it configured, is it reachable, what version.
+        Always HTTP 200; never raises. Library-backed via
+        ``lib.workspace_deps_views.remote_health``."""
+        return RemoteHealth.model_validate(_workspace_deps.remote_health())
 
     @app.get(
         "/api/source/manifest",

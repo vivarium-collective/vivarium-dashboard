@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var state = { scope: "local", repo: null, branch: null, entries: [], current: null };
+  var state = { scope: "local", repo: null, branch: null, entries: [], current: null, health: null };
   var pollTimer = null;
 
   // Snapshot (published static bundle): no live backend. The Source panel
@@ -156,6 +156,10 @@
                  current: w.status === "current" };
       });
     } else {
+      // Health probe for the panel indicator — best-effort, independent of the
+      // builds list (so the dot shows red-unreachable even when builds is empty).
+      var rh = await fetch("/api/source/remote-health").catch(function () { return null; });
+      state.health = (rh && rh.ok) ? await rh.json().catch(function () { return null; }) : null;
       var rb = await fetch("/api/source/builds").catch(function () { return null; });
       var db = (rb && rb.ok)
         ? await rb.json().catch(function () { return { error: "bad response" }; })
@@ -180,6 +184,36 @@
     var seen = {}, out = [];
     arr.forEach(function (x) { var v = x[key] || ""; if (!seen[v]) { seen[v] = 1; out.push(v); } });
     return out.sort();
+  }
+
+  // Remote sms-api health indicator row (state.health = {configured, base_url,
+  // reachable, version, error} from /api/source/remote-health).
+  function _healthRow() {
+    var h = state.health;
+    var row = _el("div", "viv-bs-row viv-bs-health");
+    row.style.cssText = "align-items:center; gap:8px; font-size:12px; margin:2px 0 8px";
+    var dot = _el("span", "viv-bs-health-dot");
+    dot.style.cssText = "width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto";
+    var color, txt;
+    if (!h) {
+      color = "#93a1b5"; txt = "checking remote endpoint…";
+    } else if (!h.configured && !h.reachable) {
+      color = "#5d6b7e"; txt = "SMS_API_BASE not set — remote disabled";
+    } else if (h.reachable) {
+      color = "#41d886";
+      txt = h.base_url + (h.version ? "  ·  sms-api v" + h.version : "") + "  ·  reachable ✓";
+      dot.style.boxShadow = "0 0 6px " + color;
+    } else {
+      color = "#ff5d6c";
+      txt = h.base_url + " — unreachable ✗ (is the tunnel up?)";
+      if (h.error) row.title = h.error;
+    }
+    dot.style.background = color;
+    var label = _el("span", "viv-bs-health-txt", txt);
+    label.style.cssText = "color:#93a1b5; font-family:ui-monospace,SFMono-Regular,Menlo,monospace";
+    row.appendChild(dot);
+    row.appendChild(label);
+    return row;
   }
 
   function _render() {
@@ -209,6 +243,11 @@
       scopeRow.appendChild(b);
     });
     host.appendChild(scopeRow);
+
+    // Remote endpoint health indicator: a 🟢/🔴 dot + the configured SMS_API_BASE,
+    // so a user knows whether the remote deployment is even reachable *before* they
+    // pick a build (no more silent hangs on an unreachable tunnel).
+    if (state.scope === "remote") host.appendChild(_healthRow());
 
     var repos = _distinct(state.entries, "repo");
     if (state.repo == null || repos.indexOf(state.repo) < 0) {

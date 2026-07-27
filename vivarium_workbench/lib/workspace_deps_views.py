@@ -39,6 +39,27 @@ def build_source_builds() -> dict:
     return remote_build_source.list_build_sources(SmsApiClient(_sms_api_base()))
 
 
+def remote_health() -> dict:
+    """Reachability + config status of the remote sms-api endpoint (``SMS_API_BASE``).
+
+    Powers the Source panel's health indicator and the startup log: tells a fresh
+    operator (or Chris) whether the remote endpoint is even configured and whether
+    it answers. Best-effort — never raises; returns
+    ``{configured, base_url, reachable, version, error}``.
+    """
+    from vivarium_workbench.lib.sms_api_client import SmsApiClient
+
+    base = _sms_api_base()
+    configured = bool(os.environ.get("SMS_API_BASE"))
+    try:
+        version = SmsApiClient(base).ping()
+        return {"configured": configured, "base_url": base, "reachable": True,
+                "version": version, "error": None}
+    except Exception as exc:  # noqa: BLE001 — a health probe must never raise
+        return {"configured": configured, "base_url": base, "reachable": False,
+                "version": None, "error": str(exc)}
+
+
 # ---------------------------------------------------------------------------
 # GET /api/workspaces
 # ---------------------------------------------------------------------------

@@ -68,6 +68,25 @@ def serve_fastapi(workspace: Path, port: int, host: str = "127.0.0.1", base_path
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+    # Surface the remote sms-api config at startup so a fresh operator (or Chris
+    # trying "switch to remote") sees immediately whether the endpoint is reachable.
+    # Only probe when SMS_API_BASE is explicitly set — a local-only user hasn't opted
+    # into remote and shouldn't pay a probe delay. Best-effort: never blocks/raises.
+    if os.environ.get("SMS_API_BASE"):
+        try:
+            from vivarium_workbench.lib.workspace_deps_views import remote_health
+            _h = remote_health()
+            if _h["reachable"]:
+                print(f"remote sms-api: {_h['base_url']} — reachable ✓ (v{_h['version']})")
+            else:
+                print(
+                    f"remote sms-api: {_h['base_url']} — UNREACHABLE ✗ "
+                    f'("switch to remote" unavailable until the endpoint/tunnel is up)',
+                    file=sys.stderr,
+                )
+        except Exception as e:  # noqa: BLE001
+            print(f"warning: remote sms-api health check failed: {e}", file=sys.stderr)
+
     # No `os.chdir(workspace)` and no `sys.path.insert(workspace)`: both are
     # single-workspace process globals that would corrupt concurrent different-
     # workspace sessions (audit risk #5). Neither is needed anymore:
