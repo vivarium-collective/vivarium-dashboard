@@ -3526,6 +3526,17 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .ccc-name{ color:var(--heading); }
 :root[data-theme="dark"] .mrow-desc,
 :root[data-theme="dark"] .ccard-desc{ color:#a9b6c6; }
+/* Investigation card titles were dark-on-dark (strong inherits, no inline color). */
+:root[data-theme="dark"] .investigation-set-card strong,
+:root[data-theme="dark"] .investigation-card .name{ color:var(--heading); }
+
+/* Registry Full runnable card: config-field chips had a white surround and the
+   port type badges (map[millimolar], string, …) were light. */
+:root[data-theme="dark"] .loom-cfg-inline .loom-cfg-row{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .loom-in-type,
+:root[data-theme="dark"] .reg-mid-config code{ background:var(--surface-3); color:#aeb9c8; }
+:root[data-theme="dark"] .loom-cfg-key{ color:#aeb9c8; }
+:root[data-theme="dark"] .loom-in-key{ color:#9db4e6; }
 
 /* Form controls: native dark rendering + explicit dark (beats inline #fff;
    appearance:none so WebKit search inputs honor the background). */
