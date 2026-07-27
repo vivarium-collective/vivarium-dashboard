@@ -45,9 +45,6 @@
     document.querySelectorAll('.study-tab-panel').forEach(function (p) {
       p.classList.toggle('active', p.dataset.kind === kind);
     });
-    // Textareas measured 0 while their tab was hidden; re-fit the now-visible
-    // panel's auto-grow boxes so they show all content without a scrollbar.
-    if (window._autoGrowTextareas) window._autoGrowTextareas();
     if (kind === 'tests') { loadTestsTab(window._study); }
     if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownload(); }
     if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
@@ -55,6 +52,9 @@
     if (kind === 'data') { _loadAnalysisOutputs(); _loadRawData(); }
     if (kind === 'compose') { _loadModelConfig(); }
     if (kind === 'simulate') { _renderReproduceCard(); _loadStudySims(); }
+    // Textareas measured 0 while their tab was hidden; re-fit the now-visible
+    // panel's auto-grow boxes so they show all content without a scrollbar.
+    if (window._autoGrowTextareas) window._autoGrowTextareas();
   }
   window._setStudyTab = _setStudyTab;
 
