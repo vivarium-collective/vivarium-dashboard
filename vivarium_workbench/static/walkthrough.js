@@ -49,12 +49,12 @@
   function _setGraphOrientation(o) {
     if (o !== 'LR' && o !== 'TB') return;
     try { window.localStorage.setItem(_graphOrientationKey(window._currentIset), o); } catch (e) { /* ignore */ }
-    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1]);
+    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1], _lastDagArgs[2]);
   }
   window._setGraphOrientation = _setGraphOrientation;
   function _resetGraphOrientation() {
     try { window.localStorage.removeItem(_graphOrientationKey(window._currentIset)); } catch (e) { /* ignore */ }
-    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1]);
+    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1], _lastDagArgs[2]);
   }
   window._resetGraphOrientation = _resetGraphOrientation;
   // Reflect the active/override state on the toggle control, if present.
@@ -8347,7 +8347,7 @@
                 .then(function (r) { if (!r.ok) throw new Error('graph ' + r.status); return r.json(); })
           )
             .then(function (graph) {
-              _renderInvestigationDag(d.studies || [], (graph && graph.chains) || {});
+              _renderInvestigationDag(d.studies || [], (graph && graph.chains) || {}, (graph && graph.study_edges) || []);
             })
             .catch(function () { _renderInvestigationDag(d.studies || []); });
         })();
@@ -8703,8 +8703,30 @@
   //   LR (left->right): depth -> x (columns), within-depth index -> y (rows).
   //   TB (top->bottom):  depth -> y (rows),    within-depth index -> x (columns).
   // Cards as absolute-positioned <div>s; edges as SVG cubic-Bezier paths.
-  function _renderInvestigationDag(studies, chainsBySlug) {
-    _lastDagArgs = [studies, chainsBySlug];
+  function _renderInvestigationDag(studies, chainsBySlug, studyEdges) {
+    _lastDagArgs = [studies, chainsBySlug, studyEdges];
+    // Prefer the server's computed study_edges for dependency layout: in the
+    // member-interface model the per-study `parent_studies` / `pipeline_gate`
+    // (what _dagEdges reads) is empty because prerequisites are declared as
+    // interface `inputs` (from:<study>), which the server resolves into
+    // study_edges. Without this the graph collapses to a flat, depth-0 row.
+    var _edgesByChild = {};
+    (studyEdges || []).forEach(function (e) {
+      var src = String(e.source || '').replace(/^study\//, '');
+      var tgt = String(e.target || '').replace(/^study\//, '');
+      if (!src || !tgt) return;
+      (_edgesByChild[tgt] = _edgesByChild[tgt] || []).push({
+        study: src,
+        condition: e.condition || 'tests-passed',
+        relation: e.artifact ? 'model-input' : 'leads-to',
+        artifact: e.artifact,
+      });
+    });
+    function dagEdgesFor(s) {
+      var fromServer = s && _edgesByChild[s.name];
+      if (fromServer && fromServer.length) return fromServer;
+      return _dagEdges(s);
+    }
     var _opts = window._layoutOptsForBand(aigBand);
     var shellEl = document.getElementById('investigation-dag-shell');
     if (shellEl) { shellEl.classList.remove('aig-zoom-far','aig-zoom-mid','aig-zoom-near'); shellEl.classList.add(_opts.cls); }
@@ -8724,7 +8746,7 @@
     var children = {};
     studies.forEach(function(s) { byName[s.name] = s; children[s.name] = []; });
     studies.forEach(function(s) {
-      _dagEdges(s).forEach(function(p) {
+      dagEdgesFor(s).forEach(function(p) {
         var pn = p.study;
         if (children[pn]) children[pn].push(s.name);
       });
@@ -8739,7 +8761,7 @@
     var depth = {};
     var queue = [];
     studies.forEach(function(s) {
-      var inParents = _dagEdges(s).filter(function(p) { return byName[p.study]; });
+      var inParents = dagEdgesFor(s).filter(function(p) { return byName[p.study]; });
       if (!inParents.length) { depth[s.name] = 0; queue.push(s.name); }
     });
     var guard = studies.length * 4;
@@ -9018,7 +9040,7 @@
       'markerWidth="7" markerHeight="7" orient="auto-start-reverse">' +
       '<path d="M 0 0 L 10 5 L 0 10 z" fill="#94a3b8"/></marker></defs>';
     studies.forEach(function(s) {
-      _dagEdges(s).forEach(function(p) {
+      dagEdgesFor(s).forEach(function(p) {
         var pn = p.study;
         if (!pos[pn] || !pos[s.name]) return;
         // Endpoints follow the flow direction: LR connects parent's right edge
@@ -9131,7 +9153,7 @@
     // No band change → keep the slider synced (above) but skip the re-render.
     if (nb === aigBand) return;
     aigBand = nb;
-    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1]);
+    if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1], _lastDagArgs[2]);
   }
   window._setAigBand = _setAigBand;
 
