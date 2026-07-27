@@ -173,6 +173,7 @@ def test_default_compute_populates_emit_paths_from_study_readouts(tmp_path, monk
     def capture_execute(request_path):
         request_data = json.loads(Path(request_path).read_text(encoding="utf-8"))
         captured_requests.append(request_data)
+        return 0
 
     # Patch execute on the real module
     monkeypatch.setattr(run_runner, "execute", capture_execute)
@@ -194,9 +195,10 @@ def test_default_compute_populates_emit_paths_from_study_readouts(tmp_path, monk
 
 
 def test_consumer_compute_receives_producer_store_path(ws):
-    """`ko`'s compute call must receive `resolved_inputs["sim_data"]` == the
-    producer (`parca`)'s artifact store path — this is how a consumer run
-    would actually read its input's on-disk content."""
+    """`ko`'s compute call must receive `resolved_inputs["sim_data"]["path"]`
+    == the producer (`parca`)'s artifact store path — this is how a consumer
+    run would actually read its input's on-disk content. `ko`'s input entry
+    declares no `into`, so `resolved_inputs["sim_data"]["into"]` is `None`."""
     captured = {}
 
     def capturing_stub(ws_root, slug, *, artifact_id, composite, config, input_ids,
@@ -212,7 +214,9 @@ def test_consumer_compute_receives_producer_store_path(ws):
 
     store = ArtifactStore(ws)
     expected_path = str(store.path(r["inputs"]["parca"]))
-    assert captured["resolved_inputs"] == {"sim_data": expected_path}
+    assert captured["resolved_inputs"] == {
+        "sim_data": {"path": expected_path, "into": None}
+    }
 
 
 def test_default_compute_merges_resolved_inputs_into_overrides(tmp_path, monkeypatch):
@@ -258,6 +262,7 @@ def test_default_compute_merges_resolved_inputs_into_overrides(tmp_path, monkeyp
         captured_requests.append(
             json.loads(_Path(request_path).read_text(encoding="utf-8"))
         )
+        return 0
 
     monkeypatch.setattr(run_runner, "execute", capture_execute)
 
@@ -272,7 +277,7 @@ def test_default_compute_merges_resolved_inputs_into_overrides(tmp_path, monkeyp
         config=orig_config,
         input_ids=["abcd1234"],
         out_dir=out_dir,
-        resolved_inputs={"sim_data": producer_path},
+        resolved_inputs={"sim_data": {"path": producer_path, "into": None}},
     )
 
     assert len(captured_requests) == 1
@@ -312,12 +317,12 @@ def test_default_compute_strips_run_control_keys_from_overrides(tmp_path, monkey
     monkeypatch.setattr(run_core, "invoke_run", lambda *a, **k: FakePlan())
 
     captured = []
-    monkeypatch.setattr(
-        run_runner, "execute",
-        lambda request_path: captured.append(
-            json.loads(Path(request_path).read_text(encoding="utf-8"))
-        ),
-    )
+
+    def _capture_execute(request_path):
+        captured.append(json.loads(Path(request_path).read_text(encoding="utf-8")))
+        return 0
+
+    monkeypatch.setattr(run_runner, "execute", _capture_execute)
 
     resolve_study(tmp_path, "sim")
 
@@ -326,3 +331,180 @@ def test_default_compute_strips_run_control_keys_from_overrides(tmp_path, monkey
     assert "n_steps" not in req["overrides"], "run-control key leaked into generator overrides"
     assert req["overrides"].get("seed") == 0, "generator param must be preserved"
     assert req["steps"] == 3, "steps must still be derived from n_steps"
+
+
+def test_default_compute_routes_generic_into_config_key(tmp_path, monkeypatch):
+    """An input edge declaring `into: cache_dir` on an artifact NOT named
+    `sim_data` (e.g. `parca_cache`) must still land at `overrides["cache_dir"]`
+    — proving `into` is a fully generic mechanism, not a `sim_data`
+    special-case. A sibling `sim_data` input with NO `into` at all must still
+    populate `overrides["cache_dir"]` via the documented back-compat default
+    (proving that default is preserved alongside the generic path)."""
+    import importlib
+    from pathlib import Path
+
+    (tmp_path / "studies" / "parca").mkdir(parents=True)
+    (tmp_path / "studies" / "consumer").mkdir(parents=True)
+    (tmp_path / "studies" / "parca" / "study.yaml").write_text(yaml.safe_dump({
+        "name": "parca",
+        "composite": "parca_builder",
+        "config": {},
+        "outputs": ["sim_data"],
+    }))
+    (tmp_path / "studies" / "consumer" / "study.yaml").write_text(yaml.safe_dump({
+        "name": "consumer",
+        "composite": "consumer_composite",
+        "config": {"seed": 0},
+        "inputs": [
+            {"artifact": "parca_cache", "from": "parca", "into": "cache_dir"},
+        ],
+        "outputs": ["run_zarr"],
+    }))
+
+    stub_calls = []
+
+    def parca_stub(ws_root, slug, *, artifact_id, composite, config, input_ids,
+                    out_dir, resolved_inputs=None):
+        stub_calls.append(slug)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        p = out_dir / "out.bin"
+        p.write_bytes(b"fake:parca")
+        return p
+
+    run_core = importlib.import_module("vivarium_workbench.lib.run_core")
+    run_runner = importlib.import_module("vivarium_workbench.lib.run_runner")
+
+    class FakePlan:
+        run_id = "generic-into-run-1"
+        spec_id = "consumer_composite"
+        target = "process_bigraph"
+
+    monkeypatch.setattr(run_core, "invoke_run", lambda *a, **k: FakePlan())
+
+    captured = []
+
+    def _capture_execute(request_path):
+        captured.append(json.loads(Path(request_path).read_text(encoding="utf-8")))
+        return 0
+
+    monkeypatch.setattr(run_runner, "execute", _capture_execute)
+
+    # `parca`'s own compute is a plain stub (not exercised by run_runner at
+    # all) — only `consumer` needs to hit the real `_default_compute` adapter.
+    def compute_fn(ws_root, slug, **kwargs):
+        if slug == "parca":
+            return parca_stub(ws_root, slug, **kwargs)
+        from vivarium_workbench.lib.artifacts.pipeline import _default_compute
+        return _default_compute(ws_root, slug, **kwargs)
+
+    r = resolve_study(tmp_path, "consumer", compute_fn=compute_fn)
+
+    store = ArtifactStore(tmp_path)
+    producer_path = str(store.path(r["inputs"]["parca"]))
+
+    assert len(captured) == 1
+    overrides = captured[0]["overrides"]
+    assert overrides["parca_cache_path"] == producer_path
+    assert overrides["cache_dir"] == producer_path
+
+
+def _sim_workspace(tmp_path):
+    (tmp_path / "studies" / "sim").mkdir(parents=True)
+    (tmp_path / "studies" / "sim" / "study.yaml").write_text(yaml.safe_dump({
+        "name": "sim",
+        "composite": "sim_composite",
+        "config": {"seed": 0},
+        "outputs": ["run_result"],
+    }))
+
+
+def _patch_run_core_plan(monkeypatch, run_id="failed-run-1"):
+    import importlib
+
+    run_core = importlib.import_module("vivarium_workbench.lib.run_core")
+
+    class FakePlan:
+        pass
+
+    FakePlan.run_id = run_id
+    FakePlan.spec_id = "sim_composite"
+    FakePlan.target = "process_bigraph"
+    monkeypatch.setattr(run_core, "invoke_run", lambda *a, **k: FakePlan())
+    return run_id
+
+
+def test_nonzero_execute_raises_and_never_caches(tmp_path, monkeypatch):
+    """`run_runner.execute` returning a non-zero exit code must raise BEFORE
+    `resolve_study` reaches `store.put` — a failed run's output directory
+    must never become a cache hit for this study's artifact id."""
+    import importlib
+
+    _sim_workspace(tmp_path)
+    run_id = _patch_run_core_plan(monkeypatch)
+    run_runner = importlib.import_module("vivarium_workbench.lib.run_runner")
+
+    def failing_execute(request_path):
+        return 1
+
+    monkeypatch.setattr(run_runner, "execute", failing_execute)
+
+    from vivarium_workbench.lib.artifacts import hashing
+    from vivarium_workbench.lib.artifacts.pipeline import _workspace_commit
+
+    oid = hashing.artifact_id(
+        composite_id="sim_composite", config={"seed": 0}, input_ids=[],
+        commit=_workspace_commit(tmp_path),
+    )
+
+    with pytest.raises(RuntimeError, match="sim"):
+        resolve_study(tmp_path, "sim")
+
+    assert ArtifactStore(tmp_path).has(oid) is False
+
+
+def test_completed_rc_but_failed_runs_meta_status_raises_and_never_caches(
+    tmp_path, monkeypatch,
+):
+    """Belt-and-suspenders: even when `run_runner.execute` returns 0, a
+    `runs_meta.status` that landed as `failed` (not `completed`) in the run's
+    own `runs.db` must still make `_default_compute` raise — never cache a
+    run whose own terminal status disagrees with the exit code."""
+    import importlib
+    from pathlib import Path
+
+    _sim_workspace(tmp_path)
+    run_id = _patch_run_core_plan(monkeypatch, run_id="rc-ok-status-failed")
+    run_runner = importlib.import_module("vivarium_workbench.lib.run_runner")
+
+    def execute_writes_failed_status(request_path):
+        request = json.loads(Path(request_path).read_text(encoding="utf-8"))
+        db_file = request["db_file"]
+        conn = sqlite3.connect(db_file)
+        try:
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS runs_meta ("
+                "run_id TEXT PRIMARY KEY, status TEXT)"
+            )
+            conn.execute(
+                "INSERT INTO runs_meta (run_id, status) VALUES (?, ?)",
+                (run_id, "failed"),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return 0  # exit code claims success; runs_meta disagrees
+
+    monkeypatch.setattr(run_runner, "execute", execute_writes_failed_status)
+
+    from vivarium_workbench.lib.artifacts import hashing
+    from vivarium_workbench.lib.artifacts.pipeline import _workspace_commit
+
+    oid = hashing.artifact_id(
+        composite_id="sim_composite", config={"seed": 0}, input_ids=[],
+        commit=_workspace_commit(tmp_path),
+    )
+
+    with pytest.raises(RuntimeError, match="sim"):
+        resolve_study(tmp_path, "sim")
+
+    assert ArtifactStore(tmp_path).has(oid) is False

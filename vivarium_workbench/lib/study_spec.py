@@ -192,11 +192,19 @@ def study_spec_path(ws_root: Path, name: str) -> Path:
 def study_interface(spec: dict) -> dict:
     """Normalize a study spec's execution interface.
 
-    Returns ``{composite, config, inputs: [{artifact, from}], outputs: [str],
-    emitter}``. ``inputs``/``outputs`` default to ``[]`` and ``config``
-    defaults to ``{}`` when absent (back-compat with legacy specs that don't
-    declare an interface at all). ``composite``/``emitter`` default to
-    ``None`` when absent.
+    Returns ``{composite, config, inputs: [{artifact, from, into?}],
+    outputs: [str], emitter}``. ``inputs``/``outputs`` default to ``[]`` and
+    ``config`` defaults to ``{}`` when absent (back-compat with legacy specs
+    that don't declare an interface at all). ``composite``/``emitter``
+    default to ``None`` when absent.
+
+    Each ``inputs[]`` entry may optionally carry ``into``: the config key the
+    consumer's generator should receive the producer's store path under (the
+    generic mechanism ``pipeline._default_compute`` merges into
+    ``overrides``). It's optional — an entry with only ``{artifact, from}``
+    is still valid, and ``into`` is simply absent (``None``) from the
+    returned dict; back-compat behavior (the ``sim_data``->``cache_dir``
+    default) lives in ``pipeline._default_compute``, not here.
 
     Later tasks derive investigation-graph edges from ``inputs[].from`` and
     drive the pull-or-compute pipeline from this block, so a malformed
@@ -220,7 +228,11 @@ def study_interface(spec: dict) -> dict:
             raise InvestigationSpecError(
                 f"interface.inputs[{i}] ({artifact!r}) is missing required field 'from'"
             )
-        inputs.append({"artifact": str(artifact), "from": str(source)})
+        into = entry.get("into")
+        item = {"artifact": str(artifact), "from": str(source)}
+        if into is not None:
+            item["into"] = str(into)
+        inputs.append(item)
 
     raw_outputs = spec.get("outputs") or []
     outputs = [str(o) for o in raw_outputs]
@@ -562,6 +574,24 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
 # The full run-merging study-detail loader
 # ---------------------------------------------------------------------------
 
+def _card_html_stub(html_path, verdict) -> bool:
+    """Whether a report card's HTML is an unrendered stub (Phase 2c).
+
+    A computed verdict (a ``<card>.verdict.json`` was read into ``verdict``)
+    is authoritative: the card has a real, machine-readable result, so it is
+    NOT a stub regardless of the HTML file's size. Only when there is NO
+    computed verdict do we fall back to the ``size < 64`` heuristic (a tiny
+    HTML file with no verdict is a placeholder the frontend should replace
+    with the verdict table). A stat error is treated as a stub.
+    """
+    if verdict is not None:
+        return False
+    try:
+        return html_path.stat().st_size < 64
+    except OSError:
+        return True
+
+
 def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
     """Load a study's spec for the GET /studies/<name> detail page.
 
@@ -827,12 +857,9 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
                     except Exception:  # noqa: BLE001
                         verdict = None
                 # The card HTML is sometimes an unrendered stub (e.g. "<b>card</b>");
-                # flag tiny files so the frontend renders the verdict table rather
-                # than an empty iframe.
-                try:
-                    html_stub = html.stat().st_size < 64
-                except OSError:
-                    html_stub = True
+                # a computed verdict wins, else flag tiny files so the frontend
+                # renders the verdict table rather than an empty iframe.
+                html_stub = _card_html_stub(html, verdict)
                 rc_urls[card] = {"url": "/" + html.relative_to(ws_root).as_posix(),
                                  "verdict": verdict, "groups": groups,
                                  "html_stub": html_stub}
@@ -1287,10 +1314,7 @@ def discover_report_card_urls(ws_root: Path, slug: str) -> dict:
                     groups = _vj.get("groups")
                 except Exception:  # noqa: BLE001
                     verdict = None
-            try:
-                html_stub = html.stat().st_size < 64
-            except OSError:
-                html_stub = True
+            html_stub = _card_html_stub(html, verdict)
             rc_urls[card] = {"url": "/" + html.relative_to(ws_root).as_posix(),
                              "verdict": verdict, "groups": groups,
                              "html_stub": html_stub}

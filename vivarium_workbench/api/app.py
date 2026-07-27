@@ -118,6 +118,7 @@ from vivarium_workbench.lib import catalog_uninstall_views as _catalog_uninstall
 from vivarium_workbench.lib.catalog_uninstall_impact import module_uninstall_impact
 from vivarium_workbench.lib import finding_views as _finding_views
 from vivarium_workbench.lib import investigation_graph_views as _ig_views
+from vivarium_workbench.lib import audit_views as _audit_views
 from vivarium_workbench.lib import chain_views as _chain_views
 from vivarium_workbench.lib import study_variants as _study_variants
 from vivarium_workbench.lib import composite_runs as _composite_runs
@@ -2052,6 +2053,22 @@ def create_app() -> FastAPI:
         dynamic endpoints) rather than a typed response_model. 404 when the
         investigation.yaml is absent."""
         body, status = _ig_views.build_investigation_graph(ws, investigation)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
+        "/api/audit",
+        tags=["Data, inputs & references"],
+        summary="Read-only L0-L5 study-reproducibility audit report",
+    )
+    def audit(ws: Path = Depends(get_workspace)):
+        """Read-only L0-L5 reproducibility audit for the workspace (the visible
+        companion to the CI gate). Runs
+        ``viva_superpowers.study_audit.audit_workspace`` and returns its
+        ``as_dict()`` — per-study/-investigation checks + a summary. Purely
+        informational: no gate, no allowlist, no writes. Tolerant — a workspace
+        with no studies or any audit error still returns 200 with an empty
+        ``studies`` list, so the payload is a passthrough JSONResponse."""
+        body, status = _audit_views.build_audit(ws)
         return JSONResponse(status_code=status, content=body)
 
     # -----------------------------------------------------------------------

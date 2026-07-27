@@ -743,6 +743,7 @@ def _do_build(
     )
     from vivarium_workbench.lib.report_views import build_inputs, build_iset_detail
     from vivarium_workbench.lib.catalog import build_catalog
+    from vivarium_workbench.lib.audit_views import build_audit as _build_audit
     from vivarium_workbench.lib.composite_lookup import composites_data
     from vivarium_workbench.lib.composite_resolve import resolve_composite
     from vivarium_workbench.lib.registry import build_registry
@@ -818,6 +819,16 @@ def _do_build(
             _m.pop("out_of_sync", None)
             _m.pop("out_of_sync_reason", None)
     _write_json(api_dir / "catalog.json", catalog)
+
+    # api/audit.json — read-only L0-L5 reproducibility audit (GET /api/audit).
+    # Tolerant: build_audit never raises (returns a 200-shaped dict on error), so
+    # the Audit tab works in the static bundle. Routed through the same
+    # allow_nan=False writer; the audit emits only str/int/list so it's a no-op.
+    try:
+        audit_body, _ = _build_audit(ws_root)
+    except Exception:
+        audit_body = {"error": "audit unavailable", "studies": [], "investigations": []}
+    _write_json(api_dir / "audit.json", audit_body)
 
     # api/explorer/* — pre-render the Data Explorer so its card works read-only
     try:

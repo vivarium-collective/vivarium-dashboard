@@ -10,6 +10,45 @@ import json
 import traceback
 from pathlib import Path
 
+from vivarium_workbench.lib.conclusion_card import _CANON_SEVERITY
+
+_RUN_VERDICT_SCHEMA = "run_verdict/v1"
+
+
+def rollup_run_verdict(verdict_json_paths) -> dict:
+    """Roll up a run's report-card ``*.verdict.json`` files into ONE verdict.
+
+    Each path's ``overall`` is canonicalized (unknown / missing / unreadable
+    -> ``"ungraded"``); the run's ``overall`` is the WORST (max
+    ``_CANON_SEVERITY``) card verdict, ``"ungraded"`` when there are no cards.
+    ``cards`` is sorted by name for a stable content hash. Never raises — a
+    broken file contributes an ``ungraded`` card, not an exception.
+
+    Returns ``{"schema": "run_verdict/v1", "overall": <canon>,
+    "cards": [{"name", "overall"}, ...]}``.
+    """
+    cards = []
+    for p in verdict_json_paths:
+        p = Path(p)
+        name = p.name[: -len(".verdict.json")] if p.name.endswith(
+            ".verdict.json") else p.stem
+        overall = "ungraded"
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            cand = data.get("overall")
+            if cand in _CANON_SEVERITY:
+                overall = cand
+        except Exception:  # noqa: BLE001 — unreadable/invalid -> ungraded card
+            pass
+        cards.append({"name": name, "overall": overall})
+    cards.sort(key=lambda c: c["name"])
+    overall = max(
+        (c["overall"] for c in cards),
+        key=lambda v: _CANON_SEVERITY.get(v, 0),
+        default="ungraded",
+    )
+    return {"schema": _RUN_VERDICT_SCHEMA, "overall": overall, "cards": cards}
+
 
 def _composite_analyses(spec_id: str, core) -> list:
     """Return this composite's ``@composite_generator(analyses=[...])``
@@ -150,4 +189,19 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
         has_report = True
     except Exception:
         traceback.print_exc()
-    return {"has_analyses": has_analyses, "has_report": has_report}
+
+    # Computed verdict (Phase 2c): roll up the report-card *.verdict.json files
+    # this run's analyses just wrote into ONE run_dir/verdict.json artifact.
+    # Best-effort — a verdict error never fails the run.
+    has_verdict = False
+    try:
+        vpaths = [Path(w) for a in analyses
+                  for w in (a.get("written") or [])
+                  if str(w).endswith(".verdict.json")]
+        (run_dir / "verdict.json").write_text(
+            json.dumps(rollup_run_verdict(vpaths)), encoding="utf-8")
+        has_verdict = True
+    except Exception:
+        traceback.print_exc()
+    return {"has_analyses": has_analyses, "has_report": has_report,
+            "has_verdict": has_verdict}

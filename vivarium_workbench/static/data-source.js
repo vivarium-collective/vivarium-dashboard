@@ -110,6 +110,12 @@
       : "/api/investigation-graph?investigation=" + encodeURIComponent(slug);
   }
 
+  function _auditUrl() {
+    return cfg().mode === "snapshot"
+      ? _base() + "/api/audit.json"
+      : "/api/audit";
+  }
+
   function _inputsUrl(slug) {
     if (!slug) {
       // No investigation context → global/shared inputs.
@@ -274,6 +280,15 @@
      */
     async loadInvestigationGraph(slug) {
       return _get(_investigationGraphUrl(slug));
+    },
+
+    /**
+     * Read-only L0-L5 study-reproducibility audit report.
+     * Local mode:    fetches GET /api/audit
+     * Snapshot mode: fetches /api/audit.json from the static bundle
+     */
+    async getAudit() {
+      return _get(_auditUrl());
     },
 
     /**
