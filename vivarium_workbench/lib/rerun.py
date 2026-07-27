@@ -95,6 +95,82 @@ def run_rerun(ws_root, run_id):
     return resp, status
 
 
+def verify_reproduction(ws_root, original_run_id, new_run_id) -> dict:
+    """Compare ``new_run_id``'s stored ``result_fingerprint`` against
+    ``original_run_id``'s (reproducible-rerun-spine Task 3 / G4, Step 6).
+
+    A fingerprint mismatch is only meaningful evidence of nondeterminism when
+    the two runs executed under the SAME environment (``env_id``) with the
+    SAME ``seed`` — otherwise a different result is expected and comparing
+    them would be a false positive. So the comparison is gated:
+
+      1. Both runs must be found (anywhere ``cli_runs.find_run`` looks:
+         every study's ``runs.db`` + the workspace ``composite-runs.db``).
+      2. Both must have a non-null, EQUAL ``env_id``.
+      3. Both must have the same ``seed`` (read from ``params["seed"]`` —
+         first-class seed storage is reproducible-rerun-spine Task 4, not yet
+         landed; the value already lives in ``params`` for every run today).
+      4. Both must have a non-null ``result_fingerprint``.
+
+    Only when all four hold is the comparison "conclusive": equal
+    fingerprints -> ``match: True``; different fingerprints -> ``match:
+    False`` AND ``new_run_id``'s ``provenance_status`` is set to
+    ``'nondeterministic'`` (a confirmed non-reproduction, persisted so the UI
+    can flag it later — not merely "we didn't check").
+
+    Any gating failure (run not found, env/seed differ, fingerprint missing)
+    returns ``match: None`` — inconclusive, NOT evidence either way — with a
+    ``reason`` explaining which precondition failed. ``provenance_status`` is
+    only ever touched on a REAL, gated mismatch.
+
+    Returns ``{"match": bool | None, "reason": str}``.
+    """
+    from vivarium_workbench.lib import cli_runs, composite_runs as cr
+
+    orig_db, orig_row = cli_runs.find_run(ws_root, original_run_id)
+    new_db, new_row = cli_runs.find_run(ws_root, new_run_id)
+    if orig_row is None or new_row is None:
+        missing = original_run_id if orig_row is None else new_run_id
+        return {"match": None, "reason": f"run not found: {missing}"}
+
+    orig_env = orig_row.get("env_id")
+    new_env = new_row.get("env_id")
+    if not orig_env or not new_env or orig_env != new_env:
+        return {"match": None,
+                "reason": "env_id missing or differs — not a like-for-like "
+                          "reproduction, comparison skipped"}
+
+    orig_seed = (orig_row.get("params") or {}).get("seed")
+    new_seed = (new_row.get("params") or {}).get("seed")
+    if orig_seed != new_seed:
+        return {"match": None,
+                "reason": f"seed differs ({orig_seed!r} vs {new_seed!r}) — "
+                          "not a like-for-like reproduction, comparison skipped"}
+
+    orig_fp = orig_row.get("result_fingerprint")
+    new_fp = new_row.get("result_fingerprint")
+    if not orig_fp or not new_fp:
+        return {"match": None,
+                "reason": "result_fingerprint missing on one or both runs"}
+
+    if orig_fp == new_fp:
+        return {"match": True,
+                "reason": "result_fingerprint matches under identical env_id + seed"}
+
+    # Real, gated mismatch: same environment, same seed, different result.
+    try:
+        conn = cr.connect(new_db)
+        try:
+            cr.set_provenance_status(conn, run_id=new_run_id, status="nondeterministic")
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — best-effort; the verdict below still returns
+        pass
+    return {"match": False,
+            "reason": "result_fingerprint differs under identical env_id + "
+                      "seed — nondeterministic"}
+
+
 def _investigation_studies(ws_root, investigation):
     """Return an investigation's declared member-study slugs.
 
