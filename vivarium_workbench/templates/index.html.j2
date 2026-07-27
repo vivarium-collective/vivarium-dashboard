@@ -999,26 +999,11 @@ window.addEventListener('pageshow', function (e) {
     <div id="investigation-needs-attention"></div>
 
     <div id="investigation-intro" class="inv-intro" style="margin: 0 0 16px 0;">
-      <!-- Single "About" disclosure (open by default): the lead/abstract, then any
-           supplementary context as labeled sub-blocks. Each sub-block keeps its id +
-           inner <ol>/<dl> so the existing render functions populate it unchanged; JS
-           toggles their display, so they stay hidden when the yaml omits them. -->
-      <details id="investigation-intro-details" class="inv-lead-details" open>
-        <summary>About this investigation</summary>
-        <div id="investigation-detail-description" class="inv-lead" style="margin-top:6px"></div>
-        <div id="investigation-how-to-read" class="inv-how-to-read" style="display:none; margin-top:12px">
-          <h4 class="inv-subhead">How to read this</h4>
-          <ol></ol>
-        </div>
-        <div id="investigation-glossary" class="inv-glossary" style="display:none; margin-top:12px">
-          <h4 class="inv-subhead">Glossary</h4>
-          <dl></dl>
-        </div>
-        <div id="investigation-biology-story" class="inv-bio-story" style="display:none; margin-top:12px">
-          <h4 class="inv-subhead inv-bio-story-label">Biology — the mechanism this investigation models</h4>
-          <div id="investigation-biology-story-text" class="inv-bio-story-text"></div>
-        </div>
-      </details>
+      <!-- Inquiry brief: the question as headline → verdict answers it as a
+           colored status line → thin meta row → one flat level of tabs
+           (How to read / Biology / Background / Glossary). No nested boxes.
+           Built entirely by _renderInvOpening(d) from the investigation data. -->
+      <div id="investigation-detail-description" class="inv-brief-host"></div>
     </div>
     <!-- Discourse-graph framing: studies as knowledge-producing operations. -->
     <div id="investigation-dag-lead" style="margin: 4px 0 8px; font-size: 0.88em; color: #475569; line-height: 1.4;">

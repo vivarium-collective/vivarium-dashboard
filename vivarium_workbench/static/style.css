@@ -2116,6 +2116,69 @@ textarea.loom-in-field{
 .inv-lead li { margin: 2px 0; }
 .inv-lead strong { color: #0f172a; }
 
+/* ── Inquiry brief — the redesigned investigation opening ──────────────────
+   Question headline → verdict answer line → meta → flat tab strip. One level
+   of hierarchy, no nested boxes. Verdict-status colour is carried on the
+   .inv-vs-* container as --vs / --vs-bg / --vs-fg custom properties. */
+.inv-brief { margin: 0 0 8px; }
+.inv-brief-q {
+  font-family: 'Charter', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 1.55em; line-height: 1.28; font-weight: 600; letter-spacing: -0.01em;
+  color: #0f172a; margin: 2px 0 14px;
+}
+.inv-brief-verdict {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  border-left: 4px solid var(--vs, #64748b);
+  background: #f8fafc; border-radius: 0 8px 8px 0;
+  padding: 11px 16px; margin: 0 0 14px;
+  font-size: 0.95em; line-height: 1.55; color: #334155;
+}
+.inv-vs-pill {
+  display: inline-block; font-size: 0.66em; font-weight: 700; letter-spacing: 0.05em;
+  background: var(--vs-bg, #e2e8f0); color: var(--vs-fg, #475569);
+  padding: 2px 9px; border-radius: 9999px; margin-right: 8px; vertical-align: 1px;
+}
+.inv-brief-verdict-label { font-weight: 700; color: #1e293b; }
+.inv-brief-framing {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.9em; line-height: 1.55; color: #64748b; margin: 0 0 12px;
+}
+.inv-brief-meta {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.9em; line-height: 1.55; color: #475569; margin: 0 0 16px;
+}
+.inv-brief-meta-item em { font-style: normal; font-weight: 700; color: #334155; margin-right: 5px; }
+.inv-brief-meta-item + .inv-brief-meta-item::before { content: "·"; margin: 0 9px; color: #cbd5e1; }
+.inv-brief-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  border-bottom: 1px solid #e2e8f0; margin: 0 0 14px;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+.inv-brief-tab {
+  appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; padding: 6px 13px; font-size: 0.87em; font-weight: 600;
+  color: #64748b; cursor: pointer; border-radius: 6px 6px 0 0;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.inv-brief-tab:hover { color: #334155; background: #f8fafc; }
+.inv-brief-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+.inv-brief-panels { font-family: -apple-system, "Segoe UI", sans-serif; }
+.inv-brief-prose { font-size: 0.95em; line-height: 1.62; color: #334155; }
+.inv-brief-prose p { margin: 0 0 10px; }
+.inv-brief-prose p:last-child { margin-bottom: 0; }
+.inv-brief-howto { margin: 0 0 4px 20px; padding: 0; font-size: 0.92em; line-height: 1.5; color: #334155; }
+.inv-brief-howto li { margin: 3px 0; }
+.inv-brief-glossary { margin: 0; font-size: 0.92em; }
+.inv-brief-glossary dt { font-weight: 700; color: #1e293b; margin-top: 9px; }
+.inv-brief-glossary dt:first-child { margin-top: 0; }
+.inv-brief-glossary dd { margin: 2px 0 0; color: #475569; line-height: 1.5; }
+/* Verdict-status palettes (light). --vs is the accent rule; -bg/-fg the pill. */
+.inv-brief.inv-vs-passed   { --vs: #16a34a; --vs-bg: #dcfce7; --vs-fg: #166534; }
+.inv-brief.inv-vs-progress { --vs: #d97706; --vs-bg: #fef9c3; --vs-fg: #854d0e; }
+.inv-brief.inv-vs-blocked  { --vs: #dc2626; --vs-bg: #fee2e2; --vs-fg: #991b1b; }
+.inv-brief.inv-vs-planning { --vs: #2563eb; --vs-bg: #dbeafe; --vs-fg: #1e40af; }
+.inv-brief.inv-vs-default  { --vs: #64748b; --vs-bg: #e2e8f0; --vs-fg: #475569; }
+
 .inv-at-a-glance {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
@@ -3553,6 +3616,117 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .reg-mid-config code{ background:var(--surface-3); color:#aeb9c8; }
 :root[data-theme="dark"] .loom-cfg-key{ color:#aeb9c8; }
 :root[data-theme="dark"] .loom-in-key{ color:#9db4e6; }
+:root[data-theme="dark"] .loom-out-ports .loom-port{ background:var(--surface-3); border-color:var(--border-2); }
+:root[data-theme="dark"] .loom-port-name{ color:#9db4e6; }
+
+/* Investigation view: biology story, graph canvas, and study-DAG node cards. */
+:root[data-theme="dark"] .inv-bio-story{ background:var(--surface-2) !important; border-color:var(--border) !important; color:var(--text); }
+:root[data-theme="dark"] .aig-zoom-mid,
+:root[data-theme="dark"] .aig-graph,
+:root[data-theme="dark"] .aig-orient-lr,
+:root[data-theme="dark"] .aig-orient-tb{ background:var(--bg) !important; }
+:root[data-theme="dark"] .iset-dag-node{ background:var(--surface) !important; border-color:var(--border) !important; color:var(--text); }
+:root[data-theme="dark"] .iset-dag-node .aig-claim-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] #investigation-dag-lead{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] #investigation-dag-lead strong{ color:var(--text) !important; }
+:root[data-theme="dark"] .inv-lead-details summary{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] .viv-info-chip{ background:var(--surface-3) !important; color:var(--text-muted) !important; border-color:var(--border) !important; }
+/* Inquiry brief (investigation opening) — dark. Accent --vs keeps its vivid
+   colour; the pill bg/fg get dark-tinted variants. */
+:root[data-theme="dark"] .inv-brief-q{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-verdict{ background:var(--surface-2); color:var(--text); }
+:root[data-theme="dark"] .inv-brief-verdict-label{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-framing{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-meta{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-meta-item em{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-meta-item + .inv-brief-meta-item::before{ color:var(--border-2); }
+:root[data-theme="dark"] .inv-brief-tabs{ border-bottom-color:var(--border); }
+:root[data-theme="dark"] .inv-brief-tab{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-tab:hover{ color:var(--text); background:var(--hover); }
+:root[data-theme="dark"] .inv-brief-tab.active{ color:var(--link); border-bottom-color:var(--link); }
+:root[data-theme="dark"] .inv-brief-prose{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-howto{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-glossary dt{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-glossary dd{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief.inv-vs-passed   { --vs-bg:#12351f; --vs-fg:#86efac; }
+:root[data-theme="dark"] .inv-brief.inv-vs-progress { --vs-bg:#2a2113; --vs-fg:#fcd34d; }
+:root[data-theme="dark"] .inv-brief.inv-vs-blocked  { --vs-bg:#3a1518; --vs-fg:#fca5a5; }
+:root[data-theme="dark"] .inv-brief.inv-vs-planning { --vs-bg:#14243f; --vs-fg:#93c5fd; }
+:root[data-theme="dark"] .inv-brief.inv-vs-default  { --vs-bg:var(--surface-3); --vs-fg:var(--text); }
+/* Modals → dark surface (base .modal-box ships background:#fff). */
+:root[data-theme="dark"] .modal-box{ background:var(--surface) !important; color:var(--text) !important; box-shadow:0 8px 32px rgba(0,0,0,0.6) !important; border:1px solid var(--border); }
+:root[data-theme="dark"] .modal-box h1,
+:root[data-theme="dark"] .modal-box h2,
+:root[data-theme="dark"] .modal-box h3,
+:root[data-theme="dark"] .modal-box h4,
+:root[data-theme="dark"] .modal-box label{ color:var(--heading) !important; }
+:root[data-theme="dark"] .modal-close{ color:var(--text-muted) !important; }
+
+/* ── Study-detail page (loaded in the study/investigation iframe) ──────────
+   Comprehensive dark pass: neutral containers → surface tokens, dark text →
+   text tokens. Small colored/gray badges (status/classification/finding-kind
+   pills, finding-id, status chips) are left as readable badges. */
+:root[data-theme="dark"] .study-tabs,
+:root[data-theme="dark"] .finding-card{ background:var(--surface) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .spine-summary,
+:root[data-theme="dark"] .status-detail,
+:root[data-theme="dark"] .status-detail-panel,
+:root[data-theme="dark"] .overview-section,
+:root[data-theme="dark"] .findings-section,
+:root[data-theme="dark"] .purpose-callout,
+:root[data-theme="dark"] .finding-evidence,
+:root[data-theme="dark"] .finding-expected,
+:root[data-theme="dark"] .finding-exp-summary{ background:var(--surface-2) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .finding-next{ background:#0f2417 !important; border-color:#1c3a28 !important; }
+/* Container text → tokens (small pills keep their own colors). */
+:root[data-theme="dark"] .study-name,
+:root[data-theme="dark"] .spine-val,
+:root[data-theme="dark"] .study-pillar,
+:root[data-theme="dark"] .finding-statement,
+:root[data-theme="dark"] .finding-explanation,
+:root[data-theme="dark"] .finding-title,
+:root[data-theme="dark"] .overview-section h2,
+:root[data-theme="dark"] .overview-section h3,
+:root[data-theme="dark"] .spine-at-glance-head{ color:var(--heading) !important; }
+:root[data-theme="dark"] .status-detail-axis,
+:root[data-theme="dark"] .spine-summary-head,
+:root[data-theme="dark"] .spine-key,
+:root[data-theme="dark"] .narrative-label,
+:root[data-theme="dark"] .finding-evidence,
+:root[data-theme="dark"] .finding-expected,
+:root[data-theme="dark"] .finding-exp-summary,
+:root[data-theme="dark"] .finding-evidence .em,
+:root[data-theme="dark"] .finding-meta{ color:var(--text-muted) !important; }
+/* Badges → dark-tinted pills (dark bg + light coloured text) so semantic
+   colour survives on a dark surface without the light pill glare. */
+:root[data-theme="dark"] .status-chip,
+:root[data-theme="dark"] .finding-id{ background:var(--surface-3) !important; color:var(--text) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .phase-pill.phase-decide,
+:root[data-theme="dark"] .status-pill.gate-status-passed,
+:root[data-theme="dark"] .status-chip.gate-status-passed{ background:#12351f !important; color:#86efac !important; border-color:#1c4a2c !important; }
+:root[data-theme="dark"] .finding-kind{ background:#1e2547 !important; color:#a5b4fc !important; border-color:#2c3566 !important; }
+:root[data-theme="dark"] .classification-pill.classification-primary{ background:#3a1518 !important; color:#fca5a5 !important; border-color:#5a2226 !important; }
+:root[data-theme="dark"] .classification-pill.classification-supporting{ background:#14243f !important; color:#93c5fd !important; border-color:#22375c !important; }
+:root[data-theme="dark"] .readiness-banner{ background:#2a2113 !important; color:#fcd34d !important; border-color:#3d3418 !important; }
+:root[data-theme="dark"] .finding-next,
+:root[data-theme="dark"] .finding-next strong,
+:root[data-theme="dark"] .finding-next *{ color:#86efac !important; }
+:root[data-theme="dark"] .sim-status-pill.sim-status-ready{ color:#86efac !important; }
+:root[data-theme="dark"] .finding-explanation em{ color:var(--text-muted) !important; }
+/* Inline-styled severity/result pills (background baked into the element
+   style). Templates use both spaced (`background: #x`) and unspaced forms. */
+:root[data-theme="dark"] [style*="background:#fee2e2"],
+:root[data-theme="dark"] [style*="background: #fee2e2"]{ background:#3a1518 !important; color:#fca5a5 !important; }
+:root[data-theme="dark"] [style*="background:#fef3c7"],
+:root[data-theme="dark"] [style*="background: #fef3c7"]{ background:#2a2113 !important; color:#fcd34d !important; }
+:root[data-theme="dark"] [style*="background:#dcfce7"],
+:root[data-theme="dark"] [style*="background: #dcfce7"]{ background:#12351f !important; color:#86efac !important; }
+:root[data-theme="dark"] [style*="background:#dbeafe"],
+:root[data-theme="dark"] [style*="background: #dbeafe"]{ background:#14243f !important; color:#93c5fd !important; }
+:root[data-theme="dark"] [style*="background:#f1f5f9"],
+:root[data-theme="dark"] [style*="background: #f1f5f9"]{ background:var(--surface-3) !important; color:var(--text-muted) !important; }
+:root[data-theme="dark"] [style*="background:#f3f4f6"],
+:root[data-theme="dark"] [style*="background: #f3f4f6"]{ background:var(--surface-3) !important; color:var(--text) !important; }
 
 /* Form controls: native dark rendering + explicit dark (beats inline #fff;
    appearance:none so WebKit search inputs honor the background). */

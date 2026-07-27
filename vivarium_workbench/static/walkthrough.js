@@ -7598,6 +7598,10 @@
   // report's "Executive summary": both read the SAME canonical investigation.yaml
   // fields (executive.{what_is_this,verdict,verdict_status} + question + hypothesis).
   // The free-form `lead` ("replaces prior work…") is demoted to a Background fold.
+  // Inquiry brief: an investigation IS a question, so lead with it as the
+  // headline; the verdict answers it as a colored status line (not a box); depth
+  // (how-to-read / biology / background / glossary) lives in one flat tab strip.
+  // Reads the SAME canonical fields as the downloaded report's executive summary.
   function _renderInvOpening(d) {
     d = d || {};
     var ex = d.executive || {};
@@ -7608,35 +7612,98 @@
     var q   = oneline(d.question);
     var hyp = oneline(d.hypothesis);
     var leadProse = (d.lead || d.description || '').trim();
+    var bio       = (d.biological_story || '').trim();
+    var glossary  = Array.isArray(d.glossary) ? d.glossary : [];
+    var howto     = Array.isArray(d.how_to_read) ? d.how_to_read : [];
 
-    // Legacy investigations with no executive content fall back to the lead.
+    // Legacy investigations with no structured content fall back to the lead.
     if (!whatIs && !verdict && !q && !hyp) {
-      return leadProse ? _renderInvLeadMarkdown(leadProse) : '';
+      return leadProse
+        ? '<div class="inv-brief"><div class="inv-brief-prose">' + _renderInvLeadMarkdown(leadProse) + '</div></div>'
+        : '';
     }
 
     var key = String(vs).toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    var vColor = ({ 'passed':'#166534','complete':'#166534','in-progress':'#854d0e',
-                    'blocked':'#991b1b','failed':'#991b1b','planning':'#1e40af' })[key] || '#475569';
-    var vBg = ({ 'passed':'#dcfce7','complete':'#dcfce7','in-progress':'#fef9c3',
-                 'blocked':'#fee2e2','failed':'#fee2e2','planning':'#dbeafe' })[key] || '#e2e8f0';
+    var vsClass = ({ 'passed':'passed','complete':'passed','in-progress':'progress',
+                     'blocked':'blocked','failed':'blocked','planning':'planning' })[key] || 'default';
 
-    var out = '';
-    if (whatIs)
-      out += '<div style="margin:2px 0 10px;color:#334155;line-height:1.5">' + _renderInvLeadMarkdown(whatIs) + '</div>';
-    if (verdict)
-      out += '<div style="background:#f8fafc;border-left:5px solid ' + vColor + ';border-radius:8px;padding:10px 14px;margin:10px 0">' +
-        '<span style="display:inline-block;font-size:0.7em;font-weight:700;letter-spacing:0.03em;background:' + vBg +
-          ';color:' + vColor + ';padding:2px 9px;border-radius:9999px;margin-right:8px">' + _esc(vs.toUpperCase()) + '</span>' +
-        '<strong style="color:#1e293b">Current verdict.</strong> <span style="color:#334155">' + _esc(verdict) + '</span></div>';
-    if (q)
-      out += '<p style="margin:8px 0;color:#334155;line-height:1.5"><strong style="color:#1e293b">Question.</strong> ' + _esc(q) + '</p>';
-    if (hyp)
-      out += '<p style="margin:8px 0;color:#475569;line-height:1.5"><strong style="color:#1e293b">Hypothesis.</strong> ' + _esc(hyp) + '</p>';
+    // The question/framing fields run long — keep the headline to the opening
+    // sentence (through the first "?" for questions, else the first period) and
+    // demote the remainder to a muted framing line.
+    var headlineOf = function(t) {
+      t = oneline(t);
+      var qi = t.indexOf('?');
+      if (qi !== -1) return t.slice(0, qi + 1);
+      var m = t.match(/^.*?[.!](?=\s)/);
+      return m ? m[0] : t;
+    };
+    var primary  = whatIs || q;
+    var headline = primary ? headlineOf(primary) : (d.title || d.name || '');
+    var framing  = primary ? oneline(primary).slice(headlineOf(primary).length).trim() : '';
+
+    var H = [];
+    H.push('<div class="inv-brief inv-vs-' + vsClass + '">');
+
+    // Headline — the driving question, kept to one line.
+    if (headline) H.push('<h2 class="inv-brief-q">' + _esc(headline) + '</h2>');
+
+    // Verdict — answers the question, as a colored status line.
+    if (verdict) {
+      H.push('<div class="inv-brief-verdict">' +
+        '<span class="inv-vs-pill">' + _esc(vs.toUpperCase()) + '</span>' +
+        '<span class="inv-brief-verdict-label">Current verdict</span> ' +
+        '<span class="inv-brief-verdict-text">' + _esc(verdict) + '</span></div>');
+    }
+
+    // Framing — the rest of the opening sentence(s), muted.
+    if (framing) H.push('<p class="inv-brief-framing">' + _esc(framing) + '</p>');
+
+    // Meta — hypothesis.
+    if (hyp) H.push('<div class="inv-brief-meta"><span class="inv-brief-meta-item"><em>Hypothesis</em> ' + _esc(hyp) + '</span></div>');
+
+    // Depth — one flat tab strip; only tabs with content are shown.
+    var tabs = [];
+    if (howto.length)
+      tabs.push({ id:'howto', label:'How to read', html:
+        '<ol class="inv-brief-howto">' + howto.map(function(x) {
+          return '<li>' + _escInv(typeof x === 'string' ? x : (x.text || x.tip || '')) + '</li>';
+        }).join('') + '</ol>' });
+    if (bio)
+      tabs.push({ id:'biology', label:'Biology', html:
+        '<div class="inv-brief-prose">' + _renderInvLeadMarkdown(bio) + '</div>' });
     if (leadProse)
-      out += '<details style="margin-top:10px"><summary style="cursor:pointer;font-size:0.88em;color:#64748b">Background &amp; context</summary>' +
-        '<div style="margin-top:6px;color:#475569;line-height:1.5">' + _renderInvLeadMarkdown(leadProse) + '</div></details>';
-    return out;
+      tabs.push({ id:'background', label:'Background', html:
+        '<div class="inv-brief-prose">' + _renderInvLeadMarkdown(leadProse) + '</div>' });
+    if (glossary.length)
+      tabs.push({ id:'glossary', label:'Glossary', html:
+        '<dl class="inv-brief-glossary">' + glossary.map(function(g) {
+          return '<dt>' + _escInv(g.term || g.name || '') + '</dt><dd>' + _escInv(g.definition || g.def || '') + '</dd>';
+        }).join('') + '</dl>' });
+
+    if (tabs.length) {
+      H.push('<div class="inv-brief-tabs" role="tablist">' + tabs.map(function(t, i) {
+        return '<button type="button" class="inv-brief-tab' + (i === 0 ? ' active' : '') +
+          '" onclick="_invBriefTab(this,\'' + t.id + '\')">' + _esc(t.label) + '</button>';
+      }).join('') + '</div>');
+      H.push('<div class="inv-brief-panels">' + tabs.map(function(t, i) {
+        return '<div class="inv-brief-panel" data-panel="' + t.id + '"' + (i === 0 ? '' : ' style="display:none"') + '>' + t.html + '</div>';
+      }).join('') + '</div>');
+    }
+
+    H.push('</div>');
+    return H.join('');
   }
+
+  // Flat tab switcher for the inquiry brief (scoped to the clicked brief).
+  function _invBriefTab(btn, id) {
+    var brief = btn.closest('.inv-brief');
+    if (!brief) return;
+    brief.querySelectorAll('.inv-brief-tab').forEach(function(b) { b.classList.toggle('active', b === btn); });
+    brief.querySelectorAll('.inv-brief-panel').forEach(function(p) {
+      p.style.display = (p.getAttribute('data-panel') === id) ? '' : 'none';
+    });
+  }
+  window._invBriefTab = _invBriefTab;
 
   function _openInvestigationDetail(name) {
     window._currentIset = name;
@@ -7688,33 +7755,10 @@
         // Lead paragraph: render lead (preferred) or fall back to description.
         // Light markdown: paragraph splits, * bullets, `code`, **bold**.
         var leadEl = document.getElementById('investigation-detail-description');
+        // The inquiry brief renders the full opening — headline, verdict, meta,
+        // and the how-to-read / biology / background / glossary tabs — from `d`.
         leadEl.innerHTML = _renderInvOpening(d);
 
-        // How to read: yaml-driven list of evaluator tips. Hidden if absent.
-        _renderInvHowToRead(d.how_to_read);
-
-        // Glossary: yaml-driven list of {term, definition}. Hidden if absent.
-        _renderInvGlossary(d.glossary);
-
-        // Biology-story banner: populated only when investigation.yaml
-        // declares `biological_story:`. Hidden otherwise.
-        var storyBox = document.getElementById('investigation-biology-story');
-        var storyText = document.getElementById('investigation-biology-story-text');
-        if (storyBox && storyText) {
-          var story = (d.biological_story || '').trim();
-          if (story) {
-            // Render as reflowing paragraphs (split on blank lines, collapse
-            // intra-paragraph hard newlines to spaces) so the text uses the full
-            // width instead of breaking at the YAML's source newlines.
-            storyText.innerHTML = story.split(/\n\s*\n/).map(function(para) {
-              return '<p>' + _esc(para.replace(/\s*\n\s*/g, ' ').trim()) + '</p>';
-            }).join('');
-            storyBox.style.display = '';
-          } else {
-            storyText.textContent = '';
-            storyBox.style.display = 'none';
-          }
-        }
         // Phase B4: render today's study graph (unchanged), then layer each
         // study's typed evidence chain into its card. Falls back to the plain
         // study graph on any fetch failure (graceful — identical to before).
