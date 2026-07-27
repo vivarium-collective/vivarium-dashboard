@@ -845,13 +845,13 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   display:flex; align-items:center; gap:12px; width:100%;
   margin:0 0 2px; padding:8px 16px;
   background:none; border:none; border-left:3px solid transparent; cursor:pointer;
-  font-family:inherit; color:#334155; text-align:left;
+  font-family:inherit; color:#374151; text-align:left; font-size:0.92em;
   transition:background 0.12s, color 0.12s;
 }
 .viv-rail-studies-link:hover{ background:#eef2ff; color:#4338ca; }
 .viv-rail-studies-ico{ width:20px; height:20px; flex:0 0 20px; color:#6b7280; }
 .viv-rail-studies-link:hover .viv-rail-studies-ico{ color:#4338ca; }
-.viv-rail-studies-txt{ flex:1 1 auto; font-size:0.9em; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; }
+.viv-rail-studies-txt{ flex:1 1 auto; font-size:1em; font-weight:400; letter-spacing:0; text-transform:none; }
 .viv-rail-link{
   display:flex; align-items:center; gap:12px;
   padding:8px 16px;
