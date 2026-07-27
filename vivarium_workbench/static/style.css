@@ -2265,6 +2265,17 @@ textarea.loom-in-field{
   border-radius: 6px; padding: 1px 7px; white-space: nowrap;
 }
 :root[data-theme="dark"] .market-avail { color: #fde68a; background: #78350f; }
+/* Provenance category chip on artifact cards (workspace / imported / available). */
+.market-cat {
+  flex: none; font-size: 0.66em; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.02em; border-radius: 6px; padding: 1px 7px; white-space: nowrap;
+}
+.market-cat-workspace { color: #4338ca; background: #e0e7ff; }
+.market-cat-imported  { color: #0369a1; background: #e0f2fe; }
+.market-cat-available  { color: #92400e; background: #fef3c7; }
+:root[data-theme="dark"] .market-cat-workspace { color: #c7d2fe; background: #312e81; }
+:root[data-theme="dark"] .market-cat-imported  { color: #bae6fd; background: #0c4a6e; }
+:root[data-theme="dark"] .market-cat-available  { color: #fde68a; background: #78350f; }
 .market-desc {
   font-size: 0.85em; line-height: 1.45; color: #64748b;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;

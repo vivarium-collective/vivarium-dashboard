@@ -4411,9 +4411,9 @@
   // shown as "Repository"); 'external' ("Other repos") is opt-in. The legacy
   // 'all' scope was retired, so only the two valid values are honored from
   // storage (anything else — incl. a stored 'all' — falls back to the default).
-  window._marketOrigin = 'workspace';
+  window._marketOrigin = 'all';   // All | workspace | imported | available
   try { var _mz = localStorage.getItem('viv.market-zoom'); if (_mz) window._marketZoom = _mz; } catch (e) {}
-  try { var _mo = localStorage.getItem('viv.market-origin'); if (_mo === 'workspace' || _mo === 'external') window._marketOrigin = _mo; } catch (e) {}
+  try { var _mo = localStorage.getItem('viv.market-origin'); if (['all', 'workspace', 'imported', 'available'].indexOf(_mo) !== -1) window._marketOrigin = _mo; } catch (e) {}
 
   var _MARKET_TYPES = [
     { key: 'process',       label: 'Processes & Steps', ico: '⚙' },
@@ -4424,6 +4424,17 @@
   function _marketIco(t) {
     for (var i = 0; i < _MARKET_TYPES.length; i++) if (_MARKET_TYPES[i].key === t) return _MARKET_TYPES[i].ico;
     return '•';
+  }
+  // Three-way provenance category, uniform across facets: an artifact is
+  // "workspace" (the workspace's own package), "imported" (an installed
+  // dependency repo), or "available" (an ecosystem repo not installed here).
+  var _MARKET_CAT_ORDER = { workspace: 0, imported: 1, available: 2 };
+  function _marketCatOf(it) {
+    return it.category || (it.origin === 'workspace' ? 'workspace' : 'imported');
+  }
+  function _marketCatChip(it) {
+    var c = _marketCatOf(it);
+    return '<span class="market-cat market-cat-' + c + '" title="' + c + '">' + c + '</span>';
   }
   // 'viva_munk.processes.x.Y' / 'pbg_copasi.composites' → display repo 'viva-munk'
   function _marketRepoOf(s) {
@@ -4487,9 +4498,17 @@
     // the workspace's OWN package; everything else (imported dependency repos
     // like viva-munk / pbg-*) is "external" so it surfaces under "Other repos".
     var wsNorm = _marketRepoNorm(window._workspaceName || '');
+    var wsLabel = window._workspaceName || 'workspace';
+    // Three-way provenance. Local artifacts (from the installed registry) are
+    // "workspace" (the workspace's own package) or "imported" (an installed
+    // dependency repo); "available" is added later from the ecosystem index for
+    // repos NOT installed here.
+    var _categoryOf = function (repo, workspaceLocal) {
+      if (workspaceLocal || (_marketRepoNorm(repo) === wsNorm && wsNorm)) return 'workspace';
+      return 'imported';
+    };
     var _originOf = function (repo, workspaceLocal) {
-      if (workspaceLocal) return 'workspace';
-      return (_marketRepoNorm(repo) === wsNorm && wsNorm) ? 'workspace' : 'external';
+      return _categoryOf(repo, workspaceLocal) === 'workspace' ? 'workspace' : 'external';
     };
 
     // The single-worker server hangs on CONCURRENT env_worker-backed requests
@@ -4498,16 +4517,20 @@
     // (~45s cold) last. Each step renders as it lands.
     J('isets').then(function (isets) {
       window._marketByType.investigation = ((isets || {}).investigations || []).map(function (iv) {
+        var repo = iv.origin_repo ? _marketRepoOf(iv.origin_repo) : wsLabel;
         return { type: 'investigation', name: iv.name, title: iv.title || iv.name,
-          repo: _marketRepoOf(iv.origin_repo) || 'workspace', origin: iv.origin_repo ? 'external' : 'workspace',
+          repo: repo, origin: iv.origin_repo ? 'external' : 'workspace',
+          category: _categoryOf(repo, !iv.origin_repo),
           desc: iv.description || '', status: iv.status || '', nStudies: iv.n_studies || 0 };
       });
       rebuild();
       return J('studies');
     }).then(function (studies) {
       window._marketByType.study = ((studies || {}).investigations || []).map(function (s) {
-        return { type: 'study', name: s.name, repo: _marketRepoOf(s.origin_repo) || 'workspace',
-          origin: s.origin_repo ? 'external' : 'workspace', desc: s.description || '',
+        var repo = s.origin_repo ? _marketRepoOf(s.origin_repo) : wsLabel;
+        return { type: 'study', name: s.name, repo: repo,
+          origin: s.origin_repo ? 'external' : 'workspace',
+          category: _categoryOf(repo, !s.origin_repo), desc: s.description || '',
           status: s.status || '', composite: s.composite || '',
           nBeh: s.n_behaviors || 0, nRuns: s.n_runs || 0, nSims: s.n_simulations || 0, use: s.n_runs || 0 };
       });
@@ -4516,9 +4539,10 @@
     }).then(function (comps) {
       var carr = Array.isArray(comps) ? comps : (comps && comps.composites) || [];
       window._marketByType.composite = carr.map(function (c) {
-        var repo = _marketRepoOf(c.origin_repo || c.module);
+        var wl = c.workspace_local || c.source === 'workspace';
+        var repo = wl ? wsLabel : _marketRepoOf(c.origin_repo || c.module);
         return { type: 'composite', name: c.name, repo: repo,
-          origin: _originOf(repo, c.workspace_local || c.source === 'workspace'),
+          origin: _originOf(repo, wl), category: _categoryOf(repo, wl),
           desc: c.description || '', requires: ((c.requires || {}).processes) || [],
           nParams: (c.parameters || []).length, nSteps: c.default_n_steps || 0, use: 0 };
       });
@@ -4529,9 +4553,10 @@
       window._marketByType.process = ((reg || {}).processes || []).filter(function (p) {
         return p.kind === 'process' || p.kind === 'step';   // emitters live on the Modules page
       }).map(function (p) {
-        var repo = _marketRepoOf(p.address || p.source);
+        var wl = p.source === 'in_workspace';
+        var repo = wl ? wsLabel : _marketRepoOf(p.address || p.source);
         return { type: 'process', kind: p.kind || 'process', name: p.name, repo: repo,
-          origin: _originOf(repo, p.source === 'in_workspace'),
+          origin: _originOf(repo, wl), category: _categoryOf(repo, wl),
           desc: p.description || '', address: p.address || '',
           usage: { comp: p.composite_uses || 0, study: p.study_uses || 0, total: p.use_count || 0 },
           use: p.use_count || 0,
@@ -4566,13 +4591,15 @@
   window._loadMarket = _loadMarket;
 
   // Fold the viva-marketplace ecosystem index (per-repo artifact lists) into the
-  // facet buckets, so processes/steps/composites/studies/investigations from
-  // OTHER repos appear under "Other repos" — tagged `available` when their repo
-  // isn't installed here (browse now, install the repo to use). Deduped against
-  // artifacts already loaded from the local registry.
+  // facet buckets — but ONLY for repos NOT installed here. Installed repos (the
+  // workspace itself + imported deps) are already loaded from the local registry,
+  // so re-adding them from the index would duplicate them (and put the
+  // workspace's own studies/investigations under "Available"). Added items are
+  // category "available": browse now, install the repo to use.
   function _mergeEcosystemIndex(eco) {
     var repos = (eco && eco.repos) || [];
     if (!repos.length) return;
+    var wsN = _marketRepoNorm(window._workspaceName || '');
     var installed = {};
     (window._marketCatalog || []).forEach(function (m) {
       if (m && m.installed !== false) installed[_marketRepoNorm(m.name || m.package)] = true;
@@ -4587,15 +4614,15 @@
     var add = { process: [], composite: [], study: [], investigation: [] };
     repos.forEach(function (r) {
       var repo = _marketRepoNorm(r.repo || r.name);
-      if (!repo) return;
-      var avail = !installed[repo];
+      if (!repo || repo === wsN || installed[repo]) return;   // only uninstalled repos
       var push = function (arr, type, kind) {
         (arr || []).forEach(function (a) {
           var nm = a && a.name; if (!nm) return;
           var key = type + '|' + repo + '|' + nm;
           if (seen[key]) return; seen[key] = true;
           var it = { type: type, name: nm, repo: repo, origin: 'external',
-            desc: (a.description || ''), available: avail, ecosystem: true, use: 0 };
+            category: 'available', desc: (a.description || ''),
+            available: true, ecosystem: true, use: 0 };
           if (type === 'process') {
             it.kind = kind; it.address = '';
             it.usage = { comp: 0, study: 0, total: 0 };
@@ -4644,7 +4671,7 @@
   window._setMarketZoom = _setMarketZoom;
 
   function _setMarketOrigin(o) {
-    window._marketOrigin = o || 'workspace';
+    window._marketOrigin = o || 'all';
     try { localStorage.setItem('viv.market-origin', window._marketOrigin); } catch (e) {}
     document.querySelectorAll('.market-origin-chip').forEach(function (b) {
       b.classList.toggle('active', b.dataset.origin === window._marketOrigin);
@@ -4713,7 +4740,7 @@
     return '<span class="market-type-ico" title="' + (it.kind || it.type) + '">' + _marketIco(it.type) + '</span>'
       + '<span class="market-name">' + _esc(it.title || it.name) + '</span>'
       + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
-      + (it.available ? '<span class="market-avail" title="From a repo not installed here — install the repo to use it">available</span>' : '')
+      + _marketCatChip(it)
       + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
   }
   function _marketOpenBtn(it) {
@@ -4980,13 +5007,17 @@
     }).join('');
     return '<table class="market-table repo-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
   }
-  function _renderMarketRepos(zoom, q, origin) {
+  function _repoCategory(b) {
+    if (b.isWorkspace) return 'workspace';
+    if (b.installed === false) return 'available';
+    return 'imported';
+  }
+  function _renderMarketRepos(zoom, q, cat) {
     var repos = _marketRepoList();
-    // The provenance toggle splits the ecosystem: "Repository" = repos installed
-    // in this workspace (the workspace's own + imported deps); "Other repos" =
-    // available-to-install repos from the marketplace.
-    if (origin === 'workspace') repos = repos.filter(function (b) { return b.installed !== false; });
-    else if (origin === 'external') repos = repos.filter(function (b) { return b.installed === false; });
+    // Same category toggle as the artifact facets: Workspace / Imported /
+    // Available (All = everything, ordered by category).
+    if (cat && cat !== 'all') repos = repos.filter(function (b) { return _repoCategory(b) === cat; });
+    else repos.sort(function (a, b) { return _MARKET_CAT_ORDER[_repoCategory(a)] - _MARKET_CAT_ORDER[_repoCategory(b)] || 0; });
     if (q) repos = repos.filter(function (b) {
       return (b.repo + ' ' + b.desc + ' ' + b.composites.join(' ')).toLowerCase().indexOf(q) !== -1;
     });
@@ -5015,22 +5046,25 @@
     var q = ((document.getElementById('market-search') || {}).value || '').trim().toLowerCase();
     var facet = window._marketFacet || 'all';
     var zoom = window._marketZoom || 'cards';
-    var origin = window._marketOrigin || 'workspace';
+    var cat = window._marketOrigin || 'all';   // All | workspace | imported | available
     var pageMarket = document.getElementById('page-market');
     if (pageMarket) pageMarket.classList.toggle('market-facet-repo', facet === 'repo');
     document.querySelectorAll('[data-mkzoom]').forEach(function (b) { b.classList.toggle('active', b.dataset.mkzoom === zoom); });
-    document.querySelectorAll('.market-origin-chip').forEach(function (b) { b.classList.toggle('active', b.dataset.origin === origin); });
+    document.querySelectorAll('.market-origin-chip').forEach(function (b) { b.classList.toggle('active', b.dataset.origin === cat); });
     // Repositories facet: whole-ecosystem repo browse with its own List/Cards/
-    // Detail zoom, filtered by the Repository (installed) / Other repos
-    // (available) toggle. Rendered before the per-artifact filtering below.
-    if (facet === 'repo') { host.innerHTML = _renderMarketRepos(zoom, q, origin); return; }
+    // Detail zoom, filtered by the same category toggle. Rendered before the
+    // per-artifact filtering below.
+    if (facet === 'repo') { host.innerHTML = _renderMarketRepos(zoom, q, cat); return; }
     var match = function (it) {
       if (facet !== 'all' && it.type !== facet) return false;
-      if (origin !== 'all' && it.origin !== origin) return false;
+      if (cat !== 'all' && _marketCatOf(it) !== cat) return false;
       if (!q) return true;
       return (it.name + ' ' + (it.title || '') + ' ' + it.desc + ' ' + it.repo).toLowerCase().indexOf(q) !== -1;
     };
     var filtered = items.filter(match);
+    // Order by category (workspace → imported → available); stable sort keeps the
+    // within-category order (e.g. processes by use). So "All" reads as grouped.
+    filtered.sort(function (a, b) { return _MARKET_CAT_ORDER[_marketCatOf(a)] - _MARKET_CAT_ORDER[_marketCatOf(b)]; });
     if (!filtered.length) {
       host.innerHTML = items.length ? '<p class="empty-state">No matches.</p>' : '<p class="empty-state">Loading&hellip;</p>';
       return;
