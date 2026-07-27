@@ -437,6 +437,18 @@ def cmd_prepare_investigation(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_gen_readme(args: argparse.Namespace) -> int:
+    """Regenerate (or --check) a workspace README's generated composite +
+    investigation tables from the workspace itself."""
+    ws = Path(args.workspace).resolve()
+    if not (ws / "workspace.yaml").is_file():
+        print(f"error: not a workspace (no workspace.yaml): {ws}", file=sys.stderr)
+        return 2
+    from vivarium_workbench.gen_readme import generate
+
+    return generate(ws, check=args.check, readme=args.readme)
+
+
 def cmd_audit(args: argparse.Namespace) -> int:
     """Run the L0-L5 reproducibility audit and print / export the result."""
     ws = Path(args.workspace).resolve()
@@ -846,6 +858,18 @@ def main(argv: list[str] | None = None) -> int:
     plog.add_argument("--follow", action="store_true")
     _add_common(plog)
     plog.set_defaults(func=cmd_logs)
+
+    p_genrdm = sub.add_parser(
+        "gen-readme",
+        help="Regenerate the workspace README's composite + investigation tables (between "
+             "<!-- BEGIN/END --> markers) from the workspace itself",
+    )
+    p_genrdm.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_genrdm.add_argument("--check", action="store_true",
+                          help="exit 1 if the README is stale instead of rewriting it (CI)")
+    p_genrdm.add_argument("--readme", default=None, metavar="PATH",
+                          help="README path (default: <workspace>/README.md)")
+    p_genrdm.set_defaults(func=cmd_gen_readme)
 
     p_audit = sub.add_parser(
         "audit",
