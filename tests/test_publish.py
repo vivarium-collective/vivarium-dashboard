@@ -180,6 +180,59 @@ def test_bundle_shell_asset_urls_resolve(tmp_workspace, tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Source provenance: repo/commit/env surfaced in the read-only Source panel
+# ---------------------------------------------------------------------------
+
+def test_snapshot_provenance_shape(tmp_workspace, monkeypatch):
+    """_snapshot_provenance returns the reproducibility facts, tolerating a
+    non-git workspace (repo/commit empty, but generated_at + shape intact)."""
+    from vivarium_workbench import publish
+
+    prov = publish._snapshot_provenance(tmp_workspace)
+    # Always-present keys, even in a bare (non-git) tmp workspace.
+    for k in ("repo_slug", "repo_url", "commit", "commit_url", "branch",
+              "lockfile", "generated_at"):
+        assert k in prov, f"missing provenance key: {k}"
+    assert prov["generated_at"], "build timestamp should always be set"
+
+
+def test_snapshot_config_injects_provenance():
+    """_set_snapshot_config threads a non-empty provenance dict into
+    __DASH_CONFIG__, and drops empty fields."""
+    from vivarium_workbench.publish import _set_snapshot_config
+
+    html = 'x window.__DASH_CONFIG__ = { mode: "local-server" }; y'
+    out = _set_snapshot_config(html, provenance={
+        "repo_url": "https://github.com/acme/widget",
+        "repo_slug": "acme/widget",
+        "commit": "abc1234def",
+        "commit_url": "https://github.com/acme/widget/commit/abc1234def",
+        "branch": "main",
+        "lockfile": "uv.lock@deadbeef",
+        "generated_at": "2026-01-02 03:04 UTC",
+        "empty_field": "",   # must be dropped
+    })
+    assert 'mode: "snapshot"' in out
+    assert "provenance: {" in out          # injected as a JS object-literal key
+    assert "acme/widget" in out
+    assert "uv.lock@deadbeef" in out
+    assert "empty_field" not in out
+
+
+def test_bundle_home_shell_carries_provenance(tmp_workspace, tmp_path):
+    """The published home shell's __DASH_CONFIG__ carries a provenance block so
+    the read-only Source panel can show repo/commit/reproduce info."""
+    from vivarium_workbench import publish
+
+    out = tmp_path / "bundle"
+    publish.build_bundle(tmp_workspace, out)
+    html = (out / "index.html").read_text(encoding="utf-8")
+    # provenance object is injected (generated_at is always present).
+    assert "provenance: {" in html, "home shell missing provenance in __DASH_CONFIG__"
+    assert "generated_at" in html
+
+
+# ---------------------------------------------------------------------------
 # Read-only viewer (full surface): Task 1 — composite-state + loom dist
 # ---------------------------------------------------------------------------
 
