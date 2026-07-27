@@ -357,11 +357,68 @@ def cmd_logs(args) -> int:
     return 0
 
 
+def _normalize_repo_url(repo: str) -> str:
+    """Turn a repo reference into a git-cloneable URL. Accepts full URLs
+    (http/https/ssh) as-is, `host/org/repo` shorthands, and `org/repo`
+    (assumed GitHub)."""
+    import re
+    repo = repo.strip()
+    if repo.startswith(("http://", "https://", "git@", "ssh://")):
+        return repo
+    if re.match(r"^(github\.com|gitlab\.com|bitbucket\.org)/", repo):
+        return "https://" + repo
+    if re.match(r"^[\w.\-]+/[\w.\-]+$", repo):   # bare org/repo → GitHub
+        return "https://github.com/" + repo
+    return repo
+
+
+def _parse_repo_at_commit(source: str):
+    """Detect a ``<repo>@<ref>`` sync spec and return ``(repo_url, ref)``, or
+    None if ``source`` isn't one (a manifest file path or a published-dashboard
+    URL — neither of which carries a trailing ``@<ref>``).
+
+    Splits on the LAST ``@`` and requires the ref to be a single path-less git
+    ref, so an ssh URL (``git@host:org/repo@sha``) keeps its user@host while a
+    plain manifest URL (no trailing ``@ref``) falls through.
+    """
+    import re
+    repo_spec, sep, ref = source.rpartition("@")
+    if not sep or not repo_spec or not ref:
+        return None
+    if "/" in ref or ":" in ref or not re.match(r"^[\w.\-]+$", ref):
+        return None
+    if "/" not in repo_spec and ":" not in repo_spec:   # need org/repo or ssh host:path
+        return None
+    return _normalize_repo_url(repo_spec), ref
+
+
+def _synthesize_manifest(repo_url: str, ref: str) -> dict:
+    """Build a minimal sync manifest for an arbitrary ``repo@commit``. The
+    commit IS the source of truth here (there's no published bundle to verify
+    against), so ``lockfile`` is left unset — the fidelity gate is skipped and
+    ``uv sync`` materializes whatever that commit pins."""
+    base = repo_url.rstrip("/")
+    if base.endswith(".git"):
+        base = base[:-4]
+    workspace = base.split("/")[-1].split(":")[-1]
+    return {"repo": repo_url, "commit": ref, "lockfile": None, "workspace": workspace}
+
+
 def _load_manifest(source: str) -> dict:
-    """Load a manifest from a file path, file://, or http(s):// (a JSON manifest
-    or a dashboard base URL whose /api/source/manifest is fetched)."""
+    """Resolve a sync source into a manifest dict. Accepts, in order:
+      - ``<repo>@<ref>``      — synthesize a manifest to reproduce ANY commit
+                                (e.g. ``github.com/org/repo@1a2b3c4`` or
+                                ``org/repo@main``), published or not;
+      - ``http(s)://…``       — a JSON manifest, or a dashboard base URL whose
+                                ``/api/source/manifest`` is fetched;
+      - a file path / file:// — a manifest JSON on disk.
+    """
     import json
     import urllib.request
+
+    repo_at = _parse_repo_at_commit(source)
+    if repo_at:
+        return _synthesize_manifest(*repo_at)
 
     if source.startswith(("http://", "https://")):
         url = source.rstrip("/")
@@ -799,9 +856,16 @@ def main(argv: list[str] | None = None) -> int:
 
     p_sync = sub.add_parser(
         "sync",
-        help="Materialize a remote dashboard's exact repo@commit workspace locally",
+        help="Materialize an exact repo@commit workspace locally (any commit, "
+             "a published workbench URL, or a manifest file)",
     )
-    p_sync.add_argument("manifest", help="manifest JSON path/URL, or a dashboard base URL")
+    p_sync.add_argument(
+        "manifest",
+        metavar="SOURCE",
+        help="one of: <repo>@<ref> (e.g. github.com/org/repo@1a2b3c4 or "
+             "org/repo@main) to reproduce any commit; a published workbench URL; "
+             "or a manifest JSON path/URL",
+    )
     p_sync.add_argument("--dest", default=None, help="destination dir (default: ./<workspace>)")
     p_sync.add_argument("--run-post-sync", action="store_true",
                         help="run manifest-declared cache-rebuild commands (executes remote-authored commands)")
