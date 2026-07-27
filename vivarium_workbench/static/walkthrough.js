@@ -4740,21 +4740,25 @@
     return 'https://github.com/vivarium-collective/' + repo;
   }
   function _marketReposHtml(items) {
+    // "This workspace" is EXACTLY the workspace's own repo; every other repo —
+    // even one whose package is pip-installed into this venv — is a dependency /
+    // federated repo you can browse (its artifacts still carry origin:workspace
+    // because they resolve locally, so we can't derive this from item origin).
+    var wsName = window._workspaceName || '';
     var byRepo = {};
     items.forEach(function (it) {
       var r = _marketRepoCanon(it.repo);
       var b = byRepo[r] || (byRepo[r] = {
-        repo: r, origin: it.origin, total: 0, use: 0,
+        repo: r, isWorkspace: (r === wsName), total: 0, use: 0,
         process: 0, composite: 0, study: 0, investigation: 0, composites: []
       });
       if (typeof b[it.type] === 'number') b[it.type]++;
       b.total++;
       b.use += _marketUseNum(it);
-      if (it.origin === 'workspace') b.origin = 'workspace';
       if (it.type === 'composite') b.composites.push(it.title || it.name);
     });
     var repos = Object.keys(byRepo).map(function (k) { return byRepo[k]; }).sort(function (a, b) {
-      if ((a.origin === 'workspace') !== (b.origin === 'workspace')) return a.origin === 'workspace' ? -1 : 1;
+      if (a.isWorkspace !== b.isWorkspace) return a.isWorkspace ? -1 : 1;   // workspace repo first
       if (b.total !== a.total) return b.total - a.total;
       return a.repo.localeCompare(b.repo);
     });
@@ -4778,8 +4782,8 @@
       + '<div class="market-card-head">'
       +   '<span class="market-repo-ico">📦</span>'
       +   '<span class="market-name">' + _esc(b.repo) + '</span>'
-      +   '<span class="market-origin market-origin-' + b.origin + '">'
-      +     (b.origin === 'workspace' ? 'This workspace' : 'External') + '</span>'
+      +   '<span class="market-origin market-origin-' + (b.isWorkspace ? 'workspace' : 'external') + '">'
+      +     (b.isWorkspace ? 'This workspace' : 'Other repo') + '</span>'
       + '</div>'
       + (hint ? '<div class="market-desc">' + hint + '</div>' : '')
       + '<div class="market-repo-stats">' + stats + '</div>'
