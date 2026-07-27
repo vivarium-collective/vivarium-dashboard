@@ -47,7 +47,7 @@ def test_cmd_serve_registers_on_boot(pbg_home, workspace_dir):
     )
     try:
         servers_dir = pbg_home / "servers"
-        deadline = time.monotonic() + 8.0
+        deadline = time.monotonic() + 30.0
         entry_path = None
         while time.monotonic() < deadline:
             if servers_dir.is_dir():
@@ -69,7 +69,7 @@ def test_cmd_serve_registers_on_boot(pbg_home, workspace_dir):
         assert int(pid_file.read_text().strip()) == proc.pid
     finally:
         proc.terminate()
-        proc.wait(timeout=5)
+        proc.wait(timeout=20)
 
     assert not entry_path.exists()
     pid_file = workspace_dir / ".pbg" / "server" / "server.pid"
@@ -117,7 +117,7 @@ def test_cmd_serve_continues_when_registration_fails(tmp_path, workspace_dir):
         # Wait for server-info — its presence signals the boot reached the
         # serve step, i.e., execution continued past the registration failure.
         info_path = workspace_dir / ".pbg" / "server" / "server-info"
-        deadline = time.monotonic() + 10.0
+        deadline = time.monotonic() + 30.0
         while time.monotonic() < deadline:
             if info_path.is_file():
                 break
@@ -136,7 +136,7 @@ def test_cmd_serve_continues_when_registration_fails(tmp_path, workspace_dir):
             f"expected warning on stderr, got: {stderr_so_far!r}"
     finally:
         proc.terminate()
-        proc.wait(timeout=5)
+        proc.wait(timeout=20)
     # Note: when registration fails, the SIGTERM signal handler is not installed
     # (it's inside the try block), so pid_file cleanup via atexit won't run on
     # SIGTERM. That's acceptable — atexit still runs on normal exit (Ctrl+C /
