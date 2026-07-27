@@ -11,6 +11,8 @@ from __future__ import annotations
 
 _DECISION_OUTCOME = {"supported": "accept", "refuted": "reject", "partial": "defer"}
 _EVIDENCE_STATE = {"accept": "accepted", "reject": "rejected", "defer": "proposed"}
+_STATUS_VERDICT = {"confirms": "supported", "contradicts": "refuted",
+                   "partial": "partial", "inconclusive": "partial"}
 
 
 def _prov(slug: str, source: str) -> dict:
@@ -18,6 +20,90 @@ def _prov(slug: str, source: str) -> dict:
             "source_objects": [f"study/{slug}"],
             "justification": f"derived from study.yaml {source}",
             "tool": "b2/chain-derivation", "commit": ""}
+
+
+def _prov_computed(slug: str, source: str) -> dict:
+    """Provenance for a chain lifted from a COMPUTED report-card verdict
+    artifact (Phase 2d), as opposed to authored study.yaml fields. Keeps
+    ``actor="derived"`` — a computed-from-artifact chain is still
+    non-human-gated, and reusing the proven shape keeps
+    ``investigation_contracts.validate_chain`` happy; the distinguishing
+    signal is ``justification``/``tool``, not ``actor``.
+    """
+    return {"actor": "derived", "agent_id": "report-card-evidence", "timestamp": "",
+            "source_objects": [f"study/{slug}"],
+            "justification": f"computed from report-card verdict {source}",
+            "tool": "2d/report-card-evidence", "commit": ""}
+
+
+def _lift_finding_list(findings, slug: str, *, id_tag: str, prov) -> dict[str, dict]:
+    """Lift a list of ``{statement, status, evidence:{observed}}`` findings into
+    the deterministic Finding->Evidence(->Decision->Conclusion) micro-chain.
+
+    Shared by the authored v4-``findings``-list path (``id_tag="fl"``) and the
+    computed report-card path (``id_tag="rc"``, Phase 2d) — identical node
+    shape, so both pass ``validate_chain`` by construction. ``prov(raw_j, fe)``
+    returns the provenance dict for a raw entry. Pure — no I/O.
+    """
+    nodes: dict[str, dict] = {}
+    k = 0
+    for raw_j, fe in enumerate(findings):
+        if not (isinstance(fe, dict) and str(fe.get("statement", "")).strip()):
+            continue
+        claim = str(fe["statement"]).strip()
+        ev = fe.get("evidence") if isinstance(fe.get("evidence"), dict) else {}
+        basis = str(ev.get("observed") or claim).strip()
+        verdict = _STATUS_VERDICT.get(str(fe.get("status", "")).strip().lower(), "")
+        fid, eid = f"finding/derived-{slug}-{id_tag}{k}", f"evidence/derived-{slug}-{id_tag}{k}"
+        did, cid = f"decision/derived-{slug}-{id_tag}{k}", f"conclusion/derived-{slug}-{id_tag}{k}"
+        p = prov(raw_j, fe)
+        # The finding's status IS the verdict for these studies (they use
+        # confidence/status rather than a separate gate), so derive the
+        # decision directly from it rather than gating on gate_status.
+        outcome = _DECISION_OUTCOME.get(verdict)
+        ev_state = _EVIDENCE_STATE.get(outcome, "proposed") if outcome else "proposed"
+        nodes[fid] = {"id": fid, "type": "finding", "lifecycle_state": "asserted",
+                      "owner": "derived", "provenance": p,
+                      "validation_status": "derived",
+                      "statement": claim, "runs": [f"run/{slug}"]}
+        nodes[eid] = {"id": eid, "type": "evidence", "lifecycle_state": ev_state,
+                      "owner": "derived", "provenance": p,
+                      "validation_status": "derived",
+                      "findings": [fid], "hypotheses": [f"hyp/derived-{slug}-{id_tag}{k}"],
+                      "confidence": 0.0, "statement": basis}
+        if outcome:
+            nodes[did] = {"id": did, "type": "decision", "lifecycle_state": "recorded",
+                          "owner": "derived", "provenance": p,
+                          "validation_status": "derived",
+                          "evidence": [eid], "outcome": outcome,
+                          "rationale": basis, "decided_by": "chain-derivation"}
+        if verdict == "supported":
+            nodes[cid] = {"id": cid, "type": "conclusion", "lifecycle_state": "published",
+                          "owner": "derived", "provenance": p,
+                          "validation_status": "derived",
+                          "evidence": [eid], "decisions": [did], "hypotheses": [],
+                          "statement": claim}
+        k += 1
+    return nodes
+
+
+def lift_report_card_findings(findings, slug: str) -> dict[str, dict]:
+    """Lift COMPUTED report-card findings (Phase 2d) into typed chain nodes.
+
+    ``findings`` is the list from
+    ``study_spec.report_card_findings_for_study`` — each entry already carries
+    ``{statement, status, evidence:{observed}}`` (the same shape the authored
+    v4 ``findings`` list uses), where ``status`` came from the report card's
+    machine-readable ``verdict.json`` (``within_tol->confirms``,
+    ``drift->partial``, ``mismatch->contradicts``, ``ungraded->novel``). The
+    caller performs the verdict.json I/O; this function is pure. Node ids use
+    the ``rc`` tag to stay distinct from authored ``fl``/``cv``/``fe`` chains.
+    """
+    if not isinstance(findings, list):
+        return {}
+    return _lift_finding_list(
+        findings, slug, id_tag="rc",
+        prov=lambda raw_j, fe: _prov_computed(slug, str(fe.get("id") or f"[{raw_j}]")))
 
 
 def derive_chain_nodes(study_spec: dict, slug: str) -> dict[str, dict]:
@@ -85,44 +171,7 @@ def derive_chain_nodes(study_spec: dict, slug: str) -> dict[str, dict]:
     # path emits — sourced from the finding's status (confirms/contradicts/partial)
     # — so these investigations' cards populate the Evidence chain like the others.
     if isinstance(findings, list):
-        _STATUS_VERDICT = {"confirms": "supported", "contradicts": "refuted",
-                           "partial": "partial", "inconclusive": "partial"}
-        k = 0
-        for raw_j, fe in enumerate(findings):
-            if not (isinstance(fe, dict) and str(fe.get("statement", "")).strip()):
-                continue
-            claim = str(fe["statement"]).strip()
-            ev = fe.get("evidence") if isinstance(fe.get("evidence"), dict) else {}
-            basis = str(ev.get("observed") or claim).strip()
-            verdict = _STATUS_VERDICT.get(str(fe.get("status", "")).strip().lower(), "")
-            fid, eid = f"finding/derived-{slug}-fl{k}", f"evidence/derived-{slug}-fl{k}"
-            did, cid = f"decision/derived-{slug}-fl{k}", f"conclusion/derived-{slug}-fl{k}"
-            src = f"findings[{raw_j}]"
-            # The finding's status IS the verdict for these studies (they use
-            # confidence/status rather than a separate gate), so derive the
-            # decision directly from it rather than gating on gate_status.
-            outcome = _DECISION_OUTCOME.get(verdict)
-            ev_state = _EVIDENCE_STATE.get(outcome, "proposed") if outcome else "proposed"
-            nodes[fid] = {"id": fid, "type": "finding", "lifecycle_state": "asserted",
-                          "owner": "derived", "provenance": _prov(slug, src),
-                          "validation_status": "derived",
-                          "statement": claim, "runs": [f"run/{slug}"]}
-            nodes[eid] = {"id": eid, "type": "evidence", "lifecycle_state": ev_state,
-                          "owner": "derived", "provenance": _prov(slug, src),
-                          "validation_status": "derived",
-                          "findings": [fid], "hypotheses": [f"hyp/derived-{slug}-fl{k}"],
-                          "confidence": 0.0, "statement": basis}
-            if outcome:
-                nodes[did] = {"id": did, "type": "decision", "lifecycle_state": "recorded",
-                              "owner": "derived", "provenance": _prov(slug, src),
-                              "validation_status": "derived",
-                              "evidence": [eid], "outcome": outcome,
-                              "rationale": basis, "decided_by": "chain-derivation"}
-            if verdict == "supported":
-                nodes[cid] = {"id": cid, "type": "conclusion", "lifecycle_state": "published",
-                              "owner": "derived", "provenance": _prov(slug, src),
-                              "validation_status": "derived",
-                              "evidence": [eid], "decisions": [did], "hypotheses": [],
-                              "statement": claim}
-            k += 1
+        nodes.update(_lift_finding_list(
+            findings, slug, id_tag="fl",
+            prov=lambda raw_j, fe: _prov(slug, f"findings[{raw_j}]")))
     return nodes

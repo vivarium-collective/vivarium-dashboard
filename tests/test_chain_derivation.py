@@ -84,6 +84,23 @@ def test_findings_entries_lift_to_findings():
     assert validate_chain({k: v for k, v in nodes.items() if v["type"] == "finding"}) == []
 
 
+def test_findings_list_lifts_full_chain():
+    # v4 studies carry findings as a LIST of {statement, status, evidence:{...}}
+    spec = {"name": "s1", "findings": [
+        {"statement": "X reproduces Y", "status": "confirms",
+         "evidence": {"observed": "n=3"}}]}
+    nodes = derive_chain_nodes(spec, "s1")
+    assert set(nodes) == {
+        "finding/derived-s1-fl0", "evidence/derived-s1-fl0",
+        "decision/derived-s1-fl0", "conclusion/derived-s1-fl0"}
+    assert nodes["finding/derived-s1-fl0"]["statement"] == "X reproduces Y"
+    assert nodes["finding/derived-s1-fl0"]["runs"] == ["run/s1"]
+    assert nodes["evidence/derived-s1-fl0"]["lifecycle_state"] == "accepted"
+    assert nodes["evidence/derived-s1-fl0"]["statement"] == "n=3"
+    assert nodes["decision/derived-s1-fl0"]["outcome"] == "accept"
+    assert validate_chain(nodes) == []
+
+
 def test_no_sources_empty():
     assert derive_chain_nodes({"name": "s1", "gate_status": "passed"}, "s1") == {}
 
