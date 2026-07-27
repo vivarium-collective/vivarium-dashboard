@@ -13,7 +13,7 @@ from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.node_store import load_study_nodes
 from vivarium_workbench.lib.investigations import normalize_dag_edges, InvestigationSpecError
 from vivarium_workbench.lib.study_spec import study_interface
-from vivarium_workbench.lib.chain_derivation import derive_chain_nodes
+from vivarium_workbench.lib.chain_derivation import derive_chain_nodes, lift_report_card_findings
 from investigation_contracts import validate_chain
 
 
@@ -120,6 +120,16 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
         if not nodes:
             nodes = derive_chain_nodes(study_spec, slug)
             derived = bool(nodes)
+        if not nodes:
+            # Phase 2d: no persisted (human/API) nodes and nothing authored to
+            # derive from — fall back to the study's COMPUTED report-card
+            # verdicts (verdict.json artifacts) lifted into the same typed
+            # evidence chain, so evidence surfaces from computed workflow
+            # artifacts, not just read-time authored fields.
+            from vivarium_workbench.lib.study_spec import report_card_findings_for_study
+            rc_findings, _ = report_card_findings_for_study(ws_root, slug)
+            nodes = lift_report_card_findings(rc_findings, slug)
+            derived = derived or bool(nodes)
         chain = _build_chain(slug, nodes)
         chain["derived"] = derived
         chains[slug] = chain
