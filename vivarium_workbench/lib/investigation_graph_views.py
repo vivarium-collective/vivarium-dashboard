@@ -94,13 +94,12 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
         # has a completed, graded analysis — surface the node as evaluated so its
         # cards show, instead of stalling as "investigating".
         _node_status = study_spec.get("status", "planned")
-        if _node_status in _PRE_EVAL_STATUSES:
+        if _node_status in _PRE_EVAL_STATUSES and study_spec.get("report_cards"):
             try:
                 from vivarium_workbench.lib.study_spec import (  # noqa: PLC0415
-                    report_card_findings_for_study as _rcf,
+                    has_graded_report_cards as _hgrc,
                 )
-                _rc_find, _rc_urls = _rcf(ws_root, slug)
-                if _rc_urls or _rc_find:
+                if _hgrc(ws_root, slug):
                     _node_status = "evaluated"
             except Exception:  # noqa: BLE001
                 pass

@@ -662,14 +662,13 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
         # then never surface and it reads as "investigating" even though the
         # graded analysis is done and committed. When such cards exist and
         # nothing is actively running, treat it as evaluated so the cards show.
-        if _eff_status in _PRE_EVAL_STATUSES and not _active_run:
+        if (_eff_status in _PRE_EVAL_STATUSES and not _active_run
+                and study_spec.get("report_cards")):
             try:
                 from vivarium_workbench.lib.study_spec import (  # noqa: PLC0415
-                    report_card_findings_for_study,
+                    has_graded_report_cards,
                 )
-                _rc_derived, _rc_urls = report_card_findings_for_study(
-                    ws_root, study_spec["name"], None)
-                if _rc_urls:
+                if has_graded_report_cards(ws_root, study_spec["name"]):
                     _eff_status = "evaluated"
             except Exception:  # noqa: BLE001
                 pass
