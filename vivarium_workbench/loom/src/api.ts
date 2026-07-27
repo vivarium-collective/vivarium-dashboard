@@ -202,6 +202,9 @@ export interface ResolveResponse {
   library?: string;
   id?: string;
   error?: string;
+  /** The resolved composite state (bigraph). Present on /api/composite-resolve —
+   *  the Explore Config panel re-renders the graph from this after Apply. */
+  state?: unknown;
 }
 
 export async function resolveComposite(

@@ -50,7 +50,9 @@ def clear_cache() -> None:
     _COMPOSITE_STATE_CACHE.clear()
 
 
-def composite_state_via_subprocess(ws_root: Path, ref: str) -> "dict | None":
+def composite_state_via_subprocess(
+    ws_root: Path, ref: str, overrides: "dict | None" = None
+) -> "dict | None":
     """Build a generator composite's state in the workspace's **env worker**.
 
     ``build_generator`` (and the discovery that primes it) must import
@@ -80,7 +82,10 @@ def composite_state_via_subprocess(ws_root: Path, ref: str) -> "dict | None":
     from vivarium_workbench.lib.env_worker_pool import get_pool
 
     try:
-        return get_pool().call(ws_root, "resolve_composite_state", {"ref": ref})
+        return get_pool().call(
+            ws_root, "resolve_composite_state",
+            {"ref": ref, "overrides": overrides or {}},
+        )
     except EnvWorkerUnavailable:
         return None
 
@@ -144,7 +149,7 @@ def build_inner_composite_state(
 
 
 def build_composite_state(
-    ws_root: Path, ref: str, *, fresh: bool = False
+    ws_root: Path, ref: str, *, fresh: bool = False, overrides: "dict | None" = None
 ) -> "tuple[dict, int]":
     """GET /api/composite-state worker — returns ``(payload_dict, status)``.
 
@@ -183,7 +188,11 @@ def build_composite_state(
     # state to another under multi-session (slice 3 of the multi-workspace
     # refactor). data_sources/observables/readouts/report_views already key by
     # ws_root; this closes the composite-state hole.
-    ckey = (ws_str, ref)
+    # Key by (workspace, ref, overrides): the same ref under different Config
+    # overrides (e.g. n_cells) resolves to a different wiring, so overrides MUST
+    # be part of the cache key or an Apply would serve the unoverridden state.
+    _ovkey = json.dumps(overrides or {}, sort_keys=True, default=str)
+    ckey = (ws_str, ref, _ovkey)
     if not fresh:
         hit = cache.get(ckey)
         if hit is not None and (time.time() - hit[0]) < _COMPOSITE_STATE_TTL_S:
@@ -193,7 +202,7 @@ def build_composite_state(
         sys.path.insert(0, ws_str)
 
     # Generator-kind branch: build in a SUBPROCESS (its own main thread).
-    res = composite_state_via_subprocess(ws_root, ref)
+    res = composite_state_via_subprocess(ws_root, ref, overrides)
     if res is not None and "state" in res:
         state_doc = res["state"]
         _embed_declared_emit_paths(state_doc, res.get("emitters"))

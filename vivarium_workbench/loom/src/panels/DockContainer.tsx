@@ -22,6 +22,9 @@ export interface DockPanelSpec {
   defaultSide: DockSide;
   /** Whether the panel starts collapsed if the reader has no saved placement. */
   defaultCollapsed?: boolean;
+  /** Optional control rendered in the panel's header button bar, left of the
+   *  dock (⇄) / collapse (‹) buttons — e.g. the Config panel's "⤢ Full". */
+  headerAction?: React.ReactNode;
   /** Panel body. Called on every render, so it always sees fresh props. */
   render: () => React.ReactNode;
 }
@@ -233,6 +236,7 @@ function DockZone(props: {
             <header className="loom-dock-panel-header">
               <span className="loom-dock-panel-title">{spec.title}</span>
               <span className="loom-dock-panel-actions">
+                {spec.headerAction}
                 <button
                   type="button"
                   className="loom-dock-btn"

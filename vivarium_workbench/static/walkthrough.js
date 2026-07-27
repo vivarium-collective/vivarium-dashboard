@@ -3114,6 +3114,41 @@
   }
   window._setCompositesSort = _setCompositesSort;
 
+  // ---- Composite pinning (localStorage, keyed by composite id) -------------
+  // Pinned composites float to the top of the list, above the sort order. The
+  // pin control is hover-revealed on each card (mirrors the studies-rail pins).
+  function _loadPinnedComposites() {
+    try {
+      var raw = window.localStorage.getItem('viv.pinnedComposites');
+      window._pinnedComposites = raw ? JSON.parse(raw) : [];
+    } catch (e) { window._pinnedComposites = []; }
+    if (!Array.isArray(window._pinnedComposites)) window._pinnedComposites = [];
+    return window._pinnedComposites;
+  }
+  function _isCompositePinned(id) {
+    if (!window._pinnedComposites) _loadPinnedComposites();
+    return window._pinnedComposites.indexOf(id) !== -1;
+  }
+  function _toggleCompositePin(id) {
+    if (!window._pinnedComposites) _loadPinnedComposites();
+    var i = window._pinnedComposites.indexOf(id);
+    if (i === -1) window._pinnedComposites.push(id);
+    else window._pinnedComposites.splice(i, 1);
+    try { window.localStorage.setItem('viv.pinnedComposites', JSON.stringify(window._pinnedComposites)); } catch (e) { /* private mode */ }
+    _renderComposites();
+  }
+  window._toggleCompositePin = _toggleCompositePin;
+  // Hover-revealed pin toggle for a composite card / row. stopPropagation so it
+  // never triggers the card's double-click-to-zoom.
+  function _compositePinBtn(c) {
+    var pinned = _isCompositePinned(c.id);
+    return '<button class="ccard-pin' + (pinned ? ' pinned' : '') + '"' +
+      ' onclick="event.stopPropagation(); _toggleCompositePin(\'' + _esc(c.id) + '\')"' +
+      ' title="' + (pinned ? 'Unpin' : 'Pin to top') + '"' +
+      ' aria-label="' + (pinned ? 'Unpin composite' : 'Pin composite to top') + '">📌</button>';
+  }
+  window._compositePinBtn = _compositePinBtn;
+
   function _renderComposites() {
     var container = document.getElementById('composite-cards');
     if (!container) return;
@@ -3171,6 +3206,14 @@
       sorted.sort(function(a, b) {
         return (a.name || '').localeCompare(b.name || '');
       });
+    }
+    // Pinned composites float to the top, preserving the sort order within the
+    // pinned and unpinned groups.
+    _loadPinnedComposites();
+    if (window._pinnedComposites.length) {
+      var _pins = [], _rest = [];
+      sorted.forEach(function (c) { (_isCompositePinned(c.id) ? _pins : _rest).push(c); });
+      sorted = _pins.concat(_rest);
     }
     composites = sorted;
 
@@ -3231,15 +3274,13 @@
         }).join('');
         var divider = _maybeDivider(prevC, c);
         prevC = c;
-        var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
-          ? ''
-          : '<button class="action-btn" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore</button>';
+        var exploreBtn = _compositeCardActions(c, 'action-btn', 'action-btn');
         return divider + '<div class="composite-list-row' + (c.read_only ? ' federated-readonly' : '') + '">' +
           '<span class="name">' + _esc(c.name) + ' ' + _wsTag(c) + _originBadge(c.origin_repo) + '</span>' +
           '<span class="desc">' + tagPills + ' ' + _esc(c.description || '(no description)') +
             _moduleLine(c) +
           '</span>' +
-          '<span>' + exploreBtn + '</span>' +
+          '<span>' + _compositePinBtn(c) + exploreBtn + '</span>' +
           '</div>';
       });
       container.innerHTML = rows.join('');
@@ -3333,14 +3374,12 @@
         }
         var divider = _maybeDivider(prevG, c);
         prevG = c;
-        var exploreBtn = (_isSnapshot && !c.has_wiring) || c.read_only
-          ? ''
-          : '<button class="ccard-explore" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\')">Explore &rarr;</button>';
+        var exploreBtn = _compositeCardActions(c, 'ccard-view', 'ccard-explore');
         var _csel = (window._compositesSelected && window._compositesSelected === c.id) ? ' reg-selected' : '';
         // Compact full-row card: identity | description | stats | actions across
         // the bar; config/structure/tags collapse into a details strip below.
         return divider + '<div class="ccard ccard-compact' + _csel + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '"' +
-            ' data-id="' + _esc(c.id) + '" ondblclick="_zoomInComposite(\'' + _esc(c.id) + '\')" title="Double-click to zoom in on this composite">' +
+            ' data-id="' + _esc(c.id) + '" ondblclick="_compositeCardDblClick(\'' + _esc(c.id) + '\')" title="Double-click to zoom in on this composite">' +
           '<div class="ccc-grid">' +
             '<div class="ccc-identity">' +
               '<div class="ccc-name-row"><span class="ccc-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span> ' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</div>' +
@@ -3348,9 +3387,11 @@
             '</div>' +
             '<div class="ccc-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</div>' +
             '<div class="ccc-stats">' + metaRow + trackRow + '</div>' +
-            '<div class="ccc-actions">' + exploreBtn + '</div>' +
+            '<div class="ccc-actions">' + _compositePinBtn(c) + exploreBtn + '</div>' +
           '</div>' +
-          ((paramPreview || structRow || tagRow) ? '<div class="ccc-details-row">' + paramPreview + structRow + tagRow + '</div>' : '') +
+          // Config-parameters / structure preview strips removed as low-signal;
+          // tags (if any) still show. Config lives in the loom's Config sidebar.
+          (tagRow ? '<div class="ccc-details-row">' + tagRow + '</div>' : '') +
           (_czoom === 'loom' ? _compositeLoomEmbed(c) : '') +
         '</div>';
       });
@@ -3392,12 +3433,112 @@
   // read-only, via the loom's static stateUrl pointed at live composite-resolve.
   function _compositeLoomEmbed(c) {
     if (c.read_only && !c.has_wiring) return '';
+    // On a live dashboard the inline loom loads read-only (lightweight); a bar
+    // lets the reader flip it to live mode (editable config + Run) in place, the
+    // same as popping out. Not offered in a published snapshot (no run backend).
+    var liveBar = (document.body.classList.contains('snapshot') || c.read_only) ? '' :
+      '<div class="ccard-loom-bar">' +
+        '<span class="ccard-loom-mode">Read-only preview</span>' +
+        '<button class="ccard-loom-live-btn" onclick="_enableInlineLoomRun(this)"' +
+          ' title="Reload this loom live so you can edit config and Run it here, as in the pop-out view">' +
+          '&#9654; Enable running</button>' +
+      '</div>';
     return '<details class="ccard-loom-embed" data-id="' + _esc(c.id) + '" ontoggle="_openCompositeLoomInline(this)">' +
       '<summary>Open loom</summary>' +
+      liveBar +
       '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Expand to resolve &amp; render the bigraph…</p></div>' +
     '</details>';
   }
   window._compositeLoomEmbed = _compositeLoomEmbed;
+
+  // Flip an inline loom embed from read-only preview to LIVE mode (editable
+  // config + Run), reloading the iframe at the same URL the pop-out uses
+  // (?id=<ref>, no ?static=1). Works whether or not the loom has loaded yet.
+  function _enableInlineLoomRun(btn) {
+    var det = btn && btn.closest('.ccard-loom-embed');
+    if (!det) return;
+    det._loomLive = true;
+    var id = det.getAttribute('data-id');
+    var apiUrl = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    var liveUrl = apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id);
+    var iframe = det.querySelector('.ccard-loom-iframe');
+    if (iframe) iframe.src = liveUrl;         // already open → swap in place
+    else { det._loomLoaded = false; _openCompositeLoomInline(det); }  // not open yet → load live
+    var bar = det.querySelector('.ccard-loom-bar');
+    if (bar) bar.innerHTML = '<span class="ccard-loom-mode live">&#9679; Live — running enabled</span>';
+  }
+  window._enableInlineLoomRun = _enableInlineLoomRun;
+
+  // "View" — open the composite's loom inline at max detail. From a lower zoom
+  // (table/cards) this jumps to the loom (max semantic) zoom AND opens this
+  // composite's embed; at loom zoom it toggles the embed. Replaces the old
+  // "Explore →" hop to the standalone explorer page (now redundant).
+  function _viewCompositeLoom(id) {
+    var esc = (window.CSS && CSS.escape) ? CSS.escape(id) : id;
+    var find = function () { return document.querySelector('.ccard-loom-embed[data-id="' + esc + '"]'); };
+    var z = window._compositesZoom || 'cards';
+    if (z !== 'loom') {
+      // Jump to max semantic zoom, focus this composite, then open its loom.
+      window._compositesSelected = id;
+      _setCompositeZoom('loom');
+      setTimeout(function () {
+        var det = find();
+        if (det) {
+          if (!det.open) det.open = true;   // fires ontoggle → lazy-load
+          try { det.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { /* ignore */ }
+        }
+      }, 80);
+      return;
+    }
+    var det = find();
+    if (!det) return;
+    det.open = !det.open;                   // toggle at loom zoom
+    if (det.open) { try { det.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { /* ignore */ } }
+  }
+  window._viewCompositeLoom = _viewCompositeLoom;
+
+  // "Pop out" — open this composite's loom in a separate window directly (live,
+  // full config + run), bypassing the standalone explorer page. In a published
+  // snapshot there's no live API, so open the static (?static=1&stateUrl=) URL.
+  function _popoutCompositeLoom(id) {
+    var apiUrl = (window.DataSource && window.DataSource.apiUrl)
+      ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    var url;
+    if (document.body.classList.contains('snapshot')) {
+      var stateUrl = apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id));
+      url = apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(stateUrl);
+    } else {
+      url = apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id);
+    }
+    var w = window.open(url, '_blank',
+      'width=1280,height=860,menubar=no,toolbar=no,location=no,resizable=yes,scrollbars=yes');
+    if (!w) alert('Popup blocked. Allow popups from this site to pop out the composite.');
+  }
+  window._popoutCompositeLoom = _popoutCompositeLoom;
+
+  // Card actions: View (inline loom) + Pop out (separate window). Shared by the
+  // table rows and the cards/loom zoom. Empty when the composite has no viewable
+  // wiring in this context (snapshot without pre-built wiring, or a read-only
+  // federated composite without wiring).
+  function _compositeCardActions(c, viewClass, popClass) {
+    if ((document.body.classList.contains('snapshot') && !c.has_wiring)) return '';
+    if (c.read_only && !c.has_wiring) return '';
+    var id = _esc(c.id);
+    return '<button class="' + viewClass + '" onclick="_viewCompositeLoom(\'' + id + '\')"' +
+        ' title="Open the loom inline at full detail">View</button>' +
+      '<button class="' + popClass + '" onclick="_popoutCompositeLoom(\'' + id + '\')"' +
+        ' title="Open the loom in a separate window">Pop out &#8599;</button>';
+  }
+  window._compositeCardActions = _compositeCardActions;
+
+  // Double-click a composite card: at the full (loom) semantic zoom there's no
+  // deeper level to zoom into, so open the loom inline instead — a quiet
+  // shortcut for the top-right "View" button. Lower zooms keep zooming in.
+  function _compositeCardDblClick(id) {
+    if ((window._compositesZoom || 'cards') === 'loom') _viewCompositeLoom(id);
+    else _zoomInComposite(id);
+  }
+  window._compositeCardDblClick = _compositeCardDblClick;
 
   function _openCompositeLoomInline(det) {
     if (!det || !det.open || det._loomLoaded) return;
@@ -3407,16 +3548,68 @@
     if (!host) return;
     host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Resolving composite (this can take a moment)…</p>';
     var apiUrl = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
-    var stateUrl = apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id));
-    var loomUrl = apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(stateUrl);
+    // Live mode (user hit "Enable running") loads the same URL as the pop-out
+    // (?id=<ref>) so config is editable and Run works; otherwise a read-only
+    // static render pointed at live composite-resolve.
+    var loomUrl = det._loomLive
+      ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id)
+      : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
+          encodeURIComponent(apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id)));
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
     f.src = loomUrl;
     host.innerHTML = '';
+    // Restore a previously dragged height (shared across all loom embeds).
+    var savedH = 0;
+    try { savedH = parseInt(localStorage.getItem('viv.loomFrameH') || '', 10) || 0; } catch (e) { /* private mode */ }
+    if (savedH) host.style.height = Math.max(220, Math.min(Math.round(window.innerHeight * 0.92), savedH)) + 'px';
     host.appendChild(f);
+    _wireLoomResize(host, f);
   }
   window._openCompositeLoomInline = _openCompositeLoomInline;
+
+  // Drag-to-resize the embedded loom panel. A full-width grip below the iframe
+  // grows/shrinks the frame; the card grows with it. Height persists across
+  // embeds via localStorage. Pointer events are disabled on the iframe mid-drag
+  // so the gesture keeps tracking when the cursor moves over the loom.
+  function _wireLoomResize(frame, iframe) {
+    var grip = document.createElement('div');
+    grip.className = 'ccard-loom-resize';
+    grip.title = 'Drag to resize';
+    frame.appendChild(grip);
+    var startY = 0, startH = 0;
+    function pointY(e) { return e.touches && e.touches[0] ? e.touches[0].clientY : e.clientY; }
+    function onMove(e) {
+      var maxH = Math.round(window.innerHeight * 0.92);
+      var h = Math.max(220, Math.min(maxH, startH + (pointY(e) - startY)));
+      frame.style.height = h + 'px';
+      if (e.cancelable) e.preventDefault();
+      try { localStorage.setItem('viv.loomFrameH', String(Math.round(h))); } catch (err) { /* private mode */ }
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove);
+      document.removeEventListener('touchend', onUp);
+      if (iframe) iframe.style.pointerEvents = '';
+      frame.classList.remove('is-resizing');
+    }
+    function onDown(e) {
+      startY = pointY(e);
+      startH = frame.getBoundingClientRect().height;
+      if (iframe) iframe.style.pointerEvents = 'none';
+      frame.classList.add('is-resizing');
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+      document.addEventListener('touchmove', onMove, { passive: false });
+      document.addEventListener('touchend', onUp);
+      if (e.cancelable) e.preventDefault();
+    }
+    grip.addEventListener('mousedown', onDown);
+    grip.addEventListener('touchstart', onDown, { passive: false });
+  }
+  window._wireLoomResize = _wireLoomResize;
 
   // Composites Table view — sortable (Name / Module / Kind / Params / Steps / Used).
   function _renderCompositesTable(container, composites) {
@@ -3445,13 +3638,21 @@
       var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
       return sd === 'desc' ? -c : c;
     });
+    // Pinned composites float to the top of the table too, above the column sort.
+    _loadPinnedComposites();
+    if (window._pinnedComposites.length) {
+      var _tp = [], _tr = [];
+      rows.forEach(function (c) { (_isCompositePinned(c.id) ? _tp : _tr).push(c); });
+      rows = _tp.concat(_tr);
+    }
     function th(key, label, cls) {
       var on = sk === key;
       return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
         '" onclick="_setCompositesTableSort(\'' + key + '\')">' + label + (on ? (sd === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
     }
     var body = rows.map(function (c) {
-      return '<tr class="reg-tr" data-id="' + _esc(c.id || '') + '" ondblclick="_zoomInComposite(\'' + _esc(c.id || '') + '\')" title="Double-click to zoom in">' +
+      return '<tr class="reg-tr" data-id="' + _esc(c.id || '') + '" ondblclick="_compositeCardDblClick(\'' + _esc(c.id || '') + '\')" title="Double-click to zoom in">' +
+        '<td class="reg-td-pin">' + _compositePinBtn(c) + '</td>' +
         '<td class="reg-td-name"><strong>' + _esc(c.name) + '</strong> <code>' + _esc(c.id || '') + '</code></td>' +
         '<td>' + _esc(mod(c)) + '</td>' +
         '<td>' + _esc(c.kind || 'spec') + '</td>' +
@@ -3463,6 +3664,7 @@
     }).join('');
     container.className = '';
     container.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
+      '<th class="reg-th reg-th-pin" title="Pin to top"></th>' +
       th('name', 'Name') + th('module', 'Module') + th('kind', 'Kind') + th('params', 'Params', 'num') +
       th('steps', 'Steps', 'num') + th('used', 'Used', 'num') + th('workspace', 'Source') +
       '</tr></thead><tbody>' + body + '</tbody></table></div>';
