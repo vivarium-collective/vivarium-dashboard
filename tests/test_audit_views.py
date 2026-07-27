@@ -18,6 +18,25 @@ import pytest
 from vivarium_workbench.lib.audit_views import build_audit
 
 
+def _has_study_audit() -> bool:
+    """Whether the installed viva_superpowers carries the audit module.
+
+    The workbench pins pbg-superpowers bare from PyPI; ``study_audit`` only
+    lights up once a viva-superpowers release (or a git pin) includes it. When
+    it is absent, ``build_audit`` DEGRADES to a 200 error-report — that is the
+    contract these tests must hold in BOTH worlds, so the populated-report
+    specifics are gated on availability.
+    """
+    try:
+        import viva_superpowers.study_audit  # noqa: F401
+    except Exception:
+        return False
+    return True
+
+
+_HAS_STUDY_AUDIT = _has_study_audit()
+
+
 def _write(p: Path, text: str) -> None:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(text, encoding="utf-8")
@@ -40,17 +59,24 @@ def test_build_audit_returns_dict_and_200(tmp_path):
     ws = _make_workspace(tmp_path / "ws")
     body, status = build_audit(ws)
 
+    # Contract that holds in BOTH worlds (audit module present or degraded):
     assert status == 200
     assert isinstance(body, dict)
-    # `studies` is always a list.
     assert isinstance(body["studies"], list)
-    assert len(body["studies"]) == 1
-    assert body["studies"][0]["slug"] == "s1"
-    # summary carries the hard-failures count.
-    assert "summary" in body
-    assert "hard_failures" in body["summary"]
     # Fully JSON-serializable (the endpoint hands this straight to JSONResponse).
     assert json.loads(json.dumps(body)) == body
+
+    if _HAS_STUDY_AUDIT:
+        # Populated report: the one study is audited, summary carries counts.
+        assert len(body["studies"]) == 1
+        assert body["studies"][0]["slug"] == "s1"
+        assert "summary" in body
+        assert "hard_failures" in body["summary"]
+    else:
+        # Degraded (workbench-CI condition until viva-superpowers ships it):
+        # 200 with an empty studies list + an explanatory error, never a 500.
+        assert body["studies"] == []
+        assert body.get("error")
 
 
 def test_build_audit_empty_workspace_is_200_with_empty_studies(tmp_path):
@@ -112,4 +138,5 @@ def test_publish_writes_parseable_audit_json(tmp_path):
     assert out.is_file()
     parsed = json.loads(out.read_text(encoding="utf-8"))
     assert isinstance(parsed.get("studies"), list)
-    assert "summary" in parsed
+    if _HAS_STUDY_AUDIT:
+        assert "summary" in parsed
