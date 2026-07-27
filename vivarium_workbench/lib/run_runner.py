@@ -543,6 +543,24 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
         return {}
 
 
+def _remote_failure_reason(exc: Exception) -> str:
+    """A clean, actionable one-line reason for a failed remote run.
+
+    Maps the known failure modes (poll timeout, unreachable sms-api, dirty/unpushed
+    workspace) to a hint an external user can act on, instead of surfacing only a
+    raw Python traceback in the run's error excerpt.
+    """
+    msg = str(exc)
+    low = msg.lower()
+    if isinstance(exc, TimeoutError):
+        return f"{msg}  [the run may still be executing on the deployment — check sms-api before retrying]"
+    if "unreachable" in low or "is the tunnel up" in low or "still reachable" in low:
+        return f"{msg}  [remote sms-api not reachable — is the tunnel/endpoint up? (SMS_API_BASE)]"
+    if "uncommitted" in low or "untracked" in low or "not pushed" in low:
+        return f"{msg}  [commit and push the workspace before running remotely — the remote build installs it from git]"
+    return f"{type(exc).__name__}: {msg}"
+
+
 def _execute_remote(req: RunRequest, run_dir: Path) -> int:
     """Dispatch a 'deployment'-target run to sms-api and land results. Returns 0/1.
 
@@ -563,10 +581,17 @@ def _execute_remote(req: RunRequest, run_dir: Path) -> int:
                 req.workspace, req.spec_id, dest=run_dir, n_steps=req.steps,
                 overrides=req.overrides,
             )
-        except Exception:
+        except Exception as exc:
             tb = traceback.format_exc()
+            reason = _remote_failure_reason(exc)
+            print(reason, flush=True)
             print(tb, flush=True)
+            # Write the traceback then the clean reason LAST, so it lands in the
+            # status endpoint's last-2000-char error excerpt (composite_run_views)
+            # and Chris sees "sms-api unreachable" / "push the workspace" instead of
+            # only a raw Python traceback.
             _write_log(req, tb)
+            _write_log(req, f"\nREMOTE RUN FAILED: {reason}\n")
             cr.complete_metadata(conn, run_id=req.run_id, n_steps=0, status="failed")
             return 1
         cr.complete_metadata(conn, run_id=req.run_id, n_steps=req.steps,

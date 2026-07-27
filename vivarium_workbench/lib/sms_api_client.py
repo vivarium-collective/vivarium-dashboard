@@ -53,6 +53,30 @@ class SmsApiClient:
         """GET /core/v1/simulator/versions — all registered simulator builds."""
         return self._get("/core/v1/simulator/versions")
 
+    def ping(self, timeout: float | None = None) -> str:
+        """GET /version — lightweight reachability probe for the health indicator.
+
+        Returns the sms-api version string; raises :class:`SmsApiError` if the
+        endpoint is unreachable. Uses a short timeout by default (min of 5 s and
+        the client timeout) so a health check never hangs the UI.
+        """
+        url = self.base_url + "/version"
+        req = Request(url, method="GET", headers={"Accept": "application/json"})
+        try:
+            with urlopen(req, timeout=timeout or min(self.timeout, 5.0)) as r:  # noqa: S310 — fixed scheme, internal tunnel
+                body = r.read().decode().strip()
+        except HTTPError as e:
+            raise SmsApiError(f"GET {url} -> {e.code}") from e
+        except (URLError, OSError) as e:
+            raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
+        try:
+            parsed = json.loads(body)
+        except (json.JSONDecodeError, ValueError):
+            return body
+        if isinstance(parsed, dict):
+            return str(parsed.get("version") or parsed.get("__version__") or body)
+        return str(parsed)
+
     def list_build_simulations(self, simulator_id: int) -> list:
         """GET /api/v1/simulations?simulator_id=N — simulation runs on the
         deployment. The ``simulator_id`` query param is required by the API but
