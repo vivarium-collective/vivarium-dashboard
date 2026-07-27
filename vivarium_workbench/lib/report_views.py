@@ -63,6 +63,12 @@ def clear_cache() -> None:
 # Private pure helpers (copied / adapted from server.py)
 # ---------------------------------------------------------------------------
 
+# Pre-evaluation effective-status values: a study in one of these has not (yet)
+# reached a graded state, so committed report-card verdicts should promote it to
+# "evaluated" (see the report-card safeguard in the investigation-graph builder).
+_PRE_EVAL_STATUSES = frozenset({"build", "planned", "implementation", "design", "pending", ""})
+
+
 def _compute_study_effective_status(
     status: str, has_runs: bool = False, has_active_run: bool = False
 ) -> str:
@@ -646,14 +652,31 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
                 pass
         n_runs_for_study = _count_runs_for_study(ws_root, study_spec["name"], study_spec)
         raw_status = study_spec.get("status", "planned")
+        _active_run = _has_active_run_for_study(ws_root, study_spec["name"], study_spec)
+        _eff_status = _compute_study_effective_status(
+            raw_status, has_runs=n_runs_for_study > 0, has_active_run=_active_run,
+        )
+        # Safeguard: a study can carry a COMPLETED evaluation as committed
+        # report-card verdicts (viz/report_card/*.verdict.json) yet be left at a
+        # pre-eval status (e.g. `build`) with no local runs.db — its report cards
+        # then never surface and it reads as "investigating" even though the
+        # graded analysis is done and committed. When such cards exist and
+        # nothing is actively running, treat it as evaluated so the cards show.
+        if _eff_status in _PRE_EVAL_STATUSES and not _active_run:
+            try:
+                from vivarium_workbench.lib.study_spec import (  # noqa: PLC0415
+                    report_card_findings_for_study,
+                )
+                _rc_derived, _rc_urls = report_card_findings_for_study(
+                    ws_root, study_spec["name"], None)
+                if _rc_urls:
+                    _eff_status = "evaluated"
+            except Exception:  # noqa: BLE001
+                pass
         studies_out.append({
             "name":                  study_spec["name"],
             "status":                raw_status,
-            "effective_status":      _compute_study_effective_status(
-                raw_status,
-                has_runs=n_runs_for_study > 0,
-                has_active_run=_has_active_run_for_study(ws_root, study_spec["name"], study_spec),
-            ),
+            "effective_status":      _eff_status,
             "phase":                 study_spec.get("phase"),
             "title":                 study_spec.get("title"),
             "question":              question,

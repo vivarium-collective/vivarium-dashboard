@@ -16,6 +16,10 @@ from vivarium_workbench.lib.study_spec import study_interface
 from vivarium_workbench.lib.chain_derivation import derive_chain_nodes, lift_report_card_findings
 from investigation_contracts import validate_chain
 
+# Pre-evaluation statuses promoted to "evaluated" when a study carries committed
+# report-card verdicts (mirrors report_views._PRE_EVAL_STATUSES).
+_PRE_EVAL_STATUSES = frozenset({"build", "planned", "implementation", "design", "pending", ""})
+
 
 def _label(node: dict) -> str:
     s = (node.get("statement") or "").strip()
@@ -85,9 +89,24 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
             study_spec = yaml.safe_load(sp.read_text(encoding="utf-8")) or {}
         except Exception:  # noqa: BLE001 — skip invalid/unloadable study, never fatal
             continue
+        # Safeguard (mirrors report_views): a study left at a pre-eval status but
+        # carrying committed report-card verdicts (viz/report_card/*.verdict.json)
+        # has a completed, graded analysis — surface the node as evaluated so its
+        # cards show, instead of stalling as "investigating".
+        _node_status = study_spec.get("status", "planned")
+        if _node_status in _PRE_EVAL_STATUSES:
+            try:
+                from vivarium_workbench.lib.study_spec import (  # noqa: PLC0415
+                    report_card_findings_for_study as _rcf,
+                )
+                _rc_find, _rc_urls = _rcf(ws_root, slug)
+                if _rc_urls or _rc_find:
+                    _node_status = "evaluated"
+            except Exception:  # noqa: BLE001
+                pass
         studies_out.append({"id": f"study/{slug}", "slug": slug, "type": "study",
                             "label": study_spec.get("title") or study_spec.get("name") or slug,
-                            "status": study_spec.get("status", "planned")})
+                            "status": _node_status})
         if use_members:
             # New reference model: edges are derived from this member's
             # declared interface inputs, restricted to other members.
