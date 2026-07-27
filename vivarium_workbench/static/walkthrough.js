@@ -330,6 +330,27 @@
   // to the overview. Measures at height:0 first so a study page whose body
   // stretches to the frame (min-height:100%) can't inflate the reading into a
   // feedback loop — at 0 height, body.scrollHeight is the true content height.
+  // Snapshot the scrollTop of every scrollable ancestor of `el` (plus the
+  // document scroller). The workbench scrolls inside a container, not the
+  // window, so a fix that only touches window scroll is a no-op — capture all
+  // of them and restore whichever the browser clamped.
+  function _captureScrollTops(el) {
+    var out = [];
+    var n = el && el.parentElement;
+    while (n) {
+      if (n.scrollHeight - n.clientHeight > 1 && n.scrollTop > 0) out.push([n, n.scrollTop]);
+      n = n.parentElement;
+    }
+    var se = document.scrollingElement || document.documentElement;
+    if (se && se.scrollTop > 0) out.push([se, se.scrollTop]);
+    return out;
+  }
+  function _restoreScrollTops(savers) {
+    for (var i = 0; i < savers.length; i++) {
+      if (savers[i][0].scrollTop !== savers[i][1]) savers[i][0].scrollTop = savers[i][1];
+    }
+  }
+
   function _fitEmbedToContent(frame, minH) {
     if (!frame) return;
     var fit = function (fromObserver) {
@@ -343,21 +364,24 @@
       var doc;
       try { doc = frame.contentDocument; } catch (_) { return; }   // cross-origin -> bail
       if (!doc || !doc.body) return;
-      // Preserve the page scroll across the height:0 measurement. Reading
+      // Preserve the scroll position across the height:0 measurement. Reading
       // scrollHeight at height:0 forces a reflow with the porthole collapsed;
-      // when the frame sits above the fold (user has scrolled up toward the
-      // investigation graph), that momentary shrink clamps window.scrollY and,
-      // once we restore the height, leaves the viewport yanked upward — the
-      // "jumps all the way back up to the investigation" glitch. The measure +
-      // restore below is synchronous, so the 0px state never paints; we just
-      // put the scroll position back where the user left it.
-      var prevY = window.pageYOffset;
+      // when the frame sits below the fold, that momentary shrink drops the
+      // document/container scrollHeight below its current scrollTop, so the
+      // browser CLAMPS scrollTop toward 0 — and once we restore the height the
+      // view is left yanked up to the investigation graph ("jumps back up").
+      // CRUCIAL: the workbench content scrolls INSIDE a container
+      // (.viv-content, overflow-y:auto), NOT the window — window.scrollY stays
+      // 0, so restoring window did nothing (the residual bug). Snapshot every
+      // scrollable ancestor of the frame (plus the document scroller) and put
+      // each back. The measure + restore is synchronous, so 0px never paints.
+      var savers = _captureScrollTops(frame);
       frame.style.height = '0px';
       var h = Math.max(
         doc.body.scrollHeight || 0,
         doc.documentElement ? doc.documentElement.scrollHeight : 0);
       frame.style.height = Math.max(minH || 0, h) + 'px';
-      if (window.pageYOffset !== prevY) window.scrollTo(0, prevY);
+      _restoreScrollTops(savers);
     };
     // Expose a direct (non-observer) refit so _wsOpenStudyTab can run a final
     // fit after the landing window closes.

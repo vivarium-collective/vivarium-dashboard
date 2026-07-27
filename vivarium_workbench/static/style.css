@@ -1645,11 +1645,15 @@ textarea.loom-in-field{
 
 /* Overview tab — full-width, streamlined layout */
 .study-overview { max-width: none; }
-/* Keep long free-text readable even at full width (comfortable measure). */
+/* The Overview boxes (caveat/conclusion/biology/purpose) fill the full content
+   width — no reading-measure cap — so wide screens are used and the right-hand
+   dead space is gone. Auto-grow (study-detail.js) removes the inner scrollbars. */
 .study-overview .overview-prose,
 .study-overview .narrative-textarea,
 .study-overview .biology-derived-preview,
-.study-overview .purpose-callout { max-width: 90ch; }
+.study-overview .purpose-callout { max-width: none; width: 100%; box-sizing: border-box; }
+/* Auto-grown textareas: no inner scrollbar, grow to content. */
+.study-overview .narrative-textarea { overflow: hidden; }
 .overview-section { margin-bottom: 20px; }
 /* Report-summary card: tile fields across the full width (label above input)
    instead of one tall skinny column. Scoped to the Overview so the Decide tab's
