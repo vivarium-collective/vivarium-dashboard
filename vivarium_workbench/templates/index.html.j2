@@ -487,16 +487,16 @@ window.addEventListener('pageshow', function (e) {
     <!-- Primary nav -->
     <nav class="viv-rail-section" role="tablist">
       <div class="viv-rail-section-label">Workspace</div>
-      <!-- Resources: a page with an arrow pointing out to the right — a source
-           document feeding out into the workspace. -->
+      <!-- Resources: a stack of documents — a dog-eared front page (two lines)
+           over a second page peeking behind. Source material for the workspace. -->
       <a href="#workspace-inputs"  class="viv-rail-link menu-link" data-page="workspace-inputs">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="4" y="3" width="9" height="18" rx="1.5"/>
-            <line x1="7" y1="8" x2="10.5" y2="8"/>
-            <line x1="7" y1="11" x2="10.5" y2="11"/>
-            <path d="M13 15h8"/>
-            <path d="M18 12l3 3-3 3"/>
+            <path d="M8 6 H6 a1 1 0 0 0 -1 1 V19.5 a1 1 0 0 0 1 1 H15 V18"/>
+            <path d="M8 4 H15 L18 7 V18 H8 Z"/>
+            <path d="M15 4 V7 H18"/>
+            <path d="M10.5 10.5 H15.5"/>
+            <path d="M10.5 13 H15.5"/>
           </svg>
         </span>
         <span class="viv-rail-link-label">Resources</span>
@@ -518,17 +518,17 @@ window.addEventListener('pageshow', function (e) {
         </span>
         <span class="viv-rail-link-label">Registry</span>
       </a>
-      <!-- Processes: a process rectangle with one input arrow (left) and one
-           output arrow (right) — the canonical process glyph. Sits under
-           Registry (its artifacts are discovered there). -->
+      <!-- Processes: a tall process box with an arrow feeding in (left) and an
+           arrow exiting (right), both outside the box — input → process → output.
+           Sits under Registry (its artifacts are discovered there). -->
       <a href="#modules"           class="viv-rail-link menu-link" data-page="modules">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="8" y="7.5" width="8" height="9" rx="1.5"/>
-            <path d="M1 12h7"/>
-            <path d="M5.5 9.5 8 12l-2.5 2.5"/>
-            <path d="M16 12h7"/>
-            <path d="M20.5 9.5 23 12l-2.5 2.5"/>
+            <rect x="9.5" y="3.5" width="5" height="17" rx="1.5"/>
+            <path d="M1.5 12 H6.5"/>
+            <path d="M4.5 9.5 L7 12 L4.5 14.5"/>
+            <path d="M17.5 12 H22.5"/>
+            <path d="M20 9.5 L22.5 12 L20 14.5"/>
           </svg>
         </span>
         <span class="viv-rail-link-label">Processes</span>
