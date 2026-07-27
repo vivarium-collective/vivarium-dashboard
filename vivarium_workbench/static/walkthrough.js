@@ -1895,9 +1895,7 @@
   // Persists in localStorage.
   window._registryZoom = (function () {
     var z; try { z = localStorage.getItem('viv.registryZoom'); } catch (e) { z = null; }
-    // Registry now has TWO zoom levels — Table + Cards (Full is reached by
-    // double-clicking a card). A stored 'full' resolves to the Cards default.
-    return (z === 'table' || z === 'grid') ? z : 'grid';
+    return (z === 'table' || z === 'grid' || z === 'full') ? z : 'grid';
   })();
 
   // ── Cards-grid column control (shared: registry / composites / modules) ──
@@ -1932,11 +1930,25 @@
         '" class="cols-slider" title="Number of columns" oninput="_setCardCols(\'' + surface + '\', this.value)">' +
       '<span class="cols-count">' + (isAuto ? 'auto' : v) + '</span>';
   }
+  // The column control only makes sense in the multi-column Cards zoom — hide
+  // it in Table / Full so it doesn't read as a stray slider elsewhere.
+  function _updateColsSlotVisibility() {
+    var show = {
+      registry: (window._registryZoom === 'grid'),
+      composites: ((window._compositesZoom || 'cards') === 'cards'),
+      modules: ((window._catalogZoom || 'cards') === 'cards'),
+    };
+    Object.keys(show).forEach(function (s) {
+      var slot = document.querySelector('.cols-ctl-slot[data-cols-surface="' + s + '"]');
+      if (slot) slot.style.display = show[s] ? '' : 'none';
+    });
+  }
   function _syncColsControls() {
     document.querySelectorAll('.cols-ctl-slot').forEach(function (slot) {
       var s = slot.getAttribute('data-cols-surface');
       if (s && !slot.innerHTML.trim()) slot.innerHTML = _colsControl(s);
     });
+    _updateColsSlotVisibility();
   }
   window._syncColsControls = _syncColsControls;
   function _setCardCols(surface, value) {
@@ -1966,6 +1978,7 @@
     window._registryZoom = z;
     try { localStorage.setItem('viv.registryZoom', z); } catch (e) { /* private mode */ }
     _syncRegistryToolbar(); _rerenderRegistryKinds();
+    _updateColsSlotVisibility();   // slider only in Cards zoom (table returns early)
     _refocusRegistrySelection();   // keep the selected process in focus on zoom
   }
   window._setRegistryZoom = _setRegistryZoom;
@@ -2665,11 +2678,10 @@
     el.innerHTML = html;
     // Full zoom only: lazily resolve+inject each runnable card's config/inputs.
     if (zoom === 'full') _observeRunnableCards(el);
-    // Cards (grid) zoom: apply the multi-column layout + sync the column control.
-    if (zoom === 'grid') {
-      _syncColsControls();
-      el.querySelectorAll('.reg-cards-grid').forEach(function (c) { _applyCardCols(c, 'registry'); });
-    }
+    // Sync the column control (visible only in Cards zoom); apply the
+    // multi-column layout when in Cards.
+    _syncColsControls();
+    if (zoom === 'grid') el.querySelectorAll('.reg-cards-grid').forEach(function (c) { _applyCardCols(c, 'registry'); });
   }
 
   // Render Analysis classes (v2ecoli ANALYSIS_REGISTRY entries) in the Registry
@@ -3244,6 +3256,7 @@
       b.classList.toggle('active', b.getAttribute('data-czoom') === z);
     });
     _renderComposites();
+    _updateColsSlotVisibility();   // slider only in Cards zoom (table/loom hidden)
   }
   window._setCompositeZoom = _setCompositeZoom;
 
@@ -3534,11 +3547,12 @@
   }
   window._setCatalogView = _setCatalogView;
 
-  // Modules semantic zoom: Table (dense sortable) → Cards (full-row) → Full (high
-  // detail). Persists; double-click a module zooms in one level.
+  // Modules has TWO zoom levels: Table (dense sortable) → Cards (multi-column
+  // grid). Persists; double-click a module zooms in one level. A stored 'full'
+  // (the removed high-detail level) resolves to Cards.
   window._catalogZoom = (function () {
     var z; try { z = localStorage.getItem('viv.catalogZoom'); } catch (e) { z = null; }
-    return (z === 'table' || z === 'cards' || z === 'full') ? z : 'cards';
+    return (z === 'table' || z === 'cards') ? z : 'cards';
   })();
   function _setCatalogZoom(z) {
     window._catalogZoom = z;
@@ -3547,10 +3561,11 @@
       b.classList.toggle('active', b.getAttribute('data-mzoom') === z);
     });
     _renderCatalog();
+    _updateColsSlotVisibility();   // slider only in Cards zoom (table hidden)
   }
   window._setCatalogZoom = _setCatalogZoom;
   function _zoomInModule(name) {
-    var order = ['table', 'cards', 'full'];
+    var order = ['table', 'cards'];
     var i = order.indexOf(window._catalogZoom || 'cards');
     window._catalogSelected = name;
     _setCatalogZoom(order[Math.min(order.length - 1, i + 1)]);

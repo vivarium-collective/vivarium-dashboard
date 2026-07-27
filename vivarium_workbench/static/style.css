@@ -1407,7 +1407,7 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .cards-grid-cols .module-card.mrow{ width:auto; }
 
 /* Column control: Auto toggle + slider + count. */
-.cols-ctl-slot{ display:inline-flex; align-items:center; gap:6px; margin-left:8px; }
+.cols-ctl-slot{ display:inline-flex; align-items:center; gap:6px; margin-right:10px; }
 .cols-auto-btn{
   border:1px solid #e2e8f0; background:#fff; color:#475569; border-radius:5px;
   padding:2px 9px; cursor:pointer; font-size:0.8em; font-weight:600;

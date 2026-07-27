@@ -653,12 +653,12 @@ window.addEventListener('pageshow', function (e) {
       <div class="card-browse-chips" id="composite-tag-chips"></div>
       {# Semantic zoom, dense → detailed: Table (sortable) → Cards (full-row) →
          Loom (the composite's bigraph, embedded on demand per card). #}
+      <span class="cols-ctl-slot" data-cols-surface="composites" title="Cards columns"></span>
       <span class="registry-zoom" role="group" aria-label="View density" title="View density">
         <button class="reg-zoom-btn" data-czoom="table" onclick="_setCompositeZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-        <button class="reg-zoom-btn active" data-czoom="cards" onclick="_setCompositeZoom('cards')" title="Cards — full-row">&#9638;</button>
+        <button class="reg-zoom-btn active" data-czoom="cards" onclick="_setCompositeZoom('cards')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
         <button class="reg-zoom-btn" data-czoom="loom" onclick="_setCompositeZoom('loom')" title="Loom — the composite bigraph (open per card)">&#9707;</button>
       </span>
-      <span class="cols-ctl-slot" data-cols-surface="composites" title="Cards columns"></span>
       <select id="composites-sort" class="composites-sort-select" onchange="_setCompositesSort(this.value)" title="Sort composites">
         <option value="workspace-first">Sort: Workspace first</option>
         <option value="passrate">Sort: Pass rate</option>
@@ -749,12 +749,11 @@ window.addEventListener('pageshow', function (e) {
         </select>
         {# Semantic zoom, dense → detailed: Table (sortable) → Cards (full-row)
            → Full (high detail). Double-click a module to zoom in. #}
+        <span class="cols-ctl-slot" data-cols-surface="modules" title="Cards columns"></span>
         <span class="registry-zoom" role="group" aria-label="View density" title="View density">
           <button class="reg-zoom-btn" data-mzoom="table" onclick="_setCatalogZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-          <button class="reg-zoom-btn active" data-mzoom="cards" onclick="_setCatalogZoom('cards')" title="Cards — full-row">&#9638;</button>
-          <button class="reg-zoom-btn" data-mzoom="full" onclick="_setCatalogZoom('full')" title="Full — high detail">&#9635;</button>
+          <button class="reg-zoom-btn active" data-mzoom="cards" onclick="_setCatalogZoom('cards')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
         </span>
-        <span class="cols-ctl-slot" data-cols-surface="modules" title="Cards columns"></span>
       </div>
     </div>
     <div id="catalog-modules-grid" class="module-grid">
@@ -788,13 +787,14 @@ window.addEventListener('pageshow', function (e) {
 
     <div class="registry-view-toolbar">
       <input type="search" class="registry-search" id="registry-search" placeholder="Filter&hellip;" oninput="_filterRegistry(this.value)">
-      {# Two zoom levels: Table (sortable) and Cards (multi-column grid). The
-         runnable Full view is reached by double-clicking a process card. #}
+      {# Three zoom levels: Table (sortable) → Cards (multi-column grid) → Full
+         (runnable process). Double-clicking a card also drills in one level. #}
+      <span class="cols-ctl-slot" data-cols-surface="registry" title="Cards columns"></span>
       <div class="registry-zoom" role="group" aria-label="View density" title="View density">
         <button class="reg-zoom-btn" data-zoom="table" onclick="_setRegistryZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-        <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — multi-column grid; double-click a card to run it">&#9638;</button>
+        <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
+        <button class="reg-zoom-btn" data-zoom="full" onclick="_setRegistryZoom('full')" title="Full — runnable process (config, ports, run)">&#9707;</button>
       </div>
-      <span class="cols-ctl-slot" data-cols-surface="registry" title="Cards columns"></span>
     </div>
 
     <div class="registry-tab-panel active" data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>
