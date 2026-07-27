@@ -2033,6 +2033,39 @@
   }
   window._setCardCols = _setCardCols;
 
+  // ── Light / dark theme toggle ──────────────────────────────────────────
+  // The theme is applied to <html data-theme> before first paint by a small
+  // inline script in <head> (no flash); this drives the toggle + persistence.
+  function _syncThemeLogo() {
+    var img = document.querySelector('.viv-rail-logo');
+    if (!img || !img.dataset) return;
+    var dark = document.documentElement.getAttribute('data-theme') === 'dark';
+    var next = dark ? img.dataset.darkSrc : img.dataset.lightSrc;
+    if (next && img.getAttribute('src') !== next) img.src = next;
+  }
+  function _setTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    try { localStorage.setItem('viv.theme', t); } catch (e) { /* private mode */ }
+    var b = document.getElementById('viv-theme-toggle');
+    if (b) b.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false');
+    _syncThemeLogo();
+  }
+  function _toggleTheme() {
+    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+    _setTheme(cur === 'dark' ? 'light' : 'dark');
+  }
+  window._toggleTheme = _toggleTheme;
+  window._setTheme = _setTheme;
+  (function () {
+    var sync = function () {
+      var b = document.getElementById('viv-theme-toggle');
+      if (b) b.setAttribute('aria-checked', document.documentElement.getAttribute('data-theme') === 'dark' ? 'true' : 'false');
+      _syncThemeLogo();
+    };
+    if (document.readyState !== 'loading') sync();
+    else document.addEventListener('DOMContentLoaded', sync);
+  })();
+
   function _syncRegistryToolbar() {
     document.querySelectorAll('.reg-zoom-btn').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-zoom') === window._registryZoom);

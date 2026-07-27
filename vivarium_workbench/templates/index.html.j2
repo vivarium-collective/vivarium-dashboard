@@ -3,6 +3,8 @@
 <meta charset="UTF-8"><title>{% if dashboard_name %}{{ dashboard_name }} dashboard{% else %}{{ workspace_name }}{% endif %}{% if active_investigation_name %}:{{ active_investigation_name }}{% endif %}</title>
 <link rel="stylesheet" href="assets/style.css{% if asset_version %}?v={{ asset_version }}{% endif %}">
 <link rel="stylesheet" href="assets/snapshot-readonly.css">
+<!-- Apply the saved light/dark theme before first paint (no flash of light). -->
+<script>(function(){try{var t=localStorage.getItem('viv.theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <!-- Per-tab session identity (session-per-tab). Loaded FIRST, as a classic
      blocking script, so the window.fetch override is in place before any other
      script or inline fetch runs — every same-origin request then carries this
@@ -412,11 +414,16 @@ window.addEventListener('pageshow', function (e) {
 
     <!-- Brand: fixed Vivarium logo + name (no per-workspace icon/name override). -->
     <div class="viv-rail-header">
-      <img class="viv-rail-logo" src="assets/vivarium-logo.png{% if asset_version %}?v={{ asset_version }}{% endif %}" alt="Vivarium" loading="lazy">
-      <div class="viv-rail-brand">
-        <strong>Vivarium</strong>
-        <small>workbench</small>
-      </div>
+      <a class="viv-rail-brand-link" href="https://vivariumlab.com" target="_blank" rel="noopener" title="vivariumlab.com">
+        <img class="viv-rail-logo" src="assets/vivarium-logo.png{% if asset_version %}?v={{ asset_version }}{% endif %}" alt="Vivarium" loading="lazy"
+             data-light-src="assets/vivarium-logo.png{% if asset_version %}?v={{ asset_version }}{% endif %}"
+             data-dark-src="assets/vivarium-logo-dark.png{% if asset_version %}?v={{ asset_version }}{% endif %}"
+             onerror="if(this.dataset.lightSrc&&this.src.indexOf('logo-dark')>=0){this.src=this.dataset.lightSrc;}">
+        <div class="viv-rail-brand">
+          <strong>Vivarium</strong>
+          <small>workbench</small>
+        </div>
+      </a>
       <!-- Rail collapse/expand toggle. Lives in the header so, when collapsed, it
            can overlay the logo and reveal on hover (see .viv-rail-collapsed CSS). -->
       <button class="viv-rail-toggle" id="viv-rail-toggle" type="button" aria-label="Collapse sidebar" title="Collapse sidebar" onclick="_vivToggleRail()">
@@ -596,6 +603,16 @@ window.addEventListener('pageshow', function (e) {
 
     </div><!-- /.viv-rail-scroll -->
 
+    <!-- Light / dark theme toggle (pinned to the rail bottom). -->
+    <div class="viv-rail-footer">
+      <button class="viv-theme-toggle" id="viv-theme-toggle" type="button" role="switch" aria-checked="false"
+              title="Toggle dark / light mode" aria-label="Toggle dark mode" onclick="_toggleTheme()">
+        <span class="viv-theme-ico viv-theme-sun" aria-hidden="true">&#9728;</span>
+        <span class="viv-theme-ico viv-theme-moon" aria-hidden="true">&#9790;</span>
+        <span class="viv-theme-thumb" aria-hidden="true"></span>
+      </button>
+    </div>
+
     <!-- The rail user-identity footer was removed: it added no navigation and
          (in snapshot/screenshot contexts) surfaced a personal GitHub identity.
          Dropping it also lets the Studies section grow to the rail's full
@@ -648,24 +665,28 @@ window.addEventListener('pageshow', function (e) {
   <!-- Available Composites (workspace-local discovery) -->
   <div class="panel">
     <h3>Available Composites <span id="composite-count" class="count-badge"></span></h3>
-    <div class="card-browse-toolbar" id="composite-toolbar">
-      <input type="search" class="card-browse-search" id="composite-search" placeholder="Filter composites…">
-      <div class="card-browse-chips" id="composite-tag-chips"></div>
-      {# Semantic zoom, dense → detailed: Table (sortable) → Cards (full-row) →
-         Loom (the composite's bigraph, embedded on demand per card). #}
-      <span class="cols-ctl-slot" data-cols-surface="composites" title="Cards columns"></span>
-      <span class="registry-zoom" role="group" aria-label="View density" title="View density">
-        <button class="reg-zoom-btn" data-czoom="table" onclick="_setCompositeZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-        <button class="reg-zoom-btn active" data-czoom="cards" onclick="_setCompositeZoom('cards')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
-        <button class="reg-zoom-btn" data-czoom="loom" onclick="_setCompositeZoom('loom')" title="Loom — the composite bigraph (open per card)">&#9707;</button>
-      </span>
-      <select id="composites-sort" class="composites-sort-select" onchange="_setCompositesSort(this.value)" title="Sort composites">
-        <option value="workspace-first">Sort: Workspace first</option>
-        <option value="passrate">Sort: Pass rate</option>
-        <option value="name">Sort: Name</option>
-        <option value="module">Sort: Module</option>
-        <option value="kind">Sort: Kind</option>
-      </select>
+    {# Two-row toolbar: search + zoom controls pinned to the TOP row (zoom stays
+       fixed top-right in every zoom setting); tag chips + sort wrap on row 2. #}
+    <div class="card-browse-toolbar cbt-2row" id="composite-toolbar">
+      <div class="cbt-top">
+        <input type="search" class="card-browse-search" id="composite-search" placeholder="Filter composites…">
+        <span class="cols-ctl-slot" data-cols-surface="composites" title="Cards columns"></span>
+        <span class="registry-zoom" role="group" aria-label="View density" title="View density">
+          <button class="reg-zoom-btn" data-czoom="table" onclick="_setCompositeZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
+          <button class="reg-zoom-btn active" data-czoom="cards" onclick="_setCompositeZoom('cards')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
+          <button class="reg-zoom-btn" data-czoom="loom" onclick="_setCompositeZoom('loom')" title="Loom — the composite bigraph (open per card)">&#9707;</button>
+        </span>
+      </div>
+      <div class="cbt-bottom">
+        <div class="card-browse-chips" id="composite-tag-chips"></div>
+        <select id="composites-sort" class="composites-sort-select" onchange="_setCompositesSort(this.value)" title="Sort composites">
+          <option value="workspace-first">Sort: Workspace first</option>
+          <option value="passrate">Sort: Pass rate</option>
+          <option value="name">Sort: Name</option>
+          <option value="module">Sort: Module</option>
+          <option value="kind">Sort: Kind</option>
+        </select>
+      </div>
     </div>
     <div id="composite-cards" class="module-grid">
       <p class="empty-state">Loading composites&hellip;</p>
