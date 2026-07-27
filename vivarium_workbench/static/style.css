@@ -1579,7 +1579,9 @@ textarea.loom-in-field{
 .loom-load-hint{ font-size:0.85em; }
 /* Wider left column so editable input fields are usable (static loom cards keep
    the narrow max-content margin). */
-.loom-runnable .loom-row{ grid-template-columns:300px minmax(0,1fr) max-content; }
+/* Runnable card: editable inputs left, body center, and a wider RIGHT panel
+   holding the output ports + the run results (collapsible JSON viewer). */
+.loom-runnable .loom-row{ grid-template-columns:280px minmax(0,1fr) minmax(300px,0.95fr); }
 .loom-inputs-edit{ width:100%; gap:9px; }
 .loom-inputs-edit .loom-in-row{ width:100%; }
 .loom-inputs-edit .loom-in-field{ width:100%; }
@@ -1587,29 +1589,77 @@ textarea.loom-in-field{
   display:flex; align-items:center; gap:10px; flex-wrap:wrap;
   margin-top:12px; padding-top:12px; border-top:1px solid #eef2f7;
 }
-.loom-runnable .loom-run-output{ padding:0 18px 14px; }
-.loom-runnable .loom-run-output:empty{ display:none; }
-
-/* Middle (grid) zoom: ports + types shown inline (read-only), no dropdown. */
-.reg-inline-ports{
-  display:grid; grid-template-columns:1fr 1fr; gap:6px 18px;
-  margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;
+.loom-out-panel{ min-width:0; display:flex; flex-direction:column; gap:10px; }
+.loom-out-panel .loom-run-output:empty{ display:none; }
+.loom-out-panel .loom-run-output{
+  border-top:1px solid #eef2f7; padding-top:10px; min-width:0;
 }
-.reg-ipcol{ display:flex; flex-wrap:wrap; gap:5px; align-items:baseline; min-width:0; }
+
+/* Collapsible JSON viewer for run outputs. */
+.loom-run-ok{ display:flex; align-items:center; gap:10px; color:#047857; font-size:0.85em; font-weight:600; margin-bottom:6px; }
+.json-viewer{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.8em; line-height:1.55;
+  max-height:320px; overflow:auto; background:#f8fafc; border:1px solid #eef2f7;
+  border-radius:6px; padding:8px 10px;
+}
+.json-viewer .jt-row{ white-space:pre-wrap; word-break:break-word; padding-left:14px; }
+.json-viewer .jt-branch{ }
+.json-viewer .jt-branch > summary{
+  cursor:pointer; list-style:none; white-space:nowrap;
+}
+.json-viewer .jt-branch > summary::-webkit-details-marker{ display:none; }
+.json-viewer .jt-branch > summary::before{ content:'▸'; color:#94a3b8; display:inline-block; width:12px; }
+.json-viewer .jt-branch[open] > summary::before{ content:'▾'; }
+.json-viewer .jt-children{ border-left:1px solid #e5e7eb; margin-left:5px; padding-left:6px; }
+.jt-key{ color:#0369a1; }
+.jt-colon{ color:#94a3b8; }
+.jt-punct{ color:#94a3b8; }
+.jt-count{ color:#cbd5e1; font-size:0.85em; margin:0 2px; }
+.jt-str{ color:#15803d; }
+.jt-num{ color:#b45309; }
+.jt-bool{ color:#7c3aed; }
+.jt-null{ color:#9ca3af; font-style:italic; }
+.loom-copy-btn{ margin-left:auto; }
+
+/* Middle (grid) zoom: compact bigraph-loom-style node — config strip on top,
+   input ports down the left, output ports down the right (read-only). */
+.reg-mid{
+  margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;
+  display:flex; flex-direction:column; gap:7px;
+}
+.reg-mid-config{ display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.reg-mid-label{
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.62em;
+  font-weight:700; color:#94a3b8; margin-right:3px;
+}
+.reg-mid-config code{
+  background:#eef2ff; color:#3730a3; border:1px solid #e0e7ff; border-radius:4px;
+  padding:1px 6px; font-size:0.72em;
+}
+.reg-mid-ports{ display:flex; gap:24px; align-items:flex-start; }
+.reg-mid-col{
+  flex:1 1 0; min-width:0; display:flex; flex-wrap:wrap; gap:4px;
+  align-items:baseline; align-content:flex-start;
+}
+.reg-mid-out{ justify-content:flex-end; }
 .reg-ip-title{
-  flex:0 0 100%; text-transform:uppercase; letter-spacing:.06em; font-size:0.68em;
+  flex:0 0 100%; text-transform:uppercase; letter-spacing:.06em; font-size:0.62em;
   font-weight:700; color:#94a3b8; margin-bottom:1px;
 }
+.reg-mid-out .reg-ip-title{ text-align:right; }
 .reg-ip{
-  display:inline-flex; align-items:baseline; gap:5px; background:#f8fafc;
-  border:1px solid #eef2f7; border-radius:6px; padding:2px 7px; max-width:100%;
+  display:inline-flex; align-items:center; gap:4px; background:#f8fafc;
+  border:1px solid #eef2f7; border-radius:5px; padding:1px 6px; max-width:100%;
+  font-size:0.75em;
 }
-.reg-ip code{ color:#1e40af; font-weight:600; font-size:0.8em; }
+.reg-ip-dot{ width:6px; height:6px; border-radius:50%; background:#6366f1; flex:none; }
+.reg-ip-out .reg-ip-dot{ background:#10b981; }
+.reg-ip code{ color:#1e40af; font-weight:600; font-size:0.95em; }
 .reg-ip-type{
-  color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.72em;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:150px;
+  color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.82em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;
 }
-.reg-ip-na{ color:#cbd5e1; font-size:0.8em; }
+.reg-ip-na{ color:#cbd5e1; font-size:0.75em; }
 
 /* Table view. */
 .registry-table-wrap{ overflow-x:auto; }

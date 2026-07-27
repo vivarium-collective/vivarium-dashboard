@@ -1954,22 +1954,36 @@
   // Inline ports + types for the middle (grid) zoom — read-only detail, always
   // visible (no dropdown). Double-click a card to reach the runnable Full view.
   function _regInlinePorts(p) {
-    function col(title, schema) {
+    // Compact bigraph-loom-style layout: config strip on top, input ports down
+    // the left, output ports down the right — small chips with a port dot.
+    function ports(schema, side) {
       var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : null;
-      var items;
-      if (keys === null) items = '<span class="reg-ip-na" title="Ports depend on a configured instance.">—</span>';
-      else if (!keys.length) items = '<span class="reg-ip-na">(none)</span>';
-      else items = keys.map(function (k) {
+      if (keys === null) return '<span class="reg-ip-na" title="Ports depend on a configured instance.">—</span>';
+      if (!keys.length) return '<span class="reg-ip-na">(none)</span>';
+      return keys.map(function (k) {
         var t = _regTypeLabel(schema[k]);
-        return '<span class="reg-ip"><code>' + _esc(k) + '</code>' +
+        return '<span class="reg-ip reg-ip-' + side + '"><span class="reg-ip-dot"></span>' +
+          '<code>' + _esc(k) + '</code>' +
           (t ? '<span class="reg-ip-type">' + _esc(t) + '</span>' : '') + '</span>';
       }).join('');
-      return '<div class="reg-ipcol"><span class="reg-ip-title">' + title + '</span>' + items + '</div>';
     }
-    if (p.inputs === undefined && p.outputs === undefined) return '';
-    return '<div class="reg-inline-ports">' +
-      col('inputs', p.inputs === undefined ? null : p.inputs) +
-      col('outputs', p.outputs === undefined ? null : p.outputs) + '</div>';
+    var hasPorts = !(p.inputs === undefined && p.outputs === undefined);
+    var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
+    if (!hasPorts && !cfgKeys.length) return '';
+    var cfg = cfgKeys.length
+      ? '<div class="reg-mid-config"><span class="reg-mid-label">config</span>' +
+        cfgKeys.slice(0, 16).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
+        (cfgKeys.length > 16 ? ' <span class="reg-ip-na">+' + (cfgKeys.length - 16) + '</span>' : '') + '</div>'
+      : '';
+    var portsRow = hasPorts
+      ? '<div class="reg-mid-ports">' +
+          '<div class="reg-mid-col reg-mid-in"><span class="reg-ip-title">inputs</span>' +
+            ports(p.inputs === undefined ? null : p.inputs, 'in') + '</div>' +
+          '<div class="reg-mid-col reg-mid-out"><span class="reg-ip-title">outputs</span>' +
+            ports(p.outputs === undefined ? null : p.outputs, 'out') + '</div>' +
+        '</div>'
+      : '';
+    return '<div class="reg-mid">' + cfg + portsRow + '</div>';
   }
 
   // Grid card (middle zoom): name, use, one-line description, and the ports+types
@@ -2077,9 +2091,13 @@
               '<button class="btn-mini" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
             '</div>' +
           '</div>' +
-          '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
+          // Right panel: static output ports on top, run results (collapsible
+          // JSON viewer) render below them here — outputs stay on the right.
+          '<div class="loom-out-panel">' +
+            '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
+            '<div class="loom-run-output"></div>' +
+          '</div>' +
         '</div>' +
-        '<div class="loom-run-output"></div>' +
       '</div>' +
     '</div>';
   }
@@ -2104,24 +2122,78 @@
     }
   }
 
-  // Lazy-load a runnable Full card's resolved defaults (core.fill, not null
-  // placeholders) the first time it becomes visible.
+  // The registry entry for an address (config_schema/inputs live here — the
+  // authoritative contract, independent of whether the class can be
+  // instantiated with an empty config).
+  function _registryEntryByAddress(address) {
+    var m = window._registryByKind || {};
+    var kinds = Object.keys(m);
+    for (var i = 0; i < kinds.length; i++) {
+      var arr = m[kinds[i]] || [];
+      for (var j = 0; j < arr.length; j++) {
+        if (arr[j] && arr[j].address === address) return arr[j];
+      }
+    }
+    return null;
+  }
+
+  // A sensible editable default for a port/config type schema (used when the
+  // instantiation-based template can't resolve a value).
+  function _defaultForSchema(s) {
+    if (s && typeof s === 'object' && !Array.isArray(s) && ('_default' in s)) return s._default;
+    var t = String(_regTypeLabel(s) || '').toLowerCase();
+    if (/(^|\b)(map|tree|dict|node|inplace)/.test(t)) return {};
+    if (/(^|\b)(list|array|tuple|set)/.test(t)) return [];
+    if (t.indexOf('int') >= 0 || t.indexOf('float') >= 0 || t.indexOf('number') >= 0) return 0;
+    if (t.indexOf('bool') >= 0) return false;
+    if (t.indexOf('string') >= 0) return '';
+    return null;
+  }
+
+  // Field set = the STATIC schema's keys (the real contract), each valued from
+  // the template when it resolved one, else a type-based default.
+  function _mergeSchemaDefaults(schema, template) {
+    schema = schema || {}; template = template || {};
+    var keys = Object.keys(schema);
+    if (!keys.length) keys = Object.keys(template);
+    var out = {};
+    keys.forEach(function (k) {
+      out[k] = (k in template) ? template[k] : _defaultForSchema(schema[k]);
+    });
+    return out;
+  }
+
+  // Populate a runnable Full card's config + input fields. The field SET comes
+  // from the entry's static config_schema/inputs (always present); the template
+  // (core.fill via instantiation) only refines default VALUES — heavy Steps
+  // like Metabolism can't be instantiated with an empty config, so the template
+  // returns empty and we must not blank the contract.
   function _loadFullRunFields(card) {
     if (!card || card._loaded) return;
     card._loaded = true;
     var address = card.getAttribute('data-address');
+    var entry = _registryEntryByAddress(address) || {};
+    var cfgSchema = (entry.config_schema && typeof entry.config_schema === 'object') ? entry.config_schema : {};
+    var inSchemaStatic = (entry.inputs && typeof entry.inputs === 'object') ? entry.inputs : {};
     var url = (window.DataSource && window.DataSource.apiUrl ? window.DataSource.apiUrl('/api/registry/process-template') : '/api/registry/process-template') +
       '?address=' + encodeURIComponent(address);
+    var apply = function (tCfg, tIn, tInSchema) {
+      var config = _mergeSchemaDefaults(cfgSchema, tCfg);
+      var inputs = _mergeSchemaDefaults(inSchemaStatic, tIn);
+      var inputsSchema = (tInSchema && Object.keys(tInSchema).length) ? tInSchema : inSchemaStatic;
+      card._defaults = { config: config, inputs: inputs, inputsSchema: inputsSchema };
+      _fillFullFields(card, config, inputs, inputsSchema);
+    };
     fetch(url)
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        var config = (j && j.ok && j.config && typeof j.config === 'object') ? j.config : {};
-        var inputs = (j && j.ok && j.inputs && typeof j.inputs === 'object') ? j.inputs : {};
-        var inSchema = (j && j.inputs_schema && typeof j.inputs_schema === 'object') ? j.inputs_schema : {};
-        card._defaults = { config: config, inputs: inputs, inputsSchema: inSchema };
-        _fillFullFields(card, config, inputs, inSchema);
+        apply(
+          (j && j.ok && j.config && typeof j.config === 'object') ? j.config : {},
+          (j && j.ok && j.inputs && typeof j.inputs === 'object') ? j.inputs : {},
+          (j && j.inputs_schema && typeof j.inputs_schema === 'object') ? j.inputs_schema : {}
+        );
       })
-      .catch(function () { card._defaults = { config: {}, inputs: {}, inputsSchema: {} }; _fillFullFields(card, {}, {}, {}); });
+      .catch(function () { apply({}, {}, {}); });
   }
 
   // Load resolved defaults for runnable Full cards as they scroll into view, so
@@ -2269,9 +2341,10 @@
       .then(function (j) {
         btn.disabled = false; btn.textContent = orig;
         if (j && j.ok) {
-          out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs:' +
+          out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs' +
             '<button class="btn-mini loom-copy-btn" onclick="_copyRunOutput(this)" title="Copy outputs JSON">⧉ Copy</button></div>' +
-            '<pre class="json-tree loom-run-pre">' + _esc(JSON.stringify(j.outputs, null, 2)) + '</pre>';
+            _jsonViewer(j.outputs) +
+            '<pre class="loom-run-raw" hidden>' + _esc(JSON.stringify(j.outputs, null, 2)) + '</pre>';
         } else {
           var stage = (j && j.stage) ? '[' + j.stage + '] ' : '';
           out.innerHTML = '<div class="loom-run-err">✗ ' + _esc(stage) + _esc((j && j.error) || 'run failed') + '</div>' +
@@ -2286,9 +2359,41 @@
   window._runRegistryProcess = _runRegistryProcess;
 
   // Copy the run output's JSON to the clipboard.
+  // Collapsible JSON viewer — objects/arrays are <details> nodes (top two
+  // levels open); scalars are typed leaves. Big/nested run outputs stay
+  // navigable instead of a wall of pretty-printed text.
+  function _jsonNode(key, val, depth) {
+    var keyHtml = (key !== null) ? '<span class="jt-key">' + _esc(key) + '</span><span class="jt-colon">:</span> ' : '';
+    if (val === null) return '<div class="jt-row">' + keyHtml + '<span class="jt-null">null</span></div>';
+    if (Array.isArray(val)) {
+      if (!val.length) return '<div class="jt-row">' + keyHtml + '<span class="jt-punct">[ ]</span></div>';
+      var ob = depth < 2 ? ' open' : '';
+      var ab = val.map(function (v, i) { return _jsonNode(String(i), v, depth + 1); }).join('');
+      return '<details class="jt-branch"' + ob + '><summary>' + keyHtml +
+        '<span class="jt-punct">[</span><span class="jt-count">' + val.length + '</span><span class="jt-punct">]</span></summary>' +
+        '<div class="jt-children">' + ab + '</div></details>';
+    }
+    if (typeof val === 'object') {
+      var keys = Object.keys(val);
+      if (!keys.length) return '<div class="jt-row">' + keyHtml + '<span class="jt-punct">{ }</span></div>';
+      var oo = depth < 2 ? ' open' : '';
+      var ob2 = keys.map(function (k) { return _jsonNode(k, val[k], depth + 1); }).join('');
+      return '<details class="jt-branch"' + oo + '><summary>' + keyHtml +
+        '<span class="jt-punct">{</span><span class="jt-count">' + keys.length + '</span><span class="jt-punct">}</span></summary>' +
+        '<div class="jt-children">' + ob2 + '</div></details>';
+    }
+    var t = typeof val;
+    var cls = t === 'number' ? 'jt-num' : (t === 'boolean' ? 'jt-bool' : 'jt-str');
+    var disp = t === 'string' ? '"' + _esc(val) + '"' : _esc(String(val));
+    return '<div class="jt-row">' + keyHtml + '<span class="' + cls + '">' + disp + '</span></div>';
+  }
+  function _jsonViewer(value) {
+    return '<div class="json-viewer">' + _jsonNode(null, value, 0) + '</div>';
+  }
+
   function _copyRunOutput(btn) {
     var out = btn.closest('.loom-run-output');
-    var pre = out ? out.querySelector('.loom-run-pre') : null;
+    var pre = out ? out.querySelector('.loom-run-raw') : null;
     if (!pre) return;
     var text = pre.textContent || '';
     var done = function () { var o = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(function () { btn.textContent = o; }, 1200); };
