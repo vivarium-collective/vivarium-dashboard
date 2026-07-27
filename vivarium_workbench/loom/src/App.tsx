@@ -1121,7 +1121,7 @@ export default function App() {
 
   // Display label map: ids that need a human-readable label different from the
   // capitalized id. E.g. 'setup' → 'Setup & Run'.
-  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Setup & Run', wiring: 'Explore' };
+  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Configure', wiring: 'Explore' };
 
   return (
     <ReactFlowProvider>
