@@ -35,24 +35,55 @@ def _workspace_packages(ws_root: Path) -> list[str]:
 
 
 def build_audit(ws_root) -> tuple[dict, int]:
-    """Run the L0-L5 audit and return ``(report.as_dict(), 200)``.
+    """Run the audit and return ``(report, 200)``.
 
-    Derives the workspace's own package from :class:`WorkspacePaths` and passes
-    it as ``extra_packages`` so its composites resolve. Tolerant: any failure ->
-    ``({"error": str, "studies": [], "investigations": []}, 200)``.
+    Two layers, each best-effort:
+      - the L0-L5 **reproducibility grade** (:mod:`audit_grade`, self-contained —
+        works with or without the upstream package), attached as ``grade`` on
+        each study/investigation block + ``summary.grade_distribution``;
+      - the upstream **structural** audit (``viva_superpowers.study_audit``),
+        whose per-check levels/verdicts fill each block's ``checks`` when present.
+
+    When ``study_audit`` is unavailable the report is built from the grade alone,
+    so the Audit tab (and published snapshot) still show reproducibility scores.
+    Tolerant: any failure -> a 200 with an ``error`` note, never a 500.
     """
     ws_root = Path(ws_root)
-    empty = {"error": "", "studies": [], "investigations": []}
+
+    try:
+        from vivarium_workbench.lib.audit_grade import grade_workspace
+        grades = grade_workspace(ws_root)
+    except Exception as exc:  # noqa: BLE001 — grade is best-effort
+        grades = {"studies": {}, "investigations": {}, "distribution": {}, "error": str(exc)}
+
+    report = None
+    err = grades.get("error") or ""
     try:
         from viva_superpowers import study_audit
-    except Exception as exc:  # noqa: BLE001 — dependency missing/broken: degrade, don't 500
-        return {**empty, "error": f"study_audit unavailable: {exc}"}, 200
-
-    extra_packages = _workspace_packages(ws_root)
-    try:
         report = study_audit.audit_workspace(
-            ws_root, extra_packages=extra_packages or None
-        )
-        return report.as_dict(), 200
-    except Exception as exc:  # noqa: BLE001 — audit is best-effort; never fatal
-        return {**empty, "error": f"audit failed: {exc}"}, 200
+            ws_root, extra_packages=_workspace_packages(ws_root) or None
+        ).as_dict()
+    except Exception as exc:  # noqa: BLE001 — dependency missing/broken: degrade, don't 500
+        err = err or f"study_audit unavailable: {exc}"
+
+    if report is None:
+        report = {
+            "error": err,
+            "studies": [{"slug": s, "worst": "pass", "checks": []} for s in grades["studies"]],
+            "investigations": [{"slug": s, "worst": "pass", "checks": []}
+                               for s in grades["investigations"]],
+            "summary": {"n_studies": len(grades["studies"]),
+                        "n_investigations": len(grades["investigations"]),
+                        "hard_failures": 0},
+        }
+
+    for blk in report.get("studies", []):
+        g = grades["studies"].get(blk.get("slug"))
+        if g:
+            blk["grade"] = g
+    for blk in report.get("investigations", []):
+        g = grades["investigations"].get(blk.get("slug"))
+        if g:
+            blk["grade"] = g
+    report.setdefault("summary", {})["grade_distribution"] = grades.get("distribution", {})
+    return report, 200
