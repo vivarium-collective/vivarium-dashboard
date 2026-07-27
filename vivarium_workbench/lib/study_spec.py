@@ -225,9 +225,18 @@ def study_interface(spec: dict) -> dict:
     raw_outputs = spec.get("outputs") or []
     outputs = [str(o) for o in raw_outputs]
 
+    # Fall back to conditions.baseline for composite and config if not defined
+    # at the top level. This handles Phase 2 migration where models moved under
+    # conditions.baseline.{composite, params}.
+    cond_baseline = ((spec.get("conditions") or {}).get("baseline")) or {}
+    composite = spec.get("composite") or cond_baseline.get("composite")
+    config = spec.get("config")
+    if not config:
+        config = dict(cond_baseline.get("params") or {})
+
     return {
-        "composite": spec.get("composite"),
-        "config": spec.get("config") or {},
+        "composite": composite,
+        "config": config,
         "inputs": inputs,
         "outputs": outputs,
         "emitter": spec.get("emitter"),
@@ -391,6 +400,36 @@ def read_runs_db_for_study(ws_root: Path, name: str) -> list[dict]:
     # db is authoritative where present, so only add spec runs not already seen.
     for _r in _study_yaml_run_rows(ws_root, name):
         rows_by_id.setdefault(_r["run_id"], _r)
+
+    # Consolidation: fold the workspace-wide `.pbg/runs.jsonl` run-index (the
+    # SAME canonical source the Simulations tab reads via
+    # simulations_index.build_simulations_data) and add any runs tagged for this
+    # study that the per-study runs.db / study.yaml didn't already surface —
+    # e.g. bespoke pbg_runner or remote runs that only ever land in the JSONL.
+    # Additive (setdefault): runs.db stays authoritative where both have a row.
+    try:
+        from vivarium_workbench.lib.run_log import fold_runs_jsonl
+        for _rid, _rec in fold_runs_jsonl(ws_root).items():
+            if _rec.get("study_slug") != name or _rid in rows_by_id:
+                continue
+            _params = _rec.get("params") if isinstance(_rec.get("params"), dict) else {}
+            rows_by_id[_rid] = {
+                "run_id":        _rid,
+                "spec_id":       _rec.get("spec_id") or name,
+                "label":         _rec.get("label") or _rec.get("sim_name") or _rid,
+                "sim_name":      _rec.get("sim_name") or _rec.get("label") or _rid,
+                "variant":       _params.get("variant"),
+                "composite":     _params.get("composite") or _rec.get("spec_id"),
+                "params":        _params,
+                "n_steps":       _rec.get("n_steps"),
+                "status":        _rec.get("status") or "completed",
+                "started_at":    _rec.get("started_at"),
+                "completed_at":  _rec.get("completed_at") or _rec.get("started_at"),
+                "generation_id": _rec.get("generation_id"),
+                "source":        "runs.jsonl",
+            }
+    except Exception:  # noqa: BLE001 — the JSONL index is a best-effort overlay
+        pass
 
     def _iso(v):
         if v is None:
@@ -564,11 +603,41 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         except Exception:
             db_runs = []
         if db_runs:
-            existing_ids = {(r or {}).get("run_id") for r in (spec.get("runs") or [])}
-            merged = list(spec.get("runs") or [])
+            # Dedup by run_id. study.yaml `runs:` entries key their identity
+            # under `name` (== runs_meta.run_id); db_runs key under `run_id`.
+            # The old merge built existing_ids from `run_id` on the study.yaml
+            # side — which is absent there — so the set collapsed to {None} and
+            # EVERY db_run was appended even when the same run was already
+            # present as a study.yaml entry, producing two rows per run (the
+            # "name vs run_id" duplicate). db_runs is the canonical run-index
+            # (runs.db + study.yaml mechanical + .pbg/runs.jsonl fold), so use it
+            # as the run LIST and graft each study.yaml entry's AUTHORED fields
+            # (outcomes/provenance — which the index doesn't carry) onto the
+            # matching row by run_id.
+            _authored_keys = ("outcomes", "computed_outcomes", "provenance",
+                              "commit", "conclusion", "notes")
+            yaml_by_id: dict = {}
+            for _y in (spec.get("runs") or []):
+                if isinstance(_y, dict):
+                    _yid = _y.get("run_id") or _y.get("name")
+                    if _yid:
+                        yaml_by_id[_yid] = _y
+            merged = []
+            seen = set()
             for r in db_runs:
-                if r.get("run_id") not in existing_ids:
-                    merged.append(r)
+                rid = r.get("run_id")
+                seen.add(rid)
+                _y = yaml_by_id.get(rid)
+                if _y:
+                    for _k in _authored_keys:
+                        if _k in _y and _k not in r:
+                            r[_k] = _y[_k]
+                merged.append(r)
+            # study.yaml-only runs with no run-index row (defensive — normally
+            # covered by _study_yaml_run_rows inside read_runs_db_for_study).
+            for _yid, _y in yaml_by_id.items():
+                if _yid not in seen:
+                    merged.append(_y)
             spec["runs"] = merged
 
         # Reconcile the simulation_set with the actual runs so the Simulations
@@ -807,6 +876,37 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
     from vivarium_workbench.lib.run_commands import study_run_commands
     spec["run_commands"] = study_run_commands(spec, name)
     spec["derived"] = _study_derivations.derived_block(spec)
+    # Spine precedent (mirrors computed_gate_verdict / write_gate_evaluator
+    # above): prefer the PERSISTED conclusion-card verdict — written by
+    # conclusion_card.write_conclusion_card as part of the post-run flush —
+    # over this render's live recompute of `derived.conclusion_verdicts`. Only
+    # each track's computed `result` is taken from the frozen, disk-persisted
+    # card; `basis` (the author's free-text rationale, sourced from
+    # spec["conclusion_verdicts"]) stays the LIVE value so editing it in
+    # study.yaml shows up immediately without needing a rerun. Falls back to
+    # the live recompute entirely when no card has been persisted yet, or on
+    # any read/parse failure — this must never break the study-detail render.
+    try:
+        _cv_path = study_dir(ws_root, name) / "viz" / "report_card" / "conclusion.verdict.json"
+        if _cv_path.is_file():
+            _persisted = _json.loads(_cv_path.read_text(encoding="utf-8"))
+            _ptracks = _persisted.get("tracks") if isinstance(_persisted, dict) else None
+            if isinstance(_ptracks, dict):
+                _live = spec["derived"].get("conclusion_verdicts")
+                _merged = dict(_live) if isinstance(_live, dict) else {}
+                for _track, _pt in _ptracks.items():
+                    if not isinstance(_pt, dict):
+                        continue
+                    _lt_raw = _merged.get(_track)
+                    _lt = _lt_raw if isinstance(_lt_raw, dict) else {}
+                    _merged[_track] = {
+                        "result": _pt.get("result", _lt.get("result", "")),
+                        "basis": _lt.get("basis", _pt.get("basis", "")),
+                    }
+                if _merged:
+                    spec["derived"]["conclusion_verdicts"] = _merged
+    except Exception:  # noqa: BLE001 — render must never break on a bad card
+        pass
     return spec
 
 
@@ -1127,6 +1227,14 @@ def derive_findings_from_report_cards(
     ws_root = Path(ws_root)
     out: list[dict] = []
     for card in sorted(report_card_urls):
+        # Feedback-loop guard: the `conclusion` card (written by
+        # conclusion_card.write_conclusion_card) IS the study's verdict, not
+        # evidence for it — study_derivations.conclusion_verdicts().explanatory_gain
+        # reads findings[].tier == "interpretation", so letting this card feed a
+        # derived finding back into `findings` would let it (indirectly) validate
+        # its own explanatory_gain input on the next compute. Skip it here.
+        if card == "conclusion":
+            continue
         meta = report_card_urls.get(card)
         meta = meta if isinstance(meta, dict) else {}
         url = meta.get("url")

@@ -2643,6 +2643,49 @@ class InvestigationRerunResult(BaseModel):
     count: Optional[int] = None
 
 
+class InvestigationResolveRequest(BaseModel):
+    """POST /api/investigation-resolve request body — ``{"investigation", "force"?}``.
+
+    Opt-in topological pull-or-compute over an investigation's member DAG
+    (``lib.artifacts.pipeline.resolve_investigation``), as opposed to the
+    declared-order ``/api/investigation-rerun`` (``InvestigationRerunRequest``)
+    which stays the default and is untouched by this endpoint.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    investigation: str = ""
+    force: bool = False
+
+
+class InvestigationResolveNode(BaseModel):
+    """One DAG node's outcome from ``resolve_investigation`` — a study or a
+    discovered (non-member) producer it transitively depends on.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    slug: str
+    artifact_id: Optional[str] = None
+    status: str = ""
+    inputs: list = []
+
+
+class InvestigationResolveResult(BaseModel):
+    """Result of ``POST /api/investigation-resolve`` — the topological
+    pull-or-compute outcome across an investigation's member DAG: resolution
+    order, each node's cached/computed/skipped/failed status, and (only on a
+    cyclic member DAG) an ``error`` string.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    investigation: Optional[str] = None
+    order: list = []
+    nodes: list[InvestigationResolveNode] = []
+    error: Optional[str] = None
+
+
 class RunTestsRequest(BaseModel):
     """POST /api/run-tests request body — empty ``{}`` (v0.3.0: no model param).
 
