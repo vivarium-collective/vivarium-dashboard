@@ -2266,6 +2266,19 @@ textarea.loom-in-field{
 .market-usage { font-size: 0.78em; color: #94a3b8; }
 .market-open { flex: none; }
 
+/* Repositories facet — one card per repo with GitHub link + per-type counts. */
+.market-repo-card .market-repo-ico { font-size: 1.05em; margin-right: 2px; }
+.market-repo-stats {
+  display: flex; flex-wrap: wrap; gap: 6px 14px;
+  margin: 8px 0 4px; font-size: 0.86em;
+}
+.market-repo-stat { display: inline-flex; align-items: center; gap: 5px; color: #475569; }
+.market-repo-stat b { color: #0f172a; font-variant-numeric: tabular-nums; }
+.market-repo-stat.zero { opacity: 0.4; }
+.market-repo-link { flex: none; text-decoration: none; }
+:root[data-theme="dark"] .market-repo-stat { color: var(--text-muted); }
+:root[data-theme="dark"] .market-repo-stat b { color: var(--text); }
+
 /* Studies-overview header action cluster: + Investigation / + Study / Audit Report */
 .iset-hdr-btn { display: inline-flex; align-items: center; gap: 5px; }
 .iset-hdr-btn svg { flex: none; }
@@ -3455,6 +3468,20 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   margin:0 0 10px; padding:8px 0 4px;
   border-bottom:1px solid var(--border);
 }
+/* The scroll container (.viv-content) carries 24px top padding; a sticky header
+   pins at top:0 = the padding edge, leaving a transparent strip above it through
+   which the scrolling cards show ("cards scrolled up under the search bar"). Drop
+   the container's top padding on these pages and let the sticky header sit flush
+   at the very top of the scroll area; the sticky supplies its own top gap. */
+.viv-content:has(> #page-market.active),
+.viv-content:has(> #page-modules.active){
+  padding-top:0 !important;
+}
+#page-modules .registry-sticky,
+#page-market .market-sticky{ padding-top:16px; }
+/* Hide the artifact-provenance chips on the Repositories facet — they don't
+   apply when browsing whole repos. */
+#page-market.market-facet-repo .market-origin-filter{ display:none; }
 /* ── Investigation DAG semantic zoom slider ────────────────────────────────── */
 #aig-zoom-slider {
   cursor: pointer;
