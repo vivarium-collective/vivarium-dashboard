@@ -2220,7 +2220,7 @@ def _cs_client(ws):
 def _patch_cs_subprocess(monkeypatch, result):
     from vivarium_workbench.lib import composite_state_views as _csv
     _csv.clear_cache()
-    monkeypatch.setattr(_csv, "composite_state_via_subprocess", lambda ws, ref: result)
+    monkeypatch.setattr(_csv, "composite_state_via_subprocess", lambda ws, ref, overrides=None: result)
 
 
 def test_composite_state_no_ref_400(client):
