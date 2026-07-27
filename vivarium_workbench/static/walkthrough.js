@@ -3497,6 +3497,18 @@
   }
   window._viewCompositeLoom = _viewCompositeLoom;
 
+  // The static composite-state URL the loom fetches. In a PUBLISHED snapshot the
+  // live /api/composite-resolve endpoint doesn't exist — the pre-resolved state
+  // is a static file at /api/composite-state/<id>.json — so point there; in live
+  // mode use the resolve endpoint. (Without this, "View" 404'd in the snapshot.)
+  function _compositeStateUrl(id) {
+    var apiUrl = (window.DataSource && window.DataSource.apiUrl)
+      ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    return document.body.classList.contains('snapshot')
+      ? apiUrl('/api/composite-state/' + encodeURIComponent(id) + '.json')
+      : apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id));
+  }
+
   // "Pop out" — open this composite's loom in a separate window directly (live,
   // full config + run), bypassing the standalone explorer page. In a published
   // snapshot there's no live API, so open the static (?static=1&stateUrl=) URL.
@@ -3505,8 +3517,7 @@
       ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
     var url;
     if (document.body.classList.contains('snapshot')) {
-      var stateUrl = apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id));
-      url = apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(stateUrl);
+      url = apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(_compositeStateUrl(id));
     } else {
       url = apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id);
     }
@@ -3554,7 +3565,7 @@
     var loomUrl = det._loomLive
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id)
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id)));
+          encodeURIComponent(_compositeStateUrl(id));
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
