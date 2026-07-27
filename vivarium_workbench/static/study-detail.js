@@ -52,6 +52,9 @@
     if (kind === 'data') { _loadAnalysisOutputs(); _loadRawData(); }
     if (kind === 'compose') { _loadModelConfig(); }
     if (kind === 'simulate') { _renderReproduceCard(); _loadStudySims(); }
+    // Textareas measured 0 while their tab was hidden; re-fit the now-visible
+    // panel's auto-grow boxes so they show all content without a scrollbar.
+    if (window._autoGrowTextareas) window._autoGrowTextareas();
   }
   window._setStudyTab = _setStudyTab;
 
@@ -717,6 +720,19 @@
       el.title = 'Network error: ' + (e && e.message || e);
     });
   }
+  // Grow a textarea to fit its content so the caveat/conclusion/biology boxes
+  // show all their text at once instead of a fixed 2–3 rows with an inner
+  // scrollbar. Runs on init and on every keystroke.
+  function _autoGrow(el) {
+    if (!el || (el.tagName || '').toLowerCase() !== 'textarea') return;
+    el.style.height = 'auto';
+    el.style.height = Math.max(el.scrollHeight, 38) + 'px';
+  }
+  // Re-fit every auto-grow box (used after a tab becomes visible: hidden
+  // textareas measure scrollHeight 0 and would otherwise stay at min height).
+  window._autoGrowTextareas = function () {
+    document.querySelectorAll('.narrative-textarea').forEach(_autoGrow);
+  };
   document.querySelectorAll('[data-narrative-path]').forEach(function(el) {
     var tag = (el.tagName || '').toLowerCase();
     // Selects save on change (immediate, no need to wait for blur). Text
@@ -724,6 +740,15 @@
     // tripping per keystroke.
     var evt = (tag === 'select') ? 'change' : 'blur';
     el.addEventListener(evt, function() { _saveNarrative(el); });
+    if (tag === 'textarea') {
+      _autoGrow(el);                                            // size to initial content
+      el.addEventListener('input', function() { _autoGrow(el); });
+    }
+  });
+  // Re-fit on window resize: line-wrapping changes with width, so a full-width
+  // box needs fewer rows than the same text at 90ch and vice-versa.
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('.narrative-textarea').forEach(_autoGrow);
   });
 
   var statusSel = document.getElementById('status-select');
