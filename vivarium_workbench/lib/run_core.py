@@ -30,10 +30,16 @@ class RunPlan:
     label: str | None
     n_steps: int | None
     target: str
+    # reproducible-rerun-spine Task 4: the run's first-class replay seed,
+    # threaded through so a caller building a manifest off this plan (e.g.
+    # ``study_runs.launch_into_study``) has it without re-deriving it from
+    # ``config``. Optional/best-effort — a caller that doesn't pass one
+    # simply gets ``None`` here (unchanged behavior).
+    seed: "int | str | None" = None
 
 
 def invoke_run(workspace, *, spec_id, config, db_path,
-               label=None, n_steps=None, target=None) -> RunPlan:
+               label=None, n_steps=None, target=None, seed=None) -> RunPlan:
     """Resolve the run id + execution target for a composite run.
 
     SP-D2: the ``deployment`` target is now BUILT — it dispatches to
@@ -42,8 +48,14 @@ def invoke_run(workspace, *, spec_id, config, db_path,
     caller writes a run-request carrying ``plan.target``; ``run_runner.execute``
     branches on it. (``RunTargetUnavailable`` is retained for callers that still
     want to reject a target explicitly, but ``invoke_run`` no longer raises it.)
+
+    ``seed`` (reproducible-rerun-spine Task 4) is purely carried through onto
+    the returned ``RunPlan`` — it does not affect ``run_id`` generation or
+    target resolution; a caller threads it here so it flows uniformly
+    alongside the run's other launch-time facts.
     """
     target = target or run_target_for(Path(workspace))
     run_id = composite_runs.generate_run_id(spec_id, config)
     return RunPlan(run_id=run_id, spec_id=spec_id, db_path=Path(db_path),
-                   config=dict(config or {}), label=label, n_steps=n_steps, target=target)
+                   config=dict(config or {}), label=label, n_steps=n_steps, target=target,
+                   seed=seed)

@@ -308,6 +308,8 @@ from vivarium_workbench.lib.models import (
     # Task 6: rerun-capability POST request bodies
     RerunRequest,
     InvestigationRerunRequest,
+    # reproducible-rerun-spine Task 4: study-scoped manifest replay
+    StudyReproduceRequest,
     # Phase 2 Task 6: investigation-resolve (opt-in topological pull-or-compute)
     InvestigationResolveRequest,
     InvestigationResolveResult,
@@ -5245,6 +5247,38 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=status, content=body)
 
     @app.post(
+        "/api/study-reproduce",
+        tags=["Studies"],
+        summary="Reproduce a recorded run by replaying its stored manifest",
+    )
+    def study_reproduce(
+        req: StudyReproduceRequest,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Replay a recorded run's stored MANIFEST as a brand-new run.
+
+        Body: ``{"study", "run_id"}`` — deliberately distinct from
+        ``POST /api/study-run-baseline`` ("Run current spec", which
+        re-derives from the live ``study.yaml``): this route always replays
+        the run_id's recorded manifest (params/seed/emitter/emit_paths/
+        runtime exactly as launched — see ``lib.rerun.resolve_rerun_target``),
+        so a spec-YAML edit made after the original run never changes what
+        Reproduce launches. ``study`` is accepted for routing/UI symmetry
+        with the other study-scoped routes; the replay target is resolved
+        from ``run_id`` alone. Delegates to the same ``lib.rerun.run_rerun``
+        Task 4 uses to thread ``reran_from``/``seed`` into the new run, so a
+        later completion can be verified against the original
+        (``verify_reproduction``). Never mutates the original run; always
+        mints a new run_id.
+
+        Status codes:
+          - 404  unknown ``run_id``
+          - 200/202  new run's launch-result dict, plus ``origin``/``reran``
+        """
+        body, status = _rerun.run_rerun(ws, req.run_id)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.post(
         "/api/study-run-variant",
         tags=["Studies"],
         summary="Run a study variant (single run or ensemble sweep)",
@@ -5304,14 +5338,20 @@ def create_app() -> FastAPI:
     ) -> JSONResponse:
         """Rerun every member study of an investigation's baseline (force).
 
-        Body: ``{"investigation"}`` — iterates the investigation's declared
-        studies and re-launches each one's baseline (``lib.rerun.
-        rerun_investigation``), ignoring the unblocked-gate. One bad study's
-        exception or non-2xx response is recorded in ``errors`` rather than
-        aborting the rest of the batch.
+        Body: ``{"investigation"}`` — re-launches each member study's
+        baseline (``lib.rerun.rerun_investigation``), ignoring the
+        unblocked-gate, in TOPOLOGICAL order over the investigation's
+        ``inputs.from`` DAG (reproducible-rerun-spine Task 7 / G2) rather
+        than a flat fan-out in declared order — a study is never launched
+        before a member it consumes. If a study's upstream failed or was
+        itself skipped earlier in the batch, the study is skipped (not
+        launched) rather than run against a possibly-stale upstream. One bad
+        study's exception or non-2xx response is recorded in ``errors``
+        rather than aborting the rest of the batch.
 
-        Always 200: ``{"investigation", "launched", "errors", "count"}``, even
-        when the investigation has no (or no known) member studies.
+        Always 200: ``{"investigation", "order", "launched", "skipped",
+        "errors", "count"}``, even when the investigation has no (or no
+        known) member studies.
         """
         body, status = _rerun.rerun_investigation(ws, req.investigation)
         return JSONResponse(status_code=status, content=body)
@@ -5328,9 +5368,11 @@ def create_app() -> FastAPI:
     ) -> InvestigationResolveResult:
         """Content-addressed pull-or-compute over an investigation's member DAG.
 
-        Body: ``{"investigation", "force"?}`` — opt-in alternative to the
-        declared-order ``/api/investigation-rerun`` (untouched by this route):
-        walks the investigation's member studies (plus any discovered
+        Body: ``{"investigation", "force"?}`` — opt-in alternative to
+        ``/api/investigation-rerun`` (which reruns via the study-run launcher,
+        not this content-addressed pull-or-compute path; both now walk the
+        member DAG in topological order, untouched by this route): walks the
+        investigation's member studies (plus any discovered
         upstream producer) in topological order via ``lib.artifacts.pipeline.
         resolve_investigation``, pulling each node's output artifact from the
         content-addressed store when a matching id already exists and

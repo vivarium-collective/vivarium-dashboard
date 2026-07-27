@@ -156,7 +156,8 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                              label, overrides=None, sim_name=None, timeout=1800,
                              emit_paths=None, study_emitter=None,
                              study_max_generations=None,
-                             study_single_daughters=None, manifest=None):
+                             study_single_daughters=None, manifest=None,
+                             reran_from=None):
     """Run a resolved composite ``state`` for ``steps`` steps in a subprocess,
     persisting runs_meta + history (via an injected SQLiteEmitter) to
     ``db_file``.
@@ -170,11 +171,26 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     ``cr.save_metadata`` so it lands in the run's ``runs_meta.manifest_json``
     row for ``rerun.resolve_rerun_target`` to replay later.
 
+    ``reran_from`` (reproducible-rerun-spine Task 4) is the ORIGINAL run_id
+    this run reproduces, when ``study_runs.launch_into_study`` was called by
+    ``rerun.run_rerun``. This is the STUDY-origin completion path (unlike
+    ``run_runner.execute``, which only handles composite-origin runs and
+    already got its own ``reran_from``/``verify_reproduction`` wiring in
+    Task 3) — study-origin reruns are the dominant path (baseline/variant/
+    study-reproduce), so without this wiring here a study reproduce would
+    never actually verify anything. Once this run's own
+    ``result_fingerprint`` is computed + stored below, a present
+    ``reran_from`` triggers ``rerun.verify_reproduction(ws_root, reran_from,
+    run_id)`` — best-effort, mirroring ``run_runner.execute``'s tail: any
+    failure there is swallowed so verification never fails an otherwise-
+    successful run.
+
     Returns ``(response_dict, status_code)``.  ``response_dict`` always has
     ``"simulation_id"``; on success also ``"results"``, ``"viz_html"``,
     ``"steps"``.
     """
     from vivarium_workbench.lib import composite_runs as cr
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
     # Emitter kind actually persisted for this run — recorded on runs_meta /
     # the JSONL run log below. Only the legacy (non-generator) path resolves
@@ -183,6 +199,22 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     # and isn't known back in the parent process, so it stays unrecorded for
     # now.
     run_emitter_kind = None
+
+    # reproducible-rerun-spine Task 3 (G4), fix round 1: this is the STUDY-
+    # origin completion path (study_runs._launch_run_and_flush ->
+    # run_composite_subprocess) — separate from, and previously not covered
+    # by, run_runner.execute's result_fingerprint wiring (that one only runs
+    # for composite-origin runs). Resolve fingerprint_fields once (manifest,
+    # falling back to emit_paths — same precedence run_runner.execute uses)
+    # and a run_dir (mirrors run_runner.execute's `.pbg/runs/<run_id>/`
+    # convention, even though nothing else writes there for a study-origin
+    # run today) so the child script below — which alone has the live
+    # `composite.state` after this subprocess's own composite finishes
+    # running — can snapshot the declared fields, and this parent (after the
+    # subprocess exits) can hash + store them the same way run_runner.execute
+    # does.
+    fingerprint_fields = (manifest or {}).get("fingerprint_fields") or list(emit_paths or [])
+    run_dir = str(WorkspacePaths.load(Path(ws_root)).pbg / "runs" / run_id)
 
     # Are we running a registered @composite_generator? If so, the child can
     # rebuild the composite in its own process from (spec_id, overrides) —
@@ -508,6 +540,18 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                     viz_html[key] = payload
             except Exception:
                 viz_html = {{}}
+            # reproducible-rerun-spine Task 3 (G4), fix round 1: snapshot this
+            # run's declared fingerprint_fields from the just-completed
+            # composite's live state — only available HERE, in the child;
+            # the parent (after this subprocess exits) reads it back via
+            # result_fingerprint.fingerprint_run(). Best-effort: swallowed so
+            # a snapshot failure never turns a successful run into a reported
+            # @@@ERROR@@@.
+            try:
+                from vivarium_workbench.lib import result_fingerprint as _rfp
+                _rfp.write_snapshot({run_dir!r}, composite.state, {fingerprint_fields!r})
+            except Exception:
+                pass
             from bigraph_schema.json_codec import BigraphJSONEncoder as _BJE
             print('@@@RESULTS@@@')
             print(json.dumps({{'results': out, 'viz_html': viz_html}}, cls=_BJE))
@@ -620,8 +664,34 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
             results = payload
             viz_html = {}
 
+        # reproducible-rerun-spine Task 3 (G4), fix round 1: the child already
+        # wrote this run's observables.json snapshot (see the shared tail
+        # script above, which has the only live composite.state); compute +
+        # store result_fingerprint from it the same way run_runner.execute
+        # does for composite-origin runs. Best-effort — never blocks an
+        # otherwise-successful run.
+        try:
+            from vivarium_workbench.lib import result_fingerprint as rfp
+            fingerprint = rfp.fingerprint_run(run_dir, fingerprint_fields)
+            cr.set_result_fingerprint(conn, run_id=run_id, fingerprint=fingerprint)
+        except Exception:
+            pass
+
         cr.complete_metadata(conn, run_id=run_id, n_steps=steps, status="completed",
                              workspace=ws_root)
+
+        # reproducible-rerun-spine Task 4: this run itself is a recorded
+        # reproduction of an earlier one — verify the two result_fingerprints
+        # now that both are stored. See the ``reran_from`` docstring note
+        # above for why this lives here rather than only in
+        # run_runner.execute (which never sees study-origin runs).
+        if reran_from:
+            try:
+                from vivarium_workbench.lib import rerun as rerun_mod
+                rerun_mod.verify_reproduction(ws_root, reran_from, run_id)
+            except Exception:
+                pass
+
         return ({"simulation_id": run_id, "results": results,
                  "viz_html": viz_html, "steps": steps}, 200)
     finally:

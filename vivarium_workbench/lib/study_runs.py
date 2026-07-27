@@ -167,12 +167,19 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
 
 def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
                           plan, pkg, ws_data, manifest, emitter, emit_paths,
-                          runtime, label, db_file, dry_run=False):
+                          runtime, label, db_file, dry_run=False, reran_from=None):
     """Run-launch + full 7-stage flush tail of ``launch_into_study``, split
     out so manifest-building (which must happen even when this seam is
     stubbed in tests) stays outside it. ``plan`` is the already-resolved
     ``run_core.invoke_run`` result (remote-build guard already applied by
     the caller); this only extracts ``run_id`` from it.
+
+    ``reran_from`` (reproducible-rerun-spine Task 4) is the ORIGINAL run_id
+    this run reproduces, when it was launched via ``rerun.run_rerun``.
+    Forwarded to ``composite_subprocess.run_composite_subprocess`` so its
+    completion tail can call ``rerun.verify_reproduction`` once this run's
+    own ``result_fingerprint`` is stored — mirroring ``run_runner.execute``'s
+    own ``reran_from`` handling (Task 3) for the composite-origin path.
     """
     run_id = plan.run_id
     runtime = runtime or {}
@@ -214,7 +221,7 @@ def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
         emit_paths=emit_paths, study_emitter=emitter,
         study_max_generations=study_max_generations,
         study_single_daughters=study_single_daughters,
-        manifest=manifest,
+        manifest=manifest, reran_from=reran_from,
     )
     if code == 200:
         # F2: do NOT append to study.yaml.runs[] — the runs_meta row
@@ -231,24 +238,39 @@ def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
     return response, code
 
 
-def launch_into_study(ws_root, study, spec_id, params, n_steps, *, emitter=None,
-                      emit_paths=None, runtime=None, label=None, dry_run=False):
+def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
+                      emitter=None, emit_paths=None, runtime=None, label=None,
+                      dry_run=False, reran_from=None):
     """Launch a run into a Study's ``runs.db`` from EXPLICIT replay inputs.
 
     Factored out of ``run_study_baseline`` (spec Part C) so a rerun can
     replay a run exactly: ``spec_id``/``params``/``n_steps``/``emitter``/
-    ``emit_paths``/``runtime`` are taken as-given (not re-derived from the
-    study's current ``study.yaml``/``workspace.yaml``). Resolves the study's
-    ``runs.db``, builds + stamps the run's full replay manifest (Part A —
-    ``composite_runs.build_run_manifest``, threaded to ``save_metadata`` via
-    ``composite_subprocess.run_composite_subprocess``'s ``manifest=`` param),
-    then drives the launch + the full 7-stage post-run flush
-    (``_launch_run_and_flush``). Returns ``(response_dict, status_code)``.
+    ``emit_paths``/``runtime``/``seed`` are taken as-given (not re-derived
+    from the study's current ``study.yaml``/``workspace.yaml``). Resolves the
+    study's ``runs.db``, builds + stamps the run's full replay manifest
+    (Part A — ``composite_runs.build_run_manifest``, threaded to
+    ``save_metadata`` via ``composite_subprocess.run_composite_subprocess``'s
+    ``manifest=`` param), then drives the launch + the full 7-stage post-run
+    flush (``_launch_run_and_flush``). Returns ``(response_dict, status_code)``.
+
+    ``seed`` (reproducible-rerun-spine Task 4) is the run's first-class
+    replay seed. When omitted, it falls back to ``params["seed"]`` — the
+    pre-Task-4 convention every existing caller (``run_study_baseline``)
+    already relies on, since a study's baseline params commonly carry a
+    ``seed`` key as a plain generator override. This keeps the fallback in
+    one place rather than requiring every call site to pop it out of
+    ``params`` explicitly; ``rerun.run_rerun`` overrides it explicitly with
+    the ORIGINAL run's recorded manifest seed so a rerun's seed can never
+    drift even if the current params shape changes.
+
+    ``reran_from`` (Task 4) is the original run_id this launch reproduces,
+    when set by ``rerun.run_rerun`` — threaded to ``_launch_run_and_flush``
+    so the completion tail can call ``rerun.verify_reproduction``.
 
     ``run_study_baseline`` resolves ``spec_id``/``params``/``n_steps``/
     ``emitter``/``emit_paths``/``runtime`` from ``study.yaml`` then delegates
     here; ``rerun.run_rerun`` (Part C) calls this directly with a stored
-    manifest's inputs.
+    manifest's inputs (including ``seed``/``reran_from``).
     """
     from vivarium_workbench.lib import composite_runs as cr
 
@@ -258,10 +280,12 @@ def launch_into_study(ws_root, study, spec_id, params, n_steps, *, emitter=None,
     if n_steps is not None:
         full_params["n_steps"] = n_steps
     label = label or "baseline"
+    effective_seed = seed if seed is not None else full_params.get("seed")
 
     try:
         plan = run_core.invoke_run(ws_root, spec_id=spec_id, config=full_params,
-                                   db_path=db_file, label=label, n_steps=n_steps)
+                                   db_path=db_file, label=label, n_steps=n_steps,
+                                   seed=effective_seed)
     except run_core.RunTargetUnavailable as e:
         return {"error": str(e)}, 409
     # Remote-build guard. This 409 was previously produced by invoke_run raising
@@ -289,7 +313,7 @@ def launch_into_study(ws_root, study, spec_id, params, n_steps, *, emitter=None,
     manifest = cr.build_run_manifest(
         origin="study", study=study, spec_id=spec_id, params=full_params,
         n_steps=n_steps, emitter=emitter, emit_paths=emit_paths,
-        runtime=runtime, pkg=pkg, ws_root=ws_root,
+        runtime=runtime, pkg=pkg, ws_root=ws_root, seed=effective_seed,
     )
 
     return _launch_run_and_flush(
@@ -297,6 +321,7 @@ def launch_into_study(ws_root, study, spec_id, params, n_steps, *, emitter=None,
         plan=plan, pkg=pkg, ws_data=ws_data, manifest=manifest,
         emitter=emitter, emit_paths=emit_paths, runtime=runtime,
         label=label, db_file=db_file, dry_run=dry_run,
+        reran_from=reran_from,
     )
 
 

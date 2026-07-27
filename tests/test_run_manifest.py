@@ -37,6 +37,71 @@ def test_build_run_manifest_shape():
         assert k in m
 
 
+def test_build_run_manifest_is_version_2_with_null_placeholders():
+    # reproducible-rerun-spine Task 1: manifest schema bumped to v2 with new
+    # keys filled in by later tasks (env=Task 2 [now populated, see below],
+    # fingerprint_fields=Task 3 [now populated, see below], seed=Task 4 [now
+    # populated, see test_build_run_manifest_first_class_seed* below]).
+    # result_fingerprint stays null at manifest-build time even after Task 3:
+    # no result exists yet at launch — it's computed post-hoc at completion
+    # (run_runner.execute / composite_subprocess.run_composite_subprocess)
+    # and stored in the runs_meta.result_fingerprint COLUMN, not written back
+    # into this snapshot.
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=100,
+                              emitter="parquet", emit_paths=["bulk"], runtime={"x": 1},
+                              origin="study", study="s1", pkg="v2ecoli", generation_id=None)
+    assert m["version"] == 2
+    for k in ("seed", "result_fingerprint"):
+        assert k in m
+        assert m[k] is None
+
+
+# --- seed (reproducible-rerun-spine Task 4) ---------------------------------
+
+def test_build_run_manifest_explicit_seed():
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite", seed=7)
+    assert m["seed"] == 7
+
+
+def test_build_run_manifest_seed_sniffed_from_params_when_not_explicit():
+    # Every pre-Task-4 caller already stashes the seed as a plain params key
+    # (e.g. a study baseline's params: {seed: 7, ...}) — build_run_manifest
+    # sniffs it so those call sites get a non-null first-class seed without
+    # every one needing to pop it out and pass it explicitly.
+    m = cr.build_run_manifest(spec_id="s", params={"seed": 7}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite")
+    assert m["seed"] == 7
+
+
+def test_build_run_manifest_explicit_seed_wins_over_params():
+    m = cr.build_run_manifest(spec_id="s", params={"seed": 999}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite", seed=7)
+    assert m["seed"] == 7
+
+
+def test_build_run_manifest_fingerprint_fields_defaults_to_emit_paths():
+    # Task 3 / G4: fingerprint_fields defaults to this run's own emit_paths
+    # (the study/composite's declared observables, already resolved at
+    # launch by the caller — e.g. collect_emit_paths_from_spec) when the
+    # caller doesn't pass fingerprint_fields explicitly.
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=100,
+                              emitter="parquet", emit_paths=["bulk", "mass"],
+                              runtime={}, origin="study", study="s1")
+    assert m["fingerprint_fields"] == ["bulk", "mass"]
+
+
+def test_build_run_manifest_fingerprint_fields_explicit_override():
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=100,
+                              emitter="parquet", emit_paths=["bulk", "mass"],
+                              runtime={}, origin="study", study="s1",
+                              fingerprint_fields=["doubling_time"])
+    assert m["fingerprint_fields"] == ["doubling_time"]
+
+
 def test_build_run_manifest_code_version_best_effort_ok_without_ws_root():
     # No ws_root / unresolvable pkg → code_version degrades to Nones, never raises.
     m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
@@ -44,3 +109,116 @@ def test_build_run_manifest_code_version_best_effort_ok_without_ws_root():
                               origin="composite")
     assert m["code_version"]["git_sha"] is None
     assert m["code_version"]["package"] is None
+
+
+# --- env / env_id (reproducible-rerun-spine Task 2) ------------------------
+
+def test_build_run_manifest_populates_env():
+    # env is no longer a null placeholder: it's a compute_env() dict, always
+    # present with the documented keys, even without ws_root/cache_fingerprint.
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite")
+    assert isinstance(m["env"], dict)
+    for k in ("workspace_commit", "sim_packages", "lockfile_hash", "python",
+              "platform", "cache_fingerprint"):
+        assert k in m["env"]
+
+
+def test_build_run_manifest_threads_explicit_cache_fingerprint(tmp_path):
+    (tmp_path / "uv.lock").write_text("lock")
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite", ws_root=tmp_path,
+                              cache_fingerprint="cf-explicit")
+    assert m["env"]["cache_fingerprint"] == "cf-explicit"
+    assert m["env"]["lockfile_hash"] is not None
+
+
+def test_build_run_manifest_sniffs_cache_fingerprint_from_params():
+    # v2ecoli's run_condition_multigen_parquet.py threads its already-computed
+    # cache fingerprint scalar onto params["cache_fingerprint"] — build_run_manifest
+    # picks it up when no explicit cache_fingerprint kwarg is given.
+    m = cr.build_run_manifest(spec_id="s", params={"cache_fingerprint": "cf-from-params"},
+                              n_steps=1, emitter=None, emit_paths=[], runtime={},
+                              origin="composite")
+    assert m["env"]["cache_fingerprint"] == "cf-from-params"
+
+
+def test_migration_adds_env_id_column(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(runs_meta)")}
+    assert "env_id" in cols
+
+
+def test_save_metadata_writes_env_id_from_manifest_env(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    manifest = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                                     emitter=None, emit_paths=[], runtime={},
+                                     origin="composite")
+    cr.save_metadata(conn, spec_id="s", run_id="r3", params={}, label="b",
+                     started_at=0.0, n_steps=1, manifest=manifest)
+    row = conn.execute("SELECT env_id FROM runs_meta WHERE run_id='r3'").fetchone()
+    assert row[0] is not None
+    assert len(row[0]) == 16
+
+
+def test_save_metadata_no_manifest_env_id_is_null(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    cr.save_metadata(conn, spec_id="s", run_id="r4", params={"seed": 0}, label="b",
+                     started_at=0.0, n_steps=100)
+    row = conn.execute("SELECT env_id FROM runs_meta WHERE run_id='r4'").fetchone()
+    assert row[0] is None
+
+
+# --- result_fingerprint / provenance_status columns (reproducible-rerun-spine
+# Task 3 / G4) ----------------------------------------------------------------
+
+def test_migration_adds_result_fingerprint_and_provenance_status_columns(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(runs_meta)")}
+    assert "result_fingerprint" in cols
+    assert "provenance_status" in cols
+
+
+def test_set_result_fingerprint_roundtrips(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    cr.save_metadata(conn, spec_id="s", run_id="r5", params={}, label="b",
+                     started_at=0.0, n_steps=1)
+    cr.set_result_fingerprint(conn, run_id="r5", fingerprint="deadbeef")
+    row = conn.execute(
+        "SELECT result_fingerprint FROM runs_meta WHERE run_id='r5'").fetchone()
+    assert row[0] == "deadbeef"
+
+
+def test_set_result_fingerprint_missing_run_id_does_not_raise(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    cr.set_result_fingerprint(conn, run_id="no-such-run", fingerprint="x")  # no raise
+
+
+def test_set_provenance_status_roundtrips(tmp_path):
+    conn = cr.connect(tmp_path / "runs.db")
+    cr.save_metadata(conn, spec_id="s", run_id="r6", params={}, label="b",
+                     started_at=0.0, n_steps=1)
+    cr.set_provenance_status(conn, run_id="r6", status="nondeterministic")
+    row = conn.execute(
+        "SELECT provenance_status FROM runs_meta WHERE run_id='r6'").fetchone()
+    assert row[0] == "nondeterministic"
+
+
+def test_query_run_meta_includes_env_id_and_fingerprint_columns(tmp_path):
+    # env_id predates Task 3 but was never added to query_run_meta's SELECT
+    # (a latent gap); fixed alongside the new columns since verify_reproduction
+    # needs all three off the same row.
+    conn = cr.connect(tmp_path / "runs.db")
+    manifest = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                                     emitter=None, emit_paths=[], runtime={},
+                                     origin="composite")
+    cr.save_metadata(conn, spec_id="s", run_id="r7", params={}, label="b",
+                     started_at=0.0, n_steps=1, manifest=manifest)
+    cr.set_result_fingerprint(conn, run_id="r7", fingerprint="abc123")
+    cr.set_provenance_status(conn, run_id="r7", status="nondeterministic")
+    row = cr.query_run_meta(conn, run_id="r7")
+    assert row["env_id"] is not None
+    assert row["result_fingerprint"] == "abc123"
+    assert row["provenance_status"] == "nondeterministic"

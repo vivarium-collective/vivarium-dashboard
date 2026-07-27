@@ -2616,6 +2616,45 @@ class RerunResult(BaseModel):
     error: Optional[str] = None
 
 
+class StudyReproduceRequest(BaseModel):
+    """POST /api/study-reproduce request body — ``{"study", "run_id"}``.
+
+    reproducible-rerun-spine Task 4 / G2: replays a previously-recorded run's
+    stored MANIFEST (params/seed/emitter/emit_paths/runtime exactly as they
+    were at launch time) — never the study's current ``study.yaml``. This is
+    the deliberately-named counterpart to ``POST /api/study-run-baseline``
+    ("Run current spec", which re-derives from the live spec): the two are
+    kept as separate routes/buttons precisely so "Reproduce" can never be
+    confused with "run the spec as it stands today". ``study`` is carried for
+    routing/UI symmetry with the other study-scoped routes; the actual replay
+    target is resolved from ``run_id`` alone (``lib.rerun.resolve_rerun_target``
+    looks the run up directly, independent of which study it's passed as).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: str = ""
+    run_id: str = ""
+
+
+class ReproduceResult(BaseModel):
+    """Result of ``POST /api/study-reproduce`` — the new run's launch result
+    plus reproduction provenance (``origin``, and on success the replayed
+    ``reran`` run_id this new run reproduces).
+
+    ``extra="allow"``: the wrapped launcher (``study_runs.launch_into_study``)
+    contributes a variable result shape (``simulation_id``, ``status``, ...);
+    only the fields this route controls are typed.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    run_id: Optional[str] = None
+    origin: Optional[str] = None
+    status: Optional[str] = None
+    error: Optional[str] = None
+
+
 class InvestigationRerunRequest(BaseModel):
     """POST /api/investigation-rerun request body — ``{"investigation"}``.
 
@@ -2631,14 +2670,18 @@ class InvestigationRerunRequest(BaseModel):
 
 class InvestigationRerunResult(BaseModel):
     """Result of ``POST /api/investigation-rerun`` — the batch outcome across
-    an investigation's member studies: which launched, which errored, and how
-    many succeeded.
+    an investigation's member studies: the topological execution ``order``
+    computed over the ``inputs.from`` DAG (reproducible-rerun-spine Task 7 /
+    G2), which launched, which were ``skipped`` because an upstream failed or
+    was itself skipped, which errored, and how many succeeded.
     """
 
     model_config = ConfigDict(extra="allow")
 
     investigation: Optional[str] = None
+    order: Optional[list] = None
     launched: Optional[list] = None
+    skipped: Optional[list] = None
     errors: Optional[list] = None
     count: Optional[int] = None
 

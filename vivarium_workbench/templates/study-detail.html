@@ -42,7 +42,8 @@
     {% endif %}
   </h1>
   <span class="study-header-actions" style="display:inline-flex; gap:6px; flex-shrink:0;">
-    <button type="button" id="study-rerun" class="btn-mini" title="Re-run this study's baseline (POST /api/study-run-baseline) as a brand-new run">↻ Rerun study</button>
+    <button type="button" id="study-reproduce" class="btn-mini" title="Replay this study's most recent run's RECORDED manifest verbatim (POST /api/study-reproduce) — ignores any study.yaml edits made since">↻ Reproduce</button>
+    <button type="button" id="study-run-current-spec" class="btn-mini" title="Run this study's CURRENT baseline spec (POST /api/study-run-baseline) as a brand-new run">▶ Run current spec</button>
   </span>
   </div>
 </header>
@@ -1941,10 +1942,14 @@ window._seedFollowupProposal = _seedFollowupProposal;
   if (window.__DASH_CONFIG__ && window.__DASH_CONFIG__.mode === "snapshot") {
     var rp = document.getElementById("remote-run-panel");
     if (rp) rp.style.display = "none";
-    // "Rerun study" POSTs to a live-only endpoint — hide it alongside the
-    // remote-run launcher in a published read-only snapshot.
-    var rerunBtn = document.getElementById("study-rerun");
-    if (rerunBtn) rerunBtn.style.display = "none";
+    // "Reproduce" / "Run current spec" both POST to live-only endpoints —
+    // hide them alongside the remote-run launcher in a published read-only
+    // snapshot (reproducible-rerun-spine Task 4 / G2: two distinct buttons,
+    // both equally inert with no live backend to launch against).
+    var reproduceBtn = document.getElementById("study-reproduce");
+    if (reproduceBtn) reproduceBtn.style.display = "none";
+    var runCurrentBtn = document.getElementById("study-run-current-spec");
+    if (runCurrentBtn) runCurrentBtn.style.display = "none";
   } else if (window._initRemoteRunPinned) {
     // Live backend: relabel the remote-run card if pinned mode is enabled.
     window._initRemoteRunPinned();

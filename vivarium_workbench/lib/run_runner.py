@@ -35,6 +35,13 @@ class RunRequest:
     db_file: str
     log_path: str
     target: str = "local"
+    # reproducible-rerun-spine Task 3 / G4, Step 6: the ORIGINAL run_id this
+    # run reproduces, when it was launched as a rerun. Optional/best-effort —
+    # `.get()` so a request file written by a producer that doesn't set it
+    # (every current producer, as of this task — see result_fingerprint
+    # report) simply parses as None, not a KeyError. When present, execute()'s
+    # completion tail runs lib.rerun.verify_reproduction(reran_from, run_id).
+    reran_from: "str | None" = None
 
     @classmethod
     def from_file(cls, path: Path) -> "RunRequest":
@@ -52,6 +59,7 @@ class RunRequest:
             db_file=data["db_file"],
             log_path=data["log_path"],
             target=data.get("target") or "local",
+            reran_from=data.get("reran_from"),
         )
 
 
@@ -706,8 +714,56 @@ def execute(request_path: Path) -> int:
                       db_file=req.db_file, run_id=req.run_id, core=core)
         except Exception:
             traceback.print_exc()   # flush must never fail the run
+
+        # reproducible-rerun-spine Task 3 (G4): compute + store a
+        # result_fingerprint over this run's declared fields so a rerun can be
+        # verified byte-for-byte rather than eyeballed. fingerprint_fields
+        # comes from the manifest this run was launched with (Task 3 resolves
+        # it at launch, defaulting to emit_paths — see
+        # composite_runs.build_run_manifest); a legacy manifest-less run
+        # falls back to this run's own resolved emit_paths directly. The
+        # snapshot is read from `composite.state` (the just-completed run's
+        # final state tree) rather than re-reading the emitter store, so it
+        # works uniformly regardless of which emitter (sqlite/parquet/zarr)
+        # persisted the run. Best-effort throughout: any failure here leaves
+        # result_fingerprint NULL rather than failing an otherwise-successful
+        # run.
+        try:
+            from vivarium_workbench.lib import result_fingerprint as rfp
+            meta_row = cr.query_run_meta(conn, run_id=req.run_id)
+            fields = None
+            if meta_row and meta_row.get("manifest_json"):
+                try:
+                    fields = json.loads(meta_row["manifest_json"]).get("fingerprint_fields")
+                except (json.JSONDecodeError, TypeError, AttributeError):
+                    fields = None
+            if not fields:
+                fields = emit_paths
+            state = getattr(composite, "state", None) or {}
+            rfp.write_snapshot(run_dir, state, fields)
+            fingerprint = rfp.fingerprint_run(run_dir, fields)
+            cr.set_result_fingerprint(conn, run_id=req.run_id, fingerprint=fingerprint)
+        except Exception:
+            traceback.print_exc()
+
         cr.complete_metadata(conn, run_id=req.run_id, n_steps=req.steps,
                              status="completed", workspace=req.workspace)
+
+        # reproducible-rerun-spine Task 3, Step 6: if this run itself is a
+        # recorded reproduction of an earlier run, verify the two
+        # fingerprints now that both are stored. `reran_from` is threaded
+        # through the request file IF the launcher set it — no current
+        # producer does yet (see the task report's concern), so this is
+        # normally a no-op; landing it here means a future one-line change to
+        # rerun.run_rerun (passing `reran_from=run_id` into the launch) is
+        # all that's needed to activate it, with no further run_runner change.
+        if req.reran_from:
+            try:
+                from vivarium_workbench.lib import rerun as rerun_mod
+                rerun_mod.verify_reproduction(req.workspace, req.reran_from, req.run_id)
+            except Exception:
+                traceback.print_exc()   # verification must never fail the run
+
         print(f"run {req.run_id} completed: {req.steps} steps", flush=True)
         return 0
     except Exception:

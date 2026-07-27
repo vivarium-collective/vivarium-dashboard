@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 from vivarium_workbench.lib import run_log
+from vivarium_workbench.lib import env_fingerprint
 
 
 _SCHEMA_RUNS_META = """
@@ -74,6 +75,24 @@ _NEW_COLUMNS = {
     # analysis flush so the UI can announce the current stage (the coarse
     # `status` stays "running" until the whole pipeline finishes). Nullable.
     "phase": "TEXT",
+    # Reconstructable environment id (reproducible-rerun-spine Task 2 / G1):
+    # a 16-hex sha256 digest of the run's ``manifest["env"]`` dict (see
+    # lib/env_fingerprint.env_id) — workspace commit, sim package versions/
+    # SHAs, uv.lock hash, python/platform, cache fingerprint. Lets two runs'
+    # environments be compared with a single string equality check. Nullable:
+    # runs predating this column, or whose manifest lacks an env, have NULL.
+    "env_id": "TEXT",
+    # sha256 digest of this run's declared ``fingerprint_fields`` (reproducible-
+    # rerun-spine Task 3 / G4) — see lib/result_fingerprint.fingerprint_run.
+    # Computed + stored best-effort at completion (run_runner.execute); NULL
+    # for a run that predates this column or whose hashing failed.
+    "result_fingerprint": "TEXT",
+    # Provenance verdict set by lib/rerun.verify_reproduction when a rerun
+    # sharing this run's env_id + seed produced a DIFFERENT result_fingerprint
+    # — i.e. a confirmed non-reproduction, not merely "unverified". NULL means
+    # "never checked" (not "reproducible"); the only non-NULL value in use is
+    # "nondeterministic".
+    "provenance_status": "TEXT",
 }
 
 
@@ -150,7 +169,9 @@ def generate_run_id(spec_id: str, params: dict | None = None,
 
 def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
                        runtime, origin, study=None, pkg=None,
-                       generation_id=None, ws_root=None) -> dict:
+                       generation_id=None, ws_root=None,
+                       cache_fingerprint=None, fingerprint_fields=None,
+                       seed=None) -> dict:
     """Assemble the canonical per-run replay manifest (spec Part A).
 
     A complete, self-contained record of everything a rerun needs to
@@ -163,6 +184,30 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
     ``pkg`` version lookup, each independently wrapped so a failure (no git
     repo, package not installed/importable, etc.) degrades to ``None``
     rather than raising — this must never block a run from being recorded.
+
+    ``env`` (reproducible-rerun-spine Task 2) is a best-effort
+    :func:`env_fingerprint.compute_env` snapshot — never raises, so a
+    lookup failure never blocks a run from being recorded. ``cache_fingerprint``
+    is threaded through explicitly when the caller already computed one (e.g.
+    a bespoke runner script); otherwise it's sniffed from
+    ``params["cache_fingerprint"]`` when that's a plain string (v2ecoli's
+    ``run_condition_multigen_parquet.cache_fingerprint()`` short hash lands
+    there), so callers don't have to pass it separately from ``params``.
+
+    ``fingerprint_fields`` (reproducible-rerun-spine Task 3 / G4) is the
+    resolved list of declared fields ``result_fingerprint`` will later hash
+    (see ``lib/result_fingerprint.fingerprint_run``). Default, when the
+    caller doesn't pass one explicitly: this run's own ``emit_paths`` — both
+    call sites already resolve those from the study/composite's declared
+    observables at launch (e.g. ``collect_emit_paths_from_spec``), so they
+    are exactly "the study's declared observables" the spec calls for.
+
+    ``seed`` (reproducible-rerun-spine Task 4) is the run's first-class
+    replay seed. When the caller doesn't pass one explicitly, it's sniffed
+    from ``params["seed"]`` (the pre-Task-4 convention — every existing
+    caller already stashes the seed there as a regular generator param), so
+    a manifest built by an un-updated call site still gets a non-null
+    ``seed`` rather than silently regressing to the old null placeholder.
     """
     git_sha = None
     if ws_root is not None:
@@ -184,8 +229,22 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
             pkg_version = None
 
+    cf = cache_fingerprint
+    if cf is None:
+        sniffed = (params or {}).get("cache_fingerprint")
+        if isinstance(sniffed, str):
+            cf = sniffed
+
+    run_seed = seed
+    if run_seed is None:
+        run_seed = (params or {}).get("seed")
+    try:
+        env = env_fingerprint.compute_env(ws_root=ws_root, cache_fingerprint=cf)
+    except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
+        env = None
+
     return {
-        "version": 1,
+        "version": 2,
         "spec_id": spec_id,
         "params": dict(params or {}),
         "n_steps": int(n_steps) if n_steps is not None else None,
@@ -197,6 +256,22 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         "pkg": pkg,
         "generation_id": generation_id,
         "code_version": {"git_sha": git_sha, "package": pkg_version},
+        # v2 keys (reproducible-rerun-spine Task 1): filled in by later tasks
+        # (Task 2 = env [now populated above], Task 3 = fingerprint_fields
+        # [now populated below] + result_fingerprint [computed post-hoc at
+        # completion, see run_runner.execute — stays null here since no
+        # result exists yet at launch], Task 4 = first-class seed [now
+        # populated above via ``run_seed``]). ``result_fingerprint`` is
+        # present as null so a manifest's shape is stable across the
+        # migration and consumers can rely on the key existing rather than
+        # probing for it.
+        "env": env,
+        "seed": run_seed,
+        "fingerprint_fields": (
+            list(fingerprint_fields) if fingerprint_fields is not None
+            else list(emit_paths or [])
+        ),
+        "result_fingerprint": None,
     }
 
 
@@ -211,15 +286,26 @@ def save_metadata(conn, *, spec_id, run_id, params, label, started_at,
     :func:`build_run_manifest`; stored verbatim as JSON in ``manifest_json``
     so ``rerun.resolve_rerun_target`` can replay this run exactly rather than
     reconstructing it from the override-delta ``params_json``/``n_steps``.
+
+    ``env_id`` (reproducible-rerun-spine Task 2) is derived from
+    ``manifest["env"]`` via :func:`env_fingerprint.env_id` and stored
+    alongside — best-effort: a manifest with no ``env`` (legacy caller) or a
+    digest failure leaves the column ``NULL`` rather than raising.
     """
+    env_id_val = None
+    if manifest and manifest.get("env") is not None:
+        try:
+            env_id_val = env_fingerprint.env_id(manifest["env"])
+        except Exception:  # noqa: BLE001 — best-effort, never block a run
+            env_id_val = None
     conn.execute(
         "INSERT INTO runs_meta "
         "(run_id, spec_id, label, params_json, started_at, status, "
-        " n_steps, log_path, progress_step, generation_id, manifest_json) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)",
+        " n_steps, log_path, progress_step, generation_id, manifest_json, env_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
         (run_id, spec_id, label, json.dumps(params or {}),
          started_at, "running", n_steps, log_path, generation_id,
-         json.dumps(manifest) if manifest else None),
+         json.dumps(manifest) if manifest else None, env_id_val),
     )
     conn.commit()
     if workspace is not None:
@@ -273,11 +359,18 @@ def delete_run(conn: sqlite3.Connection, *, run_id: str) -> bool:
 
 
 def query_run_meta(conn: sqlite3.Connection, *, run_id: str) -> dict | None:
-    """Return the runs_meta row for one run as a dict, or None if absent."""
+    """Return the runs_meta row for one run as a dict, or None if absent.
+
+    Includes ``env_id``/``result_fingerprint``/``provenance_status``
+    (reproducible-rerun-spine Task 2/3) so callers resolving a run purely by
+    id (``cli_runs.find_run`` -> ``rerun.verify_reproduction``) can compare
+    two runs' provenance without a bespoke SELECT.
+    """
     row = conn.execute(
         "SELECT run_id, spec_id, label, params_json, started_at, completed_at, "
         "n_steps, status, pid, progress_step, log_path, heartbeat_at, "
-        "generation_id, manifest_json, phase "
+        "generation_id, manifest_json, phase, env_id, result_fingerprint, "
+        "provenance_status "
         "FROM runs_meta WHERE run_id=?",
         (run_id,),
     ).fetchone()
@@ -319,6 +412,38 @@ def set_phase(conn: sqlite3.Connection, *, run_id: str, phase: "str | None") -> 
         )
         conn.commit()
     except Exception:  # noqa: BLE001 — phase is advisory; never fail the run
+        pass
+
+
+def set_result_fingerprint(conn: sqlite3.Connection, *, run_id: str,
+                           fingerprint: "str | None") -> None:
+    """Store this run's ``result_fingerprint`` (reproducible-rerun-spine
+    Task 3 / G4). Best-effort: a missing column (very old, unmigrated DB) or
+    any other write failure is swallowed — a hashing/storage problem must
+    never fail an otherwise-completed run."""
+    try:
+        conn.execute(
+            "UPDATE runs_meta SET result_fingerprint=? WHERE run_id=?",
+            (fingerprint, run_id),
+        )
+        conn.commit()
+    except Exception:  # noqa: BLE001 — best-effort, never fail the run
+        pass
+
+
+def set_provenance_status(conn: sqlite3.Connection, *, run_id: str,
+                          status: "str | None") -> None:
+    """Set this run's ``provenance_status`` (e.g. ``'nondeterministic'``),
+    written by ``lib.rerun.verify_reproduction`` on a confirmed env+seed-
+    matched fingerprint mismatch. Best-effort, same rationale as
+    :func:`set_result_fingerprint`."""
+    try:
+        conn.execute(
+            "UPDATE runs_meta SET provenance_status=? WHERE run_id=?",
+            (status, run_id),
+        )
+        conn.commit()
+    except Exception:  # noqa: BLE001 — best-effort, never fail the run
         pass
 
 

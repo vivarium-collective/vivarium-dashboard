@@ -17,8 +17,9 @@ def test_launch_into_study_explicit_inputs_and_manifest(tmp_path, monkeypatch):
 
     seen = {}
 
-    def fake_invoke_run(ws_root, *, spec_id, config, db_path, label, n_steps):
-        seen.update(spec_id=spec_id, config=config, db_path=db_path, n_steps=n_steps)
+    def fake_invoke_run(ws_root, *, spec_id, config, db_path, label, n_steps, seed=None):
+        seen.update(spec_id=spec_id, config=config, db_path=db_path, n_steps=n_steps,
+                    seed=seed)
         class P:
             pass
         return P()
@@ -26,9 +27,10 @@ def test_launch_into_study_explicit_inputs_and_manifest(tmp_path, monkeypatch):
     monkeypatch.setattr(study_runs.run_core, "invoke_run", fake_invoke_run)
 
     manifests = []
+    flush_kwargs = []
     monkeypatch.setattr(
         study_runs, "_launch_run_and_flush",
-        lambda *a, **k: (manifests.append(k.get("manifest")) or
+        lambda *a, **k: (flush_kwargs.append(k) or manifests.append(k.get("manifest")) or
                          ({"run_id": "r-new", "status": "running"}, 200)),
         raising=False,
     )
@@ -39,11 +41,69 @@ def test_launch_into_study_explicit_inputs_and_manifest(tmp_path, monkeypatch):
 
     assert "studies/s1/runs.db" in seen["db_path"].replace("\\", "/")
     assert seen["spec_id"] == "some.composite" and seen["config"].get("seed") == 3
+    # reproducible-rerun-spine Task 4: seed falls back to params["seed"] when
+    # no explicit seed= kwarg is passed — first-class seed, not just a plain
+    # generator param.
+    assert seen["seed"] == 3
     assert status == 200 and resp["run_id"]
     m = manifests[-1]
     assert m and m["emitter"] == "parquet" and m["emit_paths"] == ["bulk"]
     assert m["spec_id"] == "some.composite" and m["params"].get("seed") == 3
     assert m["origin"] == "study" and m["study"] == "s1"
+    assert m["seed"] == 3
+    # reran_from defaults to None when the caller (here, a direct
+    # launch_into_study call, not a rerun) doesn't pass one.
+    assert flush_kwargs[-1].get("reran_from") is None
+
+
+def test_launch_into_study_explicit_seed_wins_over_params(tmp_path, monkeypatch):
+    """An explicit seed= kwarg (as rerun.run_rerun passes from the ORIGINAL
+    run's recorded manifest) overrides whatever happens to be in params —
+    the first-class seed is the source of truth for a reproduce, not a
+    same-named params key that could (in principle) differ."""
+    (tmp_path / "studies" / "s1").mkdir(parents=True)
+
+    def fake_invoke_run(ws_root, *, spec_id, config, db_path, label, n_steps, seed=None):
+        return type("P", (), {"seed": seed})()
+
+    monkeypatch.setattr(study_runs.run_core, "invoke_run", fake_invoke_run)
+
+    manifests = []
+    monkeypatch.setattr(
+        study_runs, "_launch_run_and_flush",
+        lambda *a, **k: (manifests.append(k.get("manifest")) or ({}, 200)),
+        raising=False,
+    )
+
+    study_runs.launch_into_study(
+        tmp_path, "s1", "some.composite", {"seed": 999}, 5, seed=7)
+
+    assert manifests[-1]["seed"] == 7
+
+
+def test_launch_into_study_threads_reran_from(tmp_path, monkeypatch):
+    """rerun.run_rerun passes reran_from=<original run_id> — launch_into_study
+    must forward it to _launch_run_and_flush so the completion tail
+    (composite_subprocess.run_composite_subprocess) can call
+    verify_reproduction once this run's own result_fingerprint is stored."""
+    (tmp_path / "studies" / "s1").mkdir(parents=True)
+
+    def fake_invoke_run(ws_root, *, spec_id, config, db_path, label, n_steps, seed=None):
+        return type("P", (), {})()
+
+    monkeypatch.setattr(study_runs.run_core, "invoke_run", fake_invoke_run)
+
+    flush_kwargs = []
+    monkeypatch.setattr(
+        study_runs, "_launch_run_and_flush",
+        lambda *a, **k: (flush_kwargs.append(k) or ({}, 200)),
+        raising=False,
+    )
+
+    study_runs.launch_into_study(
+        tmp_path, "s1", "some.composite", {}, 5, reran_from="orig-run-1")
+
+    assert flush_kwargs[-1]["reran_from"] == "orig-run-1"
 
 
 def test_launch_into_study_remote_build_guard_409(tmp_path, monkeypatch):
