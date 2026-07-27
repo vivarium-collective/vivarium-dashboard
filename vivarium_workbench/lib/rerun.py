@@ -54,6 +54,12 @@ def resolve_rerun_target(ws_root, run_id):
             "emitter": manifest.get("emitter"),
             "emit_paths": manifest.get("emit_paths"),
             "runtime": manifest.get("runtime"),
+            # reproducible-rerun-spine Task 4: the manifest's first-class
+            # ``seed`` (populated for every run built since Task 4 landed;
+            # falls back to params["seed"] for a manifest built before this
+            # task, same convention build_run_manifest itself uses).
+            "seed": manifest.get("seed") if manifest.get("seed") is not None
+                    else params.get("seed"),
         }
 
     params = dict(row.get("params") or {})
@@ -64,8 +70,10 @@ def resolve_rerun_target(ws_root, run_id):
         "params": params,
         "n_steps": n_steps,
         # Uniform shape with the manifest branch above; legacy runs simply
-        # have no recorded emitter/emit_paths/runtime to replay.
+        # have no recorded emitter/emit_paths/runtime to replay. seed falls
+        # back to the legacy params["seed"] convention.
         "emitter": None, "emit_paths": None, "runtime": None,
+        "seed": params.get("seed"),
     }
 
 
@@ -75,9 +83,17 @@ def run_rerun(ws_root, run_id):
     Resolves the replay target (Task 2's ``resolve_rerun_target``, manifest-
     preferred) and forwards its inputs VERBATIM to the matching launcher —
     a study-origin run replays via ``study_runs.launch_into_study`` (full
-    manifest: spec_id/params/n_steps/emitter/emit_paths/runtime), a
+    manifest: spec_id/params/n_steps/seed/emitter/emit_paths/runtime), a
     composite-origin run replays via ``cli_runs.run_composite`` (detached
     subprocess). Never mutates the original run; always produces a new one.
+
+    Study-origin replays also pass ``reran_from=run_id`` (the ORIGINAL run's
+    id) so the new run's completion tail can call ``verify_reproduction``
+    once both runs' ``result_fingerprint``s are stored (Task 4 — this is the
+    producer T3 left unwired; see ``composite_subprocess.run_composite_subprocess``'s
+    ``reran_from`` handling). Composite-origin replays don't set it yet —
+    ``cli_runs.run_composite`` has no ``reran_from``/``seed`` seam; left as a
+    follow-up (mirrors T3's own noted composite-origin gap).
     """
     t = resolve_rerun_target(ws_root, run_id)
     if t is None:
@@ -85,7 +101,9 @@ def run_rerun(ws_root, run_id):
     if t["origin"] == "study":
         resp, status = study_runs.launch_into_study(
             ws_root, t["study"], t["spec_id"], t["params"], t["n_steps"],
-            emitter=t.get("emitter"), emit_paths=t.get("emit_paths"), runtime=t.get("runtime"))
+            seed=t.get("seed"),
+            emitter=t.get("emitter"), emit_paths=t.get("emit_paths"), runtime=t.get("runtime"),
+            reran_from=run_id)
     else:
         resp, status = cli_runs.run_composite(
             ws_root, t["spec_id"], steps=t["n_steps"], params=t["params"],
@@ -93,6 +111,23 @@ def run_rerun(ws_root, run_id):
     if isinstance(resp, dict):
         resp = {**resp, "origin": t["origin"], "reran": run_id}
     return resp, status
+
+
+def _row_seed(row):
+    """A ``runs_meta`` row's first-class replay seed (reproducible-rerun-
+    spine Task 4). Prefers the recorded manifest's ``seed`` key; falls back
+    to ``params["seed"]`` for a row whose manifest predates Task 4 (or has
+    none at all), matching ``build_run_manifest``'s own params-sniffing
+    fallback so pre- and post-Task-4 rows compare on the same basis."""
+    manifest_json = row.get("manifest_json")
+    if manifest_json:
+        try:
+            manifest = json.loads(manifest_json)
+        except (json.JSONDecodeError, TypeError):
+            manifest = None
+        if manifest and manifest.get("seed") is not None:
+            return manifest.get("seed")
+    return (row.get("params") or {}).get("seed")
 
 
 def verify_reproduction(ws_root, original_run_id, new_run_id) -> dict:
@@ -107,9 +142,12 @@ def verify_reproduction(ws_root, original_run_id, new_run_id) -> dict:
       1. Both runs must be found (anywhere ``cli_runs.find_run`` looks:
          every study's ``runs.db`` + the workspace ``composite-runs.db``).
       2. Both must have a non-null, EQUAL ``env_id``.
-      3. Both must have the same ``seed`` (read from ``params["seed"]`` —
-         first-class seed storage is reproducible-rerun-spine Task 4, not yet
-         landed; the value already lives in ``params`` for every run today).
+      3. Both must have the same ``seed`` — read from the run's recorded
+         manifest's first-class ``seed`` (reproducible-rerun-spine Task 4);
+         a manifest-less/pre-Task-4 row falls back to ``params["seed"]``,
+         the convention every run stored it under before Task 4 (see
+         ``_row_seed`` below — mirrors ``build_run_manifest``'s own
+         params-sniffing fallback so old and new rows compare consistently).
       4. Both must have a non-null ``result_fingerprint``.
 
     Only when all four hold is the comparison "conclusive": equal
@@ -140,8 +178,8 @@ def verify_reproduction(ws_root, original_run_id, new_run_id) -> dict:
                 "reason": "env_id missing or differs — not a like-for-like "
                           "reproduction, comparison skipped"}
 
-    orig_seed = (orig_row.get("params") or {}).get("seed")
-    new_seed = (new_row.get("params") or {}).get("seed")
+    orig_seed = _row_seed(orig_row)
+    new_seed = _row_seed(new_row)
     if orig_seed != new_seed:
         return {"match": None,
                 "reason": f"seed differs ({orig_seed!r} vs {new_seed!r}) — "

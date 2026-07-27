@@ -170,7 +170,8 @@ def generate_run_id(spec_id: str, params: dict | None = None,
 def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
                        runtime, origin, study=None, pkg=None,
                        generation_id=None, ws_root=None,
-                       cache_fingerprint=None, fingerprint_fields=None) -> dict:
+                       cache_fingerprint=None, fingerprint_fields=None,
+                       seed=None) -> dict:
     """Assemble the canonical per-run replay manifest (spec Part A).
 
     A complete, self-contained record of everything a rerun needs to
@@ -200,6 +201,13 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
     call sites already resolve those from the study/composite's declared
     observables at launch (e.g. ``collect_emit_paths_from_spec``), so they
     are exactly "the study's declared observables" the spec calls for.
+
+    ``seed`` (reproducible-rerun-spine Task 4) is the run's first-class
+    replay seed. When the caller doesn't pass one explicitly, it's sniffed
+    from ``params["seed"]`` (the pre-Task-4 convention — every existing
+    caller already stashes the seed there as a regular generator param), so
+    a manifest built by an un-updated call site still gets a non-null
+    ``seed`` rather than silently regressing to the old null placeholder.
     """
     git_sha = None
     if ws_root is not None:
@@ -226,6 +234,10 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         sniffed = (params or {}).get("cache_fingerprint")
         if isinstance(sniffed, str):
             cf = sniffed
+
+    run_seed = seed
+    if run_seed is None:
+        run_seed = (params or {}).get("seed")
     try:
         env = env_fingerprint.compute_env(ws_root=ws_root, cache_fingerprint=cf)
     except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
@@ -248,12 +260,13 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         # (Task 2 = env [now populated above], Task 3 = fingerprint_fields
         # [now populated below] + result_fingerprint [computed post-hoc at
         # completion, see run_runner.execute — stays null here since no
-        # result exists yet at launch], Task 4 = first-class seed). The
-        # still-pending ones are present as null so a manifest's shape is
-        # stable across the migration and consumers can rely on the keys
-        # existing rather than probing for them.
+        # result exists yet at launch], Task 4 = first-class seed [now
+        # populated above via ``run_seed``]). ``result_fingerprint`` is
+        # present as null so a manifest's shape is stable across the
+        # migration and consumers can rely on the key existing rather than
+        # probing for it.
         "env": env,
-        "seed": None,
+        "seed": run_seed,
         "fingerprint_fields": (
             list(fingerprint_fields) if fingerprint_fields is not None
             else list(emit_paths or [])

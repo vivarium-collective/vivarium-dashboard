@@ -23,6 +23,7 @@ from conftest import register_generator
 
 from vivarium_workbench.lib import composite_subprocess as cs
 from vivarium_workbench.lib import composite_runs as cr
+from vivarium_workbench.lib import rerun as rerun_mod
 from vivarium_workbench.lib import _root
 import viva_superpowers.composite_generator as cg
 
@@ -135,6 +136,66 @@ def test_generator_path_success_shape(tmp_path, monkeypatch):
     # Generator path embeds the registry build, NOT a state tempfile load.
     assert "build_generator(entry" in fake.script
     assert "object_hook=bigraph_json_hook" not in fake.script
+
+
+def test_reran_from_triggers_verify_reproduction(tmp_path, monkeypatch):
+    # reproducible-rerun-spine Task 4: this is the STUDY-origin completion
+    # path (study_runs.launch_into_study -> _launch_run_and_flush ->
+    # run_composite_subprocess) — a present reran_from must call
+    # rerun.verify_reproduction once this run's own result_fingerprint is
+    # stored, mirroring run_runner.execute's own reran_from wiring (Task 3)
+    # for the composite-origin path.
+    ws = _make_ws(tmp_path)
+    db = tmp_path / "runs.db"
+    spec = _gen_spec(monkeypatch)
+    fake = FakeRun(stdout=_ok_stdout())
+    monkeypatch.setattr(cs.subprocess, "run", fake)
+
+    calls = []
+    monkeypatch.setattr(rerun_mod, "verify_reproduction",
+        lambda ws_root, orig, new: calls.append((orig, new)) or {"match": None, "reason": "x"})
+
+    resp, code = cs.run_composite_subprocess(
+        ws, **_run_kwargs(ws, db, spec_id=spec, run_id="r-new"), reran_from="r-orig")
+
+    assert code == 200
+    assert calls == [("r-orig", "r-new")]
+
+
+def test_no_reran_from_skips_verify_reproduction(tmp_path, monkeypatch):
+    ws = _make_ws(tmp_path)
+    db = tmp_path / "runs.db"
+    spec = _gen_spec(monkeypatch)
+    fake = FakeRun(stdout=_ok_stdout())
+    monkeypatch.setattr(cs.subprocess, "run", fake)
+
+    calls = []
+    monkeypatch.setattr(rerun_mod, "verify_reproduction", lambda *a, **k: calls.append(1))
+
+    resp, code = cs.run_composite_subprocess(
+        ws, **_run_kwargs(ws, db, spec_id=spec, run_id="r-new2"))
+
+    assert code == 200
+    assert calls == []
+
+
+def test_verify_reproduction_failure_never_fails_the_run(tmp_path, monkeypatch):
+    # Best-effort: a broken verify_reproduction must never turn an otherwise-
+    # successful run into a failure.
+    ws = _make_ws(tmp_path)
+    db = tmp_path / "runs.db"
+    spec = _gen_spec(monkeypatch)
+    fake = FakeRun(stdout=_ok_stdout())
+    monkeypatch.setattr(cs.subprocess, "run", fake)
+
+    def _boom(*a, **k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(rerun_mod, "verify_reproduction", _boom)
+
+    resp, code = cs.run_composite_subprocess(
+        ws, **_run_kwargs(ws, db, spec_id=spec, run_id="r-new3"), reran_from="r-orig")
+
+    assert code == 200
 
 
 def test_generator_script_is_byte_identical_to_sidecar(tmp_path, monkeypatch):

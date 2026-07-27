@@ -79,6 +79,55 @@ def test_manifest_present_preferred(tmp_path):
     assert t["runtime"] == {"subprocess_timeout_s": 1800, "emitter": "parquet"}
 
 
+def test_manifest_present_returns_first_class_seed(tmp_path):
+    # reproducible-rerun-spine Task 4: a manifest built since Task 4 landed
+    # carries its own first-class "seed" key — resolve_rerun_target must
+    # surface it directly (not re-derive it from params), so a rerun forwards
+    # the ORIGINAL run's seed even if params happens to omit/differ on it.
+    (tmp_path / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
+    study_dir = tmp_path / "workspace" / "studies" / "s1"
+    study_dir.mkdir(parents=True, exist_ok=True)
+    (study_dir / "study.yaml").write_text("name: s1\n")
+    db = study_dir / "runs.db"
+    manifest = {
+        "version": 2, "spec_id": "v2ecoli.composites.baseline.baseline",
+        "params": {"X": 1}, "n_steps": 100, "seed": 7,
+        "origin": "study", "study": "s1", "pkg": "v2ecoli",
+    }
+    _seed(db, "spec__6__f", "v2ecoli.composites.baseline.baseline",
+         {"seed": 7}, 100, manifest=manifest)
+    t = rerun.resolve_rerun_target(tmp_path, "spec__6__f")
+    assert t["seed"] == 7
+    assert t["params"] == {"X": 1}
+
+
+def test_manifest_seed_falls_back_to_params_when_manifest_seed_null(tmp_path):
+    # A manifest built BEFORE Task 4 has seed=None (the old placeholder) —
+    # fall back to params["seed"] (the pre-Task-4 convention) rather than
+    # surfacing a null seed when the run actually had one.
+    (tmp_path / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
+    study_dir = tmp_path / "workspace" / "studies" / "s1"
+    study_dir.mkdir(parents=True, exist_ok=True)
+    (study_dir / "study.yaml").write_text("name: s1\n")
+    db = study_dir / "runs.db"
+    manifest = {
+        "version": 2, "spec_id": "some.composite",
+        "params": {"seed": 3}, "n_steps": 5, "seed": None,
+        "origin": "study", "study": "s1",
+    }
+    _seed(db, "spec__7__g", "some.composite", {"seed": 3}, 5, manifest=manifest)
+    t = rerun.resolve_rerun_target(tmp_path, "spec__7__g")
+    assert t["seed"] == 3
+
+
+def test_legacy_no_manifest_seed_falls_back_to_params(tmp_path):
+    (tmp_path / "workspace.yaml").write_text("layout:\n  studies: workspace/studies\n")
+    db = tmp_path / ".pbg" / "composite-runs.db"
+    _seed(db, "spec__8__h", "some.composite", {"x": 1, "seed": 2}, 5)
+    t = rerun.resolve_rerun_target(tmp_path, "spec__8__h")
+    assert t["seed"] == 2
+
+
 def test_manifest_n_steps_stripped_from_params(tmp_path):
     # The manifest's params was built as {**params, "n_steps": n_steps} by
     # launch_into_study, but the ORIGINAL run pops n_steps out of params

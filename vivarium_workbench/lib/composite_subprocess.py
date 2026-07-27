@@ -156,7 +156,8 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                              label, overrides=None, sim_name=None, timeout=1800,
                              emit_paths=None, study_emitter=None,
                              study_max_generations=None,
-                             study_single_daughters=None, manifest=None):
+                             study_single_daughters=None, manifest=None,
+                             reran_from=None):
     """Run a resolved composite ``state`` for ``steps`` steps in a subprocess,
     persisting runs_meta + history (via an injected SQLiteEmitter) to
     ``db_file``.
@@ -169,6 +170,20 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     ``study_runs.launch_into_study``); threaded straight through to
     ``cr.save_metadata`` so it lands in the run's ``runs_meta.manifest_json``
     row for ``rerun.resolve_rerun_target`` to replay later.
+
+    ``reran_from`` (reproducible-rerun-spine Task 4) is the ORIGINAL run_id
+    this run reproduces, when ``study_runs.launch_into_study`` was called by
+    ``rerun.run_rerun``. This is the STUDY-origin completion path (unlike
+    ``run_runner.execute``, which only handles composite-origin runs and
+    already got its own ``reran_from``/``verify_reproduction`` wiring in
+    Task 3) — study-origin reruns are the dominant path (baseline/variant/
+    study-reproduce), so without this wiring here a study reproduce would
+    never actually verify anything. Once this run's own
+    ``result_fingerprint`` is computed + stored below, a present
+    ``reran_from`` triggers ``rerun.verify_reproduction(ws_root, reran_from,
+    run_id)`` — best-effort, mirroring ``run_runner.execute``'s tail: any
+    failure there is swallowed so verification never fails an otherwise-
+    successful run.
 
     Returns ``(response_dict, status_code)``.  ``response_dict`` always has
     ``"simulation_id"``; on success also ``"results"``, ``"viz_html"``,
@@ -664,6 +679,19 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
 
         cr.complete_metadata(conn, run_id=run_id, n_steps=steps, status="completed",
                              workspace=ws_root)
+
+        # reproducible-rerun-spine Task 4: this run itself is a recorded
+        # reproduction of an earlier one — verify the two result_fingerprints
+        # now that both are stored. See the ``reran_from`` docstring note
+        # above for why this lives here rather than only in
+        # run_runner.execute (which never sees study-origin runs).
+        if reran_from:
+            try:
+                from vivarium_workbench.lib import rerun as rerun_mod
+                rerun_mod.verify_reproduction(ws_root, reran_from, run_id)
+            except Exception:
+                pass
+
         return ({"simulation_id": run_id, "results": results,
                  "viz_html": viz_html, "steps": steps}, 200)
     finally:

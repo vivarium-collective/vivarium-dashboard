@@ -862,32 +862,76 @@
     window.location = '/api/study-export?study=' + encodeURIComponent(studyName());
   });
 
-  // "Rerun study" — force-relaunch this study's baseline as a brand-new run
-  // (POST /api/study-run-baseline, same endpoint the Baseline tab's Run button
-  // uses). Live-only: a published read-only snapshot has no backend to launch
-  // against, so the button is hidden there (see the snapshot-mode block near
-  // the end of this file, mirroring the remote-run-panel hide).
-  bindAll('#study-rerun', function(btn) {
-    if (!confirm("Re-run this study's baseline?")) return;
+  // "Run current spec" — force-relaunch this study's baseline as a brand-new
+  // run, RE-DERIVING spec_id/params/n_steps/emitter/etc. from the study's
+  // CURRENT study.yaml (POST /api/study-run-baseline, same endpoint the
+  // Baseline tab's Run button uses). This is one of TWO deliberately distinct
+  // header actions (reproducible-rerun-spine Task 4 / G2) — the other,
+  // "Reproduce" (below), replays a run's RECORDED manifest verbatim instead;
+  // never conflate the two under one ambiguous "Rerun" button. Live-only: a
+  // published read-only snapshot has no backend to launch against, so both
+  // buttons are hidden there (see the snapshot-mode block near the end of
+  // this file, mirroring the remote-run-panel hide).
+  bindAll('#study-run-current-spec', function(btn) {
+    if (!confirm("Run this study's CURRENT baseline spec as a new run?")) return;
     var orig = btn.textContent;
     btn.disabled = true;
-    btn.textContent = '… rerunning';
+    btn.textContent = '… running';
     api('POST', '/api/study-run-baseline', { study: studyName() })
       .then(function(res) {
         btn.disabled = false;
         btn.textContent = orig;
         if (res.status === 200) {
-          var msg = 'Rerun launched' + (res.body && res.body.run_id ? ' — new run ' + res.body.run_id : '');
+          var msg = 'Run launched' + (res.body && res.body.run_id ? ' — new run ' + res.body.run_id : '');
           if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
           if (typeof _loadStudySims === 'function') _loadStudySims(true);
         } else {
-          alert('Rerun failed: ' + (res.body && res.body.error || res.status));
+          alert('Run failed: ' + (res.body && res.body.error || res.status));
         }
       })
       .catch(function(err) {
         btn.disabled = false;
         btn.textContent = orig;
-        alert('Rerun failed: network error — ' + err);
+        alert('Run failed: network error — ' + err);
+      });
+  });
+
+  // "Reproduce" — replay this study's MOST RECENT run's recorded manifest
+  // verbatim (POST /api/study-reproduce) rather than re-deriving from the
+  // current study.yaml: a spec edit made after that run never changes what
+  // this launches (reproducible-rerun-spine Task 4 / G2). Resolves the
+  // latest run_id from /api/simulations?study=<slug> (already the source the
+  // Simulations tab's table reads, newest-first) rather than requiring the
+  // user to pick one — the per-row ↻ Rerun button (Simulations tab) already
+  // covers reproducing an ARBITRARY older run.
+  bindAll('#study-reproduce', function(btn) {
+    var slug = studyName();
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '… reproducing';
+    fetch('/api/simulations?study=' + encodeURIComponent(slug))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var sims = (d && d.simulations) || [];
+        var latest = sims.length ? (sims[0].run_id || '') : '';
+        if (!latest) throw new Error('no runs recorded yet for this study');
+        return api('POST', '/api/study-reproduce', { study: slug, run_id: latest });
+      })
+      .then(function(res) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (res.status === 200) {
+          var msg = 'Reproduce launched' + (res.body && res.body.run_id ? ' — new run ' + res.body.run_id : '');
+          if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+          if (typeof _loadStudySims === 'function') _loadStudySims(true);
+        } else {
+          alert('Reproduce failed: ' + (res.body && res.body.error || res.status));
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        alert('Reproduce failed: ' + (err && err.message ? err.message : err));
       });
   });
 

@@ -5,7 +5,8 @@ def test_run_rerun_study_forwards_full_manifest(monkeypatch, tmp_path):
     monkeypatch.setattr(rerun, "resolve_rerun_target", lambda ws, rid: {
         "run_id": rid, "origin": "study", "study": "s1", "spec_id": "c",
         "params": {"seed": 2, "cache_dir": "out/cache"}, "n_steps": 80,
-        "emitter": "parquet", "emit_paths": ["bulk"], "runtime": {"emitter": "parquet"}})
+        "emitter": "parquet", "emit_paths": ["bulk"], "runtime": {"emitter": "parquet"},
+        "seed": 2})
     seen = {}
     monkeypatch.setattr(rerun.study_runs, "launch_into_study",
         lambda ws, study, spec_id, params, n_steps, **k: seen.update(
@@ -16,6 +17,11 @@ def test_run_rerun_study_forwards_full_manifest(monkeypatch, tmp_path):
     assert seen["spec_id"] == "c" and seen["params"]["cache_dir"] == "out/cache"
     assert seen["kw"]["emitter"] == "parquet" and seen["kw"]["emit_paths"] == ["bulk"]
     assert seen["kw"]["runtime"] == {"emitter": "parquet"}
+    # reproducible-rerun-spine Task 4: the ORIGINAL run's first-class seed and
+    # reran_from=<original run_id> are forwarded so the new run's manifest
+    # carries the same seed and its completion can be verified against r1.
+    assert seen["kw"]["seed"] == 2
+    assert seen["kw"]["reran_from"] == "r1"
 
 
 def test_run_rerun_composite(monkeypatch, tmp_path):

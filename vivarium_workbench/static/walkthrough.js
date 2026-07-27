@@ -7306,7 +7306,7 @@
         'title="Download a self-contained Jupyter notebook">Notebook 📓</button>' +
       (isSnapshot ? '' :
       ' <button class="btn-mini" onclick="_rerunInvestigation()" ' +
-        'title="Re-run every study\'s baseline">Rerun investigation</button>');
+        'title="Re-run every member study\'s CURRENT baseline spec (re-derives from each study\'s study.yaml)">▶ Run current spec</button>');
   }
   window._wsSetInvestigationActions = _wsSetInvestigationActions;
 
@@ -8305,8 +8305,13 @@
   }
   window._runUnblockedSimulations = _runUnblockedSimulations;
 
-  // "Rerun investigation" — force-relaunch every member study's baseline
-  // (ignores the unblocked-gate; explicit user action). POSTs to
+  // "Run current spec" (investigation-level) — force-relaunch every member
+  // study's CURRENT baseline spec, RE-DERIVING each from its own study.yaml
+  // (ignores the unblocked-gate; explicit user action). This is the
+  // investigation-level counterpart to the study header's "Run current
+  // spec" button (reproducible-rerun-spine Task 4 / G2) — an investigation-
+  // level "Reproduce" (DAG-ordered manifest replay across member studies) is
+  // explicitly OUT of scope here; that's Task 7. POSTs to
   // /api/investigation-rerun, toasts the launched count, then re-renders the
   // run-progress panel with per-study results and refreshes the detail view
   // so new runs show up in charts/Simulations.
@@ -8325,7 +8330,7 @@
     }).then(function(r) {
       return r.json().then(function(j) { return { ok: r.ok, body: j, status: r.status }; });
     }).then(function(res) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Rerun investigation'; }
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Run current spec'; }
       if (!res.ok) {
         var errMsg = 'Rerun failed: ' + ((res.body && res.body.error) || res.status);
         if (typeof _showToast === 'function') _showToast(errMsg); else alert(errMsg);
@@ -8355,7 +8360,7 @@
         setTimeout(function() { _openInvestigationDetail(name); }, 500);
       }
     }).catch(function(err) {
-      if (btn) { btn.disabled = false; btn.textContent = 'Rerun investigation'; }
+      if (btn) { btn.disabled = false; btn.textContent = '▶ Run current spec'; }
       var netMsg = 'Network error: ' + err;
       if (typeof _showToast === 'function') _showToast(netMsg); else alert(netMsg);
       if (panel) panel.innerHTML = '<div class="inv-run-progress-banner inv-run-error">' + _h(netMsg) + '</div>';

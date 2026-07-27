@@ -40,19 +40,47 @@ def test_build_run_manifest_shape():
 def test_build_run_manifest_is_version_2_with_null_placeholders():
     # reproducible-rerun-spine Task 1: manifest schema bumped to v2 with new
     # keys filled in by later tasks (env=Task 2 [now populated, see below],
-    # fingerprint_fields=Task 3 [now populated, see below], seed=Task 4 —
-    # still null here). result_fingerprint stays null at manifest-build time
-    # even after Task 3: no result exists yet at launch — it's computed
-    # post-hoc at completion (run_runner.execute) and stored in the
-    # runs_meta.result_fingerprint COLUMN, not written back into this
-    # snapshot.
-    m = cr.build_run_manifest(spec_id="s", params={"seed": 0}, n_steps=100,
+    # fingerprint_fields=Task 3 [now populated, see below], seed=Task 4 [now
+    # populated, see test_build_run_manifest_first_class_seed* below]).
+    # result_fingerprint stays null at manifest-build time even after Task 3:
+    # no result exists yet at launch — it's computed post-hoc at completion
+    # (run_runner.execute / composite_subprocess.run_composite_subprocess)
+    # and stored in the runs_meta.result_fingerprint COLUMN, not written back
+    # into this snapshot.
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=100,
                               emitter="parquet", emit_paths=["bulk"], runtime={"x": 1},
                               origin="study", study="s1", pkg="v2ecoli", generation_id=None)
     assert m["version"] == 2
     for k in ("seed", "result_fingerprint"):
         assert k in m
         assert m[k] is None
+
+
+# --- seed (reproducible-rerun-spine Task 4) ---------------------------------
+
+def test_build_run_manifest_explicit_seed():
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite", seed=7)
+    assert m["seed"] == 7
+
+
+def test_build_run_manifest_seed_sniffed_from_params_when_not_explicit():
+    # Every pre-Task-4 caller already stashes the seed as a plain params key
+    # (e.g. a study baseline's params: {seed: 7, ...}) — build_run_manifest
+    # sniffs it so those call sites get a non-null first-class seed without
+    # every one needing to pop it out and pass it explicitly.
+    m = cr.build_run_manifest(spec_id="s", params={"seed": 7}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite")
+    assert m["seed"] == 7
+
+
+def test_build_run_manifest_explicit_seed_wins_over_params():
+    m = cr.build_run_manifest(spec_id="s", params={"seed": 999}, n_steps=1,
+                              emitter=None, emit_paths=[], runtime={},
+                              origin="composite", seed=7)
+    assert m["seed"] == 7
 
 
 def test_build_run_manifest_fingerprint_fields_defaults_to_emit_paths():

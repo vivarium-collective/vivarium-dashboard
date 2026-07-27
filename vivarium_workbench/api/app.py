@@ -308,6 +308,8 @@ from vivarium_workbench.lib.models import (
     # Task 6: rerun-capability POST request bodies
     RerunRequest,
     InvestigationRerunRequest,
+    # reproducible-rerun-spine Task 4: study-scoped manifest replay
+    StudyReproduceRequest,
     # Phase 2 Task 6: investigation-resolve (opt-in topological pull-or-compute)
     InvestigationResolveRequest,
     InvestigationResolveResult,
@@ -5199,6 +5201,38 @@ def create_app() -> FastAPI:
           - 200  run-result dict
         """
         body, status = _study_runs.run_study_baseline(ws, req.model_dump(exclude_none=True))
+        return JSONResponse(status_code=status, content=body)
+
+    @app.post(
+        "/api/study-reproduce",
+        tags=["Studies"],
+        summary="Reproduce a recorded run by replaying its stored manifest",
+    )
+    def study_reproduce(
+        req: StudyReproduceRequest,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Replay a recorded run's stored MANIFEST as a brand-new run.
+
+        Body: ``{"study", "run_id"}`` — deliberately distinct from
+        ``POST /api/study-run-baseline`` ("Run current spec", which
+        re-derives from the live ``study.yaml``): this route always replays
+        the run_id's recorded manifest (params/seed/emitter/emit_paths/
+        runtime exactly as launched — see ``lib.rerun.resolve_rerun_target``),
+        so a spec-YAML edit made after the original run never changes what
+        Reproduce launches. ``study`` is accepted for routing/UI symmetry
+        with the other study-scoped routes; the replay target is resolved
+        from ``run_id`` alone. Delegates to the same ``lib.rerun.run_rerun``
+        Task 4 uses to thread ``reran_from``/``seed`` into the new run, so a
+        later completion can be verified against the original
+        (``verify_reproduction``). Never mutates the original run; always
+        mints a new run_id.
+
+        Status codes:
+          - 404  unknown ``run_id``
+          - 200/202  new run's launch-result dict, plus ``origin``/``reran``
+        """
+        body, status = _rerun.run_rerun(ws, req.run_id)
         return JSONResponse(status_code=status, content=body)
 
     @app.post(
