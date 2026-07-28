@@ -78,18 +78,30 @@
       document.removeEventListener("mousedown", onOutside, true);
     }
 
-    // Open a workspace either in a NEW tab or by SWITCHING the current one. Both
-    // ride the ?workspace= session bootstrap (session.js mints/binds the session);
-    // a name-less catalog entry can only switch in-place via the API.
+    // Open a workspace in a NEW tab, or SWITCH the current one.
+    //  - New tab: prefer the workspace's own running-server URL; else spawn via
+    //    the ?workspace= session bootstrap (session.js binds it).
+    //  - Switch this tab: RE-POINT the local server to the workspace's path
+    //    (/api/source/switch) then reload, so the whole workbench — name AND
+    //    content — reflects it. (A ?workspace= session-switch left the
+    //    server-rendered header name stale.)
     function openWs(ws, newTab) {
       close();
-      if (ws && ws.name) {
-        var url = "/?workspace=" + encodeURIComponent(ws.name);
-        if (newTab) window.open(url, "_blank");
-        else window.location.assign(url);
-      } else if (ws && ws.path) {
+      if (newTab) {
+        var url = ws && ws.url ? ws.url
+          : (ws && ws.name ? "/?workspace=" + encodeURIComponent(ws.name) : null);
+        if (url) window.open(url, "_blank");
+        else window.alert("No running server for \"" + ((ws && (ws.label || ws.name)) || "this workspace") +
+          "\" to open in a new tab. Start it from that repo, then it'll appear here.");
+        return;
+      }
+      if (ws && ws.path) {
         fetch("/api/source/switch", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: ws.path }) }).then(function (r) { if (r.ok) location.reload(); });
+          body: JSON.stringify({ path: ws.path }) })
+          .then(function (r) { if (r.ok) location.reload(); else window.alert("Switch failed."); })
+          .catch(function () { window.alert("Switch failed (network)."); });
+      } else if (ws && ws.name) {
+        window.location.assign("/?workspace=" + encodeURIComponent(ws.name));
       }
     }
 
