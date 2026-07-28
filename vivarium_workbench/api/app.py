@@ -5083,6 +5083,7 @@ def create_app() -> FastAPI:
     def source_switch(
         req: SourceSwitchRequest,
         request: Request,
+        response: Response,
     ) -> Union[SourceSwitchResponse, JSONResponse]:
         """Re-point the active workspace to a registered catalog entry.
 
@@ -5114,6 +5115,16 @@ def create_app() -> FastAPI:
         source_path = (body.get("source") or {}).get("path")
         if session_key and source_path:
             session_registry.rebind(session_key, source_path)
+            # Align the browser's vw_session COOKIE to this (per-tab, header) session
+            # so a subsequent page navigation/reload — which carries only the cookie,
+            # NOT the X-VW-Session header — routes GET / to the just-switched
+            # workspace. Without this the header session was bound but the reload kept
+            # rendering the stale cookie session (switch appeared to "not work").
+            response.set_cookie(
+                session_registry.SESSION_COOKIE, session_key,
+                httponly=True, samesite="lax",
+                secure=(request.url.scheme == "https"), path="/",
+            )
             # Eager-on-switch (materialization-lifecycle §10): prepare the env now.
             # A catalog entry is in-place local (§2a) → ready at once, no uv sync.
             body["materialization"] = session_env.prepare(session_key, source_path)
