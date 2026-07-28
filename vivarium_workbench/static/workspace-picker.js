@@ -78,11 +78,16 @@
       document.removeEventListener("mousedown", onOutside, true);
     }
 
-    function spawn(ws) {
+    // Open a workspace either in a NEW tab or by SWITCHING the current one. Both
+    // ride the ?workspace= session bootstrap (session.js mints/binds the session);
+    // a name-less catalog entry can only switch in-place via the API.
+    function openWs(ws, newTab) {
       close();
-      if (ws && ws.name) window.open("/?workspace=" + encodeURIComponent(ws.name), "_blank");
-      else if (ws && ws.path) {
-        // Name-less catalog entry can't spawn by name — fall back to in-place switch.
+      if (ws && ws.name) {
+        var url = "/?workspace=" + encodeURIComponent(ws.name);
+        if (newTab) window.open(url, "_blank");
+        else window.location.assign(url);
+      } else if (ws && ws.path) {
         fetch("/api/source/switch", { method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ path: ws.path }) }).then(function (r) { if (r.ok) location.reload(); });
       }
@@ -126,13 +131,32 @@
         name.textContent = ws.label || ws.name || ws.path || "(unnamed)";
         li.appendChild(name);
 
-        var tail = document.createElement("span");
-        tail.className = "viv-wsp-tail";
-        tail.textContent = isCur ? "current" : "Open ↗";
-        li.appendChild(tail);
-
-        if (!isCur) {
-          li.addEventListener("click", function () { spawn(ws); });
+        if (isCur) {
+          var tail = document.createElement("span");
+          tail.className = "viv-wsp-tail";
+          tail.textContent = "current";
+          li.appendChild(tail);
+        } else {
+          // Two explicit actions: Switch (this tab) or Open ↗ (new tab).
+          var acts = document.createElement("span");
+          acts.className = "viv-wsp-actions";
+          var switchBtn = document.createElement("button");
+          switchBtn.type = "button"; switchBtn.className = "viv-wsp-act";
+          switchBtn.textContent = "Switch";
+          switchBtn.title = "Switch this tab to " + (ws.label || ws.name || "this workspace");
+          switchBtn.addEventListener("click", function (e) { e.stopPropagation(); openWs(ws, false); });
+          acts.appendChild(switchBtn);
+          if (ws.name) {   // a new tab needs a bindable ?workspace= name
+            var openBtn = document.createElement("button");
+            openBtn.type = "button"; openBtn.className = "viv-wsp-act viv-wsp-act-open";
+            openBtn.textContent = "Open ↗";
+            openBtn.title = "Open " + (ws.label || ws.name) + " in a new tab";
+            openBtn.addEventListener("click", function (e) { e.stopPropagation(); openWs(ws, true); });
+            acts.appendChild(openBtn);
+          }
+          li.appendChild(acts);
+          // Clicking the row (not a button) defaults to switching this tab.
+          li.addEventListener("click", function () { openWs(ws, false); });
           li.addEventListener("mouseenter", function () {
             var rs = rows(); for (var k = 0; k < rs.length; k++) if (rs[k] === li) setActive(k);
           });
