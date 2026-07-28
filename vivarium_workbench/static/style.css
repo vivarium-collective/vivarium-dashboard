@@ -2261,6 +2261,53 @@ textarea.loom-in-field{
   font-weight: 650; color: #1e293b; font-size: 0.96em; line-height: 1.25;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
 }
+/* Cards (middle zoom): name gets its own line and can wrap — no ellipsis. */
+.market-card-x { cursor: pointer; }
+.market-card-title { display: flex; align-items: baseline; gap: 7px; }
+.market-name-full {
+  flex: 1 1 auto; min-width: 0; font-weight: 680; color: #0f172a;
+  font-size: 0.98em; line-height: 1.28; overflow-wrap: anywhere;
+}
+.market-card-caret {
+  flex: none; color: #cbd5e1; font-size: 0.8em; transition: transform 0.12s, color 0.12s;
+}
+.market-card-x:hover .market-card-caret { color: #94a3b8; }
+.market-card-x.mk-expanded .market-card-caret { transform: rotate(90deg); color: #6366f1; }
+.market-card-x.mk-expanded { border-color: #c7d2fe; box-shadow: 0 2px 12px rgba(99,102,241,0.10); }
+.market-card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+/* Click-to-expand detail region inside a card. */
+.market-card-detail { margin-top: 4px; padding-top: 8px; border-top: 1px solid #eef2f7; }
+.market-card-detail[hidden] { display: none; }
+/* Long-form description inside an expanded card: capped + scrollable so the
+   attribute rows / member studies above it stay in view. */
+.market-card-detail .mk-detail-desc {
+  margin-top: 8px; max-height: 160px; overflow-y: auto; padding-right: 4px;
+}
+:root[data-theme="dark"] .market-name-full { color: var(--heading); }
+:root[data-theme="dark"] .market-card-detail { border-top-color: var(--border); }
+/* Investigation member-studies list (in detail / expanded card). */
+.mk-studies { margin-top: 8px; }
+.mk-studies-head {
+  font-size: 0.74em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #64748b; margin-bottom: 5px; display: flex; align-items: center; gap: 6px;
+}
+.mk-study-summary { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mk-study-bar {
+  flex: 1 1 auto; height: 6px; border-radius: 3px; background: #eef2f7; overflow: hidden; max-width: 180px;
+}
+.mk-study-bar > span { display: block; height: 100%; background: #22c55e; }
+.mk-study-summary-txt { font-size: 0.76em; color: #64748b; white-space: nowrap; }
+.mk-study-row {
+  display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 5px;
+  cursor: pointer; font-size: 0.84em;
+}
+.mk-study-row:hover { background: #f1f5f9; }
+.mk-study-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.mk-study-name { flex: 1 1 auto; min-width: 0; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-study-status { flex: none; font-size: 0.82em; color: #94a3b8; text-transform: lowercase; }
+:root[data-theme="dark"] .mk-study-row:hover { background: var(--surface-3); }
+:root[data-theme="dark"] .mk-study-name { color: var(--text); }
+:root[data-theme="dark"] .mk-study-bar { background: var(--surface-3); }
 .market-repo {
   flex: none; font-size: 0.72em; font-weight: 600; color: #475569;
   background: #f1f5f9; border-radius: 9999px; padding: 1px 8px; white-space: nowrap;
@@ -2391,7 +2438,13 @@ textarea.loom-in-field{
 .market-row .market-usage { flex: none; white-space: nowrap; }
 
 /* Detail (full) zoom */
-.market-grid-detail { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+/* Detail (max zoom): one full-row card per item, like the composites cards view. */
+.market-grid-detail { grid-template-columns: 1fr; gap: 12px; }
+/* Double-click-to-zoom focus ring — cleared on the next render. */
+.market-card.mk-focused, .market-tr.mk-focused > td {
+  box-shadow: inset 0 0 0 2px #6366f1;
+}
+.market-card.mk-focused { border-color: #6366f1; }
 .market-desc-full { -webkit-line-clamp: unset; display: block; }
 .market-detail .market-card-head .market-open { margin-left: auto; }
 .market-dl {

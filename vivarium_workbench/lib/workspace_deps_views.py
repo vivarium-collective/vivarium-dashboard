@@ -79,19 +79,33 @@ def _git_branch_commit(path: str) -> tuple[str, str]:
     return _run(["rev-parse", "--abbrev-ref", "HEAD"]), _run(["rev-parse", "--short", "HEAD"])
 
 
-def _branch_label(name: str, branch: str, path: str) -> str:
+def _branch_label(
+    name: str,
+    branch: str,
+    path: str,
+    disambiguate: bool = False,
+    branch_unique: bool = True,
+) -> str:
     """Disambiguate the many worktrees/clones of one repo by branch.
 
-    ``v2ecoli`` → ``v2ecoli:dnaa-biology`` etc. Falls back to the path
-    leaf when git can't resolve a branch; plain name on the default
-    branch or when the leaf adds nothing.
+    ``v2ecoli`` → ``v2ecoli:dnaa-biology`` etc. A resolvable branch names
+    itself when it's non-default, or — when several catalog checkouts share
+    this ``name`` (``disambiguate``) — on the default branch too, so the
+    pristine ``v2ecoli:main`` is tellable apart from its sibling worktrees.
+    A branch label is only used when the ``(name, branch)`` pairing is unique
+    (``branch_unique``); otherwise, and for detached/unresolved checkouts, we
+    fall back to the folder leaf so no two rows collide.
     """
-    variant = branch if branch and branch not in ("main", "master", "HEAD") else None
-    if variant is None:
-        leaf = Path(path).name
-        if leaf and leaf != name:
-            variant = leaf
-    return f"{name}:{variant}" if variant else name
+    if branch and branch != "HEAD":
+        default = branch in ("main", "master")
+        if (not default or disambiguate) and branch_unique:
+            return f"{name}:{branch}"
+    # Detached / unresolved, colliding branch, or a redundant-name default
+    # checkout: use the folder leaf when it adds information.
+    leaf = Path(path).name
+    if leaf and leaf != name:
+        return f"{name}:{leaf}"
+    return name
 
 
 def read_workspace_name(root: Path) -> str:
@@ -152,6 +166,18 @@ def build_workspaces(ws_root: Path) -> dict:
             for _p, _res in zip(_dir_paths, _ex.map(_git_branch_commit, _dir_paths)):
                 _bc[_p] = _res
 
+    # A name shared by several catalog checkouts needs its default-branch
+    # checkout labeled explicitly (``v2ecoli:main``) to tell it apart; a branch
+    # label is only unambiguous when no other checkout shares (name, branch).
+    from collections import Counter
+    _name_counts = Counter(
+        (e.get("name") or Path(e.get("path", "")).name) for e in catalog
+    )
+    _name_branch_counts = Counter(
+        ((e.get("name") or Path(e.get("path", "")).name), _bc.get(e.get("path", ""), ("", ""))[0])
+        for e in catalog
+    )
+
     for entry in catalog:
         path = entry.get("path", "")
         name = entry.get("name") or Path(path).name
@@ -160,7 +186,12 @@ def build_workspaces(ws_root: Path) -> dict:
         row["repo"] = name
         row["branch"] = branch
         row["commit"] = commit
-        row["label"] = _branch_label(name, branch, path) if Path(path).is_dir() else name
+        _ambig = _name_counts.get(name, 0) > 1
+        _branch_unique = _name_branch_counts.get((name, branch), 0) <= 1
+        row["label"] = (
+            _branch_label(name, branch, path, _ambig, _branch_unique)
+            if Path(path).is_dir() else name
+        )
         if not Path(path).is_dir():
             row["status"] = "missing"
         elif path == current_resolved:

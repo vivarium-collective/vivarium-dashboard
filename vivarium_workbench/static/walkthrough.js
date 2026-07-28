@@ -1975,7 +1975,7 @@
   // columns to width, auto-fill); a slider overrides with a fixed count.
   window._cardCols = (function () {
     var d = {};
-    ['registry', 'composites', 'modules'].forEach(function (s) {
+    ['registry', 'composites', 'modules', 'market'].forEach(function (s) {
       var v; try { v = localStorage.getItem('viv.cols.' + s); } catch (e) { v = null; }
       d[s] = (v && v !== 'auto' && !isNaN(+v)) ? Math.max(1, Math.min(8, +v)) : 'auto';
     });
@@ -1991,7 +1991,8 @@
   }
   function _cardContainersFor(surface) {
     var sel = surface === 'registry' ? '.reg-cards-grid'
-      : (surface === 'composites' ? '.ccard-rows' : '.mrows');
+      : (surface === 'composites' ? '.ccard-rows'
+      : (surface === 'market' ? '.market-grid-cards' : '.mrows'));
     return Array.prototype.slice.call(document.querySelectorAll(sel));
   }
   function _colsControl(surface) {
@@ -2009,6 +2010,7 @@
       registry: (window._registryZoom === 'grid'),
       composites: ((window._compositesZoom || 'cards') === 'cards'),
       modules: ((window._catalogZoom || 'cards') === 'cards'),
+      market: ((window._marketZoom || 'cards') === 'cards'),
     };
     Object.keys(show).forEach(function (s) {
       var slot = document.querySelector('.cols-ctl-slot[data-cols-surface="' + s + '"]');
@@ -4532,17 +4534,20 @@
         return { type: 'investigation', name: iv.name, title: iv.title || iv.name,
           repo: repo, origin: iv.origin_repo ? 'external' : 'workspace',
           category: _categoryOf(repo, !iv.origin_repo),
-          desc: iv.description || '', status: iv.status || '', nStudies: iv.n_studies || 0 };
+          desc: iv.description || '', status: iv.effective_status || iv.status || '',
+          question: iv.question || '', hypothesis: iv.hypothesis || '',
+          studies: iv.studies || [], nStudies: iv.n_studies || (iv.studies || []).length || 0 };
       });
       rebuild();
       return J('studies');
     }).then(function (studies) {
       window._marketByType.study = ((studies || {}).investigations || []).map(function (s) {
         var repo = s.origin_repo ? _marketRepoOf(s.origin_repo) : wsLabel;
-        return { type: 'study', name: s.name, repo: repo,
+        return { type: 'study', name: s.name, title: s.title || s.name, repo: repo,
           origin: s.origin_repo ? 'external' : 'workspace',
           category: _categoryOf(repo, !s.origin_repo), desc: s.description || '',
-          status: s.status || '', composite: s.composite || '',
+          status: s.effective_status || s.status || '', composite: s.composite || '',
+          question: s.question || s.objective || '', invs: s.investigations || [],
           nBeh: s.n_behaviors || 0, nRuns: s.n_runs || 0, nSims: s.n_simulations || 0, use: s.n_runs || 0 };
       });
       rebuild();
@@ -4552,10 +4557,12 @@
       window._marketByType.composite = carr.map(function (c) {
         var wl = c.workspace_local || c.source === 'workspace';
         var repo = wl ? wsLabel : _marketRepoOf(c.origin_repo || c.module);
+        var params = c.parameters;
+        var nParams = Array.isArray(params) ? params.length : (params ? Object.keys(params).length : 0);
         return { type: 'composite', name: c.name, repo: repo,
           origin: _originOf(repo, wl), category: _categoryOf(repo, wl),
           desc: c.description || '', requires: ((c.requires || {}).processes) || [],
-          nParams: (c.parameters || []).length, nSteps: c.default_n_steps || 0, use: 0 };
+          nParams: nParams, nSteps: c.default_n_steps || 0, use: 0 };
       });
       rebuild();
       return J('reg');
@@ -4769,21 +4776,102 @@
       + _marketOpenBtn(it) + '</div>';
   }
 
-  // Cards: current card + a usage line.
-  function _marketCard(it) {
-    var u = _marketUsage(it);
-    return '<div class="market-card market-type-' + it.type + '">'
-      + '<div class="market-card-head">' + _marketHead(it) + '</div>'
-      + (it.desc ? '<div class="market-desc">' + _esc(it.desc) + '</div>' : '')
-      + '<div class="market-card-foot">'
-      +   '<span class="market-usage">' + _esc(u) + '</span>' + _marketOpenBtn(it) + '</div>'
-      + '</div>';
+  // Per-render registry so a card can be expanded in place: each card gets a
+  // small id that maps back to its item (reset every _renderMarket).
+  function _mkRegister(it) {
+    if (!window._mkCardReg) window._mkCardReg = {};
+    var id = 'mk' + (window._mkSeq = (window._mkSeq || 0) + 1);
+    window._mkCardReg[id] = it;
+    return id;
   }
 
-  // Detail (full): description + a usage/attributes table.
-  function _marketDetail(it) {
+  // Stable identity for an item across zoom re-renders (type · repo · name).
+  function _mkKey(it) { return it.type + '|' + (it.repo || '') + '|' + it.name; }
+
+  // Expand (or force-open) a card's in-place detail region.
+  function _mkToggleCard(card, forceOpen) {
+    if (!card) return;
+    var it = (window._mkCardReg || {})[card.getAttribute('data-mk-id')];
+    var det = card.querySelector('.market-card-detail');
+    if (!it || !det) return;
+    var open = forceOpen ? true : card.classList.toggle('mk-expanded');
+    if (forceOpen) card.classList.add('mk-expanded');
+    if (open && det.getAttribute('data-filled') !== '1') {
+      det.innerHTML = _marketDetailBody(it); det.setAttribute('data-filled', '1');
+    }
+    det.hidden = !open;
+  }
+
+  // Double-click an item → advance one semantic-zoom level (list → cards →
+  // detail), then center + highlight that same item. At max zoom, open it.
+  function _marketZoomTo(key) {
+    var order = ['list', 'cards', 'detail'];
+    var i = order.indexOf(window._marketZoom || 'cards');
+    if (i < 0) i = 1;
+    if (i >= order.length - 1) {   // already at max → open it where it lives
+      var p = String(key).split('|'); _marketOpen(p[0], p.slice(2).join('|')); return;
+    }
+    _setMarketZoom(order[i + 1]);   // re-renders the facet
+    setTimeout(function () {
+      var host = document.getElementById('market-results'); if (!host) return;
+      var els = host.querySelectorAll('[data-mk-key]');
+      for (var k = 0; k < els.length; k++) {
+        if (els[k].getAttribute('data-mk-key') === key) {
+          els[k].classList.add('mk-focused');
+          try { els[k].scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ }
+          if (els[k].classList.contains('market-card-x')) _mkToggleCard(els[k], true);
+          break;
+        }
+      }
+    }, 90);
+  }
+
+  // A status → color for the little study dots in an investigation's detail.
+  function _mkStatusColor(st) {
+    st = String(st || '').toLowerCase();
+    if (/complete|ran|pass|done/.test(st)) return '#22c55e';
+    if (/run|progress/.test(st)) return '#3b82f6';
+    if (/fail|error/.test(st)) return '#ef4444';
+    if (/inconclusive|partial/.test(st)) return '#f59e0b';
+    return '#cbd5e1';   // planned / unknown
+  }
+
+  // An investigation's member studies, joined against the loaded study bucket so
+  // each row shows the study's real title + status, with a completion summary.
+  function _marketInvStudies(it) {
+    var slugs = it.studies || [];
+    if (!slugs.length) {
+      return it.nStudies
+        ? '<div class="market-dl"><div class="market-dl-k">Studies</div><div class="market-dl-v">' + it.nStudies + '</div></div>'
+        : '';
+    }
+    var byName = {};
+    ((window._marketByType && window._marketByType.study) || []).forEach(function (s) { byName[s.name] = s; });
+    var done = 0, counted = 0;
+    var rowsHtml = slugs.map(function (slug) {
+      var s = byName[slug];
+      var st = s ? (s.status || 'planned') : '';   // '' → status not loaded yet (honest)
+      if (s) { counted++; if (/complete|ran|pass|done|evaluated/i.test(st)) done++; }
+      return '<div class="mk-study-row" data-open-type="study" data-open-name="' + _esc(slug) + '">' +
+        '<span class="mk-study-dot" style="background:' + _mkStatusColor(st) + '"></span>' +
+        '<span class="mk-study-name">' + _esc((s && (s.title || s.name)) || slug) + '</span>' +
+        '<span class="mk-study-status">' + _esc(st || '—') + '</span></div>';
+    }).join('');
+    var pct = counted ? Math.round(100 * done / counted) : 0;
+    var summary = counted
+      ? '<div class="mk-study-summary"><span class="mk-study-bar"><span style="width:' + pct + '%"></span></span>' +
+        '<span class="mk-study-summary-txt">' + done + ' / ' + counted + ' complete · ' + pct + '%</span></div>'
+      : '';
+    return '<div class="mk-studies"><div class="mk-studies-head">Member studies ' +
+      '<span class="market-count">' + slugs.length + '</span></div>' + summary + rowsHtml + '</div>';
+  }
+
+  // Shared detail body (description + attribute rows + type-specific extras).
+  // Used both by the Detail zoom and by a Card's click-to-expand region.
+  function _marketDetailBody(it) {
     var rows = [];
     var R = function (k, v) { if (v) rows.push('<div class="market-dl-k">' + k + '</div><div class="market-dl-v">' + v + '</div>'); };
+    var extra = '';
     if (it.type === 'process') {
       R('Address', '<code>' + _esc(it.address || it.name) + '</code>');
       R('Used by', it.usage.total
@@ -4796,15 +4884,53 @@
     } else if (it.type === 'study') {
       R('Status', _esc(it.status || '—'));
       if (it.composite) R('Composite', '<code>' + _esc(it.composite) + '</code>');
+      if (it.question) R('Question', _esc(String(it.question).split('\n')[0].slice(0, 220)));
+      if (it.invs && it.invs.length) R('Part of', it.invs.map(function (n) { return _esc(n); }).join(', '));
       R('Activity', _esc((it.nBeh || 0) + ' behavior' + (it.nBeh === 1 ? '' : 's') + ' · ' + (it.nRuns || 0) + ' run' + (it.nRuns === 1 ? '' : 's') + ' · ' + (it.nSims || 0) + ' sim' + (it.nSims === 1 ? '' : 's')));
     } else if (it.type === 'investigation') {
       R('Status', _esc(it.status || '—'));
-      R('Studies', _esc(String(it.nStudies || 0)));
+      if (it.question) R('Question', _esc(String(it.question).split('\n')[0].slice(0, 220)));
+      if (it.hypothesis) R('Hypothesis', _esc(String(it.hypothesis).split('\n')[0].slice(0, 220)));
+      extra = _marketInvStudies(it);
     }
-    return '<div class="market-card market-detail market-type-' + it.type + '">'
+    // Attributes + the type-specific extra (e.g. an investigation's member
+    // studies with success) lead; the long-form description follows.
+    return (rows.length ? '<div class="market-dl">' + rows.join('') + '</div>' : '')
+      + extra
+      + (it.desc ? '<div class="market-desc market-desc-full mk-detail-desc">' + _esc(it.desc) + '</div>' : '');
+  }
+
+  // Cards (middle zoom): a legible full name on its own line, provenance chips
+  // below, a clamped description, and a foot with usage + Open. Single-click the
+  // card body to expand the detail (description + attributes) in place.
+  function _marketCard(it) {
+    var u = _marketUsage(it);
+    var id = _mkRegister(it);
+    var tags = _marketCatChip(it)
+      + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
+      + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
+    return '<div class="market-card market-card-x market-type-' + it.type + '" data-mk-id="' + id + '"'
+      + ' data-mk-key="' + _esc(_mkKey(it)) + '"'
+      + ' role="button" tabindex="0" title="Click for details · double-click to zoom in">'
+      + '<div class="market-card-title">'
+      +   '<span class="market-type-ico" title="' + _esc(it.kind || it.type) + '">' + _marketIco(it.type) + '</span>'
+      +   '<span class="market-name-full">' + _esc(it.title || it.name) + '</span>'
+      +   '<span class="market-card-caret" aria-hidden="true">▸</span>'
+      + '</div>'
+      + '<div class="market-card-tags">' + tags + '</div>'
+      + (it.desc ? '<div class="market-desc">' + _esc(it.desc) + '</div>' : '')
+      + '<div class="market-card-foot">'
+      +   '<span class="market-usage">' + _esc(u) + '</span>' + _marketOpenBtn(it) + '</div>'
+      + '<div class="market-card-detail" hidden></div>'
+      + '</div>';
+  }
+
+  // Detail (max zoom): a full-row card with the full body always expanded.
+  function _marketDetail(it) {
+    return '<div class="market-card market-detail market-type-' + it.type + '"'
+      + ' data-mk-key="' + _esc(_mkKey(it)) + '" title="Double-click to open">'
       + '<div class="market-card-head">' + _marketHead(it) + _marketOpenBtn(it) + '</div>'
-      + (it.desc ? '<div class="market-desc market-desc-full">' + _esc(it.desc) + '</div>' : '')
-      + (rows.length ? '<div class="market-dl">' + rows.join('') + '</div>' : '')
+      + _marketDetailBody(it)
       + '</div>';
   }
 
@@ -4855,7 +4981,8 @@
         if (c.key === 'use') { var u = _marketUseNum(it); return '<td class="market-td-use">' + (u || '—') + '</td>'; }
         return '<td>' + _esc(String(c.get(it))) + '</td>';
       }).join('');
-      return '<tr class="market-tr" data-open-type="' + it.type + '" data-open-name="' + _esc(it.name) + '">' + tds + '</tr>';
+      return '<tr class="market-tr" data-open-type="' + it.type + '" data-open-name="' + _esc(it.name) + '"'
+        + ' data-mk-key="' + _esc(_mkKey(it)) + '" title="Double-click to zoom in">' + tds + '</tr>';
     }).join('');
     return '<table class="market-table"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
   }
@@ -5047,12 +5174,31 @@
     if (!host) return;
     if (!host._marketWired) {   // delegate clicks once (survives re-renders)
       host._marketWired = true;
+      var _clearTimer = function () { if (host._mkTimer) { clearTimeout(host._mkTimer); host._mkTimer = null; } };
       host.addEventListener('click', function (e) {
         var th = e.target.closest('.market-th'); if (th) { _setMarketSort(th.dataset.sort); return; }
-        var tr = e.target.closest('.market-tr'); if (tr) { _marketOpen(tr.dataset.openType, tr.dataset.openName); return; }
-        var b = e.target.closest('.market-open'); if (b) _marketOpen(b.dataset.openType, b.dataset.openName);
+        var b = e.target.closest('.market-open'); if (b) { _clearTimer(); _marketOpen(b.dataset.openType, b.dataset.openName); return; }
+        // A member-study row inside an investigation's detail → open that study.
+        var sr = e.target.closest('.mk-study-row'); if (sr && sr.dataset.openName) { _clearTimer(); _marketOpen('study', sr.dataset.openName); return; }
+        // Single-click, DEBOUNCED so a double-click can preempt it and zoom
+        // instead: a card expands its detail in place; a table row opens.
+        var card = e.target.closest('.market-card-x');
+        var tr = e.target.closest('.market-tr');
+        if (card) { _clearTimer(); host._mkTimer = setTimeout(function () { host._mkTimer = null; _mkToggleCard(card); }, 220); return; }
+        if (tr)   { _clearTimer(); host._mkTimer = setTimeout(function () { host._mkTimer = null; _marketOpen(tr.dataset.openType, tr.dataset.openName); }, 220); return; }
+      });
+      // Double-click an item → advance one zoom level, centered on it.
+      host.addEventListener('dblclick', function (e) {
+        var el = e.target.closest('[data-mk-key]');
+        if (el) { _clearTimer(); _marketZoomTo(el.getAttribute('data-mk-key')); }
+      });
+      host.addEventListener('keydown', function (e) {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.market-card-x')) {
+          e.preventDefault(); _mkToggleCard(e.target.closest('.market-card-x'));
+        }
       });
     }
+    window._mkCardReg = {}; window._mkSeq = 0;   // reset the per-render card registry
     var items = window._marketItems || [];
     var q = ((document.getElementById('market-search') || {}).value || '').trim().toLowerCase();
     var facet = window._marketFacet || 'all';
@@ -5065,7 +5211,14 @@
     // Repositories facet: whole-ecosystem repo browse with its own List/Cards/
     // Detail zoom, filtered by the same category toggle. Rendered before the
     // per-artifact filtering below.
-    if (facet === 'repo') { host.innerHTML = _renderMarketRepos(zoom, q, cat); return; }
+    if (facet === 'repo') {
+      host.innerHTML = _renderMarketRepos(zoom, q, cat);
+      if (zoom === 'cards') {
+        _syncColsControls();
+        _cardContainersFor('market').forEach(function (c) { _applyCardCols(c, 'market'); });
+      } else { _updateColsSlotVisibility(); }
+      return;
+    }
     var match = function (it) {
       if (facet !== 'all' && it.type !== facet) return false;
       if (cat !== 'all' && _marketCatOf(it) !== cat) return false;
@@ -5099,6 +5252,15 @@
       }
     }
     host.innerHTML = html;
+    // Cards zoom: honor the column dial (shared with composites/processes).
+    if (facet !== 'repo') {
+      if (zoom === 'cards') {
+        _syncColsControls();
+        _cardContainersFor('market').forEach(function (c) { _applyCardCols(c, 'market'); });
+      } else {
+        _updateColsSlotVisibility();
+      }
+    }
   }
   window._renderMarket = _renderMarket;
 

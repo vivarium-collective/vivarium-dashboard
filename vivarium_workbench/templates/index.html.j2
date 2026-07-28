@@ -153,32 +153,41 @@ window.addEventListener('pageshow', function (e) {
   border: 1px solid #eee; border-radius: 4px; padding: 12px; background: #fff;
 }
 
-/* Workspace switcher (top of the left rail). */
-.viv-workspace-switcher { position: relative; padding: 0; display: flex; align-items: center; gap: 5px; margin: 2px 12px 12px; }
+/* Workspace switcher (top of the left rail) — nudged down so it sits more
+   centrally between the brand and the WORKSPACE section label. */
+.viv-workspace-switcher { position: relative; padding: 0; margin: 14px 12px 14px; }
 
 /* ── Workspace picker: a self-describing header dropdown ──────────────────── */
 .viv-wsp-trigger {
-  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; width: auto;
-  margin: 0; padding: 7px 10px;
-  background: #fff; border: 1px solid #e2e8f0; border-radius: 9px;
+  display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+  margin: 0; padding: 6px 8px 6px 10px;
+  /* Flat + transparent so it blends into the rail (like the nav items) rather
+     than floating as a white card; a subtle hover is the only chrome. */
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
   cursor: pointer; font: inherit; color: #0f172a; text-align: left;
-  box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, box-shadow .12s;
+  box-shadow: none; transition: background .12s, border-color .12s;
 }
-/* Dedicated Source button next to the name → jumps straight to the Source page
-   (repo · branch · commit), in live and read-only. */
+/* Source icon lives INSIDE the trigger box, on the right → jumps straight to the
+   Source page (repo · branch · commit). Subtle (no box of its own). */
 .viv-wsp-source-btn {
-  flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+  flex: 0 0 auto; width: 24px; height: 24px; padding: 0; margin-left: 1px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #64748b;
-  cursor: pointer; font-size: 14px; line-height: 1;
-  box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, color .12s, box-shadow .12s;
+  border: none; border-radius: 6px; background: transparent; color: #94a3b8;
+  cursor: pointer; font-size: 14px; line-height: 1; transition: background .12s, color .12s;
 }
-.viv-wsp-source-btn:hover { border-color: #cbd5e1; color: #4f46e5; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
-.viv-wsp-trigger:hover { border-color: #cbd5e1; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
+.viv-wsp-source-btn:hover { background: #eef2ff; color: #4f46e5; }
+.viv-wsp-trigger:hover { background: #f1f5f9; border-color: transparent; }
 .viv-wsp-trigger:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
 .viv-wsp-trigger-label { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
-.viv-wsp-trigger-current { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; font-size: 13px; font-weight: 600; }
+.viv-wsp-trigger-current { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; font-size: 13px; font-weight: 600; }
 .viv-wsp-trigger-current strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Repo name on top, branch below (muted) so the current branch is always visible. */
+.viv-wsp-trigger-names { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.viv-wsp-trigger-branch {
+  font-size: 10.5px; font-weight: 500; color: #94a3b8; letter-spacing: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: ui-monospace, Menlo, monospace;
+}
 .viv-wsp-trigger-caret { color: #94a3b8; font-size: 11px; flex: 0 0 auto; }
 
 .viv-wsp-dot { flex: 0 0 auto; font-size: 11px; line-height: 1; }
@@ -189,13 +198,12 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
 /* Collapsed rail: the switcher shrinks to just the status dot (green=local,
    purple=remote, grey=not running) — no white box with truncated text, and the
    Source button + caret hide. */
-.viv-rail.viv-rail-collapsed .viv-workspace-switcher { justify-content: center; margin: 2px auto 12px; }
+.viv-rail.viv-rail-collapsed .viv-workspace-switcher { margin: 10px auto 12px; text-align: center; }
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger {
-  flex: 0 0 auto; width: 32px; padding: 6px; justify-content: center; gap: 0;
+  width: 32px; margin: 0 auto; padding: 6px; justify-content: center; gap: 0;
 }
 .viv-rail.viv-rail-collapsed .viv-wsp-source-btn,
-.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current strong,
-.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current .viv-ws-remote-tag,
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-names,
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-caret { display: none; }
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-current { flex: 0 0 auto; gap: 0; }
 .viv-rail.viv-rail-collapsed .viv-wsp-dot { font-size: 15px; }
@@ -217,12 +225,37 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
 }
 .viv-wsp-search:focus { outline: none; border-color: #6366f1; background: #fff; }
 .viv-wsp-list { list-style: none; margin: 0; padding: 5px; overflow-y: auto; flex: 1; }
-.viv-wsp-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; color: #0f172a; }
+.viv-wsp-row { position: relative; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; color: #0f172a; }
 .viv-wsp-row.active, .viv-wsp-row:hover { background: #f1f5f9; }
 .viv-wsp-row.is-current { cursor: default; background: #f0fdf4; }
 .viv-wsp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .viv-wsp-tail { flex: 0 0 auto; font-size: 11.5px; color: #64748b; font-weight: 600; }
 .viv-wsp-row.is-current .viv-wsp-tail { color: #16a34a; }
+/* Per-row actions: Switch (this tab) / Open ↗ (new tab). Absolutely positioned
+   so they reserve NO layout width — the name uses the full row — and fade in
+   over the row's right edge on hover. */
+.viv-wsp-actions {
+  position: absolute; right: 30px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; gap: 5px; opacity: 0; transition: opacity .1s; pointer-events: none;
+  padding: 2px 5px 2px 12px; border-radius: 6px;
+  background: linear-gradient(90deg, rgba(241,245,249,0) 0%, #f1f5f9 22%);
+}
+.viv-wsp-row:hover .viv-wsp-actions, .viv-wsp-row.active .viv-wsp-actions { opacity: 1; pointer-events: auto; }
+.viv-wsp-act {
+  font: inherit; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 6px;
+  border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; white-space: nowrap;
+}
+.viv-wsp-act:hover { border-color: #cbd5e1; background: #f8fafc; }
+.viv-wsp-act-open { color: #4f46e5; border-color: #c7d2fe; background: #eef2ff; }
+.viv-wsp-act-open:hover { background: #e0e7ff; }
+/* Pin toggle — dim until row-hover, full opacity when pinned. */
+.viv-wsp-pin {
+  flex: 0 0 auto; font-size: 12px; line-height: 1; padding: 3px; border: 0; border-radius: 5px;
+  background: transparent; cursor: pointer; opacity: 0; filter: grayscale(1); transition: opacity .1s;
+}
+.viv-wsp-row:hover .viv-wsp-pin, .viv-wsp-row.active .viv-wsp-pin { opacity: .55; }
+.viv-wsp-pin:hover { opacity: 1 !important; background: #eef2ff; }
+.viv-wsp-pin.pinned { opacity: 1; filter: none; }
 .viv-wsp-empty { padding: 14px 12px; text-align: center; color: #94a3b8; font-size: 12.5px; }
 .viv-wsp-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 11px; border-top: 1px solid #f1f5f9; background: #fafbfc; font-size: 11px; color: #94a3b8; }
 .viv-wsp-legend b { font-weight: 700; }
@@ -407,28 +440,59 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
   display: flex; align-items: center; gap: 8px;
 }
 .viv-iset-menu-row-title { flex: 1; font-size: 13px; color: #111827; }
-.viv-branch-source { padding: 4px 0 16px; max-width: 640px; }
-.viv-bs-title { font-size: 15px; margin: 0 0 12px; }
-.viv-bs-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
-.viv-bs-key { width: 64px; color: #6b7280; font-size: 13px; }
-.viv-bs-select, .viv-bs-commit-select { padding: 4px 8px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 13px; }
-.viv-bs-toggle { padding: 4px 12px; border: 1px solid #d0d7de; background: #fff; cursor: pointer; border-radius: 6px; font-size: 13px; }
-.viv-bs-toggle.active { background: #eef4ff; border-color: #94b4ff; color: #1e40af; }
+/* Source page: two matching cards (Source panel + Branch settings). */
+#page-github { max-width: 860px; }
+#page-github .page-title { font-size: 15px; font-weight: 700; color: #0f172a; margin: 22px 0 12px; }
+.viv-branch-source, #page-github .panel.github-settings {
+  background: #fff; border: 1px solid #e6e8ec; border-radius: 12px;
+  padding: 18px 22px; margin: 0 0 18px; max-width: none; box-shadow: none;
+}
+:root[data-theme="dark"] .viv-branch-source, :root[data-theme="dark"] #page-github .panel.github-settings {
+  background: var(--panel); border-color: var(--border);
+}
+.viv-bs-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #8a94a6; margin: 0 0 14px; }
+.viv-bs-row { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; padding: 6px 0; }
+.viv-bs-key { color: #6b7280; font-size: 13px; }
+.viv-bs-select, .viv-bs-commit-select {
+  padding: 6px 10px; border: 1px solid #d7dbe0; border-radius: 8px; font-size: 13px;
+  background: #fff; color: #0f172a; min-width: 180px; max-width: 340px;
+}
+.viv-bs-select:focus, .viv-bs-commit-select:focus, .viv-bs-search:focus {
+  outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+/* Scope: a segmented Local/Remote control. */
+.viv-bs-scope-group { display: inline-flex; }
+.viv-bs-toggle {
+  padding: 5px 14px; border: 1px solid #e2e8f0; background: #f1f5f9; cursor: pointer;
+  font-size: 13px; color: #475569; font-weight: 500;
+}
+.viv-bs-toggle:first-of-type { border-radius: 8px 0 0 8px; }
+.viv-bs-toggle:last-of-type { border-radius: 0 8px 8px 0; border-left: none; }
+.viv-bs-toggle.active { background: #fff; color: #4f46e5; font-weight: 600; }
 .viv-bs-commit { font-family: ui-monospace, monospace; font-size: 13px; }
-.viv-bs-current { color: #1e40af; font-weight: 600; font-size: 12px; }
-.viv-bs-actions { display: flex; gap: 8px; margin: 14px 0; }
-.viv-bs-action { padding: 6px 14px; border: 1px solid #d0d7de; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.viv-bs-current { color: #4f46e5; font-weight: 600; font-size: 12px; }
+.viv-bs-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 4px; }
+.viv-bs-action {
+  padding: 6px 14px; border: 1px solid #d7dbe0; background: #fff; border-radius: 8px;
+  cursor: pointer; font-size: 13px; font-weight: 500; color: #334155; transition: background .12s, border-color .12s;
+}
+.viv-bs-action:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
 .viv-bs-action:disabled { opacity: 0.45; cursor: default; }
+/* Primary action (Commit + Push) stands out. */
+#viv-bs-push:not(:disabled), .viv-bs-action.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+#viv-bs-push:hover:not(:disabled), .viv-bs-action.primary:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
 .viv-bs-note { color: #b45309; font-size: 12px; margin: 6px 0; }
-.viv-bs-list { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid #f3f4f6; }
-.viv-bs-list-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
-.viv-bs-list-row.current { background: #eef4ff; }
-.viv-bs-list-label { flex: 1; }
-.viv-bs-list-label:hover { color: #0366d6; }
-.viv-bs-forget { border: none; background: none; cursor: pointer; color: #c0c4cc; }
-.viv-bs-forget:hover { color: #d1242f; }
-.viv-bs-search { width: 100%; max-width: 420px; margin: 10px 0 0; padding: 5px 9px;
-  border: 1px solid #d0d7de; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+.viv-bs-list { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid #eef1f4; }
+.viv-bs-list-row { display: flex; align-items: center; gap: 8px; padding: 8px 6px; border-bottom: 1px solid #f3f4f6; font-size: 13px; border-radius: 6px; }
+.viv-bs-list-row:hover { background: #f8fafc; }
+.viv-bs-list-row.current { background: #eef2ff; }
+.viv-bs-list-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viv-bs-list-label:hover { color: #4f46e5; }
+.viv-bs-forget { border: none; background: none; cursor: pointer; color: #cbd5e1; opacity: 0; transition: opacity .1s, color .1s; }
+.viv-bs-list-row:hover .viv-bs-forget { opacity: 1; }
+.viv-bs-forget:hover { color: #dc2626; }
+.viv-bs-search { width: 100%; max-width: 100%; margin: 12px 0 0; padding: 7px 11px;
+  border: 1px solid #d7dbe0; border-radius: 8px; font-size: 13px; box-sizing: border-box; background: #fff; }
 .viv-bs-list-empty { padding: 8px 4px; color: #9ca3af; font-size: 13px; }
 /* Read-only reproducibility card: this workspace's repo · commit · env. */
 .viv-bs-provenance { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;
@@ -542,16 +606,19 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       <!-- The workspace-name chip opens the Branch page (#github): source,
            repo/branch/commit, push & build actions. Replaces the old rail
            dropdown and the standalone Branch rail item. -->
-      <button class="viv-wsp-trigger" id="viv-workspace-picker-trigger" type="button"
-              title="Switch workspace — pick from your workspaces">
+      <div class="viv-wsp-trigger" id="viv-workspace-picker-trigger" role="button" tabindex="0"
+           title="Switch workspace — pick from your workspaces">
         <span class="viv-wsp-trigger-current">
           <span class="viv-wsp-dot viv-wsp-ready{% if workspace_is_remote %} viv-wsp-remote{% endif %}">●</span>
-          <strong>{{ workspace_name }}</strong>{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}
+          <span class="viv-wsp-trigger-names">
+            <strong>{{ workspace_name }}{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}</strong>
+            {% if workspace_branch %}<span class="viv-wsp-trigger-branch" title="branch: {{ workspace_branch }}">{{ workspace_branch }}</span>{% endif %}
+          </span>
         </span>
         <span class="viv-wsp-trigger-caret" aria-hidden="true">▾</span>
-      </button>
-      <button class="viv-wsp-source-btn" id="viv-wsp-source-btn" type="button"
-              title="Open Source — repository · branch · commit" aria-label="Open Source page">↗</button>
+        <button class="viv-wsp-source-btn" id="viv-wsp-source-btn" type="button"
+                title="Open Source — repository · branch · commit" aria-label="Open Source page">↗</button>
+      </div>
     </div>
     <!-- Snapshot mode: static repo label replaces the switcher dropdown. -->
     <div class="viv-repo-label" id="snapshot-repo-label" style="display:none;cursor:pointer"
@@ -883,8 +950,9 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         <span class="registry-zoom market-zoom" role="group" aria-label="View density" title="View density">
           <button class="reg-zoom-btn" data-mkzoom="list" onclick="_setMarketZoom('list')" title="List — dense &amp; sortable">&#9776;</button>
           <button class="reg-zoom-btn active" data-mkzoom="cards" onclick="_setMarketZoom('cards')" title="Cards — grid with usage">&#9638;</button>
-          <button class="reg-zoom-btn" data-mkzoom="detail" onclick="_setMarketZoom('detail')" title="Detail — full description, ports, usage">&#9707;</button>
+          <button class="reg-zoom-btn" data-mkzoom="detail" onclick="_setMarketZoom('detail')" title="Detail — full-row description, ports, usage">&#9707;</button>
         </span>
+        <span class="cols-ctl-slot" data-cols-surface="market" title="Cards columns"></span>
       </div>
       {# Facet bar: one artifact type at a time, or All (grouped). Processes,
          composites, studies and investigations come from the workspace + every
@@ -1216,17 +1284,22 @@ a.viv-bs-commit:hover { text-decoration: underline; }
        three-panel layout — easier to scan, easier to extend. -->
   <div class="panel github-settings">
     <style>
-      .github-settings .gh-section { padding:18px 0; border-top:1px solid #e5e7eb }
-      .github-settings .gh-section:first-of-type { padding-top:6px; border-top:none }
-      .github-settings .gh-section-title { margin:0 0 14px; font-size:0.95em; color:#1f2937; font-weight:600; letter-spacing:0.02em }
-      .github-settings .gh-row { display:grid; grid-template-columns:180px 1fr; gap:16px; padding:8px 0; align-items:center }
+      .github-settings .gh-section { padding:20px 0; border-top:1px solid #eef1f4 }
+      .github-settings .gh-section:first-of-type { padding-top:2px; border-top:none }
+      .github-settings .gh-section-title { margin:0 0 12px; font-size:11px; color:#8a94a6; font-weight:700; letter-spacing:0.06em; text-transform:uppercase }
+      .github-settings .gh-row { display:grid; grid-template-columns:160px 1fr; gap:16px; padding:9px 0; align-items:center }
       .github-settings .gh-row[hidden] { display:none }
-      .github-settings .gh-label { color:#6b7280; font-size:0.88em }
-      .github-settings .gh-value { color:#111827; font-size:0.92em; min-width:0 }
+      .github-settings .gh-label { color:#6b7280; font-size:13px }
+      .github-settings .gh-value { color:#0f172a; font-size:13.5px; min-width:0 }
       .github-settings .gh-value code { font-size:0.92em }
-      .github-settings .gh-value-hint { color:#6b7280; font-size:0.82em; margin-top:4px }
-      .github-settings select.gh-input { width:100%; max-width:380px; padding:6px 8px; font:inherit; border:1px solid #cbd5e1; border-radius:4px; background:#fff }
+      .github-settings .gh-value a { color:#4f46e5; text-decoration:none; font-weight:500 }
+      .github-settings .gh-value a:hover { text-decoration:underline }
+      .github-settings .gh-value-hint { color:#94a3b8; font-size:12px; margin-top:5px }
+      .github-settings select.gh-input, .github-settings input.gh-input { width:100%; max-width:360px; padding:6px 10px; font:inherit; font-size:13px; border:1px solid #d7dbe0; border-radius:8px; background:#fff; color:#0f172a }
+      .github-settings .gh-input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.12) }
       .github-settings .gh-action-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center }
+      :root[data-theme="dark"] .github-settings .gh-section { border-top-color:var(--border) }
+      :root[data-theme="dark"] .github-settings .gh-value { color:var(--text) }
     </style>
 
     <!-- ── Account ──────────────────────────────────────────────── -->

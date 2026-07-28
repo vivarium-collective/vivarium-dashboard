@@ -43,6 +43,43 @@
     });
   }
 
+  // ── Pins + last-used (per-browser, localStorage) ────────────────────────────
+  // Pinned workspaces float to the top; the rest sort by most-recently-opened.
+  // Both are keyed by workspace PATH (stable across relabels).
+  function _wsPins() {
+    try { return JSON.parse(localStorage.getItem('viv.pinnedWorkspaces') || '[]') || []; }
+    catch (e) { return []; }
+  }
+  function _wsPinned(path) { return _wsPins().indexOf(path) !== -1; }
+  function _wsTogglePin(path) {
+    var a = _wsPins(), i = a.indexOf(path);
+    if (i >= 0) a.splice(i, 1); else a.push(path);
+    try { localStorage.setItem('viv.pinnedWorkspaces', JSON.stringify(a)); } catch (e) { /* private mode */ }
+    return i < 0;
+  }
+  function _wsLastUsed() {
+    try { return JSON.parse(localStorage.getItem('viv.wsLastUsed') || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function _wsRecordUsed(path) {
+    if (!path) return;
+    var m = _wsLastUsed(); m[path] = Date.now();
+    try { localStorage.setItem('viv.wsLastUsed', JSON.stringify(m)); } catch (e) { /* private mode */ }
+  }
+  // Order for the dropdown: current → pinned → most-recently-used → label.
+  function _sortWorkspaces(list) {
+    var pins = _wsPins(), lu = _wsLastUsed();
+    return list.slice().sort(function (a, b) {
+      var ac = a.status === 'current' ? 0 : 1, bc = b.status === 'current' ? 0 : 1;
+      if (ac !== bc) return ac - bc;
+      var ap = pins.indexOf(a.path) >= 0 ? 0 : 1, bp = pins.indexOf(b.path) >= 0 ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      var al = lu[a.path] || 0, bl = lu[b.path] || 0;
+      if (al !== bl) return bl - al;   // most-recent first
+      return String(a.label || a.name || '').localeCompare(String(b.label || b.name || ''));
+    });
+  }
+
   var api = { filterWorkspaces: filterWorkspaces, statusMeta: statusMeta };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
   if (typeof window !== "undefined") window.vivWorkspacePicker = api;
@@ -78,13 +115,31 @@
       document.removeEventListener("mousedown", onOutside, true);
     }
 
-    function spawn(ws) {
+    // Open a workspace in a NEW tab, or SWITCH the current one.
+    //  - New tab: prefer the workspace's own running-server URL; else spawn via
+    //    the ?workspace= session bootstrap (session.js binds it).
+    //  - Switch this tab: RE-POINT the local server to the workspace's path
+    //    (/api/source/switch) then reload, so the whole workbench — name AND
+    //    content — reflects it. (A ?workspace= session-switch left the
+    //    server-rendered header name stale.)
+    function openWs(ws, newTab) {
       close();
-      if (ws && ws.name) window.open("/?workspace=" + encodeURIComponent(ws.name), "_blank");
-      else if (ws && ws.path) {
-        // Name-less catalog entry can't spawn by name — fall back to in-place switch.
+      _wsRecordUsed(ws && ws.path);   // stamp before we navigate/switch away
+      if (newTab) {
+        var url = ws && ws.url ? ws.url
+          : (ws && ws.name ? "/?workspace=" + encodeURIComponent(ws.name) : null);
+        if (url) window.open(url, "_blank");
+        else window.alert("No running server for \"" + ((ws && (ws.label || ws.name)) || "this workspace") +
+          "\" to open in a new tab. Start it from that repo, then it'll appear here.");
+        return;
+      }
+      if (ws && ws.path) {
         fetch("/api/source/switch", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ path: ws.path }) }).then(function (r) { if (r.ok) location.reload(); });
+          body: JSON.stringify({ path: ws.path }) })
+          .then(function (r) { if (r.ok) location.reload(); else window.alert("Switch failed."); })
+          .catch(function () { window.alert("Switch failed (network)."); });
+      } else if (ws && ws.name) {
+        window.location.assign("/?workspace=" + encodeURIComponent(ws.name));
       }
     }
 
@@ -99,7 +154,7 @@
     function render() {
       if (!listEl) return;
       listEl.innerHTML = "";
-      var list = filterWorkspaces(all, searchEl ? searchEl.value : "");
+      var list = _sortWorkspaces(filterWorkspaces(all, searchEl ? searchEl.value : ""));
       if (!list.length) {
         var e = document.createElement("li");
         e.className = "viv-wsp-empty";
@@ -126,17 +181,48 @@
         name.textContent = ws.label || ws.name || ws.path || "(unnamed)";
         li.appendChild(name);
 
-        var tail = document.createElement("span");
-        tail.className = "viv-wsp-tail";
-        tail.textContent = isCur ? "current" : "Open ↗";
-        li.appendChild(tail);
-
-        if (!isCur) {
-          li.addEventListener("click", function () { spawn(ws); });
+        if (isCur) {
+          var tail = document.createElement("span");
+          tail.className = "viv-wsp-tail";
+          tail.textContent = "current";
+          li.appendChild(tail);
+        } else {
+          // Two explicit actions: Switch (this tab) or Open ↗ (new tab).
+          var acts = document.createElement("span");
+          acts.className = "viv-wsp-actions";
+          var switchBtn = document.createElement("button");
+          switchBtn.type = "button"; switchBtn.className = "viv-wsp-act";
+          switchBtn.textContent = "Switch";
+          switchBtn.title = "Switch this tab to " + (ws.label || ws.name || "this workspace");
+          switchBtn.addEventListener("click", function (e) { e.stopPropagation(); openWs(ws, false); });
+          acts.appendChild(switchBtn);
+          if (ws.name) {   // a new tab needs a bindable ?workspace= name
+            var openBtn = document.createElement("button");
+            openBtn.type = "button"; openBtn.className = "viv-wsp-act viv-wsp-act-open";
+            openBtn.textContent = "Open ↗";
+            openBtn.title = "Open " + (ws.label || ws.name) + " in a new tab";
+            openBtn.addEventListener("click", function (e) { e.stopPropagation(); openWs(ws, true); });
+            acts.appendChild(openBtn);
+          }
+          li.appendChild(acts);
+          // Clicking the row (not a button) defaults to switching this tab.
+          li.addEventListener("click", function () { openWs(ws, false); });
           li.addEventListener("mouseenter", function () {
             var rs = rows(); for (var k = 0; k < rs.length; k++) if (rs[k] === li) setActive(k);
           });
         }
+        // Pin toggle (far right) — pinned workspaces float to the top.
+        var pinned = _wsPinned(ws.path);
+        var pin = document.createElement("button");
+        pin.type = "button";
+        pin.className = "viv-wsp-pin" + (pinned ? " pinned" : "");
+        pin.textContent = "📌";
+        pin.title = pinned ? "Unpin" : "Pin to top";
+        pin.setAttribute("aria-pressed", pinned ? "true" : "false");
+        pin.addEventListener("click", function (e) {
+          e.stopPropagation(); _wsTogglePin(ws.path); render();
+        });
+        li.appendChild(pin);
         listEl.appendChild(li);
       });
       activeIdx = -1;
@@ -199,7 +285,12 @@
       searchEl.focus();
 
       fetch("/api/workspaces").then(function (r) { return r && r.ok ? r.json() : null; })
-        .then(function (d) { all = (d && d.workspaces) || d || []; render(); })
+        .then(function (d) {
+          all = (d && d.workspaces) || d || [];
+          var cur = all.filter(function (w) { return w.status === "current"; })[0];
+          if (cur) _wsRecordUsed(cur.path);   // seed "last used" for the active one
+          render();
+        })
         .catch(function () { all = []; render(); });
     }
 
@@ -207,6 +298,11 @@
       e.preventDefault();
       if (isSnap) { goSource(); return; }   // read-only → Source page (no switcher)
       open();
+    });
+    // The trigger is a role="button" div (so the Source <button> can nest inside
+    // it); wire keyboard activation like a real button.
+    trigger.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); trigger.click(); }
     });
     trigger.setAttribute("aria-haspopup", isSnap ? "false" : "listbox");
     trigger.setAttribute("aria-expanded", "false");
