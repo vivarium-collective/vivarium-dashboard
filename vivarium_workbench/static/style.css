@@ -2438,7 +2438,13 @@ textarea.loom-in-field{
 .market-row .market-usage { flex: none; white-space: nowrap; }
 
 /* Detail (full) zoom */
-.market-grid-detail { grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); }
+/* Detail (max zoom): one full-row card per item, like the composites cards view. */
+.market-grid-detail { grid-template-columns: 1fr; gap: 12px; }
+/* Double-click-to-zoom focus ring — cleared on the next render. */
+.market-card.mk-focused, .market-tr.mk-focused > td {
+  box-shadow: inset 0 0 0 2px #6366f1;
+}
+.market-card.mk-focused { border-color: #6366f1; }
 .market-desc-full { -webkit-line-clamp: unset; display: block; }
 .market-detail .market-card-head .market-open { margin-left: auto; }
 .market-dl {

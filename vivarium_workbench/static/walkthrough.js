@@ -1975,7 +1975,7 @@
   // columns to width, auto-fill); a slider overrides with a fixed count.
   window._cardCols = (function () {
     var d = {};
-    ['registry', 'composites', 'modules'].forEach(function (s) {
+    ['registry', 'composites', 'modules', 'market'].forEach(function (s) {
       var v; try { v = localStorage.getItem('viv.cols.' + s); } catch (e) { v = null; }
       d[s] = (v && v !== 'auto' && !isNaN(+v)) ? Math.max(1, Math.min(8, +v)) : 'auto';
     });
@@ -1991,7 +1991,8 @@
   }
   function _cardContainersFor(surface) {
     var sel = surface === 'registry' ? '.reg-cards-grid'
-      : (surface === 'composites' ? '.ccard-rows' : '.mrows');
+      : (surface === 'composites' ? '.ccard-rows'
+      : (surface === 'market' ? '.market-grid-cards' : '.mrows'));
     return Array.prototype.slice.call(document.querySelectorAll(sel));
   }
   function _colsControl(surface) {
@@ -2009,6 +2010,7 @@
       registry: (window._registryZoom === 'grid'),
       composites: ((window._compositesZoom || 'cards') === 'cards'),
       modules: ((window._catalogZoom || 'cards') === 'cards'),
+      market: ((window._marketZoom || 'cards') === 'cards'),
     };
     Object.keys(show).forEach(function (s) {
       var slot = document.querySelector('.cols-ctl-slot[data-cols-surface="' + s + '"]');
@@ -4783,6 +4785,47 @@
     return id;
   }
 
+  // Stable identity for an item across zoom re-renders (type · repo · name).
+  function _mkKey(it) { return it.type + '|' + (it.repo || '') + '|' + it.name; }
+
+  // Expand (or force-open) a card's in-place detail region.
+  function _mkToggleCard(card, forceOpen) {
+    if (!card) return;
+    var it = (window._mkCardReg || {})[card.getAttribute('data-mk-id')];
+    var det = card.querySelector('.market-card-detail');
+    if (!it || !det) return;
+    var open = forceOpen ? true : card.classList.toggle('mk-expanded');
+    if (forceOpen) card.classList.add('mk-expanded');
+    if (open && det.getAttribute('data-filled') !== '1') {
+      det.innerHTML = _marketDetailBody(it); det.setAttribute('data-filled', '1');
+    }
+    det.hidden = !open;
+  }
+
+  // Double-click an item → advance one semantic-zoom level (list → cards →
+  // detail), then center + highlight that same item. At max zoom, open it.
+  function _marketZoomTo(key) {
+    var order = ['list', 'cards', 'detail'];
+    var i = order.indexOf(window._marketZoom || 'cards');
+    if (i < 0) i = 1;
+    if (i >= order.length - 1) {   // already at max → open it where it lives
+      var p = String(key).split('|'); _marketOpen(p[0], p.slice(2).join('|')); return;
+    }
+    _setMarketZoom(order[i + 1]);   // re-renders the facet
+    setTimeout(function () {
+      var host = document.getElementById('market-results'); if (!host) return;
+      var els = host.querySelectorAll('[data-mk-key]');
+      for (var k = 0; k < els.length; k++) {
+        if (els[k].getAttribute('data-mk-key') === key) {
+          els[k].classList.add('mk-focused');
+          try { els[k].scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ }
+          if (els[k].classList.contains('market-card-x')) _mkToggleCard(els[k], true);
+          break;
+        }
+      }
+    }, 90);
+  }
+
   // A status → color for the little study dots in an investigation's detail.
   function _mkStatusColor(st) {
     st = String(st || '').toLowerCase();
@@ -4867,7 +4910,8 @@
       + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
       + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
     return '<div class="market-card market-card-x market-type-' + it.type + '" data-mk-id="' + id + '"'
-      + ' role="button" tabindex="0" title="Click for details">'
+      + ' data-mk-key="' + _esc(_mkKey(it)) + '"'
+      + ' role="button" tabindex="0" title="Click for details · double-click to zoom in">'
       + '<div class="market-card-title">'
       +   '<span class="market-type-ico" title="' + _esc(it.kind || it.type) + '">' + _marketIco(it.type) + '</span>'
       +   '<span class="market-name-full">' + _esc(it.title || it.name) + '</span>'
@@ -4881,9 +4925,10 @@
       + '</div>';
   }
 
-  // Detail (max zoom): the full body always expanded.
+  // Detail (max zoom): a full-row card with the full body always expanded.
   function _marketDetail(it) {
-    return '<div class="market-card market-detail market-type-' + it.type + '">'
+    return '<div class="market-card market-detail market-type-' + it.type + '"'
+      + ' data-mk-key="' + _esc(_mkKey(it)) + '" title="Double-click to open">'
       + '<div class="market-card-head">' + _marketHead(it) + _marketOpenBtn(it) + '</div>'
       + _marketDetailBody(it)
       + '</div>';
@@ -4936,7 +4981,8 @@
         if (c.key === 'use') { var u = _marketUseNum(it); return '<td class="market-td-use">' + (u || '—') + '</td>'; }
         return '<td>' + _esc(String(c.get(it))) + '</td>';
       }).join('');
-      return '<tr class="market-tr" data-open-type="' + it.type + '" data-open-name="' + _esc(it.name) + '">' + tds + '</tr>';
+      return '<tr class="market-tr" data-open-type="' + it.type + '" data-open-name="' + _esc(it.name) + '"'
+        + ' data-mk-key="' + _esc(_mkKey(it)) + '" title="Double-click to zoom in">' + tds + '</tr>';
     }).join('');
     return '<table class="market-table"><thead><tr>' + head + '</tr></thead><tbody>' + body + '</tbody></table>';
   }
@@ -5128,29 +5174,27 @@
     if (!host) return;
     if (!host._marketWired) {   // delegate clicks once (survives re-renders)
       host._marketWired = true;
+      var _clearTimer = function () { if (host._mkTimer) { clearTimeout(host._mkTimer); host._mkTimer = null; } };
       host.addEventListener('click', function (e) {
         var th = e.target.closest('.market-th'); if (th) { _setMarketSort(th.dataset.sort); return; }
-        var b = e.target.closest('.market-open'); if (b) { _marketOpen(b.dataset.openType, b.dataset.openName); return; }
-        var tr = e.target.closest('.market-tr'); if (tr) { _marketOpen(tr.dataset.openType, tr.dataset.openName); return; }
+        var b = e.target.closest('.market-open'); if (b) { _clearTimer(); _marketOpen(b.dataset.openType, b.dataset.openName); return; }
         // A member-study row inside an investigation's detail → open that study.
-        var sr = e.target.closest('.mk-study-row'); if (sr && sr.dataset.openName) { _marketOpen('study', sr.dataset.openName); return; }
-        // Single-click a card body → expand its detail in place.
+        var sr = e.target.closest('.mk-study-row'); if (sr && sr.dataset.openName) { _clearTimer(); _marketOpen('study', sr.dataset.openName); return; }
+        // Single-click, DEBOUNCED so a double-click can preempt it and zoom
+        // instead: a card expands its detail in place; a table row opens.
         var card = e.target.closest('.market-card-x');
-        if (card) {
-          var it = (window._mkCardReg || {})[card.getAttribute('data-mk-id')];
-          var det = card.querySelector('.market-card-detail');
-          if (it && det) {
-            var open = card.classList.toggle('mk-expanded');
-            if (open && det.getAttribute('data-filled') !== '1') {
-              det.innerHTML = _marketDetailBody(it); det.setAttribute('data-filled', '1');
-            }
-            det.hidden = !open;
-          }
-        }
+        var tr = e.target.closest('.market-tr');
+        if (card) { _clearTimer(); host._mkTimer = setTimeout(function () { host._mkTimer = null; _mkToggleCard(card); }, 220); return; }
+        if (tr)   { _clearTimer(); host._mkTimer = setTimeout(function () { host._mkTimer = null; _marketOpen(tr.dataset.openType, tr.dataset.openName); }, 220); return; }
+      });
+      // Double-click an item → advance one zoom level, centered on it.
+      host.addEventListener('dblclick', function (e) {
+        var el = e.target.closest('[data-mk-key]');
+        if (el) { _clearTimer(); _marketZoomTo(el.getAttribute('data-mk-key')); }
       });
       host.addEventListener('keydown', function (e) {
         if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.market-card-x')) {
-          e.preventDefault(); e.target.closest('.market-card-x').click();
+          e.preventDefault(); _mkToggleCard(e.target.closest('.market-card-x'));
         }
       });
     }
@@ -5167,7 +5211,14 @@
     // Repositories facet: whole-ecosystem repo browse with its own List/Cards/
     // Detail zoom, filtered by the same category toggle. Rendered before the
     // per-artifact filtering below.
-    if (facet === 'repo') { host.innerHTML = _renderMarketRepos(zoom, q, cat); return; }
+    if (facet === 'repo') {
+      host.innerHTML = _renderMarketRepos(zoom, q, cat);
+      if (zoom === 'cards') {
+        _syncColsControls();
+        _cardContainersFor('market').forEach(function (c) { _applyCardCols(c, 'market'); });
+      } else { _updateColsSlotVisibility(); }
+      return;
+    }
     var match = function (it) {
       if (facet !== 'all' && it.type !== facet) return false;
       if (cat !== 'all' && _marketCatOf(it) !== cat) return false;
@@ -5201,6 +5252,15 @@
       }
     }
     host.innerHTML = html;
+    // Cards zoom: honor the column dial (shared with composites/processes).
+    if (facet !== 'repo') {
+      if (zoom === 'cards') {
+        _syncColsControls();
+        _cardContainersFor('market').forEach(function (c) { _applyCardCols(c, 'market'); });
+      } else {
+        _updateColsSlotVisibility();
+      }
+    }
   }
   window._renderMarket = _renderMarket;
 

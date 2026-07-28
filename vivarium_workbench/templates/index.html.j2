@@ -225,15 +225,22 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
 }
 .viv-wsp-search:focus { outline: none; border-color: #6366f1; background: #fff; }
 .viv-wsp-list { list-style: none; margin: 0; padding: 5px; overflow-y: auto; flex: 1; }
-.viv-wsp-row { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; color: #0f172a; }
+.viv-wsp-row { position: relative; display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; color: #0f172a; }
 .viv-wsp-row.active, .viv-wsp-row:hover { background: #f1f5f9; }
 .viv-wsp-row.is-current { cursor: default; background: #f0fdf4; }
 .viv-wsp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
 .viv-wsp-tail { flex: 0 0 auto; font-size: 11.5px; color: #64748b; font-weight: 600; }
 .viv-wsp-row.is-current .viv-wsp-tail { color: #16a34a; }
-/* Per-row actions: Switch (this tab) / Open ↗ (new tab). Reveal on row hover. */
-.viv-wsp-actions { flex: 0 0 auto; display: inline-flex; gap: 5px; opacity: 0; transition: opacity .1s; }
-.viv-wsp-row:hover .viv-wsp-actions, .viv-wsp-row.active .viv-wsp-actions { opacity: 1; }
+/* Per-row actions: Switch (this tab) / Open ↗ (new tab). Absolutely positioned
+   so they reserve NO layout width — the name uses the full row — and fade in
+   over the row's right edge on hover. */
+.viv-wsp-actions {
+  position: absolute; right: 30px; top: 50%; transform: translateY(-50%);
+  display: inline-flex; gap: 5px; opacity: 0; transition: opacity .1s; pointer-events: none;
+  padding: 2px 5px 2px 12px; border-radius: 6px;
+  background: linear-gradient(90deg, rgba(241,245,249,0) 0%, #f1f5f9 22%);
+}
+.viv-wsp-row:hover .viv-wsp-actions, .viv-wsp-row.active .viv-wsp-actions { opacity: 1; pointer-events: auto; }
 .viv-wsp-act {
   font: inherit; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 6px;
   border: 1px solid #e2e8f0; background: #fff; color: #475569; cursor: pointer; white-space: nowrap;
@@ -241,6 +248,14 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
 .viv-wsp-act:hover { border-color: #cbd5e1; background: #f8fafc; }
 .viv-wsp-act-open { color: #4f46e5; border-color: #c7d2fe; background: #eef2ff; }
 .viv-wsp-act-open:hover { background: #e0e7ff; }
+/* Pin toggle — dim until row-hover, full opacity when pinned. */
+.viv-wsp-pin {
+  flex: 0 0 auto; font-size: 12px; line-height: 1; padding: 3px; border: 0; border-radius: 5px;
+  background: transparent; cursor: pointer; opacity: 0; filter: grayscale(1); transition: opacity .1s;
+}
+.viv-wsp-row:hover .viv-wsp-pin, .viv-wsp-row.active .viv-wsp-pin { opacity: .55; }
+.viv-wsp-pin:hover { opacity: 1 !important; background: #eef2ff; }
+.viv-wsp-pin.pinned { opacity: 1; filter: none; }
 .viv-wsp-empty { padding: 14px 12px; text-align: center; color: #94a3b8; font-size: 12.5px; }
 .viv-wsp-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 11px; border-top: 1px solid #f1f5f9; background: #fafbfc; font-size: 11px; color: #94a3b8; }
 .viv-wsp-legend b { font-weight: 700; }
@@ -935,8 +950,9 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         <span class="registry-zoom market-zoom" role="group" aria-label="View density" title="View density">
           <button class="reg-zoom-btn" data-mkzoom="list" onclick="_setMarketZoom('list')" title="List — dense &amp; sortable">&#9776;</button>
           <button class="reg-zoom-btn active" data-mkzoom="cards" onclick="_setMarketZoom('cards')" title="Cards — grid with usage">&#9638;</button>
-          <button class="reg-zoom-btn" data-mkzoom="detail" onclick="_setMarketZoom('detail')" title="Detail — full description, ports, usage">&#9707;</button>
+          <button class="reg-zoom-btn" data-mkzoom="detail" onclick="_setMarketZoom('detail')" title="Detail — full-row description, ports, usage">&#9707;</button>
         </span>
+        <span class="cols-ctl-slot" data-cols-surface="market" title="Cards columns"></span>
       </div>
       {# Facet bar: one artifact type at a time, or All (grouped). Processes,
          composites, studies and investigations come from the workspace + every

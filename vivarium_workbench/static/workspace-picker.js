@@ -43,6 +43,43 @@
     });
   }
 
+  // ── Pins + last-used (per-browser, localStorage) ────────────────────────────
+  // Pinned workspaces float to the top; the rest sort by most-recently-opened.
+  // Both are keyed by workspace PATH (stable across relabels).
+  function _wsPins() {
+    try { return JSON.parse(localStorage.getItem('viv.pinnedWorkspaces') || '[]') || []; }
+    catch (e) { return []; }
+  }
+  function _wsPinned(path) { return _wsPins().indexOf(path) !== -1; }
+  function _wsTogglePin(path) {
+    var a = _wsPins(), i = a.indexOf(path);
+    if (i >= 0) a.splice(i, 1); else a.push(path);
+    try { localStorage.setItem('viv.pinnedWorkspaces', JSON.stringify(a)); } catch (e) { /* private mode */ }
+    return i < 0;
+  }
+  function _wsLastUsed() {
+    try { return JSON.parse(localStorage.getItem('viv.wsLastUsed') || '{}') || {}; }
+    catch (e) { return {}; }
+  }
+  function _wsRecordUsed(path) {
+    if (!path) return;
+    var m = _wsLastUsed(); m[path] = Date.now();
+    try { localStorage.setItem('viv.wsLastUsed', JSON.stringify(m)); } catch (e) { /* private mode */ }
+  }
+  // Order for the dropdown: current → pinned → most-recently-used → label.
+  function _sortWorkspaces(list) {
+    var pins = _wsPins(), lu = _wsLastUsed();
+    return list.slice().sort(function (a, b) {
+      var ac = a.status === 'current' ? 0 : 1, bc = b.status === 'current' ? 0 : 1;
+      if (ac !== bc) return ac - bc;
+      var ap = pins.indexOf(a.path) >= 0 ? 0 : 1, bp = pins.indexOf(b.path) >= 0 ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      var al = lu[a.path] || 0, bl = lu[b.path] || 0;
+      if (al !== bl) return bl - al;   // most-recent first
+      return String(a.label || a.name || '').localeCompare(String(b.label || b.name || ''));
+    });
+  }
+
   var api = { filterWorkspaces: filterWorkspaces, statusMeta: statusMeta };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
   if (typeof window !== "undefined") window.vivWorkspacePicker = api;
@@ -87,6 +124,7 @@
     //    server-rendered header name stale.)
     function openWs(ws, newTab) {
       close();
+      _wsRecordUsed(ws && ws.path);   // stamp before we navigate/switch away
       if (newTab) {
         var url = ws && ws.url ? ws.url
           : (ws && ws.name ? "/?workspace=" + encodeURIComponent(ws.name) : null);
@@ -116,7 +154,7 @@
     function render() {
       if (!listEl) return;
       listEl.innerHTML = "";
-      var list = filterWorkspaces(all, searchEl ? searchEl.value : "");
+      var list = _sortWorkspaces(filterWorkspaces(all, searchEl ? searchEl.value : ""));
       if (!list.length) {
         var e = document.createElement("li");
         e.className = "viv-wsp-empty";
@@ -173,6 +211,18 @@
             var rs = rows(); for (var k = 0; k < rs.length; k++) if (rs[k] === li) setActive(k);
           });
         }
+        // Pin toggle (far right) — pinned workspaces float to the top.
+        var pinned = _wsPinned(ws.path);
+        var pin = document.createElement("button");
+        pin.type = "button";
+        pin.className = "viv-wsp-pin" + (pinned ? " pinned" : "");
+        pin.textContent = "📌";
+        pin.title = pinned ? "Unpin" : "Pin to top";
+        pin.setAttribute("aria-pressed", pinned ? "true" : "false");
+        pin.addEventListener("click", function (e) {
+          e.stopPropagation(); _wsTogglePin(ws.path); render();
+        });
+        li.appendChild(pin);
         listEl.appendChild(li);
       });
       activeIdx = -1;
@@ -235,7 +285,12 @@
       searchEl.focus();
 
       fetch("/api/workspaces").then(function (r) { return r && r.ok ? r.json() : null; })
-        .then(function (d) { all = (d && d.workspaces) || d || []; render(); })
+        .then(function (d) {
+          all = (d && d.workspaces) || d || [];
+          var cur = all.filter(function (w) { return w.status === "current"; })[0];
+          if (cur) _wsRecordUsed(cur.path);   // seed "last used" for the active one
+          render();
+        })
         .catch(function () { all = []; render(); });
     }
 
