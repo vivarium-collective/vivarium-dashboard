@@ -153,27 +153,27 @@ window.addEventListener('pageshow', function (e) {
   border: 1px solid #eee; border-radius: 4px; padding: 12px; background: #fff;
 }
 
-/* Workspace switcher (top of the left rail). */
-.viv-workspace-switcher { position: relative; padding: 0; display: flex; align-items: center; gap: 5px; margin: 2px 12px 12px; }
+/* Workspace switcher (top of the left rail) — nudged down so it sits more
+   centrally between the brand and the WORKSPACE section label. */
+.viv-workspace-switcher { position: relative; padding: 0; margin: 14px 12px 14px; }
 
 /* ── Workspace picker: a self-describing header dropdown ──────────────────── */
 .viv-wsp-trigger {
-  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; width: auto;
-  margin: 0; padding: 7px 10px;
+  display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
+  margin: 0; padding: 6px 8px 6px 10px;
   background: #fff; border: 1px solid #e2e8f0; border-radius: 9px;
   cursor: pointer; font: inherit; color: #0f172a; text-align: left;
   box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, box-shadow .12s;
 }
-/* Dedicated Source button next to the name → jumps straight to the Source page
-   (repo · branch · commit), in live and read-only. */
+/* Source icon lives INSIDE the trigger box, on the right → jumps straight to the
+   Source page (repo · branch · commit). Subtle (no box of its own). */
 .viv-wsp-source-btn {
-  flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+  flex: 0 0 auto; width: 24px; height: 24px; padding: 0; margin-left: 1px;
   display: inline-flex; align-items: center; justify-content: center;
-  border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #64748b;
-  cursor: pointer; font-size: 14px; line-height: 1;
-  box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, color .12s, box-shadow .12s;
+  border: none; border-radius: 6px; background: transparent; color: #94a3b8;
+  cursor: pointer; font-size: 14px; line-height: 1; transition: background .12s, color .12s;
 }
-.viv-wsp-source-btn:hover { border-color: #cbd5e1; color: #4f46e5; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
+.viv-wsp-source-btn:hover { background: #eef2ff; color: #4f46e5; }
 .viv-wsp-trigger:hover { border-color: #cbd5e1; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
 .viv-wsp-trigger:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
 .viv-wsp-trigger-label { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
@@ -189,9 +189,9 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
 /* Collapsed rail: the switcher shrinks to just the status dot (green=local,
    purple=remote, grey=not running) — no white box with truncated text, and the
    Source button + caret hide. */
-.viv-rail.viv-rail-collapsed .viv-workspace-switcher { justify-content: center; margin: 2px auto 12px; }
+.viv-rail.viv-rail-collapsed .viv-workspace-switcher { margin: 10px auto 12px; text-align: center; }
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger {
-  flex: 0 0 auto; width: 32px; padding: 6px; justify-content: center; gap: 0;
+  width: 32px; margin: 0 auto; padding: 6px; justify-content: center; gap: 0;
 }
 .viv-rail.viv-rail-collapsed .viv-wsp-source-btn,
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-current strong,
@@ -542,16 +542,16 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       <!-- The workspace-name chip opens the Branch page (#github): source,
            repo/branch/commit, push & build actions. Replaces the old rail
            dropdown and the standalone Branch rail item. -->
-      <button class="viv-wsp-trigger" id="viv-workspace-picker-trigger" type="button"
-              title="Switch workspace — pick from your workspaces">
+      <div class="viv-wsp-trigger" id="viv-workspace-picker-trigger" role="button" tabindex="0"
+           title="Switch workspace — pick from your workspaces">
         <span class="viv-wsp-trigger-current">
           <span class="viv-wsp-dot viv-wsp-ready{% if workspace_is_remote %} viv-wsp-remote{% endif %}">●</span>
           <strong>{{ workspace_name }}</strong>{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}
         </span>
         <span class="viv-wsp-trigger-caret" aria-hidden="true">▾</span>
-      </button>
-      <button class="viv-wsp-source-btn" id="viv-wsp-source-btn" type="button"
-              title="Open Source — repository · branch · commit" aria-label="Open Source page">↗</button>
+        <button class="viv-wsp-source-btn" id="viv-wsp-source-btn" type="button"
+                title="Open Source — repository · branch · commit" aria-label="Open Source page">↗</button>
+      </div>
     </div>
     <!-- Snapshot mode: static repo label replaces the switcher dropdown. -->
     <div class="viv-repo-label" id="snapshot-repo-label" style="display:none;cursor:pointer"

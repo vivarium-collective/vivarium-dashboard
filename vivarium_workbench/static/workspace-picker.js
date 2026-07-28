@@ -208,6 +208,11 @@
       if (isSnap) { goSource(); return; }   // read-only → Source page (no switcher)
       open();
     });
+    // The trigger is a role="button" div (so the Source <button> can nest inside
+    // it); wire keyboard activation like a real button.
+    trigger.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); trigger.click(); }
+    });
     trigger.setAttribute("aria-haspopup", isSnap ? "false" : "listbox");
     trigger.setAttribute("aria-expanded", "false");
     if (isSnap) trigger.title = "Open Source — repository, branch, commit";
