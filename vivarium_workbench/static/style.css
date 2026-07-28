@@ -2383,8 +2383,19 @@ textarea.loom-in-field{
   border-color: #16a34a; color: #166534; background: #f0fdf4; font-weight: 600;
 }
 .repo-install:hover { background: #dcfce7; }
+.repo-uninstall {
+  border-color: #fca5a5; color: #b91c1c; background: #fef2f2; font-weight: 600;
+}
+.repo-uninstall:hover { background: #fee2e2; }
 .repo-td-actions { white-space: nowrap; text-align: right; }
+.repo-td-actions .repo-actions { justify-content: flex-end; }
+/* Affected-studies emphasis in the table + card foot. */
+.repo-affected { font-variant-numeric: tabular-nums; font-weight: 700; color: #b45309; }
+.repo-td-zero { color: #cbd5e1; }
+.repo-card-foot .repo-meta b { color: #b45309; font-weight: 700; }
 :root[data-theme="dark"] .repo-install { border-color: #16a34a; color: #86efac; background: #052e16; }
+:root[data-theme="dark"] .repo-uninstall { border-color: #7f1d1d; color: #fca5a5; background: #450a0a; }
+:root[data-theme="dark"] .repo-affected, :root[data-theme="dark"] .repo-card-foot .repo-meta b { color: #fbbf24; }
 .repo-sample { font-size: 0.82em; color: #64748b; }
 .repo-sample-lbl { font-weight: 600; color: #475569; margin-right: 2px; }
 .repo-sample code { font-size: 0.92em; }
@@ -2459,6 +2470,18 @@ textarea.loom-in-field{
 
 /* List (minimized) zoom = sortable table — columns roll up, no horizontal scroll */
 .market-table { width: 100%; border-collapse: collapse; font-size: 0.88em; table-layout: fixed; }
+/* Draggable column widths — a grip on each header's right edge. */
+.col-resizer {
+  position: absolute; top: 0; right: -4px; width: 9px; height: 100%;
+  cursor: col-resize; z-index: 3; user-select: none;
+}
+.col-resizer::after {
+  content: ''; position: absolute; top: 20%; right: 4px; width: 2px; height: 60%;
+  background: transparent; border-radius: 1px;
+}
+.col-resizer:hover::after { background: #6366f1; }
+body.col-resizing { cursor: col-resize; user-select: none; }
+body.col-resizing .col-resizer::after { background: #6366f1; }
 .market-table th, .market-table td {
   text-align: left; padding: 6px 10px; border-bottom: 1px solid #eef1f5;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
