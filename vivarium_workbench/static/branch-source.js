@@ -255,17 +255,20 @@
     // the button silently did nothing). Labels are clarified for the remote client.
     var RO = !!((window._uiConfig || {}).readonly);
 
-    // Scope toggle
+    // Scope toggle — wrap the buttons in a segmented group so they share one grid
+    // cell (otherwise each button lands in its own cell and "Remote" wraps).
     var scopeRow = _el("div", "viv-bs-row");
     scopeRow.appendChild(_el("label", "viv-bs-key", "Scope"));
+    var scopeGroup = _el("div", "viv-bs-scope-group");
     ["local", "remote"].forEach(function (s) {
       var label = RO
         ? (s === "local" ? "Workspaces" : "sms-api builds")
         : (s === "local" ? "Local" : "Remote");
       var b = _el("button", "viv-bs-toggle" + (state.scope === s ? " active" : ""), label);
       b.addEventListener("click", function () { state.scope = s; state.repo = null; state.branch = null; refresh(); });
-      scopeRow.appendChild(b);
+      scopeGroup.appendChild(b);
     });
+    scopeRow.appendChild(scopeGroup);
     host.appendChild(scopeRow);
 
     // Remote endpoint health indicator: a 🟢/🔴 dot + the configured SMS_API_BASE,

@@ -425,28 +425,59 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
   display: flex; align-items: center; gap: 8px;
 }
 .viv-iset-menu-row-title { flex: 1; font-size: 13px; color: #111827; }
-.viv-branch-source { padding: 4px 0 16px; max-width: 640px; }
-.viv-bs-title { font-size: 15px; margin: 0 0 12px; }
-.viv-bs-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
-.viv-bs-key { width: 64px; color: #6b7280; font-size: 13px; }
-.viv-bs-select, .viv-bs-commit-select { padding: 4px 8px; border: 1px solid #d0d7de; border-radius: 6px; font-size: 13px; }
-.viv-bs-toggle { padding: 4px 12px; border: 1px solid #d0d7de; background: #fff; cursor: pointer; border-radius: 6px; font-size: 13px; }
-.viv-bs-toggle.active { background: #eef4ff; border-color: #94b4ff; color: #1e40af; }
+/* Source page: two matching cards (Source panel + Branch settings). */
+#page-github { max-width: 860px; }
+#page-github .page-title { font-size: 15px; font-weight: 700; color: #0f172a; margin: 22px 0 12px; }
+.viv-branch-source, #page-github .panel.github-settings {
+  background: #fff; border: 1px solid #e6e8ec; border-radius: 12px;
+  padding: 18px 22px; margin: 0 0 18px; max-width: none; box-shadow: none;
+}
+:root[data-theme="dark"] .viv-branch-source, :root[data-theme="dark"] #page-github .panel.github-settings {
+  background: var(--panel); border-color: var(--border);
+}
+.viv-bs-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #8a94a6; margin: 0 0 14px; }
+.viv-bs-row { display: grid; grid-template-columns: 72px 1fr; gap: 12px; align-items: center; padding: 6px 0; }
+.viv-bs-key { color: #6b7280; font-size: 13px; }
+.viv-bs-select, .viv-bs-commit-select {
+  padding: 6px 10px; border: 1px solid #d7dbe0; border-radius: 8px; font-size: 13px;
+  background: #fff; color: #0f172a; min-width: 180px; max-width: 340px;
+}
+.viv-bs-select:focus, .viv-bs-commit-select:focus, .viv-bs-search:focus {
+  outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,.12);
+}
+/* Scope: a segmented Local/Remote control. */
+.viv-bs-scope-group { display: inline-flex; }
+.viv-bs-toggle {
+  padding: 5px 14px; border: 1px solid #e2e8f0; background: #f1f5f9; cursor: pointer;
+  font-size: 13px; color: #475569; font-weight: 500;
+}
+.viv-bs-toggle:first-of-type { border-radius: 8px 0 0 8px; }
+.viv-bs-toggle:last-of-type { border-radius: 0 8px 8px 0; border-left: none; }
+.viv-bs-toggle.active { background: #fff; color: #4f46e5; font-weight: 600; }
 .viv-bs-commit { font-family: ui-monospace, monospace; font-size: 13px; }
-.viv-bs-current { color: #1e40af; font-weight: 600; font-size: 12px; }
-.viv-bs-actions { display: flex; gap: 8px; margin: 14px 0; }
-.viv-bs-action { padding: 6px 14px; border: 1px solid #d0d7de; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.viv-bs-current { color: #4f46e5; font-weight: 600; font-size: 12px; }
+.viv-bs-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 4px; }
+.viv-bs-action {
+  padding: 6px 14px; border: 1px solid #d7dbe0; background: #fff; border-radius: 8px;
+  cursor: pointer; font-size: 13px; font-weight: 500; color: #334155; transition: background .12s, border-color .12s;
+}
+.viv-bs-action:hover:not(:disabled) { background: #f8fafc; border-color: #cbd5e1; }
 .viv-bs-action:disabled { opacity: 0.45; cursor: default; }
+/* Primary action (Commit + Push) stands out. */
+#viv-bs-push:not(:disabled), .viv-bs-action.primary { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+#viv-bs-push:hover:not(:disabled), .viv-bs-action.primary:hover:not(:disabled) { background: #4338ca; border-color: #4338ca; }
 .viv-bs-note { color: #b45309; font-size: 12px; margin: 6px 0; }
-.viv-bs-list { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid #f3f4f6; }
-.viv-bs-list-row { display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
-.viv-bs-list-row.current { background: #eef4ff; }
-.viv-bs-list-label { flex: 1; }
-.viv-bs-list-label:hover { color: #0366d6; }
-.viv-bs-forget { border: none; background: none; cursor: pointer; color: #c0c4cc; }
-.viv-bs-forget:hover { color: #d1242f; }
-.viv-bs-search { width: 100%; max-width: 420px; margin: 10px 0 0; padding: 5px 9px;
-  border: 1px solid #d0d7de; border-radius: 6px; font-size: 13px; box-sizing: border-box; }
+.viv-bs-list { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px solid #eef1f4; }
+.viv-bs-list-row { display: flex; align-items: center; gap: 8px; padding: 8px 6px; border-bottom: 1px solid #f3f4f6; font-size: 13px; border-radius: 6px; }
+.viv-bs-list-row:hover { background: #f8fafc; }
+.viv-bs-list-row.current { background: #eef2ff; }
+.viv-bs-list-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.viv-bs-list-label:hover { color: #4f46e5; }
+.viv-bs-forget { border: none; background: none; cursor: pointer; color: #cbd5e1; opacity: 0; transition: opacity .1s, color .1s; }
+.viv-bs-list-row:hover .viv-bs-forget { opacity: 1; }
+.viv-bs-forget:hover { color: #dc2626; }
+.viv-bs-search { width: 100%; max-width: 100%; margin: 12px 0 0; padding: 7px 11px;
+  border: 1px solid #d7dbe0; border-radius: 8px; font-size: 13px; box-sizing: border-box; background: #fff; }
 .viv-bs-list-empty { padding: 8px 4px; color: #9ca3af; font-size: 13px; }
 /* Read-only reproducibility card: this workspace's repo · commit · env. */
 .viv-bs-provenance { border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;
@@ -1237,17 +1268,22 @@ a.viv-bs-commit:hover { text-decoration: underline; }
        three-panel layout — easier to scan, easier to extend. -->
   <div class="panel github-settings">
     <style>
-      .github-settings .gh-section { padding:18px 0; border-top:1px solid #e5e7eb }
-      .github-settings .gh-section:first-of-type { padding-top:6px; border-top:none }
-      .github-settings .gh-section-title { margin:0 0 14px; font-size:0.95em; color:#1f2937; font-weight:600; letter-spacing:0.02em }
-      .github-settings .gh-row { display:grid; grid-template-columns:180px 1fr; gap:16px; padding:8px 0; align-items:center }
+      .github-settings .gh-section { padding:20px 0; border-top:1px solid #eef1f4 }
+      .github-settings .gh-section:first-of-type { padding-top:2px; border-top:none }
+      .github-settings .gh-section-title { margin:0 0 12px; font-size:11px; color:#8a94a6; font-weight:700; letter-spacing:0.06em; text-transform:uppercase }
+      .github-settings .gh-row { display:grid; grid-template-columns:160px 1fr; gap:16px; padding:9px 0; align-items:center }
       .github-settings .gh-row[hidden] { display:none }
-      .github-settings .gh-label { color:#6b7280; font-size:0.88em }
-      .github-settings .gh-value { color:#111827; font-size:0.92em; min-width:0 }
+      .github-settings .gh-label { color:#6b7280; font-size:13px }
+      .github-settings .gh-value { color:#0f172a; font-size:13.5px; min-width:0 }
       .github-settings .gh-value code { font-size:0.92em }
-      .github-settings .gh-value-hint { color:#6b7280; font-size:0.82em; margin-top:4px }
-      .github-settings select.gh-input { width:100%; max-width:380px; padding:6px 8px; font:inherit; border:1px solid #cbd5e1; border-radius:4px; background:#fff }
+      .github-settings .gh-value a { color:#4f46e5; text-decoration:none; font-weight:500 }
+      .github-settings .gh-value a:hover { text-decoration:underline }
+      .github-settings .gh-value-hint { color:#94a3b8; font-size:12px; margin-top:5px }
+      .github-settings select.gh-input, .github-settings input.gh-input { width:100%; max-width:360px; padding:6px 10px; font:inherit; font-size:13px; border:1px solid #d7dbe0; border-radius:8px; background:#fff; color:#0f172a }
+      .github-settings .gh-input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.12) }
       .github-settings .gh-action-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center }
+      :root[data-theme="dark"] .github-settings .gh-section { border-top-color:var(--border) }
+      :root[data-theme="dark"] .github-settings .gh-value { color:var(--text) }
     </style>
 
     <!-- ── Account ──────────────────────────────────────────────── -->
