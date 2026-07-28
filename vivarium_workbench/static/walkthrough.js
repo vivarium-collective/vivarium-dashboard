@@ -4562,6 +4562,7 @@
         return { type: 'composite', name: c.name, repo: repo,
           origin: _originOf(repo, wl), category: _categoryOf(repo, wl),
           desc: c.description || '', requires: ((c.requires || {}).processes) || [],
+          affectedStudies: (c.studies && c.studies.studies) || 0,
           nParams: nParams, nSteps: c.default_n_steps || 0, use: 0 };
       });
       rebuild();
@@ -4803,15 +4804,16 @@
   }
 
   // Double-click an item → advance one semantic-zoom level (list → cards →
-  // detail), then center + highlight that same item. At max zoom, open it.
+  // detail), then center + highlight that same item. This stays WITHIN the
+  // registry — it never navigates to another tab (an available/external item
+  // has no row in the Processes tab, so opening it there just 404s the search).
+  // Use the explicit "Open ↗" button to jump to where an installed item lives.
   function _marketZoomTo(key) {
     var order = ['list', 'cards', 'detail'];
     var i = order.indexOf(window._marketZoom || 'cards');
     if (i < 0) i = 1;
-    if (i >= order.length - 1) {   // already at max → open it where it lives
-      var p = String(key).split('|'); _marketOpen(p[0], p.slice(2).join('|')); return;
-    }
-    _setMarketZoom(order[i + 1]);   // re-renders the facet
+    var next = order[Math.min(order.length - 1, i + 1)];   // clamp at detail
+    if (next !== window._marketZoom) _setMarketZoom(next);   // re-renders the facet
     setTimeout(function () {
       var host = document.getElementById('market-results'); if (!host) return;
       var els = host.querySelectorAll('[data-mk-key]');
@@ -4881,6 +4883,7 @@
     } else if (it.type === 'composite') {
       if (it.requires.length) R('Requires', it.requires.slice(0, 12).map(function (p) { return '<code>' + _esc(p) + '</code>'; }).join(' '));
       R('Structure', _esc(it.nSteps + ' steps · ' + it.nParams + ' parameters'));
+      if (it.affectedStudies) R('Affected studies', '<span title="studies in your investigations that use this composite">' + it.affectedStudies + '</span>');
     } else if (it.type === 'study') {
       R('Status', _esc(it.status || '—'));
       if (it.composite) R('Composite', '<code>' + _esc(it.composite) + '</code>');
@@ -5047,6 +5050,10 @@
         b.total = b.process + b.composite + b.study + b.investigation;
         b.use = c.n_used || 0;
       }
+      // Affected studies = this workspace's OWN studies that depend on the repo
+      // (module_stats.n_used — deep, via composite→process usage). The real
+      // "what breaks if I uninstall" signal, distinct from total artifact uses.
+      b.affected = (c && typeof c.n_used === 'number') ? c.n_used : 0;
       if (!b.url) b.url = _marketRepoUrl(b.repo);
     });
     return Object.keys(byRepo).map(function (k) { return byRepo[k]; }).sort(function (a, b) {
@@ -5079,19 +5086,34 @@
   // the read-only snapshot auto-suppresses it (browse-only there); live workbench
   // shows it and _installFromMarketplace runs the submodule + pip install flow.
   function _repoInstallBtn(b) {
-    if (b.installed !== false) return '';
+    if (b.installed !== false || b.isWorkspace) return '';   // only not-installed repos
     var target = b.installName || b.repo;
     return '<button class="btn-mini js-authoring repo-install" '
       + 'onclick="event.preventDefault();event.stopPropagation();_installFromMarketplace(\'' + _esc(target) + '\');return false;">'
       + '+ Install</button>';
   }
+  // Uninstall an imported (installed, non-workspace) repo — routes through the
+  // existing impact-confirmation modal (composites/studies lost + workspace
+  // studies that would be left with a dangling reference).
+  function _repoUninstallBtn(b) {
+    if (b.installed === false || b.isWorkspace) return '';
+    var target = b.installName || b.repo;
+    return '<button class="btn-mini js-authoring repo-uninstall" title="Uninstall — shows what it affects first" '
+      + 'onclick="event.preventDefault();event.stopPropagation();_uninstallFromCatalog(\'' + _esc(target) + '\');return false;">'
+      + 'Uninstall</button>';
+  }
+  // GitHub link + Install/Uninstall, shared by card + detail.
+  function _repoActions(b) {
+    return '<span class="repo-actions">'
+      + '<a class="btn-mini repo-gh" href="' + _esc(b.url) + '" target="_blank" rel="noopener" onclick="event.stopPropagation()">GitHub ↗</a>'
+      + _repoInstallBtn(b) + _repoUninstallBtn(b) + '</span>';
+  }
   function _repoFoot(b) {
     var meta = [];
     if (b.total) meta.push(b.total + ' artifact' + (b.total === 1 ? '' : 's'));
-    if (b.use) meta.push(b.use + ' use' + (b.use === 1 ? '' : 's'));
+    if (b.affected) meta.push('<span title="studies in your investigations that depend on this repo"><b>' + b.affected + '</b> affected stud' + (b.affected === 1 ? 'y' : 'ies') + '</span>');
     return '<div class="repo-card-foot"><span class="repo-meta">' + (meta.join(' · ') || '&nbsp;') + '</span>'
-      + '<span class="repo-actions">' + _repoInstallBtn(b)
-      + '<a class="btn-mini repo-gh" href="' + _esc(b.url) + '" target="_blank" rel="noopener">GitHub ↗</a></span></div>';
+      + _repoActions(b) + '</div>';
   }
   function _marketRepoCard(b) {
     return '<div class="market-card repo-card' + (b.isWorkspace ? ' repo-card-ws' : '') + '">'
@@ -5123,14 +5145,16 @@
   function _marketRepoTable(repos) {
     var head = '<tr>'
       + '<th class="repo-th">Repository</th>'
-      + '<th class="repo-th">Status</th>'
-      + '<th class="repo-th" style="width:130px">Processes</th>'
-      + '<th class="repo-th" style="width:130px">Composites</th>'
-      + '<th class="repo-th" style="width:110px">Studies</th>'
-      + '<th class="repo-th" style="width:70px">Uses</th>'
-      + '<th class="repo-th" style="width:80px"></th></tr>';
+      + '<th class="repo-th" style="width:120px">Status</th>'
+      + '<th class="repo-th" style="width:100px">Processes</th>'
+      + '<th class="repo-th" style="width:100px">Composites</th>'
+      + '<th class="repo-th" style="width:90px">Studies</th>'
+      + '<th class="repo-th" style="width:130px" title="Studies in your investigations that depend on this repo">Affected studies</th>'
+      + '<th class="repo-th" style="width:190px"></th></tr>';
     var body = repos.map(function (b) {
-      var status = b.isWorkspace ? 'This workspace' : (b.installed === false ? 'Available' : 'Imported');
+      var aff = b.affected
+        ? '<span class="repo-affected" title="studies in your investigations that depend on this repo">' + b.affected + '</span>'
+        : '<span class="repo-td-zero">—</span>';
       return '<tr class="repo-tr">'
         + '<td class="market-td-name">📦 ' + _esc(b.repo)
         +   (b.desc ? '<span class="market-td-desc">' + _esc(b.desc) + '</span>' : '') + '</td>'
@@ -5138,9 +5162,8 @@
         + '<td class="repo-td-num">' + (b.process || '—') + '</td>'
         + '<td class="repo-td-num">' + (b.composite || '—') + '</td>'
         + '<td class="repo-td-num">' + (b.study || '—') + '</td>'
-        + '<td class="repo-td-num">' + (b.use || '—') + '</td>'
-        + '<td class="repo-td-actions"><span class="repo-actions">' + _repoInstallBtn(b)
-        +   '<a class="btn-mini repo-gh" href="' + _esc(b.url) + '" target="_blank" rel="noopener">GitHub ↗</a></span></td>'
+        + '<td class="repo-td-num">' + aff + '</td>'
+        + '<td class="repo-td-actions">' + _repoActions(b) + '</td>'
         + '</tr>';
     }).join('');
     return '<table class="market-table repo-table"><thead>' + head + '</thead><tbody>' + body + '</tbody></table>';
@@ -5169,6 +5192,43 @@
       + repos.map(render).join('') + '</div>';
   }
 
+  // Draggable column widths for the registry tables (Repositories list + the
+  // artifact list). A thin grip on each header's right edge resizes that column;
+  // widths persist per (facet · column) in localStorage.
+  function _enableColResize(root) {
+    (root || document).querySelectorAll('table.market-table').forEach(function (tbl) {
+      var facet = window._marketFacet || 'all';
+      var ths = tbl.querySelectorAll('thead th');
+      ths.forEach(function (th, i) {
+        if (i === ths.length - 1) return;   // last column absorbs the slack
+        // Restore a saved width.
+        try {
+          var saved = localStorage.getItem('viv.colw.' + facet + '.' + i);
+          if (saved) th.style.width = saved + 'px';
+        } catch (e) { /* private mode */ }
+        var grip = document.createElement('span');
+        grip.className = 'col-resizer';
+        th.style.position = 'relative';
+        th.appendChild(grip);
+        grip.addEventListener('click', function (e) { e.stopPropagation(); });   // don't sort
+        grip.addEventListener('mousedown', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          var startX = e.pageX, startW = th.offsetWidth;
+          document.body.classList.add('col-resizing');
+          function mv(ev) { th.style.width = Math.max(48, startW + (ev.pageX - startX)) + 'px'; }
+          function up() {
+            document.removeEventListener('mousemove', mv);
+            document.removeEventListener('mouseup', up);
+            document.body.classList.remove('col-resizing');
+            try { localStorage.setItem('viv.colw.' + facet + '.' + i, String(parseInt(th.style.width, 10) || th.offsetWidth)); } catch (e) { /* ignore */ }
+          }
+          document.addEventListener('mousemove', mv);
+          document.addEventListener('mouseup', up);
+        });
+      });
+    });
+  }
+
   function _renderMarket() {
     var host = document.getElementById('market-results');
     if (!host) return;
@@ -5185,7 +5245,9 @@
         var card = e.target.closest('.market-card-x');
         var tr = e.target.closest('.market-tr');
         if (card) { _clearTimer(); host._mkTimer = setTimeout(function () { host._mkTimer = null; _mkToggleCard(card); }, 220); return; }
-        if (tr)   { _clearTimer(); host._mkTimer = setTimeout(function () { host._mkTimer = null; _marketOpen(tr.dataset.openType, tr.dataset.openName); }, 220); return; }
+        // A list row drills into Cards (centered) — it stays in the registry
+        // rather than navigating to the owning tab (which 404s for external items).
+        if (tr && tr.getAttribute('data-mk-key')) { _clearTimer(); var k = tr.getAttribute('data-mk-key'); host._mkTimer = setTimeout(function () { host._mkTimer = null; _marketZoomTo(k); }, 220); return; }
       });
       // Double-click an item → advance one zoom level, centered on it.
       host.addEventListener('dblclick', function (e) {
@@ -5217,6 +5279,7 @@
         _syncColsControls();
         _cardContainersFor('market').forEach(function (c) { _applyCardCols(c, 'market'); });
       } else { _updateColsSlotVisibility(); }
+      if (zoom === 'list') _enableColResize(host);
       return;
     }
     var match = function (it) {
@@ -5260,6 +5323,7 @@
       } else {
         _updateColsSlotVisibility();
       }
+      if (zoom === 'list') _enableColResize(host);
     }
   }
   window._renderMarket = _renderMarket;
