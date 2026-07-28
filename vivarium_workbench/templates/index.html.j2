@@ -161,9 +161,11 @@ window.addEventListener('pageshow', function (e) {
 .viv-wsp-trigger {
   display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box;
   margin: 0; padding: 6px 8px 6px 10px;
-  background: #fff; border: 1px solid #e2e8f0; border-radius: 9px;
+  /* Flat + transparent so it blends into the rail (like the nav items) rather
+     than floating as a white card; a subtle hover is the only chrome. */
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
   cursor: pointer; font: inherit; color: #0f172a; text-align: left;
-  box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, box-shadow .12s;
+  box-shadow: none; transition: background .12s, border-color .12s;
 }
 /* Source icon lives INSIDE the trigger box, on the right → jumps straight to the
    Source page (repo · branch · commit). Subtle (no box of its own). */
@@ -174,11 +176,18 @@ window.addEventListener('pageshow', function (e) {
   cursor: pointer; font-size: 14px; line-height: 1; transition: background .12s, color .12s;
 }
 .viv-wsp-source-btn:hover { background: #eef2ff; color: #4f46e5; }
-.viv-wsp-trigger:hover { border-color: #cbd5e1; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
+.viv-wsp-trigger:hover { background: #f1f5f9; border-color: transparent; }
 .viv-wsp-trigger:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
 .viv-wsp-trigger-label { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
-.viv-wsp-trigger-current { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1; font-size: 13px; font-weight: 600; }
+.viv-wsp-trigger-current { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; font-size: 13px; font-weight: 600; }
 .viv-wsp-trigger-current strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Repo name on top, branch below (muted) so the current branch is always visible. */
+.viv-wsp-trigger-names { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.viv-wsp-trigger-branch {
+  font-size: 10.5px; font-weight: 500; color: #94a3b8; letter-spacing: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: ui-monospace, Menlo, monospace;
+}
 .viv-wsp-trigger-caret { color: #94a3b8; font-size: 11px; flex: 0 0 auto; }
 
 .viv-wsp-dot { flex: 0 0 auto; font-size: 11px; line-height: 1; }
@@ -194,8 +203,7 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
   width: 32px; margin: 0 auto; padding: 6px; justify-content: center; gap: 0;
 }
 .viv-rail.viv-rail-collapsed .viv-wsp-source-btn,
-.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current strong,
-.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current .viv-ws-remote-tag,
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-names,
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-caret { display: none; }
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-current { flex: 0 0 auto; gap: 0; }
 .viv-rail.viv-rail-collapsed .viv-wsp-dot { font-size: 15px; }
@@ -556,7 +564,10 @@ a.viv-bs-commit:hover { text-decoration: underline; }
            title="Switch workspace — pick from your workspaces">
         <span class="viv-wsp-trigger-current">
           <span class="viv-wsp-dot viv-wsp-ready{% if workspace_is_remote %} viv-wsp-remote{% endif %}">●</span>
-          <strong>{{ workspace_name }}</strong>{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}
+          <span class="viv-wsp-trigger-names">
+            <strong>{{ workspace_name }}{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}</strong>
+            {% if workspace_branch %}<span class="viv-wsp-trigger-branch" title="branch: {{ workspace_branch }}">{{ workspace_branch }}</span>{% endif %}
+          </span>
         </span>
         <span class="viv-wsp-trigger-caret" aria-hidden="true">▾</span>
         <button class="viv-wsp-source-btn" id="viv-wsp-source-btn" type="button"
