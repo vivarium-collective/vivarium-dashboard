@@ -52,6 +52,21 @@
     var trigger = document.getElementById("viv-workspace-picker-trigger");
     if (!trigger) return;
 
+    // Read-only snapshot: there are no other workspaces to switch to, so the
+    // dropdown is pointless (and cramped when the rail is collapsed). The trigger
+    // instead opens the Source page directly, and its status dot goes grey (not a
+    // running local workspace).
+    var isSnap = (document.body && document.body.classList.contains("snapshot"))
+      || (window.__DASH_CONFIG__ && window.__DASH_CONFIG__.mode === "snapshot");
+    function goSource() {
+      try { window.location.hash = "#github"; } catch (e) { /* ignore */ }
+      if (typeof window._switchPage === "function") window._switchPage("github");
+    }
+    if (isSnap) {
+      var d = trigger.querySelector(".viv-wsp-dot");
+      if (d) { d.classList.remove("viv-wsp-ready", "viv-wsp-remote"); d.classList.add("viv-wsp-stopped"); }
+    }
+
     var menu = null, searchEl = null, listEl = null, all = [], activeIdx = -1;
 
     function close() {
@@ -166,7 +181,13 @@
         '<a href="#github" class="viv-wsp-settings" title="Repo / branch / GitHub settings">Branch settings ↗</a>';
       menu.appendChild(foot);
 
-      (trigger.parentNode || document.body).appendChild(menu);
+      // Mount on <body> and position at the trigger (fixed) so the rail's
+      // overflow-x:hidden can't clip/squish it — the menu can be wider than the
+      // sidebar.
+      document.body.appendChild(menu);
+      var r = trigger.getBoundingClientRect();
+      menu.style.top = Math.round(r.bottom + 4) + "px";
+      menu.style.left = Math.round(r.left) + "px";
       trigger.setAttribute("aria-expanded", "true");
       document.addEventListener("keydown", onKey, true);
       document.addEventListener("mousedown", onOutside, true);
@@ -182,9 +203,19 @@
         .catch(function () { all = []; render(); });
     }
 
-    trigger.addEventListener("click", function (e) { e.preventDefault(); open(); });
-    trigger.setAttribute("aria-haspopup", "listbox");
+    trigger.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (isSnap) { goSource(); return; }   // read-only → Source page (no switcher)
+      open();
+    });
+    trigger.setAttribute("aria-haspopup", isSnap ? "false" : "listbox");
     trigger.setAttribute("aria-expanded", "false");
+    if (isSnap) trigger.title = "Open Source — repository, branch, commit";
+    // The dedicated Source button (next to the name) always jumps to the Source
+    // page, in both live and read-only. Wired here so it works regardless of the
+    // trigger's mode.
+    var srcBtn = document.getElementById("viv-wsp-source-btn");
+    if (srcBtn) srcBtn.addEventListener("click", function (e) { e.preventDefault(); e.stopPropagation(); goSource(); });
   }
 
   if (document.readyState !== "loading") boot();
