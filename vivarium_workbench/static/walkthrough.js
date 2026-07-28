@@ -4532,17 +4532,20 @@
         return { type: 'investigation', name: iv.name, title: iv.title || iv.name,
           repo: repo, origin: iv.origin_repo ? 'external' : 'workspace',
           category: _categoryOf(repo, !iv.origin_repo),
-          desc: iv.description || '', status: iv.status || '', nStudies: iv.n_studies || 0 };
+          desc: iv.description || '', status: iv.effective_status || iv.status || '',
+          question: iv.question || '', hypothesis: iv.hypothesis || '',
+          studies: iv.studies || [], nStudies: iv.n_studies || (iv.studies || []).length || 0 };
       });
       rebuild();
       return J('studies');
     }).then(function (studies) {
       window._marketByType.study = ((studies || {}).investigations || []).map(function (s) {
         var repo = s.origin_repo ? _marketRepoOf(s.origin_repo) : wsLabel;
-        return { type: 'study', name: s.name, repo: repo,
+        return { type: 'study', name: s.name, title: s.title || s.name, repo: repo,
           origin: s.origin_repo ? 'external' : 'workspace',
           category: _categoryOf(repo, !s.origin_repo), desc: s.description || '',
-          status: s.status || '', composite: s.composite || '',
+          status: s.effective_status || s.status || '', composite: s.composite || '',
+          question: s.question || s.objective || '', invs: s.investigations || [],
           nBeh: s.n_behaviors || 0, nRuns: s.n_runs || 0, nSims: s.n_simulations || 0, use: s.n_runs || 0 };
       });
       rebuild();
@@ -4552,10 +4555,12 @@
       window._marketByType.composite = carr.map(function (c) {
         var wl = c.workspace_local || c.source === 'workspace';
         var repo = wl ? wsLabel : _marketRepoOf(c.origin_repo || c.module);
+        var params = c.parameters;
+        var nParams = Array.isArray(params) ? params.length : (params ? Object.keys(params).length : 0);
         return { type: 'composite', name: c.name, repo: repo,
           origin: _originOf(repo, wl), category: _categoryOf(repo, wl),
           desc: c.description || '', requires: ((c.requires || {}).processes) || [],
-          nParams: (c.parameters || []).length, nSteps: c.default_n_steps || 0, use: 0 };
+          nParams: nParams, nSteps: c.default_n_steps || 0, use: 0 };
       });
       rebuild();
       return J('reg');
@@ -4769,21 +4774,61 @@
       + _marketOpenBtn(it) + '</div>';
   }
 
-  // Cards: current card + a usage line.
-  function _marketCard(it) {
-    var u = _marketUsage(it);
-    return '<div class="market-card market-type-' + it.type + '">'
-      + '<div class="market-card-head">' + _marketHead(it) + '</div>'
-      + (it.desc ? '<div class="market-desc">' + _esc(it.desc) + '</div>' : '')
-      + '<div class="market-card-foot">'
-      +   '<span class="market-usage">' + _esc(u) + '</span>' + _marketOpenBtn(it) + '</div>'
-      + '</div>';
+  // Per-render registry so a card can be expanded in place: each card gets a
+  // small id that maps back to its item (reset every _renderMarket).
+  function _mkRegister(it) {
+    if (!window._mkCardReg) window._mkCardReg = {};
+    var id = 'mk' + (window._mkSeq = (window._mkSeq || 0) + 1);
+    window._mkCardReg[id] = it;
+    return id;
   }
 
-  // Detail (full): description + a usage/attributes table.
-  function _marketDetail(it) {
+  // A status → color for the little study dots in an investigation's detail.
+  function _mkStatusColor(st) {
+    st = String(st || '').toLowerCase();
+    if (/complete|ran|pass|done/.test(st)) return '#22c55e';
+    if (/run|progress/.test(st)) return '#3b82f6';
+    if (/fail|error/.test(st)) return '#ef4444';
+    if (/inconclusive|partial/.test(st)) return '#f59e0b';
+    return '#cbd5e1';   // planned / unknown
+  }
+
+  // An investigation's member studies, joined against the loaded study bucket so
+  // each row shows the study's real title + status, with a completion summary.
+  function _marketInvStudies(it) {
+    var slugs = it.studies || [];
+    if (!slugs.length) {
+      return it.nStudies
+        ? '<div class="market-dl"><div class="market-dl-k">Studies</div><div class="market-dl-v">' + it.nStudies + '</div></div>'
+        : '';
+    }
+    var byName = {};
+    ((window._marketByType && window._marketByType.study) || []).forEach(function (s) { byName[s.name] = s; });
+    var done = 0, counted = 0;
+    var rowsHtml = slugs.map(function (slug) {
+      var s = byName[slug];
+      var st = s ? (s.status || 'planned') : '';   // '' → status not loaded yet (honest)
+      if (s) { counted++; if (/complete|ran|pass|done|evaluated/i.test(st)) done++; }
+      return '<div class="mk-study-row" data-open-type="study" data-open-name="' + _esc(slug) + '">' +
+        '<span class="mk-study-dot" style="background:' + _mkStatusColor(st) + '"></span>' +
+        '<span class="mk-study-name">' + _esc((s && (s.title || s.name)) || slug) + '</span>' +
+        '<span class="mk-study-status">' + _esc(st || '—') + '</span></div>';
+    }).join('');
+    var pct = counted ? Math.round(100 * done / counted) : 0;
+    var summary = counted
+      ? '<div class="mk-study-summary"><span class="mk-study-bar"><span style="width:' + pct + '%"></span></span>' +
+        '<span class="mk-study-summary-txt">' + done + ' / ' + counted + ' complete · ' + pct + '%</span></div>'
+      : '';
+    return '<div class="mk-studies"><div class="mk-studies-head">Member studies ' +
+      '<span class="market-count">' + slugs.length + '</span></div>' + summary + rowsHtml + '</div>';
+  }
+
+  // Shared detail body (description + attribute rows + type-specific extras).
+  // Used both by the Detail zoom and by a Card's click-to-expand region.
+  function _marketDetailBody(it) {
     var rows = [];
     var R = function (k, v) { if (v) rows.push('<div class="market-dl-k">' + k + '</div><div class="market-dl-v">' + v + '</div>'); };
+    var extra = '';
     if (it.type === 'process') {
       R('Address', '<code>' + _esc(it.address || it.name) + '</code>');
       R('Used by', it.usage.total
@@ -4796,15 +4841,51 @@
     } else if (it.type === 'study') {
       R('Status', _esc(it.status || '—'));
       if (it.composite) R('Composite', '<code>' + _esc(it.composite) + '</code>');
+      if (it.question) R('Question', _esc(String(it.question).split('\n')[0].slice(0, 220)));
+      if (it.invs && it.invs.length) R('Part of', it.invs.map(function (n) { return _esc(n); }).join(', '));
       R('Activity', _esc((it.nBeh || 0) + ' behavior' + (it.nBeh === 1 ? '' : 's') + ' · ' + (it.nRuns || 0) + ' run' + (it.nRuns === 1 ? '' : 's') + ' · ' + (it.nSims || 0) + ' sim' + (it.nSims === 1 ? '' : 's')));
     } else if (it.type === 'investigation') {
       R('Status', _esc(it.status || '—'));
-      R('Studies', _esc(String(it.nStudies || 0)));
+      if (it.question) R('Question', _esc(String(it.question).split('\n')[0].slice(0, 220)));
+      if (it.hypothesis) R('Hypothesis', _esc(String(it.hypothesis).split('\n')[0].slice(0, 220)));
+      extra = _marketInvStudies(it);
     }
+    // Attributes + the type-specific extra (e.g. an investigation's member
+    // studies with success) lead; the long-form description follows.
+    return (rows.length ? '<div class="market-dl">' + rows.join('') + '</div>' : '')
+      + extra
+      + (it.desc ? '<div class="market-desc market-desc-full mk-detail-desc">' + _esc(it.desc) + '</div>' : '');
+  }
+
+  // Cards (middle zoom): a legible full name on its own line, provenance chips
+  // below, a clamped description, and a foot with usage + Open. Single-click the
+  // card body to expand the detail (description + attributes) in place.
+  function _marketCard(it) {
+    var u = _marketUsage(it);
+    var id = _mkRegister(it);
+    var tags = _marketCatChip(it)
+      + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
+      + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
+    return '<div class="market-card market-card-x market-type-' + it.type + '" data-mk-id="' + id + '"'
+      + ' role="button" tabindex="0" title="Click for details">'
+      + '<div class="market-card-title">'
+      +   '<span class="market-type-ico" title="' + _esc(it.kind || it.type) + '">' + _marketIco(it.type) + '</span>'
+      +   '<span class="market-name-full">' + _esc(it.title || it.name) + '</span>'
+      +   '<span class="market-card-caret" aria-hidden="true">▸</span>'
+      + '</div>'
+      + '<div class="market-card-tags">' + tags + '</div>'
+      + (it.desc ? '<div class="market-desc">' + _esc(it.desc) + '</div>' : '')
+      + '<div class="market-card-foot">'
+      +   '<span class="market-usage">' + _esc(u) + '</span>' + _marketOpenBtn(it) + '</div>'
+      + '<div class="market-card-detail" hidden></div>'
+      + '</div>';
+  }
+
+  // Detail (max zoom): the full body always expanded.
+  function _marketDetail(it) {
     return '<div class="market-card market-detail market-type-' + it.type + '">'
       + '<div class="market-card-head">' + _marketHead(it) + _marketOpenBtn(it) + '</div>'
-      + (it.desc ? '<div class="market-desc market-desc-full">' + _esc(it.desc) + '</div>' : '')
-      + (rows.length ? '<div class="market-dl">' + rows.join('') + '</div>' : '')
+      + _marketDetailBody(it)
       + '</div>';
   }
 
@@ -5049,10 +5130,31 @@
       host._marketWired = true;
       host.addEventListener('click', function (e) {
         var th = e.target.closest('.market-th'); if (th) { _setMarketSort(th.dataset.sort); return; }
+        var b = e.target.closest('.market-open'); if (b) { _marketOpen(b.dataset.openType, b.dataset.openName); return; }
         var tr = e.target.closest('.market-tr'); if (tr) { _marketOpen(tr.dataset.openType, tr.dataset.openName); return; }
-        var b = e.target.closest('.market-open'); if (b) _marketOpen(b.dataset.openType, b.dataset.openName);
+        // A member-study row inside an investigation's detail → open that study.
+        var sr = e.target.closest('.mk-study-row'); if (sr && sr.dataset.openName) { _marketOpen('study', sr.dataset.openName); return; }
+        // Single-click a card body → expand its detail in place.
+        var card = e.target.closest('.market-card-x');
+        if (card) {
+          var it = (window._mkCardReg || {})[card.getAttribute('data-mk-id')];
+          var det = card.querySelector('.market-card-detail');
+          if (it && det) {
+            var open = card.classList.toggle('mk-expanded');
+            if (open && det.getAttribute('data-filled') !== '1') {
+              det.innerHTML = _marketDetailBody(it); det.setAttribute('data-filled', '1');
+            }
+            det.hidden = !open;
+          }
+        }
+      });
+      host.addEventListener('keydown', function (e) {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.closest('.market-card-x')) {
+          e.preventDefault(); e.target.closest('.market-card-x').click();
+        }
       });
     }
+    window._mkCardReg = {}; window._mkSeq = 0;   // reset the per-render card registry
     var items = window._marketItems || [];
     var q = ((document.getElementById('market-search') || {}).value || '').trim().toLowerCase();
     var facet = window._marketFacet || 'all';
