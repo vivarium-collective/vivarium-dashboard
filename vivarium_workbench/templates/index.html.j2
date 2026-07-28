@@ -174,6 +174,16 @@ window.addEventListener('pageshow', function (e) {
 .viv-wsp-dot { flex: 0 0 auto; font-size: 11px; line-height: 1; }
 .viv-wsp-ready { color: #16a34a; } .viv-wsp-stopped { color: #94a3b8; }
 .viv-wsp-stale { color: #d97706; } .viv-wsp-missing { color: #dc2626; } .viv-wsp-remote { color: #7c3aed; }
+/* Collapsed rail: the trigger shrinks to just the status dot (green=local,
+   purple=remote, grey=not running) — no white box with truncated text. */
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger {
+  width: 32px; margin: 2px auto 12px; padding: 6px; justify-content: center; gap: 0;
+}
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current strong,
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current .viv-ws-remote-tag,
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-caret { display: none; }
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current { flex: 0 0 auto; gap: 0; }
+.viv-rail.viv-rail-collapsed .viv-wsp-dot { font-size: 15px; }
 
 .viv-wsp-menu {
   position: absolute; left: 12px; right: 12px; top: 100%; z-index: 1200; margin-top: 4px;
@@ -515,7 +525,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
            dropdown and the standalone Branch rail item. -->
       <button class="viv-wsp-trigger" id="viv-workspace-picker-trigger" type="button"
               title="Switch workspace — pick from your workspaces">
-        <span class="viv-wsp-trigger-label">Workspace</span>
         <span class="viv-wsp-trigger-current">
           <span class="viv-wsp-dot viv-wsp-ready{% if workspace_is_remote %} viv-wsp-remote{% endif %}">●</span>
           <strong>{{ workspace_name }}</strong>{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}
@@ -1398,27 +1407,33 @@ a.viv-bs-commit:hover { text-decoration: underline; }
     #sim-table th[data-sort-key]:hover { background:#e5e7eb; }
     #sim-table th[data-sort-dir="asc"]::after { content:" \25B2"; }
     #sim-table th[data-sort-dir="desc"]::after { content:" \25BC"; }
+    /* Actions cell: let the run-action buttons wrap within a roomy column
+       instead of overflowing off the right edge. */
+    #sim-table .run-actions { display:flex; flex-wrap:wrap; gap:4px; align-items:center; justify-content:flex-start; }
+    #sim-table .run-actions .action-btn { font-size:11px; padding:2px 7px; white-space:nowrap; }
   </style>
 
-  <table id="sim-table" style="width:100%; table-layout:fixed; border-collapse: collapse; font-size: 13px; display: none;">
+  <div style="overflow-x:auto; width:100%;">
+  <table id="sim-table" style="width:100%; min-width:1120px; table-layout:fixed; border-collapse: collapse; font-size: 13px; display: none;">
     <thead>
       <tr style="background:#f3f4f6;">
-        <th data-sort-key="investigation" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Investigation</th>
-        <th data-sort-key="study" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Study</th>
+        <th data-sort-key="investigation" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:108px; cursor:pointer;">Investigation</th>
+        <th data-sort-key="study" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:100px; cursor:pointer;">Study</th>
         <th data-sort-key="run" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; cursor:pointer;">Run</th>
-        <th data-sort-key="composite" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:150px; cursor:pointer;">Composite</th>
-        <th style="text-align:left; padding:6px 8px; width:200px;">Config</th>
-        <th style="text-align:left; padding:6px 8px; width:150px;">Location</th>
-        <th data-sort-key="origin" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:90px; cursor:pointer;">Origin</th>
-        <th data-sort-key="emitter_type" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:80px; cursor:pointer;">Emitter</th>
-        <th data-sort-key="time" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:104px; cursor:pointer;">Time</th>
-        <th data-sort-key="status" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:84px; cursor:pointer;">Status</th>
-        <th style="text-align:left; padding:6px 8px; width:130px;">Tools</th>
-        <th style="text-align:center; padding:6px 8px; width:158px;">Actions</th>
+        <th data-sort-key="composite" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Composite</th>
+        <th style="text-align:left; padding:6px 8px; width:140px;">Config</th>
+        <th style="text-align:left; padding:6px 8px; width:110px;">Location</th>
+        <th data-sort-key="origin" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:66px; cursor:pointer;">Origin</th>
+        <th data-sort-key="emitter_type" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:74px; cursor:pointer;">Emitter</th>
+        <th data-sort-key="time" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:98px; cursor:pointer;">Time</th>
+        <th data-sort-key="status" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:80px; cursor:pointer;">Status</th>
+        <th style="text-align:left; padding:6px 8px; width:104px;">Tools</th>
+        <th style="text-align:left; padding:6px 8px; width:220px;">Actions</th>
       </tr>
     </thead>
     <tbody id="sim-tbody"></tbody>
   </table>
+  </div>
 
   <!-- Confirmation dialog for full simulation delete -->
   <div id="sim-delete-dialog" style="display:none; position:fixed; inset:0;
