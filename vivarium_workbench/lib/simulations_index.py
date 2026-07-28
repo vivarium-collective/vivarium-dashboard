@@ -264,6 +264,46 @@ def _row_to_dict(row, db_path_str: str) -> dict:
         return raw
 
 
+# Statuses a run can still make progress from — the only ones worth a live
+# BatchProgress fetch. A terminal row (completed/failed) is left untouched.
+_NON_TERMINAL_STATUSES = frozenset({"running", "pending", "starting", "submitted"})
+
+
+def _apply_live_batch_progress(row: dict, remote_sim_id, base_url: str | None = None) -> None:
+    """Enrich a still-running remote (compose) run row IN PLACE with live
+    BatchProgress (sms-api #183), reusing the compose sim id persisted at submit.
+
+    Fetches ``GET /compose/v1/simulation/{id}/progress`` and folds the mapped
+    status + started/total lineage progress onto the row's existing SimRow fields
+    (``status``/``progress_step``/``n_steps``). Best-effort: a no-op when there is
+    no sim id, the run is already terminal, or sms-api is unreachable — never
+    raises, so a down tunnel can't break the Simulations-DB listing.
+    """
+    if remote_sim_id is None:
+        return
+    if (row.get("status") or "running") not in _NON_TERMINAL_STATUSES:
+        return
+    try:
+        from vivarium_workbench.lib.remote_simulations import (
+            _sms_api_base,
+            batch_progress_fields,
+        )
+        from vivarium_workbench.lib.sms_api_client import SmsApiClient
+    except ImportError:
+        return
+    try:
+        # Short timeout: this runs on the Simulations-DB listing hot path, so a slow
+        # or wedged sms-api must not stall the Runs tab — degrade to the DB status.
+        client = SmsApiClient(base_url or _sms_api_base(), timeout=5.0)
+        bp = client.compose_progress(int(remote_sim_id))
+    except Exception:  # noqa: BLE001 — listing must survive any client failure (down tunnel, HTTP error)
+        return
+    fields = batch_progress_fields(bp)
+    for key in ("status", "progress_step", "n_steps"):
+        if key in fields:
+            row[key] = fields[key]
+
+
 def _read_sqlite_emitter(db_path: Path, db_path_str: str) -> list[dict]:
     """Read process_bigraph.emitter.SQLiteEmitter's `simulations` + `history`
     tables and translate to the dashboard's run-dict shape. Returns [] when
@@ -345,7 +385,7 @@ def _read_runs_meta(db_path: Path, db_path_str: str) -> list[dict]:
         rows = conn.execute(
             "SELECT run_id, spec_id, sim_name, label, status, n_steps, "
             "progress_step, started_at, completed_at, params_json, "
-            "emitter_path, capabilities_json "
+            "emitter_path, capabilities_json, remote_sim_id "
             "FROM runs_meta ORDER BY started_at DESC"
         ).fetchall()
         # Attach capabilities WHILE conn is still open, so a completed run
@@ -358,6 +398,10 @@ def _read_runs_meta(db_path: Path, db_path_str: str) -> list[dict]:
             rd = dict(r)  # sqlite3.Row -> dict (row_factory is sqlite3.Row)
             rd["db_path"] = db_path_str
             d["capabilities"] = _capabilities_for_row(rd, conn=conn)
+            # Live-enrich a still-running remote (compose) batch with BatchProgress
+            # (sms-api #183): fold its real lineage/generation progress + status
+            # into the Runs-tab row. Best-effort; no-op for local/terminal runs.
+            _apply_live_batch_progress(d, rd.get("remote_sim_id"))
             out.append(d)
         return out
     except sqlite3.OperationalError as e:

@@ -95,7 +95,7 @@ def test_execute_deployment_target_dispatches_remote(tmp_path, monkeypatch):
 
     calls = {}
 
-    def _fake_run_remote(ws_root, spec_id, *, dest, n_steps, overrides=None):
+    def _fake_run_remote(ws_root, spec_id, *, dest, n_steps, overrides=None, on_submit=None):
         calls["ws_root"] = Path(ws_root)
         calls["spec_id"] = spec_id
         calls["n_steps"] = n_steps

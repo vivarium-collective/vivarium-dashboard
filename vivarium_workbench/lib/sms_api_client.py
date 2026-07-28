@@ -257,6 +257,17 @@ class SmsApiClient:
         """GET /compose/v1/simulation/{id}/status — poll run status."""
         return self._get(f"/compose/v1/simulation/{task_id}/status")
 
+    def compose_progress(self, simulation_id: int) -> dict:
+        """GET /compose/v1/simulation/{id}/progress — live BatchProgress (sms-api #183).
+
+        Returns the batch's live sweep progress computed from the S3 hive output:
+        ``{lineages: "started:total", generations: "deepest:total", overall: float,
+        time_elapsed: float, status: str|None}``. This is the productionized form of
+        the panel math (lineages / deepest generation / whole-sweep percent), so a
+        compose multiseed batch can surface a live row in the Runs tab.
+        """
+        return self._get(f"/compose/v1/simulation/{simulation_id}/progress")
+
     def download_compose_results(self, sim_id: int, dest: Path, timeout: float | None = None) -> Path:
         """GET /compose/v1/simulation/{id}/results — stream results.zip to dest.
 

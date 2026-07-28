@@ -578,8 +578,12 @@ def _execute_remote(req: RunRequest, run_dir: Path) -> int:
     try:
         try:
             remote_run.run_remote(
-                req.workspace, req.spec_id, dest=run_dir, n_steps=req.steps,
+                req.workspace, req.spec_id, dest=run_dir, n_steps=int(req.steps),
                 overrides=req.overrides,
+                # Persist the sms-api compose sim id as soon as it's known (before the
+                # blocking poll) so the Runs tab can enrich this row with live
+                # BatchProgress (#183) while the batch is still running.
+                on_submit=lambda sid: cr.write_run_remote_sim_id(conn, req.run_id, sid),
             )
         except Exception as exc:
             tb = traceback.format_exc()

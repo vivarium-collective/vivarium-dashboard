@@ -140,3 +140,15 @@ def test_download_data_streams_to_file(monkeypatch, tmp_path):
     assert out.read_bytes() == payload
     assert cap["method"] == "POST"
     assert cap["url"] == "http://h:8080/api/v1/simulations/49/data"
+
+
+def test_compose_progress_hits_progress_endpoint(monkeypatch):
+    cap = {}
+    payload = {"lineages": "925:1000", "generations": "10:10", "overall": 60.7,
+               "time_elapsed": 1234.5, "status": "RUNNING"}
+    with _patch_urlopen(monkeypatch, cap, payload):
+        c = SmsApiClient("http://h:8080")
+        out = c.compose_progress(7)
+    assert out["overall"] == 60.7
+    assert cap["url"] == "http://h:8080/compose/v1/simulation/7/progress"
+    assert cap["method"] == "GET"
