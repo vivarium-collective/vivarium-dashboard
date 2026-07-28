@@ -93,6 +93,11 @@ _NEW_COLUMNS = {
     # "never checked" (not "reproducible"); the only non-NULL value in use is
     # "nondeterministic".
     "provenance_status": "TEXT",
+    # sms-api compose simulation id for a 'deployment'-target (remote) run, captured
+    # right after /compose/v1 submit (before the blocking poll). Lets the Runs tab
+    # enrich a live compose batch row with BatchProgress (sms-api #183) via
+    # SmsApiClient.compose_progress. NULL for local runs and legacy remote runs.
+    "remote_sim_id": "INTEGER",
 }
 
 
@@ -110,6 +115,17 @@ def write_run_capabilities(conn, run_id: str, tags) -> None:
     import json
     conn.execute("UPDATE runs_meta SET capabilities_json=? WHERE run_id=?",
                  (json.dumps(list(tags)), run_id))
+    conn.commit()
+
+
+def write_run_remote_sim_id(conn, run_id: str, sim_id: int) -> None:
+    """Store the sms-api compose simulation id for a deployment-target run.
+
+    Called right after ``/compose/v1`` submit so the Runs tab can enrich this
+    run's row with live BatchProgress (sms-api #183) via ``compose_progress``.
+    """
+    conn.execute("UPDATE runs_meta SET remote_sim_id=? WHERE run_id=?",
+                 (int(sim_id), run_id))
     conn.commit()
 
 

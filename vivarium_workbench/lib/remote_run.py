@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 from vivarium_workbench.lib.pbg_export import export_composite_pbg  # noqa: E402 (module-level for patch)
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from vivarium_workbench.lib.sms_api_client import SmsApiClient
 
 # Default poll interval in seconds
@@ -95,6 +97,7 @@ def run_remote(
     n_steps: int = 1,
     overrides: "dict | None" = None,
     poll_timeout: float = _DEFAULT_POLL_TIMEOUT,
+    on_submit: "Callable[[int], None] | None" = None,
 ) -> Path:
     """Export a composite, submit to sms-api, poll, and land results.zip.
 
@@ -180,6 +183,14 @@ def run_remote(
     print(f"Submitting composite '{composite_id}' to sms-api ({steps} steps)…")
     sim_id = client.compose_submit(pbg_bytes, extra_pip_deps=extra_pip_deps, interval_time=float(steps))
     print(f"Submitted. Simulation id: {sim_id}")
+    # Report the compose sim id BEFORE the blocking poll so callers (e.g.
+    # _execute_remote) can persist it while the run is still going — that id is
+    # what the Runs tab uses to fetch live BatchProgress (sms-api #183).
+    if on_submit is not None:
+        try:
+            on_submit(int(sim_id))
+        except Exception:  # noqa: BLE001 — persistence is best-effort, never abort a live run
+            pass
 
     # Poll until terminal state — bounded by a wall-clock deadline and tolerant of a
     # few consecutive transient errors (see _poll_until_terminal).
