@@ -89,13 +89,18 @@ def build_analysis_tools(ws_root) -> list[dict]:
         v["matched"] = match(v["requires"], runs) if v["requires"] else []
         tools.append(v)
 
-    # built-in tools
+    # Built-in tools are capability-matched: only surface one where THIS
+    # workspace actually has data for it (an observables run for the Data
+    # Explorer, a 3d_pack for the Parsimony Viewer). That keeps these
+    # v2ecoli-flavored tools out of workspaces that will never satisfy them
+    # (e.g. human-atlas shows only its own HRA Organ Viewer) instead of listing
+    # permanently-empty "needs observables / needs 3d_pack" cards.
     for t in builtin_tools():
         t = dict(t)
         cands = packs if "3d_pack" in t["requires"] else runs
         t["matched"] = match(t["requires"], cands)
-        t["unmatched_reason"] = (
-            f"No compatible runs — needs {', '.join(t['requires'])}."
-            if not t["matched"] else "")
+        if not t["matched"]:
+            continue
+        t["unmatched_reason"] = ""
         tools.append(t)
     return tools

@@ -151,6 +151,45 @@ def _jinja_fmt_duration(seconds) -> str:
 # Public API
 # ---------------------------------------------------------------------------
 
+def _reflow_prose(s):
+    """Reflow a YAML block-scalar string so it fills the container width.
+
+    Single newlines within a paragraph (cosmetic ~72-col wrapping) collapse to a
+    space; blank-line paragraph breaks are preserved. Non-strings pass through.
+    """
+    if not isinstance(s, str) or "\n" not in s:
+        return s
+    import re
+    paras = re.split(r"\n[ \t]*\n", s.strip("\n"))
+    return "\n\n".join(re.sub(r"[ \t]*\n[ \t]*", " ", p).strip() for p in paras)
+
+
+# Narrative prose fields the study-detail template renders (top-level + nested).
+_NARRATIVE_FIELDS = (
+    "question", "hypothesis", "objective", "biological_summary",
+    "background", "conclusion", "caveat", "discovery_implications",
+)
+_NARRATIVE_SUBTREES = ("purpose", "study_card", "report")
+
+
+def _reflow_study_narrative(spec: dict) -> None:
+    """In-place reflow of the narrative prose fields on a study spec."""
+    for f in _NARRATIVE_FIELDS:
+        if isinstance(spec.get(f), str):
+            spec[f] = _reflow_prose(spec[f])
+    for sub in _NARRATIVE_SUBTREES:
+        node = spec.get(sub)
+        if isinstance(node, dict):
+            spec[sub] = {k: (_reflow_prose(v) if isinstance(v, str) else v) for k, v in node.items()}
+    # Findings carry statement/evidence prose too.
+    if isinstance(spec.get("findings"), list):
+        for fnd in spec["findings"]:
+            if isinstance(fnd, dict):
+                for k in ("statement", "evidence", "summary"):
+                    if isinstance(fnd.get(k), str):
+                        fnd[k] = _reflow_prose(fnd[k])
+
+
 def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path: str = "") -> str:
     """Render study-detail.html via Jinja2.
 
@@ -172,6 +211,12 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     from vivarium_workbench.lib.study_spec import study_dir
 
     spec = dict(spec)
+    # Reflow narrative prose so it FILLS the container width: study.yaml authors
+    # narrative as YAML `|` block scalars hard-wrapped at ~72 cols; preserving
+    # those cosmetic single newlines makes the text wrap narrowly mid-column.
+    # Collapse single newlines within a paragraph to a space, keep blank-line
+    # paragraph breaks. Applies to every study, so no per-file re-authoring.
+    _reflow_study_narrative(spec)
     spec["runs"] = _enrich_runs_with_meta(study_dir(ws_root, name), spec.get("runs") or [])
     # Normalize implementation_requirements / gaps so the template iterates a
     # list of dicts — never a prose STRING.
