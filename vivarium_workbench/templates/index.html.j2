@@ -154,16 +154,26 @@ window.addEventListener('pageshow', function (e) {
 }
 
 /* Workspace switcher (top of the left rail). */
-.viv-workspace-switcher { position: relative; padding: 0; }
+.viv-workspace-switcher { position: relative; padding: 0; display: flex; align-items: center; gap: 5px; margin: 2px 12px 12px; }
 
 /* ── Workspace picker: a self-describing header dropdown ──────────────────── */
 .viv-wsp-trigger {
-  display: flex; align-items: center; gap: 8px; width: calc(100% - 24px);
-  margin: 2px 12px 12px; padding: 7px 10px;
+  display: flex; align-items: center; gap: 8px; flex: 1 1 auto; min-width: 0; width: auto;
+  margin: 0; padding: 7px 10px;
   background: #fff; border: 1px solid #e2e8f0; border-radius: 9px;
   cursor: pointer; font: inherit; color: #0f172a; text-align: left;
   box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, box-shadow .12s;
 }
+/* Dedicated Source button next to the name → jumps straight to the Source page
+   (repo · branch · commit), in live and read-only. */
+.viv-wsp-source-btn {
+  flex: 0 0 auto; width: 30px; height: 30px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #e2e8f0; border-radius: 8px; background: #fff; color: #64748b;
+  cursor: pointer; font-size: 14px; line-height: 1;
+  box-shadow: 0 1px 2px rgba(15,23,42,.04); transition: border-color .12s, color .12s, box-shadow .12s;
+}
+.viv-wsp-source-btn:hover { border-color: #cbd5e1; color: #4f46e5; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
 .viv-wsp-trigger:hover { border-color: #cbd5e1; box-shadow: 0 2px 6px rgba(15,23,42,.08); }
 .viv-wsp-trigger:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
 .viv-wsp-trigger-label { font-size: 9.5px; letter-spacing: .09em; text-transform: uppercase; color: #94a3b8; font-weight: 700; }
@@ -174,9 +184,28 @@ window.addEventListener('pageshow', function (e) {
 .viv-wsp-dot { flex: 0 0 auto; font-size: 11px; line-height: 1; }
 .viv-wsp-ready { color: #16a34a; } .viv-wsp-stopped { color: #94a3b8; }
 .viv-wsp-stale { color: #d97706; } .viv-wsp-missing { color: #dc2626; } .viv-wsp-remote { color: #7c3aed; }
+/* Read-only snapshot: the status dot is grey (not a running local workspace). */
+body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
+/* Collapsed rail: the switcher shrinks to just the status dot (green=local,
+   purple=remote, grey=not running) — no white box with truncated text, and the
+   Source button + caret hide. */
+.viv-rail.viv-rail-collapsed .viv-workspace-switcher { justify-content: center; margin: 2px auto 12px; }
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger {
+  flex: 0 0 auto; width: 32px; padding: 6px; justify-content: center; gap: 0;
+}
+.viv-rail.viv-rail-collapsed .viv-wsp-source-btn,
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current strong,
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current .viv-ws-remote-tag,
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-caret { display: none; }
+.viv-rail.viv-rail-collapsed .viv-wsp-trigger-current { flex: 0 0 auto; gap: 0; }
+.viv-rail.viv-rail-collapsed .viv-wsp-dot { font-size: 15px; }
 
 .viv-wsp-menu {
-  position: absolute; left: 12px; right: 12px; top: 100%; z-index: 1200; margin-top: 4px;
+  /* FIXED, not absolute: the rail's overflow-x:hidden would clip an absolute
+     menu to the sidebar width (squished). Fixed escapes it; JS positions it at
+     the trigger and gives it a comfortable width that can overflow the rail. */
+  position: fixed; z-index: 1200;
+  width: 340px; max-width: calc(100vw - 24px);
   background: #fff; border: 1px solid #e2e8f0; border-radius: 11px;
   box-shadow: 0 14px 40px rgba(15,23,42,.16); overflow: hidden;
   display: flex; flex-direction: column; max-height: min(60vh, 420px);
@@ -515,13 +544,14 @@ a.viv-bs-commit:hover { text-decoration: underline; }
            dropdown and the standalone Branch rail item. -->
       <button class="viv-wsp-trigger" id="viv-workspace-picker-trigger" type="button"
               title="Switch workspace — pick from your workspaces">
-        <span class="viv-wsp-trigger-label">Workspace</span>
         <span class="viv-wsp-trigger-current">
           <span class="viv-wsp-dot viv-wsp-ready{% if workspace_is_remote %} viv-wsp-remote{% endif %}">●</span>
           <strong>{{ workspace_name }}</strong>{% if workspace_is_remote %} <span class="viv-ws-remote-tag">remote</span>{% endif %}
         </span>
         <span class="viv-wsp-trigger-caret" aria-hidden="true">▾</span>
       </button>
+      <button class="viv-wsp-source-btn" id="viv-wsp-source-btn" type="button"
+              title="Open Source — repository · branch · commit" aria-label="Open Source page">↗</button>
     </div>
     <!-- Snapshot mode: static repo label replaces the switcher dropdown. -->
     <div class="viv-repo-label" id="snapshot-repo-label" style="display:none;cursor:pointer"
@@ -1398,27 +1428,33 @@ a.viv-bs-commit:hover { text-decoration: underline; }
     #sim-table th[data-sort-key]:hover { background:#e5e7eb; }
     #sim-table th[data-sort-dir="asc"]::after { content:" \25B2"; }
     #sim-table th[data-sort-dir="desc"]::after { content:" \25BC"; }
+    /* Actions cell: let the run-action buttons wrap within a roomy column
+       instead of overflowing off the right edge. */
+    #sim-table .run-actions { display:flex; flex-wrap:wrap; gap:4px; align-items:center; justify-content:flex-start; }
+    #sim-table .run-actions .action-btn { font-size:11px; padding:2px 7px; white-space:nowrap; }
   </style>
 
-  <table id="sim-table" style="width:100%; table-layout:fixed; border-collapse: collapse; font-size: 13px; display: none;">
+  <div style="overflow-x:auto; width:100%;">
+  <table id="sim-table" style="width:100%; min-width:1120px; table-layout:fixed; border-collapse: collapse; font-size: 13px; display: none;">
     <thead>
       <tr style="background:#f3f4f6;">
-        <th data-sort-key="investigation" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Investigation</th>
-        <th data-sort-key="study" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Study</th>
+        <th data-sort-key="investigation" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:108px; cursor:pointer;">Investigation</th>
+        <th data-sort-key="study" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:100px; cursor:pointer;">Study</th>
         <th data-sort-key="run" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; cursor:pointer;">Run</th>
-        <th data-sort-key="composite" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:150px; cursor:pointer;">Composite</th>
-        <th style="text-align:left; padding:6px 8px; width:200px;">Config</th>
-        <th style="text-align:left; padding:6px 8px; width:150px;">Location</th>
-        <th data-sort-key="origin" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:90px; cursor:pointer;">Origin</th>
-        <th data-sort-key="emitter_type" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:80px; cursor:pointer;">Emitter</th>
-        <th data-sort-key="time" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:104px; cursor:pointer;">Time</th>
-        <th data-sort-key="status" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:84px; cursor:pointer;">Status</th>
-        <th style="text-align:left; padding:6px 8px; width:130px;">Tools</th>
-        <th style="text-align:center; padding:6px 8px; width:158px;">Actions</th>
+        <th data-sort-key="composite" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:130px; cursor:pointer;">Composite</th>
+        <th style="text-align:left; padding:6px 8px; width:140px;">Config</th>
+        <th style="text-align:left; padding:6px 8px; width:110px;">Location</th>
+        <th data-sort-key="origin" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:66px; cursor:pointer;">Origin</th>
+        <th data-sort-key="emitter_type" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:74px; cursor:pointer;">Emitter</th>
+        <th data-sort-key="time" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:98px; cursor:pointer;">Time</th>
+        <th data-sort-key="status" onclick="_onSimHeaderClick(this)" style="text-align:left; padding:6px 8px; width:80px; cursor:pointer;">Status</th>
+        <th style="text-align:left; padding:6px 8px; width:104px;">Tools</th>
+        <th style="text-align:left; padding:6px 8px; width:220px;">Actions</th>
       </tr>
     </thead>
     <tbody id="sim-tbody"></tbody>
   </table>
+  </div>
 
   <!-- Confirmation dialog for full simulation delete -->
   <div id="sim-delete-dialog" style="display:none; position:fixed; inset:0;

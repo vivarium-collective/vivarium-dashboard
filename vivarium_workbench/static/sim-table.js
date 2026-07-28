@@ -327,7 +327,7 @@
     cells += td(esc(fmtTime(row.completed_at || row.started_at)), "color:#6b7280;");
     cells += td(statusChip(row.status));
     cells += td(toolsCell(row), "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;");
-    cells += td(_actions(row), "text-align:center;white-space:nowrap;");
+    cells += td('<div class="run-actions">' + _actions(row) + '</div>', "vertical-align:middle;");
     return '<tr data-run-id="' + esc(runId) + '" data-study="' + esc(study(row)) + '" ' +
       'style="border-bottom:1px solid #f3f4f6;cursor:pointer;" ' +
       'title="Click to open this run — its study, or the Composite Explorer">' + cells + "</tr>";
