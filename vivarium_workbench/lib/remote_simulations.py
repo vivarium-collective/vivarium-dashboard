@@ -115,6 +115,50 @@ def _normalize(rec: dict) -> dict:
     }
 
 
+def batch_progress_fields(bp: dict | None) -> dict:
+    """Map a compose ``BatchProgress`` DTO (sms-api #183) to Runs-tab row fields.
+
+    BatchProgress carries ``lineages="started:total"``, ``generations="deepest:total"``,
+    a whole-sweep ``overall`` percent, and a coarse ``status``. This returns only the
+    subset of Simulations-DB row fields those enrich — a normalized ``status`` and a
+    ``progress_step``/``n_steps`` pair (started/total lineages) that reuses the row's
+    existing progress rendering — plus ``overall`` for callers that want the
+    cell-generation percent. Pure: identity/location fields are left to the caller.
+    """
+    bp = bp or {}
+
+    def _int(s: object) -> int | None:
+        try:
+            return int(str(s).strip())
+        except (TypeError, ValueError):
+            return None
+
+    started_s, _, total_s = str(bp.get("lineages") or "").partition(":")
+    started_n, total_n = _int(started_s), _int(total_s)
+    overall = bp.get("overall")
+    raw = str(bp.get("status") or "").lower()
+
+    if raw in {"succeeded", "completed", "success"} or (
+        isinstance(overall, (int, float)) and overall >= 100
+    ):
+        status = "completed"
+    elif raw in {"failed", "error", "cancelled", "canceled"}:
+        status = "failed"
+    elif raw in {"running", "runnable", "starting", "submitted", "pending"}:
+        status = "running"
+    else:
+        status = "running" if started_n else "pending"
+
+    out: dict = {"status": status}
+    if started_n is not None:
+        out["progress_step"] = started_n
+    if total_n is not None:
+        out["n_steps"] = total_n
+    if isinstance(overall, (int, float)):
+        out["overall"] = float(overall)
+    return out
+
+
 def _read_build_meta(ws_root: Path) -> dict | None:
     meta = Path(ws_root) / ".viv-build.json"
     if not meta.is_file():
