@@ -87,6 +87,37 @@ def test_run_simulation_query_and_repeated_observables(monkeypatch):
     assert qs["experiment_id"] == ["exp1"]
 
 
+def test_run_simulation_sends_analysis_options_as_json_body(monkeypatch):
+    """analysis_options is a Pydantic model with no Query()/Body() wrapper on
+    the sms-api route — FastAPI reads a bare model param from the JSON
+    request body, not the query string (unlike every other run_simulation
+    param above)."""
+    cap = {}
+    with _patch_urlopen(monkeypatch, cap, {"database_id": 51}):
+        c = SmsApiClient("http://h:8080")
+        out = c.run_simulation(
+            simulator_id=15, num_generations=1, num_seeds=1, run_parca=True,
+            observables=["mass"], analysis_options={"multiseed": {"ecocyc_table": {}}},
+        )
+    assert out["database_id"] == 51
+    assert json.loads(cap["body"].decode()) == {
+        "analysis_options": {"multiseed": {"ecocyc_table": {}}}
+    }
+    qs = parse_qs(urlsplit(cap["url"]).query)
+    assert "analysis_options" not in qs  # never in the query string
+
+
+def test_run_simulation_omits_json_body_when_no_analysis_options(monkeypatch):
+    cap = {}
+    with _patch_urlopen(monkeypatch, cap, {"database_id": 52}):
+        c = SmsApiClient("http://h:8080")
+        c.run_simulation(
+            simulator_id=15, num_generations=1, num_seeds=1, run_parca=True,
+            observables=["mass"],
+        )
+    assert cap["body"] is None
+
+
 def test_upload_simulator_sends_json_body(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"database_id": 16, "status": "running"}):
