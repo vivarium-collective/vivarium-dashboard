@@ -895,3 +895,111 @@ def test_build_zip_unknown_run_404s(tmp_path):
     data, filename, status = build_simulation_run_zip(ws, "no-such-run")
     assert status == 404
     assert data == b""
+
+
+# ---------------------------------------------------------------------------
+# build_simulation_run_zip — S3-only store falls back to sms-api (GovCloud
+# runs whose local materialization no longer exists, e.g. after a pod restart)
+# ---------------------------------------------------------------------------
+
+
+def _remote_only_row(run_id, *, simulation_id, s3_uri):
+    """A row shaped exactly like remote_simulations.py's _normalize() output —
+    a run known to sms-api but never (or no longer) landed into a local
+    runs.db, e.g. because the session/build checkout it landed into didn't
+    survive a pod restart. db_path is None; store_path is the s3:// URI."""
+    return {
+        "run_id": run_id, "spec_id": "", "sim_name": run_id, "label": run_id,
+        "status": "completed", "n_steps": None, "progress_step": None,
+        "started_at": 10.0, "completed_at": 10.0,
+        "db_path": None, "store_path": s3_uri, "emitter": "xarray",
+        "studies": [], "study_slug": None, "investigation_slug": None,
+        "remote_origin": {
+            "deployment": "build #50", "simulation_id": simulation_id,
+            "experiment_id": run_id, "backend": "aws", "s3_uri": s3_uri,
+        },
+    }
+
+
+def test_build_zip_falls_back_to_sms_api_for_s3_only_store(tmp_path, monkeypatch):
+    """A run whose store_path is an s3:// URI (nothing local to zip) — and
+    whose remote_origin carries a simulation_id — must fetch the run's native
+    store from sms-api (the same download_data() call remote_run_land already
+    makes) instead of 404ing outright."""
+    import tarfile
+
+    from vivarium_workbench.lib import simulations_index as _si
+
+    ws = tmp_path / "ws"
+    row = _remote_only_row("r-s3-only", simulation_id=113,
+                            s3_uri="s3://bucket/vecoli-output/exp-113")
+    monkeypatch.setattr(_si, "list_simulations", lambda workspace: [row])
+
+    # Build a fake tar.gz mirroring what sms-api's /data endpoint streams.
+    tar_src = tmp_path / "fake_store"
+    tar_src.mkdir()
+    (tar_src / "zarr.json").write_text('{"ok": true}')
+    tar_path = tmp_path / "fake.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tf:
+        tf.add(tar_src, arcname="exp-113")
+
+    def _fake_download_data(self, simulation_id, dest_dir, timeout=None):
+        assert simulation_id == 113
+        out = Path(dest_dir) / f"sim_{simulation_id}.tar.gz"
+        out.write_bytes(tar_path.read_bytes())
+        return out
+
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.sms_api_client.SmsApiClient.download_data",
+        _fake_download_data,
+    )
+
+    data, filename, status = build_simulation_run_zip(ws, "r-s3-only")
+    assert status == 200
+    assert filename == "r-s3-only_emitter.zip"
+
+    import io
+    import zipfile
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        names = zf.namelist()
+        assert any(n.endswith("exp-113/zarr.json") for n in names), names
+        matching = [n for n in names if n.endswith("exp-113/zarr.json")]
+        assert zf.read(matching[0]) == b'{"ok": true}'
+
+
+def test_build_zip_s3_only_store_with_no_remote_origin_404s(tmp_path, monkeypatch):
+    """An s3:// store_path with no remote_origin (no simulation_id to fetch
+    from) has nowhere left to resolve to — 404, not a crash."""
+    from vivarium_workbench.lib import simulations_index as _si
+
+    ws = tmp_path / "ws"
+    row = _remote_only_row("r-s3-orphan", simulation_id=None, s3_uri="s3://bucket/orphan")
+    row["remote_origin"] = None
+    monkeypatch.setattr(_si, "list_simulations", lambda workspace: [row])
+
+    data, filename, status = build_simulation_run_zip(ws, "r-s3-orphan")
+    assert status == 404
+    assert data == b""
+
+
+def test_build_zip_sms_api_failure_404s_not_crashes(tmp_path, monkeypatch):
+    """sms-api unreachable/erroring during the fallback fetch must fail closed
+    (404), not raise SmsApiError up through the route handler."""
+    from vivarium_workbench.lib import simulations_index as _si
+
+    ws = tmp_path / "ws"
+    row = _remote_only_row("r-s3-down", simulation_id=114,
+                            s3_uri="s3://bucket/vecoli-output/exp-114")
+    monkeypatch.setattr(_si, "list_simulations", lambda workspace: [row])
+
+    def _raise(self, simulation_id, dest_dir, timeout=None):
+        from vivarium_workbench.lib.sms_api_client import SmsApiError
+        raise SmsApiError("sms-api unreachable")
+
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.sms_api_client.SmsApiClient.download_data", _raise
+    )
+
+    data, filename, status = build_simulation_run_zip(ws, "r-s3-down")
+    assert status == 404
+    assert data == b""
