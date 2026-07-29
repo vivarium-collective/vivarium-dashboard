@@ -269,6 +269,39 @@ def test_submit_missing_simulator_id_400(monkeypatch, tmp_path):
     assert rrv.remote_run_submit(tmp_path, {"study": "s"})[1] == 400
 
 
+def test_submit_threads_analysis_options_from_spec(monkeypatch, tmp_path):
+    """spec.analyses must reach client.run_simulation()'s analysis_options —
+    this was silently dropped for every remote dispatch (the "Analyses 404"
+    root cause: sms-api never received a real analysis config to run)."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"baseline": [{"composite": "my-comp"}],
+                   "analyses": [{"name": "ecocyc_table", "params": {}}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries: ({"multiseed": {"ecocyc_table": {}}}, []),
+    )
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
+    assert status == 202
+    assert client.ran["analysis_options"] == {"multiseed": {"ecocyc_table": {}}}
+
+
+def test_submit_analysis_options_none_when_spec_has_no_analyses(monkeypatch, tmp_path):
+    """A study with no analyses: entries passes analysis_options=None, not {}
+    — matching run_simulation()'s default and sms-api's contract."""
+    _wire_thin(monkeypatch, tmp_path)
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
+    assert status == 202
+    assert client.ran["analysis_options"] is None
+
+
 def test_land_downloads_and_lands(monkeypatch, tmp_path):
     captured = _wire_thin(monkeypatch, tmp_path)
     monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)

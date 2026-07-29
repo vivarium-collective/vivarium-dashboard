@@ -161,6 +161,7 @@ class SmsApiClient:
         observables: list[str],
         experiment_id: str | None = None,
         description: str | None = None,
+        analysis_options: dict | None = None,
     ) -> dict:
         params: dict = {
             "simulator_id": simulator_id,
@@ -174,7 +175,12 @@ class SmsApiClient:
             params["description"] = description
         if observables:
             params["observables"] = observables  # list → repeated key via doseq
-        return self._post("/api/v1/simulations", params=params)
+        # analysis_options is a Pydantic model on the sms-api side with no
+        # Query()/Body() wrapper — FastAPI reads a bare model param from the
+        # JSON request body, not the query string, so it goes in json_body
+        # rather than alongside the other params above.
+        json_body = {"analysis_options": analysis_options} if analysis_options else None
+        return self._post("/api/v1/simulations", params=params, json_body=json_body)
 
     # ------------------------------------------------------------------
     # Compose endpoints (generic .pbg runner, Phase C)

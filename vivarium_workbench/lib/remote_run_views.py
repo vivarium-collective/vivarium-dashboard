@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import warnings
 from pathlib import Path
 
 from vivarium_workbench.lib import git_status
@@ -230,6 +231,15 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
         return {"error": f"study {study!r} not found"}, 404
     spec = load_spec(spec_path)
     observables = study_spec.collect_study_observables(spec)
+    # spec.analyses (the same source study_run_post.run_study_analyses reads
+    # for the LOCAL post-run pipeline) was never threaded into the remote
+    # dispatch payload — every remote-dispatched run's analysis_options came
+    # out empty regardless of what a study configured. build_analysis_options
+    # translates it into v2ecoli's {scale: {name: params}} shape.
+    from vivarium_workbench.lib.study_run_post import build_analysis_options
+    analysis_options, analysis_errors = build_analysis_options(spec.get("analyses") or [])
+    for err in analysis_errors:
+        warnings.warn(f"remote_run_submit: {study!r} analysis config: {err.get('error')}")
     client = SmsApiClient(_sms_api_base())
     sim = client.run_simulation(
         simulator_id=int(sim_id),
@@ -237,6 +247,7 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
         num_seeds=int(body.get("num_seeds") or 1),
         run_parca=bool(body.get("run_parca", True)),
         observables=observables,
+        analysis_options=analysis_options or None,
     )
     return {"simulation_id": sim["database_id"], "phase": "running"}, 202
 
