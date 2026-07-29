@@ -183,7 +183,7 @@ def test_source_path_shape_copies_sidecar_and_writes_spec_yaml(tmp_path, monkeyp
     }
 
 
-def test_blank_shape_writes_stub_spec_yaml(tmp_path):
+def test_blank_shape_writes_study_yaml(tmp_path):
     ws = _make_ws(tmp_path)
     body, status = views.study_create(ws, {"name": "inv-blank"})
     assert status == 200
@@ -191,22 +191,29 @@ def test_blank_shape_writes_stub_spec_yaml(tmp_path):
 
     inv_dir = ws / "studies" / "inv-blank"
     assert (inv_dir / "data" / ".keep").exists()
-    assert not (inv_dir / "study.yaml").exists()
-    expected_stub = (
-        "name: inv-blank\n"
-        "description: \"\"\n"
-        "\n"
-        "composites: []\n"
-        "\n"
-        "simulations: []\n"
-        "\n"
-        "observables: []\n"
-        "\n"
-        "visualizations: []\n"
-        "\n"
-        "status: planned\n"
-    )
-    assert (inv_dir / "spec.yaml").read_text() == expected_stub
+    # blank shape must be study.yaml, NOT spec.yaml: iter_study_dirs() only
+    # recognizes study.yaml under the flat studies/<name>/ layout, so a
+    # spec.yaml here would scaffold successfully yet stay invisible to every
+    # read route (see test_blank_shape_is_visible_to_iter_study_dirs below).
+    assert not (inv_dir / "spec.yaml").exists()
+    text = (inv_dir / "study.yaml").read_text()
+    assert "name: inv-blank" in text
+    assert "schema_version" in text
+
+
+def test_blank_shape_is_visible_to_iter_study_dirs(tmp_path):
+    """Regression: a blank (no-source) study must be discoverable by the same
+    scan /api/investigations and /api/study/{slug} use — a study.yaml the
+    scaffold writes but iter_study_dirs() can't see is a study that exists on
+    disk yet 404s everywhere."""
+    from vivarium_workbench.lib.investigations_index import _iter_study_dirs
+
+    ws = _make_ws(tmp_path)
+    body, status = views.study_create(ws, {"name": "inv-blank"})
+    assert status == 200
+
+    names = [d.name for d in _iter_study_dirs(ws)]
+    assert names == ["inv-blank"]
 
 
 # ---------------------------------------------------------------------------

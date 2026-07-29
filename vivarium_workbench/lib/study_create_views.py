@@ -11,7 +11,14 @@ three scaffold shapes depending on the resolved ``source`` composite:
     no sidecar).
   * YAML source ref               → ``spec.yaml`` (the legacy v2 shape) plus a
     ``composites/<baseline>.yaml`` sidecar copied verbatim from the source.
-  * no ``source``                 → a blank ``spec.yaml`` stub.
+  * no ``source``                 → a blank ``study.yaml`` via
+    :func:`lib.scaffold_yaml.v4_study_scaffold` with no composite (placeholder
+    ``baseline:`` block). Matters because ``WorkspacePaths.iter_study_dirs()``
+    only recognizes ``study.yaml`` for the flat ``studies/<name>/`` layout —
+    ``spec.yaml`` there is invisible to ``/api/investigations`` and
+    ``/api/study/{slug}`` (that legacy shape is only honored under
+    ``investigations/<name>/``). A blank study written as ``spec.yaml`` here
+    used to return ``{"ok": true}`` yet never appear anywhere.
 
 The single behavioural difference from the live handler is that the git
 **commit is DEFERRED**: the legacy server wraps the scaffold in
@@ -152,22 +159,14 @@ def study_create(ws_root: Path, body: dict) -> "tuple[dict, int]":
             }
             (inv_dir / "spec.yaml").write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
         else:
-            # Blank study — no composite yet
-            stub = (
-                f"name: {name}\n"
-                f"description: \"\"\n"
-                f"\n"
-                f"composites: []\n"
-                f"\n"
-                f"simulations: []\n"
-                f"\n"
-                f"observables: []\n"
-                f"\n"
-                f"visualizations: []\n"
-                f"\n"
-                f"status: planned\n"
-            )
-            (inv_dir / "spec.yaml").write_text(stub, encoding="utf-8")
+            # Blank study — no composite yet. Must be the v4 study.yaml shape
+            # (not spec.yaml): iter_study_dirs() only recognizes study.yaml
+            # under the flat studies/<name>/ layout, so a spec.yaml here would
+            # be scaffolded successfully yet stay permanently invisible to
+            # /api/investigations and /api/study/{slug}.
+            from vivarium_workbench.lib.scaffold_yaml import v4_study_scaffold
+            body_yaml = v4_study_scaffold(name)
+            (inv_dir / "study.yaml").write_text(body_yaml, encoding="utf-8")
 
     # Deferred commit: the live handler wraps ``action`` in
     # ``_active_branch_action(commit_msg, action)`` (commit-on-active-branch).

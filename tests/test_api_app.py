@@ -3794,7 +3794,9 @@ class TestInvestigationCreateRoute:
         r = ic_client.post("/api/study-create", json={"name": "inv-blank"})
         assert r.status_code == 200
         assert r.json() == {"ok": True, "name": "inv-blank"}
-        assert (ws / "studies" / "inv-blank" / "spec.yaml").is_file()
+        # study.yaml, not spec.yaml: iter_study_dirs() only recognizes
+        # study.yaml under the flat studies/<name>/ layout.
+        assert (ws / "studies" / "inv-blank" / "study.yaml").is_file()
         assert (ws / "studies" / "inv-blank" / "data" / ".keep").is_file()
 
     def test_create_missing_name(self, ic_client: TestClient) -> None:
