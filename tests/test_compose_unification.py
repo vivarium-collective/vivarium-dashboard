@@ -64,3 +64,27 @@ def test_build_guard_preserves_conditions_and_baseline():
     guard = p[i:i + 120]
     for field in ["study.model_change", "study.implementation_requirements", "study.conditions", "study.baseline"]:
         assert field in guard, f"build guard dropped {field}: {guard!r}"
+
+
+def test_analyses_section_present_and_reachable_on_the_study_page():
+    # Regression: an earlier "Analyses" authoring control was wired only into
+    # the legacy Investigation-detail panel (#investigation-detail inside
+    # #page-studies), which no current navigation path opens — dead UI. This
+    # one lives on the Model (compose) tab of the Study page, which every
+    # study (grouped or ungrouped) is actually reachable through.
+    p = _panel_compose()
+    assert 'id="study-analyses-list"' in p
+    assert 'onclick="_saveStudyAnalyses()"' in p
+    assert 'id="study-analyses-status"' in p
+    # Rendered unconditionally within the panel (outside the _has_build guard)
+    # so a brand-new blank study can still have its analyses configured.
+    assert "endif %}\n\n  {# Analyses" in HTML or "{# Analyses" in HTML
+
+
+def test_save_study_analyses_posts_to_the_working_endpoint():
+    js = (ROOT / "vivarium_workbench/static/study-detail.js").read_text()
+    i = js.index("function _saveStudyAnalyses")
+    block = js[i:i + 800]
+    assert "/api/study-set-analyses" in block
+    assert "studyName()" in block
+    assert "window._saveStudyAnalyses = _saveStudyAnalyses" in js
