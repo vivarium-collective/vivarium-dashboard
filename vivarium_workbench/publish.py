@@ -353,48 +353,121 @@ def _stage_report_cards(spec, ws_root: Path, out_dir: Path,
             card["url"] = base_path + url
 
 
+def _artifact_dest(art, ws_root: Path):
+    """``(src, out_name)`` for a study artifact with a local ``path``, else
+    ``(None, None)``.
+
+    Directories (e.g. a ``.zarr`` store) become ``<name>.zip``; files keep their
+    suffix. The naming is the SINGLE source of truth shared by
+    :func:`_stage_artifacts` (which writes the file) and
+    :func:`_artifact_bundle_url` (which computes the link) so the runs-tab link
+    and the staged file can never drift apart.
+    """
+    if not isinstance(art, dict):
+        return None, None
+    path = art.get("path")
+    if not path or str(path).startswith(("/api/", "http://", "https://", "//")):
+        return None, None
+    src = (ws_root / str(path)).resolve()
+    if not src.exists():
+        return None, None
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(art.get("name") or src.name))
+    return src, (safe + ".zip" if src.is_dir() else safe + src.suffix)
+
+
+def _artifact_bundle_url(slug: str, art, ws_root: Path, base_path: str):
+    """Deterministic bundle URL a staged artifact WILL live at (or ``None``).
+
+    Order-independent: computable before the file is staged, so
+    ``simulations.json`` (written before the per-study staging loop) can carry a
+    working ``download_url`` for the runs tab.
+    """
+    _src, out_name = _artifact_dest(art, ws_root)
+    if not out_name:
+        return None
+    rel = "/studies/%s/artifacts/%s" % (slug, out_name)
+    return (base_path + rel) if base_path else rel
+
+
 def _stage_artifacts(spec, ws_root: Path, out_dir: Path,
                      base_path: str, slug: str) -> None:
     """Copy a study's declared ``artifacts[]`` into the bundle as downloadable
     files and set a bundle-relative ``href`` (+ ``bytes``) on each (mutates
     *spec* in place).
 
-    Each artifact may carry a workspace-relative ``path`` to a file or a
-    directory (e.g. a ``.zarr`` store). Files are copied verbatim; directories
-    are zipped. Downloads land under ``studies/<slug>/artifacts/`` so the
-    read-only study page can offer a working ``download`` link with no live
-    backend — the snapshot analogue of the live ``⬇ Results`` button (whose
-    ``/api/...`` endpoint does not exist in a static bundle). Artifacts with no
-    local ``path`` (e.g. a report rendered elsewhere, or an external URL) are
-    left untouched.
+    Files are copied verbatim; directories (e.g. a ``.zarr`` store) are zipped.
+    Downloads land under ``studies/<slug>/artifacts/`` so both the read-only
+    study page ("Download artifacts") AND the runs tab (via
+    :func:`_attach_artifact_downloads`) can offer a working ``download`` with no
+    live backend — the snapshot analogue of the live ``⬇ Results`` button.
+    Artifacts with no local ``path`` are left untouched.
     """
     arts = spec.get("artifacts")
     if not isinstance(arts, list):
         return
     dest_root = out_dir / "studies" / slug / "artifacts"
     for art in arts:
-        if not isinstance(art, dict):
+        src, out_name = _artifact_dest(art, ws_root)
+        if not src:
             continue
-        path = art.get("path")
-        if not path or str(path).startswith(("/api/", "http://", "https://", "//")):
-            continue
-        src = (ws_root / str(path)).resolve()
-        if not src.exists():
-            continue
-        safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(art.get("name") or src.name))
         dest_root.mkdir(parents=True, exist_ok=True)
+        out_file = dest_root / out_name
         if src.is_dir():
-            out_file = Path(shutil.make_archive(
-                str(dest_root / safe), "zip", root_dir=str(src)))
+            shutil.make_archive(str(out_file)[:-4], "zip", root_dir=str(src))
         else:
-            out_file = dest_root / (safe + src.suffix)
             shutil.copy2(src, out_file)
-        rel_url = "/studies/%s/artifacts/%s" % (slug, out_file.name)
-        art["href"] = (base_path + rel_url) if base_path else rel_url
+        art["href"] = _artifact_bundle_url(slug, art, ws_root, base_path)
         try:
             art["bytes"] = out_file.stat().st_size
         except OSError:
             pass
+
+
+def _attach_artifact_downloads(sims, ws_root: Path, base_path: str) -> None:
+    """Stamp a static ``download_url`` onto each run row in ``simulations.json``
+    whose study declares a downloadable artifact (mutates *sims* in place).
+
+    The runs-tab ``⬇ Results`` button is live-only (``/api/simulation-run-download``),
+    so it is dead in a static bundle. Here we point it at the study's staged
+    results artifact instead — deterministically, from ``study.yaml``'s
+    ``artifacts[]`` — so the SAME zarr the "Download artifacts" panel serves is
+    reachable from the Runs tab. The row's study is taken from ``study_slug`` or
+    parsed out of its ``db_path``/``store_path`` (``studies/<slug>/…``).
+    """
+    rows = (sims or {}).get("simulations") or []
+    cache: dict = {}
+
+    def _study_results_artifact(slug: str):
+        if slug in cache:
+            return cache[slug]
+        art = None
+        try:
+            from vivarium_workbench.lib import study_spec as _ss
+            spec = _ss.load_study_detail_spec(ws_root, slug)
+            arts = [a for a in (spec.get("artifacts") or [])
+                    if isinstance(a, dict) and a.get("path")]
+            art = next((a for a in arts if a.get("kind") == "zarr"), None) \
+                or (arts[0] if arts else None)
+        except Exception:
+            art = None
+        cache[slug] = art
+        return art
+
+    for row in rows:
+        slug = row.get("study_slug")
+        if not slug:
+            loc = str(row.get("db_path") or row.get("store_path") or "").replace("\\", "/")
+            m = re.search(r"studies/([^/]+)/", loc)
+            if m:
+                slug = m.group(1)
+                row["study_slug"] = slug  # so the runs table associates the row
+        if not slug:
+            continue
+        art = _study_results_artifact(slug)
+        if art:
+            url = _artifact_bundle_url(slug, art, ws_root, base_path)
+            if url:
+                row["download_url"] = url
 
 
 def _stage_comparison_plotly(spec, ws_root: Path, out_dir: Path,
@@ -1077,6 +1150,12 @@ def _do_build(
         sims = build_simulations_data(ws_root)
     except Exception:
         sims = {"simulations": [], "current": None}
+    # Point each run row's ⬇ Results at the study's staged results artifact so
+    # the runs tab download works in the (backend-less) read-only bundle.
+    try:
+        _attach_artifact_downloads(sims, ws_root, base_path)
+    except Exception:
+        pass
     _write_json(api_dir / "simulations.json", sims)
 
     # api/visualization-classes.json — registered viz/analysis classes
