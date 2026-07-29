@@ -88,3 +88,21 @@ def test_save_study_analyses_posts_to_the_working_endpoint():
     assert "/api/study-set-analyses" in block
     assert "studyName()" in block
     assert "window._saveStudyAnalyses = _saveStudyAnalyses" in js
+
+
+def test_baseline_composite_replace_control_present_and_wired():
+    # Regression: the pre-unification "+ Add baseline" form (_submitBaselineAdd)
+    # was removed from this template, leaving its JS handler and the
+    # /api/study-baseline-add /-remove endpoints orphaned — no UI path could
+    # ever set/replace a study's composite ref once created (e.g. to fix the
+    # "+ Study" blank scaffold's placeholder ref). This control reuses those
+    # existing, working endpoints instead of adding a new one.
+    p = _panel_compose()
+    assert 'class="baseline-composite-input"' in p
+    assert 'class="action-btn baseline-composite-set"' in p
+    assert "baseline-composite-status" in p
+    js = (ROOT / "vivarium_workbench/static/study-detail.js").read_text()
+    i = js.index("baseline-composite-set", js.index("bindAll"))
+    block = js[i:i + 900]
+    assert "/api/study-baseline-remove" in block
+    assert "/api/study-baseline-add" in block
