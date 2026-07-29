@@ -443,6 +443,27 @@ def test_load_spec_accepts_composites_list(tmp_path):
     assert spec['runs'][0]['composite'] == 'baseline'
 
 
+def test_load_spec_accepts_blank_study_with_empty_composites(tmp_path):
+    """A freshly-scaffolded study with no composite chosen yet
+    (``composites: []``, no ``variants`` key) must load without raising —
+    this is exactly the shape ``study_create``'s "no source" scaffold
+    produces, and it must remain openable until the user adds a composite."""
+    from vivarium_workbench.lib.investigations import load_spec
+    spec_path = tmp_path / 'spec.yaml'
+    spec_path.write_text(
+        'name: blank-study\n'
+        'description: ""\n'
+        'composites: []\n'
+        'simulations: []\n'
+        'observables: []\n'
+        'visualizations: []\n'
+        'status: planned\n'
+    )
+    spec = load_spec(spec_path)
+    assert spec['name'] == 'blank-study'
+    assert spec['composites'] == []
+
+
 # test_load_spec_rejects_runs_without_composite_when_multi was deleted (Plan 1 Task 7).
 # The v2 "composites" validator enforced that every run entry had a "composite"
 # field; the v3 _validate_study_v3 validator treats runs as a free-form list and

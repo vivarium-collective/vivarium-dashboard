@@ -42,18 +42,21 @@ def _validate_composites_list(spec: dict) -> None:
     """Validate the new multi-composite ``composites:`` list shape.
 
     Checks:
-    - Non-empty list of mappings, each with a ``name`` field.
-    - Each entry has ``source`` (registered) or ``extends`` (derived), or both.
+    - Must be a list of mappings; empty is tolerated (a freshly-scaffolded
+      "blank" study with no composite chosen yet — nothing to validate until
+      the user adds one).
+    - Each entry has ``name``, and ``source`` (registered) or ``extends``
+      (derived), or both.
     - ``extends`` must reference a *previously-declared* composite (no forward refs).
     - No duplicate ``name`` values.
     - If ``runs`` is present it must be a list; every run entry must have
       a ``composite`` field that names a declared composite.
     """
     composites = spec["composites"]
-    if not isinstance(composites, list) or not composites:
-        raise InvestigationSpecError(
-            "'composites' must be a non-empty list of mappings"
-        )
+    if not isinstance(composites, list):
+        raise InvestigationSpecError("'composites' must be a list of mappings")
+    if not composites:
+        return
 
     declared_names: list[str] = []
     for i, entry in enumerate(composites):
