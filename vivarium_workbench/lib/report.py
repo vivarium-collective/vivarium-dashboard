@@ -485,10 +485,19 @@ def _apply_live_base_path(html: str, base_path: str) -> str:
       case covers a study's ``embed_visualizations`` (interactive figure
       iframes/links) so they resolve to this service under the prefix rather
       than the ALB root — which, in the sms-api co-tenant deploy, is PTools.
-    - Injects ``basePath`` into ``__DASH_CONFIG__`` and a small runtime shim that
-      prepends the prefix to root-absolute app URLs used by ``fetch`` /
-      ``EventSource`` / ``XMLHttpRequest`` (the SPA builds many raw requests that
-      don't route through DataSource).
+    - Injects ``basePath`` into ``__DASH_CONFIG__`` and, early in ``<head>`` (via
+      :func:`inject_base_path_shim`, same as the bigraph-loom entry point below),
+      a small runtime shim that prepends the prefix to root-absolute app URLs used
+      by ``fetch`` / ``EventSource`` / ``XMLHttpRequest`` (the SPA builds many raw
+      requests that don't route through DataSource).
+
+    The shim must patch ``window.fetch`` before ``session.js`` runs — it's the
+    first ``<script>`` in ``<head>`` and fires a synchronous ``fetch`` on load
+    (its ``?build=``/``?workspace=`` spawn-bind). Appending the shim at the
+    ``__DASH_CONFIG__`` marker (near the end of the document) let that bind
+    request go out unprefixed and 404 against the ALB's ``/api/*`` -> sms-api
+    rule — the same class of bug ``inject_base_path_shim`` was already written
+    to avoid for the bigraph-loom bundle; this just applies it here too.
 
     No-op when *base_path* is empty (root hosting). Known gap: URLs assigned via
     an element's ``.src``/``.href`` in JS (e.g. the bigraph-loom iframe) are not
@@ -502,12 +511,11 @@ def _apply_live_base_path(html: str, base_path: str) -> str:
     html = _re.sub(r'(\b(?:src|href)=")assets/', rf'\1{bp}/assets/', html)
     html = _re.sub(r'(\b(?:src|href)=")(/(?:assets|bigraph-loom|reports)/)', rf'\1{bp}\2', html)
     bpj = json.dumps(bp)
-    shim = _base_path_shim(bp)
     html = html.replace(
         '<script>window.__DASH_CONFIG__ = { mode: "local-server" };</script>',
-        '<script>window.__DASH_CONFIG__ = { mode: "local-server", basePath: ' + bpj + ' };</script>' + shim,
+        '<script>window.__DASH_CONFIG__ = { mode: "local-server", basePath: ' + bpj + ' };</script>',
     )
-    return html
+    return inject_base_path_shim(html, bp)
 
 
 def _normalize_asset_urls(html: str) -> str:
