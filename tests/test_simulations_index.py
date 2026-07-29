@@ -1,11 +1,15 @@
 """Unit tests for vivarium_workbench.lib.simulations_index."""
+import os
 from pathlib import Path
 
 import pytest
 import yaml
 
 from vivarium_workbench.lib.composite_runs import connect, save_metadata
-from vivarium_workbench.lib.simulations_index import list_simulations
+from vivarium_workbench.lib.simulations_index import (
+    build_simulation_run_zip,
+    list_simulations,
+)
 
 
 def _seed_run(db_file, *, spec_id, run_id, started_at, sim_name=None):
@@ -821,3 +825,73 @@ def test_study_yaml_runs_with_simulation_id_keys_surface(tmp_path):
     assert "abc-123" in sims                       # keyed by simulation_id
     assert sims["abc-123"]["sim_name"] == "static-env-baseline"
     assert sims["abc-123"]["study_slug"] == "mbp-01"
+
+
+# ---------------------------------------------------------------------------
+# build_simulation_run_zip — epoch-0 mtimes (remote/S3-landed runs)
+# ---------------------------------------------------------------------------
+
+
+def _seed_run_with_store(db_file, *, run_id, store_path):
+    """Like _seed_run, but records a store_path in the provenance JSON —
+    what a landed remote run actually carries (see _row_to_dict)."""
+    conn = connect(db_file)
+    save_metadata(conn, spec_id="pkg.batch_baseline", run_id=run_id,
+                  params={"store_path": store_path}, label="",
+                  started_at=10.0, n_steps=3, log_path=None)
+    conn.close()
+
+
+def test_build_zip_handles_epoch_zero_mtime(tmp_path):
+    """A file with mtime=0 (S3 downloads set no mtime — the actual shape of a
+    landed remote run) must not crash the zip build with zipfile's bare
+    'ZIP does not support timestamps before 1980' ValueError."""
+    ws = tmp_path / "ws"
+    (ws / ".pbg").mkdir(parents=True)
+    store = ws / "runs.example.zarr"
+    store.mkdir()
+    f = store / "zarr.json"
+    f.write_text("{}")
+    os.utime(f, (0, 0))  # epoch 0 — exactly what a real landed run had
+
+    _seed_run_with_store(ws / ".pbg" / "composite-runs.db",
+                          run_id="r-remote", store_path="runs.example.zarr")
+
+    data, filename, status = build_simulation_run_zip(ws, "r-remote")
+    assert status == 200
+    assert filename == "r-remote_emitter.zip"
+
+    import zipfile
+    import io
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.namelist() == ["runs.example.zarr/zarr.json"]
+        assert zf.read("runs.example.zarr/zarr.json") == b"{}"
+
+
+def test_build_zip_preserves_normal_mtime(tmp_path):
+    """A file with a normal (post-1980) mtime is written via the fast path
+    (zf.write) unchanged — the fix only touches files that actually need it."""
+    ws = tmp_path / "ws"
+    (ws / ".pbg").mkdir(parents=True)
+    store = ws / "runs.example.zarr"
+    store.mkdir()
+    (store / "zarr.json").write_text("{}")  # real, current mtime
+
+    _seed_run_with_store(ws / ".pbg" / "composite-runs.db",
+                          run_id="r-local", store_path="runs.example.zarr")
+
+    data, filename, status = build_simulation_run_zip(ws, "r-local")
+    assert status == 200
+
+    import zipfile
+    import io
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        assert zf.namelist() == ["runs.example.zarr/zarr.json"]
+
+
+def test_build_zip_unknown_run_404s(tmp_path):
+    ws = tmp_path / "ws"
+    (ws / ".pbg").mkdir(parents=True)
+    data, filename, status = build_simulation_run_zip(ws, "no-such-run")
+    assert status == 404
+    assert data == b""
