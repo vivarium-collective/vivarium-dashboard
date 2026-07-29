@@ -353,6 +353,50 @@ def _stage_report_cards(spec, ws_root: Path, out_dir: Path,
             card["url"] = base_path + url
 
 
+def _stage_artifacts(spec, ws_root: Path, out_dir: Path,
+                     base_path: str, slug: str) -> None:
+    """Copy a study's declared ``artifacts[]`` into the bundle as downloadable
+    files and set a bundle-relative ``href`` (+ ``bytes``) on each (mutates
+    *spec* in place).
+
+    Each artifact may carry a workspace-relative ``path`` to a file or a
+    directory (e.g. a ``.zarr`` store). Files are copied verbatim; directories
+    are zipped. Downloads land under ``studies/<slug>/artifacts/`` so the
+    read-only study page can offer a working ``download`` link with no live
+    backend — the snapshot analogue of the live ``⬇ Results`` button (whose
+    ``/api/...`` endpoint does not exist in a static bundle). Artifacts with no
+    local ``path`` (e.g. a report rendered elsewhere, or an external URL) are
+    left untouched.
+    """
+    arts = spec.get("artifacts")
+    if not isinstance(arts, list):
+        return
+    dest_root = out_dir / "studies" / slug / "artifacts"
+    for art in arts:
+        if not isinstance(art, dict):
+            continue
+        path = art.get("path")
+        if not path or str(path).startswith(("/api/", "http://", "https://", "//")):
+            continue
+        src = (ws_root / str(path)).resolve()
+        if not src.exists():
+            continue
+        safe = re.sub(r"[^A-Za-z0-9._-]", "_", str(art.get("name") or src.name))
+        dest_root.mkdir(parents=True, exist_ok=True)
+        if src.is_dir():
+            out_file = Path(shutil.make_archive(
+                str(dest_root / safe), "zip", root_dir=str(src)))
+        else:
+            out_file = dest_root / (safe + src.suffix)
+            shutil.copy2(src, out_file)
+        rel_url = "/studies/%s/artifacts/%s" % (slug, out_file.name)
+        art["href"] = (base_path + rel_url) if base_path else rel_url
+        try:
+            art["bytes"] = out_file.stat().st_size
+        except OSError:
+            pass
+
+
 def _stage_comparison_plotly(spec, ws_root: Path, out_dir: Path,
                              base_path: str) -> None:
     """Copy a study's ``comparison_plotly_url`` file into the bundle + base-path it.
@@ -1134,6 +1178,7 @@ def _do_build(
             _stage_report_cards(data, ws_root, out_dir, base_path)
             _stage_comparison_plotly(data, ws_root, out_dir, base_path)
             _stage_gif_visualizations(data, ws_root, out_dir, slug)
+            _stage_artifacts(data, ws_root, out_dir, base_path, slug)
             _write_json(api_dir / "study" / f"{slug}.json", data)
 
     # api/study-charts/<slug>.json — the Visualizations-tab charts payload,
@@ -1242,6 +1287,7 @@ def _do_build(
             _stage_embed_visualizations(spec, ws_root, out_dir, base_path)
             _stage_report_cards(spec, ws_root, out_dir, base_path)
             _stage_comparison_plotly(spec, ws_root, out_dir, base_path)
+            _stage_artifacts(spec, ws_root, out_dir, base_path, slug)
             study_html = render_study_detail_html(ws_root, slug, spec)
             study_html = _normalize_asset_urls(study_html)
             study_html = _apply_base_path(study_html, base_path)
