@@ -218,9 +218,54 @@ def test_gh_cli_session_wins_when_available(monkeypatch):
 def test_no_session_when_nothing_configured(monkeypatch):
     """No gh, no keyring entry, no env var → unauthenticated."""
     monkeypatch.delenv(ga._CLIENT_ID_ENV, raising=False)
+    monkeypatch.delenv("VIVARIUM_WORKBENCH_GH_TOKEN", raising=False)
     assert ga.current_session() is None
     assert ga.status_payload() == {"authenticated": False}
     assert ga.current_token_env() == {}
+
+
+# ---------------------------------------------------------------------------
+# Env-var machine credential (VIVARIUM_WORKBENCH_GH_TOKEN)
+# ---------------------------------------------------------------------------
+
+
+def test_env_token_used_when_nothing_else_configured(monkeypatch):
+    """No gh, no keyring/device-flow session → falls back to the env-var
+    machine credential, validated against GitHub and cached."""
+    monkeypatch.setenv("VIVARIUM_WORKBENCH_GH_TOKEN", "ghp_machinexxxxxxxxxxxxxxxxxxxxxxxx")
+    monkeypatch.setattr(ga, "_http_get", _get_returns(200, {"login": "sms-bot"}))
+
+    session = ga.current_session()
+    assert session is not None
+    assert session.login == "sms-bot"
+    assert session.source == "token"
+    assert ga.current_token_env() == {
+        "GH_TOKEN": "ghp_machinexxxxxxxxxxxxxxxxxxxxxxxx",
+        "GITHUB_TOKEN": "ghp_machinexxxxxxxxxxxxxxxxxxxxxxxx",
+        "GH_USER": "sms-bot",
+    }
+
+
+def test_env_token_rejected_by_github_falls_through_to_unauthenticated(monkeypatch):
+    """An expired/invalid env-var token doesn't crash — just no session."""
+    monkeypatch.setenv("VIVARIUM_WORKBENCH_GH_TOKEN", "ghp_badxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+    monkeypatch.setattr(ga, "_http_get", _get_returns(401, {"message": "Bad credentials"}))
+
+    assert ga.current_session() is None
+
+
+def test_gh_cli_session_wins_over_env_token(monkeypatch):
+    """An interactive gh-cli session takes priority over the machine credential."""
+    monkeypatch.setenv("VIVARIUM_WORKBENCH_GH_TOKEN", "ghp_machinexxxxxxxxxxxxxxxxxxxxxxxx")
+    monkeypatch.setattr(ga, "_gh_available", lambda: True)
+    monkeypatch.setattr(ga, "_gh_auth_ok", lambda: True)
+    monkeypatch.setattr(ga, "_gh_token", lambda: "ghp_cli_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
+    monkeypatch.setattr(ga, "_gh_login", lambda: "alex")
+
+    session = ga.current_session()
+    assert session is not None
+    assert session.source == "gh_cli"
+    assert session.login == "alex"
 
 
 # ---------------------------------------------------------------------------

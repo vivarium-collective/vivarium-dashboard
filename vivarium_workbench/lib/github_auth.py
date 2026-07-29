@@ -456,15 +456,35 @@ def _get_cached_session() -> Session | None:
         return _CACHED_SESSION
 
 
+def _env_token_session() -> Session | None:
+    """Machine-credential fallback: a scoped PAT / GitHub App installation
+    token supplied via ``VIVARIUM_WORKBENCH_GH_TOKEN`` (e.g. a k8s Secret env
+    var) — the non-interactive path for server-side git push/build dispatch,
+    same pattern as CI's ``GHCR_PAT``. Lowest priority: an interactive
+    gh-cli/device-flow/keyring session always wins if present.
+    """
+    from vivarium_workbench.lib.env_compat import get_env
+    token = (get_env("GH_TOKEN", "") or "").strip()
+    if not token:
+        return None
+    status, payload = _http_get(_USER_URL, token=token)
+    if status != 200 or not isinstance(payload, dict) or not payload.get("login"):
+        log.warning("VIVARIUM_WORKBENCH_GH_TOKEN set but rejected by GitHub (status=%s)", status)
+        return None
+    return Session(login=payload["login"], token=token, source="token")
+
+
 def current_session() -> Session | None:
     """Return the active session, in resolution order:
 
     1. ``gh auth status`` succeeds → return that.
     2. In-process cache (set by a prior device flow).
     3. Keyring lookup for the last-known login (rehydrates the cache).
-    4. ``None`` — caller should treat as unauthenticated.
+    4. ``VIVARIUM_WORKBENCH_GH_TOKEN`` env var — a stored machine credential
+       (fine-grained PAT or GitHub App token), for non-interactive dispatch.
+    5. ``None`` — caller should treat as unauthenticated.
 
-    Cached after first hit so repeated calls don't shell out.
+    Cached after first hit so repeated calls don't shell out / re-validate.
     """
     cached = _get_cached_session()
     if cached is not None:
@@ -482,6 +502,11 @@ def current_session() -> Session | None:
             session = Session(login=login, token=tok, source="device_flow")
             _set_cached_session(session)
             return session
+
+    env_session = _env_token_session()
+    if env_session is not None:
+        _set_cached_session(env_session)
+        return env_session
 
     return None
 
