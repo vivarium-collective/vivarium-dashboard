@@ -1615,15 +1615,22 @@ def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str,
     Resolves the run's on-disk store from ``run_id`` via the workspace scan, so
     NO filesystem path is trusted from the client. Prefers the native
     zarr/parquet store directory; falls back to the SQLite ``runs.db`` that holds
-    the run's rows. Remote (``s3://``) stores can't be zipped locally, so those
-    fall back to the local metadata DB.
+    the run's rows. Remote (``s3://``) stores can't be zipped as-is, so those
+    fall back to fetching the run's native store from sms-api (which already
+    streams it out of S3 with no disk touch on its side) via the run's recorded
+    ``remote_origin.simulation_id`` — the same call the remote-run-land flow
+    already makes at dispatch time (:mod:`lib.remote_run_views`), reused here
+    for an already-landed run whose local materialization no longer exists
+    (e.g. the session/build directory it ran in didn't survive a pod restart).
 
     Returns ``(zip_bytes, filename, status)``:
-      200 — zip built;  404 — run not found or its store is absent on disk.
+      200 — zip built;  404 — run not found, and no local or remote store to fetch it from.
     """
     import io
     import re as _re
     import shutil
+    import tarfile
+    import tempfile
     import time as _time
     import zipfile
 
@@ -1657,8 +1664,25 @@ def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str,
         return pp if pp.exists() else None
 
     target = _resolve(row.get("store_path")) or _resolve(row.get("db_path"))
+    remote_tmp: "tempfile.TemporaryDirectory | None" = None
     if target is None:
-        return b"", "", 404
+        remote_origin = row.get("remote_origin") or {}
+        sim_id = remote_origin.get("simulation_id")
+        if sim_id is None:
+            return b"", "", 404
+        from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+        from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
+        remote_tmp = tempfile.TemporaryDirectory()
+        try:
+            tar_path = SmsApiClient(_sms_api_base()).download_data(int(sim_id), Path(remote_tmp.name))
+        except SmsApiError:
+            remote_tmp.cleanup()
+            return b"", "", 404
+        extract_dir = Path(remote_tmp.name) / "extracted"
+        extract_dir.mkdir()
+        with tarfile.open(tar_path) as tf:
+            tf.extractall(extract_dir, filter="data")  # noqa: S202 — sms-api's own tar, not user input
+        target = extract_dir
 
     def _write(zf: "zipfile.ZipFile", f: Path, arcname: Path) -> None:
         mtime = f.stat().st_mtime
@@ -1681,6 +1705,9 @@ def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str,
                     _write(zf, f, f.relative_to(base))
         else:
             _write(zf, target, Path(target.name))
+
+    if remote_tmp is not None:
+        remote_tmp.cleanup()
 
     safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", str(run_id)).strip("_") or "run"
     return buf.getvalue(), f"{safe}_emitter.zip", 200
