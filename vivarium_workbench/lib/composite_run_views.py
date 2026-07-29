@@ -260,6 +260,56 @@ def run_artifacts_present(ws_root, run_id: str) -> dict:
     return present
 
 
+def _zarr_fallback_viz(ws_root, run_id: str, name: str) -> "str | None":
+    """Best-effort zarr-native render for a run with no local viz.json/report.html.
+
+    Returns the rendered HTML, or ``None`` when the run isn't found, its store
+    doesn't resolve at all, or it resolves to something other than zarr
+    (parquet/sqlite runs already have viz.json written by a local execution —
+    this fallback only exists for the never-executed-locally, zarr-only case).
+    Never raises.
+    """
+    from vivarium_workbench.lib import emitters
+    from vivarium_workbench.lib import simulations_index
+    from vivarium_workbench.lib import zarr_default_viz
+
+    ws_root = Path(ws_root)
+    row = next(
+        (r for r in simulations_index.list_simulations(ws_root) if r.get("run_id") == run_id),
+        None,
+    )
+    if row is None:
+        return None
+
+    store, tmp = simulations_index.resolve_or_fetch_store(ws_root, row)
+    if store is None:
+        return None
+    try:
+        kind, resolved = emitters.read_source(str(store))
+        if kind != "zarr" or resolved is None:
+            return None
+        import html as _html
+        body = zarr_default_viz.render_default_viz(resolved, run_id)
+        if name == "report":
+            title, heading = "Run report", "Report"
+            note = (
+                f'<p style="color:#6b7280;font-size:13px"><code>{_html.escape(run_id)}</code> — '
+                f'no formal report card was generated (this run was never executed locally); '
+                f'showing the default observables rendered directly from its native store.</p>'
+            )
+        else:
+            title, heading = "Run visualizations", "Visualizations"
+            note = f'<p style="color:#6b7280;font-size:13px"><code>{_html.escape(run_id)}</code></p>'
+        return (
+            f'<!doctype html><meta charset="utf-8"><title>{title} — {_html.escape(run_id)}</title>'
+            f'<body style="max-width:1100px;margin:24px auto;padding:0 16px;font-family:system-ui">'
+            f'<h2 style="color:#111827">{heading}</h2>{note}{body}</body>'
+        )
+    finally:
+        if tmp is not None:
+            tmp.cleanup()
+
+
 def build_run_artifact(ws_root, run_id: str, name: str) -> tuple[bytes, str, "str | None", int]:
     """Serve one named run artifact. Returns ``(content, media_type, download_name, status)``.
 
@@ -267,6 +317,13 @@ def build_run_artifact(ws_root, run_id: str, name: str) -> tuple[bytes, str, "st
     visualization's html (so the colony GIF / plots open directly in a tab);
     ``report`` is the run's report.html; ``analyses``/``verdict`` are the raw
     JSON (downloadable). 400 on an unknown name, 404 when the file is absent.
+
+    ``viz``/``report`` fall back to a zarr-native default render
+    (:mod:`lib.zarr_default_viz`) when the local file is absent AND the run's
+    native store resolves (locally, or fetched from sms-api via
+    :func:`lib.simulations_index.resolve_or_fetch_store`) to a zarr/XArray
+    store — the shape every GovCloud/Ray-dispatched run actually uses, for
+    which no local composite execution ever wrote a viz.json/report.html.
     """
     spec = _RUN_ARTIFACTS.get(name)
     if spec is None:
@@ -275,6 +332,10 @@ def build_run_artifact(ws_root, run_id: str, name: str) -> tuple[bytes, str, "st
     run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
     path = run_dir / filename
     if not path.is_file():
+        if name in ("viz", "report"):
+            rendered = _zarr_fallback_viz(ws_root, run_id, name)
+            if rendered is not None:
+                return rendered.encode("utf-8"), "text/html", None, 200
         return b"", media_type, None, 404
     raw = path.read_bytes()
     if name == "viz":
