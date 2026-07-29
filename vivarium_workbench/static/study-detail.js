@@ -1002,6 +1002,27 @@
     });
   });
 
+  // Replace a baseline entry's composite ref: remove-then-add against the
+  // existing (previously orphaned) endpoints, since there's no single
+  // "replace" route. Params are dropped on replace — a fresh composite
+  // ref starts from its own defaults, matching what "+ Study" itself does.
+  bindAll('.baseline-composite-set', function(btn) {
+    var name = btn.dataset.baselineName;
+    var input = document.querySelector('.baseline-composite-input[data-baseline-name="' + name + '"]');
+    var status = document.querySelector('.baseline-composite-status[data-baseline-name="' + name + '"]');
+    var composite = input ? input.value.trim() : '';
+    if (!composite) { if (status) status.textContent = 'Enter a composite ref first.'; return; }
+    if (status) status.textContent = 'Setting…';
+    api('POST', '/api/study-baseline-remove', {study: studyName(), name: name})
+      .then(function () {
+        return api('POST', '/api/study-baseline-add', {study: studyName(), name: name, composite: composite, params: {}});
+      })
+      .then(function (r) {
+        if (r.status === 200) location.reload();
+        else if (status) status.textContent = 'Error: ' + (r.body && r.body.error || r.status);
+      });
+  });
+
   bindAll('.btn-baseline-remove', function(btn) {
     var entryName = btn.dataset.baselineName;
     if (!confirm('Remove baseline composite "' + entryName + '"?')) return;

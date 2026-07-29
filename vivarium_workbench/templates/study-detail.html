@@ -729,6 +729,18 @@
                 onclick="_openCompositeLoom('{{ b.composite }}')">🧬 explore &amp; run ↗</button>
         {% else %}<span class="muted">no composite declared</span>{% endif %}
       </div>
+      {# Replace this entry's composite ref — the only way to point a study at a
+         real composite once created: the pre-unification "+ Add baseline" form
+         (_submitBaselineAdd) was removed from this template, leaving its JS
+         handler and the /api/study-baseline-add /-remove endpoints orphaned. #}
+      <div style="display:flex;align-items:center;gap:6px;margin-top:6px">
+        <input type="text" class="baseline-composite-input" data-baseline-name="{{ b.name or 'baseline' }}"
+               value="{{ b.composite or '' }}" placeholder="pkg.composites.name"
+               style="flex:1;min-width:200px;font-family:monospace;font-size:0.82em;padding:3px 6px" />
+        <button type="button" class="action-btn baseline-composite-set" style="font-size:0.8em"
+                data-baseline-name="{{ b.name or 'baseline' }}">Set composite</button>
+      </div>
+      <div class="baseline-composite-status muted" data-baseline-name="{{ b.name or 'baseline' }}" style="font-size:0.8em;margin-top:2px"></div>
       {# Config that runs — resolved params (composite defaults ⊕ this study's
          overrides), fetched on demand from /api/composite-resolve. #}
       <div class="model-config-mount" style="margin-top:8px">
