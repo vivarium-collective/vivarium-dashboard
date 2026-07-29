@@ -103,6 +103,11 @@ def test_baseline_composite_replace_control_present_and_wired():
     assert "baseline-composite-status" in p
     js = (ROOT / "vivarium_workbench/static/study-detail.js").read_text()
     i = js.index("baseline-composite-set", js.index("bindAll"))
-    block = js[i:i + 900]
+    block = js[i:i + 1200]
     assert "/api/study-baseline-remove" in block
     assert "/api/study-baseline-add" in block
+    # Regression: add MUST come before remove. study_baseline_remove refuses
+    # to leave baseline[] empty (400) — a single-entry study (the common
+    # case, e.g. a fresh "+ Study" blank scaffold) always has exactly one
+    # entry, so remove-then-add always fails on the very first call.
+    assert block.index("/api/study-baseline-add") < block.index("/api/study-baseline-remove")
