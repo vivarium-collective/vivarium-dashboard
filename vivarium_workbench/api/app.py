@@ -193,6 +193,7 @@ from vivarium_workbench.lib.models import (
     WorkCompositeDiffEntry,
     # Batch 18: request-body models for investigation & study mutations
     SetObservablesBody,
+    SetAnalysesBody,
     SetConclusionsBody,
     SetOverviewBody,
     SetStatusBody,
@@ -4633,6 +4634,26 @@ def create_app() -> FastAPI:
     ) -> dict:
         """study-* alias → ``lib.metadata_mutations.set_investigation_observables``."""
         body, status = _meta_mut.set_investigation_observables(ws, req.model_dump())
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return body
+
+    @app.post(
+        "/api/study-set-analyses",
+        tags=["Studies"],
+        summary="Set a study's analyses[] (translated into analysis_options at remote dispatch)",
+    )
+    def study_set_analyses(
+        req: SetAnalysesBody,
+        ws: Path = Depends(get_workspace),
+    ) -> dict:
+        """Rewrite spec.yaml/study.yaml analyses[].
+
+        Body: ``{investigation, analyses: [{name, params?}, ...]}``. Names are
+        validated against ``v2ecoli.workflow.analysis.ANALYSIS_REGISTRY`` at
+        dispatch time (``lib.study_run_post.build_analysis_options``), not here.
+        """
+        body, status = _meta_mut.set_investigation_analyses(ws, req.model_dump())
         if status != 200:
             return JSONResponse(status_code=status, content=body)
         return body

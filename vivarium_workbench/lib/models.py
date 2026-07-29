@@ -1311,6 +1311,20 @@ class SetObservablesBody(BaseModel):
     emit_all: Optional[bool] = None
 
 
+class SetAnalysesBody(BaseModel):
+    """POST /api/investigation-set-analyses {investigation, analyses}
+
+    ``analyses`` is a list of ``{name, params?}`` — ``name`` must match an
+    entry in ``v2ecoli.workflow.analysis.ANALYSIS_REGISTRY`` (validated at
+    dispatch time by ``lib.study_run_post.build_analysis_options``, not here —
+    this endpoint only persists the spec)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    investigation: str = ""
+    analyses: Optional[list] = None
+
+
 class SetConclusionsBody(BaseModel):
     """POST /api/investigation-set-conclusions {investigation|name|study, markdown}"""
 

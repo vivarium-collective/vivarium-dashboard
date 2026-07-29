@@ -16704,6 +16704,15 @@
         '<div id="inv-observables-tree" style="font-family:monospace;font-size:0.9em"></div>' +
         '<button class="action-btn js-authoring" onclick="_saveObservables()">Save observables</button>' +
         '<div id="inv-observables-status" style="margin-top:8px;font-size:0.9em;color:#555"></div>' +
+        '<hr style="margin:20px 0;border:none;border-top:1px solid #eee">' +
+        '<p class="panel-lead">Analyses to run at dispatch time — one <code>v2ecoli.workflow.analysis.' +
+          'ANALYSIS_REGISTRY</code> name per line (e.g. <code>doubling_time_distribution</code>). Translated ' +
+          'into <code>analysis_options</code> for remote (sms-api) dispatch and the local post-run pipeline ' +
+          'alike.</p>' +
+        '<textarea id="inv-analyses-list" rows="3" style="width:100%;font-family:monospace;font-size:0.9em" ' +
+          'placeholder="doubling_time_distribution"></textarea>' +
+        '<button class="action-btn js-authoring" onclick="_saveAnalyses()">Save analyses</button>' +
+        '<div id="inv-analyses-status" style="margin-top:8px;font-size:0.9em;color:#555"></div>' +
       '</div>' +
       '<div class="investigation-detail-panel" data-tab="viz">' +
         '<section class="ws-comparisons" style="margin-bottom:16px;padding:10px;border:1px solid #eee">' +
@@ -17393,6 +17402,7 @@
     }
     if (tab === 'observables' && window._currentInvestigation) {
       _loadInvObservables(window._currentInvestigation);
+      _loadInvAnalyses(window._currentInvestigation);
     }
     if (tab === 'interventions' && window._currentInvestigation) {
       _loadInterventionsTab(window._currentInvestigation);
@@ -17898,6 +17908,51 @@
       });
   }
   window._saveObservables = _saveObservables;
+
+  // ── Investigation Analyses tab handlers ───────────────────────────────────
+  // Lives in the same "observables" panel — both configure what a dispatch
+  // records/computes for this study, and neither needed its own top-level tab.
+
+  function _loadInvAnalyses(invName) {
+    // Pre-fill from the current spec.yaml.analyses[].name — same naive-scrape
+    // approach _loadInvObservables already uses for observables, so this
+    // doesn't need a new read endpoint.
+    fetch('/investigations/' + encodeURIComponent(invName) + '/spec.yaml').then(function(r) {
+      return r.ok ? r.text() : '';
+    }).then(function(specText) {
+      var names = [];
+      var m = specText.match(/^analyses:\s*\n([\s\S]*?)(?=^[a-zA-Z_]|\s*$)/m);
+      if (m) {
+        m[1].split(/\r?\n/).forEach(function(line) {
+          var p = line.match(/name:\s*["']?([\w.-]+)["']?/);
+          if (p) names.push(p[1]);
+        });
+      }
+      var el = document.getElementById('inv-analyses-list');
+      if (el) el.value = names.join('\n');
+    });
+  }
+  window._loadInvAnalyses = _loadInvAnalyses;
+
+  function _saveAnalyses() {
+    var invName = window._currentInvestigation || '';
+    var el = document.getElementById('inv-analyses-list');
+    var names = ((el && el.value) || '').split(/[\n,]/)
+      .map(function(s) { return s.trim(); }).filter(Boolean);
+    var analyses = names.map(function(n) { return {name: n, params: {}}; });
+    fetch('/api/study-set-analyses', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({investigation: invName, analyses: analyses}),
+    }).then(function(r) { return r.json().then(function(j) { return [r.ok, j]; }); })
+      .then(function(parts) {
+        var status = document.getElementById('inv-analyses-status');
+        if (!status) return;
+        status.textContent = parts[0]
+          ? 'Saved ' + analyses.length + ' analysis/analyses'
+          : 'Save failed: ' + ((parts[1] || {}).error || '');
+      });
+  }
+  window._saveAnalyses = _saveAnalyses;
 
   function _openAddCompositeModal() {
     var sel = document.getElementById('inv-add-composite-source');

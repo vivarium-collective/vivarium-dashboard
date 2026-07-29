@@ -101,6 +101,35 @@ def set_investigation_observables(ws_root: Path, body: dict) -> tuple[dict, int]
     return {"ok": True}, 200
 
 
+def set_investigation_analyses(ws_root: Path, body: dict) -> tuple[dict, int]:
+    """POST /api/investigation-set-analyses {investigation, analyses}
+
+    Rewrites spec.yaml/study.yaml analyses[] — {name, params} entries
+    translated into v2ecoli's analysis_options at remote-dispatch time by
+    lib.study_run_post.build_analysis_options (the same function the LOCAL
+    post-run pipeline already used; remote dispatch never read spec.analyses
+    at all until that was fixed — this was the other missing half: no UI
+    ever wrote it in the first place).
+    """
+    inv_name = (body.get("investigation") or "").strip()
+    analyses = body.get("analyses")
+    if not inv_name:
+        return {"error": "investigation required"}, 400
+    if analyses is None or not isinstance(analyses, list):
+        return {"error": "analyses must be a list of {name, params} objects"}, 400
+    spec_path = _investigation_spec_path(ws_root, inv_name)
+    if not spec_path.is_file():
+        return {"error": "investigation not found"}, 404
+    cleaned = []
+    for e in analyses:
+        if isinstance(e, dict) and e.get("name"):
+            cleaned.append({"name": str(e["name"]), "params": e.get("params") or {}})
+    spec: dict = yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
+    spec["analyses"] = cleaned
+    spec_path.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
+    return {"ok": True}, 200
+
+
 def set_investigation_conclusions(ws_root: Path, body: dict) -> tuple[dict, int]:
     """POST /api/investigation-set-conclusions {investigation, markdown}
 

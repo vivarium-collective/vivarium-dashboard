@@ -125,6 +125,56 @@ class TestSetInvestigationObservables:
         assert code == 404
 
 
+class TestSetInvestigationAnalyses:
+    def test_sets_analyses(self, ws):
+        resp, code = mm.set_investigation_analyses(ws, {
+            "investigation": "dnaa-test",
+            "analyses": [{"name": "doubling_time_distribution", "params": {}}],
+        })
+        assert code == 200
+        assert resp == {"ok": True}
+        spec = _read_inv_spec(ws)
+        assert spec["analyses"] == [{"name": "doubling_time_distribution", "params": {}}]
+
+    def test_entries_missing_name_are_dropped_not_crashed_on(self, ws):
+        resp, code = mm.set_investigation_analyses(ws, {
+            "investigation": "dnaa-test",
+            "analyses": [{"name": "doubling_time_distribution"}, {"params": {"x": 1}}, "not-a-dict"],
+        })
+        assert code == 200
+        spec = _read_inv_spec(ws)
+        # the no-name entry and the non-dict entry are dropped; params defaults to {}
+        assert spec["analyses"] == [{"name": "doubling_time_distribution", "params": {}}]
+
+    def test_empty_list_clears_analyses(self, ws):
+        mm.set_investigation_analyses(ws, {
+            "investigation": "dnaa-test",
+            "analyses": [{"name": "doubling_time_distribution"}],
+        })
+        resp, code = mm.set_investigation_analyses(ws, {
+            "investigation": "dnaa-test", "analyses": [],
+        })
+        assert code == 200
+        assert _read_inv_spec(ws)["analyses"] == []
+
+    def test_missing_investigation_400(self, ws):
+        resp, code = mm.set_investigation_analyses(ws, {"analyses": []})
+        assert code == 400
+        assert "investigation required" in resp["error"]
+
+    def test_analyses_not_list_400(self, ws):
+        resp, code = mm.set_investigation_analyses(ws, {
+            "investigation": "dnaa-test", "analyses": "not-a-list",
+        })
+        assert code == 400
+
+    def test_unknown_investigation_404(self, ws):
+        resp, code = mm.set_investigation_analyses(ws, {
+            "investigation": "no-such", "analyses": [],
+        })
+        assert code == 404
+
+
 class TestSetInvestigationConclusions:
     def test_sets_markdown(self, ws):
         resp, code = mm.set_investigation_conclusions(ws, {
@@ -412,6 +462,25 @@ class TestInvestigationSetObservablesRoute:
         schema = client.get("/openapi.json").json()
         paths = schema["paths"]
         assert "/api/investigation-set-observables" in paths
+
+
+class TestStudySetAnalysesRoute:
+    def test_200_sets_analyses(self, client, ws):
+        r = client.post("/api/study-set-analyses", json={
+            "investigation": "dnaa-test",
+            "analyses": [{"name": "doubling_time_distribution", "params": {}}],
+        })
+        assert r.status_code == 200
+        spec = _read_inv_spec(ws)
+        assert spec["analyses"] == [{"name": "doubling_time_distribution", "params": {}}]
+
+    def test_400_missing_investigation(self, client):
+        r = client.post("/api/study-set-analyses", json={"analyses": []})
+        assert r.status_code == 400
+
+    def test_in_openapi(self, client):
+        schema = client.get("/openapi.json").json()
+        assert "/api/study-set-analyses" in schema["paths"]
 
 
 class TestInvestigationSetConclusionsRoute:
