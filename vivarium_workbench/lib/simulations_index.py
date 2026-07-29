@@ -16,6 +16,7 @@ import datetime as _dt
 import json
 import shutil
 import sqlite3
+import tempfile
 import threading
 import warnings
 from pathlib import Path
@@ -1609,6 +1610,59 @@ def build_simulations_data(ws_root: Path) -> dict:
     return {"simulations": sims, "current": current_branch_slug(ws_root)}
 
 
+def resolve_or_fetch_store(workspace: Path, row: dict) -> "tuple[Path | None, tempfile.TemporaryDirectory | None]":
+    """Resolve a run's native store, falling back to sms-api when local
+    resolution fails and the row's ``remote_origin`` carries a
+    ``simulation_id`` — the same S3-streaming fetch
+    :func:`build_simulation_run_zip` uses for Results, reused here so
+    Viz/Report can render real data for a run whose local materialization
+    is gone.
+
+    Returns ``(store_path, tmp_handle)``. ``tmp_handle`` is a
+    ``tempfile.TemporaryDirectory`` when a remote fetch happened (the caller
+    MUST call ``tmp_handle.cleanup()`` once done with ``store_path``) or
+    ``None`` when the store resolved locally (nothing to clean up) or
+    couldn't be resolved at all (``store_path`` is also ``None`` in that case).
+    """
+    import tarfile
+
+    workspace = Path(workspace)
+
+    def _resolve(p: "str | None") -> "Path | None":
+        if not p or str(p).startswith(("s3://", "http://", "https://")):
+            return None
+        pp = Path(p)
+        pp = pp if pp.is_absolute() else (workspace / pp)
+        try:
+            pp = pp.resolve()
+        except OSError:
+            return None
+        return pp if pp.exists() else None
+
+    target = _resolve(row.get("store_path")) or _resolve(row.get("db_path"))
+    if target is not None:
+        return target, None
+
+    remote_origin = row.get("remote_origin") or {}
+    sim_id = remote_origin.get("simulation_id")
+    if sim_id is None:
+        return None, None
+
+    from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+    from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
+    tmp = tempfile.TemporaryDirectory()
+    try:
+        tar_path = SmsApiClient(_sms_api_base()).download_data(int(sim_id), Path(tmp.name))
+    except SmsApiError:
+        tmp.cleanup()
+        return None, None
+    extract_dir = Path(tmp.name) / "extracted"
+    extract_dir.mkdir()
+    with tarfile.open(tar_path) as tf:
+        tf.extractall(extract_dir, filter="data")  # noqa: S202 — sms-api's own tar, not user input
+    return extract_dir, tmp
+
+
 def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str, int]":
     """Zip a run's RAW EMITTER DATA for download (GET /api/simulation-run-download).
 
@@ -1629,8 +1683,6 @@ def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str,
     import io
     import re as _re
     import shutil
-    import tarfile
-    import tempfile
     import time as _time
     import zipfile
 
@@ -1652,37 +1704,9 @@ def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str,
     if row is None:
         return b"", "", 404
 
-    def _resolve(p: "str | None") -> "Path | None":
-        if not p or str(p).startswith(("s3://", "http://", "https://")):
-            return None
-        pp = Path(p)
-        pp = pp if pp.is_absolute() else (workspace / pp)
-        try:
-            pp = pp.resolve()
-        except OSError:
-            return None
-        return pp if pp.exists() else None
-
-    target = _resolve(row.get("store_path")) or _resolve(row.get("db_path"))
-    remote_tmp: "tempfile.TemporaryDirectory | None" = None
+    target, remote_tmp = resolve_or_fetch_store(workspace, row)
     if target is None:
-        remote_origin = row.get("remote_origin") or {}
-        sim_id = remote_origin.get("simulation_id")
-        if sim_id is None:
-            return b"", "", 404
-        from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
-        from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
-        remote_tmp = tempfile.TemporaryDirectory()
-        try:
-            tar_path = SmsApiClient(_sms_api_base()).download_data(int(sim_id), Path(remote_tmp.name))
-        except SmsApiError:
-            remote_tmp.cleanup()
-            return b"", "", 404
-        extract_dir = Path(remote_tmp.name) / "extracted"
-        extract_dir.mkdir()
-        with tarfile.open(tar_path) as tf:
-            tf.extractall(extract_dir, filter="data")  # noqa: S202 — sms-api's own tar, not user input
-        target = extract_dir
+        return b"", "", 404
 
     def _write(zf: "zipfile.ZipFile", f: Path, arcname: Path) -> None:
         mtime = f.stat().st_mtime
