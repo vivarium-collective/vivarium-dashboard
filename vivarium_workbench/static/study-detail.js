@@ -789,6 +789,29 @@
 
   function studyName() { return window._studyName; }
 
+  // --- Analyses (Model tab) ---
+  // Reuses /api/study-set-analyses (lib.metadata_mutations.set_investigation_analyses,
+  // which despite its name resolves any study by name via study_dir() — flat
+  // studies/<name>/ preferred over legacy investigations/<name>/, so this works
+  // for an ungrouped study exactly like a grouped one).
+  function _saveStudyAnalyses() {
+    var el = document.getElementById('study-analyses-list');
+    var status = document.getElementById('study-analyses-status');
+    if (!el) return;
+    var names = el.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var analyses = names.map(function (n) { return {name: n, params: {}}; });
+    if (status) status.textContent = 'Saving…';
+    api('POST', '/api/study-set-analyses', {investigation: studyName(), analyses: analyses})
+      .then(function (r) {
+        if (status) {
+          status.textContent = (r.status === 200)
+            ? 'Saved.'
+            : 'Error: ' + (r.body && r.body.error || r.status);
+        }
+      });
+  }
+  window._saveStudyAnalyses = _saveStudyAnalyses;
+
   // Fetch the param schema for a composite and render an input form.
   // currentOverrides: {} or existing overrides (for edit flow).
   // Returns a Promise<{collect, ok}>: collect() reads back the current input

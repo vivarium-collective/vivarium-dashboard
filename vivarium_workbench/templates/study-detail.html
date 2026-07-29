@@ -941,6 +941,21 @@
   {% if not _has_build and _is_v3 %}
   <p class="empty-message">Nothing to compose yet.</p>
   {% endif %}
+
+  {# Analyses — which post-run analysis modules this study's dispatch should
+     compute. Shown regardless of build state: a study can have its analyses
+     configured before its composite is finalized. Reuses the existing
+     /api/study-set-analyses endpoint (already resolves the flat studies/
+     layout correctly) — this panel replaces the earlier one wired into the
+     legacy, no-longer-navigable Investigation-detail page. #}
+  <div class="overview-section" id="analyses-section">
+    <h3>Analyses <span class="muted" style="font-size:0.85em;font-weight:normal">— post-run analysis modules to compute on dispatch</span></h3>
+    <p class="muted" style="font-size:0.88em">One analysis name per line (e.g. <code>doubling_time_distribution</code>). Threaded into <code>analysis_options</code> on both local and remote dispatch.</p>
+    <textarea id="study-analyses-list" rows="3" style="width:100%;font-family:monospace;font-size:0.88em" placeholder="doubling_time_distribution">{% if study.analyses %}{% for a in study.analyses %}{{ a.name if a is mapping else a }}
+{% endfor %}{% endif %}</textarea>
+    <button type="button" class="action-btn" style="margin-top:6px" onclick="_saveStudyAnalyses()">Save analyses</button>
+    <div id="study-analyses-status" class="muted" style="font-size:0.85em;margin-top:4px"></div>
+  </div>
 </section>
 
 
