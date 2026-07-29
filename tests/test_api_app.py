@@ -62,6 +62,28 @@ def test_session_header_not_echoed_when_supplied(client):
     assert "x-vw-session" not in {k.lower() for k in r.headers.keys()}
 
 
+def test_stale_cookie_is_refreshed_to_match_header(client):
+    """A request carrying BOTH a header and a stale, different cookie must have
+    its cookie refreshed to the header's value — otherwise a later plain
+    navigation (no header, cookie-only, e.g. an iframe src or a typed URL)
+    would resolve to the stale session forever, even though every fetch()
+    call (which does carry the header) correctly used the new one."""
+    r = client.get("/health", headers={"X-VW-Session": "tab-fresh"},
+                    cookies={"vw_session": "tab-stale"})
+    assert r.status_code == 200
+    set_cookie = r.headers.get("set-cookie", "")
+    assert "vw_session=tab-fresh" in set_cookie
+
+
+def test_matching_cookie_is_not_reset(client):
+    """No unnecessary Set-Cookie churn when the cookie already matches the
+    effective session key."""
+    r = client.get("/health", headers={"X-VW-Session": "tab-same"},
+                    cookies={"vw_session": "tab-same"})
+    assert r.status_code == 200
+    assert "set-cookie" not in {k.lower() for k in r.headers.keys()}
+
+
 def test_session_header_takes_precedence_for_binding(client, tmp_path, monkeypatch):
     """The X-VW-Session id is the session key used for per-session binding: a
     switch carrying the header binds THAT id (preferred over cookie/minted)."""

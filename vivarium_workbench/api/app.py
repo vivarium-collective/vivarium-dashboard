@@ -589,7 +589,16 @@ def create_app() -> FastAPI:
         # capture it (whether it was minted now or carried only by the cookie).
         if not header_key:
             response.headers[session_registry.SESSION_HEADER] = session_key
-        if not cookie_key:
+        # Refresh (not just mint-if-absent): a browser that already carries a
+        # STALE cookie from an earlier, different session (e.g. an unbound
+        # default-workspace session set before this tab bound to a remote
+        # build) would otherwise never converge — every fetch() call keeps
+        # correctly using the header, but any plain navigation (a link, an
+        # iframe src, a typed URL) has no header and falls back to that
+        # never-updated cookie, silently resolving to the wrong workspace.
+        # Re-stamping whenever the cookie disagrees with the effective key
+        # keeps the cookie following the header on every request that has one.
+        if cookie_key != session_key:
             response.set_cookie(
                 session_registry.SESSION_COOKIE,
                 session_key,
