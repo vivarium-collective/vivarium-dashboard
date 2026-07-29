@@ -190,10 +190,14 @@
     // emitter store); the artifact endpoint serves them by name.
     var completed = String(row.status || "").toLowerCase() === "completed";
     var hasRun = !!row.run_id;
+    // href/download attributes are plain markup, not fetch/XHR/EventSource, so
+    // the base-path shim (report.py's _base_path_shim) never sees them — prefix
+    // explicitly with window.__BASE_PATH__ (same idiom as branch-source.js).
+    var BP = window.__BASE_PATH__ || "";
     function _art(name, label, title, download) {
       return '<a class="action-btn js-authoring" title="' + title + '" ' +
         (download ? 'download ' : 'target="_blank" rel="noopener" ') +
-        'href="/api/composite-run/' + runIdEnc + '/artifact/' + name +
+        'href="' + BP + '/api/composite-run/' + runIdEnc + '/artifact/' + name +
         '" style="text-decoration:none;">' + label + '</a>';
     }
     var viz    = (completed && hasRun) ? _art("viz",    "📊 Viz",      "Open this run's visualizations (GIF + plots)", false) : "";
@@ -201,7 +205,7 @@
     var analyses = (completed && hasRun) ? _art("analyses", "⬇ Analyses",   "Download this run's analyses (JSON)", true) : "";
     var data = (row.run_id && (row.store_path || row.db_path))
       ? '<a class="action-btn js-authoring" title="Download this run\'s results / raw emitter data (.zip)" ' +
-        'href="/api/simulation-run-download?run_id=' + runIdEnc + '" download style="text-decoration:none;">⬇ Results</a>' : "";
+        'href="' + BP + '/api/simulation-run-download?run_id=' + runIdEnc + '" download style="text-decoration:none;">⬇ Results</a>' : "";
     var analysis = "";
     // Rerun — REPRODUCES this run (replays its recorded manifest verbatim —
     // params/seed/emitter/emit_paths/runtime exactly as launched, ignoring

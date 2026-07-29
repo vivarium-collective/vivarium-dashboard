@@ -140,7 +140,7 @@
           return;
         }
         var links = withData.map(function (s) {
-          var url = '/api/simulation-run-download?run_id=' + encodeURIComponent(s.run_id);
+          var url = (window.__BASE_PATH__ || "") + '/api/simulation-run-download?run_id=' + encodeURIComponent(s.run_id);
           return '<li style="margin:2px 0"><a class="action-btn" download href="' + url + '">⬇ '
             + e(s.sim_name || s.label || s.run_id) + '</a></li>';
         }).join('');
@@ -347,7 +347,7 @@
           var label = row.sim_name || row.label || runId;
           var loc = window.SimTable ? window.SimTable.location(row) : esc(row.store_path || row.db_path || '');
           var dl = hasData
-            ? '<a class="action-btn" download href="/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data</a>'
+            ? '<a class="action-btn" download href="' + (window.__BASE_PATH__ || "") + '/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data</a>'
             : '<span class="muted" style="font-size:0.82em">no store</span>';
           return '<tr style="border-bottom:1px solid #f3f4f6"><td style="padding:5px 8px"><code style="font-size:0.85em">' + esc(label) + '</code></td>' +
             '<td style="padding:5px 8px">' + loc + '</td>' +
@@ -452,11 +452,12 @@
     var runId = row.run_id || '';
     var hasData = !!(row.store_path || row.db_path);
     var slug = studyName();
+    var BP = window.__BASE_PATH__ || "";
     var dl = hasData
-      ? '<a class="action-btn" download href="/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data (raw emitter)</a>'
+      ? '<a class="action-btn" download href="' + BP + '/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data (raw emitter)</a>'
       : '<span class="muted" style="font-size:0.85em">no persisted store</span>';
     var an = slug
-      ? '<a class="action-btn" download href="/api/study-analysis-zip?study=' + encodeURIComponent(slug) + '">⬇ Analysis (figures / cards)</a>'
+      ? '<a class="action-btn" download href="' + BP + '/api/study-analysis-zip?study=' + encodeURIComponent(slug) + '">⬇ Analysis (figures / cards)</a>'
       : '';
     // Enforcement: the run opens in the Composite Explorer only when its
     // composite is a registered composite; otherwise we surface the gap.
@@ -879,7 +880,8 @@
   });
 
   bindAll('.btn-export', function() {
-    window.location = '/api/study-export?study=' + encodeURIComponent(studyName());
+    // A location assignment bypasses the fetch/XHR/EventSource base-path shim.
+    window.location = (window.__BASE_PATH__ || "") + '/api/study-export?study=' + encodeURIComponent(studyName());
   });
 
   // "Run current spec" — force-relaunch this study's baseline as a brand-new

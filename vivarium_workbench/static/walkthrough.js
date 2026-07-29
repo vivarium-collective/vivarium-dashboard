@@ -8152,7 +8152,9 @@
   // Open the reproducibility audit report (latest cached; the page itself has a
   // "Re-run audit" link → ?rerun=1). New tab so it doesn't disturb the SPA.
   function _openAuditReport() {
-    window.open('/api/audit-report', '_blank', 'noopener');
+    // window.open() bypasses the fetch/XHR/EventSource base-path shim — prefix
+    // explicitly (same gap as sim-table.js's per-run artifact links).
+    window.open((window.__BASE_PATH__ || "") + '/api/audit-report', '_blank', 'noopener');
   }
   window._openAuditReport = _openAuditReport;
 
