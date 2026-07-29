@@ -52,3 +52,21 @@ def test_apply_live_base_path_still_injects_the_shim():
     out = _apply_live_base_path(html, "/workbench")
     assert 'basePath: "/workbench"' in out
     assert "__BASE_PATH__" in out
+
+
+def test_apply_live_base_path_shim_precedes_session_js():
+    """Regression: session.js is the first <head> script and fires a synchronous
+    fetch (its ?build=/?workspace= spawn-bind) on load. The shim used to land at
+    the __DASH_CONFIG__ marker near the end of the document, so that bind request
+    went out unprefixed and 404'd against the ALB's /api/* -> sms-api rule. The
+    shim must now land before session.js, the same way inject_base_path_shim
+    already does for the bigraph-loom bundle.
+    """
+    html = (
+        "<html><head><script src=\"/workbench/assets/session.js\"></script></head>"
+        "<body>"
+        '<script>window.__DASH_CONFIG__ = { mode: "local-server" };</script>'
+        "</body></html>"
+    )
+    out = _apply_live_base_path(html, "/workbench")
+    assert out.index("__BASE_PATH__") < out.index("session.js")
