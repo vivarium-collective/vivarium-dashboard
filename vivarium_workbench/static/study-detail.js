@@ -1002,10 +1002,17 @@
     });
   });
 
-  // Replace a baseline entry's composite ref: remove-then-add against the
+  // Replace a baseline entry's composite ref: add-then-remove against the
   // existing (previously orphaned) endpoints, since there's no single
-  // "replace" route. Params are dropped on replace — a fresh composite
-  // ref starts from its own defaults, matching what "+ Study" itself does.
+  // "replace" route. Order matters — study_baseline_remove refuses to leave
+  // baseline[] empty (400), which a single-entry study (e.g. a fresh "+
+  // Study" blank scaffold) always is; adding the replacement under a new
+  // name FIRST means baseline[] never goes empty, then the old entry is
+  // removed. The replacement keeps the original name only when it wasn't
+  // already used (i.e. removal isn't blocked); otherwise it's suffixed to
+  // avoid the add's own "already exists" 409. Params are dropped on
+  // replace — a fresh composite ref starts from its own defaults, matching
+  // what "+ Study" itself does.
   bindAll('.baseline-composite-set', function(btn) {
     var name = btn.dataset.baselineName;
     var input = document.querySelector('.baseline-composite-input[data-baseline-name="' + name + '"]');
@@ -1013,13 +1020,18 @@
     var composite = input ? input.value.trim() : '';
     if (!composite) { if (status) status.textContent = 'Enter a composite ref first.'; return; }
     if (status) status.textContent = 'Setting…';
-    api('POST', '/api/study-baseline-remove', {study: studyName(), name: name})
-      .then(function () {
-        return api('POST', '/api/study-baseline-add', {study: studyName(), name: name, composite: composite, params: {}});
+    var newName = name + '-' + Date.now().toString(36);
+    api('POST', '/api/study-baseline-add', {study: studyName(), name: newName, composite: composite, params: {}})
+      .then(function (addResult) {
+        if (addResult.status !== 200) throw addResult;
+        return api('POST', '/api/study-baseline-remove', {study: studyName(), name: name});
       })
       .then(function (r) {
         if (r.status === 200) location.reload();
         else if (status) status.textContent = 'Error: ' + (r.body && r.body.error || r.status);
+      })
+      .catch(function (addResult) {
+        if (status) status.textContent = 'Error: ' + (addResult.body && addResult.body.error || addResult.status);
       });
   });
 
