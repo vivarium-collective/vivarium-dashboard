@@ -22,6 +22,7 @@
     stopped: { cls: "stopped", dot: "○", label: "stopped" },
     stale: { cls: "stale", dot: "⚠", label: "stale" },
     missing: { cls: "missing", dot: "⊘", label: "missing" },
+    remote: { cls: "remote", dot: "☁", label: "remote build" },
   };
 
   function statusMeta(status) {
@@ -40,6 +41,33 @@
       var ac = a.status === "current" ? 0 : 1, bc = b.status === "current" ? 0 : 1;
       if (ac !== bc) return ac - bc;
       return String(a.label || a.name || "").localeCompare(String(b.label || b.name || ""));
+    });
+  }
+
+  // Reduce sms-api's flat build history (GET /api/source/builds) to one row
+  // per distinct repo — its MOST RECENT build — normalized into the same
+  // {name, label, status, path} shape a local workspace row has, so it can
+  // share render()/openWs()/pin/recent-use machinery. Older builds of the
+  // same repo (different branches/commits) stay reachable via the row's
+  // "Branch settings" link into the full Source panel; this list's job is
+  // "get me into a repo quickly," not replicate that panel's full picker.
+  function normalizeRemoteBuilds(builds) {
+    var latest = {};
+    (builds || []).forEach(function (b) {
+      if (!b || !b.repo) return;
+      var prev = latest[b.repo];
+      if (!prev || String(b.created_at || "") > String(prev.created_at || "")) {
+        latest[b.repo] = b;
+      }
+    });
+    return Object.keys(latest).sort().map(function (repo) {
+      var b = latest[repo];
+      return {
+        name: null, path: "remote:" + repo, kind: "remote",
+        status: "remote", simulator_id: b.simulator_id,
+        label: b.repo + " @ " + String(b.commit || "").slice(0, 7)
+          + " (build #" + b.simulator_id + ") [" + (b.branch || "") + "]",
+      };
     });
   }
 
@@ -80,7 +108,8 @@
     });
   }
 
-  var api = { filterWorkspaces: filterWorkspaces, statusMeta: statusMeta };
+  var api = { filterWorkspaces: filterWorkspaces, statusMeta: statusMeta,
+              normalizeRemoteBuilds: normalizeRemoteBuilds };
   if (typeof module !== "undefined" && module.exports) { module.exports = api; return; }
   if (typeof window !== "undefined") window.vivWorkspacePicker = api;
 
@@ -125,6 +154,14 @@
     function openWs(ws, newTab) {
       close();
       _wsRecordUsed(ws && ws.path);   // stamp before we navigate/switch away
+      if (ws && ws.kind === "remote") {
+        // Same URL shape branch-source.js's Open button already uses —
+        // session.js's ?build= bootstrap materializes it and binds this new
+        // tab's session, honoring the base path behind the shared ALB.
+        var bp = window.__BASE_PATH__ || "";
+        window.open(bp + "/?build=" + encodeURIComponent(ws.simulator_id), "_blank");
+        return;
+      }
       if (newTab) {
         var url = ws && ws.url ? ws.url
           : (ws && ws.name ? "/?workspace=" + encodeURIComponent(ws.name) : null);
@@ -181,22 +218,29 @@
         name.textContent = ws.label || ws.name || ws.path || "(unnamed)";
         li.appendChild(name);
 
+        var isRemote = ws.kind === "remote";
         if (isCur) {
           var tail = document.createElement("span");
           tail.className = "viv-wsp-tail";
           tail.textContent = "current";
           li.appendChild(tail);
         } else {
-          // Two explicit actions: Switch (this tab) or Open ↗ (new tab).
+          // Local workspaces get two actions (Switch this tab / Open in a new
+          // tab); remote sms-api builds are session-per-tab only (branch-source.js
+          // established this: window.open('/?build=<id>') spawns a fresh
+          // per-tab session — there is no in-place "switch this tab" for a
+          // remote build), so they get Open ↗ only.
           var acts = document.createElement("span");
           acts.className = "viv-wsp-actions";
-          var switchBtn = document.createElement("button");
-          switchBtn.type = "button"; switchBtn.className = "viv-wsp-act";
-          switchBtn.textContent = "Switch";
-          switchBtn.title = "Switch this tab to " + (ws.label || ws.name || "this workspace");
-          switchBtn.addEventListener("click", function (e) { e.stopPropagation(); openWs(ws, false); });
-          acts.appendChild(switchBtn);
-          if (ws.name) {   // a new tab needs a bindable ?workspace= name
+          if (!isRemote) {
+            var switchBtn = document.createElement("button");
+            switchBtn.type = "button"; switchBtn.className = "viv-wsp-act";
+            switchBtn.textContent = "Switch";
+            switchBtn.title = "Switch this tab to " + (ws.label || ws.name || "this workspace");
+            switchBtn.addEventListener("click", function (e) { e.stopPropagation(); openWs(ws, false); });
+            acts.appendChild(switchBtn);
+          }
+          if (ws.name || isRemote) {   // a new tab needs a bindable ?workspace=/?build=
             var openBtn = document.createElement("button");
             openBtn.type = "button"; openBtn.className = "viv-wsp-act viv-wsp-act-open";
             openBtn.textContent = "Open ↗";
@@ -205,8 +249,8 @@
             acts.appendChild(openBtn);
           }
           li.appendChild(acts);
-          // Clicking the row (not a button) defaults to switching this tab.
-          li.addEventListener("click", function () { openWs(ws, false); });
+          // Clicking the row defaults to Open (remote) or Switch (local).
+          li.addEventListener("click", function () { openWs(ws, isRemote); });
           li.addEventListener("mouseenter", function () {
             var rs = rows(); for (var k = 0; k < rs.length; k++) if (rs[k] === li) setActive(k);
           });
@@ -284,14 +328,23 @@
       listEl.appendChild(loading);
       searchEl.focus();
 
-      fetch("/api/workspaces").then(function (r) { return r && r.ok ? r.json() : null; })
-        .then(function (d) {
-          all = (d && d.workspaces) || d || [];
-          var cur = all.filter(function (w) { return w.status === "current"; })[0];
-          if (cur) _wsRecordUsed(cur.path);   // seed "last used" for the active one
-          render();
-        })
-        .catch(function () { all = []; render(); });
+      // Local catalog workspaces + remote sms-api builds, fetched in parallel
+      // and merged into one list — previously remote builds were reachable
+      // only through the separate Source panel, which a user switching
+      // workspaces had no reason to know existed.
+      var wsFetch = fetch("/api/workspaces").then(function (r) { return r && r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+      var buildsFetch = fetch("/api/source/builds").then(function (r) { return r && r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+      Promise.all([wsFetch, buildsFetch]).then(function (results) {
+        var wsData = results[0], buildsData = results[1];
+        var local = (wsData && wsData.workspaces) || wsData || [];
+        var remote = normalizeRemoteBuilds(buildsData && buildsData.builds);
+        all = local.concat(remote);
+        var cur = local.filter(function (w) { return w.status === "current"; })[0];
+        if (cur) _wsRecordUsed(cur.path);   // seed "last used" for the active one
+        render();
+      });
     }
 
     trigger.addEventListener("click", function (e) {
