@@ -1623,7 +1623,19 @@ def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str,
     """
     import io
     import re as _re
+    import shutil
+    import time as _time
     import zipfile
+
+    # DOS/ZIP timestamps can't represent anything before 1980-01-01 —
+    # zipfile.ZipInfo.from_file (what zf.write uses internally) raises
+    # ValueError outright if a file's mtime predates it. Files landed from a
+    # remote (S3) run commonly carry an epoch-0 mtime (S3 has no native mtime
+    # concept; nothing sets one on download), which crashed every download of
+    # a remote-dispatched run's results with a bare 500. Clamp to "now" only
+    # for the handful of files that actually need it — untouched files keep
+    # their real mtime.
+    _ZIP_EPOCH = 315532800.0  # 1980-01-01T00:00:00Z
 
     workspace = Path(workspace)
     row = next(
@@ -1648,15 +1660,27 @@ def build_simulation_run_zip(workspace: Path, run_id: str) -> "tuple[bytes, str,
     if target is None:
         return b"", "", 404
 
+    def _write(zf: "zipfile.ZipFile", f: Path, arcname: Path) -> None:
+        mtime = f.stat().st_mtime
+        if mtime >= _ZIP_EPOCH:
+            zf.write(f, arcname)
+            return
+        # Streamed (not read fully into memory) so this stays fine for large
+        # emitter files too.
+        zinfo = zipfile.ZipInfo(str(arcname), date_time=_time.localtime(_time.time())[:6])
+        zinfo.compress_type = zipfile.ZIP_DEFLATED
+        with open(f, "rb") as src, zf.open(zinfo, "w") as dst:
+            shutil.copyfileobj(src, dst)
+
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         if target.is_dir():
             base = target.parent
             for f in sorted(target.rglob("*")):
                 if f.is_file():
-                    zf.write(f, f.relative_to(base))
+                    _write(zf, f, f.relative_to(base))
         else:
-            zf.write(target, target.name)
+            _write(zf, target, Path(target.name))
 
     safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", str(run_id)).strip("_") or "run"
     return buf.getvalue(), f"{safe}_emitter.zip", 200
