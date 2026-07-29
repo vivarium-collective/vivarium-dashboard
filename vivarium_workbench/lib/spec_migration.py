@@ -34,7 +34,12 @@ def migrate_study_to_v2_vocabulary(spec_path: pathlib.Path) -> bool:
         return True
     if 'composites' not in data:
         return False
-    composites = data.pop('composites') or []
+    if not (data.get('composites') or []):
+        # A freshly-scaffolded "blank" study (no composite chosen yet) —
+        # nothing to migrate. Leave it in its pre-migration shape rather than
+        # writing back a `variants: []` that immediately fails validation.
+        return False
+    composites = data.pop('composites')
     variants = []
     baseline_name = None
     for entry in composites:
@@ -110,6 +115,18 @@ def migrate_v2_to_v3(spec: dict) -> dict:
         and any(isinstance(v, dict) and v.get("source") for v in variants_in)
     )
     if version != 2 and not has_composites_key and not is_variants_as_composites:
+        return spec
+
+    if (
+        has_composites_key
+        and not is_variants_as_composites
+        and not (spec.get("composites") or [])
+    ):
+        # Blank scaffold: `composites` key present but empty, and not the
+        # variants-as-composites shape. Nothing to migrate yet — leave it
+        # unversioned so load_spec's has_composites_list branch validates it
+        # (an empty composites: [] is a legitimate "no baseline chosen yet"
+        # draft, not schema_version: 3 with no baseline at all).
         return spec
 
     out = dict(spec)

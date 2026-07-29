@@ -40,8 +40,7 @@ def _study_name_from_body(body: dict) -> str:
 
 def _resolve_study_dir_and_sf(ws_root: Path, study: str):
     """Return (study_dir, spec_file) for the given study name."""
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     return study_dir, sf
 
@@ -70,9 +69,7 @@ def study_variant_add(ws_root: Path, body: dict) -> tuple[dict, int]:
     if overrides is not None and not isinstance(overrides, dict):
         return {"error": "parameter_overrides must be an object"}, 400
 
-    # Inline ws_root-based path resolution (matches Task 5/6 pattern).
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": "study not found"}, 404
@@ -133,9 +130,7 @@ def study_variant_set_params(ws_root: Path, body: dict) -> tuple[dict, int]:
     if not isinstance(overrides, dict):
         return {"error": "parameter_overrides must be an object"}, 400
 
-    # Inline ws_root-based path resolution (matches Task 5/6/7 pattern).
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": "study not found"}, 404
@@ -179,9 +174,7 @@ def study_baseline_add(ws_root: Path, body: dict) -> tuple[dict, int]:
     if params is not None and not isinstance(params, dict):
         return {"error": "params must be an object"}, 400
 
-    # Inline ws_root-based path resolution (matches Task 5/6/7/8 pattern).
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": "study not found"}, 404
@@ -210,9 +203,7 @@ def study_baseline_remove(ws_root: Path, body: dict) -> tuple[dict, int]:
     if not study or not entry_name:
         return {"error": "missing study or baseline entry name"}, 400
 
-    # Inline ws_root-based path resolution.
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": "study not found"}, 404
@@ -262,9 +253,7 @@ def study_intervention_add(ws_root: Path, body: dict) -> tuple[dict, int]:
     if not study or not name:
         return {"error": "missing study or intervention name"}, 400
 
-    # Inline ws_root-based path resolution.
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": "study not found"}, 404
@@ -286,9 +275,7 @@ def study_intervention_update(ws_root: Path, body: dict) -> tuple[dict, int]:
     if not study or not name:
         return {"error": "missing study or intervention name"}, 400
 
-    # Inline ws_root-based path resolution.
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": "study not found"}, 404
@@ -309,9 +296,7 @@ def study_intervention_delete(ws_root: Path, body: dict) -> tuple[dict, int]:
     if not study or not name:
         return {"error": "missing study or intervention name"}, 400
 
-    # Inline ws_root-based path resolution.
-    studies_path = ws_root / "studies" / study
-    study_dir = studies_path if studies_path.is_dir() else ws_root / "investigations" / study
+    study_dir = _study_spec_lib.study_dir(ws_root, study)
     sf = _study_spec_lib.study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": "study not found"}, 404

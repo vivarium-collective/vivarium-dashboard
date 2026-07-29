@@ -47,6 +47,28 @@ def ws(tmp_path):
     return ws_root
 
 
+@pytest.fixture
+def ws_layout_remap(tmp_path):
+    """Workspace whose `layout:` remaps studies/ under workspace/ — the
+    v2ecoli/sms-ecoli convention (studies: workspace/studies)."""
+    ws_root = tmp_path / "ws"
+    ws_root.mkdir()
+    (ws_root / "workspace.yaml").write_text(
+        'schema_version: 2\nname: ws\ncreated: "2026-05-14"\n'
+        'plugin_version: 0.6.1\npackage_path: pkg\n'
+        'layout:\n  studies: workspace/studies\n'
+    )
+    sd = ws_root / "workspace" / "studies" / "s1"
+    sd.mkdir(parents=True)
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3, "name": "s1",
+        "baseline": [{"name": "core", "composite": "pkg.composites.foo", "params": {}}],
+        "variants": [], "runs": [], "visualizations": [], "interventions": [],
+        "comparisons": [],
+    }))
+    return ws_root
+
+
 def _read_spec(ws_root):
     return yaml.safe_load((ws_root / "studies" / "s1" / "study.yaml").read_text())
 
@@ -197,6 +219,19 @@ class TestStudyBaselineAdd:
             "name": "alt", "composite": "pkg.composites.bar",
         })
         assert code == 400
+
+    def test_honors_workspace_layout_remap(self, ws_layout_remap):
+        """A workspace declaring `layout: {studies: workspace/studies}` (the
+        v2ecoli/sms-ecoli convention) must still resolve — not 404 because the
+        builder hardcoded ws_root/'studies' instead of WorkspacePaths."""
+        resp, code = scm.study_baseline_add(ws_layout_remap, {
+            "study": "s1", "name": "alt", "composite": "pkg.composites.bar",
+        })
+        assert code == 200
+        spec = yaml.safe_load(
+            (ws_layout_remap / "workspace" / "studies" / "s1" / "study.yaml").read_text()
+        )
+        assert any(b["name"] == "alt" for b in spec["baseline"])
 
 
 class TestStudyBaselineRemove:

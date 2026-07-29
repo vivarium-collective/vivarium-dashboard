@@ -115,6 +115,25 @@ def test_migrate_idempotent(tmp_path):
     assert p.read_text() == before
 
 
+def test_migrate_skips_blank_scaffold_with_empty_composites(tmp_path):
+    """A freshly-scaffolded study with `composites: []` (no baseline chosen
+    yet) must not be migrated to `variants: []`, which fails the v2 validator
+    with 'must be a non-empty list of mappings'."""
+    p = _write(tmp_path, """
+        name: s
+        description: ""
+        composites: []
+        simulations: []
+        observables: []
+        visualizations: []
+        status: planned
+    """)
+    before = p.read_text()
+    applied = migrate_study_to_v2_vocabulary(p)
+    assert applied is False
+    assert p.read_text() == before
+
+
 def test_migrate_v2_to_v3_lifts_first_composite_to_baseline():
     """v3 has `baseline: [{name, composite, params}]` + drops `composites: [...]`."""
     v2 = {
@@ -204,6 +223,26 @@ def test_migrate_v2_to_v3_baseline_is_a_list_of_all_composites():
         {"name": "b", "composite": "pkg.b", "params": {}},
     ]
     assert "composites" not in out
+
+
+def test_migrate_v2_to_v3_skips_blank_scaffold_with_empty_composites():
+    """A blank study (composites: [], no schema_version) must not be bumped
+    to schema_version: 3 without a baseline — that leaves it in a shape no
+    downstream validator accepts. Leave it unversioned for load_spec's
+    has_composites_list branch (tolerant of an empty list) to validate."""
+    spec = {
+        "name": "s",
+        "description": "",
+        "composites": [],
+        "simulations": [],
+        "observables": [],
+        "visualizations": [],
+        "status": "planned",
+    }
+    out = migrate_v2_to_v3(spec)
+    assert out == spec
+    assert "schema_version" not in out
+    assert "baseline" not in out
 
 
 def test_migrate_v2_to_v3_lone_composite_key_becomes_one_element_list():
