@@ -179,6 +179,39 @@ class TestRemotePushAndSha:
         # Pushed -u origin <branch> with the resolved branch.
         assert ["git", "push", "-u", "origin", "feature/x"] in calls
 
+    def test_token_present_injects_scoped_auth_header(self, monkeypatch, tmp_path: Path) -> None:
+        """GH_TOKEN/GITHUB_TOKEN alone can't authenticate plain git's HTTPS
+        transport (no credential helper) — a real token must be injected as a
+        scoped http.extraHeader for the push, not just merged into the env."""
+        import base64
+        from vivarium_workbench.lib import github_auth
+        monkeypatch.setattr(github_auth, "current_token_env", lambda: {
+            "GH_TOKEN": "ghp_realtokenxxxxxxxxxxxxxxxxxxxxxxxx",
+            "GITHUB_TOKEN": "ghp_realtokenxxxxxxxxxxxxxxxxxxxxxxxx",
+            "GH_USER": "sms-bot",
+        })
+        calls = []
+
+        def _fake_run(args, **kwargs):
+            calls.append(args)
+            if args[:2] == ["git", "rev-parse"] and "--abbrev-ref" in args:
+                return _cp(stdout="feature/x\n")
+            if "push" in args:
+                return _cp(returncode=0)
+            if args[:2] == ["git", "rev-parse"]:  # HEAD sha
+                return _cp(stdout="deadbeef\n")
+            raise AssertionError(f"unexpected git call: {args}")
+
+        monkeypatch.setattr(gs.subprocess, "run", _fake_run)
+        assert gs.remote_push_and_sha(tmp_path) == "deadbeef"
+
+        push_call = next(c for c in calls if "push" in c)
+        expected_basic = base64.b64encode(b"x-access-token:ghp_realtokenxxxxxxxxxxxxxxxxxxxxxxxx").decode()
+        assert push_call == [
+            "git", "-c", f"http.extraHeader=AUTHORIZATION: basic {expected_basic}",
+            "push", "-u", "origin", "feature/x",
+        ]
+
     def test_detached_head_raises(self, monkeypatch, tmp_path: Path) -> None:
         monkeypatch.setattr(gs.subprocess, "run", lambda *a, **k: _cp(stdout="HEAD\n"))
         with pytest.raises(RuntimeError, match="not on a named branch"):

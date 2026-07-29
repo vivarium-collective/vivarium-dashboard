@@ -15,6 +15,7 @@ build_dirty_status   → GET /api/dirty-status
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
@@ -127,9 +128,16 @@ def remote_push_and_sha(ws_root: Path) -> str:
 
     Mirrors ``server._remote_push_and_sha`` parameterised on ``ws_root``:
     resolves the current branch (raises if detached/unnamed), pushes
-    ``-u origin <branch>`` with ``os.environ | github_auth.current_token_env()``
-    (raises with the stderr/stdout ``[-300:]`` tail on failure), then resolves
-    and returns the HEAD SHA (raising if empty).
+    ``-u origin <branch>`` (raises with the stderr/stdout ``[-300:]`` tail on
+    failure), then resolves and returns the HEAD SHA (raising if empty).
+
+    ``GH_TOKEN``/``GITHUB_TOKEN`` (from ``github_auth.current_token_env()``) are
+    ``gh``-cli/Octokit conventions, not something plain git's HTTPS transport
+    understands on its own — without a credential helper (none is installed in
+    the workbench container), a push would fail with "could not read Username".
+    So the token is injected as a scoped ``http.extraHeader`` Basic-auth header
+    for this push only (the same mechanism ``actions/checkout`` uses) — it's
+    never written to disk or to the persisted git config.
     """
     from vivarium_workbench.lib import github_auth
 
@@ -140,8 +148,14 @@ def remote_push_and_sha(ws_root: Path) -> str:
     if not branch or branch == "HEAD":
         raise RuntimeError("workspace is not on a named branch")
     env = os.environ | github_auth.current_token_env()
+    token = env.get("GH_TOKEN") or env.get("GITHUB_TOKEN")
+    cmd = ["git"]
+    if token:
+        basic = base64.b64encode(f"x-access-token:{token}".encode()).decode()
+        cmd += ["-c", f"http.extraHeader=AUTHORIZATION: basic {basic}"]
+    cmd += ["push", "-u", "origin", branch]
     push = subprocess.run(
-        ["git", "push", "-u", "origin", branch], cwd=ws_root,
+        cmd, cwd=ws_root,
         capture_output=True, text=True, timeout=120, env=env,
     )
     if push.returncode != 0:
