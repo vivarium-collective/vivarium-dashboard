@@ -2321,25 +2321,31 @@
         '</div>' +
         // title / info — click to pin this card to the top of the list
         '<div class="loom-info pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' + o.bodyHead + '</div>' +
-        // body row: inputs | contract | outputs — double-click a header to collapse/expand.
-        '<div class="pcard-body-row">' +
-          '<div class="pcard-region pcard-inputs">' +
-            '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to collapse / expand"><span class="pcard-caret pcard-caret-open">▾</span> inputs <span class="pcard-region-count">' + nIn + '</span></div>' +
+        // body row: inputs | contract | outputs — draggable dividers resize the
+        // three panes; drag a gutter to an edge to snap a pane closed, or bring
+        // the two gutters together to collapse the contract. Run outputs land in
+        // the outputs (right) pane.
+        '<div class="pcard-body-row" data-role="body-row">' +
+          '<div class="pcard-region pcard-inputs" data-pane="inputs">' +
+            '<div class="pcard-region-head">inputs <span class="pcard-region-count">' + nIn + '</span></div>' +
             '<div class="pcard-region-body loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
           '</div>' +
-          '<div class="pcard-region pcard-contract">' +
-            '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to collapse / expand"><span class="pcard-caret pcard-caret-open">▾</span> contract</div>' +
+          '<div class="pcard-gutter" data-gutter="0" title="Drag to resize · left edge closes inputs" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
+          '<div class="pcard-region pcard-contract" data-pane="contract">' +
+            '<div class="pcard-region-head">contract</div>' +
             '<div class="pcard-region-body" data-role="contract">' +
               (p.description ? '<p class="pcard-contract-desc">' + _esc(String(p.description).trim().split('\n')[0]) + '</p>' : '') +
               '<div class="pcard-contract-meta" data-role="contract-meta">' + kind + ' · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
             '</div>' +
           '</div>' +
-          '<div class="pcard-region pcard-outputs">' +
-            '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to collapse / expand"><span class="pcard-caret pcard-caret-open">▾</span> outputs <span class="pcard-region-count">' + nOut + '</span>' +
-              '<button class="btn-mini pcard-dl" type="button" onclick="event.stopPropagation();_downloadProcessOutputs(this)" title="Download outputs" disabled>⬇</button>' +
+          '<div class="pcard-gutter" data-gutter="1" title="Drag to resize · right edge closes outputs" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
+          '<div class="pcard-region pcard-outputs" data-pane="outputs">' +
+            '<div class="pcard-region-head">outputs <span class="pcard-region-count">' + nOut + '</span>' +
+              '<button class="btn-mini pcard-dl" type="button" onclick="_downloadProcessOutputs(this)" title="Download outputs" disabled>⬇</button>' +
             '</div>' +
             '<div class="pcard-region-body" data-role="outputs">' +
               '<div class="loom-out-ports">' + outPortsHtml + '</div>' +
+              '<div class="loom-run-output" data-role="run-output"></div>' +
             '</div>' +
           '</div>' +
         '</div>' +
@@ -2350,7 +2356,6 @@
           (isComposite ? '<span class="pcard-loom-handle" aria-hidden="true">⌄</span>' : '') +
         '</div>' +
         (isComposite ? '<div class="pcard-loom-view" data-role="loom-view" hidden></div>' : '') +
-        '<div class="loom-run-output" data-role="run-output"></div>' +
       '</div>' +
     '</div>';
   }
@@ -2452,6 +2457,7 @@
   // Load resolved defaults for runnable Full cards as they scroll into view, so
   // the Full zoom doesn't fire N template fetches for every process at once.
   function _observeRunnableCards(root) {
+    if (typeof _syncPcardSplit === 'function') _syncPcardSplit(root);
     var cards = (root || document).querySelectorAll('.loom-runnable');
     if (!cards.length) return;
     if (!('IntersectionObserver' in window)) { cards.forEach(_loadFullRunFields); return; }
@@ -2581,6 +2587,72 @@
     // slice 2: lazily mount the composite's loom iframe into `view` on first open.
   }
   window._toggleLoomView = _toggleLoomView;
+
+  // ── ProcessCard body-row splitter (inputs | contract | outputs) ──────────────
+  // Two draggable gutters set the L/M/R split as percentages (b1 = inputs|contract
+  // boundary, b2 = contract|outputs boundary). Drag a gutter to an edge to snap a
+  // pane closed; bring the gutters together to collapse the contract. The split
+  // is one shared layout applied to every card (drag once, all cards reflow).
+  window._pcardSplit = (function () {
+    try { var s = JSON.parse(localStorage.getItem('viv.pcardSplit') || ''); if (s && s.length === 2) return s; } catch (e) { /* private mode */ }
+    return [34, 67];
+  })();
+  function _applyPcardSplitRow(row, b1, b2) {
+    row._b1 = b1; row._b2 = b2;
+    row.style.setProperty('--b1', b1);
+    row.style.setProperty('--b2', b2);
+    row.classList.toggle('inputs-closed', b1 <= 1);
+    row.classList.toggle('outputs-closed', b2 >= 99);
+    row.classList.toggle('contract-closed', (b2 - b1) <= 1);
+  }
+  function _applyPcardSplitAll(b1, b2) {
+    b1 = Math.max(0, Math.min(100, b1)); b2 = Math.max(b1, Math.min(100, b2));
+    window._pcardSplit = [b1, b2];
+    try { localStorage.setItem('viv.pcardSplit', JSON.stringify([b1, b2])); } catch (e) { /* private mode */ }
+    document.querySelectorAll('.pcard-body-row').forEach(function (row) { _applyPcardSplitRow(row, b1, b2); });
+  }
+  window._applyPcardSplitAll = _applyPcardSplitAll;
+  function _syncPcardSplit(root) {
+    var b = window._pcardSplit || [34, 67];
+    (root || document).querySelectorAll('.pcard-body-row').forEach(function (row) { _applyPcardSplitRow(row, b[0], b[1]); });
+  }
+  window._syncPcardSplit = _syncPcardSplit;
+  // Ensure the outputs pane is visible (called before rendering run results).
+  function _ensureOutputsOpen() {
+    var b = window._pcardSplit || [34, 67];
+    if (b[1] >= 99) _applyPcardSplitAll(Math.min(b[0], 34), 67);
+  }
+  window._ensureOutputsOpen = _ensureOutputsOpen;
+  function _pcardGutterDown(e, gutter) {
+    if (e.cancelable) e.preventDefault();
+    var row = gutter.closest('.pcard-body-row'); if (!row) return;
+    var which = parseInt(gutter.getAttribute('data-gutter'), 10);
+    var rect = row.getBoundingClientRect();
+    var b = window._pcardSplit || [34, 67];
+    var b1 = b[0], b2 = b[1];
+    document.body.classList.add('pcard-splitting');
+    function clientX(ev) { return (ev.touches && ev.touches[0]) ? ev.touches[0].clientX : ev.clientX; }
+    function pct(x) { return Math.max(0, Math.min(100, ((x - rect.left) / rect.width) * 100)); }
+    function onMove(ev) {
+      var x = pct(clientX(ev));
+      if (which === 0) b1 = Math.min(x, b2); else b2 = Math.max(x, b1);
+      _applyPcardSplitAll(b1, b2);
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp);
+      document.body.classList.remove('pcard-splitting');
+      // Snap: near an edge → pane fully closed; gutters near each other → contract closed.
+      if (b1 <= 8) b1 = 0;
+      if (b2 >= 92) b2 = 100;
+      if ((b2 - b1) <= 8) { var mid = Math.round((b1 + b2) / 2); b1 = mid; b2 = mid; }
+      _applyPcardSplitAll(b1, b2);
+    }
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp);
+  }
+  window._pcardGutterDown = _pcardGutterDown;
 
   // Pin a card to the top of the scroll region (sticky) so it lines up for
   // comparison/editing. Radio: pins this one, releases any other; clicking the
@@ -2737,6 +2809,7 @@
         btn.disabled = false; btn.textContent = orig;
         if (j && j.ok) {
           card._lastOutputs = j.outputs;
+          if (typeof _ensureOutputsOpen === 'function') _ensureOutputsOpen();
           var dl = card.querySelector('.pcard-dl'); if (dl) { dl.disabled = false; dl.title = 'Download outputs (JSON)'; }
           out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs' +
             '<button class="btn-mini loom-copy-btn" onclick="_copyRunOutput(this)" title="Copy outputs JSON">⧉ Copy</button></div>' +

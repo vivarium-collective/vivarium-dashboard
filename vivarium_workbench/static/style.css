@@ -1713,25 +1713,38 @@ textarea.loom-in-field{
 .pcard-title{ cursor:pointer; }
 .pcard-title:hover .loom-name{ text-decoration:underline dotted; }
 
-/* body row: inputs | contract | outputs */
-.pcard-body-row{
-  display:grid;
-  grid-template-columns:minmax(240px,1fr) minmax(200px,1.1fr) minmax(200px,1fr);
-  border-top:1px solid #eef2f7;
-}
+/* body row: inputs | contract | outputs — flex panes split by draggable gutters.
+   Widths are driven by --b1 / --b2 (percent boundaries); outputs takes the rest. */
+.pcard-body-row{ display:flex; align-items:stretch; border-top:1px solid #eef2f7; }
 .pcard-region{ padding:12px 16px; min-width:0; }
-.pcard-body-row > .pcard-region{ border-left:1px solid #f1f5f9; }
-.pcard-body-row > .pcard-region:first-child{ border-left:0; }
+.pcard-body-row > .pcard-inputs{ flex:0 0 auto; width:calc(var(--b1,34) * 1%); }
+.pcard-body-row > .pcard-contract{ flex:0 0 auto; width:calc((var(--b2,67) - var(--b1,34)) * 1%); }
+.pcard-body-row > .pcard-outputs{ flex:1 1 0; }
+/* draggable gutter — a thin hit-target with a centred rule that thickens on hover */
+.pcard-gutter{ flex:0 0 9px; cursor:col-resize; position:relative; align-self:stretch; }
+.pcard-gutter::before{ content:''; position:absolute; top:8px; bottom:8px; left:4px; width:1px; background:#e2e8f0; transition:background .1s, width .1s; }
+.pcard-gutter:hover::before, .pcard-splitting .pcard-gutter::before{ background:#6366f1; left:3px; width:3px; }
 .pcard-region-head{
-  display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+  display:flex; align-items:center; gap:6px; user-select:none;
   text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700;
   color:#94a3b8; margin-bottom:9px;
 }
-.pcard-region-head:hover{ color:#64748b; }
+.pcard-config-region > .pcard-region-head{ cursor:pointer; }
+.pcard-config-region > .pcard-region-head:hover{ color:#64748b; }
 .pcard-region-count{ margin-left:2px; color:#cbd5e1; font-weight:700; }
 .pcard-region-body{ min-width:0; }
+/* config region still uses double-click collapse */
 .pcard-collapsed > .pcard-region-body{ display:none; }
 .pcard-collapsed > .pcard-region-head{ margin-bottom:0; }
+/* splitter snap states */
+.pcard-body-row.inputs-closed > .pcard-inputs,
+.pcard-body-row.inputs-closed > .pcard-gutter[data-gutter="0"]{ display:none; }
+.pcard-body-row.outputs-closed > .pcard-outputs,
+.pcard-body-row.outputs-closed > .pcard-gutter[data-gutter="1"]{ display:none; }
+.pcard-body-row.contract-closed > .pcard-contract,
+.pcard-body-row.contract-closed > .pcard-gutter[data-gutter="1"]{ display:none; }
+body.pcard-splitting{ cursor:col-resize; user-select:none; }
+body.pcard-splitting iframe{ pointer-events:none; }
 .pcard-contract-desc{ margin:0 0 8px; color:#475569; font-size:0.86em; line-height:1.5; }
 .pcard-contract-meta{ color:#64748b; font-size:0.8em; }
 .pcard-outputs .pcard-region-head{ justify-content:space-between; }
@@ -1754,9 +1767,12 @@ textarea.loom-in-field{
 
 /* responsive: stack the three regions on narrow widths */
 @media (max-width:820px){
-  .pcard-body-row{ grid-template-columns:1fr; }
-  .pcard-region{ border-left:0; border-top:1px solid #f1f5f9; }
-  .pcard-region:first-child{ border-top:0; }
+  .pcard-body-row{ flex-direction:column; }
+  .pcard-body-row > .pcard-inputs,
+  .pcard-body-row > .pcard-contract,
+  .pcard-body-row > .pcard-outputs{ width:auto; flex:1 1 auto; border-top:1px solid #f1f5f9; }
+  .pcard-body-row > .pcard-inputs{ border-top:0; }
+  .pcard-gutter{ display:none; }
 }
 
 .loom-out-panel{ min-width:0; display:flex; flex-direction:column; gap:10px; }
