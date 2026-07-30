@@ -44,13 +44,31 @@ from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 _TERMINAL_OK = {"completed", "done", "succeeded"}
 _TERMINAL_BAD = {"failed", "cancelled", "error"}
 
-# There is no status/poll endpoint for the standalone-analysis K8s job (fire-
-# and-forget by design -- see SmsApiClient.run_analysis), so this fixed wait
-# before downloading is the only completion signal available. Generous enough
-# to cover a cold image pull of the multi-GB v2ecoli image plus the analysis
-# script's own (fast) run; a miss here just means the analysis isn't folded
-# into THIS landing -- landing again later picks it up (see land_remote_run).
+# Real completion signal now exists (GET /analyses/{id}/status, S3-exists
+# probe server-side) for Ray-backend triggers -- poll it instead of blindly
+# sleeping. Interval/attempts sized to cover a cold image pull of the multi-GB
+# v2ecoli image plus the analysis script's own (fast) run, without polling so
+# tightly it hammers sms-api. _ANALYSIS_LAND_WAIT_SECONDS is the fallback for
+# simulators where no database_id comes back at all (shouldn't happen for
+# Ray-backend triggers post gap-3, kept only as a safety net).
+_ANALYSIS_POLL_INTERVAL_SECONDS = 10
+_ANALYSIS_POLL_MAX_ATTEMPTS = 30  # ~5 min ceiling
 _ANALYSIS_LAND_WAIT_SECONDS = 90
+_ANALYSIS_TERMINAL_STATUSES = {"completed", "failed"}
+
+
+def _poll_analysis_until_terminal(client: SmsApiClient, database_id: int) -> None:
+    """Poll GET /analyses/{id}/status until COMPLETED/FAILED or the attempt
+    ceiling is reached. A miss just means the analysis isn't folded into THIS
+    landing -- landing again later picks it up (see land_remote_run)."""
+    for _ in range(_ANALYSIS_POLL_MAX_ATTEMPTS):
+        try:
+            status = client.analysis_status(database_id)
+        except SmsApiError:
+            return  # best-effort: a transient poll failure must not block landing
+        if status.get("status") in _ANALYSIS_TERMINAL_STATUSES:
+            return
+        time.sleep(_ANALYSIS_POLL_INTERVAL_SECONDS)
 
 
 def _run_auth_ok() -> bool:
@@ -266,13 +284,12 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     study run. Returns ``({run_id}, 200)``.
 
     If the study has ``spec.analyses`` configured, also triggers standalone
-    analysis on the same simulation before downloading, and waits a bounded
-    amount so the download (which streams everything under the experiment's
-    S3 prefix) has a real chance of picking up the analysis output too --
-    there is no separate status/poll endpoint for that K8s job (see
-    SmsApiClient.run_analysis), so this wait is the only signal available.
-    If the job hasn't finished in time, the run still lands normally; the
-    analysis just isn't folded in yet (landing again later will pick it up).
+    analysis on the same simulation before downloading, then polls its real
+    status (GET /analyses/{id}/status) so the download -- which streams
+    everything under the experiment's S3 prefix -- has a real chance of
+    picking up the analysis output too. If the job hasn't finished within the
+    poll ceiling, the run still lands normally; the analysis just isn't
+    folded in yet (landing again later will pick it up).
     """
     body = body or {}
     if not _run_auth_ok():
@@ -298,11 +315,18 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
         analysis_options, _errors = build_analysis_options(analyses)
         if analysis_options:
             try:
-                client.run_analysis(int(sim_id), analysis_options)
+                triggered = client.run_analysis(int(sim_id), analysis_options)
             except SmsApiError:
                 pass
             else:
-                time.sleep(_ANALYSIS_LAND_WAIT_SECONDS)
+                database_id = triggered.get("database_id")
+                if database_id is not None:
+                    _poll_analysis_until_terminal(client, database_id)
+                else:
+                    # No database_id came back -- this simulator's analysis path
+                    # has no status endpoint (shouldn't happen for Ray-backend
+                    # triggers post gap-3; kept as a safety net for anything else).
+                    time.sleep(_ANALYSIS_LAND_WAIT_SECONDS)
 
     with tempfile.TemporaryDirectory() as td:
         tar_path = client.download_data(int(sim_id), Path(td))

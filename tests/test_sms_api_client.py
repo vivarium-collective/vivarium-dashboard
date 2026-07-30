@@ -186,3 +186,13 @@ def test_download_data_streams_to_file(monkeypatch, tmp_path):
     assert out.read_bytes() == payload
     assert cap["method"] == "POST"
     assert cap["url"] == "http://h:8080/api/v1/simulations/49/data"
+
+
+def test_analysis_status_gets_by_database_id(monkeypatch):
+    cap = {}
+    with _patch_urlopen(monkeypatch, cap, {"id": 7, "status": "completed", "error_log": None}):
+        c = SmsApiClient("http://h:8080")
+        out = c.analysis_status(7)
+    assert out["status"] == "completed"
+    assert cap["method"] == "GET"
+    assert cap["url"] == "http://h:8080/analyses/7/status"

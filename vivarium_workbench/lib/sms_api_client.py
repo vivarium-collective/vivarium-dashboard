@@ -184,17 +184,22 @@ class SmsApiClient:
 
     def run_analysis(self, simulation_id: int, modules: dict) -> dict:
         """POST /api/v1/simulations/{id}/analysis — trigger standalone analysis on
-        a completed simulation's output. Fire-and-forget: sms-api submits a K8s
-        Job and returns immediately with a job_id; there is no status/poll
-        endpoint for this job (see remote_run_landing.land_remote_run, which
-        detects completion by finding the analysis output already landed in the
-        same tar the simulation output comes from)."""
+        a completed simulation's output. Returns immediately with a job_id and
+        (for Ray-backend simulators) a database_id -- pass the latter to
+        analysis_status() to poll for real completion."""
         # modules is read via query param (?modules=<json>) on the sms-api side,
         # not a request body -- matches the endpoint's own OpenAPI shape.
         return self._post(
             f"/api/v1/simulations/{simulation_id}/analysis",
             params={"modules": json.dumps(modules)},
         )
+
+    def analysis_status(self, analysis_id: int) -> dict:
+        """GET /analyses/{id}/status — poll a triggered analysis's real status.
+        Only meaningful when run_analysis() returned a database_id (Ray-backend
+        simulators); resolved server-side via S3-exists probe, since there is
+        no persistent job-status API for the backing K8s Job."""
+        return self._get(f"/analyses/{analysis_id}/status")
 
     # ------------------------------------------------------------------
     # Compose endpoints (generic .pbg runner, Phase C)

@@ -211,7 +211,11 @@ class _FakeThinClient:
 
     def run_analysis(self, simulation_id, modules):
         self.analyzed = (simulation_id, modules)
-        return {"job_id": "ana-fake"}
+        return {"job_id": "ana-fake", "database_id": 7}
+
+    def analysis_status(self, analysis_id):
+        self.status_polls = getattr(self, "status_polls", 0) + 1
+        return {"id": analysis_id, "status": "completed"}
 
 
 def _wire_thin(monkeypatch, tmp_path, *, authed=True, study_exists=True):
@@ -319,11 +323,12 @@ def test_land_downloads_and_lands(monkeypatch, tmp_path):
     assert kw["spec_id"] == "my-comp"
 
 
-def test_land_triggers_analysis_and_waits_when_spec_has_analyses(monkeypatch, tmp_path):
+def test_land_triggers_analysis_and_polls_real_status_when_spec_has_analyses(monkeypatch, tmp_path):
     """A study with spec.analyses configured must trigger sms-api's standalone
-    analysis (the 14th-bug fix) before downloading, and wait — there is no
-    status/poll endpoint for that K8s job, so a fixed wait is the only
-    completion signal the download can act on."""
+    analysis (the 14th-bug fix) before downloading, then poll its REAL status
+    (gap-3/gap-5: GET /analyses/{id}/status, not a blind fixed sleep) until
+    terminal, so a completed job has a real chance of being included in what
+    the subsequent download picks up."""
     _wire_thin(monkeypatch, tmp_path)
     monkeypatch.setattr(
         rrv, "load_spec",
@@ -343,10 +348,78 @@ def test_land_triggers_analysis_and_waits_when_spec_has_analyses(monkeypatch, tm
 
     assert status == 200
     assert client.analyzed == (199, {"multiseed": {"doubling_time_distribution": {}}})
-    assert slept == [rrv._ANALYSIS_LAND_WAIT_SECONDS]
+    # Status came back "completed" on the FIRST poll -- no sleeping needed,
+    # unlike the old blind-wait behavior this replaces.
+    assert client.status_polls == 1
+    assert slept == []
     # The trigger must happen BEFORE the download, so a completed job has a
     # real chance of being included in what gets downloaded.
     assert client.downloaded == 199
+
+
+def test_land_polls_until_terminal_then_stops(monkeypatch, tmp_path):
+    """A slow analysis job must be polled repeatedly (sleeping between
+    attempts) until it reaches a terminal status, then stop -- not poll
+    forever, not give up after one check."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"baseline": [{"composite": "my-comp"}],
+                   "analyses": [{"name": "doubling_time_distribution", "params": {}}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+    )
+
+    class _SlowAnalysisClient(_FakeThinClient):
+        def __init__(self, base=None):
+            super().__init__(base)
+            self._polls = 0
+
+        def analysis_status(self, analysis_id):
+            self._polls += 1
+            return {"id": analysis_id, "status": "running" if self._polls < 3 else "completed"}
+
+    client = _SlowAnalysisClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    slept = []
+    monkeypatch.setattr(rrv.time, "sleep", slept.append)
+
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+
+    assert status == 200
+    assert client._polls == 3
+    assert slept == [rrv._ANALYSIS_POLL_INTERVAL_SECONDS] * 2
+
+
+def test_land_gives_up_after_poll_ceiling(monkeypatch, tmp_path):
+    """A job that never reaches a terminal status must not poll forever --
+    landing proceeds anyway after the ceiling, per the best-effort contract."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"baseline": [{"composite": "my-comp"}],
+                   "analyses": [{"name": "doubling_time_distribution", "params": {}}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+    )
+
+    class _StuckAnalysisClient(_FakeThinClient):
+        def analysis_status(self, analysis_id):
+            self.status_polls = getattr(self, "status_polls", 0) + 1
+            return {"id": analysis_id, "status": "running"}
+
+    client = _StuckAnalysisClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv.time, "sleep", lambda s: None)
+
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+
+    assert status == 200
+    assert client.status_polls == rrv._ANALYSIS_POLL_MAX_ATTEMPTS
 
 
 def test_land_skips_analysis_trigger_when_spec_has_no_analyses(monkeypatch, tmp_path):
