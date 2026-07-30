@@ -125,6 +125,12 @@ export default function App() {
   // reveals its hub wires on demand.
   const showHubWires = false;
   const [tab, setTab] = useState<TabId>('wiring');
+  // Chromeless embed mode (?chrome=off): the workbench ProcessCard already
+  // provides Configure/Run/Outputs, so when embedded we hide the loom's own
+  // breadcrumb + tab strip and show only the Explore (wiring) graph.
+  const chromeless = (() => {
+    try { return new URLSearchParams(window.location.search).get('chrome') === 'off'; } catch { return false; }
+  })();
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
     const p = new URLSearchParams(window.location.search);
@@ -1018,7 +1024,7 @@ export default function App() {
   // and Nodes stack on the RIGHT. `render` closes over the latest props so each
   // panel always sees current selection / hidden / focus. Rebuilt when any of
   // those inputs change identity — the DockContainer just calls render().
-  const dockPanels: DockPanelSpec[] = useMemo(() => [
+  const dockPanels: DockPanelSpec[] = useMemo(() => ([
     {
       id: 'config',
       title: 'Config',
@@ -1087,8 +1093,8 @@ export default function App() {
         />
       ),
     },
-  ], [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection,
-      compositeId, parameters, overrides, handleApplied, STATIC]);
+  ] as DockPanelSpec[]).filter((p) => !(chromeless && p.id === 'config')), [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection,
+      compositeId, parameters, overrides, handleApplied, STATIC, chromeless]);
 
   if (!state) {
     return (
@@ -1128,7 +1134,7 @@ export default function App() {
       <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
         {/* Thin breadcrumb header: composite name + library.
             One layer up from the tabs so the tab strip stays compact. */}
-        {(name || compositeId) && (
+        {!chromeless && (name || compositeId) && (
           <div style={{
             display: 'flex', alignItems: 'baseline', gap: 6,
             padding: '4px 16px',
@@ -1184,7 +1190,7 @@ export default function App() {
           </div>
         )}
         <nav style={{
-          display: 'flex', gap: 24, alignItems: 'center',
+          display: chromeless ? 'none' : 'flex', gap: 24, alignItems: 'center',
           padding: '4px 16px',
           borderBottom: '1px solid #e5e7eb',
           background: '#fff',
@@ -1411,6 +1417,8 @@ export default function App() {
               </div>
               </DockContainer>
               </div>
+              {/* Run is provided by the workbench card in chromeless embeds. */}
+              {!chromeless && (
               <ExploreRunBar
                 compositeId={compositeId}
                 overrides={overrides}
@@ -1424,6 +1432,7 @@ export default function App() {
                 onCompleted={() => setTab('results')}
                 onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
               />
+              )}
             </EmitContext.Provider>
           </div>
           {tab === 'setup' && (

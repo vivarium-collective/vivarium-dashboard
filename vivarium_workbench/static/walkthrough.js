@@ -4158,7 +4158,7 @@
     det._loomLive = true;
     var id = det.getAttribute('data-id');
     var apiUrl = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
-    var liveUrl = apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id);
+    var liveUrl = apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) + '&chrome=off';
     var iframe = det.querySelector('.ccard-loom-iframe');
     if (iframe) iframe.src = liveUrl;         // already open → swap in place
     else { det._loomLoaded = false; _openCompositeLoomInline(det); }  // not open yet → load live
@@ -4265,11 +4265,12 @@
     // Live mode (user hit "Enable running") loads the same URL as the pop-out
     // (?id=<ref>) so config is editable and Run works; otherwise a read-only
     // static render pointed at live composite-resolve.
+    // chrome=off → embedded (Explore-only) loom: no breadcrumb, no tab strip.
     var loomUrl = det._loomLive
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
-          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '')
+          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off'
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(_compositeStateUrl(id, det._overrides));
+          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + '&chrome=off';
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
