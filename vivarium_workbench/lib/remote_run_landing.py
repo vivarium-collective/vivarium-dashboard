@@ -47,7 +47,7 @@ def _fold_analyses(extract_root: Path, ws_root: Path, run_id: str) -> None:
 
     entries = []
     for manifest_path in manifests:
-        manifest = json.loads(manifest_path.read_text())
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         entries.append({
             "name": manifest.get("analysis_name"),
             "written": manifest.get("written", []),
@@ -55,7 +55,7 @@ def _fold_analyses(extract_root: Path, ws_root: Path, run_id: str) -> None:
         })
     run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "analyses.json").write_text(json.dumps(entries, indent=2))
+    (run_dir / "analyses.json").write_text(json.dumps(entries, indent=2), encoding="utf-8")
 
 
 def _detect_and_locate_all(extract_root: Path) -> tuple[str, list[Path]]:
