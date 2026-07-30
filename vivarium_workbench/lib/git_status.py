@@ -138,6 +138,16 @@ def remote_push_and_sha(ws_root: Path) -> str:
     So the token is injected as a scoped ``http.extraHeader`` Basic-auth header
     for this push only (the same mechanism ``actions/checkout`` uses) — it's
     never written to disk or to the persisted git config.
+
+    The push timeout (600s) matches ``remote_build_source._DOWNLOAD_TIMEOUT_S``
+    on purpose: a session bound to a switched build via
+    ``remote_build_source.ensure_git_workspace`` has NO shared history with
+    origin (a fresh ``git init``, not a clone), so its first push sends the
+    entire materialized tree as one brand-new commit — comparable in size to
+    the same content's tarball download, which needed that long over a slow
+    link. A short timeout here would surface as an opaque "internal server
+    error" (subprocess.TimeoutExpired is unhandled by any caller) instead of a
+    push that just needed more time.
     """
     from vivarium_workbench.lib import github_auth
 
@@ -156,7 +166,7 @@ def remote_push_and_sha(ws_root: Path) -> str:
     cmd += ["push", "-u", "origin", branch]
     push = subprocess.run(
         cmd, cwd=ws_root,
-        capture_output=True, text=True, timeout=120, env=env,
+        capture_output=True, text=True, timeout=600, env=env,
     )
     if push.returncode != 0:
         raise RuntimeError(f"git push failed: {(push.stderr or push.stdout)[-300:]}")

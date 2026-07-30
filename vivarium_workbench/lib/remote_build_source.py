@@ -13,8 +13,10 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import tarfile
 import tempfile
+import warnings
 from pathlib import Path
 from typing import Any
 
@@ -98,6 +100,51 @@ def materialize_build(client: Any, simulator_id: int, commit: str, *, force: boo
         shutil.rmtree(staging, ignore_errors=True)
     _stamp_build_meta(cache, simulator_id, commit)
     return cache
+
+
+def ensure_git_workspace(cache_dir: Path, repo_url: str, branch: str, commit: str, simulator_id: int) -> None:
+    """Turn a tarball-materialized build into a real, push-ready git working copy.
+
+    ``materialize_build`` extracts a GitHub tarball on purpose — no ``.git``, so
+    the cache stays a plain immutable snapshot shared across sessions/commits.
+    But the SAME cache dir is what a session binds to via switch-build, and
+    every write path a session can take afterwards (study authoring commits,
+    the non-pinned "Run on remote" push-based dispatch in
+    ``lib.remote_run_views``) assumes a git working copy with an ``origin``
+    remote — without this, dispatch fails with "no GitHub remote configured"
+    for every switched build, every time (found live trying to dispatch a
+    pilot run against a switched sms-ecoli build).
+
+    Idempotent (no-ops if ``.git`` already exists) and best-effort (a failure
+    here must never fail the switch itself — the build stays browsable even if
+    git-readiness setup fails; dispatch will just keep 409ing as before). Since
+    ``build_cache_root()`` lives on the container's ephemeral filesystem (not
+    the workbench's persistent EBS volume), this re-runs — and self-heals —
+    every time a session switches to the build, including after a pod restart
+    wipes the cache and it gets re-materialized from scratch.
+
+    Commits under a NEW local branch (``workbench/sim<id>-<commit>``), never
+    the upstream ``branch`` itself, so a later push can never collide with or
+    fast-forward over real history on that ref.
+    """
+    if not repo_url or (cache_dir / ".git").exists():
+        return
+    try:
+        subprocess.run(["git", "init", "-q"], cwd=cache_dir, check=True, capture_output=True)
+        subprocess.run(["git", "remote", "add", "origin", repo_url], cwd=cache_dir, check=True, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=cache_dir, check=True, capture_output=True)
+        subprocess.run(
+            ["git", "-c", "user.email=pbg-template@local", "-c", "user.name=pbg-template",
+             "commit", "-q", "--allow-empty", "-m", f"Materialized build baseline: {branch}@{commit[:12]}"],
+            cwd=cache_dir, check=True, capture_output=True,
+        )
+        local_branch = f"workbench/sim{simulator_id}-{commit[:12]}"
+        subprocess.run(["git", "checkout", "-q", "-b", local_branch], cwd=cache_dir, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or b"")
+        detail = detail.decode() if isinstance(detail, bytes) else detail
+        warnings.warn(f"ensure_git_workspace: git setup failed for {cache_dir}: {detail[:300]}")
+        shutil.rmtree(cache_dir / ".git", ignore_errors=True)  # don't leave a half-initialized .git behind
 
 
 def list_build_sources(client: Any) -> dict:

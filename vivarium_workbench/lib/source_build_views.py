@@ -28,7 +28,7 @@ import json
 from pathlib import Path
 
 from vivarium_workbench.lib import active_workspace
-from vivarium_workbench.lib.remote_build_source import list_build_sources, materialize_build
+from vivarium_workbench.lib.remote_build_source import ensure_git_workspace, list_build_sources, materialize_build
 from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
 from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
@@ -111,6 +111,13 @@ def switch_build(body: dict, *, switch_active: bool = True) -> tuple[dict, int]:
         cache_dir = materialize_build(client, sim_id, entry["commit"])
     except SmsApiError as e:
         return {"error": f"materialize failed: {e}"}, 502
+    # Idempotent/self-healing: a bare tarball extraction has no `.git`, so a
+    # session bound to it can never dispatch (remote_run_views's push-based
+    # "Run on remote" 409s with "no GitHub remote configured" — found live
+    # trying to dispatch a pilot run from a switched sms-ecoli build). Runs on
+    # every switch, not just first materialize, since build-cache lives on the
+    # container's ephemeral filesystem and gets wiped+re-extracted on restart.
+    ensure_git_workspace(Path(cache_dir), entry.get("repo_url", ""), entry.get("branch", ""), entry["commit"], sim_id)
     # Stamp build provenance into the cache dir so the rail chip can show
     # "<branch> @ <commit> · remote build #<id>" (a materialized build is not
     # a git repo, so the chip can't derive branch/commit from git).

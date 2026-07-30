@@ -237,6 +237,28 @@ class TestRemotePushAndSha:
         with pytest.raises(RuntimeError, match="git push failed:.*Permission denied"):
             gs.remote_push_and_sha(tmp_path)
 
+    def test_push_uses_a_long_timeout(self, monkeypatch, tmp_path: Path) -> None:
+        """A switched-build session's first push sends the whole materialized
+        tree as a brand-new commit (no shared history with origin) — must not
+        use a short timeout tuned for an ordinary small incremental push."""
+        from vivarium_workbench.lib import github_auth
+        monkeypatch.setattr(github_auth, "current_token_env", lambda: {})
+        seen = {}
+
+        def _fake_run(args, **kwargs):
+            if "--abbrev-ref" in args:
+                return _cp(stdout="feature/x\n")
+            if args[:2] == ["git", "push"]:
+                seen["timeout"] = kwargs.get("timeout")
+                return _cp(returncode=0)
+            if args[:2] == ["git", "rev-parse"]:
+                return _cp(stdout="deadbeef\n")
+            raise AssertionError(f"unexpected git call: {args}")
+
+        monkeypatch.setattr(gs.subprocess, "run", _fake_run)
+        gs.remote_push_and_sha(tmp_path)
+        assert seen["timeout"] is not None and seen["timeout"] >= 300
+
     def test_empty_sha_raises(self, monkeypatch, tmp_path: Path) -> None:
         from vivarium_workbench.lib import github_auth
         monkeypatch.setattr(github_auth, "current_token_env", lambda: {})

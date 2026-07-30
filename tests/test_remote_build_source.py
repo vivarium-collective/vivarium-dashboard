@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import subprocess
 import tarfile
 from pathlib import Path
 
@@ -262,3 +263,80 @@ def test_switch_build_materialize_failure_502_leaves_state_unchanged(monkeypatch
 # two-optgroup <select> was superseded (the dropdown moved to the Branch-tab
 # Source panel, branch-source.js). The builds API contract is covered above and
 # in tests/test_source_branch.py.
+
+
+# ---------------------------------------------------------------------------
+# ensure_git_workspace — makes a tarball-materialized build push-ready
+# ---------------------------------------------------------------------------
+def test_ensure_git_workspace_creates_origin_and_branch(tmp_path):
+    from vivarium_workbench.lib import git_status
+
+    cache = tmp_path / "sim45-32b901deadbeef"
+    cache.mkdir()
+    (cache / "workspace.yaml").write_text("name: built\n")
+
+    rbs.ensure_git_workspace(cache, "https://github.com/org/repo.git", "main", "32b901deadbeef", 45)
+
+    assert (cache / ".git").exists()
+    assert git_status.has_origin_remote(cache)
+    assert git_status.remote_repo_url(cache) == "https://github.com/org/repo"
+    branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cache, capture_output=True, text=True,
+    ).stdout.strip()
+    assert branch == "workbench/sim45-32b901deadbe"  # never the upstream 'main' ref
+    # a commit must already exist (dispatch's `rev-parse --abbrev-ref HEAD` /
+    # push both require a named branch with at least one commit on it)
+    sha = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cache, capture_output=True, text=True)
+    assert sha.returncode == 0 and sha.stdout.strip()
+
+
+def test_ensure_git_workspace_is_idempotent(tmp_path):
+    cache = tmp_path / "sim45-32b901"
+    cache.mkdir()
+    (cache / "workspace.yaml").write_text("name: built\n")
+    rbs.ensure_git_workspace(cache, "https://github.com/org/repo.git", "main", "32b901", 45)
+    sha1 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cache, capture_output=True, text=True).stdout
+
+    rbs.ensure_git_workspace(cache, "https://github.com/org/repo.git", "main", "32b901", 45)  # no-op: .git exists
+    sha2 = subprocess.run(["git", "rev-parse", "HEAD"], cwd=cache, capture_output=True, text=True).stdout
+    assert sha1 == sha2
+
+
+def test_ensure_git_workspace_skips_without_repo_url(tmp_path):
+    cache = tmp_path / "sim45-32b901"
+    cache.mkdir()
+    rbs.ensure_git_workspace(cache, "", "main", "32b901", 45)
+    assert not (cache / ".git").exists()
+
+
+def test_switch_build_wires_ensure_git_workspace(monkeypatch, tmp_path):
+    """switch_build must pass the sms-api-reported repo_url/branch/commit through
+    to ensure_git_workspace so a switched build becomes push-ready — the actual
+    fix for the "no GitHub remote configured" dispatch failure on any session
+    bound to a switched build (found live trying to dispatch an sms-ecoli pilot
+    run from a switch-build session)."""
+    from vivarium_workbench.lib import source_build_views as sbv
+
+    cache = tmp_path / "sim45-32b901"
+    cache.mkdir()
+    (cache / "workspace.yaml").write_text("name: built\n")
+    monkeypatch.setattr(sbv, "list_build_sources", lambda client: {
+        "builds": [{"simulator_id": 45, "commit": "32b901", "branch": "main",
+                    "repo_url": "https://github.com/CovertLabEcoli/sms-ecoli",
+                    "label": "sms-ecoli @ 32b901 (build #45)"}],
+        "error": None,
+    })
+    monkeypatch.setattr(sbv, "materialize_build", lambda client, sim_id, commit, **k: cache)
+    monkeypatch.setattr(sbv.active_workspace, "switch_workspace", lambda root: None)
+
+    seen = {}
+    monkeypatch.setattr(sbv, "ensure_git_workspace",
+                        lambda cd, repo_url, branch, commit, sim_id: seen.update(
+                            cache_dir=cd, repo_url=repo_url, branch=branch, commit=commit, sim_id=sim_id))
+
+    obj, code = sbv.switch_build({"simulator_id": 45})
+    assert code == 200
+    assert seen == {
+        "cache_dir": cache, "repo_url": "https://github.com/CovertLabEcoli/sms-ecoli",
+        "branch": "main", "commit": "32b901", "sim_id": 45,
+    }
