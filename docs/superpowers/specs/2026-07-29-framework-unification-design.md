@@ -40,7 +40,9 @@ confusable synonyms are banned so the docs read as one architecture.
 | **sort** | the constraint on what may fill a site (`Site._sort`) | slot type, kind |
 | **admits** | site-sort ⊨ filler (the *filling* discipline) | formation (that's *nesting*) |
 | **formation** | parent-sort ⊨ child-sort (the *nesting* discipline) | conformance |
-| **face** | a port-type map (`_inputs`/`_outputs`, `Interface`); a `Composite`'s `bridge` is its outer face | interface, contract, signature, bridge-as-a-thing |
+| **face** | the **typed core of a contract** — a port-type map (`_inputs`/`_outputs`, `Interface`); a `Composite`'s `bridge` is its outer face | interface, signature, bridge-as-a-thing |
+| **contract** | an edge's *or* site's full interface: the **face** + description + per-port semantics + assumptions + references + **amendments** (`describe_contract`); `admits` checks the face | "just the port types" (that's the face) |
+| **amend** | append a monotone refinement to a contract — `narrow` (tighten the face) or `annotate` (document); never loosen, never add ports | extend, override |
 | **wires** | port → store path (`inputs`/`outputs`) | topology, connections |
 | **fill** | substitute fillers into named sites (`instantiate`) | bind, compose_at, reify, substitute, interpolate |
 | **compose** | `fill` with positionally-matched sites — Milner's ∘ | (reserve strictly for the Milner sense) |
