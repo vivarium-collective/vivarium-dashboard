@@ -2275,12 +2275,14 @@
     return _renderProcessCard(p, kind, { selCls: selClsFull, sourceAttr: sourceAttr, addrAttr: addrAttr, bodyHead: bodyHead });
   }
 
-  // The unified ProcessCard renderer (§ unified-process-card design). Used by
-  // the registry Full zoom now; the composite card adopts it next (slice 2).
-  //   config top-bar (expand → editable fields + Apply/Reset)
-  //   inputs (left) · contract (middle) · outputs (right), each collapsible
-  //   Run bar at the bottom; outputs carry a Download affordance
-  // Click the card's title to pin it to the top of the scroll region.
+  // The unified ProcessCard renderer (§ unified-process-card design):
+  //   1. name + address + FULL-WIDTH description (carries the contract: N in/M out)
+  //   2. config panel (collapse/expand pull; loom-style fields + Apply/Reset)
+  //   3. inputs | outputs — two mirrored, resizable panels; each degrades by
+  //      width through three levels: full (editable) → info (name+type) → dots
+  //      (drag to an edge; click a dot for info). Outputs mirrors inputs (dots right).
+  //   4. Run bar at the bottom.
+  // Click the header to pin the card to the top of the scroll region.
   function _renderProcessCard(p, kind, o) {
     var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
     var chip = function (k) { return '<code class="pcard-chip">' + _esc(k) + '</code>'; };
@@ -2291,20 +2293,13 @@
     var timestep = (kind === 'process')
       ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>'
       : '';
-    // Outputs are static chips until a run lands; Download enables once outputs exist.
-    var outPortsHtml = (function () {
-      var keys = (p.outputs && typeof p.outputs === 'object') ? Object.keys(p.outputs) : [];
-      if (!keys.length) return '<div class="loom-port loom-port-empty">—</div>';
-      return keys.map(function (k) {
-        var t = _regTypeLabel(p.outputs[k]);
-        return '<div class="loom-port loom-port-out" title="' + _esc(t || '') + '"><span class="loom-port-dot"></span>' +
-          '<span class="loom-port-name">' + _esc(k) + '</span>' + (t ? '<span class="loom-port-type">' + _esc(t) + '</span>' : '') + '</div>';
-      }).join('');
-    })();
-    var isComposite = (kind === 'composite');
     return '<div class="registry-entry registry-entry-full loom-runnable pcard' + o.selCls + '"' + o.sourceAttr + o.addrAttr + '>' +
       '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
-        // config top-bar — a region; double-click the header to expand/collapse.
+        // 1. header: name / address / full-width description + contract counts.
+        '<div class="loom-info pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' + o.bodyHead +
+          '<div class="pcard-contract-meta" data-role="contract-meta">' + kind + ' · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
+        '</div>' +
+        // 2. config panel — pull the header down for the full config, up to collapse.
         '<div class="pcard-region pcard-config-region pcard-collapsed" data-role="config-bar">' +
           '<div class="pcard-region-head pcard-config-head" onmousedown="_configPull(event,this)" ontouchstart="_configPull(event,this)" title="Drag down for the full config · drag up to collapse">' +
             '<span class="pcard-sec-label">config</span>' +
@@ -2319,45 +2314,29 @@
             '</div>' +
           '</div>' +
         '</div>' +
-        // title / info — click to pin this card to the top of the list
-        '<div class="loom-info pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' + o.bodyHead + '</div>' +
-        // body row: inputs | contract | outputs — draggable dividers resize the
-        // three panes; drag a gutter to an edge to snap a pane closed, or bring
-        // the two gutters together to collapse the contract. Run outputs land in
-        // the outputs (right) pane.
-        '<div class="pcard-body-row" data-role="body-row">' +
-          '<div class="pcard-region pcard-inputs" data-pane="inputs">' +
+        // 3. inputs | outputs — two mirrored panels; drag the divider to resize.
+        //    Each pane degrades by width: full (editable) → info (name+type) → dots.
+        '<div class="pcard-ports-row" data-role="ports-row">' +
+          '<div class="pcard-region pcard-inputs" data-pane="inputs" data-level="full">' +
             '<div class="pcard-region-head">inputs <span class="pcard-region-count">' + nIn + '</span></div>' +
             _pcardRail('inputs', p.inputs, 'in') +
             '<div class="pcard-region-body loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
           '</div>' +
-          '<div class="pcard-gutter" data-gutter="0" title="Drag to resize · left edge closes inputs" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
-          '<div class="pcard-region pcard-contract" data-pane="contract">' +
-            '<div class="pcard-region-head">contract</div>' +
-            '<div class="pcard-region-body" data-role="contract">' +
-              (p.description ? '<p class="pcard-contract-desc">' + _esc(String(p.description).trim().split('\n')[0]) + '</p>' : '') +
-              '<div class="pcard-contract-meta" data-role="contract-meta">' + kind + ' · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
-            '</div>' +
-          '</div>' +
-          '<div class="pcard-gutter" data-gutter="1" title="Drag to resize · right edge closes outputs" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
-          '<div class="pcard-region pcard-outputs" data-pane="outputs">' +
+          '<div class="pcard-gutter" data-gutter="0" title="Drag to resize · edges collapse to dots" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
+          '<div class="pcard-region pcard-outputs" data-pane="outputs" data-level="full">' +
             '<div class="pcard-region-head">outputs <span class="pcard-region-count">' + nOut + '</span>' +
               '<button class="btn-mini pcard-dl" type="button" onclick="_downloadProcessOutputs(this)" title="Download outputs" disabled>⬇</button>' +
             '</div>' +
             _pcardRail('outputs', p.outputs, 'out') +
             '<div class="pcard-region-body" data-role="outputs">' +
-              '<div class="loom-out-ports">' + outPortsHtml + '</div>' +
               '<div class="loom-run-output" data-role="run-output"></div>' +
             '</div>' +
           '</div>' +
         '</div>' +
-        // run bar (bottom) — for composites, double-click pulls the loom in/out.
-        '<div class="loom-run-actions pcard-run' + (isComposite ? ' pcard-run-loomable' : '') + '"' +
-          (isComposite ? ' ondblclick="_toggleLoomView(this)" title="Double-click to reveal / hide the loom"' : '') + '>' + timestep +
+        // 4. run bar (bottom)
+        '<div class="loom-run-actions pcard-run">' + timestep +
           '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
-          (isComposite ? '<span class="pcard-loom-handle" aria-hidden="true">⌄</span>' : '') +
         '</div>' +
-        (isComposite ? '<div class="pcard-loom-view" data-role="loom-view" hidden></div>' : '') +
       '</div>' +
     '</div>';
   }
@@ -2590,66 +2569,62 @@
   }
   window._toggleLoomView = _toggleLoomView;
 
-  // ── ProcessCard body-row splitter (inputs | contract | outputs) ──────────────
-  // Two draggable gutters set the L/M/R split as percentages (b1 = inputs|contract
-  // boundary, b2 = contract|outputs boundary). Drag a gutter to an edge to snap a
-  // pane closed; bring the gutters together to collapse the contract. The split
-  // is one shared layout applied to every card (drag once, all cards reflow).
+  // ── ProcessCard inputs|outputs splitter ──────────────────────────────────────
+  // One draggable gutter sets the boundary `b` (inputs width %); outputs takes
+  // the rest. Each pane degrades by its pixel width through three levels:
+  //   full (>248px, editable) → info (name+type) → dots (≤64px; drag to an edge).
+  // The split is one shared layout (drag once, all cards reflow) and persists.
   window._pcardSplit = (function () {
-    try { var s = JSON.parse(localStorage.getItem('viv.pcardSplit') || ''); if (s && s.length === 2) return s; } catch (e) { /* private mode */ }
-    return [34, 67];
+    try { var s = parseFloat(localStorage.getItem('viv.pcardSplit')); if (isFinite(s) && s >= 0 && s <= 100) return s; } catch (e) { /* private mode */ }
+    return 45;
   })();
-  function _applyPcardSplitRow(row, b1, b2) {
-    row._b1 = b1; row._b2 = b2;
-    row.style.setProperty('--b1', b1);
-    row.style.setProperty('--b2', b2);
-    row.classList.toggle('inputs-closed', b1 <= 1);
-    row.classList.toggle('outputs-closed', b2 >= 99);
-    row.classList.toggle('contract-closed', (b2 - b1) <= 1);
+  function _paneLevel(px) { return px <= 64 ? 'dots' : (px <= 248 ? 'info' : 'full'); }
+  function _applyPcardSplitRow(row, b) {
+    row._b = b;
+    row.style.setProperty('--pb', b);
+    var rw = row.getBoundingClientRect().width || 900;
+    var inPx = b / 100 * rw, outPx = rw - inPx - 10;
+    var ip = row.querySelector('.pcard-inputs'); if (ip) ip.setAttribute('data-level', _paneLevel(inPx));
+    var op = row.querySelector('.pcard-outputs'); if (op) op.setAttribute('data-level', _paneLevel(outPx));
   }
-  function _applyPcardSplitAll(b1, b2) {
-    b1 = Math.max(0, Math.min(100, b1)); b2 = Math.max(b1, Math.min(100, b2));
-    window._pcardSplit = [b1, b2];
-    try { localStorage.setItem('viv.pcardSplit', JSON.stringify([b1, b2])); } catch (e) { /* private mode */ }
-    document.querySelectorAll('.pcard-body-row').forEach(function (row) { _applyPcardSplitRow(row, b1, b2); });
+  function _applyPcardSplitAll(b) {
+    b = Math.max(0, Math.min(100, b));
+    window._pcardSplit = b;
+    try { localStorage.setItem('viv.pcardSplit', String(b)); } catch (e) { /* private mode */ }
+    document.querySelectorAll('.pcard-ports-row').forEach(function (row) { _applyPcardSplitRow(row, b); });
   }
   window._applyPcardSplitAll = _applyPcardSplitAll;
   function _syncPcardSplit(root) {
-    var b = window._pcardSplit || [34, 67];
-    (root || document).querySelectorAll('.pcard-body-row').forEach(function (row) { _applyPcardSplitRow(row, b[0], b[1]); });
+    var b = (typeof window._pcardSplit === 'number') ? window._pcardSplit : 45;
+    (root || document).querySelectorAll('.pcard-ports-row').forEach(function (row) { _applyPcardSplitRow(row, b); });
   }
   window._syncPcardSplit = _syncPcardSplit;
-  // Ensure the outputs pane is visible (called before rendering run results).
+  // Ensure outputs is wide enough (full level) to show run results.
   function _ensureOutputsOpen() {
-    var b = window._pcardSplit || [34, 67];
-    if (b[1] >= 99) _applyPcardSplitAll(Math.min(b[0], 34), 67);
+    var b = (typeof window._pcardSplit === 'number') ? window._pcardSplit : 45;
+    var row = document.querySelector('.pcard-ports-row');
+    var rw = row ? (row.getBoundingClientRect().width || 900) : 900;
+    if ((100 - b) / 100 * rw < 260) _applyPcardSplitAll(Math.min(b, 42));
   }
   window._ensureOutputsOpen = _ensureOutputsOpen;
   function _pcardGutterDown(e, gutter) {
     if (e.cancelable) e.preventDefault();
-    var row = gutter.closest('.pcard-body-row'); if (!row) return;
-    var which = parseInt(gutter.getAttribute('data-gutter'), 10);
+    var row = gutter.closest('.pcard-ports-row'); if (!row) return;
     var rect = row.getBoundingClientRect();
-    var b = window._pcardSplit || [34, 67];
-    var b1 = b[0], b2 = b[1];
+    var b = (typeof window._pcardSplit === 'number') ? window._pcardSplit : 45;
     document.body.classList.add('pcard-splitting');
     function clientX(ev) { return (ev.touches && ev.touches[0]) ? ev.touches[0].clientX : ev.clientX; }
     function pct(x) { return Math.max(0, Math.min(100, ((x - rect.left) / rect.width) * 100)); }
-    function onMove(ev) {
-      var x = pct(clientX(ev));
-      if (which === 0) b1 = Math.min(x, b2); else b2 = Math.max(x, b1);
-      _applyPcardSplitAll(b1, b2);
-      if (ev.cancelable) ev.preventDefault();
-    }
+    function onMove(ev) { b = pct(clientX(ev)); _applyPcardSplitAll(b); if (ev.cancelable) ev.preventDefault(); }
     function onUp() {
       document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
       document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp);
       document.body.classList.remove('pcard-splitting');
-      // Snap: near an edge → pane fully closed; gutters near each other → contract closed.
-      if (b1 <= 8) b1 = 0;
-      if (b2 >= 92) b2 = 100;
-      if ((b2 - b1) <= 8) { var mid = Math.round((b1 + b2) / 2); b1 = mid; b2 = mid; }
-      _applyPcardSplitAll(b1, b2);
+      // Snap to a thin dots rail at either edge.
+      var rw = rect.width || 900, edge = 46 / rw * 100;
+      if (b / 100 * rw <= 70) b = edge;
+      else if ((100 - b) / 100 * rw <= 70) b = 100 - edge;
+      _applyPcardSplitAll(b);
     }
     document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
     document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp);
@@ -2670,19 +2645,12 @@
         (t ? '<span class="pcard-rail-type">' + _esc(t) + '</span>' : '') +
         '</div>';
     }).join('');
-    return '<div class="pcard-rail">' + rows + '</div>';
+    return '<div class="pcard-rail' + (side === 'out' ? ' pcard-rail-out' : '') + '">' + rows + '</div>';
   }
   window._pcardRail = _pcardRail;
 
-  // Re-open a snapped-closed pane (from its rail) to a usable width.
-  function _expandPane(el, which) {
-    var b = window._pcardSplit || [34, 67];
-    if (which === 'inputs') _applyPcardSplitAll(28, Math.max(b[1], 60));
-    else _applyPcardSplitAll(Math.min(b[0], 40), 72);
-  }
-  window._expandPane = _expandPane;
-
-  // Click a rail dot → a small popover with the port name + type.
+  // Click a rail dot / port row → a small popover with the port name + type
+  // (the primary "more info" affordance when a pane is collapsed to dots).
   function _portDotInfo(e, el) {
     if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
     var old = document.querySelector('.pcard-portpop'); if (old) old.remove();
@@ -2761,14 +2729,12 @@
     return bad ? { __error: bad } : config;
   }
 
-  function _fillOutputChips(card, outSchema) {
-    var box = card.querySelector('[data-role="outputs"] .loom-out-ports'); if (!box) return;
-    var keys = Object.keys(outSchema || {});
-    box.innerHTML = keys.length ? keys.map(function (k) {
-      var t = _regTypeLabel(outSchema[k]);
-      return '<div class="loom-port loom-port-out" title="' + _esc(t || '') + '"><span class="loom-port-dot"></span>' +
-        '<span class="loom-port-name">' + _esc(k) + '</span>' + (t ? '<span class="loom-port-type">' + _esc(t) + '</span>' : '') + '</div>';
-    }).join('') : '<div class="loom-port loom-port-empty">—</div>';
+  // Rebuild a pane's rail (dot · name · type list) from a re-derived schema.
+  function _rebuildRail(card, side, schema) {
+    var pane = card.querySelector(side === 'in' ? '.pcard-inputs' : '.pcard-outputs'); if (!pane) return;
+    var rail = pane.querySelector('.pcard-rail');
+    var html = _pcardRail(side === 'in' ? 'inputs' : 'outputs', schema || {}, side);
+    if (rail) rail.outerHTML = html; else pane.insertAdjacentHTML('beforeend', html);
   }
 
   function _updateContractMeta(card, kind, nIn, nOut) {
@@ -2809,8 +2775,9 @@
           : '<div class="loom-port loom-port-empty muted">(no input ports)</div>';
         inBox.querySelectorAll('textarea.loom-in-field').forEach(_autoGrow);
       }
+      _rebuildRail(card, 'in', inSchema);   // update the inputs rail (info/dots levels)
       var outSchema = (j.outputs_schema && typeof j.outputs_schema === 'object' && Object.keys(j.outputs_schema).length) ? j.outputs_schema : null;
-      if (outSchema) _fillOutputChips(card, outSchema);
+      if (outSchema) _rebuildRail(card, 'out', outSchema);
       _updateContractMeta(card, j.kind || card.getAttribute('data-kind'), Object.keys(inputs).length, outSchema ? Object.keys(outSchema).length : null);
       _updateConfigChips(card, config);
       card._appliedConfig = config;
