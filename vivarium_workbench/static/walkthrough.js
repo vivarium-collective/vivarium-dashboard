@@ -2306,10 +2306,9 @@
       '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
         // config top-bar — a region; double-click the header to expand/collapse.
         '<div class="pcard-region pcard-config-region pcard-collapsed" data-role="config-bar">' +
-          '<div class="pcard-region-head pcard-config-head" onmousedown="_configPull(event,this)" ontouchstart="_configPull(event,this)" title="Pull down for the full config · pull up to collapse">' +
-            '<span class="pcard-caret">▸</span><span class="pcard-sec-label">config</span>' +
+          '<div class="pcard-region-head pcard-config-head" onmousedown="_configPull(event,this)" ontouchstart="_configPull(event,this)" title="Drag down for the full config · drag up to collapse">' +
+            '<span class="pcard-sec-label">config</span>' +
             '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>' +
-            '<span class="pcard-config-grip" aria-hidden="true">⌄</span>' +
           '</div>' +
           '<div class="pcard-region-body">' +
             '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
@@ -2328,8 +2327,8 @@
         // the outputs (right) pane.
         '<div class="pcard-body-row" data-role="body-row">' +
           '<div class="pcard-region pcard-inputs" data-pane="inputs">' +
-            _pcardRail('inputs', p.inputs, 'in') +
             '<div class="pcard-region-head">inputs <span class="pcard-region-count">' + nIn + '</span></div>' +
+            _pcardRail('inputs', p.inputs, 'in') +
             '<div class="pcard-region-body loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
           '</div>' +
           '<div class="pcard-gutter" data-gutter="0" title="Drag to resize · left edge closes inputs" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
@@ -2342,10 +2341,10 @@
           '</div>' +
           '<div class="pcard-gutter" data-gutter="1" title="Drag to resize · right edge closes outputs" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
           '<div class="pcard-region pcard-outputs" data-pane="outputs">' +
-            _pcardRail('outputs', p.outputs, 'out') +
             '<div class="pcard-region-head">outputs <span class="pcard-region-count">' + nOut + '</span>' +
               '<button class="btn-mini pcard-dl" type="button" onclick="_downloadProcessOutputs(this)" title="Download outputs" disabled>⬇</button>' +
             '</div>' +
+            _pcardRail('outputs', p.outputs, 'out') +
             '<div class="pcard-region-body" data-role="outputs">' +
               '<div class="loom-out-ports">' + outPortsHtml + '</div>' +
               '<div class="loom-run-output" data-role="run-output"></div>' +
@@ -2657,18 +2656,21 @@
   }
   window._pcardGutterDown = _pcardGutterDown;
 
-  // A snapped-closed inputs/outputs pane collapses to this thin RAIL: the ports
-  // as clickable dots (info popover) + a chevron to expand back to the full API.
+  // A snapped-closed inputs/outputs pane collapses to this compact RAIL: each
+  // port as dot + name + type (drag the divider back open for the full API).
   function _pcardRail(which, schema, side) {
     var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : [];
-    var dots = keys.length ? keys.map(function (k) {
+    if (!keys.length) return '<div class="pcard-rail"><span class="pcard-rail-empty">—</span></div>';
+    var rows = keys.map(function (k) {
       var t = _regTypeLabel(schema[k]);
-      return '<span class="pcard-rail-dot loom-port-' + side + '" title="' + _esc(k + (t ? ' : ' + t : '')) +
-        '" data-port="' + _esc(k) + '" data-type="' + _esc(t || '') + '" onclick="_portDotInfo(event,this)"></span>';
-    }).join('') : '<span class="pcard-rail-empty">—</span>';
-    var chev = (which === 'outputs') ? '⟨' : '⟩';
-    return '<div class="pcard-rail" onclick="_expandPane(this,\'' + which + '\')" title="Expand ' + which + '">' +
-      '<span class="pcard-rail-expand">' + chev + '</span><div class="pcard-rail-dots">' + dots + '</div></div>';
+      return '<div class="pcard-rail-port loom-port-' + side + '" title="' + _esc(k + (t ? ' : ' + t : '')) +
+        '" data-port="' + _esc(k) + '" data-type="' + _esc(t || '') + '" onclick="_portDotInfo(event,this)">' +
+        '<span class="pcard-rail-dot"></span>' +
+        '<span class="pcard-rail-name">' + _esc(k) + '</span>' +
+        (t ? '<span class="pcard-rail-type">' + _esc(t) + '</span>' : '') +
+        '</div>';
+    }).join('');
+    return '<div class="pcard-rail">' + rows + '</div>';
   }
   window._pcardRail = _pcardRail;
 
