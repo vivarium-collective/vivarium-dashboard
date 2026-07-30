@@ -741,6 +741,13 @@
       }
     }
 
+    // ?popcard=<address>&kind=<kind> → a focused single-card pop-out window.
+    var _qsPop = new URLSearchParams(window.location.search).get('popcard');
+    if (_qsPop) {
+      _enterPopcardMode(_qsPop, new URLSearchParams(window.location.search).get('kind') || 'process');
+      return;   // skip normal hash routing in a pop-out window
+    }
+
     if (!focusedPage) {
       function fromHash() {
         var h = (window.location.hash || '').replace(/^#/, '');
@@ -2347,6 +2354,62 @@
     return '<span class="proc-kind-badge proc-kind-composite" title="Composite — a Process assembled from other processes/steps; open Explore for its bigraph">Composite</span>';
   }
 
+  // A card header "pop out" control — opens the whole card (Explore/loom and all)
+  // in its own focused window.
+  function _cardPopoutBtn(address, kind) {
+    return '<button class="pcard-popout" type="button" title="Pop out this card into its own window" ' +
+      'onclick="event.stopPropagation();_popoutCard(\'' + _esc(address) + '\',\'' + _esc(kind) + '\')">⤢</button>';
+  }
+  function _popoutCard(address, kind) {
+    var url = location.origin + location.pathname +
+      '?popcard=' + encodeURIComponent(address) + '&kind=' + encodeURIComponent(kind || 'process');
+    window.open(url, '_blank', 'width=1180,height=940,menubar=no,toolbar=no,location=no,resizable=yes,scrollbars=yes');
+  }
+  window._popoutCard = _popoutCard;
+
+  // In a ?popcard= window: strip the shell to just the single requested card.
+  function _enterPopcardMode(address, kind) {
+    // focus-mode strips the rail/topbar (content-only window); popcard-mode
+    // additionally hides the registry tabs + toolbar to leave just the card.
+    document.body.classList.add('focus-mode', 'popcard-mode');
+    var isComposite = (kind === 'composite');
+    if (typeof _switchPage === 'function') _switchPage('modules');
+    window._registryZoom = 'full';
+    try { localStorage.setItem('viv.registryZoom', 'full'); } catch (e) { /* private mode */ }
+    if (typeof _setRegistryTab === 'function') _setRegistryTab(isComposite ? 'composite' : 'process');
+    document.title = address.split('.').pop() + ' — Vivarium card';
+    var tries = 0;
+    (function attempt() {
+      var host = null, html = null;
+      if (isComposite) {
+        var c = (window._compositesById || {})[address];
+        if (c) { host = document.getElementById('registry-composites-container'); html = _renderCompositeCardFull(c); }
+      } else {
+        var e = _registryEntryByAddress(address);
+        if (e) { host = document.getElementById('registry-processes-container'); html = _renderRegistryEntryFull(e); }
+      }
+      if (host && html) {
+        host.innerHTML = '<div class="reg-cards reg-cards-full popcard-single">' + html + '</div>';
+        if (typeof _observeRunnableCards === 'function') _observeRunnableCards(host);
+        // For composites, auto-open Explore so the loom is visible immediately.
+        if (isComposite) {
+          var sec = host.querySelector('.pcard-sec-explore .pcard-sec-head');
+          if (sec) _pcardToggleSec(sec);
+        }
+        return;
+      }
+      // Not ready yet — (re)trigger the load. The registry/composites endpoints
+      // can transiently 500 under concurrency, which would otherwise leave the
+      // one-shot load empty; re-trigger every ~1.2s until the data arrives.
+      if (tries % 6 === 0) {
+        if (isComposite) { if (typeof _loadComposites === 'function') _loadComposites(); }
+        else { window._registryLoaded = false; if (typeof _loadRegistry === 'function') _loadRegistry(false); }
+      }
+      if (tries++ < 120) setTimeout(attempt, 200);
+    })();
+  }
+  window._enterPopcardMode = _enterPopcardMode;
+
   // The unified ProcessCard renderer (§ unified-process-card design):
   //   header: name + kind badge + address
   //   summary: a little INFO PANEL (Config / Inputs / Outputs counts — click to
@@ -2407,6 +2470,7 @@
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' +
             '<span class="loom-name">' + _esc(p.name) + '</span>' + _procKindBadge(kind) + _regUseBadge(p) +
             '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
+            _cardPopoutBtn(p.address || kind, kind) +
           '</div>' +
           '<div class="pcard-summary">' + infoPanel +
             '<div class="pcard-desc-col">' +
@@ -2563,6 +2627,7 @@
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' +
             '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + wsPill + roPill +
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
+            _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
           '<div class="pcard-summary">' + infoPanel +
             '<div class="pcard-desc-col">' +
@@ -3430,6 +3495,8 @@
   }
 
   function _renderRegistryGrid(containerId, entries) {
+    // In a pop-out window the single card owns its container — don't clobber it.
+    if (document.body.classList.contains('popcard-mode')) return;
     var el = document.getElementById(containerId);
     if (!el) return;
     if (!entries || !entries.length) {
@@ -4472,6 +4539,7 @@
   // Render composites as unified accordion ProcessCards into the Processes-page
   // "Composites" tab (respecting the shared registry filter). One wide card/row.
   function _renderRegistryComposites(composites) {
+    if (document.body.classList.contains('popcard-mode')) return;
     var el = document.getElementById('registry-composites-container');
     if (!el) return;
     composites = composites || window._composites || [];

@@ -1769,6 +1769,27 @@ textarea.loom-in-field{
 .pcard-desc-clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
 .pcard-desc-clamp.pcard-desc-open{ display:block; -webkit-line-clamp:unset; overflow:visible; }
 
+/* header pop-out control */
+.pcard-popout{
+  margin-left:auto; flex:none; align-self:center;
+  background:none; border:1px solid transparent; border-radius:5px; cursor:pointer;
+  color:#94a3b8; font-size:0.95em; line-height:1; padding:2px 7px;
+}
+.pcard-popout:hover{ background:#eef2ff; color:#4338ca; border-color:#c7d2fe; }
+
+/* pop-out (?popcard=) window: focus-mode strips the rail; hide the registry
+   tabs + toolbar too so only the single card shows, full-window. */
+body.popcard-mode .registry-tabs,
+body.popcard-mode .registry-view-toolbar,
+body.popcard-mode .registry-sticky > .registry-tabs{ display:none !important; }
+body.popcard-mode .registry-tab-panel{ padding:0 !important; }
+body.popcard-mode #registry-status,
+body.popcard-mode .registry-imports-section{ display:none !important; }
+body.popcard-mode .popcard-single{ margin:0; }
+body.popcard-mode .popcard-single .pcard{ border-radius:10px; }
+body.popcard-mode .pcard-popout{ display:none; }   /* no nested pop-out */
+:root[data-theme="dark"] .pcard-popout:hover{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
+
 /* persistent Run bar (not an accordion) — always visible at the card's top level */
 .pcard-runbar{
   display:flex; align-items:center; flex-wrap:wrap; gap:12px;
