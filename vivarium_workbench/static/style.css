@@ -1744,11 +1744,8 @@ textarea.loom-in-field{
   font-family:ui-monospace,Menlo,monospace;
 }
 
-/* summary row: compact info panel (left) + contract/description (right) */
-.pcard-summary{
-  display:grid; grid-template-columns:auto 1fr; gap:14px;
-  align-items:start; padding:0;
-}
+/* summary row: contract line + description (info panel removed) */
+.pcard-summary{ display:block; padding:0; }
 .pcard-infopanel{
   display:flex; flex-direction:column; gap:0; min-width:100px; align-self:start;
   background:#f8fafc; border:1px solid #eef2f7; border-radius:8px; padding:2px; overflow:hidden;

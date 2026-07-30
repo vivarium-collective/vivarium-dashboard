@@ -2521,7 +2521,7 @@
             '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
             _cardPopoutBtn(p.address || kind, kind) +
           '</div>' +
-          '<div class="pcard-summary">' + infoPanel +
+          '<div class="pcard-summary">' +
             '<div class="pcard-desc-col">' +
               '<div class="pcard-contract-meta" data-role="contract-meta">' + _procKindLabel(kind).toLowerCase() + ' process · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
               (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
@@ -2530,7 +2530,7 @@
         '</div>' +
         // 2. accordion — Configure ▸ Inputs (resizable) · Run bar · Outputs.
         '<div class="pcard-acc">' +
-          section('configure', 'Configure', '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>', configBody, { resizable: true }) +
+          section('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { resizable: true }) +
           section('inputs', 'Inputs', '<span class="pcard-sec-count">' + nIn + '</span>', inputsBody, { open: true, resizable: true }) +
           runBar +
           section('outputs', 'Outputs', '<span class="pcard-sec-count">' + nOut + '</span>', outputsBody, { headExtra: dlBtn }) +
@@ -2678,8 +2678,8 @@
     var runBar = _pcardRunBar(
       c.read_only
         ? '<span class="muted pcard-run-note">read-only composite — enable running inside Explore to run in place</span>'
-        : '<button class="action-btn" onclick="_runComposite(this)">▶ Configure &amp; Run</button>' +
-          '<span class="muted pcard-run-note">set the time range &amp; parameters, then launch a run</span>');
+        : '<label class="loom-run-field loom-run-interval-field">Time <input type="number" step="any" min="0" class="pcard-run-time" placeholder="e.g. 10"></label>' +
+          '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>');
 
     // Outputs = the composite's declared Visualizations / Results / Document,
     // folded in from the loom (chromeless, one tab at a time).
@@ -2704,7 +2704,7 @@
             _compositeJsonBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
-          '<div class="pcard-summary">' + infoPanel +
+          '<div class="pcard-summary">' +
             '<div class="pcard-desc-col">' +
               '<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
               (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
@@ -2715,11 +2715,11 @@
           '</div>' +
         '</div>' +
         '<div class="pcard-acc">' +
-          _pcardSection('configure', 'Configure', '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>', configBody, { open: true, resizable: true }) +
-          _pcardSection('inputs', 'Inputs', '<span class="muted">top-level</span>', topNote) +
-          _pcardSection('explore', 'Explore', '<span class="muted">open to render the bigraph</span>', _compositeLoomExplore(c), { wide: true }) +
+          _pcardSection('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { open: true, resizable: true }) +
+          _pcardSection('inputs', 'Inputs', '<span class="pcard-sec-count">0</span>', topNote) +
+          _pcardSection('explore', 'Explore', '', _compositeLoomExplore(c), { wide: true }) +
           runBar +
-          _pcardSection('outputs', 'Outputs', '<span class="muted">viz · results</span>', outputsBody, { wide: true }) +
+          _pcardSection('outputs', 'Outputs', '', outputsBody, { wide: true }) +
         '</div>' +
       '</div>' +
     '</div>';
@@ -2766,12 +2766,21 @@
   }
   window._resetCompositeConfig = _resetCompositeConfig;
 
-  // Launch a composite run via the existing Configure-composite modal (which
-  // collects sim name + time range + any parameter overrides).
+  // Launch a composite run via the Configure-composite modal, prefilling the
+  // end time from the card's inline Time field.
   function _runComposite(btn) {
     var card = btn.closest('.registry-entry-full'); if (!card) return;
     var id = card.getAttribute('data-address');
+    var tEl = card.querySelector('.pcard-run-time');
+    var t = (tEl && tEl.value !== '') ? tEl.value : null;
     if (typeof _useComposite === 'function') _useComposite(id);
+    if (t != null) {
+      setTimeout(function () {
+        var f = document.getElementById('form-configure-composite');
+        var end = f && f.querySelector('input[name="t_end"]');
+        if (end) end.value = t;
+      }, 60);
+    }
   }
   window._runComposite = _runComposite;
 
