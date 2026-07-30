@@ -2306,9 +2306,10 @@
       '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
         // config top-bar — a region; double-click the header to expand/collapse.
         '<div class="pcard-region pcard-config-region pcard-collapsed" data-role="config-bar">' +
-          '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to expand / collapse config">' +
+          '<div class="pcard-region-head pcard-config-head" onmousedown="_configPull(event,this)" ontouchstart="_configPull(event,this)" title="Pull down for the full config · pull up to collapse">' +
             '<span class="pcard-caret">▸</span><span class="pcard-sec-label">config</span>' +
             '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>' +
+            '<span class="pcard-config-grip" aria-hidden="true">⌄</span>' +
           '</div>' +
           '<div class="pcard-region-body">' +
             '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
@@ -2327,6 +2328,7 @@
         // the outputs (right) pane.
         '<div class="pcard-body-row" data-role="body-row">' +
           '<div class="pcard-region pcard-inputs" data-pane="inputs">' +
+            _pcardRail('inputs', p.inputs, 'in') +
             '<div class="pcard-region-head">inputs <span class="pcard-region-count">' + nIn + '</span></div>' +
             '<div class="pcard-region-body loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
           '</div>' +
@@ -2340,6 +2342,7 @@
           '</div>' +
           '<div class="pcard-gutter" data-gutter="1" title="Drag to resize · right edge closes outputs" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
           '<div class="pcard-region pcard-outputs" data-pane="outputs">' +
+            _pcardRail('outputs', p.outputs, 'out') +
             '<div class="pcard-region-head">outputs <span class="pcard-region-count">' + nOut + '</span>' +
               '<button class="btn-mini pcard-dl" type="button" onclick="_downloadProcessOutputs(this)" title="Download outputs" disabled>⬇</button>' +
             '</div>' +
@@ -2653,6 +2656,75 @@
     document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp);
   }
   window._pcardGutterDown = _pcardGutterDown;
+
+  // A snapped-closed inputs/outputs pane collapses to this thin RAIL: the ports
+  // as clickable dots (info popover) + a chevron to expand back to the full API.
+  function _pcardRail(which, schema, side) {
+    var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : [];
+    var dots = keys.length ? keys.map(function (k) {
+      var t = _regTypeLabel(schema[k]);
+      return '<span class="pcard-rail-dot loom-port-' + side + '" title="' + _esc(k + (t ? ' : ' + t : '')) +
+        '" data-port="' + _esc(k) + '" data-type="' + _esc(t || '') + '" onclick="_portDotInfo(event,this)"></span>';
+    }).join('') : '<span class="pcard-rail-empty">—</span>';
+    var chev = (which === 'outputs') ? '⟨' : '⟩';
+    return '<div class="pcard-rail" onclick="_expandPane(this,\'' + which + '\')" title="Expand ' + which + '">' +
+      '<span class="pcard-rail-expand">' + chev + '</span><div class="pcard-rail-dots">' + dots + '</div></div>';
+  }
+  window._pcardRail = _pcardRail;
+
+  // Re-open a snapped-closed pane (from its rail) to a usable width.
+  function _expandPane(el, which) {
+    var b = window._pcardSplit || [34, 67];
+    if (which === 'inputs') _applyPcardSplitAll(28, Math.max(b[1], 60));
+    else _applyPcardSplitAll(Math.min(b[0], 40), 72);
+  }
+  window._expandPane = _expandPane;
+
+  // Click a rail dot → a small popover with the port name + type.
+  function _portDotInfo(e, el) {
+    if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
+    var old = document.querySelector('.pcard-portpop'); if (old) old.remove();
+    var name = el.getAttribute('data-port'), type = el.getAttribute('data-type');
+    var pop = document.createElement('div');
+    pop.className = 'pcard-portpop';
+    pop.innerHTML = '<code>' + _esc(name) + '</code>' + (type ? '<span class="pcard-portpop-type">' + _esc(type) + '</span>' : '');
+    document.body.appendChild(pop);
+    var r = el.getBoundingClientRect();
+    pop.style.left = Math.round(r.right + 8 + window.scrollX) + 'px';
+    pop.style.top = Math.round(r.top + window.scrollY - 3) + 'px';
+    var close = function () { pop.remove(); document.removeEventListener('mousedown', close); window.removeEventListener('scroll', close, true); };
+    setTimeout(function () { document.addEventListener('mousedown', close); window.addEventListener('scroll', close, true); }, 0);
+  }
+  window._portDotInfo = _portDotInfo;
+
+  // Config top-bar as a PULL-DOWN: drag the header down to reveal the full config
+  // API (editable fields), up to collapse back to the informative chips panel. A
+  // plain click (no drag) toggles. Lazily loads resolved fields on first expand.
+  function _configPull(e, head) {
+    if (e && e.preventDefault) e.preventDefault();
+    var bar = head.closest('.pcard-config-region'); if (!bar) return;
+    function y(ev) { return (ev.touches && ev.touches[0]) ? ev.touches[0].clientY : ev.clientY; }
+    var startY = y(e), moved = false;
+    function setExpanded(exp) {
+      bar.classList.toggle('pcard-collapsed', !exp);
+      var caret = bar.querySelector('.pcard-caret'); if (caret) caret.textContent = exp ? '▾' : '▸';
+      var grip = bar.querySelector('.pcard-config-grip'); if (grip) grip.textContent = exp ? '⌃' : '⌄';
+      if (exp) { var card = bar.closest('.registry-entry-full'); if (card && typeof _loadFullRunFields === 'function') _loadFullRunFields(card); }
+    }
+    function onMove(ev) {
+      var dy = y(ev) - startY;
+      if (Math.abs(dy) > 16) { moved = true; setExpanded(dy > 0); }
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function onUp() {
+      document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp);
+      document.removeEventListener('touchmove', onMove); document.removeEventListener('touchend', onUp);
+      if (!moved) setExpanded(bar.classList.contains('pcard-collapsed'));  // click = toggle
+    }
+    document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+    document.addEventListener('touchmove', onMove, { passive: false }); document.addEventListener('touchend', onUp);
+  }
+  window._configPull = _configPull;
 
   // Pin a card to the top of the scroll region (sticky) so it lines up for
   // comparison/editing. Radio: pins this one, releases any other; clicking the

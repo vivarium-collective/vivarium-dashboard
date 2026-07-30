@@ -1729,22 +1729,45 @@ textarea.loom-in-field{
   text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700;
   color:#94a3b8; margin-bottom:9px;
 }
-.pcard-config-region > .pcard-region-head{ cursor:pointer; }
-.pcard-config-region > .pcard-region-head:hover{ color:#64748b; }
+.pcard-config-region > .pcard-region-head{ cursor:ns-resize; }
+.pcard-config-region > .pcard-region-head:hover{ color:#64748b; background:#f1f5f9; }
+.pcard-config-grip{ margin-left:auto; color:#94a3b8; font-size:0.95em; line-height:1; }
+.pcard-config-region > .pcard-region-head:hover .pcard-config-grip{ color:#4338ca; }
 .pcard-region-count{ margin-left:2px; color:#cbd5e1; font-weight:700; }
 .pcard-region-body{ min-width:0; }
 /* config region still uses double-click collapse */
 .pcard-collapsed > .pcard-region-body{ display:none; }
 .pcard-collapsed > .pcard-region-head{ margin-bottom:0; }
-/* splitter snap states */
+/* splitter snap states — inputs/outputs collapse to a thin dots RAIL (still
+   clickable + expandable), not hidden, so they can always be recovered; the
+   gutter stays visible so a drag also reopens. */
 .pcard-body-row.inputs-closed > .pcard-inputs,
-.pcard-body-row.inputs-closed > .pcard-gutter[data-gutter="0"]{ display:none; }
-.pcard-body-row.outputs-closed > .pcard-outputs,
-.pcard-body-row.outputs-closed > .pcard-gutter[data-gutter="1"]{ display:none; }
-.pcard-body-row.contract-closed > .pcard-contract,
+.pcard-body-row.outputs-closed > .pcard-outputs{ width:44px !important; flex:0 0 44px !important; padding:0; }
+.pcard-body-row.inputs-closed > .pcard-inputs > .pcard-region-head,
+.pcard-body-row.inputs-closed > .pcard-inputs > .pcard-region-body,
+.pcard-body-row.outputs-closed > .pcard-outputs > .pcard-region-head,
+.pcard-body-row.outputs-closed > .pcard-outputs > .pcard-region-body{ display:none; }
+.pcard-body-row.inputs-closed > .pcard-inputs > .pcard-rail,
+.pcard-body-row.outputs-closed > .pcard-outputs > .pcard-rail{ display:flex; }
+/* contract collapses away entirely when the two gutters meet */
+.pcard-body-row.contract-closed > .pcard-contract{ display:none; }
 .pcard-body-row.contract-closed > .pcard-gutter[data-gutter="1"]{ display:none; }
 body.pcard-splitting{ cursor:col-resize; user-select:none; }
 body.pcard-splitting iframe{ pointer-events:none; }
+
+/* collapsed-pane dots rail */
+.pcard-rail{ display:none; flex-direction:column; align-items:center; gap:10px; padding:12px 0; cursor:pointer; }
+.pcard-rail:hover{ background:#f8fafc; }
+.pcard-rail-expand{ color:#94a3b8; font-size:0.85em; line-height:1; }
+.pcard-rail:hover .pcard-rail-expand{ color:#4338ca; }
+.pcard-rail-dots{ display:flex; flex-direction:column; align-items:center; gap:10px; }
+.pcard-rail-dot{ width:9px; height:9px; border-radius:50%; background:#6366f1; cursor:pointer; }
+.pcard-rail-dot.loom-port-out{ background:#10b981; }
+.pcard-rail-dot:hover{ box-shadow:0 0 0 3px rgba(99,102,241,0.25); }
+.pcard-rail-empty{ color:#cbd5e1; font-size:0.8em; }
+.pcard-portpop{ position:absolute; z-index:60; background:#0f172a; color:#fff; padding:5px 9px; border-radius:6px; font-size:0.78em; box-shadow:0 6px 18px -6px rgba(0,0,0,0.45); white-space:nowrap; pointer-events:none; }
+.pcard-portpop code{ color:#c7d2fe; font-weight:600; }
+.pcard-portpop-type{ color:#94a3b8; margin-left:8px; font-family:ui-monospace,Menlo,monospace; }
 .pcard-contract-desc{ margin:0 0 8px; color:#475569; font-size:0.86em; line-height:1.5; }
 .pcard-contract-meta{ color:#64748b; font-size:0.8em; }
 .pcard-outputs .pcard-region-head{ justify-content:space-between; }
