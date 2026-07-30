@@ -27,6 +27,23 @@ def _make_remote_zarr_tar(tmp_path: Path, seed: int = 0) -> Path:
     return tar_path
 
 
+def _make_remote_zarr_tar_multiseed(tmp_path: Path, seeds: tuple[int, ...] = (0, 1)) -> Path:
+    """Build a tar.gz mirroring a real multi-seed Ray dispatch: one independently-rooted
+    seed_NN/store.zarr per seed, each with its own uniquely-named experiment_id=* partition —
+    exactly the shape confirmed against real GovCloud/Ray S3 output."""
+    staging = tmp_path / "staging"
+    for seed in seeds:
+        part = staging / f"seed_{seed:02d}" / "store.zarr" / f"experiment_id=exp-seed{seed:02d}"
+        part.mkdir(parents=True)
+        (part / ".zgroup").write_text('{"zarr_format":2}')
+        # Trivial top-level group marker, repeated per seed store (mirrors real output).
+        (staging / f"seed_{seed:02d}" / "store.zarr" / "zarr.json").write_text('{"zarr_format":3}')
+    tar_path = tmp_path / "sim_multiseed.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(staging, arcname=".")
+    return tar_path
+
+
 def test_land_zarr_places_store_and_writes_runs_meta(tmp_path: Path):
     study = tmp_path / "study"
     study.mkdir()
@@ -38,7 +55,6 @@ def test_land_zarr_places_store_and_writes_runs_meta(tmp_path: Path):
         experiment_id="exp-abc",
         commit="abc123",
         tar_path=tar,
-        seed=0,
     )
     # zarr store placed at <study>/runs.<run_id>.zarr with the experiment_id=* partition intact
     zarr_dir = study / f"runs.{run_id}.zarr"
@@ -66,7 +82,7 @@ def test_landed_zarr_is_discovered_by_study_charts(tmp_path: Path):
     study.mkdir()
     tar = _make_remote_zarr_tar(tmp_path)
     run_id = land_remote_run(
-        study, spec_id="s", simulation_id=7, experiment_id="e", commit="c", tar_path=tar, seed=0
+        study, spec_id="s", simulation_id=7, experiment_id="e", commit="c", tar_path=tar
     )
     found = study_charts._latest_zarr_for_study(study)
     assert found == study / f"runs.{run_id}.zarr"
@@ -84,7 +100,6 @@ def test_land_stores_s3_uri_in_provenance(tmp_path: Path):
         experiment_id="exp-s3",
         commit="deadbeef",
         tar_path=tar,
-        seed=0,
         s3_uri="s3://bucket/prefix/exp/",
     )
     conn = sqlite3.connect(str(study / "runs.db"))
@@ -96,3 +111,36 @@ def test_land_stores_s3_uri_in_provenance(tmp_path: Path):
         conn.close()
     prov = json.loads(meta[0])
     assert prov["s3_uri"] == "s3://bucket/prefix/exp/"
+
+
+def test_land_multiseed_keeps_every_seed(tmp_path: Path):
+    """Regression: landing a 2-seed dispatch must keep BOTH seeds' partitions, not
+    silently discard every seed but the first (the found bug — land_remote_run's
+    seed param defaulted to 0 and no caller ever overrode it)."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar_multiseed(tmp_path, seeds=(0, 1))
+    run_id = land_remote_run(
+        study,
+        spec_id="v2ecoli.composites.batch_baseline",
+        simulation_id=114,
+        experiment_id="exp-multiseed",
+        commit="43cabf0",
+        tar_path=tar,
+    )
+    zarr_dir = study / f"runs.{run_id}.zarr"
+    partitions = sorted(p.name for p in zarr_dir.glob("experiment_id=*"))
+    assert partitions == ["experiment_id=exp-seed00", "experiment_id=exp-seed01"]
+
+
+def test_land_multiseed_single_seed_still_works(tmp_path: Path):
+    """A single-seed dispatch (the common case) still lands correctly under the
+    new union-all-seeds logic — no regression for the 1-seed path."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar_multiseed(tmp_path, seeds=(0,))
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=1, experiment_id="e", commit="c", tar_path=tar,
+    )
+    zarr_dir = study / f"runs.{run_id}.zarr"
+    assert [p.name for p in zarr_dir.glob("experiment_id=*")] == ["experiment_id=exp-seed00"]
