@@ -2266,32 +2266,91 @@
       '</div>';
     }
 
-    // Runnable (process/step): the config bar IS the editable config, the left
-    // ports ARE the editable inputs, and Run lives in the body. Fields load
-    // lazily (resolved defaults) when the card scrolls into view.
+    // Runnable (process/step): the unified ProcessCard — a config top-bar
+    // (expandable + settable, with Apply that re-derives ports), an
+    // inputs-left / contract-middle / outputs-right body row (each region
+    // collapsible), and a Run bar pinned at the bottom. This is the loom node's
+    // grammar, restacked as an accessible static card. Config + input fields
+    // load lazily (resolved defaults) when the card scrolls into view.
+    return _renderProcessCard(p, kind, { selCls: selClsFull, sourceAttr: sourceAttr, addrAttr: addrAttr, bodyHead: bodyHead });
+  }
+
+  // The unified ProcessCard renderer (§ unified-process-card design). Used by
+  // the registry Full zoom now; the composite card adopts it next (slice 2).
+  //   config top-bar (expand → editable fields + Apply/Reset)
+  //   inputs (left) · contract (middle) · outputs (right), each collapsible
+  //   Run bar at the bottom; outputs carry a Download affordance
+  // Click the card's title to pin it to the top of the scroll region.
+  function _renderProcessCard(p, kind, o) {
+    var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
+    var chip = function (k) { return '<code class="pcard-chip">' + _esc(k) + '</code>'; };
+    var cfgChips = cfgKeys.length
+      ? cfgKeys.slice(0, 6).map(chip).join('') + (cfgKeys.length > 6 ? ' <span class="muted pcard-chip-more">+' + (cfgKeys.length - 6) + '</span>' : '')
+      : '<span class="muted">none</span>';
+    var nIn = _nPorts(p.inputs), nOut = _nPorts(p.outputs);
     var timestep = (kind === 'process')
       ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>'
       : '';
-    // Vertical stack: description/info on top, then config, then input ports,
-    // then run controls, then outputs (ports + collapsible run JSON) at the
-    // bottom. Fields load lazily (resolved defaults) when the card is visible.
-    return '<div class="registry-entry registry-entry-full loom-runnable' + selClsFull + '"' + sourceAttr + addrAttr + '>' +
+    // Outputs are static chips until a run lands; Download enables once outputs exist.
+    var outPortsHtml = (function () {
+      var keys = (p.outputs && typeof p.outputs === 'object') ? Object.keys(p.outputs) : [];
+      if (!keys.length) return '<div class="loom-port loom-port-empty">—</div>';
+      return keys.map(function (k) {
+        var t = _regTypeLabel(p.outputs[k]);
+        return '<div class="loom-port loom-port-out" title="' + _esc(t || '') + '"><span class="loom-port-dot"></span>' +
+          '<span class="loom-port-name">' + _esc(k) + '</span>' + (t ? '<span class="loom-port-type">' + _esc(t) + '</span>' : '') + '</div>';
+      }).join('');
+    })();
+    var isComposite = (kind === 'composite');
+    return '<div class="registry-entry registry-entry-full loom-runnable pcard' + o.selCls + '"' + o.sourceAttr + o.addrAttr + '>' +
       '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
-        '<div class="loom-info">' + bodyHead + '</div>' +
-        '<div class="loom-sec"><div class="loom-sec-label">config</div>' +
-          '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
+        // config top-bar — a region; double-click the header to expand/collapse.
+        '<div class="pcard-region pcard-config-region pcard-collapsed" data-role="config-bar">' +
+          '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to expand / collapse config">' +
+            '<span class="pcard-caret">▸</span><span class="pcard-sec-label">config</span>' +
+            '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>' +
+          '</div>' +
+          '<div class="pcard-region-body">' +
+            '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
+            '<div class="pcard-config-actions">' +
+              '<button class="btn-mini pcard-apply" type="button" onclick="_applyProcessConfig(this)" title="Apply config &amp; re-derive ports">✓ Apply</button>' +
+              '<button class="btn-mini" type="button" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+              '<span class="pcard-apply-status muted" data-role="apply-status"></span>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
-        '<div class="loom-sec"><div class="loom-sec-label">input ports</div>' +
-          '<div class="loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
+        // title / info — click to pin this card to the top of the list
+        '<div class="loom-info pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' + o.bodyHead + '</div>' +
+        // body row: inputs | contract | outputs — double-click a header to collapse/expand.
+        '<div class="pcard-body-row">' +
+          '<div class="pcard-region pcard-inputs">' +
+            '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to collapse / expand"><span class="pcard-caret pcard-caret-open">▾</span> inputs <span class="pcard-region-count">' + nIn + '</span></div>' +
+            '<div class="pcard-region-body loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
+          '</div>' +
+          '<div class="pcard-region pcard-contract">' +
+            '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to collapse / expand"><span class="pcard-caret pcard-caret-open">▾</span> contract</div>' +
+            '<div class="pcard-region-body" data-role="contract">' +
+              (p.description ? '<p class="pcard-contract-desc">' + _esc(String(p.description).trim().split('\n')[0]) + '</p>' : '') +
+              '<div class="pcard-contract-meta" data-role="contract-meta">' + kind + ' · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="pcard-region pcard-outputs">' +
+            '<div class="pcard-region-head" ondblclick="_toggleRegion(this)" title="Double-click to collapse / expand"><span class="pcard-caret pcard-caret-open">▾</span> outputs <span class="pcard-region-count">' + nOut + '</span>' +
+              '<button class="btn-mini pcard-dl" type="button" onclick="event.stopPropagation();_downloadProcessOutputs(this)" title="Download outputs" disabled>⬇</button>' +
+            '</div>' +
+            '<div class="pcard-region-body" data-role="outputs">' +
+              '<div class="loom-out-ports">' + outPortsHtml + '</div>' +
+            '</div>' +
+          '</div>' +
         '</div>' +
-        '<div class="loom-run-actions">' + timestep +
+        // run bar (bottom) — for composites, double-click pulls the loom in/out.
+        '<div class="loom-run-actions pcard-run' + (isComposite ? ' pcard-run-loomable' : '') + '"' +
+          (isComposite ? ' ondblclick="_toggleLoomView(this)" title="Double-click to reveal / hide the loom"' : '') + '>' + timestep +
           '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
-          '<button class="btn-mini" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+          (isComposite ? '<span class="pcard-loom-handle" aria-hidden="true">⌄</span>' : '') +
         '</div>' +
-        '<div class="loom-sec loom-sec-out"><div class="loom-sec-label">outputs</div>' +
-          '<div class="loom-out-ports">' + ports(p.outputs, 'out') + '</div>' +
-          '<div class="loom-run-output"></div>' +
-        '</div>' +
+        (isComposite ? '<div class="pcard-loom-view" data-role="loom-view" hidden></div>' : '') +
+        '<div class="loom-run-output" data-role="run-output"></div>' +
       '</div>' +
     '</div>';
   }
@@ -2483,9 +2542,151 @@
     if (!card) return;
     var d = card._defaults || { config: {}, inputs: {}, inputsSchema: {} };
     _fillFullFields(card, d.config, d.inputs, d.inputsSchema);
+    card._appliedConfig = null;
+    // Restore the config chips + a cleared run state (ports revert to the card's
+    // static contract on the next Apply / render).
+    if (typeof _updateConfigChips === 'function') _updateConfigChips(card, d.config);
     var out = card.querySelector('.loom-run-output'); if (out) out.innerHTML = '';
+    var dl = card.querySelector('.pcard-dl'); if (dl) dl.disabled = true;
+    card._lastOutputs = null;
+    var status = card.querySelector('[data-role="apply-status"]'); if (status) { status.textContent = ''; status.classList.remove('pcard-apply-err'); }
   }
   window._resetRunPanel = _resetRunPanel;
+
+  // ---- ProcessCard interactions: config expand / Apply / regions / pin / download ----
+
+  // Toggle the config top-bar panel (chips ⇄ editable fields). Lazily loads the
+  // resolved defaults the first time it opens.
+  // Collapse / expand one card region (config · inputs · contract · outputs) on
+  // double-click of its header. Expanding config ensures its fields are loaded.
+  function _toggleRegion(head) {
+    var region = head.closest('.pcard-region'); if (!region) return;
+    var collapsed = region.classList.toggle('pcard-collapsed');
+    var caret = head.querySelector('.pcard-caret');
+    if (caret) caret.textContent = collapsed ? '▸' : '▾';
+    if (!collapsed && region.querySelector('[data-role="cfg"]')) {
+      var card = head.closest('.registry-entry-full'); if (card) _loadFullRunFields(card);
+    }
+  }
+  window._toggleRegion = _toggleRegion;
+
+  // Composite Run bar: double-click pulls the embedded loom in/out (the internal
+  // bigraph graph). Wired for composite cards; slice 2 mounts the loom here.
+  function _toggleLoomView(bar) {
+    var card = bar.closest('.pcard'); if (!card) return;
+    var view = card.querySelector('[data-role="loom-view"]'); if (!view) return;
+    var open = view.hidden;
+    view.hidden = !open;
+    card.classList.toggle('pcard-loom-open', open);
+    // slice 2: lazily mount the composite's loom iframe into `view` on first open.
+  }
+  window._toggleLoomView = _toggleLoomView;
+
+  // Pin a card to the top of the scroll region (sticky) so it lines up for
+  // comparison/editing. Radio: pins this one, releases any other; clicking the
+  // pinned card's title again releases it.
+  function _pinCardTop(el) {
+    var card = el.closest('.pcard'); if (!card) return;
+    var wasPinned = card.classList.contains('pcard-pinned');
+    document.querySelectorAll('.pcard-pinned').forEach(function (c) {
+      c.classList.remove('pcard-pinned'); c.style.removeProperty('--pcard-pin-top');
+    });
+    if (wasPinned) return;
+    var sticky = document.querySelector('.registry-sticky');
+    var top = sticky ? Math.round(sticky.getBoundingClientRect().height) : 0;
+    card.style.setProperty('--pcard-pin-top', top + 'px');
+    card.classList.add('pcard-pinned');
+    try { card.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { card.scrollIntoView(); }
+  }
+  window._pinCardTop = _pinCardTop;
+
+  // Collect the config fields into an object (or {__error} on bad JSON).
+  function _collectCardConfig(card) {
+    var config = {}, bad = null;
+    card.querySelectorAll('.loom-cfg-field').forEach(function (el) {
+      if (bad) return;
+      var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
+      if (vt === 'boolean') v = el.checked;
+      else if (vt === 'number') v = (el.value === '' ? null : parseFloat(el.value));
+      else if (vt === 'json') { try { v = (el.value === '' ? null : JSON.parse(el.value)); } catch (e) { bad = 'Config "' + key + '": ' + e.message; return; } }
+      else v = el.value;
+      config[key] = v;
+    });
+    return bad ? { __error: bad } : config;
+  }
+
+  function _fillOutputChips(card, outSchema) {
+    var box = card.querySelector('[data-role="outputs"] .loom-out-ports'); if (!box) return;
+    var keys = Object.keys(outSchema || {});
+    box.innerHTML = keys.length ? keys.map(function (k) {
+      var t = _regTypeLabel(outSchema[k]);
+      return '<div class="loom-port loom-port-out" title="' + _esc(t || '') + '"><span class="loom-port-dot"></span>' +
+        '<span class="loom-port-name">' + _esc(k) + '</span>' + (t ? '<span class="loom-port-type">' + _esc(t) + '</span>' : '') + '</div>';
+    }).join('') : '<div class="loom-port loom-port-empty">—</div>';
+  }
+
+  function _updateContractMeta(card, kind, nIn, nOut) {
+    var meta = card.querySelector('[data-role="contract-meta"]'); if (!meta) return;
+    var mOut = meta.textContent.match(/(\d+)\s*out/);
+    var outN = (nOut != null) ? nOut : (mOut ? mOut[1] : 0);
+    meta.innerHTML = _esc(kind || 'process') + ' · <strong>' + nIn + '</strong> in / <strong>' + outN + '</strong> out';
+  }
+
+  function _updateConfigChips(card, config) {
+    var box = card.querySelector('[data-role="config-chips"]'); if (!box) return;
+    var keys = Object.keys(config || {});
+    box.innerHTML = keys.length
+      ? keys.slice(0, 6).map(function (k) { return '<code class="pcard-chip">' + _esc(k) + '</code>'; }).join('') +
+        (keys.length > 6 ? ' <span class="muted pcard-chip-more">+' + (keys.length - 6) + '</span>' : '')
+      : '<span class="muted">none</span>';
+  }
+
+  // Apply the edited config: re-derive the ports (re-instantiate with the config
+  // override) and refill input fields + output chips + contract counts.
+  function _applyProcessConfig(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var address = card.getAttribute('data-address');
+    var status = card.querySelector('[data-role="apply-status"]');
+    var config = _collectCardConfig(card);
+    if (config.__error) { if (status) { status.textContent = config.__error; status.classList.add('pcard-apply-err'); } return; }
+    if (status) { status.textContent = 'applying…'; status.classList.remove('pcard-apply-err'); }
+    var base = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl('/api/registry/process-template') : '/api/registry/process-template';
+    var url = base + '?address=' + encodeURIComponent(address) + '&config=' + encodeURIComponent(JSON.stringify(config));
+    fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || !j.ok) { if (status) { status.textContent = (j && j.error) ? j.error : 'apply failed'; status.classList.add('pcard-apply-err'); } return; }
+      var inputs = (j.inputs && typeof j.inputs === 'object') ? j.inputs : {};
+      var inSchema = (j.inputs_schema && typeof j.inputs_schema === 'object') ? j.inputs_schema : {};
+      var inBox = card.querySelector('[data-role="inputs"]');
+      if (inBox) {
+        var ik = Object.keys(inputs);
+        inBox.innerHTML = ik.length ? ik.map(function (k) { return _runInputField(k, inputs[k], inSchema[k]); }).join('')
+          : '<div class="loom-port loom-port-empty muted">(no input ports)</div>';
+        inBox.querySelectorAll('textarea.loom-in-field').forEach(_autoGrow);
+      }
+      var outSchema = (j.outputs_schema && typeof j.outputs_schema === 'object' && Object.keys(j.outputs_schema).length) ? j.outputs_schema : null;
+      if (outSchema) _fillOutputChips(card, outSchema);
+      _updateContractMeta(card, j.kind || card.getAttribute('data-kind'), Object.keys(inputs).length, outSchema ? Object.keys(outSchema).length : null);
+      _updateConfigChips(card, config);
+      card._appliedConfig = config;
+      if (status) { status.textContent = '✓ applied'; status.classList.remove('pcard-apply-err'); }
+    }).catch(function () { if (status) { status.textContent = 'network error'; status.classList.add('pcard-apply-err'); } });
+  }
+  window._applyProcessConfig = _applyProcessConfig;
+
+  // Download the last run's outputs. A single process update() has no run dir to
+  // zip, so we serialize the returned outputs to a JSON file client-side.
+  function _downloadProcessOutputs(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card || !card._lastOutputs) return;
+    var name = (card.getAttribute('data-address') || 'process').split('.').pop();
+    var blob;
+    try { blob = new Blob([JSON.stringify(card._lastOutputs, null, 2)], { type: 'application/json' }); } catch (e) { return; }
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name + '-outputs.json';
+    document.body.appendChild(a); a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 0);
+  }
+  window._downloadProcessOutputs = _downloadProcessOutputs;
 
   // Collect the Full card's config (per-field) + inputs (JSON), run, show outputs.
   function _runRegistryProcess(btn) {
@@ -2535,6 +2736,8 @@
       .then(function (j) {
         btn.disabled = false; btn.textContent = orig;
         if (j && j.ok) {
+          card._lastOutputs = j.outputs;
+          var dl = card.querySelector('.pcard-dl'); if (dl) { dl.disabled = false; dl.title = 'Download outputs (JSON)'; }
           out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs' +
             '<button class="btn-mini loom-copy-btn" onclick="_copyRunOutput(this)" title="Copy outputs JSON">⧉ Copy</button></div>' +
             _jsonViewer(j.outputs) +

@@ -1685,6 +1685,80 @@ textarea.loom-in-field{
 .loom-card-stack .loom-run-output:empty{ display:none; }
 .loom-card-stack .loom-run-output{ margin-top:10px; }
 
+/* ── Unified ProcessCard ─────────────────────────────────────────────────────
+   The loom node's grammar as one card: an expandable/settable config top-bar
+   (with Apply that re-derives ports), an inputs-left / contract-middle /
+   outputs-right body row (each region collapsible), and a Run bar at the bottom.
+   Used by the registry Full zoom; the composite card adopts it next. */
+.pcard .loom-card-stack{ position:relative; }
+
+/* config top-bar — a full-width region; double-click the header to expand/collapse */
+.pcard-config-region{ background:#f8fafc; border-bottom:1px solid #eef2f7; padding:0; }
+.pcard-config-region > .pcard-region-head{ padding:8px 16px; margin:0; cursor:pointer; }
+.pcard-config-region > .pcard-region-head:hover{ background:#f1f5f9; }
+.pcard-config-region > .pcard-region-body{ padding:10px 16px 12px; background:#fff; border-top:1px solid #eef2f7; }
+.pcard-caret{ color:#94a3b8; font-size:0.8em; flex:none; width:0.9em; text-align:center; }
+.pcard-sec-label{ text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700; color:#94a3b8; }
+.pcard-config-chips{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-width:0; }
+.pcard-chip{ background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:5px; font-size:0.78em; border:1px solid #e0e7ff; }
+.pcard-chip-more{ font-size:0.78em; }
+.pcard-config-actions{ display:flex; align-items:center; gap:10px; margin-top:10px; }
+/* Filled primary Apply — specificity beats the shared .btn-mini blue theme. */
+.pcard-config-actions .pcard-apply{ background:#4338ca; color:#fff; border:1px solid #4338ca; }
+.pcard-config-actions .pcard-apply:hover{ background:#3730a3; border-color:#3730a3; }
+.pcard-apply-status{ font-size:0.78em; color:#047857; }
+.pcard-apply-status.pcard-apply-err{ color:#b91c1c; }
+
+/* title — click to pin */
+.pcard-title{ cursor:pointer; }
+.pcard-title:hover .loom-name{ text-decoration:underline dotted; }
+
+/* body row: inputs | contract | outputs */
+.pcard-body-row{
+  display:grid;
+  grid-template-columns:minmax(240px,1fr) minmax(200px,1.1fr) minmax(200px,1fr);
+  border-top:1px solid #eef2f7;
+}
+.pcard-region{ padding:12px 16px; min-width:0; }
+.pcard-body-row > .pcard-region{ border-left:1px solid #f1f5f9; }
+.pcard-body-row > .pcard-region:first-child{ border-left:0; }
+.pcard-region-head{
+  display:flex; align-items:center; gap:6px; cursor:pointer; user-select:none;
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700;
+  color:#94a3b8; margin-bottom:9px;
+}
+.pcard-region-head:hover{ color:#64748b; }
+.pcard-region-count{ margin-left:2px; color:#cbd5e1; font-weight:700; }
+.pcard-region-body{ min-width:0; }
+.pcard-collapsed > .pcard-region-body{ display:none; }
+.pcard-collapsed > .pcard-region-head{ margin-bottom:0; }
+.pcard-contract-desc{ margin:0 0 8px; color:#475569; font-size:0.86em; line-height:1.5; }
+.pcard-contract-meta{ color:#64748b; font-size:0.8em; }
+.pcard-outputs .pcard-region-head{ justify-content:space-between; }
+.pcard-dl{ margin-left:auto; padding:1px 7px; }
+.pcard-dl:disabled{ opacity:0.4; cursor:default; }
+.pcard-inputs .loom-inputs-stack .loom-in-row{ flex:1 1 100%; max-width:none; }
+
+/* run bar — for composites, double-click pulls the loom in/out */
+.pcard-run-loomable{ cursor:ns-resize; }
+.pcard-loom-handle{ margin-left:auto; color:#94a3b8; font-size:1.1em; line-height:1; transition:transform .15s ease; }
+.pcard-loom-open .pcard-loom-handle{ transform:rotate(180deg); }
+.pcard-loom-view{ border-top:1px solid #eef2f7; min-height:160px; background:#fbfcfe; }
+.pcard-loom-view[hidden]{ display:none; }
+
+/* pinned to the top of the scroll region (sticky) so it lines up */
+.pcard-pinned{ position:sticky; top:var(--pcard-pin-top,0); z-index:5; }
+.pcard-pinned .loom-card{
+  border-color:#6366f1; box-shadow:0 6px 20px -6px rgba(79,70,229,0.35);
+}
+
+/* responsive: stack the three regions on narrow widths */
+@media (max-width:820px){
+  .pcard-body-row{ grid-template-columns:1fr; }
+  .pcard-region{ border-left:0; border-top:1px solid #f1f5f9; }
+  .pcard-region:first-child{ border-top:0; }
+}
+
 .loom-out-panel{ min-width:0; display:flex; flex-direction:column; gap:10px; }
 .loom-out-panel .loom-run-output:empty{ display:none; }
 .loom-out-panel .loom-run-output{

@@ -2166,21 +2166,37 @@ def _process_template(params: dict) -> dict:
         return {"ok": False, "error": f"class not found: {address}"}
     is_step = _class_is_step(cls)
 
+    # Optional ``config`` override (from the card's "Apply"): merge it over the
+    # filled defaults, then re-instantiate so ``inputs()``/``outputs()`` reflect
+    # config-dependent ports. Absent → the plain resolved-defaults template.
+    override = p.get("config") if isinstance(p.get("config"), dict) else None
+
     config = {}
     try:
         cs = getattr(cls, "config_schema", {}) or {}
         config = core.fill(cs, {}) if hasattr(core, "fill") else {}
     except Exception:
         config = {}
+    if override:
+        if not isinstance(config, dict):
+            config = {}
+        config.update(override)
 
     inputs = {}
     inputs_schema = {}
+    outputs_schema = {}
     try:
         inst = cls(config if isinstance(config, dict) else {}, core)
         in_schema = inst.inputs()
         if isinstance(in_schema, dict):
             inputs_schema = _json_safe(in_schema)
             inputs = core.fill(in_schema, {}) if hasattr(core, "fill") else {}
+        try:
+            out_schema = inst.outputs()
+            if isinstance(out_schema, dict):
+                outputs_schema = _json_safe(out_schema)
+        except Exception:
+            outputs_schema = {}
     except Exception:
         inputs = {}
 
@@ -2190,6 +2206,7 @@ def _process_template(params: dict) -> dict:
         "config": _json_safe(config) if isinstance(config, dict) else {},
         "inputs": _json_safe(inputs) if isinstance(inputs, dict) else {},
         "inputs_schema": inputs_schema if isinstance(inputs_schema, dict) else {},
+        "outputs_schema": outputs_schema if isinstance(outputs_schema, dict) else {},
     }
 
 
