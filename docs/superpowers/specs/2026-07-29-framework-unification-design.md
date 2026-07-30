@@ -27,9 +27,35 @@ predicate `is_ground`); everything else already exists.
 
 The bespoke, imperative orchestrators (`run_runner.py`, `composite_flush.py`,
 `investigation_run_views.py`) collapse onto the step-network engine. The endpoint's job
-shrinks to: *fill the document → hand it to the engine → read the artifacts*. Shared
-vocabulary is the glossary (review §3.4): **site, sort, admits, formation, face, wires,
-fill, compose, ground, template, document, edge, reaction, results, artifact**.
+shrinks to: *fill the document → hand it to the engine → read the artifacts*.
+
+### 1.1 Shared glossary (canonical — all four specs use only the left column)
+
+One word per concept, across the umbrella, Layer 1, Layer 2a, and the viewer. The
+confusable synonyms are banned so the docs read as one architecture.
+
+| Use this | Means | Never say |
+|---|---|---|
+| **site** | an open position in the place graph (`Site`) | slot, hole, placeholder, parameter position |
+| **sort** | the constraint on what may fill a site (`Site._sort`) | slot type, kind |
+| **admits** | site-sort ⊨ filler (the *filling* discipline) | formation (that's *nesting*) |
+| **formation** | parent-sort ⊨ child-sort (the *nesting* discipline) | conformance |
+| **face** | a port-type map (`_inputs`/`_outputs`, `Interface`); a `Composite`'s `bridge` is its outer face | interface, contract, signature, bridge-as-a-thing |
+| **wires** | port → store path (`inputs`/`outputs`) | topology, connections |
+| **fill** | substitute fillers into named sites (`instantiate`) | bind, compose_at, reify, substitute, interpolate |
+| **compose** | `fill` with positionally-matched sites — Milner's ∘ | (reserve strictly for the Milner sense) |
+| **ground** | no open sites (`is_ground`) — the runnable predicate | concrete, complete, resolved |
+| **template** | a document that is not ground | (not a type; not a registry entry) |
+| **document** | `{schema, state}` — what `Composite` consumes | spec, generator output, composite doc |
+| **edge** | `Link`/`Edge` — process, step, composite alike | node, module, card |
+| **reaction** | a rule firing / a run | run, execute, flush, tick |
+| **results** | the emitter's output handle | run output, extract, context bag |
+| **artifact** | what a flush edge writes to disk | output, product |
+
+Retired entirely: *slot, bind, reify, interpolate, gate evaluator, barrier, phase,
+flush engine, contract pane*. The payoff: "gating," "template binding," and "the
+card's unbound state" all reduce to the same three words — an **open site** not yet
+**filled**, so the document isn't **ground**.
 
 ## 2. Current state — the substrate that already exists
 
