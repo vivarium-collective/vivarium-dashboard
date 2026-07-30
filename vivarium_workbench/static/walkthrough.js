@@ -790,6 +790,18 @@
   }
 
   window._switchPage = _switchPage;
+
+  // Composites are now a tab on the Processes page. The rail "Composites" item
+  // opens that page and activates the Composites tab (and owns the rail
+  // highlight, since two rail items share the modules page).
+  function _openCompositesTab() {
+    _switchPage('modules');
+    if (typeof _setRegistryTab === 'function') _setRegistryTab('composite');
+    document.querySelectorAll('.menu-link').forEach(function (a) { a.classList.remove('active'); });
+    var link = document.querySelector('.menu-link[data-rail="composites"]');
+    if (link) link.classList.add('active');
+  }
+  window._openCompositesTab = _openCompositesTab;
   window._initMenuNav = _initMenuNav;
 
   // -------------------------------------------------------------------------
@@ -2080,6 +2092,7 @@
   function _rerenderRegistryKinds() {
     var m = window._registryByKind || {};
     Object.keys(m).forEach(function (cid) { _renderRegistryGrid(cid, m[cid]); });
+    if (typeof _renderRegistryComposites === 'function') _renderRegistryComposites();
   }
   function _setRegistryZoom(z) {
     window._registryZoom = z;
@@ -2105,6 +2118,24 @@
         ' composite(s) / runner script(s) in this workspace">' + p.use_count +
         ' use' + (p.use_count === 1 ? '' : 's') + '</span>'
       : '';
+  }
+
+  // Process vs Step. In process-bigraph a Process advances state over a
+  // timestep ("Temporal"); a Step is a dataflow node that runs to fixed point
+  // (no timestep). Both are Processes (edges) — these helpers say which kind.
+  function _procKindLabel(kind) {
+    if (kind === 'step') return 'Step';
+    if (kind === 'process') return 'Temporal';
+    return kind ? kind.charAt(0).toUpperCase() + kind.slice(1) : '';
+  }
+  // Small pill for the two runnable kinds; '' for anything else (emitter/type/…).
+  function _procKindBadge(kind) {
+    if (kind !== 'process' && kind !== 'step') return '';
+    var isStep = kind === 'step';
+    return '<span class="proc-kind-badge proc-kind-' + (isStep ? 'step' : 'temporal') + '" title="' +
+      (isStep ? 'Step — dataflow node, runs to fixed point (no timestep)'
+              : 'Temporal — a Process that advances state over a timestep') +
+      '">' + (isStep ? 'Step' : 'Temporal') + '</span>';
   }
 
   // Config-schema + ports body, revealed by a per-card "config & ports" dropdown
@@ -2207,7 +2238,7 @@
         ' title="Double-click to zoom in on this ' + (p.kind || 'process') + '">' +
       '<div class="reg-card-row">' +
         '<div class="reg-card-main">' +
-          '<div class="reg-card-head"><strong class="reg-card-name">' + esc(p.name) + '</strong>' + defaultBadge + _regUseBadge(p) + '</div>' +
+          '<div class="reg-card-head"><strong class="reg-card-name">' + esc(p.name) + '</strong>' + _procKindBadge(p.kind) + defaultBadge + _regUseBadge(p) + '</div>' +
           '<code class="reg-card-addr">' + addr + '</code>' +
           (short ? '<p class="reg-card-desc">' + esc(short) + '</p>' : '') +
         '</div>' +
@@ -2242,7 +2273,7 @@
       }).join('');
     }
     var bodyHead =
-      '<div class="loom-body-head"><span class="loom-name">' + _esc(p.name) + '</span>' + _regUseBadge(p) + '</div>' +
+      '<div class="loom-body-head"><span class="loom-name">' + _esc(p.name) + '</span>' + _procKindBadge(kind) + _regUseBadge(p) + '</div>' +
       '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
       (desc ? '<p class="loom-desc">' + _esc(desc) + '</p>' : '');
 
@@ -2275,71 +2306,331 @@
     return _renderProcessCard(p, kind, { selCls: selClsFull, sourceAttr: sourceAttr, addrAttr: addrAttr, bodyHead: bodyHead });
   }
 
+  // ── Shared ProcessCard building blocks (used by process + composite cards) ──
+  // Left info-panel row → open + scroll the matching accordion section.
+  function _pcardInfoRow(target, label, n) {
+    return '<button type="button" class="pcard-info-row" data-target="' + target +
+      '" onclick="_pcardJumpSec(this)" title="Open the ' + label + ' section">' +
+      '<span class="pcard-info-label">' + _esc(label) + '</span>' +
+      '<span class="pcard-info-n">' + n + '</span></button>';
+  }
+  // One accordion section: header (caret · name · summary [· extra]) + body.
+  function _pcardSection(key, name, summary, body, opts) {
+    opts = opts || {};
+    var open = !!opts.open;
+    var caret = open ? '▾' : '▸';
+    var cls = 'pcard-sec pcard-sec-' + key + (open ? ' pcard-sec-open' : '') +
+      (opts.wide ? ' pcard-sec-wide' : '') + (opts.resizable ? ' pcard-sec-resizable' : '');
+    // Resizable sections get a drag grip: drag to set height, double-click to fit.
+    var grip = opts.resizable
+      ? '<div class="pcard-sec-grip" title="Drag to resize · double-click to fit contents" ' +
+        'onmousedown="_pcardSecGripDown(event,this)" ontouchstart="_pcardSecGripDown(event,this)" ' +
+        'ondblclick="_pcardSecGripFull(event,this)"></div>'
+      : '';
+    return '<div class="' + cls + '" data-sec="' + key + '">' +
+      '<div class="pcard-sec-head" role="button" tabindex="0" onclick="_pcardToggleSec(this)" onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();_pcardToggleSec(this);}">' +
+        '<span class="pcard-sec-caret">' + caret + '</span>' +
+        '<span class="pcard-sec-name">' + _esc(name) + '</span>' +
+        '<span class="pcard-sec-sum">' + summary + '</span>' +
+        (opts.headExtra || '') +
+      '</div>' +
+      '<div class="pcard-sec-body">' + body + '</div>' +
+      grip +
+    '</div>';
+  }
+  // Persistent (non-collapsible) Run bar — always visible at the card's top level.
+  function _pcardRunBar(inner) {
+    return '<div class="pcard-runbar">' + inner + '</div>';
+  }
+  // "Composite" kind pill (a composite IS a process — sits alongside Temporal/Step).
+  function _compositeBadge() {
+    return '<span class="proc-kind-badge proc-kind-composite" title="Composite — a Process assembled from other processes/steps; open Explore for its bigraph">Composite</span>';
+  }
+
   // The unified ProcessCard renderer (§ unified-process-card design):
-  //   1. name + address + FULL-WIDTH description (carries the contract: N in/M out)
-  //   2. config panel (collapse/expand pull; loom-style fields + Apply/Reset)
-  //   3. inputs | outputs — two mirrored, resizable panels; each degrades by
-  //      width through three levels: full (editable) → info (name+type) → dots
-  //      (drag to an edge; click a dot for info). Outputs mirrors inputs (dots right).
-  //   4. Run bar at the bottom.
-  // Click the header to pin the card to the top of the scroll region.
+  //   header: name + kind badge + address
+  //   summary: a little INFO PANEL (Config / Inputs / Outputs counts — click to
+  //     jump) beside the contract line + description.
+  //   accordion: four collapsible sections, in order —
+  //     Configure ▸ Inputs ▸ Run ▸ Outputs. Each expands in place; several can be
+  //     open at once. Config + input fields load lazily (resolved defaults).
+  //   Click the header name to pin the card to the top of the scroll region.
   function _renderProcessCard(p, kind, o) {
     var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
     var chip = function (k) { return '<code class="pcard-chip">' + _esc(k) + '</code>'; };
     var cfgChips = cfgKeys.length
       ? cfgKeys.slice(0, 6).map(chip).join('') + (cfgKeys.length > 6 ? ' <span class="muted pcard-chip-more">+' + (cfgKeys.length - 6) + '</span>' : '')
       : '<span class="muted">none</span>';
-    var nIn = _nPorts(p.inputs), nOut = _nPorts(p.outputs);
-    var timestep = (kind === 'process')
+    var nCfg = cfgKeys.length, nIn = _nPorts(p.inputs), nOut = _nPorts(p.outputs);
+    var desc = (p.description || '').trim();
+    var isProc = (kind === 'process');
+    var timestep = isProc
       ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>'
-      : '';
-    return '<div class="registry-entry registry-entry-full loom-runnable pcard' + o.selCls + '"' + o.sourceAttr + o.addrAttr + '>' +
+      : '<span class="muted pcard-run-note">Step — runs to fixed point (no timestep)</span>';
+
+    var infoPanel =
+      '<div class="pcard-infopanel">' +
+        _pcardInfoRow('configure', 'Config', nCfg) +
+        _pcardInfoRow('inputs', 'Inputs', nIn) +
+        _pcardInfoRow('outputs', 'Outputs', nOut) +
+      '</div>';
+    var section = _pcardSection;
+
+    var configBody =
+      '<div class="cfg-list" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
+      _cfgJsonTools() +
+      '<div class="pcard-config-actions">' +
+        '<button class="btn-mini pcard-apply" type="button" onclick="_applyProcessConfig(this)" title="Apply config &amp; re-derive ports">✓ Apply</button>' +
+        '<button class="btn-mini" type="button" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+        _cfgJsonToggle() +
+        '<span class="pcard-apply-status muted" data-role="apply-status"></span>' +
+      '</div>';
+
+    var inputsBody =
+      '<div class="cfg-list" data-role="inputs"><span class="muted loom-load-hint">resolving defaults…</span></div>';
+
+    // Run is a persistent bar (not an accordion) — always visible.
+    var runBar = _pcardRunBar(timestep +
+      '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+      '<span class="pcard-run-out" data-role="run-inline-status"></span>');
+
+    var outputsBody =
+      '<div class="pcard-outputs" data-pane="outputs">' + _pcardRail('outputs', p.outputs, 'out') + '</div>' +
+      '<div class="loom-run-output" data-role="run-output"><span class="muted pcard-run-hint">Run to see outputs.</span></div>';
+    var dlBtn = '<button class="btn-mini pcard-dl" type="button" title="Download outputs" disabled onclick="event.stopPropagation();_downloadProcessOutputs(this)">⬇</button>';
+
+    return '<div class="registry-entry registry-entry-full loom-runnable pcard pcard-accordion' + o.selCls + '"' + o.sourceAttr + o.addrAttr + '>' +
       '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
-        // 1. header: name / address / full-width description + contract counts.
-        '<div class="loom-info pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' + o.bodyHead +
-          '<div class="pcard-contract-meta" data-role="contract-meta">' + kind + ' · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
-        '</div>' +
-        // 2. config panel — pull the header down for the full config, up to collapse.
-        '<div class="pcard-region pcard-config-region pcard-collapsed" data-role="config-bar">' +
-          '<div class="pcard-region-head pcard-config-head" onmousedown="_configPull(event,this)" ontouchstart="_configPull(event,this)" title="Drag down for the full config · drag up to collapse">' +
-            '<span class="pcard-sec-label">config</span>' +
-            '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>' +
+        // 1. compact top — header (name·badge·address) + info panel beside the
+        //    contract line + description in one tight band.
+        '<div class="pcard-top">' +
+          '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' +
+            '<span class="loom-name">' + _esc(p.name) + '</span>' + _procKindBadge(kind) + _regUseBadge(p) +
+            '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
           '</div>' +
-          '<div class="pcard-region-body">' +
-            '<div class="loom-cfg-inline" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
-            '<div class="pcard-config-actions">' +
-              '<button class="btn-mini pcard-apply" type="button" onclick="_applyProcessConfig(this)" title="Apply config &amp; re-derive ports">✓ Apply</button>' +
-              '<button class="btn-mini" type="button" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
-              '<span class="pcard-apply-status muted" data-role="apply-status"></span>' +
+          '<div class="pcard-summary">' + infoPanel +
+            '<div class="pcard-desc-col">' +
+              '<div class="pcard-contract-meta" data-role="contract-meta">' + _procKindLabel(kind).toLowerCase() + ' process · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
+              (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
             '</div>' +
           '</div>' +
         '</div>' +
-        // 3. inputs | outputs — two mirrored panels; drag the divider to resize.
-        //    Each pane degrades by width: full (editable) → info (name+type) → dots.
-        '<div class="pcard-ports-row" data-role="ports-row">' +
-          '<div class="pcard-region pcard-inputs" data-pane="inputs" data-level="full">' +
-            '<div class="pcard-region-head">inputs <span class="pcard-region-count">' + nIn + '</span></div>' +
-            _pcardRail('inputs', p.inputs, 'in') +
-            '<div class="pcard-region-body loom-inputs-edit loom-inputs-stack" data-role="inputs"><span class="muted loom-load-hint">…</span></div>' +
-          '</div>' +
-          '<div class="pcard-gutter" data-gutter="0" title="Drag to resize · edges collapse to dots" onmousedown="_pcardGutterDown(event,this)" ontouchstart="_pcardGutterDown(event,this)"></div>' +
-          '<div class="pcard-region pcard-outputs" data-pane="outputs" data-level="full">' +
-            '<div class="pcard-region-head">outputs <span class="pcard-region-count">' + nOut + '</span>' +
-              '<button class="btn-mini pcard-dl" type="button" onclick="_downloadProcessOutputs(this)" title="Download outputs" disabled>⬇</button>' +
-            '</div>' +
-            _pcardRail('outputs', p.outputs, 'out') +
-            '<div class="pcard-region-body" data-role="outputs">' +
-              '<div class="loom-run-output" data-role="run-output"></div>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
-        // 4. run bar (bottom)
-        '<div class="loom-run-actions pcard-run">' + timestep +
-          '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+        // 2. accordion — Configure ▸ Inputs (resizable) · Run bar · Outputs.
+        '<div class="pcard-acc">' +
+          section('configure', 'Configure', '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>', configBody, { resizable: true }) +
+          section('inputs', 'Inputs', '<span class="pcard-sec-count">' + nIn + '</span>', inputsBody, { open: true, resizable: true }) +
+          runBar +
+          section('outputs', 'Outputs', '<span class="pcard-sec-count">' + nOut + '</span>', outputsBody, { headExtra: dlBtn }) +
         '</div>' +
       '</div>' +
     '</div>';
   }
+
+  // Expand / collapse a clamped description in place.
+  function _pcardToggleDesc(el) { if (el) el.classList.toggle('pcard-desc-open'); }
+  window._pcardToggleDesc = _pcardToggleDesc;
+
+  // Resize a section body by dragging its grip; double-click fits to contents.
+  function _pcardSecGripDown(e, grip) {
+    if (e && e.cancelable) e.preventDefault();
+    var sec = grip.closest('.pcard-sec'); if (!sec) return;
+    var body = sec.querySelector('.pcard-sec-body'); if (!body) return;
+    sec.classList.remove('pcard-sec-full');
+    var y0 = (e.touches && e.touches[0]) ? e.touches[0].clientY : e.clientY;
+    var h0 = body.getBoundingClientRect().height;
+    document.body.classList.add('pcard-sec-resizing');
+    function move(ev) {
+      var y = (ev.touches && ev.touches[0]) ? ev.touches[0].clientY : ev.clientY;
+      body.style.setProperty('--pch', Math.max(56, h0 + (y - y0)) + 'px');
+      if (ev.cancelable) ev.preventDefault();
+    }
+    function up() {
+      document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up);
+      document.removeEventListener('touchmove', move); document.removeEventListener('touchend', up);
+      document.body.classList.remove('pcard-sec-resizing');
+    }
+    document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
+    document.addEventListener('touchmove', move, { passive: false }); document.addEventListener('touchend', up);
+  }
+  window._pcardSecGripDown = _pcardSecGripDown;
+  function _pcardSecGripFull(e, grip) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    var sec = grip.closest('.pcard-sec'); if (!sec) return;
+    var body = sec.querySelector('.pcard-sec-body'); if (body) body.style.removeProperty('--pch');
+    sec.classList.toggle('pcard-sec-full');
+  }
+  window._pcardSecGripFull = _pcardSecGripFull;
+
+  // Toggle one accordion section (Configure / Inputs / Run / Outputs). Opening
+  // Configure or Inputs makes sure the lazily-resolved fields are loaded.
+  function _pcardToggleSec(head) {
+    var sec = head.closest('.pcard-sec'); if (!sec) return;
+    var open = sec.classList.toggle('pcard-sec-open');
+    var caret = head.querySelector('.pcard-sec-caret'); if (caret) caret.textContent = open ? '▾' : '▸';
+    if (!open) return;
+    var card = head.closest('.registry-entry-full');
+    // Process cards lazy-load resolved config/input fields; composites don't.
+    if (card && !card.classList.contains('pcard-composite')) _loadFullRunFields(card);
+    // Explore section: mount the composite's loom bigraph on first open.
+    var embed = sec.querySelector('.ccard-loom-embed');
+    if (embed && typeof _openCompositeLoomInline === 'function') _openCompositeLoomInline(embed);
+  }
+  window._pcardToggleSec = _pcardToggleSec;
+
+  // Info-panel click → open the matching section and scroll it into view.
+  function _pcardJumpSec(btn) {
+    var target = btn.getAttribute('data-target');
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var sec = card.querySelector('.pcard-sec[data-sec="' + target + '"]'); if (!sec) return;
+    if (!sec.classList.contains('pcard-sec-open')) {
+      var head = sec.querySelector('.pcard-sec-head'); if (head) _pcardToggleSec(head);
+    }
+    try { sec.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (e) { /* ignore */ }
+  }
+  window._pcardJumpSec = _pcardJumpSec;
+
+  // ── Composite ProcessCard ────────────────────────────────────────────────
+  // A composite IS a process (§ unified idea): same card, same accordion, plus
+  // an EXPLORE section (the wide loom bigraph) between Inputs and Run. A
+  // composite is mostly top-level, so Inputs/Outputs are informational; the
+  // value is Configure (its parameters) + Explore (its internal wiring).
+  function _compositeLoomExplore(c) {
+    var liveBar = (document.body.classList.contains('snapshot') || c.read_only) ? '' :
+      '<div class="ccard-loom-bar">' +
+        '<span class="ccard-loom-mode">Read-only preview</span>' +
+        '<button class="ccard-loom-live-btn" onclick="_enableInlineLoomRun(this)"' +
+          ' title="Reload live to edit config and Run in place">&#9654; Enable running</button>' +
+      '</div>';
+    return '<div class="ccard-loom-embed pcard-loom" data-id="' + _esc(c.id) + '">' +
+      liveBar +
+      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the bigraph…</p></div>' +
+    '</div>';
+  }
+
+  function _renderCompositeCardFull(c) {
+    var params = (c.parameters && typeof c.parameters === 'object') ? c.parameters : {};
+    var pKeys = Object.keys(params), nCfg = pKeys.length;
+    var desc = (c.description || '').trim();
+    var sel = (window._registrySelected && window._registrySelected === c.id) ? ' reg-selected' : '';
+    var wsPill = c.workspace_local ? '<span class="composite-ws-tag">📦 workspace</span>' : '';
+    var roPill = c.read_only ? '<span class="tag-pill" style="background:#fef2f2;color:#b91c1c;margin-left:6px">read-only</span>' : '';
+
+    var chip = function (k) { return '<code class="pcard-chip">' + _esc(k) + '</code>'; };
+    var cfgChips = nCfg
+      ? pKeys.slice(0, 6).map(chip).join('') + (nCfg > 6 ? ' <span class="muted pcard-chip-more">+' + (nCfg - 6) + '</span>' : '')
+      : '<span class="muted">none</span>';
+
+    // Editable config fields from each parameter's default; title carries its
+    // description so hovering a field explains the parameter.
+    var cfgFields = nCfg
+      ? pKeys.map(function (k) {
+          var pv = params[k] || {};
+          return _runField(k, ('default' in pv) ? pv.default : null, { type: pv.type, description: pv.description });
+        }).join('')
+      : '<p class="muted" style="font-size:0.82em">No parameters.</p>';
+
+    var infoPanel =
+      '<div class="pcard-infopanel">' +
+        _pcardInfoRow('configure', 'Config', nCfg) +
+        _pcardInfoRow('inputs', 'Inputs', 0) +
+        _pcardInfoRow('outputs', 'Outputs', 0) +
+      '</div>';
+
+    var configBody =
+      '<div class="cfg-list" data-role="cfg">' + cfgFields + '</div>' +
+      _cfgJsonTools() +
+      '<div class="pcard-config-actions">' +
+        '<button class="btn-mini pcard-apply" type="button" onclick="_applyCompositeConfig(this)" title="Apply parameters &amp; re-resolve the Explore bigraph">✓ Apply</button>' +
+        '<button class="btn-mini" type="button" onclick="_resetCompositeConfig(this)" title="Reset to declared defaults">↺ Reset</button>' +
+        _cfgJsonToggle() +
+        '<span class="pcard-apply-status muted" data-role="apply-status"></span>' +
+      '</div>';
+
+    var topNote = '<p class="muted pcard-toplevel-note">Top-level composite — its interface is the internal wiring (see Explore), not bridge ports.</p>';
+    var runBar = _pcardRunBar(
+      c.read_only
+        ? '<span class="muted pcard-run-note">read-only composite — enable running inside Explore to run in place</span>'
+        : '<button class="action-btn" onclick="_runComposite(this)">▶ Configure &amp; Run</button>' +
+          '<span class="muted pcard-run-note">set the time range &amp; parameters, then launch a run</span>');
+
+    var outputsBody = '<p class="muted pcard-run-hint">Composite outputs are produced by a Run (launch one above) and are inspectable in the Explore bigraph.</p>';
+    var addr = c.module ? (c.module + '.' + c.name) : c.id;
+
+    return '<div class="registry-entry registry-entry-full loom-runnable pcard pcard-accordion pcard-composite' + sel +
+        '" data-address="' + _esc(c.id) + '" data-kind="composite">' +
+      '<div class="loom-card loom-card-stack loom-card-composite">' +
+        '<div class="pcard-top">' +
+          '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' +
+            '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + wsPill + roPill +
+            '<code class="loom-addr">' + _esc(addr) + '</code>' +
+          '</div>' +
+          '<div class="pcard-summary">' + infoPanel +
+            '<div class="pcard-desc-col">' +
+              '<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
+              (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
+            '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="pcard-acc">' +
+          _pcardSection('configure', 'Configure', '<span class="pcard-config-chips" data-role="config-chips">' + cfgChips + '</span>', configBody, { open: true, resizable: true }) +
+          _pcardSection('inputs', 'Inputs', '<span class="muted">top-level</span>', topNote) +
+          _pcardSection('explore', 'Explore', '<span class="muted">open to render the bigraph</span>', _compositeLoomExplore(c), { wide: true }) +
+          runBar +
+          _pcardSection('outputs', 'Outputs', '<span class="muted">top-level</span>', outputsBody) +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+  window._renderCompositeCardFull = _renderCompositeCardFull;
+
+  // Apply edited parameters → re-resolve the Explore bigraph with the overrides.
+  function _applyCompositeConfig(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var status = card.querySelector('[data-role="apply-status"]');
+    var cfg = _collectCardConfig(card);
+    if (cfg.__error) { if (status) { status.textContent = cfg.__error; status.classList.add('pcard-apply-err'); } return; }
+    card._appliedConfig = cfg;
+    _updateConfigChips(card, cfg);
+    var embed = card.querySelector('.ccard-loom-embed');
+    if (embed) {
+      embed._overrides = JSON.stringify(cfg);
+      embed._loomLoaded = false;
+      var host = embed.querySelector('.ccard-loom-frame');
+      if (host) host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Re-resolving with new parameters…</p>';
+      var sec = embed.closest('.pcard-sec');
+      if (sec && !sec.classList.contains('pcard-sec-open')) { var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h); }
+      else _openCompositeLoomInline(embed);
+    }
+    if (status) { status.textContent = '✓ applied — Explore re-resolved'; status.classList.remove('pcard-apply-err'); }
+  }
+  window._applyCompositeConfig = _applyCompositeConfig;
+
+  function _resetCompositeConfig(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var c = (window._compositesById || {})[card.getAttribute('data-address')];
+    if (!c) return;
+    var params = (c.parameters && typeof c.parameters === 'object') ? c.parameters : {};
+    var cfgBox = card.querySelector('[data-role="cfg"]');
+    if (cfgBox) {
+      var ks = Object.keys(params);
+      cfgBox.innerHTML = ks.length
+        ? ks.map(function (k) { var pv = params[k] || {}; return _runField(k, ('default' in pv) ? pv.default : null, { type: pv.type, description: pv.description }); }).join('')
+        : '<p class="muted" style="font-size:0.82em">No parameters.</p>';
+    }
+    card._appliedConfig = null;
+    var embed = card.querySelector('.ccard-loom-embed'); if (embed) embed._overrides = null;
+    var status = card.querySelector('[data-role="apply-status"]'); if (status) { status.textContent = ''; status.classList.remove('pcard-apply-err'); }
+  }
+  window._resetCompositeConfig = _resetCompositeConfig;
+
+  // Launch a composite run via the existing Configure-composite modal (which
+  // collects sim name + time range + any parameter overrides).
+  function _runComposite(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var id = card.getAttribute('data-address');
+    if (typeof _useComposite === 'function') _useComposite(id);
+  }
+  window._runComposite = _runComposite;
 
   // Populate a runnable Full card's editable config (top) + input fields (left)
   // from resolved defaults. Shared by lazy-load and Reset.
@@ -2347,9 +2638,11 @@
     var cfgBox = card.querySelector('[data-role="cfg"]');
     var inBox = card.querySelector('[data-role="inputs"]');
     if (cfgBox) {
+      var entry = _registryEntryByAddress(card.getAttribute('data-address')) || {};
+      var cfgSchema = (entry.config_schema && typeof entry.config_schema === 'object') ? entry.config_schema : {};
       var ck = Object.keys(config || {});
       cfgBox.innerHTML = ck.length
-        ? ck.map(function (k) { return _runField(k, config[k]); }).join('')
+        ? ck.map(function (k) { return _runField(k, config[k], { type: _regTypeLabel(cfgSchema[k]) }); }).join('')
         : '<span class="muted" style="font-size:0.82em">no config parameters</span>';
     }
     if (inBox) {
@@ -2448,8 +2741,12 @@
     cards.forEach(function (c) { io.observe(c); });
   }
 
-  // One typed config field, chosen from the resolved default's JS type.
-  function _runField(key, value) {
+  // One config parameter as an organized ROW: name · declared type · value
+  // field (prefilled with the default). `opts.type` is the declared type label,
+  // `opts.description` a hover/explainer line. The input carries the vtype the
+  // collectors (_collectCardConfig / run) read back.
+  function _runField(key, value, opts) {
+    opts = opts || {};
     var t = (value === null) ? 'null' : (Array.isArray(value) ? 'json' : typeof value);
     var attr = 'class="loom-cfg-field" data-key="' + _esc(key) + '" data-vtype="';
     var input;
@@ -2463,8 +2760,83 @@
       var jv = ''; try { jv = JSON.stringify(value); } catch (e) { jv = ''; }
       input = '<input type="text" ' + attr + 'json" value="' + _esc(jv) + '" placeholder="JSON / null">';
     }
-    return '<label class="loom-cfg-row"><span class="loom-cfg-key" title="' + _esc(key) + '">' + _esc(key) + '</span>' + input + '</label>';
+    var typeLabel = opts.type || '';
+    var desc = (opts.description || '').trim();
+    return '<div class="cfg-row"' + (desc ? ' title="' + _esc(desc) + '"' : '') + '>' +
+        '<div class="cfg-row-name">' +
+          '<span class="cfg-key">' + _esc(key) + '</span>' +
+          (typeLabel ? '<span class="cfg-type">' + _esc(typeLabel) + '</span>' : '') +
+        '</div>' +
+        '<div class="cfg-row-input">' + input + '</div>' +
+        (desc ? '<div class="cfg-row-desc">' + _esc(desc) + '</div>' : '') +
+      '</div>';
   }
+
+  // "Set via JSON" panel — paste a JSON object to override matching config
+  // fields in one shot. Shared by process + composite Configure sections.
+  function _cfgJsonTools() {
+    return '<div class="cfg-json" hidden data-role="cfg-json">' +
+        '<textarea class="cfg-json-box" spellcheck="false" rows="4" ' +
+          'placeholder=\'{ "param": value, … }  — overrides the matching fields above\'></textarea>' +
+        '<div class="cfg-json-actions">' +
+          '<button class="btn-mini" type="button" onclick="_applyConfigJson(this)">Load into fields</button>' +
+          '<span class="cfg-json-status muted"></span>' +
+        '</div>' +
+      '</div>';
+  }
+  function _cfgJsonToggle() {
+    return '<button class="btn-mini cfg-json-toggle" type="button" onclick="_toggleConfigJson(this)" ' +
+      'title="Paste a JSON object to set several parameters at once">{ } Set via JSON</button>';
+  }
+  // Reveal/hide the JSON panel; on reveal, prefill it with the current values.
+  function _toggleConfigJson(btn) {
+    var body = btn.closest('.pcard-sec-body') || btn.closest('.pcard-region-body'); if (!body) return;
+    var panel = body.querySelector('[data-role="cfg-json"]'); if (!panel) return;
+    var show = panel.hidden;
+    panel.hidden = !show;
+    btn.classList.toggle('active', show);
+    if (show) {
+      var card = btn.closest('.registry-entry-full');
+      var cfg = card ? _collectCardConfig(card) : {};
+      var box = panel.querySelector('.cfg-json-box');
+      if (box && !cfg.__error) { box.value = JSON.stringify(cfg, null, 2); _autoGrow(box); }
+      if (box) box.focus();
+    }
+  }
+  window._toggleConfigJson = _toggleConfigJson;
+  // Set a config field's value from a JS value, respecting its editor vtype.
+  function _setCfgFieldValue(el, v) {
+    var vt = el.getAttribute('data-vtype');
+    if (vt === 'boolean') { el.checked = !!v; return; }
+    if (vt === 'number') { el.value = (v == null ? '' : v); return; }
+    if (vt === 'json') { el.value = (typeof v === 'string') ? v : (function () { try { return JSON.stringify(v); } catch (e) { return ''; } })(); }
+    else { el.value = (v == null ? '' : String(v)); }
+    if (el.tagName === 'TEXTAREA') _autoGrow(el);
+  }
+  // Parse the JSON box and push each key onto its matching field.
+  function _applyConfigJson(btn) {
+    var panel = btn.closest('[data-role="cfg-json"]'); if (!panel) return;
+    var box = panel.querySelector('.cfg-json-box');
+    var status = panel.querySelector('.cfg-json-status');
+    var setErr = function (m) { if (status) { status.textContent = '✗ ' + m; status.classList.add('pcard-apply-err'); } };
+    var obj;
+    try { obj = JSON.parse(box.value); } catch (e) { return setErr(e.message); }
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return setErr('expected a JSON object');
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var esc = (window.CSS && CSS.escape) ? function (s) { return CSS.escape(s); } : function (s) { return s; };
+    var n = 0, unknown = [];
+    Object.keys(obj).forEach(function (k) {
+      var el = card.querySelector('.loom-cfg-field[data-key="' + esc(k) + '"]');
+      if (!el) { unknown.push(k); return; }
+      _setCfgFieldValue(el, obj[k]); n++;
+    });
+    if (status) {
+      status.classList.remove('pcard-apply-err');
+      status.textContent = '✓ set ' + n + ' field' + (n === 1 ? '' : 's') +
+        (unknown.length ? ' · ignored ' + unknown.length + ' unknown (' + unknown.slice(0, 3).join(', ') + (unknown.length > 3 ? '…' : '') + ')' : '');
+    }
+  }
+  window._applyConfigJson = _applyConfigJson;
 
   // One input-port field: name + expected TYPE + editable default. Scalars get a
   // typed input; nested/complex values get an auto-growing JSON box (no scroll).
@@ -2483,10 +2855,12 @@
       var jv = ''; try { jv = JSON.stringify(value); } catch (e) { jv = ''; }
       field = '<textarea ' + attr + 'json" rows="1" spellcheck="false" oninput="_autoGrow(this)">' + _esc(jv) + '</textarea>';
     }
-    return '<div class="loom-in-row">' +
-      '<div class="loom-in-head"><span class="loom-in-key">' + _esc(key) + '</span>' +
-        (typeLabel ? '<span class="loom-in-type" title="expected type">' + _esc(typeLabel) + '</span>' : '') + '</div>' +
-      field + '</div>';
+    // Same organized row layout as config (name · type · value field).
+    return '<div class="cfg-row">' +
+        '<div class="cfg-row-name"><span class="cfg-key">' + _esc(key) + '</span>' +
+          (typeLabel ? '<span class="cfg-type" title="expected type">' + _esc(typeLabel) + '</span>' : '') + '</div>' +
+        '<div class="cfg-row-input">' + field + '</div>' +
+      '</div>';
   }
 
   function _autoGrow(el) {
@@ -2599,12 +2973,12 @@
     (root || document).querySelectorAll('.pcard-ports-row').forEach(function (row) { _applyPcardSplitRow(row, b); });
   }
   window._syncPcardSplit = _syncPcardSplit;
-  // Ensure outputs is wide enough (full level) to show run results.
-  function _ensureOutputsOpen() {
-    var b = (typeof window._pcardSplit === 'number') ? window._pcardSplit : 45;
-    var row = document.querySelector('.pcard-ports-row');
-    var rw = row ? (row.getBoundingClientRect().width || 900) : 900;
-    if ((100 - b) / 100 * rw < 260) _applyPcardSplitAll(Math.min(b, 42));
+  // Expand a card's Outputs accordion section so run results are visible.
+  function _ensureOutputsOpen(card) {
+    var sec = (card || document).querySelector('.pcard-sec[data-sec="outputs"]');
+    if (sec && !sec.classList.contains('pcard-sec-open')) {
+      var head = sec.querySelector('.pcard-sec-head'); if (head) _pcardToggleSec(head);
+    }
   }
   window._ensureOutputsOpen = _ensureOutputsOpen;
   function _pcardGutterDown(e, gutter) {
@@ -2850,7 +3224,7 @@
         btn.disabled = false; btn.textContent = orig;
         if (j && j.ok) {
           card._lastOutputs = j.outputs;
-          if (typeof _ensureOutputsOpen === 'function') _ensureOutputsOpen();
+          if (typeof _ensureOutputsOpen === 'function') _ensureOutputsOpen(card);
           var dl = card.querySelector('.pcard-dl'); if (dl) { dl.disabled = false; dl.title = 'Download outputs (JSON)'; }
           out.innerHTML = '<div class="loom-run-ok">✓ ran — outputs' +
             '<button class="btn-mini loom-copy-btn" onclick="_copyRunOutput(this)" title="Copy outputs JSON">⧉ Copy</button></div>' +
@@ -2927,6 +3301,7 @@
     var rows = entries.slice().sort(function (a, b) {
       var av, bv;
       if (sortKey === 'name') { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); }
+      else if (sortKey === 'kind') { av = _procKindLabel(a.kind).toLowerCase(); bv = _procKindLabel(b.kind).toLowerCase(); }
       else if (sortKey === 'module') { av = mod(a).toLowerCase(); bv = mod(b).toLowerCase(); }
       else if (sortKey === 'in') { av = _nPorts(a.inputs); bv = _nPorts(b.inputs); }
       else if (sortKey === 'out') { av = _nPorts(a.outputs); bv = _nPorts(b.outputs); }
@@ -2952,6 +3327,7 @@
           '" onclick="_selectRegistryEntry(\'' + _esc(p.address || '') + '\')" ondblclick="_zoomInOn(\'' + _esc(p.address || '') + '\')"' +
           ' title="Click to select · double-click to zoom in on this process">' +
         '<td class="reg-td-name"><strong>' + _esc(p.name) + '</strong> <code>' + _esc(p.address || '') + '</code></td>' +
+        '<td class="reg-td-kind">' + (_procKindBadge(p.kind) || _esc(_procKindLabel(p.kind))) + '</td>' +
         '<td>' + _esc(mod(p)) + '</td>' +
         '<td class="num">' + (p.use_count || 0) + '</td>' +
         '<td class="num">' + ((p.study_participation || {}).studies || 0) + '</td>' +
@@ -2962,7 +3338,7 @@
       '</tr>';
     }).join('');
     el.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
-      th('name', 'Name') + th('module', 'Module') + th('use', 'Uses', 'num') +
+      th('name', 'Name') + th('kind', 'Type') + th('module', 'Module') + th('use', 'Uses', 'num') +
       th('studies', 'Studies', 'num') + th('success', 'Success', 'num') +
       th('in', 'In', 'num') + th('out', 'Out', 'num') + th('source', 'Source') +
       '</tr></thead><tbody>' + body + '</tbody></table></div>';
@@ -3286,16 +3662,17 @@
 
         // Cache per-kind entries so the semantic-zoom / view-mode toggles can
         // re-render without re-fetching. Keyed container-id -> entries.
+        // Processes and Steps share one "Processes" tab — both are Processes
+        // (edges); each card/row is badged Temporal vs Step (_procKindBadge).
+        var procsAndSteps = byKind.process.concat(byKind.step);
         window._registryByKind = {
-          'registry-processes-container': byKind.process,
-          'registry-steps-container': byKind.step,
+          'registry-processes-container': procsAndSteps,
           'registry-emitters-container': byKind.emitter,
           'registry-visualizations-container': byKind.visualization,
           'registry-report_cards-container': byKind.report_card,
         };
         // Render tabbed Registry browser (Registry page).
-        _renderRegistryGrid('registry-processes-container', byKind.process);
-        _renderRegistryGrid('registry-steps-container', byKind.step);
+        _renderRegistryGrid('registry-processes-container', procsAndSteps);
         _renderRegistryGrid('registry-emitters-container', byKind.emitter);
         window._registryVizEntries = byKind.visualization;
         _renderRegistryGrid('registry-visualizations-container', byKind.visualization);
@@ -3324,8 +3701,7 @@
             el.title = wsCount + ' from this workspace, ' + (total - wsCount) + ' from environment';
           }
         };
-        setCount('registry-process-count', byKind.process);
-        setCount('registry-step-count', byKind.step);
+        setCount('registry-process-count', procsAndSteps);
         setCount('registry-emitter-count', byKind.emitter);
         setCount('registry-visualization-count', byKind.visualization);
         setCount('registry-report_card-count', byKind.report_card);
@@ -3363,6 +3739,9 @@
         // Note: the Analyses page (viz-picker-container) is now populated by
         // _loadAnalysesPage() (called from _switchPage), which fetches
         // /api/visualization-classes and renders two groups (Analyses + Visualizations).
+
+        // Composites live as a peer tab on this page — load + render them too.
+        if (typeof _loadComposites === 'function') _loadComposites();
       })
       .catch(function(err) {
         if (status) status.innerHTML = '<span style="color:#991b1b">Network error: ' + err + '</span>';
@@ -3820,12 +4199,14 @@
   // live /api/composite-resolve endpoint doesn't exist — the pre-resolved state
   // is a static file at /api/composite-state/<id>.json — so point there; in live
   // mode use the resolve endpoint. (Without this, "View" 404'd in the snapshot.)
-  function _compositeStateUrl(id) {
+  function _compositeStateUrl(id, overrides) {
     var apiUrl = (window.DataSource && window.DataSource.apiUrl)
       ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
-    return document.body.classList.contains('snapshot')
-      ? apiUrl('/api/composite-state/' + encodeURIComponent(id) + '.json')
-      : apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id));
+    if (document.body.classList.contains('snapshot')) {
+      return apiUrl('/api/composite-state/' + encodeURIComponent(id) + '.json');
+    }
+    return apiUrl('/api/composite-resolve?id=' + encodeURIComponent(id)) +
+      (overrides ? '&overrides=' + encodeURIComponent(overrides) : '');
   }
 
   // "Pop out" — open this composite's loom in a separate window directly (live,
@@ -3871,7 +4252,10 @@
   window._compositeCardDblClick = _compositeCardDblClick;
 
   function _openCompositeLoomInline(det) {
-    if (!det || !det.open || det._loomLoaded) return;
+    if (!det || det._loomLoaded) return;
+    // <details> embeds only mount when open; a plain container (the ProcessCard
+    // Explore section) has no `.open` and mounts as soon as it's asked to.
+    if (det.tagName === 'DETAILS' && !det.open) return;
     det._loomLoaded = true;
     var id = det.getAttribute('data-id');
     var host = det.querySelector('.ccard-loom-frame');
@@ -3882,9 +4266,10 @@
     // (?id=<ref>) so config is editable and Run works; otherwise a read-only
     // static render pointed at live composite-resolve.
     var loomUrl = det._loomLive
-      ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id)
+      ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
+          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '')
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(_compositeStateUrl(id));
+          encodeURIComponent(_compositeStateUrl(id, det._overrides));
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
@@ -4042,19 +4427,24 @@
       : fetch('/api/composites').then(function(r) { return r.json(); });
     _p
       .then(function(data) {
-        var container = document.getElementById('composite-cards');
-        var countBadge = document.getElementById('composite-count');
-        if (!container) return;
         var composites = data.composites || [];
         // Cache by id so onclick handlers pass just the id; _useComposite
         // looks the full object up. Inline JSON.stringify in onclick attrs
         // breaks when descriptions contain apostrophes / quotes.
         window._compositesById = {};
         composites.forEach(function(c) { window._compositesById[c.id] = c; });
+        window._composites = composites;
+
+        // (a) Registry/Processes-page "Composites" tab — accordion cards.
+        _renderRegistryComposites(composites);
+
+        // (b) Standalone Composites page (simulation-setup), if present.
+        var container = document.getElementById('composite-cards');
+        var countBadge = document.getElementById('composite-count');
         if (countBadge) countBadge.textContent = '(' + composites.length + ')';
-        // Count lives in the search placeholder now (the heading was removed).
         var _cSearch = document.getElementById('composite-search');
         if (_cSearch) _cSearch.placeholder = 'Filter ' + composites.length + ' composites…';
+        if (!container) return;
         if (!composites.length) {
           container.innerHTML =
             '<p class="empty-state">No composite specs found yet. Add a <code>*.composite.yaml</code> file under ' +
@@ -4063,7 +4453,6 @@
             'the composite spec convention</a> for the format.</p>';
           return;
         }
-        window._composites = composites;
         // Wire up search input
         var searchEl = document.getElementById('composite-search');
         if (searchEl && !searchEl._pbgWired) {
@@ -4078,6 +4467,36 @@
       });
   }
   window._loadComposites = _loadComposites;
+
+  // Render composites as unified accordion ProcessCards into the Processes-page
+  // "Composites" tab (respecting the shared registry filter). One wide card/row.
+  function _renderRegistryComposites(composites) {
+    var el = document.getElementById('registry-composites-container');
+    if (!el) return;
+    composites = composites || window._composites || [];
+    var count = document.getElementById('registry-composite-count');
+    if (count) count.textContent = composites.length;
+    var q = window._registryFilter;
+    var list = composites;
+    if (q) {
+      list = composites.filter(function (c) {
+        return ((c.name || '') + ' ' + (c.description || '') + ' ' + (c.module || '') + ' ' + (c.tags || []).join(' ')).toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    if (!list.length) {
+      el.innerHTML = q
+        ? '<p class="empty-state muted" style="font-size:0.9em">No composites match “' + _esc(q) + '”.</p>'
+        : '<p class="empty-state">No composites registered.</p>';
+      return;
+    }
+    // Workspace-local first, then by name.
+    list = list.slice().sort(function (a, b) {
+      return ((a.workspace_local ? 0 : 1) - (b.workspace_local ? 0 : 1)) ||
+             String(a.name || '').localeCompare(String(b.name || ''));
+    });
+    el.innerHTML = '<div class="reg-cards reg-cards-full">' + list.map(_renderCompositeCardFull).join('') + '</div>';
+  }
+  window._renderRegistryComposites = _renderRegistryComposites;
 
   function _useComposite(compositeOrId) {
     // Accept either a full composite object (legacy) or an id string.
@@ -5075,7 +5494,7 @@
   function _marketHead(it) {
     return '<span class="market-type-ico" title="' + (it.kind || it.type) + '">' + _marketIco(it.type) + '</span>'
       + '<span class="market-name">' + _esc(it.title || it.name) + '</span>'
-      + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
+      + (it.type === 'process' ? _procKindBadge(it.kind) : '')
       + _marketCatChip(it)
       + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
   }
@@ -5227,7 +5646,7 @@
     var u = _marketUsage(it);
     var id = _mkRegister(it);
     var tags = _marketCatChip(it)
-      + (it.kind === 'step' ? '<span class="market-repo" title="Step">step</span>' : '')
+      + (it.type === 'process' ? _procKindBadge(it.kind) : '')
       + (it.repo ? '<span class="market-repo">' + _esc(it.repo) + '</span>' : '');
     return '<div class="market-card market-card-x market-type-' + it.type + '" data-mk-id="' + id + '"'
       + ' data-mk-key="' + _esc(_mkKey(it)) + '"'

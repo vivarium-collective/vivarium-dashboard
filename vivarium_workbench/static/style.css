@@ -1419,6 +1419,22 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   white-space:nowrap;
 }
 
+/* Process kind pill: Temporal (a Process, has a timestep) vs Step (dataflow,
+   no timestep). Distinct hues so the two read apart at a glance. */
+.proc-kind-badge{
+  flex:none; display:inline-block;
+  font-size:0.68em; font-weight:600; letter-spacing:0.02em;
+  padding:1px 7px; border-radius:9999px; white-space:nowrap;
+  vertical-align:middle;
+}
+.proc-kind-temporal{  background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
+.proc-kind-step{      background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+.proc-kind-composite{ background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe; }
+:root[data-theme="dark"] .proc-kind-temporal{  background:rgba(16,185,129,0.14); color:#6ee7b7; border-color:rgba(16,185,129,0.35); }
+:root[data-theme="dark"] .proc-kind-step{      background:rgba(245,158,11,0.15); color:#fcd34d; border-color:rgba(245,158,11,0.35); }
+:root[data-theme="dark"] .proc-kind-composite{ background:rgba(124,58,237,0.18); color:#c4b5fd; border-color:rgba(124,58,237,0.4); }
+.registry-table .reg-td-kind{ white-space:nowrap; }
+
 /* ── Registry semantic zoom + view mode ─────────────────────────────────── */
 .registry-view-toolbar{ display:flex; align-items:center; gap:10px; margin:0 0 6px; flex-wrap:wrap; }
 .registry-view-toolbar .registry-search{ flex:1 1 220px; margin:0; }
@@ -1708,6 +1724,179 @@ textarea.loom-in-field{
 .pcard-config-actions .pcard-apply:hover{ background:#3730a3; border-color:#3730a3; }
 .pcard-apply-status{ font-size:0.78em; color:#047857; }
 .pcard-apply-status.pcard-apply-err{ color:#b91c1c; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Unified ProcessCard — accordion layout
+   header (name · badge · address) → summary (info panel + description) →
+   accordion (Configure ▸ Inputs ▸ Run ▸ Outputs, each collapsible).
+   ═══════════════════════════════════════════════════════════════════════ */
+.pcard-accordion .loom-card-stack{ padding:0; overflow:hidden; }
+
+/* compact top band: header + summary in one tight, information-rich block */
+.pcard-top{ padding:9px 14px 9px; }
+.pcard-accordion .pcard-header{
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 8px; padding:0; margin:0 0 5px;
+}
+.pcard-accordion .loom-name{ font-size:0.97rem; font-weight:650; }
+.pcard-accordion .loom-addr{
+  display:inline-block; margin:0; font-size:0.74em; color:#5b6b82;
+  background:#f1f5f9; padding:1px 7px; border-radius:5px;
+  font-family:ui-monospace,Menlo,monospace;
+}
+
+/* summary row: compact info panel (left) + contract/description (right) */
+.pcard-summary{
+  display:grid; grid-template-columns:auto 1fr; gap:14px;
+  align-items:start; padding:0;
+}
+.pcard-infopanel{
+  display:flex; flex-direction:column; gap:0; min-width:100px; align-self:start;
+  background:#f8fafc; border:1px solid #eef2f7; border-radius:8px; padding:2px; overflow:hidden;
+}
+.pcard-info-row{
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  border:none; background:none; cursor:pointer; padding:3px 8px; border-radius:5px;
+  font:inherit; color:#475569; text-align:left; transition:background .12s, color .12s;
+}
+.pcard-info-row:hover{ background:#eef2ff; color:#4338ca; }
+.pcard-info-label{ font-size:0.75em; font-weight:600; letter-spacing:0.01em; }
+.pcard-info-n{ font-size:0.8em; font-weight:700; color:#94a3b8; min-width:1.4em; text-align:right; }
+.pcard-info-row:hover .pcard-info-n{ color:#4338ca; }
+.pcard-desc-col{ min-width:0; }
+.pcard-desc-col .pcard-contract-meta{ margin-top:0; font-size:0.78em; }
+.pcard-desc-col .loom-desc{ margin:4px 0 0; max-width:none; font-size:0.86em; line-height:1.45; color:#475569; }
+/* clamp long descriptions to a few lines; click to expand in place */
+.pcard-desc-clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
+.pcard-desc-clamp.pcard-desc-open{ display:block; -webkit-line-clamp:unset; overflow:visible; }
+
+/* persistent Run bar (not an accordion) — always visible at the card's top level */
+.pcard-runbar{
+  display:flex; align-items:center; flex-wrap:wrap; gap:12px;
+  padding:9px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
+  background:#fbfcfe;
+}
+.pcard-runbar .action-btn{ flex:none; }
+.pcard-run-out{ font-size:0.8em; color:#64748b; }
+:root[data-theme="dark"] .pcard-runbar{ background:var(--surface-2); border-color:var(--border-faint); }
+
+/* resizable sections: capped, scrollable body + a drag grip (dbl-click = fit) */
+.pcard-sec-resizable.pcard-sec-open > .pcard-sec-body{ max-height:var(--pch,300px); overflow:auto; }
+.pcard-sec-resizable.pcard-sec-full > .pcard-sec-body{ max-height:none; overflow:visible; }
+.pcard-sec-grip{ display:none; }
+.pcard-sec-resizable.pcard-sec-open > .pcard-sec-grip{
+  display:block; height:11px; cursor:ns-resize; position:relative;
+  border-top:1px solid #f1f5f9;
+}
+.pcard-sec-grip::before{
+  content:''; position:absolute; left:50%; top:4px; transform:translateX(-50%);
+  width:34px; height:3px; border-radius:2px; background:#cbd5e1;
+}
+.pcard-sec-grip:hover::before{ background:#6366f1; }
+body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
+:root[data-theme="dark"] .pcard-sec-grip{ border-top-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-sec-grip::before{ background:var(--border-2); }
+
+/* accordion */
+.pcard-acc{ border-top:1px solid #eef2f7; }
+.pcard-sec{ border-bottom:1px solid #eef2f7; }
+.pcard-sec:last-child{ border-bottom:none; }
+.pcard-sec-head{
+  display:flex; align-items:center; gap:10px; padding:10px 16px;
+  cursor:pointer; user-select:none; transition:background .12s;
+}
+.pcard-sec-head:hover{ background:#f8fafc; }
+.pcard-sec-head:focus-visible{ outline:2px solid #6366f1; outline-offset:-2px; }
+.pcard-sec-caret{ color:#94a3b8; font-size:0.72em; width:0.9em; flex:none; text-align:center; }
+.pcard-sec-name{
+  font-size:0.72em; font-weight:700; text-transform:uppercase; letter-spacing:0.07em;
+  color:#334155; flex:none;
+}
+.pcard-sec-sum{
+  display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-width:0;
+  color:#94a3b8; font-size:0.8em;
+}
+.pcard-sec-count{ font-weight:700; color:#94a3b8; }
+.pcard-sec-head .pcard-dl{ margin-left:auto; flex:none; }
+.pcard-sec-body{ padding:2px 16px 14px 35px; }
+.pcard-sec:not(.pcard-sec-open) > .pcard-sec-body{ display:none; }
+
+/* open state: faint fill + a section-colored accent bar on the left edge */
+.pcard-sec-open{ background:#fcfdff; }
+.pcard-sec-open > .pcard-sec-head .pcard-sec-name{ color:#312e81; }
+.pcard-sec-configure.pcard-sec-open > .pcard-sec-head{ box-shadow:inset 3px 0 0 #6366f1; }
+.pcard-sec-inputs.pcard-sec-open    > .pcard-sec-head{ box-shadow:inset 3px 0 0 #2563eb; }
+.pcard-sec-explore.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #7c3aed; }
+.pcard-sec-run.pcard-sec-open       > .pcard-sec-head{ box-shadow:inset 3px 0 0 #0891b2; }
+.pcard-sec-outputs.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #10b981; }
+
+.pcard-run-note, .pcard-run-hint{ font-size:0.82em; }
+.pcard-run .loom-run-interval-field{ margin-right:6px; }
+
+/* Organized config list: one row per parameter — name · type · value(default).
+   Shared by process + composite Configure sections. */
+.cfg-list{ display:block; width:100%; box-sizing:border-box; border:1px solid #eef2f7; border-radius:9px; overflow:hidden; }
+/* scoped under .cfg-list — a bare .cfg-row exists elsewhere as display:flex */
+.cfg-list .cfg-row{
+  display:grid; grid-template-columns:210px minmax(0,1fr); column-gap:16px; row-gap:2px;
+  align-items:center; width:100%; box-sizing:border-box;
+  padding:6px 12px; border-bottom:1px solid #f1f5f9;
+}
+.cfg-list .cfg-row:last-child{ border-bottom:none; }
+.cfg-list .cfg-row:hover{ background:#f8fafc; }
+.cfg-row-name{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; min-width:0; }
+.cfg-key{ font-family:ui-monospace,Menlo,monospace; font-size:0.82em; font-weight:600; color:#1e293b; word-break:break-word; }
+.cfg-type{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.72em; color:#7c8698;
+  background:#f1f5f9; border:1px solid #e6ebf1; border-radius:4px; padding:0 5px; flex:none; white-space:nowrap;
+}
+.cfg-row-input{ min-width:0; }
+.cfg-list .cfg-row-input input[type="text"],
+.cfg-list .cfg-row-input input[type="number"],
+.cfg-list .cfg-row-input textarea{ width:100%; box-sizing:border-box; font-size:0.82em; }
+.cfg-list .cfg-row-input input[type="checkbox"]{ width:16px; height:16px; }
+.cfg-row-desc{ grid-column:1 / -1; font-size:0.75em; color:#94a3b8; margin-top:1px; }
+
+/* Set-via-JSON panel */
+.cfg-json{ margin:10px 0 0; }
+.cfg-json-box{
+  width:100%; box-sizing:border-box; font-family:ui-monospace,Menlo,monospace; font-size:0.8em;
+  border:1px solid #d9e0e8; border-radius:7px; padding:8px 10px; background:#fbfcfe; resize:vertical; min-height:64px;
+}
+.cfg-json-actions{ display:flex; align-items:center; gap:10px; margin-top:6px; }
+.cfg-json-status{ font-size:0.78em; }
+.cfg-json-status.pcard-apply-err{ color:#b91c1c; }
+.cfg-json-toggle.active{ background:#eef2ff; color:#4338ca; border-color:#c7d2fe; }
+
+:root[data-theme="dark"] .cfg-list{ border-color:var(--border); }
+:root[data-theme="dark"] .cfg-list .cfg-row{ border-bottom-color:var(--border-faint); }
+:root[data-theme="dark"] .cfg-list .cfg-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] .cfg-key{ color:#d3ddeb; }
+:root[data-theme="dark"] .cfg-type{ background:var(--surface-3); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .cfg-json-box{ background:var(--field); border-color:var(--border-2); color:var(--text); }
+:root[data-theme="dark"] .cfg-json-toggle.active{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
+
+/* Composite card: the Explore section is wide (full-bleed loom); top-level
+   Inputs/Outputs carry an explanatory note rather than editable ports. */
+.pcard-toplevel-note{ font-size:0.82em; margin:2px 0 0; }
+.pcard-sec-wide > .pcard-sec-body{ padding:0; }
+.pcard-sec-wide .pcard-loom{ margin:0; }
+.pcard-sec-wide .ccard-loom-frame{ width:100%; min-height:340px; }
+.pcard-composite .loom-card-composite{ position:relative; }
+.pcard-composite .composite-ws-tag{ margin-left:8px; }
+:root[data-theme="dark"] .proc-kind-composite ~ .composite-ws-tag{ opacity:0.9; }
+
+/* dark theme */
+:root[data-theme="dark"] .pcard-accordion .loom-addr{ background:var(--surface-2); color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-infopanel{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .pcard-info-row{ color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-info-row:hover{ background:var(--active); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-info-row:hover .pcard-info-n{ color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-acc,
+:root[data-theme="dark"] .pcard-sec{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-sec-head:hover{ background:var(--hover); }
+:root[data-theme="dark"] .pcard-sec-name{ color:#c8d4e4; }
+:root[data-theme="dark"] .pcard-sec-open{ background:var(--surface-2); }
+:root[data-theme="dark"] .pcard-sec-open > .pcard-sec-head .pcard-sec-name{ color:#c7d2fe; }
 
 /* title — click to pin */
 .pcard-title{ cursor:pointer; }

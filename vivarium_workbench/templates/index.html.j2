@@ -704,18 +704,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         </span>
         <span class="viv-rail-link-label">Processes</span>
       </a>
-      <!-- Composites: composite-as-process — outer boundary containing a process rectangle wired to a store -->
-      <a href="#simulation-setup"  class="viv-rail-link menu-link" data-page="simulation-setup">
-        <span class="viv-rail-link-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="2.5" y="6" width="19" height="12" rx="1.25"/>
-            <rect x="5.5" y="9" width="5.5" height="6"/>
-            <circle cx="16.5" cy="12" r="2.4"/>
-            <path d="M11 12h3.1"/>
-          </svg>
-        </span>
-        <span class="viv-rail-link-label">Composites</span>
-      </a>
       <!-- Studies: the investigations overview. Sits directly under Composites; the
            per-investigation study list lives in the search section below. Branching-fan (DAG) icon. -->
       <a href="#investigations"    class="viv-rail-link menu-link" data-page="investigations">
@@ -955,7 +943,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
          installed module across the public repos. #}
       <div class="market-facets" id="market-facets" role="tablist">
         <button class="market-facet active" data-facet="repo"          onclick="_setMarketFacet('repo')" role="tab" title="Browse whole repositories in the ecosystem">Repositories</button>
-        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes &amp; Steps</button>
+        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes</button>
         <button class="market-facet"        data-facet="composite"     onclick="_setMarketFacet('composite')" role="tab">Composites</button>
         <button class="market-facet"        data-facet="study"         onclick="_setMarketFacet('study')" role="tab">Studies</button>
         <button class="market-facet"        data-facet="investigation" onclick="_setMarketFacet('investigation')" role="tab">Investigations</button>
@@ -990,8 +978,8 @@ a.viv-bs-commit:hover { text-decoration: underline; }
        of the scroll area so the long entry list scrolls beneath them. #}
     <div class="registry-sticky">
       <div class="registry-tabs">
-        <button class="registry-tab active" data-kind="process"       onclick="_setRegistryTab('process')">Processes <span class="count-badge" id="registry-process-count"></span></button>
-        <button class="registry-tab"        data-kind="step"          onclick="_setRegistryTab('step')">Steps <span class="count-badge" id="registry-step-count"></span></button>
+        <button class="registry-tab active" data-kind="composite"     onclick="_setRegistryTab('composite')">Composites <span class="count-badge" id="registry-composite-count"></span></button>
+        <button class="registry-tab"        data-kind="process"       onclick="_setRegistryTab('process')">Processes <span class="count-badge" id="registry-process-count"></span></button>
         <button class="registry-tab"        data-kind="emitter"       onclick="_setRegistryTab('emitter')">Emitters <span class="count-badge" id="registry-emitter-count"></span></button>
         <button class="registry-tab"        data-kind="visualization" onclick="_setRegistryTab('visualization')">Visualizations <span class="count-badge" id="registry-visualization-count"></span></button>
         <button class="registry-tab"        data-kind="analysis"      onclick="_setRegistryTab('analysis')">Analyses <span class="count-badge" id="registry-analysis-count"></span></button>
@@ -1012,8 +1000,8 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       </div>
     </div>
 
-    <div class="registry-tab-panel active" data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>
-    <div class="registry-tab-panel"        data-kind="step"          id="registry-steps-container"></div>
+    <div class="registry-tab-panel active" data-kind="composite"     id="registry-composites-container"><p class="empty-state">Loading&hellip;</p></div>
+    <div class="registry-tab-panel"        data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>
     <div class="registry-tab-panel"        data-kind="emitter"       id="registry-emitters-container"></div>
     <div class="registry-tab-panel"        data-kind="visualization" id="registry-visualizations-container"></div>
     <div class="registry-tab-panel"        data-kind="analysis"      id="registry-analyses-container"></div>
