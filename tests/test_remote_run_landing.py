@@ -44,6 +44,90 @@ def _make_remote_zarr_tar_multiseed(tmp_path: Path, seeds: tuple[int, ...] = (0,
     return tar_path
 
 
+def _make_remote_zarr_tar_with_analysis(tmp_path: Path, seed: int = 0) -> Path:
+    """A tar mirroring what lands once scripts/run_standalone_analysis.py (the
+    v2ecoli-native standalone-analysis fix, v2ecoli#426/sms-ecoli#24) has
+    completed: seed_NN/store.zarr plus an analyses/<name>/_manifest.json,
+    written to the same S3 experiment prefix the download streams whole."""
+    staging = tmp_path / "staging"
+    part = staging / f"seed_{seed:02d}" / "store.zarr" / f"experiment_id=exp-seed{seed:02d}"
+    part.mkdir(parents=True)
+    (part / ".zgroup").write_text('{"zarr_format":2}')
+    analysis_dir = staging / "analyses" / "analysis-exp-ab12"
+    analysis_dir.mkdir(parents=True)
+    (analysis_dir / "doubling_time_distribution.json").write_text(
+        json.dumps({"n_cells": 2, "n_divided": 0, "final_dry_mass_mean": 220.0})
+    )
+    (analysis_dir / "_manifest.json").write_text(json.dumps({
+        "analysis_name": "analysis-exp-ab12",
+        "modules": {"multiseed": {"doubling_time_distribution": {}}},
+        "written": ["s3://bucket/exp/analyses/analysis-exp-ab12/doubling_time_distribution.json"],
+        "errors": [],
+        "status": "done",
+    }))
+    tar_path = tmp_path / "sim_with_analysis.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(staging, arcname=".")
+    return tar_path
+
+
+def test_land_folds_analysis_manifest_into_pbg_runs_analyses_json(tmp_path: Path):
+    """Once the analysis job has completed, landing (with ws_root passed) must
+    fold its manifest into .pbg/runs/<run_id>/analyses.json -- the exact local
+    artifact contract composite_flush.run_flush's own (non-remote) analyses
+    dispatch already produces, so the existing Analyses button renders it with
+    no further changes."""
+    ws_root = tmp_path / "workspace"
+    study = ws_root / "studies" / "s"
+    study.mkdir(parents=True)
+    tar = _make_remote_zarr_tar_with_analysis(tmp_path)
+
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=115, experiment_id="e", commit="c",
+        tar_path=tar, ws_root=ws_root,
+    )
+
+    analyses_path = ws_root / ".pbg" / "runs" / run_id / "analyses.json"
+    assert analyses_path.is_file()
+    entries = json.loads(analyses_path.read_text())
+    assert entries == [{
+        "name": "analysis-exp-ab12",
+        "written": ["s3://bucket/exp/analyses/analysis-exp-ab12/doubling_time_distribution.json"],
+        "errors": [],
+    }]
+
+
+def test_land_without_analysis_manifest_writes_nothing(tmp_path: Path):
+    """If the analysis job hasn't completed by the time this run lands, landing
+    the simulation output must still succeed -- and must not fabricate an
+    analyses.json for output that was never actually produced."""
+    ws_root = tmp_path / "workspace"
+    study = ws_root / "studies" / "s"
+    study.mkdir(parents=True)
+    tar = _make_remote_zarr_tar(tmp_path)
+
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=116, experiment_id="e", commit="c",
+        tar_path=tar, ws_root=ws_root,
+    )
+
+    assert not (ws_root / ".pbg" / "runs" / run_id / "analyses.json").exists()
+
+
+def test_land_without_ws_root_skips_analysis_folding(tmp_path: Path):
+    """ws_root is optional -- existing callers that never trigger analysis for
+    a landed run must be unaffected, even if a manifest happens to be present."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar_with_analysis(tmp_path)
+
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=117, experiment_id="e", commit="c", tar_path=tar,
+    )
+
+    assert run_id  # lands normally; no ws_root means no .pbg/runs/ write attempted
+
+
 def test_land_zarr_places_store_and_writes_runs_meta(tmp_path: Path):
     study = tmp_path / "study"
     study.mkdir()

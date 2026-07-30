@@ -16,7 +16,7 @@ from pathlib import Path
 import yaml
 from process_bigraph.composite_spec import CompositeSpec, get as _get_spec  # module-level for monkeypatch
 
-from vivarium_workbench.lib.sms_api_client import SmsApiClient
+from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
 from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
 
@@ -297,5 +297,17 @@ def resolve_composite_for_request(
         sim_id = meta.get("simulator_id")
         if sim_id is None:
             return {"error": "remote build has no simulator_id stamp"}
-        return SmsApiClient(_sms_api_base()).composite_resolve(int(sim_id), spec_id, overrides or {})
+        try:
+            return SmsApiClient(_sms_api_base()).composite_resolve(int(sim_id), spec_id, overrides or {})
+        except SmsApiError as e:
+            # sms-api has no POST /core/v1/simulator/{id}/composite-resolve route —
+            # this client method was added speculatively and the server side was
+            # never built. Composite preview is a non-blocking convenience (actual
+            # dispatch reads the composite ref directly and never calls this), so
+            # degrade to the same honest-unavailable shape every other resolve
+            # failure already uses, instead of a 500.
+            return _degraded_result(
+                spec_id, e,
+                notice="composite preview is not available for remote-pinned deployments yet",
+            )
     return resolve_composite(ws_root, spec_id, overrides)
