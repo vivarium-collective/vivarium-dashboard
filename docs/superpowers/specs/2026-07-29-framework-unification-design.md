@@ -6,17 +6,30 @@
 
 ---
 
+> *Revised 2026-07-30 after the Fable architecture review
+> (`~/AI-Generated/2026-07-30-architecture-unification-review-fable.md`): one operation
+> (`fill`), one law (`is_ground`). Gating is conditional filling, not scheduling; the
+> two-phase barrier is deleted (the emitter gains a `results` port).*
+
 ## 1. The unifying claim
 
-Every workbench object — a **study**, an **investigation**, a **template** — becomes a
-**bigraph-schema-typed document** that **process-bigraph executes as a step network**.
-There are exactly **three new or lifted primitives**; everything else is composition of
-machinery that already exists.
+> **There is one object: a bigraph — a typed document whose place graph is dict nesting,
+> whose link graph is `Link` nodes with faces and wires, and whose holes are sorted
+> sites. There is one operation: `fill` — substitute fillers into named open sites. There
+> is one law: a document is runnable exactly when it is *ground* (no open sites).**
 
-The bespoke, imperative workbench orchestrators (`run_runner.py`, `composite_flush.py`,
-`investigation_run_views.py`) collapse onto process-bigraph's step-network engine. The
-endpoint's job shrinks to: *build the composite document → hand it to the engine → read
-the artifacts*.
+A **process** is a ground document; a **composite** is a document whose sites were filled
+by other documents (which is why `Composite` *is* a `Process` — composition is closed); a
+**template** is a document that is not yet ground; a **study** is a template with its
+model site filled; an **investigation** is a document with one site per dependent study,
+filled at runtime by gate edges. There is **one** new primitive — `fill` (and its
+predicate `is_ground`); everything else already exists.
+
+The bespoke, imperative orchestrators (`run_runner.py`, `composite_flush.py`,
+`investigation_run_views.py`) collapse onto the step-network engine. The endpoint's job
+shrinks to: *fill the document → hand it to the engine → read the artifacts*. Shared
+vocabulary is the glossary (review §3.4): **site, sort, admits, formation, face, wires,
+fill, compose, ground, template, document, edge, reaction, results, artifact**.
 
 ## 2. Current state — the substrate that already exists
 
@@ -54,60 +67,63 @@ and `v2ecoli/docs/superpowers/specs/2026-06-29-study-report-card-modules-design.
 2. **On-disk model:** studies/investigations become **native composite documents** on disk
    with a **one-shot migrator** from the existing `study.yaml` / `investigation.yaml`
    (~250 studies, 13 investigations).
-3. **Study execution:** **two-phase composite** — a temporal Phase 1 (sim + emitter) and a
-   pure-step Phase 2 (flush), separated by a durable barrier.
-4. **Emitter seam (refinement):** the emitter is the durable phase boundary; an explicit,
-   **emitter-polymorphic extractor substep** bridges emitter → normalized `results` →
-   flush entities.
-5. **Investigation gating:** a failed prerequisite **blocks** its dependents — gating falls
-   out of normal step-triggering over gate stores.
-6. **Templates:** **multi-slot from the start** — N typed slots, 0+ of type `composite`.
+3. **Study execution:** **one step network** — no phases, no barrier. `Emitter` gains a
+   `results` output port, so the extractor and flush entities are ordinary downstream steps.
+4. **Emitter seam:** the emitter's `results` port carries the durable handle
+   (store ref + `sim_data` context); the **emitter-polymorphic extractor** is a normal step
+   that reads it. Durability is a property of one edge, not a stage of the engine.
+5. **Investigation gating:** gating is **conditional filling**, not scheduling.
+   `determine_steps` force-runs remaining steps and never inspects a value, so triggering
+   alone cannot block. A failed prerequisite leaves the dependent's **site open** →
+   non-ground → never built. Gating and template binding are the same mechanism.
+6. **Templates:** a template is **a document that is not ground** — N open sites, filled by
+   `fill`. Not a new type.
 
 ## 4. Architecture
 
-### Layer 0 — bigraph-schema: the `template` primitive *(the one new thing)*
+### Layer 0 — bigraph-schema: `fill` + `is_ground` *(the one new thing)*
 
-A **template** is a schema with named, typed **slots** (holes), at least one of type
-`composite`. Filling the slots produces a concrete composite document.
+The single new primitive is **`fill`** — substitute fillers into a document's named open
+**sites** — plus its predicate **`is_ground`**. A **template** is simply a document that is
+not ground; there is **no** `Template`/`Slot` type and `BASE_TYPES` gains nothing. See the
+Layer-1 spec (`bigraph-schema/docs/superpowers/specs/2026-07-30-template-slot-primitive-design.md`).
 
-- Generalizes `CompositeSpec.parameters` (flat `${name}` string interpolation) into **typed
-  slots resolved through the existing `align_parameters`/`reify_schema` machinery**, so a
-  slot value may be a scalar *or* a whole composite subtree.
-- **Multi-slot:** a template declares N slots; a single-composite study template is the N=1
-  case, a comparison template (model-under-test vs. reference) is N=2. `reify_schema` already
-  handles multiple parameters, so this costs little.
-- A **template study** = a template whose composite slot(s) bind the model(s)-under-test to a
-  standard analysis-flush sub-network. Drop any registered composite (`ecoli_baseline`,
-  `viva_munk.biofilm`, `pbg_copasi.steady-state`) into a slot → a runnable study with
-  viz/analysis/report cards.
-- **Home:** bigraph-schema, because the mechanism is generic and every layer above consumes
-  it; and because the user explicitly wants templates there.
+- `assembly.instantiate` (`assembly.py:1044`) already performs named-site substitution;
+  `fill` = it + a per-site `admits` check (face-conformance / value-check). `compose` becomes
+  a two-line adapter (positional `fill`). Register as `core.fill_sites` — **`Core.bind`
+  already exists** and must not be shadowed.
+- A site's **name is its key**; its **sort** constrains its filler. A `${name}` scalar and a
+  model subtree differ only in sort — one kind of site, not three.
+- A **template study** = a document whose model site is face-constrained; drop any conforming
+  registered composite (`ecoli_baseline`, `viva_munk.biofilm`, `pbg_copasi.steady-state`) into
+  it → a runnable study.
+- **Home:** bigraph-schema — the mechanism is generic and every layer consumes it.
+- **Blocking prerequisite:** the `compose` link-branch is untested and its wire target is
+  suspect (Layer-1 §2/§6 Task 0) — prove it on a real wired document before building up.
 
-### Layer 1 — process-bigraph: Study = a two-phase composite
+### Layer 1 — process-bigraph: Study = one step network
 
-One study composite document, internally two-phase, with the **emitter as the durable seam**:
+One study document, **one** network — no phases, no barrier. The barrier was an artifact of
+a one-line omission: `Emitter.update` returns `{}` (`emitter.py:159`), so
+`build_step_network` gives an emitter no outputs and nothing can depend on it. **Fix: give
+`Emitter` one output port, `results`**, written at finalize, carrying the durable handle
+(store ref + `sim_data` context). Then everything downstream is an ordinary edge:
 
 ```
-Study Composite
-  Phase 1 (temporal):
-    sim composite(s)  ──emit──►  emitter (declared, interchangeable: RAM | Parquet | XArray-zarr)
-                                    │  persists → runs.db / zarr
-                ── barrier (durable) ──
-  Phase 2 (pure step network, run(0.0)):
-    [extractor substep]  ── reads emitter (any kind) ──►  results store  (xarray + sim_data context)
-    results ──►  [ viz_* | analysis_* | report_card_* ]  (flush entities, fire as a DAG)
-                                                    └──►  artifacts/   ← study OUTPUT
+Study document (one step network, run(0.0)):
+  sim composite(s) ──emit──► emitter [results ●] ──► [extractor] ──► results store (xarray + sim_data)
+                               │ persists → runs.db/zarr        results ──► [ viz_* | analysis_* | report_card_* ]
+                                                                                        └──► artifacts/  ← study OUTPUT
 ```
 
-- **Phase 1** runs the selected sim composite(s) with a *declared, interchangeable* emitter
-  attached. The emitter is the persistence boundary (`runs.db`/zarr).
-- **The extractor substep** is a first-class Step that is **emitter-polymorphic**: it knows
-  how to query *whatever* emitter was used (generalizing `gather_emitter_results` across
-  RAM/Parquet/XArray) and materialize the single standardized **`results` handle** (today's
-  `RunExtract` context: xarray + `sim_data`). The flush entities never touch the raw
-  emitter — only the normalized `results`. Emitter-interchangeability is absorbed here, once.
-- **Phase 2** wires the existing viz/analysis/report-card Steps to the `results` store; they
-  fire as a DAG (`run(0.0)`), writing artifacts.
+- The emitter's **`results` port** is the persistence boundary *and* a normal producer store;
+  the **extractor** is an ordinary downstream step (emitter-polymorphic, generalizing
+  `gather_emitter_results`) that materializes the standardized **`results` handle** (today's
+  `RunExtract` context). Flush entities read only `results`, never the raw emitter.
+- The composite's declared `visualizations`/`analyses`/`report_cards` are just edges wired to
+  `results` — **the step network *is* the flush DAG**; no separate flush assembler exists.
+- Durability is a property of one edge, not a stage of the engine — so "one engine" is
+  *literally* true, not approximately.
 - **Study output = the artifact set** (verdicts, cards, figures, analyses).
 - **Ownership split:** the *generic* machinery (two-phase runner, the `results` contract, the
   extractor substep, assembling the flush network from a composite's declared
@@ -115,17 +131,20 @@ Study Composite
   (v2ecoli's cards, viva_munk's viz) stay in their packages and self-register via the existing
   discovery mechanism.
 
-### Layer 2 — process-bigraph: Investigation = a composite
+### Layer 2 — process-bigraph: Investigation = a composite (gating = conditional filling)
 
-Studies are **step nodes**; `pipeline_gate.prerequisites` become **store wiring**:
+An investigation is a document with **one open site per dependent study**. Gating is
+**conditional filling, not scheduling** — `determine_steps` (`scheduling.py:473`) orders
+steps by producer/consumer dependency, has no value predicate, and force-runs remaining
+steps to break cycles, so triggering alone *cannot* block a dependent.
 
-- An upstream study writes a `gate/<slug>/verdict` store on completion.
-- A downstream study step lists that store among its trigger inputs; it fires **only when the
-  prerequisite gate stores read `passed`**. A failed prerequisite blocks its dependents — they
-  do not run.
-- **No separate gate evaluator:** gating is exactly process-bigraph's producer/consumer
-  triggering. Membership (`members:`) + the DAG (`prerequisites`) collapse into one composite
-  document. The investigation runs on the *same* engine.
+- The gate edge for study *A* does not write a boolean; it **emits a filler**. On `passed` it
+  fills *B*'s site with *B*'s subtree; on `failed` it leaves the site **open**.
+- An open site ⇒ the region is **not ground** ⇒ it is never built and therefore never runs.
+  This deletes the `gate/<slug>/verdict` convention and any gate evaluator.
+- **Gating and template binding are the same mechanism** (`fill` + `is_ground`), so the
+  investigation layer is *literally* the template layer. The blocked study also renders for
+  free: a study whose site is still open (the ProcessCard viewer, presentation side).
 
 ### Layer 3 — workbench: consume, don't reimplement
 
@@ -152,9 +171,10 @@ Studies are **step nodes**; `pipeline_gate.prerequisites` become **store wiring*
 2. **The extractor substep** (emitter adapter). Input: a reference to the finished run's
    emitter/store. Output: the `results` handle. One implementation per emitter kind, selected
    by the emitter the composite declared.
-3. **Template / slot schema.** A template document: N named slots each with a type (scalar
-   types or `composite`), optional defaults, and a body schema referencing the slots. Binding =
-   `reify_schema` fill → concrete composite document.
+3. **`fill` + sites.** A template document = a non-ground document with named, sorted sites
+   (name = key; sort = a value type or a face). `fill(core, body, bindings)` substitutes
+   admissible fillers into named sites → a ground document. `is_ground` is the runnable
+   predicate. (See Layer-1 spec; register `core.fill_sites`, not `core.bind`.)
 4. **Study composite document.** The on-disk native form: which sim composite(s) + params, the
    emitter, the bound flush entities, expected-behavior/tests. Produced by the migrator or by
    instantiating a template study.
@@ -171,14 +191,18 @@ Studies are **step nodes**; `pipeline_gate.prerequisites` become **store wiring*
   to a branch), and dry-run-able (mirror `migrate-investigations`).
 - Existing published/read-only bundles keep rendering (Layer 3 read-side is preserved); only the
   *authoring + run* path moves onto the engine.
+- **The migrator emits *ground* documents and does not depend on Layer 1** — a study is a
+  ground document; templates are introduced only where migration output shows measured
+  duplication. This decouples the load-bearing ~250-study path from the newest primitive and
+  lets the corpus tell us what the templates should actually abstract.
 
 ## 7. Repo ownership & the sequenced sub-spec stack
 
 Each becomes its own spec → plan → implementation cycle, in this order (later layers depend on
 earlier):
 
-1. **bigraph-schema — `template`/`slot` primitive.** Keystone; everything depends on it.
-   *(spec lands in bigraph-schema)*
+1. **bigraph-schema — `fill` + `is_ground`.** Keystone; everything depends on it. Blocking
+   Task 0: prove `compose` on a real wired document. *(spec lands in bigraph-schema — PR #174)*
 2. **process-bigraph — Study two-phase composite.** The `results` contract, the
    emitter-polymorphic extractor substep, and flush-network assembly; replaces the imperative
    flush/run cores. *(spec lands in process-bigraph)*
@@ -196,9 +220,13 @@ earlier):
 - **Emitter polymorphism** is the crux of the extractor substep — the `results` contract must be
   rich enough that no flush entity ever needs the raw emitter. If a flush entity needs something
   the contract lacks, extend the contract, not the entity.
-- **CompositeSpec vs. template overlap:** the template primitive must *subsume* `CompositeSpec`'s
-  `parameters`, not duplicate it. Layer 1 of the stack decides whether `CompositeSpec` becomes a
-  thin adapter over the bigraph-schema template or is refactored into it.
+- **CompositeSpec vs. template overlap (resolved, Layer 2a):** `CompositeSpec`'s `parameters`
+  refactor onto `fill` — each `${name}` becomes a site; `substitute_parameters` is deleted. The
+  `CompositeSpec` surface stays as the ergonomic authoring API; only its resolution swaps. A
+  golden corpus (every `*.composite.{yaml,json}` + the 13 v2ecoli generators) guards byte-identity.
+- **Untested `compose` link-branch** is the real foundational risk — Task 0 gates the whole stack.
+- **`Composite.__init__` must enforce `is_ground`** (Layer 2a A0) — the contract is otherwise
+  unchecked at the one place it is consumed.
 - **Cross-repo release choreography:** bigraph-schema → process-bigraph → workbench → v2ecoli is
   a dependency chain; each sub-plan must state its minimum upstream version.
 - **~250 studies** means the migrator is load-bearing; it needs a golden-file test corpus.
