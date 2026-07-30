@@ -1918,6 +1918,19 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 /* Composite card: the Explore section is wide (full-bleed loom); top-level
    Inputs/Outputs carry an explanatory note rather than editable ports. */
 .pcard-toplevel-note{ font-size:0.82em; margin:2px 0 0; }
+
+/* Composite Outputs → embedded loom Visualizations/Results/Document tabs */
+.pcard-out-tabs{ display:flex; gap:4px; padding:8px 12px 0; }
+.pcard-out-tab{
+  border:1px solid transparent; border-bottom:none; background:none; cursor:pointer;
+  font-size:0.76em; font-weight:600; color:#64748b; padding:5px 12px; border-radius:7px 7px 0 0;
+}
+.pcard-out-tab:hover{ color:#4338ca; background:#eef2ff; }
+.pcard-out-tab.active{ color:#312e81; background:#fff; border-color:#eef2f7; }
+.pcard-out-loom{ margin:0; }
+.pcard-sec-wide .pcard-out-loom .ccard-loom-frame{ width:100%; min-height:320px; }
+:root[data-theme="dark"] .pcard-out-tab.active{ background:var(--surface); border-color:var(--border); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-out-tab:hover{ background:var(--active); }
 .pcard-sec-wide > .pcard-sec-body{ padding:0; }
 .pcard-sec-wide .pcard-loom{ margin:0; }
 .pcard-sec-wide .ccard-loom-frame{ width:100%; min-height:340px; }

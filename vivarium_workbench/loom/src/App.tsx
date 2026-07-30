@@ -124,7 +124,16 @@ export default function App() {
   // drawn-edge seam (drawFocus / culls) still reads it; focusing a process still
   // reveals its hub wires on demand.
   const showHubWires = false;
-  const [tab, setTab] = useState<TabId>('wiring');
+  // Initial tab honours ?tab=<id> (used by the workbench to embed a single
+  // view — e.g. the Visualizations/Results panel inside the card's Outputs).
+  const [tab, setTab] = useState<TabId>(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      const valid: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
+      if (t && (valid as string[]).includes(t)) return t as TabId;
+    } catch { /* no-op */ }
+    return 'wiring';
+  });
   // Chromeless embed mode (?chrome=off): the workbench ProcessCard already
   // provides Configure/Run/Outputs, so when embedded we hide the loom's own
   // breadcrumb + tab strip and show only the Explore (wiring) graph.

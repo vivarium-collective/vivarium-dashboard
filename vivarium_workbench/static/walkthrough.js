@@ -2620,6 +2620,21 @@
     '</div>';
   }
 
+  // Switch the composite Outputs embed between Visualizations / Results /
+  // Document — reloads the (chromeless) loom at that tab.
+  function _setCompositeOutView(btn) {
+    var body = btn.closest('.pcard-sec-body'); if (!body) return;
+    body.querySelectorAll('.pcard-out-tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
+    var view = btn.getAttribute('data-view');
+    var embed = body.querySelector('.pcard-out-loom'); if (!embed) return;
+    embed.setAttribute('data-view', view);
+    embed._loomLoaded = false;
+    var host = embed.querySelector('.ccard-loom-frame');
+    if (host) host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Loading ' + _esc(view) + '…</p>';
+    if (typeof _openCompositeLoomInline === 'function') _openCompositeLoomInline(embed);
+  }
+  window._setCompositeOutView = _setCompositeOutView;
+
   function _renderCompositeCardFull(c) {
     var params = (c.parameters && typeof c.parameters === 'object') ? c.parameters : {};
     var pKeys = Object.keys(params), nCfg = pKeys.length;
@@ -2666,7 +2681,17 @@
         : '<button class="action-btn" onclick="_runComposite(this)">▶ Configure &amp; Run</button>' +
           '<span class="muted pcard-run-note">set the time range &amp; parameters, then launch a run</span>');
 
-    var outputsBody = '<p class="muted pcard-run-hint">Composite outputs are produced by a Run (launch one above) and are inspectable in the Explore bigraph.</p>';
+    // Outputs = the composite's declared Visualizations / Results / Document,
+    // folded in from the loom (chromeless, one tab at a time).
+    var outputsBody =
+      '<div class="pcard-out-tabs">' +
+        '<button class="pcard-out-tab active" type="button" data-view="visualizations" onclick="_setCompositeOutView(this)">Visualizations</button>' +
+        '<button class="pcard-out-tab" type="button" data-view="results" onclick="_setCompositeOutView(this)">Results</button>' +
+        '<button class="pcard-out-tab" type="button" data-view="document" onclick="_setCompositeOutView(this)">Document</button>' +
+      '</div>' +
+      '<div class="ccard-loom-embed pcard-out-loom" data-id="' + _esc(c.id) + '" data-view="visualizations">' +
+        '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Open to load declared visualizations / results…</p></div>' +
+      '</div>';
     var addr = c.module ? (c.module + '.' + c.name) : c.id;
 
     return '<div class="registry-entry registry-entry-full loom-runnable pcard pcard-accordion pcard-composite' + sel +
@@ -2694,7 +2719,7 @@
           _pcardSection('inputs', 'Inputs', '<span class="muted">top-level</span>', topNote) +
           _pcardSection('explore', 'Explore', '<span class="muted">open to render the bigraph</span>', _compositeLoomExplore(c), { wide: true }) +
           runBar +
-          _pcardSection('outputs', 'Outputs', '<span class="muted">top-level</span>', outputsBody) +
+          _pcardSection('outputs', 'Outputs', '<span class="muted">viz · results</span>', outputsBody, { wide: true }) +
         '</div>' +
       '</div>' +
     '</div>';
@@ -4385,12 +4410,15 @@
     // Live mode (user hit "Enable running") loads the same URL as the pop-out
     // (?id=<ref>) so config is editable and Run works; otherwise a read-only
     // static render pointed at live composite-resolve.
-    // chrome=off → embedded (Explore-only) loom: no breadcrumb, no tab strip.
+    // chrome=off → embedded (no breadcrumb/tab strip). An optional data-view
+    // (e.g. "visualizations"/"results"/"document") selects which loom tab the
+    // embed shows — used by the card's Outputs section.
+    var tabParam = det.getAttribute('data-view') ? '&tab=' + encodeURIComponent(det.getAttribute('data-view')) : '';
     var loomUrl = det._loomLive
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
-          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off'
+          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off' + tabParam
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + '&chrome=off';
+          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + '&chrome=off' + tabParam;
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
