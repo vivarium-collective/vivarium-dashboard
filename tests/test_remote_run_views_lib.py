@@ -193,6 +193,7 @@ class _FakeThinClient:
         self.uploaded = None
         self.ran = None
         self.downloaded = None
+        self.analyzed = None
 
     def upload_simulator(self, simulator, force=False):
         self.uploaded = simulator
@@ -207,6 +208,10 @@ class _FakeThinClient:
         p = Path(dest_dir) / f"sim_{simulation_id}.tar.gz"
         p.write_bytes(b"TAR")
         return p
+
+    def run_analysis(self, simulation_id, modules):
+        self.analyzed = (simulation_id, modules)
+        return {"job_id": "ana-fake"}
 
 
 def _wire_thin(monkeypatch, tmp_path, *, authed=True, study_exists=True):
@@ -312,6 +317,80 @@ def test_land_downloads_and_lands(monkeypatch, tmp_path):
     _study_dir, kw = captured["land"]
     assert kw["simulation_id"] == 199
     assert kw["spec_id"] == "my-comp"
+
+
+def test_land_triggers_analysis_and_waits_when_spec_has_analyses(monkeypatch, tmp_path):
+    """A study with spec.analyses configured must trigger sms-api's standalone
+    analysis (the 14th-bug fix) before downloading, and wait — there is no
+    status/poll endpoint for that K8s job, so a fixed wait is the only
+    completion signal the download can act on."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"baseline": [{"composite": "my-comp"}],
+                   "analyses": [{"name": "doubling_time_distribution", "params": {}}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+    )
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    slept = []
+    monkeypatch.setattr(rrv.time, "sleep", slept.append)
+
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+
+    assert status == 200
+    assert client.analyzed == (199, {"multiseed": {"doubling_time_distribution": {}}})
+    assert slept == [rrv._ANALYSIS_LAND_WAIT_SECONDS]
+    # The trigger must happen BEFORE the download, so a completed job has a
+    # real chance of being included in what gets downloaded.
+    assert client.downloaded == 199
+
+
+def test_land_skips_analysis_trigger_when_spec_has_no_analyses(monkeypatch, tmp_path):
+    _wire_thin(monkeypatch, tmp_path)
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    slept = []
+    monkeypatch.setattr(rrv.time, "sleep", slept.append)
+
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+
+    assert status == 200
+    assert client.analyzed is None
+    assert slept == []
+
+
+def test_land_analysis_trigger_failure_does_not_block_landing(monkeypatch, tmp_path):
+    """run_analysis is best-effort: if sms-api rejects/can't reach the trigger,
+    landing the simulation output itself must still succeed."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"baseline": [{"composite": "my-comp"}],
+                   "analyses": [{"name": "doubling_time_distribution", "params": {}}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+    )
+
+    class _FailingAnalysisClient(_FakeThinClient):
+        def run_analysis(self, simulation_id, modules):
+            raise rrv.SmsApiError("sms-api unreachable")
+
+    client = _FailingAnalysisClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    slept = []
+    monkeypatch.setattr(rrv.time, "sleep", slept.append)
+
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+
+    assert status == 200
+    assert body["run_id"] == "run-xyz"
+    assert slept == []  # never waits if the trigger itself failed
 
 
 def test_land_missing_simulation_id_400(monkeypatch, tmp_path):

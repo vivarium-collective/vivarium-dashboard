@@ -129,6 +129,21 @@ def test_upload_simulator_sends_json_body(monkeypatch):
     assert "force=true" in cap["url"]
 
 
+def test_run_analysis_sends_modules_as_query_json(monkeypatch):
+    """modules is read via a query param on sms-api's endpoint (?modules=<json>),
+    not a request body -- unlike run_simulation's analysis_options."""
+    cap = {}
+    with _patch_urlopen(monkeypatch, cap, {"job_id": "ana-exp1", "analysis_name": "analysis-exp1-ab12"}):
+        c = SmsApiClient("http://h:8080")
+        out = c.run_analysis(115, {"multiseed": {"doubling_time_distribution": {}}})
+    assert out["job_id"] == "ana-exp1"
+    assert cap["method"] == "POST"
+    assert cap["body"] is None
+    assert "/api/v1/simulations/115/analysis?" in cap["url"]
+    qs = parse_qs(urlsplit(cap["url"]).query)
+    assert json.loads(qs["modules"][0]) == {"multiseed": {"doubling_time_distribution": {}}}
+
+
 def test_composite_resolve_posts_to_simulator_route(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"name": "c", "parameters": {}, "state": {}}):

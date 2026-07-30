@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import subprocess
 import tempfile
+import time
 import warnings
 from pathlib import Path
 
@@ -42,6 +43,14 @@ from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 # deletes). The thin client maps a raw sms-api status into a UI phase.
 _TERMINAL_OK = {"completed", "done", "succeeded"}
 _TERMINAL_BAD = {"failed", "cancelled", "error"}
+
+# There is no status/poll endpoint for the standalone-analysis K8s job (fire-
+# and-forget by design -- see SmsApiClient.run_analysis), so this fixed wait
+# before downloading is the only completion signal available. Generous enough
+# to cover a cold image pull of the multi-GB v2ecoli image plus the analysis
+# script's own (fast) run; a miss here just means the analysis isn't folded
+# into THIS landing -- landing again later picks it up (see land_remote_run).
+_ANALYSIS_LAND_WAIT_SECONDS = 90
 
 
 def _run_auth_ok() -> bool:
@@ -254,7 +263,17 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
 
 def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     """Phase 3 (on demand): download a COMPLETED sim's store and land it as a
-    study run. Returns ``({run_id}, 200)``."""
+    study run. Returns ``({run_id}, 200)``.
+
+    If the study has ``spec.analyses`` configured, also triggers standalone
+    analysis on the same simulation before downloading, and waits a bounded
+    amount so the download (which streams everything under the experiment's
+    S3 prefix) has a real chance of picking up the analysis output too --
+    there is no separate status/poll endpoint for that K8s job (see
+    SmsApiClient.run_analysis), so this wait is the only signal available.
+    If the job hasn't finished in time, the run still lands normally; the
+    analysis just isn't folded in yet (landing again later will pick it up).
+    """
     body = body or {}
     if not _run_auth_ok():
         return {"error": "not authenticated"}, 401
@@ -269,6 +288,22 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     _baseline = spec.get("baseline") or []
     spec_id = (_baseline[0].get("composite") if _baseline else None) or study
     client = SmsApiClient(_sms_api_base())
+
+    analyses = spec.get("analyses") or []
+    if analyses:
+        from vivarium_workbench.lib.study_run_post import build_analysis_options
+        # errors (unresolvable analysis names) are intentionally not surfaced here:
+        # this trigger is best-effort and must never block landing the simulation
+        # itself, which is the primary, always-must-succeed action of this route.
+        analysis_options, _errors = build_analysis_options(analyses)
+        if analysis_options:
+            try:
+                client.run_analysis(int(sim_id), analysis_options)
+            except SmsApiError:
+                pass
+            else:
+                time.sleep(_ANALYSIS_LAND_WAIT_SECONDS)
+
     with tempfile.TemporaryDirectory() as td:
         tar_path = client.download_data(int(sim_id), Path(td))
         run_id = land_remote_run(
@@ -278,6 +313,7 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
             experiment_id=body.get("experiment_id") or f"sim-{sim_id}-{study}",
             commit=body.get("commit") or "",
             tar_path=tar_path,
+            ws_root=ws_root,
             s3_uri=body.get("s3_uri"),
         )
     return {"run_id": run_id}, 200

@@ -17,6 +17,7 @@ children, not a data merge.
 
 from __future__ import annotations
 
+import json
 import shutil
 import tarfile
 import tempfile
@@ -24,6 +25,37 @@ import time as _time
 from pathlib import Path
 
 from vivarium_workbench.lib import composite_runs as cr
+
+
+def _fold_analyses(extract_root: Path, ws_root: Path, run_id: str) -> None:
+    """Fold any standalone-analysis output already present in the landed tar into
+    ``.pbg/runs/<run_id>/analyses.json`` -- the same local artifact contract
+    composite_flush.run_flush's local (non-remote) analyses dispatch already
+    produces, so the existing Analyses button needs no changes to render it.
+
+    There is no status/poll endpoint for the K8s analysis job (see
+    SmsApiClient.run_analysis), so completion is detected the same way the rest
+    of this pipeline detects it: by finding the output already landed, here,
+    rather than by polling sms-api. If the job hasn't finished by the time this
+    run is landed, this is a no-op -- landing again later (once the analysis
+    has actually completed) will pick it up.
+    """
+    manifests = sorted(extract_root.glob("**/analyses/*/_manifest.json"))
+    if not manifests:
+        return
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    entries = []
+    for manifest_path in manifests:
+        manifest = json.loads(manifest_path.read_text())
+        entries.append({
+            "name": manifest.get("analysis_name"),
+            "written": manifest.get("written", []),
+            "errors": manifest.get("errors", []),
+        })
+    run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "analyses.json").write_text(json.dumps(entries, indent=2))
 
 
 def _detect_and_locate_all(extract_root: Path) -> tuple[str, list[Path]]:
@@ -50,10 +82,16 @@ def land_remote_run(
     experiment_id: str,
     commit: str,
     tar_path: Path,
+    ws_root: Path | None = None,
     label: str | None = None,
     s3_uri: str | None = None,
 ) -> str:
-    """Extract tar_path, place the native store(s) in study_dir, record runs_meta; return run_id."""
+    """Extract tar_path, place the native store(s) in study_dir, record runs_meta; return run_id.
+
+    ``ws_root`` is optional (defaults to no analyses-folding) so existing callers
+    that only land simulation output, with no analysis ever triggered for that
+    run, are unaffected.
+    """
     study_dir = Path(study_dir)
     study_dir.mkdir(parents=True, exist_ok=True)
 
@@ -99,6 +137,9 @@ def land_remote_run(
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(sources[0], dest)
+
+        if ws_root is not None:
+            _fold_analyses(extract_root, ws_root, run_id)
 
     provenance["store_path"] = str(dest)
     started = _time.time()

@@ -24,6 +24,30 @@ def test_dispatch_deployment_when_viv_build(tmp_path, monkeypatch):
     assert captured == {"sid": 66, "ref": "pkg.x", "ov": {"k": 2}}
 
 
+def test_dispatch_deployment_degrades_when_sms_api_route_missing(tmp_path, monkeypatch):
+    """sms-api has no POST /core/v1/simulator/{id}/composite-resolve route --
+    SmsApiClient.composite_resolve was added speculatively and the server side
+    was never built, so every call 404s. This is a non-blocking preview
+    convenience (dispatch itself never calls it), so a missing/unreachable
+    remote route must degrade to the same honest-unavailable 200 shape every
+    other resolve failure already uses, not propagate as a 500."""
+    (tmp_path / ".viv-build.json").write_text('{"simulator_id": 66}')
+
+    class _FailingClient:
+        def __init__(self, base=None): pass
+        def composite_resolve(self, sid, ref, ov=None):
+            raise cr.SmsApiError("POST http://sms/core/v1/simulator/66/composite-resolve -> 404")
+
+    monkeypatch.setattr(cr, "SmsApiClient", _FailingClient)
+    monkeypatch.setattr(cr, "_sms_api_base", lambda: "http://sms")
+
+    out = cr.resolve_composite_for_request(tmp_path, "pkg.x")
+
+    assert out["id"] == "pkg.x"
+    assert out["wiring_status"] == "unavailable"
+    assert "not available" in out["notice"]
+
+
 def test_resolve_generator_without_artifact_degrades(tmp_path, monkeypatch):
     from process_bigraph import composite_spec as cs
     from vivarium_workbench.lib import composite_resolve as cr

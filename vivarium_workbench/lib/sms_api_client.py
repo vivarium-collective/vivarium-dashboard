@@ -182,6 +182,20 @@ class SmsApiClient:
         json_body = {"analysis_options": analysis_options} if analysis_options else None
         return self._post("/api/v1/simulations", params=params, json_body=json_body)
 
+    def run_analysis(self, simulation_id: int, modules: dict) -> dict:
+        """POST /api/v1/simulations/{id}/analysis — trigger standalone analysis on
+        a completed simulation's output. Fire-and-forget: sms-api submits a K8s
+        Job and returns immediately with a job_id; there is no status/poll
+        endpoint for this job (see remote_run_landing.land_remote_run, which
+        detects completion by finding the analysis output already landed in the
+        same tar the simulation output comes from)."""
+        # modules is read via query param (?modules=<json>) on the sms-api side,
+        # not a request body -- matches the endpoint's own OpenAPI shape.
+        return self._post(
+            f"/api/v1/simulations/{simulation_id}/analysis",
+            params={"modules": json.dumps(modules)},
+        )
+
     # ------------------------------------------------------------------
     # Compose endpoints (generic .pbg runner, Phase C)
     # ------------------------------------------------------------------
