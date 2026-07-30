@@ -2367,6 +2367,55 @@
   }
   window._popoutCard = _popoutCard;
 
+  // "{ } JSON" — reveal the composite's full resolved JSON spec (processes,
+  // wiring, visualizations…) at the top of the card, as a collapsible tree.
+  function _compositeJsonBtn() {
+    return '<button class="pcard-json-btn" type="button" title="View the full composite JSON spec" ' +
+      'onclick="event.stopPropagation();_toggleCompositeJson(this)">{ } JSON</button>';
+  }
+  function _toggleCompositeJson(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var panel = card.querySelector('[data-role="composite-json"]'); if (!panel) return;
+    var show = panel.hidden;
+    panel.hidden = !show;
+    btn.classList.toggle('active', show);
+    if (!show || panel._loaded) return;
+    panel._loaded = true;
+    var id = card.getAttribute('data-address');
+    var body = panel.querySelector('.pcard-json-body');
+    if (body) body.innerHTML = '<span class="muted" style="font-size:0.85em">Resolving composite JSON…</span>';
+    var url = (typeof _compositeStateUrl === 'function')
+      ? _compositeStateUrl(id)
+      : '/api/composite-resolve?id=' + encodeURIComponent(id);
+    fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      var doc = (j && j.state) ? j.state : j;
+      if (body) {
+        body.innerHTML =
+          '<div class="pcard-json-toolbar">' +
+            '<button class="btn-mini" type="button" onclick="_copyCompositeJson(this)">⧉ Copy</button>' +
+            '<a class="btn-mini" href="' + _esc(url) + '" target="_blank" rel="noopener">Raw ↗</a>' +
+          '</div>' +
+          (typeof _jsonViewer === 'function' ? _jsonViewer(doc) : '<pre>' + _esc(JSON.stringify(doc, null, 2)) + '</pre>') +
+          '<pre class="pcard-json-raw" hidden>' + _esc(JSON.stringify(doc, null, 2)) + '</pre>';
+      }
+      panel._json = doc;
+    }).catch(function (e) {
+      if (body) body.innerHTML = '<span class="loom-run-err">Failed to load JSON: ' + _esc(String(e)) + '</span>';
+      panel._loaded = false;
+    });
+  }
+  window._toggleCompositeJson = _toggleCompositeJson;
+  function _copyCompositeJson(btn) {
+    var panel = btn.closest('[data-role="composite-json"]');
+    var pre = panel && panel.querySelector('.pcard-json-raw');
+    if (!pre) return;
+    var txt = pre.textContent || '';
+    var done = function () { var o = btn.textContent; btn.textContent = '✓ Copied'; setTimeout(function () { btn.textContent = o; }, 1200); };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(done);
+    else done();
+  }
+  window._copyCompositeJson = _copyCompositeJson;
+
   // In a ?popcard= window: strip the shell to just the single requested card.
   function _enterPopcardMode(address, kind) {
     // focus-mode strips the rail/topbar (content-only window); popcard-mode
@@ -2627,6 +2676,7 @@
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' +
             '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + wsPill + roPill +
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
+            _compositeJsonBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
           '<div class="pcard-summary">' + infoPanel +
@@ -2634,6 +2684,9 @@
               '<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
               (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
             '</div>' +
+          '</div>' +
+          '<div class="pcard-json-view" data-role="composite-json" hidden>' +
+            '<div class="pcard-json-body"></div>' +
           '</div>' +
         '</div>' +
         '<div class="pcard-acc">' +

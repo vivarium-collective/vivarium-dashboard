@@ -1769,6 +1769,25 @@ textarea.loom-in-field{
 .pcard-desc-clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
 .pcard-desc-clamp.pcard-desc-open{ display:block; -webkit-line-clamp:unset; overflow:visible; }
 
+/* header "{ } JSON" toggle + the revealed spec viewer */
+.pcard-json-btn{
+  margin-left:auto; flex:none; align-self:center;
+  background:none; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer;
+  color:#64748b; font-size:0.72em; font-weight:600; padding:2px 8px;
+  font-family:ui-monospace,Menlo,monospace; letter-spacing:0.02em;
+}
+.pcard-json-btn:hover{ background:#eef2ff; color:#4338ca; border-color:#c7d2fe; }
+.pcard-json-btn.active{ background:#4338ca; color:#fff; border-color:#4338ca; }
+.pcard-header .pcard-json-btn + .pcard-popout{ margin-left:6px; }   /* sit side by side */
+.pcard-json-view{
+  margin-top:8px; border:1px solid #eef2f7; border-radius:9px; background:#fbfcfe;
+  max-height:340px; overflow:auto; padding:8px 10px;
+}
+.pcard-json-toolbar{ display:flex; gap:8px; margin:0 0 6px; position:sticky; top:-8px; }
+:root[data-theme="dark"] .pcard-json-btn{ border-color:var(--border-2); color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-json-btn:hover{ background:var(--active); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-json-view{ background:var(--surface-2); border-color:var(--border); }
+
 /* header pop-out control */
 .pcard-popout{
   margin-left:auto; flex:none; align-self:center;
