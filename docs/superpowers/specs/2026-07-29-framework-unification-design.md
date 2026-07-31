@@ -174,6 +174,27 @@ steps to break cycles, so triggering alone *cannot* block a dependent.
   investigation layer is *literally* the template layer. The blocked study also renders for
   free: a study whose site is still open (the ProcessCard viewer, presentation side).
 
+#### Worked example — the comparison-harness investigation as a template
+
+The **v2ecoli ↔ vEcoli comparison** is an **investigation template** — the flagship
+that exercises the whole stack. Its sites:
+
+- **value sites** for the compared configs (media, `n_seeds`, matched timepoints,
+  tolerances) — `fill` different values to sweep the comparison;
+- an **`address` site for vEcoli's repo**, defaulting to `CovertLab/vEcoli` — a
+  *process definition without an implementation* (Layer-1 §4.6, address injection):
+  the vEcoli edge fixes the **face** (its I/O contract) and leaves the **repo
+  address** open. Comparing against a fork / branch / pinned commit is one
+  `fill(address_site, 'git:CovertLab/vEcoli@<ref>')`;
+- (optionally) a **study site per model under comparison**.
+
+Filling it = choose the vEcoli source + set the compared configs → a runnable
+comparison investigation, no code. **New piece this needs (spec at Layer 3):** a
+git/remote **protocol** that resolves a repo address to a runnable vEcoli process —
+the implementation the `address` names. This makes "studies-as-templates" and
+"investigations-as-templates" concrete, and proves address injection end-to-end on
+a real cross-model harness.
+
 ### Layer 3 — workbench: consume, don't reimplement
 
 - `study.yaml` / `investigation.yaml` → native **composite documents** on disk (e.g.
