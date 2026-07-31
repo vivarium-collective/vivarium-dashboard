@@ -2201,6 +2201,35 @@
 
   // Grid card (middle zoom): name, use, one-line description, and the ports+types
   // shown inline. Double-click zooms to the runnable Full view.
+  // Usage stats chips — shared by grid + full cards, for processes AND
+  // composites: "used in N composites", "requires N processes" (composites),
+  // "N studies · X% passed". Returns '' when there's nothing to show.
+  function _regStatsHtml(p) {
+    var esc = _esc;
+    function stat(glyph, n, singular, plural, title) {
+      return '<span class="reg-stat" title="' + esc(title) + '"><span class="reg-stat-glyph">' + glyph +
+        '</span><strong>' + n + '</strong> ' + (n === 1 ? singular : plural) + '</span>';
+    }
+    var stats = [];
+    if (p.composite_uses) stats.push(stat('▦', p.composite_uses, 'composite', 'composites', 'Used in this many composite generators'));
+    if (p.requires && p.requires.processes && p.requires.processes.length)
+      stats.push(stat('⚙', p.requires.processes.length, 'process', 'processes', 'Requires this many process/step classes'));
+    var sp = p.study_participation || p.studies;   // composites carry `studies`
+    if (sp && sp.studies) {
+      var succ = (sp.success_pct != null && sp.total)
+        ? ' <span class="reg-succ-inline ' + (sp.success_pct >= 80 ? 'reg-succ-hi' : (sp.success_pct >= 50 ? 'reg-succ-mid' : 'reg-succ-lo')) + '">' + sp.success_pct + '%</span>'
+        : '';
+      stats.push('<span class="reg-stat reg-stat-part" title="Participates in ' + sp.studies +
+        ' stud' + (sp.studies === 1 ? 'y' : 'ies') + '; ' +
+        (sp.pass != null ? sp.pass + '/' + sp.total + ' report-card outcomes passed' : '') + '"><span class="reg-stat-glyph">◆</span><strong>' +
+        sp.studies + '</strong> stud' + (sp.studies === 1 ? 'y' : 'ies') + succ + '</span>');
+    } else if (p.study_uses) {
+      stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
+    }
+    return stats.join('');
+  }
+  window._regStatsHtml = _regStatsHtml;
+
   function _renderRegistryEntryGrid(p) {
     var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
     var esc = _esc, addr = _esc(p.address || '');
@@ -2209,26 +2238,7 @@
       : '';
     var desc = (p.description || '').trim();
     var short = desc ? desc.split('\n')[0] : '';
-    // Usage split — across composites vs studies. Port counts are dropped here:
-    // the middle zoom shows the actual ports+types inline (see _regInlinePorts).
-    function stat(glyph, n, singular, plural, title) {
-      return '<span class="reg-stat" title="' + esc(title) + '"><span class="reg-stat-glyph">' + glyph +
-        '</span><strong>' + n + '</strong> ' + (n === 1 ? singular : plural) + '</span>';
-    }
-    var stats = [];
-    if (p.composite_uses) stats.push(stat('▦', p.composite_uses, 'composite', 'composites', 'Used in this many composite generators'));
-    var sp = p.study_participation;
-    if (sp && sp.studies) {
-      var succ = (sp.success_pct != null && sp.total)
-        ? ' <span class="reg-succ-inline ' + (sp.success_pct >= 80 ? 'reg-succ-hi' : (sp.success_pct >= 50 ? 'reg-succ-mid' : 'reg-succ-lo')) + '">' + sp.success_pct + '%</span>'
-        : '';
-      stats.push('<span class="reg-stat reg-stat-part" title="Participates in ' + sp.studies +
-        ' stud' + (sp.studies === 1 ? 'y' : 'ies') + ' (via the composites that contain it); ' +
-        sp.pass + '/' + sp.total + ' report-card outcomes passed"><span class="reg-stat-glyph">◆</span><strong>' +
-        sp.studies + '</strong> stud' + (sp.studies === 1 ? 'y' : 'ies') + succ + '</span>');
-    } else if (p.study_uses) {
-      stats.push(stat('⌥', p.study_uses, 'study', 'studies', 'Referenced by this many study runner scripts'));
-    }
+    var stats = _regStatsHtml(p);
     var inlinePorts = _regInlinePorts(p);
     // Collapsed by default: config + input/output ports live behind a click-to-
     // expand <details> so the middle card stays compact. stopPropagation so the
@@ -2531,7 +2541,7 @@
         // 2. accordion — Configure ▸ Inputs (resizable) · Run bar · Outputs.
         '<div class="pcard-acc">' +
           section('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { resizable: true }) +
-          section('inputs', 'Inputs', '<span class="pcard-sec-count">' + nIn + '</span>', inputsBody, { open: true, resizable: true }) +
+          section('inputs', 'Inputs', '<span class="pcard-sec-count">' + nIn + '</span>', inputsBody, { resizable: true }) +
           runBar +
           section('outputs', 'Outputs', '<span class="pcard-sec-count">' + nOut + '</span>', outputsBody, { headExtra: dlBtn }) +
         '</div>' +
@@ -2766,21 +2776,40 @@
   }
   window._resetCompositeConfig = _resetCompositeConfig;
 
-  // Launch a composite run via the Configure-composite modal, prefilling the
-  // end time from the card's inline Time field.
+  // Launch a composite run directly (no modal): POST /api/simulation with the
+  // inline Time (t_end), the Configure params as overrides, and an auto name.
+  // Detached run — feedback + a link to Runs; the "Configure & Run" modal is
+  // still available via _useComposite for advanced setup.
   function _runComposite(btn) {
     var card = btn.closest('.registry-entry-full'); if (!card) return;
     var id = card.getAttribute('data-address');
+    var c = (window._compositesById || {})[id] || {};
+    var bar = btn.closest('.pcard-runbar');
+    var status = bar && bar.querySelector('.pcard-run-status');
+    if (!status && bar) { status = document.createElement('span'); status.className = 'pcard-run-status muted'; bar.appendChild(status); }
+    var setErr = function (m) { if (status) { status.textContent = m; status.classList.add('pcard-apply-err'); } };
     var tEl = card.querySelector('.pcard-run-time');
-    var t = (tEl && tEl.value !== '') ? tEl.value : null;
-    if (typeof _useComposite === 'function') _useComposite(id);
-    if (t != null) {
-      setTimeout(function () {
-        var f = document.getElementById('form-configure-composite');
-        var end = f && f.querySelector('input[name="t_end"]');
-        if (end) end.value = t;
-      }, 60);
-    }
+    var tEnd = (tEl && tEl.value !== '') ? parseFloat(tEl.value) : NaN;
+    if (isNaN(tEnd) || tEnd <= 0) { setErr('Enter a Time (end) first'); if (tEl) tEl.focus(); return; }
+    var overrides = _collectCardConfig(card);
+    if (overrides.__error) { setErr(overrides.__error); return; }
+    var payload = { name: (c.name || 'composite') + '-run-' + Date.now().toString(36),
+      composite: id, t_start: 0, t_end: tEnd, parameter_overrides: overrides };
+    var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Launching…';
+    if (status) { status.classList.remove('pcard-apply-err'); status.textContent = 'launching run…'; }
+    fetch('/api/simulation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = orig;
+        if (!res.ok) { setErr('✗ ' + ((res.j && res.j.error) || ('HTTP ' + res.status))); return; }
+        var branch = (res.j && res.j.branch) || '';
+        if (status) {
+          status.classList.remove('pcard-apply-err');
+          status.innerHTML = '✓ launched — <a href="#simulations" onclick="_switchPage(\'simulations\');return false;">view in Runs</a>' +
+            (branch ? ' · <code>' + _esc(branch) + '</code>' : '');
+        }
+      })
+      .catch(function (e) { btn.disabled = false; btn.textContent = orig; setErr('network error: ' + String(e)); });
   }
   window._runComposite = _runComposite;
 

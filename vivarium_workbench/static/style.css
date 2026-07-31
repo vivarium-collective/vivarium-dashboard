@@ -1867,6 +1867,9 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 .pcard-sec-outputs.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #10b981; }
 
 .pcard-run-note, .pcard-run-hint{ font-size:0.82em; }
+.pcard-run-status{ font-size:0.82em; }
+.pcard-run-status.pcard-apply-err{ color:#b91c1c; }
+.pcard-run-status a{ color:#2563eb; }
 .pcard-run .loom-run-interval-field{ margin-right:6px; }
 
 /* Organized config list: one row per parameter — name · type · value(default).
