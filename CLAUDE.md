@@ -12,7 +12,7 @@ run from the workspace venv) see [docs/USAGE.md](docs/USAGE.md).
 
 `vivarium-workbench` is a local web UI for [process-bigraph](https://github.com/vivarium-collective/process-bigraph)
 workspaces. You point it at a workspace directory (one containing `workspace.yaml`,
-scaffolded from [pbg-template](https://github.com/vivarium-collective/pbg-template))
+scaffolded from [viva-template](https://github.com/vivarium-collective/viva-template))
 and it serves an interactive dashboard over that workspace's registry, composites,
 studies, investigations, and reports. The dashboard reads and **writes** the
 workspace's files — every action commits to a git branch in the workspace, giving
@@ -158,7 +158,7 @@ behavior, consider both the live and snapshot data sources.
 ## Companion projects
 - **pbg-superpowers** — Claude Code plugin whose `/pbg-*` skills drive this
   dashboard's HTTP API (AI-assisted authoring). A runtime dependency.
-- **pbg-template** — the workspace scaffold this dashboard serves; ships the
+- **viva-template** — the workspace scaffold this dashboard serves; ships the
   canonical `.pbg/schemas/` validators the dashboard reads at save time.
 - **bigraph-loom** — embedded state-tree (bigraph) explorer, served at
   `/loom-explore`.
