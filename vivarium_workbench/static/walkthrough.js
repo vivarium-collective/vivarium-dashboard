@@ -3947,14 +3947,11 @@
       el.innerHTML = '<p class="empty-state">None registered.</p>';
       return;
     }
-    // Apply the search + facet filter uniformly across every layout (runs for a
-    // text query OR an active kind/source facet chip).
-    var _fac = window._registryFacets || {};
-    if (window._registryFilter || _fac.kind || _fac.source) {
+    // Apply the (data-driven) text filter uniformly across every layout.
+    if (window._registryFilter) {
       entries = entries.filter(_registryEntryMatches);
       if (!entries.length) {
-        var _what = window._registryFilter ? ('“' + _esc(window._registryFilter) + '”') : 'these filters';
-        el.innerHTML = '<p class="empty-state muted" style="font-size:0.9em">No entries match ' + _what + '.</p>';
+        el.innerHTML = '<p class="empty-state muted" style="font-size:0.9em">No entries match “' + _esc(window._registryFilter) + '”.</p>';
         return;
       }
     }
@@ -4097,44 +4094,20 @@
   // Data-driven filter: store the query and re-render so it works uniformly
   // across the Table / Cards / Full layouts (the old per-.registry-entry DOM
   // hide didn't match the new table rows or grid cards).
-  // Facet + sort state, shared by the chip bar, the `kind:`/`source:`/`sort:`
-  // search tokens, and every zoom (grid / table / full).
-  window._registryFacets = window._registryFacets || { kind: null, source: null };
+  // Sort state (default: most-used first). Ordering — including grouping by
+  // Type or Source — is handled by the Sort control; there is no facet filter.
   window._registrySort = window._registrySort || 'use';
 
   function _filterRegistry(query) {
-    var f = window._registryFacets = window._registryFacets || { kind: null, source: null };
-    // Pull `kind:` / `source:` / `sort:` tokens out; the remainder is free text.
-    var text = (query || '').replace(/\b(kind|source|sort):([a-z_%]+)/gi, function (_m, key, val) {
-      key = key.toLowerCase(); val = val.toLowerCase();
-      if (key === 'kind') { if (val === 'temporal' || val === 'process') f.kind = 'temporal'; else if (val === 'step') f.kind = 'step'; }
-      else if (key === 'source') { if (val === 'workspace' || val === 'imported') f.source = val; }
-      else if (key === 'sort') { window._registrySort = val; }
-      return '';
+    // Pull an optional `sort:` token out; the remainder is a free-text match.
+    var text = (query || '').replace(/\bsort:([a-z_%]+)/gi, function (_m, val) {
+      window._registrySort = val.toLowerCase(); return '';
     });
     window._registryFilter = text.toLowerCase().trim();
-    _syncFacetChips();
     var sel = document.getElementById('registry-sort'); if (sel) sel.value = window._registrySort || 'use';
     _rerenderRegistryKinds();
   }
   window._filterRegistry = _filterRegistry;
-
-  function _toggleRegistryFacet(facet, val) {
-    var f = window._registryFacets;
-    f[facet] = (f[facet] === val) ? null : val;   // click again to clear
-    _syncFacetChips();
-    _rerenderRegistryKinds();
-  }
-  window._toggleRegistryFacet = _toggleRegistryFacet;
-
-  function _clearRegistryFacets() {
-    window._registryFacets = { kind: null, source: null };
-    window._registryFilter = '';
-    var s = document.getElementById('registry-search'); if (s) s.value = '';
-    _syncFacetChips();
-    _rerenderRegistryKinds();
-  }
-  window._clearRegistryFacets = _clearRegistryFacets;
 
   function _setRegistrySort(val) {
     window._registrySort = val || 'use';
@@ -4144,16 +4117,6 @@
     _rerenderRegistryKinds();
   }
   window._setRegistrySort = _setRegistrySort;
-
-  function _syncFacetChips() {
-    var f = window._registryFacets || {};
-    document.querySelectorAll('#registry-facets .facet-chip').forEach(function (c) {
-      c.classList.toggle('active', f[c.dataset.facet] === c.dataset.val);
-    });
-    var clear = document.getElementById('registry-facet-clear');
-    if (clear) clear.hidden = !(f.kind || f.source || (window._registryFilter || ''));
-  }
-  window._syncFacetChips = _syncFacetChips;
 
   // Shared ordering comparator (grid + full). Table has its own dir-aware sort
   // via clickable headers, kept in sync through _setRegistrySort.
@@ -4170,14 +4133,6 @@
   }
 
   function _registryEntryMatches(p) {
-    var f = window._registryFacets || {};
-    if (f.kind === 'step' && p.kind !== 'step') return false;
-    if (f.kind === 'temporal' && p.kind !== 'process') return false;
-    if (f.source) {
-      var inWs = p.source === 'in_workspace';
-      if (f.source === 'workspace' && !inWs) return false;
-      if (f.source === 'imported' && inWs) return false;
-    }
     var q = window._registryFilter;
     if (!q) return true;
     var hay = ((p.name || '') + ' ' + (p.address || '') + ' ' + (p.description || '') + ' ' +

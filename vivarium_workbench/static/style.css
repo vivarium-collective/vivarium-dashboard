@@ -4682,22 +4682,12 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] [style*="solid #eee"],
 :root[data-theme="dark"] [style*="solid #f1f5f9"]{ border-color:var(--border) !important; }
 
-/* ===== Registry: quick facets + sort bar ===== */
+/* ===== Registry: sort bar ===== */
 .registry-facets{ display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin:8px 0 2px; padding:2px 2px 8px; }
 .facet-group{ display:inline-flex; align-items:center; gap:6px; }
 .facet-label{ font-size:0.7em; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#94a3b8; }
-.facet-chip{
-  font-size:0.8em; font-weight:600; color:#475569; background:#fff; border:1px solid #d5dbe6;
-  border-radius:999px; padding:3px 12px; cursor:pointer; transition:all .12s ease; line-height:1.4;
-}
-.facet-chip:hover{ border-color:#93b4f5; color:#1d4ed8; }
-.facet-chip.active{ background:#2563eb; border-color:#2563eb; color:#fff; }
 .facet-select{ font-size:0.8em; color:#334155; background:#fff; border:1px solid #d5dbe6; border-radius:7px; padding:3px 8px; cursor:pointer; }
-.facet-sort-group{ margin-left:auto; }
-.facet-clear{ font-size:0.78em; color:#64748b; background:transparent; border:none; cursor:pointer; text-decoration:underline; }
-.facet-clear:hover{ color:#1d4ed8; }
-:root[data-theme="dark"] .facet-chip, :root[data-theme="dark"] .facet-select{ background:var(--surface); border-color:var(--border); color:var(--text); }
-:root[data-theme="dark"] .facet-chip.active{ background:#2563eb; border-color:#2563eb; color:#fff; }
+:root[data-theme="dark"] .facet-select{ background:var(--surface); border-color:var(--border); color:var(--text); }
 
 /* ===== Registry table: fill the window + resizable columns ===== */
 .registry-table-wrap{ overflow-x:auto; width:100%; }

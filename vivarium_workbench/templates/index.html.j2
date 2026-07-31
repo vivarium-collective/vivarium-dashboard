@@ -1005,31 +1005,20 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         </div>
       </div>
 
-      {# Quick facets + sort — narrow the list by kind/source and reorder. Also
-         driven by `kind:` / `source:` / `sort:` tokens typed into Filter above. #}
+      {# Sort control — orders entries (including grouping by Type or Source).
+         Also drivable with a `sort:` token typed into Filter above. #}
       <div class="registry-facets" id="registry-facets">
-        <span class="facet-group" data-facet-kinds>
-          <span class="facet-label">Type</span>
-          <button type="button" class="facet-chip" data-facet="kind" data-val="temporal" onclick="_toggleRegistryFacet('kind','temporal')" title="Temporal processes (advance state over a timestep)">Temporal</button>
-          <button type="button" class="facet-chip" data-facet="kind" data-val="step" onclick="_toggleRegistryFacet('kind','step')" title="Steps (dataflow nodes, no timestep)">Step</button>
-        </span>
         <span class="facet-group">
-          <span class="facet-label">Source</span>
-          <button type="button" class="facet-chip" data-facet="source" data-val="workspace" onclick="_toggleRegistryFacet('source','workspace')" title="Declared in this workspace">Workspace</button>
-          <button type="button" class="facet-chip" data-facet="source" data-val="imported" onclick="_toggleRegistryFacet('source','imported')" title="Imported from a package / available in the environment">Imported</button>
-        </span>
-        <span class="facet-group facet-sort-group">
           <span class="facet-label">Sort</span>
           <select class="facet-select" id="registry-sort" onchange="_setRegistrySort(this.value)" title="Order entries">
             <option value="use">Most used</option>
             <option value="name">Name (A–Z)</option>
             <option value="studies">Most studies</option>
             <option value="success">Success %</option>
-            <option value="kind">Type</option>
-            <option value="source">Source</option>
+            <option value="kind">Type (Temporal / Step)</option>
+            <option value="source">Source (Workspace / Imported)</option>
           </select>
         </span>
-        <button type="button" class="facet-clear" id="registry-facet-clear" onclick="_clearRegistryFacets()" hidden>Clear</button>
       </div>
     </div>
 
