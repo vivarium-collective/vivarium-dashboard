@@ -2788,14 +2788,9 @@
   // composite is mostly top-level, so Inputs/Outputs are informational; the
   // value is Configure (its parameters) + Explore (its internal wiring).
   function _compositeLoomExplore(c) {
-    var liveBar = (document.body.classList.contains('snapshot') || c.read_only) ? '' :
-      '<div class="ccard-loom-bar">' +
-        '<span class="ccard-loom-mode">Read-only preview</span>' +
-        '<button class="ccard-loom-live-btn" onclick="_enableInlineLoomRun(this)"' +
-          ' title="Reload live to edit config and Run in place">&#9654; Enable running</button>' +
-      '</div>';
+    // The loom is a read-only VIEWER: config is edited in the Configure section
+    // and running is the ▶ RUN bar below — so no "Enable running" / live toggle.
     return '<div class="ccard-loom-embed pcard-loom" data-id="' + _esc(c.id) + '">' +
-      liveBar +
       '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the bigraph…</p></div>' +
     '</div>';
   }
@@ -4789,19 +4784,10 @@
   // read-only, via the loom's static stateUrl pointed at live composite-resolve.
   function _compositeLoomEmbed(c) {
     if (c.read_only && !c.has_wiring) return '';
-    // On a live dashboard the inline loom loads read-only (lightweight); a bar
-    // lets the reader flip it to live mode (editable config + Run) in place, the
-    // same as popping out. Not offered in a published snapshot (no run backend).
-    var liveBar = (document.body.classList.contains('snapshot') || c.read_only) ? '' :
-      '<div class="ccard-loom-bar">' +
-        '<span class="ccard-loom-mode">Read-only preview</span>' +
-        '<button class="ccard-loom-live-btn" onclick="_enableInlineLoomRun(this)"' +
-          ' title="Reload this loom live so you can edit config and Run it here, as in the pop-out view">' +
-          '&#9654; Enable running</button>' +
-      '</div>';
+    // Read-only viewer only — config is edited in Configure, running is the
+    // external ▶ RUN bar; no in-place "Enable running" toggle.
     return '<details class="ccard-loom-embed" data-id="' + _esc(c.id) + '" ontoggle="_openCompositeLoomInline(this)">' +
       '<summary>Open loom</summary>' +
-      liveBar +
       '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Expand to resolve &amp; render the bigraph…</p></div>' +
     '</details>';
   }
