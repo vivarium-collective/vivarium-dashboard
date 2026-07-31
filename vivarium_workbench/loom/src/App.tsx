@@ -16,7 +16,6 @@ import { useLayoutMode } from './hooks/useLayoutMode';
 import { useFocus } from './hooks/useFocus';
 import { getMode } from './layouts/registry';
 import { egoLayout } from './layouts/egoLayout';
-import { depthStackLayout } from './layouts/depthStack';
 import { pickDrawnEdges } from './layouts/pickDrawnEdges';
 import { tierForZoom } from './layouts/processColumn';
 import type { ZoomTierId } from './layouts/types';
@@ -633,19 +632,8 @@ export default function App() {
     debouncedPersistRef.current?.(compositeId, positionsFromNodes(nodes as any), layoutMode.modeId);
   }, [nodes, compositeId, layoutMode.modeId]);
 
-  // "Adjust ▸ Stack stores by depth": a one-shot arrangement — lay the stores
-  // out as a nesting tree with processes packed below, move the nodes there, and
-  // leave them (the change persists via the effect above). Not a mode/toggle.
-  const handleStackByDepth = useCallback(() => {
-    setNodes((ns: any[]) => {
-      const laid = depthStackLayout(ns as any, edges as any).nodes as any[];
-      const posById = new Map(laid.map((n) => [n.id, n.position]));
-      return ns.map((n) => (posById.has(n.id) ? { ...n, position: posById.get(n.id) } : n));
-    });
-    window.setTimeout(
-      () => rfRef.current?.fitView?.({ padding: 0.2, duration: 400 }), 120,
-    );
-  }, [edges, setNodes]);
+  // ("Stack stores by depth" was retired — the flow-direction switch supersedes
+  // it. `depthStackLayout` remains on disk, exercised by its unit tests.)
 
   // "Adjust ▸ Center on this process": one-shot — its read-only stores to the
   // left, write-only to the right, read+write below, everything else parked out
@@ -1297,6 +1285,36 @@ export default function App() {
                   flexWrap: 'wrap', justifyContent: 'flex-end',
                   maxWidth: 'calc(100% - 16px)',
                 }}>
+                  {/* Flow direction: none (relationship packing) / top-to-bottom /
+                      left-to-right. The directional modes order nodes by the flow
+                      network (ELK layered). */}
+                  <div
+                    style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
+                    title="Layout: relationship packing, or order by the flow network (top-to-bottom / left-to-right)"
+                  >
+                    {([
+                      { id: 'hierarchy', label: '○', t: 'No enforced direction (relationship packing)' },
+                      { id: 'flow-tb', label: '↓', t: 'Flow order: top to bottom' },
+                      { id: 'flow-lr', label: '→', t: 'Flow order: left to right' },
+                    ] as const).map((opt) => {
+                      const active = layoutMode.modeId === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => layoutMode.setModeId(opt.id)}
+                          title={opt.t}
+                          style={{
+                            padding: '4px 9px', fontSize: 13, border: 'none', cursor: 'pointer',
+                            background: active ? '#eff6ff' : '#fff',
+                            color: active ? '#2563eb' : '#6b7280',
+                            fontWeight: active ? 700 : 400,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <ViewsMenu
                     compositeId={compositeId}
                     captureCurrentView={captureCurrentView}
@@ -1324,12 +1342,6 @@ export default function App() {
                         minWidth: 230, zIndex: 20,
                       }}>
                         {[
-                          {
-                            label: '⤵ Stack stores by depth',
-                            hint: 'Arrange stores as a nesting tree; processes packed below',
-                            enabled: true,
-                            on: () => handleStackByDepth(),
-                          },
                           {
                             label: focus.locked ? '⊹ Center on locked process' : '⊹ Center on this (lock a process first)',
                             hint: 'Inputs left, outputs right, shared stores below',
