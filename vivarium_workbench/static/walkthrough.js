@@ -2296,22 +2296,9 @@
 
     if (!runnable) {
       // Non-runnable kinds (emitter/visualization/analysis/type/report_card):
-      // static loom card — config keys as pills, static ports both sides.
-      var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
-      var cfgTop = cfgKeys.length
-        ? '<div class="loom-config"><span class="loom-config-label">config</span>' +
-          cfgKeys.slice(0, 14).map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join('') +
-          (cfgKeys.length > 14 ? ' <span class="muted">+' + (cfgKeys.length - 14) + '</span>' : '') + '</div>'
-        : '';
-      return '<div class="registry-entry registry-entry-full' + selClsFull + '"' + sourceAttr + addrAttr + '>' +
-        '<div class="loom-card loom-card-' + kind + '">' + cfgTop +
-          '<div class="loom-row">' +
-            '<div class="loom-ports loom-ports-in">' + ports(p.inputs, 'in') + '</div>' +
-            '<div class="loom-body">' + bodyHead + '</div>' +
-            '<div class="loom-ports loom-ports-out">' + ports(p.outputs, 'out') + '</div>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
+      // the SAME accordion ProcessCard, minus the Run bar — config/inputs/
+      // outputs shown as static name·type contracts.
+      return _renderProcessCard(p, kind, { selCls: selClsFull, sourceAttr: sourceAttr, addrAttr: addrAttr, nonRunnable: true });
     }
 
     // Runnable (process/step): the unified ProcessCard — a config top-bar
@@ -2477,73 +2464,80 @@
   //     Configure ▸ Inputs ▸ Run ▸ Outputs. Each expands in place; several can be
   //     open at once. Config + input fields load lazily (resolved defaults).
   //   Click the header name to pin the card to the top of the scroll region.
+  // Static name·type rows (no editable value) — used for non-runnable kinds'
+  // config/inputs/outputs, which are a contract to read, not a form to fill.
+  function _schemaRowsHtml(schema) {
+    var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : [];
+    if (!keys.length) return '<p class="muted" style="font-size:0.82em;padding:2px 0">none</p>';
+    return '<div class="cfg-list cfg-list-static">' + keys.map(function (k) {
+      var t = _regTypeLabel(schema[k]);
+      return '<div class="cfg-row"><div class="cfg-row-name"><span class="cfg-key">' + _esc(k) + '</span>' +
+        (t ? '<span class="cfg-type">' + _esc(t) + '</span>' : '') + '</div></div>';
+    }).join('') + '</div>';
+  }
+
   function _renderProcessCard(p, kind, o) {
+    o = o || {};
+    var nonRun = !!o.nonRunnable;   // emitter/visualization/analysis/type/report_card
     var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
-    var chip = function (k) { return '<code class="pcard-chip">' + _esc(k) + '</code>'; };
-    var cfgChips = cfgKeys.length
-      ? cfgKeys.slice(0, 6).map(chip).join('') + (cfgKeys.length > 6 ? ' <span class="muted pcard-chip-more">+' + (cfgKeys.length - 6) + '</span>' : '')
-      : '<span class="muted">none</span>';
     var nCfg = cfgKeys.length, nIn = _nPorts(p.inputs), nOut = _nPorts(p.outputs);
     var desc = (p.description || '').trim();
     var isProc = (kind === 'process');
     var timestep = isProc
       ? '<label class="loom-run-field loom-run-interval-field">Timestep <input type="number" step="any" class="loom-run-interval" value="1"></label>'
       : '<span class="muted pcard-run-note">Step — runs to fixed point (no timestep)</span>';
-
-    var infoPanel =
-      '<div class="pcard-infopanel">' +
-        _pcardInfoRow('configure', 'Config', nCfg) +
-        _pcardInfoRow('inputs', 'Inputs', nIn) +
-        _pcardInfoRow('outputs', 'Outputs', nOut) +
-      '</div>';
     var section = _pcardSection;
+    var kindBadge = _procKindBadge(kind) || (nonRun ? '<span class="proc-kind-badge proc-kind-other">' + _esc(_procKindLabel(kind)) + '</span>' : '');
+    var contractMeta = nonRun
+      ? _procKindLabel(kind).toLowerCase() + ' · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out'
+      : _procKindLabel(kind).toLowerCase() + ' process · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out';
 
-    var configBody =
-      '<div class="cfg-list" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
-      _cfgJsonTools() +
-      '<div class="pcard-config-actions">' +
-        '<button class="btn-mini pcard-apply" type="button" onclick="_applyProcessConfig(this)" title="Apply config &amp; re-derive ports">✓ Apply</button>' +
-        '<button class="btn-mini" type="button" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
-        _cfgJsonToggle() +
-        '<span class="pcard-apply-status muted" data-role="apply-status"></span>' +
-      '</div>';
+    var configBody = nonRun
+      ? _schemaRowsHtml(p.config_schema)
+      : '<div class="cfg-list" data-role="cfg"><span class="muted loom-load-hint">resolving defaults…</span></div>' +
+        _cfgJsonTools() +
+        '<div class="pcard-config-actions">' +
+          '<button class="btn-mini pcard-apply" type="button" onclick="_applyProcessConfig(this)" title="Apply config &amp; re-derive ports">✓ Apply</button>' +
+          '<button class="btn-mini" type="button" onclick="_resetRunPanel(this)" title="Reset to resolved defaults">↺ Reset</button>' +
+          _cfgJsonToggle() +
+          '<span class="pcard-apply-status muted" data-role="apply-status"></span>' +
+        '</div>';
 
-    var inputsBody =
-      '<div class="cfg-list" data-role="inputs"><span class="muted loom-load-hint">resolving defaults…</span></div>';
+    var inputsBody = nonRun
+      ? _schemaRowsHtml(p.inputs)
+      : '<div class="cfg-list" data-role="inputs"><span class="muted loom-load-hint">resolving defaults…</span></div>';
 
-    // Run is a persistent bar (not an accordion) — always visible.
-    var runBar = _pcardRunBar(timestep +
+    // Run is a persistent bar (not an accordion) — only for runnable kinds.
+    var runBar = nonRun ? '' : _pcardRunBar(timestep +
       '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
       '<span class="pcard-run-out" data-role="run-inline-status"></span>');
 
-    var outputsBody =
-      '<div class="pcard-outputs" data-pane="outputs">' + _pcardRail('outputs', p.outputs, 'out') + '</div>' +
-      '<div class="loom-run-output" data-role="run-output"><span class="muted pcard-run-hint">Run to see outputs.</span></div>';
-    var dlBtn = '<button class="btn-mini pcard-dl" type="button" title="Download outputs" disabled onclick="event.stopPropagation();_downloadProcessOutputs(this)">⬇</button>';
+    var outputsBody = nonRun
+      ? _schemaRowsHtml(p.outputs)
+      : '<div class="pcard-outputs" data-pane="outputs">' + _pcardRail('outputs', p.outputs, 'out') + '</div>' +
+        '<div class="loom-run-output" data-role="run-output"><span class="muted pcard-run-hint">Run to see outputs.</span></div>';
+    var dlBtn = nonRun ? '' : '<button class="btn-mini pcard-dl" type="button" title="Download outputs" disabled onclick="event.stopPropagation();_downloadProcessOutputs(this)">⬇</button>';
 
-    return '<div class="registry-entry registry-entry-full loom-runnable pcard pcard-accordion' + o.selCls + '"' + o.sourceAttr + o.addrAttr + '>' +
+    return '<div class="registry-entry registry-entry-full' + (nonRun ? '' : ' loom-runnable') + ' pcard pcard-accordion' + (o.selCls || '') + '"' + (o.sourceAttr || '') + (o.addrAttr || '') + '>' +
       '<div class="loom-card loom-card-stack loom-card-' + kind + '">' +
-        // 1. compact top — header (name·badge·address) + info panel beside the
-        //    contract line + description in one tight band.
         '<div class="pcard-top">' +
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' +
-            '<span class="loom-name">' + _esc(p.name) + '</span>' + _procKindBadge(kind) + _regUseBadge(p) +
+            '<span class="loom-name">' + _esc(p.name) + '</span>' + kindBadge + _regUseBadge(p) +
             '<code class="loom-addr">' + _esc(p.address || kind) + '</code>' +
             _cardPopoutBtn(p.address || kind, kind) +
           '</div>' +
           '<div class="pcard-summary">' +
             '<div class="pcard-desc-col">' +
-              '<div class="pcard-contract-meta" data-role="contract-meta">' + _procKindLabel(kind).toLowerCase() + ' process · <strong>' + nIn + '</strong> in / <strong>' + nOut + '</strong> out</div>' +
+              '<div class="pcard-contract-meta" data-role="contract-meta">' + contractMeta + '</div>' +
               (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
             '</div>' +
           '</div>' +
         '</div>' +
-        // 2. accordion — Configure ▸ Inputs (resizable) · Run bar · Outputs.
         '<div class="pcard-acc">' +
           section('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { resizable: true }) +
           section('inputs', 'Inputs', '<span class="pcard-sec-count">' + nIn + '</span>', inputsBody, { resizable: true }) +
           runBar +
-          section('outputs', 'Outputs', '<span class="pcard-sec-count">' + nOut + '</span>', outputsBody, { headExtra: dlBtn }) +
+          section('outputs', 'Outputs', '<span class="pcard-sec-count">' + nOut + '</span>', outputsBody, dlBtn ? { headExtra: dlBtn } : {}) +
         '</div>' +
       '</div>' +
     '</div>';
