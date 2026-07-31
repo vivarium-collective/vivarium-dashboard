@@ -2233,6 +2233,102 @@
   }
   window._regStatsHtml = _regStatsHtml;
 
+  // Small info-box popup anchored under the clicked element; closes on outside
+  // click / scroll. Shared by the clickable card stats.
+  function _regInfoPop(e, html) {
+    if (e) { e.stopPropagation(); if (e.preventDefault) e.preventDefault(); }
+    var old = document.querySelector('.reg-infopop'); if (old) old.remove();
+    var pop = document.createElement('div');
+    pop.className = 'reg-infopop';
+    pop.innerHTML = html;
+    document.body.appendChild(pop);
+    var target = (e && (e.currentTarget || e.target)) || document.body;
+    var r = target.getBoundingClientRect();
+    var w = pop.getBoundingClientRect().width || 300;
+    pop.style.left = Math.round(Math.max(8, Math.min(r.left, window.innerWidth - w - 12)) + window.scrollX) + 'px';
+    pop.style.top = Math.round(r.bottom + 6 + window.scrollY) + 'px';
+    var close = function (ev) { if (pop.contains(ev.target)) return; pop.remove(); document.removeEventListener('mousedown', close); window.removeEventListener('scroll', close, true); };
+    setTimeout(function () { document.addEventListener('mousedown', close); window.addEventListener('scroll', close, true); }, 0);
+  }
+  window._regInfoPop = _regInfoPop;
+
+  // Stacked pass / inconclusive / fail bar over a process's report-card outcomes.
+  function _successBar(sp) {
+    if (!sp || !sp.total) return '';
+    var pass = sp.pass || 0, incon = sp.inconclusive || 0, fail = sp.fail || 0, total = sp.total;
+    var seg = function (cls, n) { return n ? '<span class="reg-succbar-seg ' + cls + '" style="width:' + (n / total * 100) + '%"></span>' : ''; };
+    return '<div class="reg-succbar" title="' + pass + ' passed · ' + incon + ' inconclusive · ' + fail + ' failed of ' + total + ' report-card outcomes">' +
+        '<div class="reg-succbar-track">' + seg('reg-succbar-pass', pass) + seg('reg-succbar-incon', incon) + seg('reg-succbar-fail', fail) + '</div>' +
+        '<div class="reg-succbar-legend">' +
+          '<span class="reg-succbar-t-pass">' + pass + ' pass</span>' +
+          (incon ? ' · <span class="reg-succbar-t-incon">' + incon + ' incon</span>' : '') +
+          (fail ? ' · <span class="reg-succbar-t-fail">' + fail + ' fail</span>' : '') +
+          ' · ' + total + ' total' +
+        '</div>' +
+      '</div>';
+  }
+  window._successBar = _successBar;
+
+  // Clickable card stats: composites-using (opens a list), requires-N, studies
+  // (opens a breakdown). Studies/success hidden for non-runnable kinds.
+  function _regClickStats(p) {
+    var addr = _esc(p.address || '');
+    var out = [];
+    if (p.composite_uses) out.push('<button type="button" class="reg-stat reg-stat-btn" onclick="_showProcessComposites(event,\'' + addr + '\')" title="See which composites use this"><span class="reg-stat-glyph">▦</span><strong>' + p.composite_uses + '</strong> ' + (p.composite_uses === 1 ? 'composite' : 'composites') + '</button>');
+    if (p.requires && p.requires.processes && p.requires.processes.length) out.push('<span class="reg-stat"><span class="reg-stat-glyph">⚙</span><strong>' + p.requires.processes.length + '</strong> ' + (p.requires.processes.length === 1 ? 'process' : 'processes') + '</span>');
+    var noStudies = /^(emitter|visualization|analysis|type|report_card)$/.test(p.kind || '');
+    var sp = noStudies ? null : (p.study_participation || p.studies);
+    if (sp && sp.studies) out.push('<button type="button" class="reg-stat reg-stat-btn" onclick="_showProcessStudies(event,\'' + addr + '\')" title="Study participation breakdown"><span class="reg-stat-glyph">◆</span><strong>' + sp.studies + '</strong> ' + (sp.studies === 1 ? 'study' : 'studies') + '</button>');
+    return out.join('');
+  }
+
+  // Popup: composites that use this process (derived from loaded composite specs).
+  function _showProcessComposites(e, address) {
+    var p = _registryEntryByAddress(address) || {};
+    var name = p.name;
+    var comps = (window._composites || []).filter(function (c) { return c.requires && c.requires.processes && c.requires.processes.indexOf(name) >= 0; });
+    var html = '<div class="reg-infopop-title">Composites using <code>' + _esc(name || '') + '</code></div>';
+    html += comps.length
+      ? '<ul class="reg-infopop-list">' + comps.map(function (c) {
+          return '<li><a href="#" onclick="_setRegistryTab(\'composite\');return false;">' + _esc(c.name) + '</a> <span class="muted">' + _esc(c.module || '') + '</span></li>';
+        }).join('') + '</ul>'
+      : '<p class="muted">Not required by any loaded composite spec' + (p.composite_uses ? ' (used via generators — open the Composites tab).' : '.') + '</p>';
+    _regInfoPop(e, html);
+  }
+  window._showProcessComposites = _showProcessComposites;
+
+  // Popup: study participation breakdown (names need a backend annotation).
+  function _showProcessStudies(e, address) {
+    var p = _registryEntryByAddress(address) || {};
+    var sp = p.study_participation || p.studies || {};
+    var html = '<div class="reg-infopop-title">Study participation</div>' +
+      '<div class="reg-infopop-stats">' +
+        '<div><strong>' + (sp.studies || 0) + '</strong> studies participated</div>' +
+      '</div>' + _successBar(sp) +
+      '<p class="muted reg-infopop-note">Individual study names aren\'t in the registry index yet — browse them under ' +
+        '<a href="#investigations" onclick="_switchPage(\'investigations\');return false;">Studies</a>.</p>';
+    _regInfoPop(e, html);
+  }
+  window._showProcessStudies = _showProcessStudies;
+
+  // Popup: full config keys + input/output ports (replaces the inline expander).
+  function _showConfigPorts(e, address) {
+    var p = _registryEntryByAddress(address) || {};
+    var cfgKeys = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema) : [];
+    function portRows(schema) {
+      var keys = (schema && typeof schema === 'object') ? Object.keys(schema) : [];
+      if (!keys.length) return '<span class="muted">none</span>';
+      return keys.map(function (k) { var t = _regTypeLabel(schema[k]); return '<div class="reg-infopop-port"><code>' + _esc(k) + '</code>' + (t ? '<span class="reg-infopop-type">' + _esc(t) + '</span>' : '') + '</div>'; }).join('');
+    }
+    var html = '<div class="reg-infopop-title">Config &amp; ports</div>' +
+      '<div class="reg-infopop-sec"><span class="reg-infopop-label">config · ' + cfgKeys.length + '</span>' +
+        (cfgKeys.length ? cfgKeys.map(function (k) { return '<code>' + _esc(k) + '</code>'; }).join(' ') : '<span class="muted">none</span>') + '</div>' +
+      '<div class="reg-infopop-sec"><span class="reg-infopop-label">inputs · ' + _nPorts(p.inputs) + '</span>' + portRows(p.inputs) + '</div>' +
+      '<div class="reg-infopop-sec"><span class="reg-infopop-label">outputs · ' + _nPorts(p.outputs) + '</span>' + portRows(p.outputs) + '</div>';
+    _regInfoPop(e, html);
+  }
+  window._showConfigPorts = _showConfigPorts;
+
   function _renderRegistryEntryGrid(p) {
     var sourceAttr = p.source ? ' data-source="' + _esc(p.source) + '"' : '';
     var esc = _esc, addr = _esc(p.address || '');
@@ -2241,16 +2337,14 @@
       : '';
     var desc = (p.description || '').trim();
     var short = desc ? desc.split('\n')[0] : '';
-    var stats = _regStatsHtml(p);
-    var inlinePorts = _regInlinePorts(p);
-    // Collapsed by default: config + input/output ports live behind a click-to-
-    // expand <details> so the middle card stays compact. stopPropagation so the
-    // toggle doesn't select/zoom the card.
-    var _cfgN = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema).length : 0;
-    var _detail = inlinePorts
-      ? '<details class="reg-mid-details" onclick="event.stopPropagation()"><summary>config &amp; ports' +
-        ' <span class="reg-mid-sum">' + _cfgN + ' config · ' + _nPorts(p.inputs) + ' in · ' + _nPorts(p.outputs) + ' out</span></summary>' +
-        inlinePorts + '</details>'
+    var noStudies = /^(emitter|visualization|analysis|type|report_card)$/.test(p.kind || '');
+    var sp = noStudies ? null : (p.study_participation || p.studies);
+    var nCfg = (p.config_schema && typeof p.config_schema === 'object') ? Object.keys(p.config_schema).length : 0;
+    var nIn = _nPorts(p.inputs), nOut = _nPorts(p.outputs);
+    // Config & ports → a click-popup info button (like the other stats).
+    var cfgPortsBtn = (nCfg || nIn || nOut)
+      ? '<button type="button" class="reg-cfgports-btn" onclick="event.stopPropagation();_showConfigPorts(event,\'' + addr + '\')" title="See config &amp; ports">' +
+        'config &amp; ports <span class="reg-mid-sum">' + nCfg + ' config · ' + nIn + ' in · ' + nOut + ' out</span></button>'
       : '';
     var selCls = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
     return '<div class="registry-card' + selCls + '"' + sourceAttr + ' data-address="' + addr + '"' +
@@ -2262,9 +2356,10 @@
           '<code class="reg-card-addr">' + addr + '</code>' +
           (short ? '<p class="reg-card-desc">' + esc(short) + '</p>' : '') +
         '</div>' +
-        '<div class="reg-card-stats">' + stats + '</div>' +
+        '<div class="reg-card-stats">' + _regClickStats(p) + '</div>' +
       '</div>' +
-      _detail +
+      _successBar(sp) +
+      cfgPortsBtn +
     '</div>';
   }
 
@@ -3320,20 +3415,14 @@
   }
   window._configPull = _configPull;
 
-  // Pin a card to the top of the scroll region (sticky) so it lines up for
-  // comparison/editing. Radio: pins this one, releases any other; clicking the
-  // pinned card's title again releases it.
+  // Clicking a card header scrolls it up to just below the sticky toolbar, so
+  // it lines up at the top without manual scrolling. (No sticky pin — a plain
+  // one-time scroll.)
   function _pinCardTop(el) {
     var card = el.closest('.pcard'); if (!card) return;
-    var wasPinned = card.classList.contains('pcard-pinned');
-    document.querySelectorAll('.pcard-pinned').forEach(function (c) {
-      c.classList.remove('pcard-pinned'); c.style.removeProperty('--pcard-pin-top');
-    });
-    if (wasPinned) return;
     var sticky = document.querySelector('.registry-sticky');
-    var top = sticky ? Math.round(sticky.getBoundingClientRect().height) : 0;
-    card.style.setProperty('--pcard-pin-top', top + 'px');
-    card.classList.add('pcard-pinned');
+    var offset = (sticky ? Math.round(sticky.getBoundingClientRect().height) : 0) + 8;
+    card.style.scrollMarginTop = offset + 'px';
     try { card.scrollIntoView({ block: 'start', behavior: 'smooth' }); } catch (e) { card.scrollIntoView(); }
   }
   window._pinCardTop = _pinCardTop;

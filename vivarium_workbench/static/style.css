@@ -1436,6 +1436,54 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .cfg-list-static .cfg-row{ grid-template-columns:1fr; }
 /* usage stats row inside the full card top */
 .pcard-usage{ margin:5px 0 0; }
+
+/* clickable card stats + config·ports button */
+.reg-stat-btn{ border:none; background:none; cursor:pointer; font:inherit; color:inherit; padding:0; }
+.reg-stat-btn:hover{ color:#2563eb; text-decoration:underline; }
+.reg-cfgports-btn{
+  display:inline-flex; align-items:center; gap:6px; margin-top:8px;
+  border:1px solid #e5e7eb; background:#f8fafc; border-radius:7px; cursor:pointer;
+  font-size:0.78em; font-weight:600; color:#475569; padding:4px 10px;
+}
+.reg-cfgports-btn:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+.reg-cfgports-btn .reg-mid-sum{ font-weight:400; color:#94a3b8; }
+
+/* stacked pass / inconclusive / fail success bar */
+.reg-succbar{ margin:7px 0 0; }
+.reg-succbar-track{ display:flex; height:7px; border-radius:4px; overflow:hidden; background:#eef2f7; }
+.reg-succbar-seg{ display:block; height:100%; }
+.reg-succbar-pass{ background:#16a34a; }
+.reg-succbar-incon{ background:#d97706; }
+.reg-succbar-fail{ background:#dc2626; }
+.reg-succbar-legend{ font-size:0.72em; color:#64748b; margin-top:3px; }
+.reg-succbar-t-pass{ color:#16a34a; font-weight:600; }
+.reg-succbar-t-incon{ color:#b45309; font-weight:600; }
+.reg-succbar-t-fail{ color:#dc2626; font-weight:600; }
+
+/* shared info popup (composites / studies / config·ports) */
+.reg-infopop{
+  position:absolute; z-index:70; max-width:340px; min-width:200px;
+  background:#fff; border:1px solid #e2e8f0; border-radius:10px;
+  box-shadow:0 12px 30px -8px rgba(15,23,42,0.28); padding:12px 14px; font-size:0.85em;
+}
+.reg-infopop-title{ font-weight:600; color:#1e293b; margin:0 0 8px; font-size:0.95em; }
+.reg-infopop-list{ list-style:none; margin:0; padding:0; max-height:220px; overflow:auto; }
+.reg-infopop-list li{ padding:3px 0; border-bottom:1px solid #f1f5f9; }
+.reg-infopop-list li:last-child{ border-bottom:none; }
+.reg-infopop-list a{ color:#2563eb; text-decoration:none; }
+.reg-infopop-list a:hover{ text-decoration:underline; }
+.reg-infopop-sec{ margin:0 0 8px; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline; }
+.reg-infopop-label{ display:block; width:100%; font-size:0.82em; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; }
+.reg-infopop-sec code{ background:#f1f5f9; border-radius:4px; padding:1px 5px; font-size:0.9em; }
+.reg-infopop-port{ display:flex; align-items:baseline; gap:8px; width:100%; padding:1px 0; }
+.reg-infopop-type{ color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.85em; }
+.reg-infopop-stats{ margin:0 0 6px; }
+.reg-infopop-note{ font-size:0.85em; margin:8px 0 0; }
+.reg-infopop-note a{ color:#2563eb; }
+:root[data-theme="dark"] .reg-infopop{ background:var(--surface); border-color:var(--border); }
+:root[data-theme="dark"] .reg-infopop-title{ color:#d3ddeb; }
+:root[data-theme="dark"] .reg-cfgports-btn{ background:var(--surface-2); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .reg-succbar-track{ background:var(--surface-3); }
 /* center the SVG zoom icons in their buttons */
 .reg-zoom-btn{ display:inline-flex; align-items:center; justify-content:center; }
 .reg-zoom-btn svg{ display:block; }
@@ -2040,18 +2088,8 @@ body.pcard-splitting iframe{ pointer-events:none; }
 .pcard-inputs .loom-inputs-stack .loom-in-row{ flex:1 1 100%; max-width:none; }
 
 /* pinned to the top of the scroll region (sticky) so it lines up */
-.pcard-pinned{ position:sticky; top:var(--pcard-pin-top,0); z-index:5; }
-.pcard-pinned .loom-card{
-  border-color:#2563eb; box-shadow:0 6px 20px -6px rgba(37,99,235,0.35);
-}
-/* A pinned card collapses to just its compact top (a small sticky reference at
-   the page top) so the space below stays usable — click the header to release. */
-.pcard-pinned .pcard-acc,
-.pcard-pinned .pcard-runbar{ display:none; }
-.pcard-pinned .pcard-header::after{
-  content:'📌'; margin-left:8px; font-size:0.9em; opacity:0.85;
-}
-.pcard-pinned .loom-name{ text-decoration:none !important; }
+/* (header click scrolls the card to the top — see _pinCardTop; no sticky pin) */
+.pcard-header{ cursor:pointer; }
 
 /* responsive: stack the two panes on narrow widths (show full body for both) */
 @media (max-width:820px){
