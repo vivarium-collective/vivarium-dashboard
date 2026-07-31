@@ -2852,7 +2852,7 @@
     var runBar = _pcardRunBar(
       c.read_only
         ? '<span class="muted pcard-run-note">read-only composite — enable running inside Explore to run in place</span>'
-        : '<label class="loom-run-field loom-run-interval-field">Time <input type="number" step="any" min="0" class="pcard-run-time" placeholder="e.g. 10"></label>' +
+        : '<label class="loom-run-field loom-run-interval-field">Steps <input type="number" step="1" min="1" class="pcard-run-time" placeholder="e.g. 10"></label>' +
           '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>');
 
     // Outputs = Visualizations / Results / Document, rendered natively (a
@@ -2953,24 +2953,29 @@
     if (!status && bar) { status = document.createElement('span'); status.className = 'pcard-run-status muted'; bar.appendChild(status); }
     var setErr = function (m) { if (status) { status.textContent = m; status.classList.add('pcard-apply-err'); } };
     var tEl = card.querySelector('.pcard-run-time');
-    var tEnd = (tEl && tEl.value !== '') ? parseFloat(tEl.value) : NaN;
-    if (isNaN(tEnd) || tEnd <= 0) { setErr('Enter a Time (end) first'); if (tEl) tEl.focus(); return; }
+    var steps = (tEl && tEl.value !== '') ? parseInt(tEl.value, 10) : NaN;
+    if (isNaN(steps) || steps <= 0) { setErr('Enter the number of steps first'); if (tEl) tEl.focus(); return; }
     var overrides = _collectCardConfig(card);
     if (overrides.__error) { setErr(overrides.__error); return; }
-    var payload = { name: (c.name || 'composite') + '-run-' + Date.now().toString(36),
-      composite: id, t_start: 0, t_end: tEnd, parameter_overrides: overrides };
+    // Detached composite run launcher: POST /api/composite-test-run → 202 {run_id}.
+    var payload = { id: id, steps: steps, overrides: overrides, label: (c.name || 'composite') + '-run' };
     var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Launching…';
     if (status) { status.classList.remove('pcard-apply-err'); status.textContent = 'launching run…'; }
-    fetch('/api/simulation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    fetch('/api/composite-test-run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
       .then(function (res) {
         btn.disabled = false; btn.textContent = orig;
-        if (!res.ok) { setErr('✗ ' + ((res.j && res.j.error) || ('HTTP ' + res.status))); return; }
-        var branch = (res.j && res.j.branch) || '';
-        if (status) {
-          status.classList.remove('pcard-apply-err');
-          status.innerHTML = '✓ launched — <a href="#simulations" onclick="_switchPage(\'simulations\');return false;">view in Runs</a>' +
-            (branch ? ' · <code>' + _esc(branch) + '</code>' : '');
+        var rid = res.j && res.j.run_id;
+        if (res.status === 202 || rid) {
+          if (status) {
+            status.classList.remove('pcard-apply-err');
+            status.innerHTML = '✓ launched' + (rid ? ' <code>' + _esc(String(rid)) + '</code>' : '') +
+              ' — <a href="#simulations" onclick="_switchPage(\'simulations\');return false;">view in Runs</a>';
+          }
+        } else if (res.status === 429) {
+          setErr('too many runs in progress — try again shortly');
+        } else {
+          setErr('✗ ' + ((res.j && res.j.error) || ('HTTP ' + res.status)));
         }
       })
       .catch(function (e) { btn.disabled = false; btn.textContent = orig; setErr('network error: ' + String(e)); });
