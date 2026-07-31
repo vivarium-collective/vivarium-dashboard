@@ -2800,13 +2800,24 @@
               '<p class="muted"><code>' + _esc(runId) + '</code></p></div>';
             setTimeout(tick, 1500);
           } else if (st === 'completed' || st === 'done' || st === 'success') {
-            var viz = j.viz_html || '';
-            panel.innerHTML =
-              '<div class="pcard-out-runhead">✓ completed · <a href="' + _esc(dl) + '" target="_blank" rel="noopener">Download ZIP</a> · open in ' + runsLink + '</div>' +
-              (viz
+            // viz_html is a { name: htmlString } map (parsed from the run's viz
+            // JSON) — collect the HTML fragments; may be empty for runs with no
+            // declared visualizations.
+            var viz = j.viz_html;
+            var htmls = [];
+            if (viz && typeof viz === 'object' && !Array.isArray(viz)) {
+              Object.keys(viz).forEach(function (k) { if (typeof viz[k] === 'string' && viz[k].trim()) htmls.push(viz[k]); });
+            } else if (typeof viz === 'string' && viz.trim()) { htmls.push(viz); }
+            var art = function (name, label) { return '<a href="' + _esc(api('/api/composite-run/' + encodeURIComponent(runId) + '/artifact/' + name)) + '" target="_blank" rel="noopener">' + label + '</a>'; };
+            var links = ['<a href="' + _esc(dl) + '" target="_blank" rel="noopener">Download ZIP</a>'];
+            if (j.has_report) links.push(art('report', 'Report'));
+            if (j.has_analyses) links.push(art('analyses', 'Analyses'));
+            links.push('open in ' + runsLink);
+            panel.innerHTML = '<div class="pcard-out-runhead">✓ completed · ' + links.join(' · ') + '</div>' +
+              (htmls.length
                 ? '<iframe class="pcard-out-viz" sandbox="allow-scripts allow-same-origin"></iframe>'
-                : '<p class="muted">Run completed — no inline visualization was produced. Open it in ' + runsLink + ' for results.</p>');
-            if (viz) { var f = panel.querySelector('.pcard-out-viz'); if (f) f.srcdoc = viz; }
+                : '<p class="muted">This run produced no inline visualization. Use Download ZIP' + (j.has_report || j.has_analyses ? ' / the report/analyses above' : '') + ', or open it in ' + runsLink + '.</p>');
+            if (htmls.length) { var f = panel.querySelector('.pcard-out-viz'); if (f) f.srcdoc = htmls.join('\n<hr>\n'); }
           } else {   // failed / orphaned / error
             panel.innerHTML = '<div class="pcard-out-run"><p class="pcard-out-empty-title loom-run-err">✗ ' + _esc(st) + '</p>' +
               (j.error ? '<pre class="loom-run-pre">' + _esc(String(j.error)) + '</pre>' : '') +
