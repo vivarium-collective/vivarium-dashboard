@@ -155,7 +155,7 @@ window.addEventListener('pageshow', function (e) {
 
 /* Workspace switcher (top of the left rail) — nudged down so it sits more
    centrally between the brand and the WORKSPACE section label. */
-.viv-workspace-switcher { position: relative; padding: 0; margin: 14px 12px 14px; }
+.viv-workspace-switcher { position: relative; padding: 0; margin: 10px 12px 2px 9px; }
 
 /* ── Workspace picker: a self-describing header dropdown ──────────────────── */
 .viv-wsp-trigger {
@@ -702,7 +702,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
             <path d="M20 9.5 L22.5 12 L20 14.5"/>
           </svg>
         </span>
-        <span class="viv-rail-link-label">Processes</span>
+        <span class="viv-rail-link-label">Modules</span>
       </a>
       <!-- Studies: the investigations overview. Sits directly under Composites; the
            per-investigation study list lives in the search section below. Branching-fan (DAG) icon. -->
@@ -1003,6 +1003,33 @@ a.viv-bs-commit:hover { text-decoration: underline; }
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16.5" x2="13" y2="16.5"/></svg>
           </button>
         </div>
+      </div>
+
+      {# Quick facets + sort — narrow the list by kind/source and reorder. Also
+         driven by `kind:` / `source:` / `sort:` tokens typed into Filter above. #}
+      <div class="registry-facets" id="registry-facets">
+        <span class="facet-group" data-facet-kinds>
+          <span class="facet-label">Type</span>
+          <button type="button" class="facet-chip" data-facet="kind" data-val="temporal" onclick="_toggleRegistryFacet('kind','temporal')" title="Temporal processes (advance state over a timestep)">Temporal</button>
+          <button type="button" class="facet-chip" data-facet="kind" data-val="step" onclick="_toggleRegistryFacet('kind','step')" title="Steps (dataflow nodes, no timestep)">Step</button>
+        </span>
+        <span class="facet-group">
+          <span class="facet-label">Source</span>
+          <button type="button" class="facet-chip" data-facet="source" data-val="workspace" onclick="_toggleRegistryFacet('source','workspace')" title="Declared in this workspace">Workspace</button>
+          <button type="button" class="facet-chip" data-facet="source" data-val="imported" onclick="_toggleRegistryFacet('source','imported')" title="Imported from a package / available in the environment">Imported</button>
+        </span>
+        <span class="facet-group facet-sort-group">
+          <span class="facet-label">Sort</span>
+          <select class="facet-select" id="registry-sort" onchange="_setRegistrySort(this.value)" title="Order entries">
+            <option value="use">Most used</option>
+            <option value="name">Name (A–Z)</option>
+            <option value="studies">Most studies</option>
+            <option value="success">Success %</option>
+            <option value="kind">Type</option>
+            <option value="source">Source</option>
+          </select>
+        </span>
+        <button type="button" class="facet-clear" id="registry-facet-clear" onclick="_clearRegistryFacets()" hidden>Clear</button>
       </div>
     </div>
 
