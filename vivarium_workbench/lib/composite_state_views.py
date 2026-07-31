@@ -215,9 +215,13 @@ def build_composite_state(
         # ROBUST FALLBACK: a live build can fail for environmental reasons
         # (e.g. a stale ParCa cache missing 'tf_ids') even when the composite
         # is valid — serve the pre-generated static state if it exists.
+        # BUT NOT when the caller supplied Config overrides: the static artifact
+        # is the UNOVERRIDDEN default, so serving it would silently mask an
+        # invalid-override error (e.g. a single-value param given a comma-list)
+        # as if the bad config had been accepted. Surface the error instead.
         e = res["__build_error__"]
         _static = ws_root / "reports" / "composite-state" / (ref + ".json")
-        if _static.is_file():
+        if not overrides and _static.is_file():
             try:
                 _doc = json.loads(_static.read_text(encoding="utf-8"))
                 _inner = _doc.get("state", _doc) if isinstance(_doc, dict) else _doc

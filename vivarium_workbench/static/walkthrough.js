@@ -3089,17 +3089,35 @@
     if (cfg.__error) { if (status) { status.textContent = cfg.__error; status.classList.add('pcard-apply-err'); } return; }
     card._appliedConfig = cfg;
     _updateConfigChips(card, cfg);
+    var id = card.getAttribute('data-address');
     var embed = card.querySelector('.ccard-loom-embed');
-    if (embed) {
-      embed._overrides = JSON.stringify(cfg);
-      embed._loomLoaded = false;
-      var host = embed.querySelector('.ccard-loom-frame');
-      if (host) host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Re-resolving with new parameters…</p>';
-      var sec = embed.closest('.pcard-sec');
-      if (sec && !sec.classList.contains('pcard-sec-open')) { var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h); }
-      else _openCompositeLoomInline(embed);
-    }
-    if (status) { status.textContent = '✓ applied — Explore re-resolved'; status.classList.remove('pcard-apply-err'); }
+    var host = embed && embed.querySelector('.ccard-loom-frame');
+    if (host) host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Re-resolving with new parameters…</p>';
+    if (status) { status.textContent = 'Re-resolving…'; status.classList.remove('pcard-apply-err'); }
+    // Validate the overrides by resolving FIRST. If the build rejects them
+    // (e.g. a single-value param handed a comma-list), surface the exception
+    // instead of silently rendering the default (unoverridden) wiring.
+    var url = _api('/api/composite-resolve?id=' + encodeURIComponent(id) +
+      '&overrides=' + encodeURIComponent(JSON.stringify(cfg)));
+    fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      if (j && (j.wiring_status === 'error' || (j.error && !j.state))) {
+        var msg = j.notice || j.error || 'configuration rejected';
+        if (status) { status.textContent = '✗ ' + msg; status.classList.add('pcard-apply-err'); }
+        if (host) host.innerHTML = '<div class="loom-run-err" style="padding:10px">✗ ' + _esc(String(msg)) + '</div>';
+        return;   // do NOT reload the loom — it would show a stale/default graph
+      }
+      if (embed) {
+        embed._overrides = JSON.stringify(cfg);
+        embed._loomLoaded = false;
+        var sec = embed.closest('.pcard-sec');
+        if (sec && !sec.classList.contains('pcard-sec-open')) { var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h); }
+        else _openCompositeLoomInline(embed);
+      }
+      if (status) { status.textContent = '✓ applied — Explore re-resolved'; status.classList.remove('pcard-apply-err'); }
+    }).catch(function (e) {
+      if (status) { status.textContent = '✗ ' + ((e && e.message) || 'resolve failed'); status.classList.add('pcard-apply-err'); }
+      if (host) host.innerHTML = '<div class="loom-run-err" style="padding:10px">✗ resolve failed</div>';
+    });
   }
   window._applyCompositeConfig = _applyCompositeConfig;
 

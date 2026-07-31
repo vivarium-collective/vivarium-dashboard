@@ -134,6 +134,20 @@ def _live_generator_state(ws_root, spec_id: str, overrides: "dict | None" = None
     returns — or None when the build fails or no worker is available (in which
     case the caller's honest "unavailable" notice still stands).
     """
+    doc, _err = _live_generator_build(ws_root, spec_id, overrides)
+    return doc
+
+
+def _live_generator_build(
+    ws_root, spec_id: str, overrides: "dict | None" = None,
+) -> "tuple[dict | None, str | None]":
+    """Build a generator's state, returning ``(state, error)``.
+
+    Like :func:`_live_generator_state` but also surfaces the build error string
+    so a caller that supplied *overrides* can refuse to silently fall back to
+    the default (unoverridden) wiring — an invalid Config → Apply must show its
+    exception, not a stale default graph. ``error`` is None on success.
+    """
     try:
         from vivarium_workbench.lib.composite_state_views import build_composite_state
         # With overrides (Config → Apply), bypass the TTL cache so the freshly
@@ -141,15 +155,19 @@ def _live_generator_state(ws_root, spec_id: str, overrides: "dict | None" = None
         body, status = build_composite_state(
             Path(ws_root), spec_id, overrides=overrides, fresh=bool(overrides),
         )
-    except Exception:  # noqa: BLE001 — a failed build must never break resolve
-        return None
-    if status != 200 or not isinstance(body, dict):
-        return None
+    except Exception as e:  # noqa: BLE001 — a failed build must never break resolve
+        return None, str(e)
+    if not isinstance(body, dict):
+        return None, "generator build returned no document"
+    if status != 200:
+        return None, str(body.get("error") or f"generator build failed (HTTP {status})")
     doc = body.get("state")
     if (isinstance(doc, dict) and isinstance(doc.get("state"), dict)
             and set(doc) <= {"state", "schema", "composition", "bridge", "interface"}):
         doc = doc["state"]
-    return doc if isinstance(doc, dict) and doc else None
+    if isinstance(doc, dict) and doc:
+        return doc, None
+    return None, "generator build produced empty state"
 
 
 def resolve_composite(
@@ -218,7 +236,21 @@ def resolve_composite(
         # the committed artifact are the CANONICAL (unoverridden) state. So when
         # overrides are given for a generator, build straight from them.
         if overrides and allow_build and getattr(spec, "kind", None) == "generator":
-            state = _live_generator_state(ws_root, spec_id, overrides)
+            state, override_err = _live_generator_build(ws_root, spec_id, overrides)
+            if state is None and override_err:
+                # The user supplied Config overrides and the build FAILED (e.g.
+                # a single-value param given a comma-list). Surface the exception
+                # — do NOT fall back to the default (unoverridden) wiring, which
+                # would render as if the invalid config had been accepted.
+                return {
+                    "id": spec_id, "name": spec.name, "description": spec.description,
+                    "parameters": spec.parameters, "state": None, "schema": spec.schema,
+                    "requires": spec.requires, "tags": spec.tags,
+                    "visualizations": spec.visualizations, "analyses": spec.analyses,
+                    "emitters": spec.emitters, "kind": spec.kind, "module": spec.module,
+                    "default_n_steps": spec.default_n_steps, "svg": None,
+                    "wiring_status": "error", "notice": override_err, "error": override_err,
+                }
         if state is None:
             try:
                 state = spec.default_state(base_dir=_artifact_base_dir(ws_root, spec))
