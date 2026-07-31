@@ -1292,9 +1292,10 @@ export default function App() {
                     title="Layout: relationship packing, or order by the flow network (top-to-bottom / left-to-right)"
                   >
                     {([
-                      { id: 'hierarchy', label: '○', t: 'No enforced direction (relationship packing)' },
-                      { id: 'flow-tb', label: '↓', t: 'Flow order: top to bottom' },
-                      { id: 'flow-lr', label: '→', t: 'Flow order: left to right' },
+                      { id: 'hierarchy', label: '○', t: 'Relationship packing (no enforced direction)' },
+                      { id: 'flow-tb', label: '↓', t: 'Stack by depth: top to bottom (fast)' },
+                      { id: 'flow-lr', label: '→', t: 'Stack by depth: left to right (fast)' },
+                      { id: 'flow-elk', label: 'ƒ', t: 'Flow network — ELK layered (orders by the step flow)' },
                     ] as const).map((opt) => {
                       const active = layoutMode.modeId === opt.id;
                       return (
