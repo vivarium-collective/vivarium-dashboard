@@ -2766,48 +2766,69 @@
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
-  // Native content for a composite Outputs tab (Visualizations/Results/Document).
-  function _compositeOutContent(view, c) {
-    c = c || {};
-    var runHint = '<a href="#simulations" onclick="_switchPage(\'simulations\');return false;">Runs</a>';
-    if (view === 'document') {
-      var np = (c.parameters && typeof c.parameters === 'object') ? Object.keys(c.parameters).length : 0;
-      var nr = (c.requires && c.requires.processes) ? c.requires.processes.length : 0;
-      var meta = [];
-      if (c.module) meta.push('<span><span class="muted">module</span> <code>' + _esc(c.module) + '</code></span>');
-      meta.push('<span><span class="muted">params</span> <strong>' + np + '</strong></span>');
-      if (nr) meta.push('<span><span class="muted">requires</span> <strong>' + nr + '</strong> process' + (nr === 1 ? '' : 'es') + '</span>');
-      if (c.default_n_steps != null) meta.push('<span><span class="muted">default steps</span> <strong>' + _esc(String(c.default_n_steps)) + '</strong></span>');
-      var tags = (c.tags && c.tags.length) ? '<div class="pcard-out-tags">' + c.tags.map(function (t) { return '<span class="tag-pill">' + _esc(t) + '</span>'; }).join(' ') + '</div>' : '';
-      return '<div class="pcard-out-doc">' +
-        (c.description ? '<p class="pcard-out-desc">' + _esc(c.description) + '</p>' : '<p class="muted">No description.</p>') +
-        '<div class="pcard-out-meta">' + meta.join('') + '</div>' + tags +
-        '<p class="muted pcard-out-hint">Full spec: use the <strong>{ } JSON</strong> button in the header, or open <strong>Explore</strong> for the bigraph.</p>' +
-      '</div>';
-    }
-    if (view === 'results') {
-      return '<div class="pcard-out-empty">' +
-        '<p class="pcard-out-empty-title">No run results yet</p>' +
-        '<p class="muted">Set a <strong>Time</strong> and <strong>▶ Run</strong> above — time-series results and report cards appear in the run, viewable under ' + runHint + '.</p>' +
-      '</div>';
-    }
+  // Outputs before any run this session.
+  function _compositeOutIdle() {
     return '<div class="pcard-out-empty">' +
-      '<p class="pcard-out-empty-title">No visualizations yet</p>' +
-      '<p class="muted">The composite\'s declared visualizations are produced by a run. <strong>▶ Run</strong> it above, then open the run under ' + runHint + '.</p>' +
+      '<p class="pcard-out-empty-title">No run yet</p>' +
+      '<p class="muted">Set <strong>Steps</strong> and hit <strong>▶ Run</strong> above — this shows the run\'s progress, then its visualizations. Past runs live under ' +
+        '<a href="#simulations" onclick="_switchPage(\'simulations\');return false;">Runs</a>.</p>' +
     '</div>';
   }
 
-  // Switch the composite Outputs panel between Visualizations / Results / Document.
-  function _setCompositeOutView(btn) {
-    var body = btn.closest('.pcard-sec-body'); if (!body) return;
-    body.querySelectorAll('.pcard-out-tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
-    var view = btn.getAttribute('data-view');
-    var card = btn.closest('.registry-entry-full');
-    var c = (window._compositesById || {})[card && card.getAttribute('data-address')] || {};
-    var panel = body.querySelector('[data-role="out-panel"]');
-    if (panel) panel.innerHTML = _compositeOutContent(view, c);
+  // Poll a launched composite run and render its progress → visualizations into
+  // the card's Outputs panel. /api/composite-run/<id>/status returns
+  // {status, progress_step, n_steps, ...} and, on completion, viz_html.
+  function _pollCompositeRun(card, runId) {
+    var panel = card.querySelector('[data-role="out-panel"]'); if (!panel) return;
+    var dl = _api('/api/composite-run/' + encodeURIComponent(runId) + '/download');
+    var runsLink = '<a href="#simulations" onclick="_switchPage(\'simulations\');return false;">Runs</a>';
+    card._pollRun = runId;   // guard: a newer run supersedes this poll
+    var tick = function () {
+      if (card._pollRun !== runId) return;   // superseded
+      fetch(_api('/api/composite-run/' + encodeURIComponent(runId) + '/status'))
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (card._pollRun !== runId) return;
+          var j = res.j || {};
+          var st = j.status || (res.ok ? 'running' : 'unknown');
+          var prog = (j.progress_step != null && j.n_steps)
+            ? ' <span class="muted">step ' + j.progress_step + ' / ' + j.n_steps + '</span>' : '';
+          if (st === 'running' || st === 'queued' || st === 'starting') {
+            panel.innerHTML = '<div class="pcard-out-run"><p class="pcard-out-empty-title">Running…' + prog + '</p>' +
+              '<div class="pcard-out-progress"><span style="width:' + (j.n_steps ? Math.round((j.progress_step || 0) / j.n_steps * 100) : 0) + '%"></span></div>' +
+              '<p class="muted"><code>' + _esc(runId) + '</code></p></div>';
+            setTimeout(tick, 1500);
+          } else if (st === 'completed' || st === 'done' || st === 'success') {
+            // viz_html is a { name: htmlString } map (parsed from the run's viz
+            // JSON) — collect the HTML fragments; may be empty for runs with no
+            // declared visualizations.
+            var viz = j.viz_html;
+            var htmls = [];
+            if (viz && typeof viz === 'object' && !Array.isArray(viz)) {
+              Object.keys(viz).forEach(function (k) { if (typeof viz[k] === 'string' && viz[k].trim()) htmls.push(viz[k]); });
+            } else if (typeof viz === 'string' && viz.trim()) { htmls.push(viz); }
+            var art = function (name, label) { return '<a href="' + _esc(_api('/api/composite-run/' + encodeURIComponent(runId) + '/artifact/' + name)) + '" target="_blank" rel="noopener">' + label + '</a>'; };
+            var links = ['<a href="' + _esc(dl) + '" target="_blank" rel="noopener">Download ZIP</a>'];
+            if (j.has_report) links.push(art('report', 'Report'));
+            if (j.has_analyses) links.push(art('analyses', 'Analyses'));
+            links.push('open in ' + runsLink);
+            panel.innerHTML = '<div class="pcard-out-runhead">✓ completed · ' + links.join(' · ') + '</div>' +
+              (htmls.length
+                ? '<iframe class="pcard-out-viz" sandbox="allow-scripts allow-same-origin"></iframe>'
+                : '<p class="muted">This run produced no inline visualization. Use Download ZIP' + (j.has_report || j.has_analyses ? ' / the report/analyses above' : '') + ', or open it in ' + runsLink + '.</p>');
+            if (htmls.length) { var f = panel.querySelector('.pcard-out-viz'); if (f) f.srcdoc = htmls.join('\n<hr>\n'); }
+          } else {   // failed / orphaned / error
+            panel.innerHTML = '<div class="pcard-out-run"><p class="pcard-out-empty-title loom-run-err">✗ ' + _esc(st) + '</p>' +
+              (j.error ? '<pre class="loom-run-pre">' + _esc(String(j.error)) + '</pre>' : '') +
+              '<p class="muted">Details under ' + runsLink + '.</p></div>';
+          }
+        })
+        .catch(function () { if (card._pollRun === runId) setTimeout(tick, 3000); });
+    };
+    panel.innerHTML = '<div class="pcard-out-run"><p class="pcard-out-empty-title">Launching…</p><p class="muted"><code>' + _esc(runId) + '</code></p></div>';
+    tick();
   }
-  window._setCompositeOutView = _setCompositeOutView;
+  window._pollCompositeRun = _pollCompositeRun;
 
   function _renderCompositeCardFull(c) {
     var params = (c.parameters && typeof c.parameters === 'object') ? c.parameters : {};
@@ -2852,19 +2873,14 @@
     var runBar = _pcardRunBar(
       c.read_only
         ? '<span class="muted pcard-run-note">read-only composite — enable running inside Explore to run in place</span>'
-        : '<label class="loom-run-field loom-run-interval-field">Time <input type="number" step="any" min="0" class="pcard-run-time" placeholder="e.g. 10"></label>' +
+        : '<label class="loom-run-field loom-run-interval-field">Steps <input type="number" step="1" min="1" class="pcard-run-time" placeholder="e.g. 10"></label>' +
           '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>');
 
-    // Outputs = Visualizations / Results / Document, rendered natively (a
-    // composite run is detached → its outputs live in the run; these panels
-    // point there rather than embedding a read-only loom).
+    // Outputs = the launched run's live status → its visualizations. A composite
+    // run is detached; _runComposite stores the run_id and _pollCompositeRun
+    // fills this panel (progress → viz_html on completion).
     var outputsBody =
-      '<div class="pcard-out-tabs">' +
-        '<button class="pcard-out-tab active" type="button" data-view="visualizations" onclick="_setCompositeOutView(this)">Visualizations</button>' +
-        '<button class="pcard-out-tab" type="button" data-view="results" onclick="_setCompositeOutView(this)">Results</button>' +
-        '<button class="pcard-out-tab" type="button" data-view="document" onclick="_setCompositeOutView(this)">Document</button>' +
-      '</div>' +
-      '<div class="pcard-out-panel" data-role="out-panel">' + _compositeOutContent('visualizations', c) + '</div>';
+      '<div class="pcard-out-panel" data-role="out-panel">' + _compositeOutIdle() + '</div>';
     var addr = c.module ? (c.module + '.' + c.name) : c.id;
 
     return '<div class="registry-entry registry-entry-full loom-runnable pcard pcard-accordion pcard-composite' + sel +
@@ -2953,24 +2969,34 @@
     if (!status && bar) { status = document.createElement('span'); status.className = 'pcard-run-status muted'; bar.appendChild(status); }
     var setErr = function (m) { if (status) { status.textContent = m; status.classList.add('pcard-apply-err'); } };
     var tEl = card.querySelector('.pcard-run-time');
-    var tEnd = (tEl && tEl.value !== '') ? parseFloat(tEl.value) : NaN;
-    if (isNaN(tEnd) || tEnd <= 0) { setErr('Enter a Time (end) first'); if (tEl) tEl.focus(); return; }
+    var steps = (tEl && tEl.value !== '') ? parseInt(tEl.value, 10) : NaN;
+    if (isNaN(steps) || steps <= 0) { setErr('Enter the number of steps first'); if (tEl) tEl.focus(); return; }
     var overrides = _collectCardConfig(card);
     if (overrides.__error) { setErr(overrides.__error); return; }
-    var payload = { name: (c.name || 'composite') + '-run-' + Date.now().toString(36),
-      composite: id, t_start: 0, t_end: tEnd, parameter_overrides: overrides };
+    // Detached composite run launcher: POST /api/composite-test-run → 202 {run_id}.
+    var payload = { id: id, steps: steps, overrides: overrides, label: (c.name || 'composite') + '-run' };
     var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Launching…';
     if (status) { status.classList.remove('pcard-apply-err'); status.textContent = 'launching run…'; }
-    fetch('/api/simulation', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    fetch(_api('/api/composite-test-run'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
       .then(function (res) {
         btn.disabled = false; btn.textContent = orig;
-        if (!res.ok) { setErr('✗ ' + ((res.j && res.j.error) || ('HTTP ' + res.status))); return; }
-        var branch = (res.j && res.j.branch) || '';
-        if (status) {
-          status.classList.remove('pcard-apply-err');
-          status.innerHTML = '✓ launched — <a href="#simulations" onclick="_switchPage(\'simulations\');return false;">view in Runs</a>' +
-            (branch ? ' · <code>' + _esc(branch) + '</code>' : '');
+        var rid = res.j && res.j.run_id;
+        if (res.status === 202 || rid) {
+          if (status) {
+            status.classList.remove('pcard-apply-err');
+            status.innerHTML = '✓ launched — tracking in Outputs';
+          }
+          if (rid) {
+            // Open Outputs and track the run's progress → visualizations there.
+            var sec = card.querySelector('.pcard-sec-outputs');
+            if (sec && !sec.classList.contains('pcard-sec-open')) { var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h); }
+            _pollCompositeRun(card, rid);
+          }
+        } else if (res.status === 429) {
+          setErr('too many runs in progress — try again shortly');
+        } else {
+          setErr('✗ ' + ((res.j && res.j.error) || ('HTTP ' + res.status)));
         }
       })
       .catch(function (e) { btn.disabled = false; btn.textContent = orig; setErr('network error: ' + String(e)); });

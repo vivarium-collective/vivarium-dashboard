@@ -1985,6 +1985,14 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 .pcard-out-tab:hover{ color:#2563eb; background:#eff6ff; }
 .pcard-out-tab.active{ color:#1d4ed8; background:#fff; border-color:#eef2f7; }
 .pcard-out-panel{ padding:12px 14px; }
+.pcard-out-run{ padding:2px; }
+.pcard-out-progress{ height:7px; border-radius:4px; background:#eef2f7; overflow:hidden; margin:6px 0; }
+.pcard-out-progress span{ display:block; height:100%; background:#2563eb; transition:width .3s; }
+.pcard-out-runhead{ font-size:0.85em; margin:0 0 8px; color:#334155; }
+.pcard-out-runhead a{ color:#2563eb; }
+.pcard-out-viz{ width:100%; min-height:440px; border:1px solid #eef2f7; border-radius:8px; background:#fff; display:block; }
+:root[data-theme="dark"] .pcard-out-progress{ background:var(--surface-3); }
+:root[data-theme="dark"] .pcard-out-viz{ background:var(--surface); border-color:var(--border); }
 .pcard-out-empty{ padding:10px 4px; }
 .pcard-out-empty-title{ margin:0 0 4px; font-weight:600; color:#334155; }
 .pcard-out-empty .muted, .pcard-out-hint{ font-size:0.86em; line-height:1.5; }
