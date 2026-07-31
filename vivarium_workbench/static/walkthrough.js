@@ -2690,6 +2690,10 @@
     // Explore section: mount the composite's loom bigraph on first open.
     var embed = sec.querySelector('.ccard-loom-embed');
     if (embed && typeof _openCompositeLoomInline === 'function') _openCompositeLoomInline(embed);
+    // Outputs section: lazy-fill the declared-observables checklist on first open.
+    if (card && card.classList.contains('pcard-composite') && sec.getAttribute('data-sec') === 'outputs') {
+      _loadCompositeObservables(card);
+    }
   }
   window._pcardToggleSec = _pcardToggleSec;
 
@@ -2774,6 +2778,90 @@
         '<a href="#simulations" onclick="_switchPage(\'simulations\');return false;">Runs</a>.</p>' +
     '</div>';
   }
+
+  // Outputs controls: the emitter (observation sink) + the observables to emit.
+  // The emitter mirrors the composite's `emitter` config param (choices), and
+  // on change syncs back to the Configure field so runs + Explore re-resolve
+  // stay consistent. The observables checklist is lazy-filled on first open
+  // (see _loadCompositeObservables) from the composite's declared emit paths.
+  function _compositeOutControls(c) {
+    var params = (c.parameters && typeof c.parameters === 'object') ? c.parameters : {};
+    var em = params.emitter || {};
+    var emVal = ('default' in em) ? em.default : null;
+    var emChoices = Array.isArray(em.choices) ? em.choices : null;
+    var emHint = em.description ? String(em.description).split('.')[0] : '';
+    var emitterRow = '';
+    if (emChoices) {
+      emitterRow =
+        '<div class="pcard-out-ctl-row">' +
+          '<span class="pcard-out-ctl-lbl">Emitter</span>' +
+          '<select class="pcard-out-emitter" data-role="out-emitter-sel" onchange="_syncOutEmitter(this)" title="Observation sink — where this run\'s outputs are written">' +
+            emChoices.map(function (ch) { return '<option value="' + _esc(String(ch)) + '"' + (ch === emVal ? ' selected' : '') + '>' + _esc(String(ch)) + '</option>'; }).join('') +
+          '</select>' +
+          (emHint ? '<span class="pcard-out-ctl-hint muted">' + _esc(emHint) + '</span>' : '') +
+        '</div>';
+    } else if (emVal != null) {
+      emitterRow =
+        '<div class="pcard-out-ctl-row">' +
+          '<span class="pcard-out-ctl-lbl">Emitter</span>' +
+          '<code class="pcard-out-emitter-static">' + _esc(String(emVal)) + '</code>' +
+          '<span class="pcard-out-ctl-hint muted">set in Configure</span>' +
+        '</div>';
+    }
+    return '<div class="pcard-out-controls" data-role="out-controls">' +
+      emitterRow +
+      '<div class="pcard-out-ctl-row pcard-out-obs-row">' +
+        '<span class="pcard-out-ctl-lbl">Observables</span>' +
+        '<div class="pcard-out-obs" data-role="out-observables">' +
+          '<span class="muted pcard-out-obs-hint">Loading declared observables…</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // Mirror the Outputs emitter <select> back to the Configure `emitter` field so
+  // there is a single authoritative value at run time (_collectCardConfig reads
+  // Configure) and the Explore re-resolve uses the same emitter.
+  function _syncOutEmitter(sel) {
+    var card = sel.closest('.registry-entry-full'); if (!card) return;
+    var cfg = card.querySelector('.loom-cfg-field[data-key="emitter"]');
+    if (cfg) cfg.value = sel.value;
+  }
+  window._syncOutEmitter = _syncOutEmitter;
+
+  // Lazy-fill the Outputs observables checklist from the composite's DECLARED
+  // emit paths (composite-resolve → state._declared_emit_paths). All checked by
+  // default; global_time is always emitted (time axis) so it's shown pinned/
+  // disabled, not a toggle. Runs pass a subset as emit_paths (see _runComposite).
+  function _loadCompositeObservables(card) {
+    if (!card || card._obsLoaded) return;
+    card._obsLoaded = true;
+    var box = card.querySelector('[data-role="out-observables"]'); if (!box) return;
+    var id = card.getAttribute('data-address');
+    fetch(_api('/api/composite-resolve?id=' + encodeURIComponent(id)))
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        var st = (d && d.state) ? d.state : d;
+        var paths = (st && Array.isArray(st._declared_emit_paths)) ? st._declared_emit_paths : [];
+        var toggles = paths.filter(function (p) { return p && p !== 'global_time'; });
+        if (!toggles.length) {
+          box.innerHTML = '<span class="muted">This composite declares no selectable observables — the run emits its default set.</span>';
+          return;
+        }
+        box.innerHTML =
+          (paths.indexOf('global_time') >= 0
+            ? '<label class="pcard-obs-item pcard-obs-fixed" title="Always emitted — the trajectory time axis"><input type="checkbox" checked disabled> global_time</label>'
+            : '') +
+          toggles.map(function (p) {
+            return '<label class="pcard-obs-item"><input type="checkbox" class="pcard-obs-cb" value="' + _esc(p) + '" checked> ' + _esc(p) + '</label>';
+          }).join('');
+      })
+      .catch(function () {
+        card._obsLoaded = false;  // allow a retry on next open
+        box.innerHTML = '<span class="muted pcard-apply-err">Could not load declared observables.</span>';
+      });
+  }
+  window._loadCompositeObservables = _loadCompositeObservables;
 
   // Poll a launched composite run and render its progress → visualizations into
   // the card's Outputs panel. /api/composite-run/<id>/status returns
@@ -2880,6 +2968,7 @@
     // run is detached; _runComposite stores the run_id and _pollCompositeRun
     // fills this panel (progress → viz_html on completion).
     var outputsBody =
+      _compositeOutControls(c) +
       '<div class="pcard-out-panel" data-role="out-panel">' + _compositeOutIdle() + '</div>';
     var addr = c.module ? (c.module + '.' + c.name) : c.id;
 
@@ -2975,6 +3064,18 @@
     if (overrides.__error) { setErr(overrides.__error); return; }
     // Detached composite run launcher: POST /api/composite-test-run → 202 {run_id}.
     var payload = { id: id, steps: steps, overrides: overrides, label: (c.name || 'composite') + '-run' };
+    // Observables selection (Outputs tab). Server semantics: empty/omitted →
+    // emit all stores (the default). So all-checked → omit (unchanged default);
+    // a subset → emit exactly those; none → block (empty would mean "all").
+    if (card._obsLoaded) {
+      var obsCbs = card.querySelectorAll('.pcard-obs-cb');
+      if (obsCbs.length) {
+        var checked = [];
+        obsCbs.forEach(function (cb) { if (cb.checked) checked.push(cb.value); });
+        if (checked.length === 0) { setErr('Select at least one observable to emit (in Outputs)'); return; }
+        if (checked.length < obsCbs.length) payload.emit_paths = checked;
+      }
+    }
     var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Launching…';
     if (status) { status.classList.remove('pcard-apply-err'); status.textContent = 'launching run…'; }
     fetch(_api('/api/composite-test-run'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })

@@ -120,6 +120,11 @@ export function defaultHiddenIds(state: any): Set<string> {
     name.includes('unique_update') ||
     name.startsWith('allocator') ||
     name.includes('listener');
+  // The emitter (observation sink) is run-time plumbing auto-materialized by the
+  // composite generator, not biology — hide it by default so Explore shows the
+  // science graph. Re-showable via the Processes sidebar; its observables are
+  // controlled in the card's Outputs tab. Matches `emitter` / `emitter_<i>`.
+  const isEmitter = (name: string) => name === 'emitter' || name.startsWith('emitter_');
   // Bookkeeping STORES that clutter the biology view without being biology:
   // the allocator RNG, per-tick timing scratch, config-only stores, and the
   // top-level `global_time` duplicate (the per-agent `agents.0.global_time`
@@ -134,7 +139,7 @@ export function defaultHiddenIds(state: any): Set<string> {
     if (!node || typeof node !== 'object' || Array.isArray(node)) return;
     const name = path[path.length - 1] || '';
     if (node._type === 'process' || node._type === 'step') {
-      if (isNoise(name)) out.add(path.join('.'));
+      if (isNoise(name) || isEmitter(name)) out.add(path.join('.'));
       return;
     }
     if (path.length > 0 && isNoiseStore(name, path)) { out.add(path.join('.')); return; }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { topLevelStorePaths } from '../convert';
+import { topLevelStorePaths, defaultHiddenIds } from '../convert';
 
 describe('topLevelStorePaths', () => {
   it('returns top-level store keys, skipping process and step nodes', () => {
@@ -23,5 +23,20 @@ describe('topLevelStorePaths', () => {
   it('returns [] for empty or missing state', () => {
     expect(topLevelStorePaths({})).toEqual([]);
     expect(topLevelStorePaths(null)).toEqual([]);
+  });
+});
+
+describe('defaultHiddenIds', () => {
+  it('hides the injected emitter (and emitter_<i>) processes by default', () => {
+    const state = {
+      sim: { _type: 'process', address: 'local:Sim' },
+      emitter: { _type: 'step', address: 'local:Emitter' },
+      emitter_1: { _type: 'step', address: 'local:Emitter' },
+      bulk: { count: 0 },
+    };
+    const hidden = defaultHiddenIds(state);
+    expect(hidden.has('emitter')).toBe(true);
+    expect(hidden.has('emitter_1')).toBe(true);
+    expect(hidden.has('sim')).toBe(false);   // biology stays visible
   });
 });
