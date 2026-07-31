@@ -269,10 +269,15 @@ earlier):
 - **Emitter polymorphism** is the crux of the extractor substep — the `results` contract must be
   rich enough that no flush entity ever needs the raw emitter. If a flush entity needs something
   the contract lacks, extend the contract, not the entity.
-- **CompositeSpec vs. template overlap (resolved, Layer 2a):** `CompositeSpec`'s `parameters`
-  refactor onto `fill` — each `${name}` becomes a site; `substitute_parameters` is deleted. The
-  `CompositeSpec` surface stays as the ergonomic authoring API; only its resolution swaps. A
-  golden corpus (every `*.composite.{yaml,json}` + the 13 v2ecoli generators) guards byte-identity.
+- **CompositeSpec vs. template (CORRECTED 2026-07-31 — they are different things):** `${name}`
+  does **not** lower onto a site. Proven by the frozen corpus: v2ecoli's generators are
+  builder-kind with zero `${name}`; the real 68-spec corpus keeps 73% of placeholders inside
+  opaque `config` blobs and 23% in edge fields (not place-graph positions), and `fill_sites →
+  core.fill` realizes every edge (loading external models at construction). A **site** fills a
+  place-graph position in a *schema*; `${name}` fills a value in a *state* document. `CompositeSpec`
+  is **kept** (with typed-parameter validation, Part B′). **Study/investigation templates are a
+  separate, new site-based format** (params *are* sites) built on Layer 1 — see the
+  study-investigation-template spec — not a `CompositeSpec` refactor.
 - **Untested `compose` link-branch** is the real foundational risk — Task 0 gates the whole stack.
 - **`Composite.__init__` must enforce `is_ground`** (Layer 2a A0) — the contract is otherwise
   unchecked at the one place it is consumed.
