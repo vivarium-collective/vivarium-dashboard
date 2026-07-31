@@ -20353,11 +20353,48 @@
   // Open a run in the Composite Explorer (in-app, left nav preserved) with its
   // saved config seeded into the Configure form so Run reproduces the run.
   function _openCompositeFromRun(row) {
-    if (!row || !row.run_id || !row.spec_id) return;
+    if (!row || !row.spec_id) return;
     window._ceIncomingOverrides = _runConfigToOverrides(row);
-    _openSimulationInExplorer(row.run_id, row.spec_id);
+    _openCompositeCardView(row.spec_id);
   }
   window._openCompositeFromRun = _openCompositeFromRun;
+
+  // Open a registered composite in the NEW full composite-card view (Modules →
+  // Composites tab, Full zoom), focused on it with its Explore/loom opened —
+  // instead of the old standalone bigraph-loom composite-explore page.
+  function _openCompositeCardView(spec_id) {
+    if (!spec_id) return;
+    if (typeof _openCompositesTab === 'function') _openCompositesTab();
+    window._registryZoom = 'full';
+    try { localStorage.setItem('viv.registryZoom', 'full'); } catch (e) { /* private mode */ }
+    if (typeof _syncRegistryToolbar === 'function') _syncRegistryToolbar();
+    var esc = (window.CSS && CSS.escape) ? CSS.escape(spec_id) : spec_id;
+    var reveal = function () {
+      if (typeof _renderRegistryComposites === 'function') _renderRegistryComposites();
+      var card = document.querySelector('.pcard-composite[data-address="' + esc + '"]');
+      if (!card) return false;
+      try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { /* ignore */ }
+      var sec = card.querySelector('.pcard-sec-explore');
+      if (sec && !sec.classList.contains('pcard-sec-open')) {
+        var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h);
+      }
+      return true;
+    };
+    // Composites may not be loaded yet on a cold Modules page — load, then reveal.
+    if (window._composites && window._composites.length) {
+      setTimeout(function () { reveal(); }, 60);
+    } else if (typeof _loadComposites === 'function') {
+      _loadComposites();
+      var tries = 0;
+      var poll = setInterval(function () {
+        tries++;
+        if (reveal() || tries > 20) clearInterval(poll);
+      }, 250);
+    } else {
+      setTimeout(function () { reveal(); }, 200);
+    }
+  }
+  window._openCompositeCardView = _openCompositeCardView;
 
   function _renderSimRow(row) { return window.SimTable.renderRow(row, { scope: 'full' }); }
 
