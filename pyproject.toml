@@ -17,7 +17,11 @@ dependencies = [
     "pydantic>=2",
     "fastapi>=0.110",
     "uvicorn>=0.29",
-    "process-bigraph",
+    # Floor, not decoration: `lib/artifacts/hashing.py` re-exports
+    # `process_bigraph.artifacts.artifact_id` instead of hand-porting it, and
+    # that module landed in 1.6.0. An older pbg makes the import fail at
+    # startup rather than silently computing a different content address.
+    "process-bigraph>=1.6.0",
     # SQLiteEmitter (and ParquetEmitter) were extracted from process-bigraph at
     # 1.4.17 into the focused pbg-emitters library; pb's `process_bigraph.emitter`
     # only re-exports SQLiteEmitter when pbg-emitters is installed. The dashboard
