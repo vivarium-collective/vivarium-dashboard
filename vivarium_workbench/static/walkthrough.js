@@ -2214,7 +2214,10 @@
     if (p.composite_uses) stats.push(stat('▦', p.composite_uses, 'composite', 'composites', 'Used in this many composite generators'));
     if (p.requires && p.requires.processes && p.requires.processes.length)
       stats.push(stat('⚙', p.requires.processes.length, 'process', 'processes', 'Requires this many process/step classes'));
-    var sp = p.study_participation || p.studies;   // composites carry `studies`
+    // Study participation / % success is meaningful only for runnable process
+    // kinds and composites — not emitters/visualizations/analyses/types.
+    var noStudies = /^(emitter|visualization|analysis|type|report_card)$/.test(p.kind || '');
+    var sp = noStudies ? null : (p.study_participation || p.studies);   // composites carry `studies`
     if (sp && sp.studies) {
       var succ = (sp.success_pct != null && sp.total)
         ? ' <span class="reg-succ-inline ' + (sp.success_pct >= 80 ? 'reg-succ-hi' : (sp.success_pct >= 50 ? 'reg-succ-mid' : 'reg-succ-lo')) + '">' + sp.success_pct + '%</span>'
@@ -3768,11 +3771,14 @@
   // here). Best-effort — a failure leaves the build_core-derived tabs intact.
   function _enrichRegistryWithVizClasses(vizEntries) {
     var entries = vizEntries || [];
-    var analyses = entries.filter(function(c) { return c.kind === 'analysis'; });
+    var analyses = entries.filter(function(c) { return c.kind === 'analysis'; })
+      .map(function (c) { return { name: c.name, address: c.address, description: c.doc || '', kind: 'analysis', source: 'framework' }; });
     var vizzes   = entries.filter(function(c) { return c.kind !== 'analysis'; });
 
-    // Analyses tab.
-    _renderAnalysisRegistryGrid('registry-analyses-container', analyses);
+    // Analyses tab — same card renderers as everything else (grid/full/table),
+    // and registered so semantic-zoom re-renders pick them up.
+    (window._registryByKind = window._registryByKind || {})['registry-analyses-container'] = analyses;
+    _renderRegistryGrid('registry-analyses-container', analyses);
     var aCount = document.getElementById('registry-analysis-count');
     if (aCount) aCount.textContent = analyses.length;
 
