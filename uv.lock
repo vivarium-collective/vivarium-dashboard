@@ -4822,8 +4822,8 @@ wheels = [
 
 [[package]]
 name = "process-bigraph"
-version = "1.6.0"
-source = { git = "https://github.com/vivarium-collective/process-bigraph.git?branch=main#130db126cc4989359ed8e3fff3d2d4a7ccc642dc" }
+version = "1.7.0"
+source = { git = "https://github.com/vivarium-collective/process-bigraph.git?branch=main#4889ded6d685c5109445d0b7fe9673e0eafa8acd" }
 dependencies = [
     { name = "bigraph-schema", marker = "python_full_version == '3.12.12'" },
     { name = "matplotlib", marker = "python_full_version == '3.12.12'" },
@@ -7444,7 +7444,7 @@ requires-dist = [
     { name = "pbg-ptools", marker = "extra == 'demo'", editable = "../pbg-ptools" },
     { name = "pbg-superpowers", specifier = ">=0.14.0" },
     { name = "polars", marker = "extra == 'test'" },
-    { name = "process-bigraph" },
+    { name = "process-bigraph", specifier = ">=1.7.0" },
     { name = "pyarrow", marker = "extra == 'test'" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pypdf", specifier = ">=4.0" },
