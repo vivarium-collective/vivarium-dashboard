@@ -1083,6 +1083,7 @@ export default function App() {
       id: 'process',
       title: 'Processes',
       defaultSide: 'right',
+      defaultCollapsed: true,
       render: () => (
         <ProcessPanel
           nodes={allNodes}
