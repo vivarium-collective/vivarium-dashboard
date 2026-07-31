@@ -1909,8 +1909,8 @@ body.popcard-mode .pcard-maximize{ display:none; }   /* already full-window */
 }
 .pcard-runbar .pcard-run-glyph{ color:#0891b2; }
 .pcard-runbar .pcard-sec-name{ color:#0891b2; }        /* run-row title in its accent */
-.pcard-runbar .loom-run-field{ margin-left:auto; }     /* push Steps + Run to the right */
-.pcard-runbar .pcard-run-note{ margin-left:auto; }     /* read-only note right-aligns too */
+.pcard-runbar .loom-run-field{ margin-left:18px; }     /* sit just right of the RUN label */
+.pcard-runbar .pcard-run-note{ margin-left:18px; }     /* read-only note next to the label */
 .pcard-runbar .action-btn{ flex:none; }
 .pcard-run-out{ font-size:0.8em; color:#64748b; }
 :root[data-theme="dark"] .pcard-runbar{ background:var(--surface-1, #0f1728); border-color:var(--border-faint); }
