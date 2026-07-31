@@ -4132,6 +4132,22 @@
     return ((b.use_count || 0) - (a.use_count || 0)) || byName;   // 'use' (default)
   }
 
+  // Composite ordering for the Sort control. Composites carry study info under
+  // `studies` (an object with .studies/.success_pct) and `workspace_local`
+  // instead of a process's `study_participation`/`source`, and have no
+  // Temporal/Step kind or use-count — so they get their own comparator.
+  function _compositeSortCmp(a, b, key) {
+    function studies(c) { return ((c.study_participation || c.studies || {}).studies) || 0; }
+    function succ(c) { var s = (c.study_participation || c.studies || {}).success_pct; return s == null ? -1 : s; }
+    var byName = String(a.name || '').localeCompare(String(b.name || ''));
+    var wsFirst = (a.workspace_local ? 0 : 1) - (b.workspace_local ? 0 : 1);
+    if (key === 'name') return byName;
+    if (key === 'studies') return (studies(b) - studies(a)) || byName;
+    if (key === 'success') return (succ(b) - succ(a)) || byName;
+    if (key === 'source') return wsFirst || byName;
+    return wsFirst || byName;   // 'use' (default) / 'kind' — keep workspace-first, then name
+  }
+
   function _registryEntryMatches(p) {
     var q = window._registryFilter;
     if (!q) return true;
@@ -5041,11 +5057,9 @@
         : '<p class="empty-state">No composites registered.</p>';
       return;
     }
-    // Workspace-local first, then by name.
-    list = list.slice().sort(function (a, b) {
-      return ((a.workspace_local ? 0 : 1) - (b.workspace_local ? 0 : 1)) ||
-             String(a.name || '').localeCompare(String(b.name || ''));
-    });
+    // Honour the Sort control (default keeps workspace-local first, then name).
+    var _sortKey = window._registrySort || 'use';
+    list = list.slice().sort(function (a, b) { return _compositeSortCmp(a, b, _sortKey); });
     // Semantic zoom: Table (dense) → Cards (grid + usage) → Full (accordion).
     var zoom = window._registryZoom || 'grid';
     if (zoom === 'table') { el.innerHTML = _renderCompositeTableHtml(list); return; }
@@ -9182,11 +9196,9 @@
   function _setIsetBrowseTab(tab) {
     window._isetBrowseTab = tab;
     document.querySelectorAll('.iset-browse-tab').forEach(function (b) {
-      var on = b.getAttribute('data-browse') === tab;
-      b.classList.toggle('active', on);
-      b.style.color = on ? '#1e293b' : '#64748b';
-      b.style.fontWeight = on ? '600' : '400';
-      b.style.borderBottomColor = on ? '#3b82f6' : 'transparent';
+      // Styling comes from the shared .registry-tab / .registry-tab.active CSS
+      // (same as the Modules/Registry tabs) — just toggle the class.
+      b.classList.toggle('active', b.getAttribute('data-browse') === tab);
     });
     var createBtn = document.getElementById('iset-browse-create');
     if (createBtn) createBtn.textContent = (tab === 'studies') ? '+ Study' : '+ Investigation';

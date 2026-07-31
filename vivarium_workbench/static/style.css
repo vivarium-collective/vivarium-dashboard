@@ -4721,3 +4721,7 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
 .viv-search::placeholder{ color:#94a3b8; }
 .viv-search:focus{ outline:none; border-color:#93b4f5; box-shadow:0 0 0 2px rgba(147,180,245,.35); }
 :root[data-theme="dark"] .viv-search{ background:var(--surface); border-color:var(--border); color:var(--text); }
+
+/* Studies page has no sticky header (unlike Registry/Modules), so its tab row
+   needs the extra top gap to line up with those pages' tabs. */
+#page-investigations .iset-browse-tabs.registry-tabs{ margin-top:24px; }
