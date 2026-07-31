@@ -1399,7 +1399,7 @@ export default function App() {
                         borderRadius: 4, cursor: 'pointer', color: '#374151',
                       }}
                     >
-                      Download ▾
+                      Download
                     </button>
                     {showExport && (
                       <div style={{

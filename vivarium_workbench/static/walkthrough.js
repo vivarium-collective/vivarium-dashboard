@@ -2469,6 +2469,70 @@
   }
   window._popoutCard = _popoutCard;
 
+  // "⛶" — maximize this card into the content area (right of the left rail),
+  // in-place (unlike ⤢ pop-out which opens a new window). Toggles again / Esc
+  // to restore. Gives the Explore/loom graph the full pane to work in.
+  function _cardMaximizeBtn() {
+    return '<button class="pcard-maximize" type="button" title="Fill the pane — maximize (Esc to exit)" ' +
+      'onclick="event.stopPropagation();_toggleCardMaximize(this)">⛶</button>';
+  }
+  function _positionMaximizedCard(card) {
+    // The card's fixed geometry is CSS-driven (see .pcard-maximized) off a single
+    // CSS var so a card re-render can't strip inline positioning. Here we only
+    // (a) publish the rail's right edge so the card clears the menu bar, and
+    // (b) grow the embedded loom to fill from its top to the bottom of the pane.
+    var rail = document.querySelector('.viv-rail');
+    var railRight = rail ? rail.getBoundingClientRect().right : 240;
+    document.documentElement.style.setProperty('--vw-rail-right', railRight + 'px');
+    var frame = card.querySelector('.ccard-loom-frame');
+    if (frame) {
+      var fr = frame.getBoundingClientRect();
+      frame.style.height = Math.max(360, window.innerHeight - fr.top - 16) + 'px';
+      frame.style.maxHeight = 'none';
+    }
+  }
+  function _toggleCardMaximize(btn) {
+    var card = btn.closest('.registry-entry-full');
+    if (!card) return;
+    var on = card.classList.toggle('pcard-maximized');
+    document.body.classList.toggle('pcard-maximized', on);
+    if (on) {
+      btn.title = 'Restore (Esc)';
+      // Make sure the Explore section is open so the loom is actually visible.
+      var explore = card.querySelector('.pcard-sec-explore');
+      if (explore && !explore.classList.contains('pcard-sec-open')) {
+        var head = explore.querySelector('.pcard-sec-head');
+        if (head) head.click();
+      }
+      _positionMaximizedCard(card);
+      card._maxReposition = function () { _positionMaximizedCard(card); };
+      card._maxEsc = function (e) { if (e.key === 'Escape') _toggleCardMaximize(btn); };
+      window.addEventListener('resize', card._maxReposition);
+      document.addEventListener('keydown', card._maxEsc);
+      // Re-fit once the Explore section has finished expanding.
+      setTimeout(function () { if (card.classList.contains('pcard-maximized')) _positionMaximizedCard(card); }, 120);
+    } else {
+      btn.title = 'Fill the pane — maximize (Esc to exit)';
+      ['position', 'top', 'left', 'width', 'height', 'zIndex'].forEach(function (p) { card.style[p] = ''; });
+      var frame = card.querySelector('.ccard-loom-frame');
+      if (frame) { frame.style.height = ''; frame.style.maxHeight = ''; }
+      if (card._maxReposition) window.removeEventListener('resize', card._maxReposition);
+      if (card._maxEsc) document.removeEventListener('keydown', card._maxEsc);
+      card._maxReposition = card._maxEsc = null;
+      card.scrollIntoView({ block: 'nearest' });
+    }
+  }
+  window._toggleCardMaximize = _toggleCardMaximize;
+
+  // Double-clicking a composite card's header also maximizes it (per user ask).
+  function _maximizeCardFromHeader(headerEl) {
+    var card = headerEl.closest('.registry-entry-full');
+    if (!card) return;
+    var btn = card.querySelector('.pcard-maximize');
+    if (btn) _toggleCardMaximize(btn);
+  }
+  window._maximizeCardFromHeader = _maximizeCardFromHeader;
+
   // "{ } JSON" — reveal the composite's full resolved JSON spec (processes,
   // wiring, visualizations…) at the top of the card, as a collapsible tree.
   function _compositeJsonBtn() {
@@ -2966,10 +3030,14 @@
 
     var topNote = '<p class="muted pcard-toplevel-note">Top-level composite — its interface is the internal wiring (see Explore), not bridge ports.</p>';
     var runBar = _pcardRunBar(
-      c.read_only
+      // A titled row matching the accordion section heads (▶ RUN), with the
+      // Steps selector + Run button living on the same bar.
+      '<span class="pcard-sec-caret pcard-run-glyph">▶</span>' +
+      '<span class="pcard-sec-name">Run</span>' +
+      (c.read_only
         ? '<span class="muted pcard-run-note">read-only composite — enable running inside Explore to run in place</span>'
         : '<label class="loom-run-field loom-run-interval-field">Steps <input type="number" step="1" min="1" class="pcard-run-time" placeholder="e.g. 10"></label>' +
-          '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>');
+          '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>'));
 
     // Outputs = the launched run's live status → its visualizations. A composite
     // run is detached; _runComposite stores the run_id and _pollCompositeRun
@@ -2983,10 +3051,11 @@
         '" data-address="' + _esc(c.id) + '" data-kind="composite">' +
       '<div class="loom-card loom-card-stack loom-card-composite">' +
         '<div class="pcard-top">' +
-          '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" title="Click to pin to top">' +
+          '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" ondblclick="event.stopPropagation();_maximizeCardFromHeader(this)" title="Click to pin to top · double-click to maximize">' +
             '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + wsPill + roPill +
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
             _compositeJsonBtn() +
+            _cardMaximizeBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
           '<div class="pcard-summary">' +

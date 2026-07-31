@@ -1854,13 +1854,35 @@ textarea.loom-in-field{
 :root[data-theme="dark"] .pcard-json-btn:hover{ background:var(--active); color:#c7d2fe; }
 :root[data-theme="dark"] .pcard-json-view{ background:var(--surface-2); border-color:var(--border); }
 
-/* header pop-out control */
+/* header maximize + pop-out controls (sit together at the right edge) */
+.pcard-maximize,
 .pcard-popout{
-  margin-left:auto; flex:none; align-self:center;
+  flex:none; align-self:center;
   background:none; border:1px solid transparent; border-radius:5px; cursor:pointer;
   color:#94a3b8; font-size:0.95em; line-height:1; padding:2px 7px;
 }
+.pcard-maximize{ margin-left:auto; }                 /* push the pair to the right */
+.pcard-maximize + .pcard-popout{ margin-left:6px; }  /* pop-out sits beside maximize */
+.pcard-popout{ margin-left:auto; }                   /* still right-aligned when alone */
+.pcard-maximize:hover,
 .pcard-popout:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+.pcard-maximized .pcard-maximize{ background:#2563eb; color:#fff; border-color:#2563eb; }
+
+/* Maximized card: fills the content pane (right of the rail). Geometry is
+   CSS-driven off --vw-rail-right (published by JS) so a card re-render can't
+   strip the positioning. Lock page scroll so only the card scrolls. */
+body.pcard-maximized{ overflow:hidden; }
+.registry-entry-full.pcard-maximized{
+  position:fixed !important;
+  top:0 !important; right:0 !important; bottom:0 !important;
+  left:var(--vw-rail-right, 240px) !important;
+  width:auto !important; height:auto !important;
+  max-width:none !important; z-index:900;
+  margin:0 !important; border-radius:0;
+  background:#fff; overflow:auto;
+  box-shadow:-4px 0 18px rgba(15,23,42,.10);
+}
+:root[data-theme="dark"] .registry-entry-full.pcard-maximized{ background:var(--surface-1, #0f1728); }
 
 /* pop-out (?popcard=) window: focus-mode strips the rail; hide the registry
    tabs + toolbar too so only the single card shows, full-window. */
@@ -1873,18 +1895,25 @@ body.popcard-mode #registry-status,
 body.popcard-mode .registry-imports-section{ display:none !important; }
 body.popcard-mode .popcard-single{ margin:0; }
 body.popcard-mode .popcard-single .pcard{ border-radius:10px; }
-body.popcard-mode .pcard-popout{ display:none; }   /* no nested pop-out */
+body.popcard-mode .pcard-popout,
+body.popcard-mode .pcard-maximize{ display:none; }   /* already full-window */
 :root[data-theme="dark"] .pcard-popout:hover{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
 
 /* persistent Run bar (not an accordion) — always visible at the card's top level */
+/* Run bar: styled like an accordion section head (▶ RUN) with its Steps + Run
+   controls on the right, so it sits uniformly among CONFIGURE/INPUTS/EXPLORE. */
 .pcard-runbar{
-  display:flex; align-items:center; flex-wrap:wrap; gap:12px;
-  padding:9px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
-  background:#fbfcfe;
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+  padding:10px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
+  background:#fff; box-shadow:inset 3px 0 0 #0891b2;   /* cyan run accent */
 }
+.pcard-runbar .pcard-run-glyph{ color:#0891b2; }
+.pcard-runbar .pcard-sec-name{ color:#0891b2; }        /* run-row title in its accent */
+.pcard-runbar .loom-run-field{ margin-left:auto; }     /* push Steps + Run to the right */
+.pcard-runbar .pcard-run-note{ margin-left:auto; }     /* read-only note right-aligns too */
 .pcard-runbar .action-btn{ flex:none; }
 .pcard-run-out{ font-size:0.8em; color:#64748b; }
-:root[data-theme="dark"] .pcard-runbar{ background:var(--surface-2); border-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-runbar{ background:var(--surface-1, #0f1728); border-color:var(--border-faint); }
 
 /* resizable sections: capped, scrollable body + a drag grip (dbl-click = fit) */
 .pcard-sec-resizable.pcard-sec-open > .pcard-sec-body{ max-height:var(--pch,300px); overflow:auto; }
