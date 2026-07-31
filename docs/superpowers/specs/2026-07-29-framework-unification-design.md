@@ -95,8 +95,14 @@ and `v2ecoli/docs/superpowers/specs/2026-06-29-study-report-card-modules-design.
 2. **On-disk model:** studies/investigations become **native composite documents** on disk
    with a **one-shot migrator** from the existing `study.yaml` / `investigation.yaml`
    (~250 studies, 13 investigations).
-3. **Study execution:** **one step network** — no phases, no barrier. `Emitter` gains a
-   `results` output port, so the extractor and flush entities are ordinary downstream steps.
+3. **Study execution:** **one step network + one finalize hook** (corrected 2026-07-31 —
+   *not* "no phases"). `Emitter` gains a `results` output port, so the emitter is an ordinary
+   **producer** and the flush entities are ordinary **consumers**, correctly ordered — proven
+   (PR #160). But `results` is definitionally a **completion-time** value and the step network
+   is definitionally **per-tick**, so flush steps can't just live in the per-tick DAG (they'd
+   fire every tick). The honest win: the barrier stops being a **two-phase document** (Phase 1 /
+   barrier / Phase 2) and becomes **one `finalize()` lifecycle hook on one edge** — flush is
+   ordinary steps wired to an ordinary port, run once at completion.
 4. **Emitter seam:** the emitter's `results` port carries the durable handle
    (store ref + `sim_data` context); the **emitter-polymorphic extractor** is a normal step
    that reads it. Durability is a property of one edge, not a stage of the engine.
@@ -150,8 +156,10 @@ Study document (one step network, run(0.0)):
   `RunExtract` context). Flush entities read only `results`, never the raw emitter.
 - The composite's declared `visualizations`/`analyses`/`report_cards` are just edges wired to
   `results` — **the step network *is* the flush DAG**; no separate flush assembler exists.
-- Durability is a property of one edge, not a stage of the engine — so "one engine" is
-  *literally* true, not approximately.
+- Durability is a property of one edge (the emitter's `results` port), and completion is a
+  single `finalize()` hook — **not** a two-phase document. ("One engine, no phases" is *not*
+  literally achievable: `results` is completion-time, the step network is per-tick. The real,
+  defensible win is barrier-as-two-phases → **one lifecycle hook on one edge**. PR #160.)
 - **Study output = the artifact set** (verdicts, cards, figures, analyses).
 - **Ownership split:** the *generic* machinery (two-phase runner, the `results` contract, the
   extractor substep, assembling the flush network from a composite's declared
