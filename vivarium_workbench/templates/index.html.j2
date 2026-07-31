@@ -993,9 +993,15 @@ a.viv-bs-commit:hover { text-decoration: underline; }
            (runnable process). Double-clicking a card also drills in one level. #}
         <span class="cols-ctl-slot" data-cols-surface="registry" title="Cards columns"></span>
         <div class="registry-zoom" role="group" aria-label="View density" title="View density">
-          <button class="reg-zoom-btn" data-zoom="table" onclick="_setRegistryZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-          <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
-          <button class="reg-zoom-btn" data-zoom="full" onclick="_setRegistryZoom('full')" title="Full — runnable process (config, ports, run)">&#9707;</button>
+          <button class="reg-zoom-btn" data-zoom="table" onclick="_setRegistryZoom('table')" title="Table — dense &amp; sortable" aria-label="Table view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+          </button>
+          <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — grid with usage; adjust columns at left" aria-label="Cards view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.4"/></svg>
+          </button>
+          <button class="reg-zoom-btn" data-zoom="full" onclick="_setRegistryZoom('full')" title="Full — the whole card (config, ports, run)" aria-label="Full card view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16.5" x2="13" y2="16.5"/></svg>
+          </button>
         </div>
       </div>
     </div>

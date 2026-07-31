@@ -2259,7 +2259,7 @@
           '<code class="reg-card-addr">' + addr + '</code>' +
           (short ? '<p class="reg-card-desc">' + esc(short) + '</p>' : '') +
         '</div>' +
-        '<div class="reg-card-stats">' + stats.join('') + '</div>' +
+        '<div class="reg-card-stats">' + stats + '</div>' +
       '</div>' +
       _detail +
     '</div>';
@@ -2529,6 +2529,7 @@
           '<div class="pcard-summary">' +
             '<div class="pcard-desc-col">' +
               '<div class="pcard-contract-meta" data-role="contract-meta">' + contractMeta + '</div>' +
+              (function () { var s = _regStatsHtml(p); return s ? '<div class="reg-card-stats pcard-usage">' + s + '</div>' : ''; })() +
               (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
             '</div>' +
           '</div>' +
@@ -2624,6 +2625,49 @@
     '</div>';
   }
 
+  // Compact composite card (Cards / medium zoom) — mirrors the process grid
+  // card: name · badge · address · short desc · usage stats.
+  function _renderCompositeCardGrid(c) {
+    var addr = c.module ? (c.module + '.' + c.name) : c.id;
+    var desc = (c.description || '').trim(), short = desc ? desc.split('\n')[0] : '';
+    var wsPill = c.workspace_local ? '<span class="composite-ws-tag">📦 workspace</span>' : '';
+    var stats = _regStatsHtml(c);
+    var selCls = (window._registrySelected && window._registrySelected === c.id) ? ' reg-selected' : '';
+    return '<div class="registry-card' + selCls + '" data-address="' + _esc(c.id) + '" data-kind="composite"' +
+        ' onclick="_selectRegistryEntry(\'' + _esc(c.id) + '\')" ondblclick="_setRegistryZoom(\'full\')"' +
+        ' title="Double-click to open the full card">' +
+      '<div class="reg-card-row">' +
+        '<div class="reg-card-main">' +
+          '<div class="reg-card-head"><strong class="reg-card-name">' + _esc(c.name) + '</strong>' + _compositeBadge() + wsPill + '</div>' +
+          '<code class="reg-card-addr">' + _esc(addr) + '</code>' +
+          (short ? '<p class="reg-card-desc">' + _esc(short) + '</p>' : '') +
+        '</div>' +
+        '<div class="reg-card-stats">' + stats + '</div>' +
+      '</div>' +
+    '</div>';
+  }
+  // Composite table (Table / dense zoom).
+  function _renderCompositeTableHtml(list) {
+    var mod = function (c) { return (c.module || ''); };
+    var rows = list.map(function (c) {
+      var sp = c.studies || {};
+      var np = (c.parameters && typeof c.parameters === 'object') ? Object.keys(c.parameters).length : 0;
+      var nr = (c.requires && c.requires.processes) ? c.requires.processes.length : 0;
+      var sel = (window._registrySelected === c.id) ? ' reg-selected' : '';
+      return '<tr class="reg-tr' + sel + '" data-address="' + _esc(c.id) + '" onclick="_selectRegistryEntry(\'' + _esc(c.id) + '\')" ondblclick="_setRegistryZoom(\'full\')" title="Double-click to open the full card">' +
+        '<td class="reg-td-name"><strong>' + _esc(c.name) + '</strong> <code>' + _esc(c.id) + '</code></td>' +
+        '<td>' + _esc(mod(c)) + '</td>' +
+        '<td class="num">' + np + '</td>' +
+        '<td class="num">' + nr + '</td>' +
+        '<td class="num">' + (sp.studies || 0) + '</td>' +
+        '<td class="num">' + _successCell(sp) + '</td>' +
+      '</tr>';
+    }).join('');
+    return '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
+      '<th>Name</th><th>Module</th><th class="num">Params</th><th class="num">Needs</th><th class="num">Studies</th><th class="num">Success</th>' +
+      '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
   // Switch the composite Outputs embed between Visualizations / Results /
   // Document — reloads the (chromeless) loom at that tab.
   function _setCompositeOutView(btn) {
@@ -2711,6 +2755,7 @@
           '<div class="pcard-summary">' +
             '<div class="pcard-desc-col">' +
               '<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
+              (function () { var s = _regStatsHtml(c); return s ? '<div class="reg-card-stats pcard-usage">' + s + '</div>' : ''; })() +
               (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
             '</div>' +
           '</div>' +
@@ -4676,7 +4721,13 @@
       return ((a.workspace_local ? 0 : 1) - (b.workspace_local ? 0 : 1)) ||
              String(a.name || '').localeCompare(String(b.name || ''));
     });
-    el.innerHTML = '<div class="reg-cards reg-cards-full">' + list.map(_renderCompositeCardFull).join('') + '</div>';
+    // Semantic zoom: Table (dense) → Cards (grid + usage) → Full (accordion).
+    var zoom = window._registryZoom || 'grid';
+    if (zoom === 'table') { el.innerHTML = _renderCompositeTableHtml(list); return; }
+    var cardsCls = 'reg-cards reg-cards-' + (zoom === 'full' ? 'full' : 'grid');
+    var render = (zoom === 'full') ? _renderCompositeCardFull : _renderCompositeCardGrid;
+    el.innerHTML = '<div class="' + cardsCls + '">' + list.map(render).join('') + '</div>';
+    if (zoom === 'grid') el.querySelectorAll('.reg-cards-grid').forEach(function (cc) { _applyCardCols(cc, 'registry'); });
   }
   window._renderRegistryComposites = _renderRegistryComposites;
 

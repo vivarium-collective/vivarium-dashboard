@@ -1434,6 +1434,11 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 :root[data-theme="dark"] .proc-kind-other{ background:var(--surface-3); color:var(--text-muted); border-color:var(--border); }
 /* static contract rows (non-runnable kinds): name·type only, single column */
 .cfg-list-static .cfg-row{ grid-template-columns:1fr; }
+/* usage stats row inside the full card top */
+.pcard-usage{ margin:5px 0 0; }
+/* center the SVG zoom icons in their buttons */
+.reg-zoom-btn{ display:inline-flex; align-items:center; justify-content:center; }
+.reg-zoom-btn svg{ display:block; }
 :root[data-theme="dark"] .proc-kind-temporal{  background:rgba(16,185,129,0.14); color:#6ee7b7; border-color:rgba(16,185,129,0.35); }
 :root[data-theme="dark"] .proc-kind-step{      background:rgba(245,158,11,0.15); color:#fcd34d; border-color:rgba(245,158,11,0.35); }
 :root[data-theme="dark"] .proc-kind-composite{ background:rgba(124,58,237,0.18); color:#c4b5fd; border-color:rgba(124,58,237,0.4); }
