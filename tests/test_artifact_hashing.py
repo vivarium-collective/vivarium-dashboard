@@ -52,6 +52,13 @@ GOLDEN_ADDRESSES = [
     # key order must not matter: canonical() sorts keys
     (("study", {"b": 2, "a": 1}, [], ""), "a70c18c5c80eb729"),
     (("study", {"a": 1, "b": 2}, [], ""), "a70c18c5c80eb729"),
+    # spelling must not matter: a whole float and its int are one address.
+    # These are the value the INT spelling always had — the float spelling
+    # moved onto it, so every vector above is unchanged by the 1.7.0 fix and
+    # only float-spelled configs were re-keyed.
+    (("study", {"seed": 1}, [], ""), "7cfd48d2cf54e4b6"),
+    (("study", {"seed": 1.0}, [], ""), "7cfd48d2cf54e4b6"),
+    (("study", {"n": [1.0, 2, 3.5]}, [], ""), "66e1fbdc641f035a"),
 ]
 
 
@@ -83,18 +90,26 @@ def test_canonical_encoding_is_exactly_this():
     assert canonical(None) == "{}"
 
 
-def test_int_and_whole_float_are_different_addresses():
-    """A known hazard, pinned so it stays visible on this side too.
+def test_int_and_whole_float_are_the_same_address():
+    """`1` and `1.0` are the same number, so they are the same artifact.
 
-    `canonical` passes a `_stable` hook to `json.dumps` that reads as "narrow
-    whole floats to ints so 1 and 1.0 address the same artifact". It has never
-    done that — `default=` is consulted only for types json *cannot*
-    serialize, and a float is serializable, so the hook never sees one.
+    They were not. `canonical` hung whole-float narrowing on json's
+    `default=` hook, which is consulted only for types json *cannot*
+    serialize — and a float is serializable, so it never ran. A config
+    carrying `seed: 1` from YAML and `seed: 1.0` after a float-typed
+    parameter pass addressed two different artifacts for the same study.
 
-    So a config carrying `seed: 1` from YAML and `seed: 1.0` after a
-    float-typed parameter pass addresses two different artifacts for the same
-    study. Fixing it is a wire-format change that orphans every stored
-    artifact, so it needs a migration, not a patch. See
-    `process-bigraph:tests.py::test_int_and_whole_float_are_DIFFERENT_addresses`.
+    Fixed in process-bigraph 1.7.0 by narrowing in a pre-walk. Existing
+    stores are re-keyed by `vivarium-workbench migrate-artifacts`.
     """
-    assert canonical({"seed": 1.0}) != canonical({"seed": 1})
+    assert canonical({"seed": 1.0}) == canonical({"seed": 1}) == '{"seed":1}'
+    assert artifact_id(composite_id="s", config={"seed": 1.0},
+                       input_ids=[], commit="") == artifact_id(
+        composite_id="s", config={"seed": 1}, input_ids=[], commit="")
+
+
+def test_narrowing_reaches_nested_values_and_spares_bools():
+    """A config is a tree, and `bool` is an `int` subclass that must not be
+    narrowed — that would erase the difference between `True` and `1`."""
+    assert canonical({"x": {"y": [1.0, 2.5]}}) == '{"x":{"y":[1,2.5]}}'
+    assert canonical({"flag": True, "one": 1}) == '{"flag":true,"one":1}'

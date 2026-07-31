@@ -224,7 +224,30 @@ def resolve_study(
                     out_dir=scratch,
                     resolved_inputs=resolved_inputs,
                 )
-                store.put(oid, produced, {"slug": slug, "stage": output_name}, overwrite=force)
+                # Record what the address was computed FROM, not just what
+                # the artifact is. `meta.json` used to carry `{slug, stage}`
+                # only, which is not enough to recompute an address — so when
+                # the address formula changed, the store could not re-key
+                # itself and a migration had to re-derive every config from
+                # the workspace at its current commit (and orphan anything
+                # produced at an older one). Storing the address inputs makes
+                # the store self-describing: a future formula change is a
+                # rehash of recorded values, not an archaeology exercise.
+                store.put(
+                    oid,
+                    produced,
+                    {
+                        "slug": slug,
+                        "stage": output_name,
+                        "address_inputs": {
+                            "composite_id": iface["composite"] or slug,
+                            "config": iface["config"],
+                            "input_ids": sorted(inputs_map.values()),
+                            "commit": commit,
+                        },
+                    },
+                    overwrite=force,
+                )
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
 

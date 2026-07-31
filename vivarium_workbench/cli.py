@@ -210,6 +210,20 @@ def cmd_migrate_studies(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_migrate_artifacts(args: argparse.Namespace) -> int:
+    """CLI handler for the migrate-artifacts subcommand."""
+    from vivarium_workbench.lib.artifacts.migrate import migrate_artifacts
+    ws = Path(args.workspace).resolve()
+    report = migrate_artifacts(ws, dry_run=args.dry_run)
+    if args.json:
+        print(json.dumps(report.to_dict(), indent=2))
+    else:
+        if args.dry_run:
+            print("DRY RUN — nothing was moved\n")
+        print(report.summary())
+    return 0
+
+
 def cmd_run_composite_worker(args: argparse.Namespace) -> int:
     """CLI handler for the run-composite subcommand — runs one detached composite."""
     from vivarium_workbench.lib.run_runner import execute
@@ -813,6 +827,21 @@ def main(argv: list[str] | None = None) -> int:
     p_migs.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
     p_migs.add_argument("--dry-run", action="store_true", help="Report what would move without touching disk")
     p_migs.set_defaults(func=cmd_migrate_studies)
+
+    p_miga = sub.add_parser(
+        "migrate-artifacts",
+        help="Re-key the artifact store onto the current content-address "
+             "formula (process-bigraph 1.7.0 whole-float narrowing). "
+             "Idempotent — safe to re-run.",
+    )
+    p_miga.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_miga.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would move, and what would be orphaned, without touching the store",
+    )
+    p_miga.add_argument("--json", action="store_true", help="Emit the report as JSON")
+    p_miga.set_defaults(func=cmd_migrate_artifacts)
 
     p_run = sub.add_parser(
         "run-composite",

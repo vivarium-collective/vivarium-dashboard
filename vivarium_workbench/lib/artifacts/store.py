@@ -120,3 +120,40 @@ class ArtifactStore:
 
     def meta(self, artifact_id: str) -> dict:
         return json.loads(self._meta_path(artifact_id).read_text())
+
+    def ids(self) -> list[str]:
+        """Every artifact id present in the store, sorted.
+
+        Only fully-written entries count — an id with no ``meta.json`` is a
+        partial or interrupted ``put``, exactly as ``has()`` defines it.
+        """
+        if not self.base.is_dir():
+            return []
+        return sorted(
+            d.name for d in self.base.iterdir()
+            if d.is_dir() and (d / "meta.json").is_file())
+
+    def rekey(self, old_id: str, new_id: str) -> bool:
+        """Move an artifact to a new address. Returns True if it moved.
+
+        For an address-formula change: the bytes are unchanged, only where
+        they live. A directory rename, so it is near-instant and atomic
+        whatever the payload's size.
+
+        Idempotent by design, because a migration must be safe to re-run:
+        nothing at ``old_id`` (already migrated, or never present) is a no-op,
+        and something already at ``new_id`` is left alone rather than
+        clobbered — a store hit at the new address is the outcome the
+        migration wanted, and the old entry is reported so the caller can
+        decide about it rather than losing it silently.
+        """
+        if old_id == new_id:
+            return False
+        source, dest = self._dir(old_id), self._dir(new_id)
+        if not (source / "meta.json").is_file():
+            return False
+        if (dest / "meta.json").is_file():
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(source, dest)
+        return True
