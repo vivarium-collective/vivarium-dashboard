@@ -23,17 +23,50 @@ from pathlib import Path
 _VENV_INTERPRETERS = (".venv/bin/python", ".venv/Scripts/python.exe")
 
 
+def _linked_worktree_main(ws: Path) -> Path | None:
+    """If ``ws`` is a linked git worktree, return its MAIN checkout root.
+
+    A linked worktree's ``.git`` is a file ``gitdir: <main>/.git/worktrees/<name>``.
+    The main checkout (where ``uv sync`` provisioned ``.venv``) is the path just
+    above that ``.git`` — so a worktree with no venv of its own can borrow it.
+    """
+    dotgit = ws / ".git"
+    try:
+        if not dotgit.is_file():
+            return None
+        text = dotgit.read_text(encoding="utf-8").strip()
+        if not text.startswith("gitdir:"):
+            return None
+        gitdir = Path(text.split(":", 1)[1].strip())
+        parts = gitdir.parts
+        if ".git" in parts:
+            return Path(*parts[: parts.index(".git")])
+    except Exception:
+        return None
+    return None
+
+
 def resolve_interpreter(workspace: Path | str) -> str:
     """The interpreter the workspace's env worker should run on.
 
-    In-place local adapter: the checkout's own `.venv` if present, else the
-    running interpreter (`sys.executable`).
+    In-place local adapter: the checkout's own `.venv` if present; else, for a
+    git worktree, the MAIN checkout's `.venv` (worktrees share the provisioned
+    environment); else the running interpreter (`sys.executable`).
     """
     ws = Path(workspace)
     for rel in _VENV_INTERPRETERS:
         cand = ws / rel
         if cand.is_file():
             return str(cand)
+    # A linked worktree (e.g. `<repo>--<task>`) rarely has its own `.venv`; use
+    # the main checkout's so it builds under the workspace's real dependencies
+    # (e.g. viva_human_atlas needs pbg_biomodels, absent from the server's venv).
+    main = _linked_worktree_main(ws)
+    if main is not None:
+        for rel in _VENV_INTERPRETERS:
+            cand = main / rel
+            if cand.is_file():
+                return str(cand)
     # A managed venv provisioned for this workspace's environment coordinate
     # (materialization-lifecycle §5), if one exists. Behavior-preserving today —
     # nothing populates the store until the managed path runs `uv sync` — so a
