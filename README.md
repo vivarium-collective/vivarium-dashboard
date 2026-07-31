@@ -48,11 +48,11 @@ git clone https://github.com/vivarium-collective/vivarium-workbench.git ~/code/v
 
 ### 2. Get a workspace
 
-The dashboard serves a [pbg-template](https://github.com/vivarium-collective/pbg-template)
+The dashboard serves a [viva-template](https://github.com/vivarium-collective/viva-template)
 workspace. Two ways to scaffold one — same files either way, pick whichever
 interface you prefer:
 
-**Standalone (no AI required).** On the pbg-template GitHub page, click
+**Standalone (no AI required).** On the viva-template GitHub page, click
 **Use this template → Create a new repository**, clone your new repo, then run:
 
 ```bash
@@ -173,7 +173,7 @@ These three planes — and the round-trip between them — are specified in
 ## Companion repos
 
 - **[pbg-superpowers](https://github.com/vivarium-collective/pbg-superpowers)** — the Claude Code plugin whose `/pbg-*` skills drive this dashboard's HTTP API. Use it for AI-assisted authoring.
-- **[pbg-template](https://github.com/vivarium-collective/pbg-template)** — the workspace scaffold this dashboard serves. Includes the canonical `.pbg/schemas/` validators.
+- **[viva-template](https://github.com/vivarium-collective/viva-template)** — the workspace scaffold this dashboard serves. Includes the canonical `.pbg/schemas/` validators.
 - **investigation-contracts** — event-log contracts shared by both spines. Not yet on PyPI; install editable from the repo: `pip install -e /path/to/investigation-contracts`.
 
 ## Migrating an older workspace
