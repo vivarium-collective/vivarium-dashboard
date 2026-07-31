@@ -65,6 +65,37 @@ def declared_emit_paths(decls: "list[dict] | None") -> list:
     return out
 
 
+def _actual_emit_paths(state: "dict | None") -> list:
+    """Emit paths derived from the composite's ACTUAL emitter nodes in the
+    resolved ``state`` — the store paths each emitter step is wired to read.
+
+    This surfaces selectable observables even for composites that build their
+    emitter internally (e.g. ecoli_colony) rather than declaring ``emitters=``,
+    so the Outputs panel shows what a composite emits, not just what it declares.
+    An emitter node is a step whose address ends in 'Emitter' (RAMEmitter /
+    ParquetEmitter / XArrayEmitter …); its emit paths are the '/'-joined targets
+    of its ``inputs`` wires.
+    """
+    out: list = []
+    if not isinstance(state, dict):
+        return out
+    for node in state.values():
+        if not isinstance(node, dict):
+            continue
+        addr = str(node.get("address", ""))
+        if not addr.split(":")[-1].endswith("Emitter"):
+            continue
+        wires = node.get("inputs")
+        if not isinstance(wires, dict):
+            continue
+        for target in wires.values():
+            segs = (target if isinstance(target, list) else [target])
+            norm = "/".join(str(s) for s in segs if s not in (None, ""))
+            if norm and norm not in out:
+                out.append(norm)
+    return out
+
+
 def _artifact_base_dir(ws_root: "Path", spec: "CompositeSpec") -> "Path":
     """Where a generator's default-state artifact lives. Reuses the dashboard's
     existing snapshot dir if present, else the workspace root."""
@@ -290,7 +321,14 @@ def resolve_composite(
             # dropped before it ever reaches loom's `declaredEmitPaths`.
             if isinstance(state, dict):
                 try:
+                    # Union the DECLARED emitters= paths with the paths the
+                    # composite's ACTUAL emitter nodes are wired to — so every
+                    # composite surfaces its observables, including ones that
+                    # build their emitter internally (e.g. ecoli_colony).
                     declared = declared_emit_paths(spec.emitters)
+                    for p in _actual_emit_paths(state):
+                        if p not in declared:
+                            declared.append(p)
                     if declared:
                         state["_declared_emit_paths"] = declared
                 except Exception:
