@@ -1866,6 +1866,7 @@ textarea.loom-in-field{
    tabs + toolbar too so only the single card shows, full-window. */
 body.popcard-mode .registry-tabs,
 body.popcard-mode .registry-view-toolbar,
+body.popcard-mode .registry-facets,
 body.popcard-mode .registry-sticky > .registry-tabs{ display:none !important; }
 body.popcard-mode .registry-tab-panel{ padding:0 !important; }
 body.popcard-mode #registry-status,
