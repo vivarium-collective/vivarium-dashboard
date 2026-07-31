@@ -1984,6 +1984,23 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 }
 .pcard-out-tab:hover{ color:#2563eb; background:#eff6ff; }
 .pcard-out-tab.active{ color:#1d4ed8; background:#fff; border-color:#eef2f7; }
+/* Outputs controls: emitter sink + observables checklist (above the run panel) */
+.pcard-out-controls{ padding:12px 14px 4px; display:flex; flex-direction:column; gap:8px; border-bottom:1px solid #eef2f7; }
+.pcard-out-ctl-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.pcard-out-ctl-lbl{ font-size:0.72em; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:#64748b; min-width:74px; }
+.pcard-out-emitter{ font-size:0.85em; padding:2px 6px; border:1px solid #d5dbe6; border-radius:6px; background:#fff; color:#1e293b; }
+.pcard-out-emitter-static{ font-size:0.85em; color:#1e293b; }
+.pcard-out-ctl-hint{ font-size:0.78em; }
+.pcard-out-obs-row{ align-items:flex-start; }
+.pcard-out-obs{ display:flex; flex-wrap:wrap; gap:4px 14px; font-size:0.85em; }
+.pcard-out-obs-hint{ font-size:0.82em; }
+.pcard-obs-item{ display:inline-flex; align-items:center; gap:5px; color:#334155; cursor:pointer; }
+.pcard-obs-item input{ margin:0; }
+.pcard-obs-fixed{ color:#94a3b8; cursor:default; }
+:root[data-theme="dark"] .pcard-out-controls{ border-color:var(--border); }
+:root[data-theme="dark"] .pcard-out-emitter{ background:var(--surface); border-color:var(--border); color:var(--text); }
+:root[data-theme="dark"] .pcard-out-emitter-static,
+:root[data-theme="dark"] .pcard-obs-item{ color:var(--text); }
 .pcard-out-panel{ padding:12px 14px; }
 .pcard-out-run{ padding:2px; }
 .pcard-out-progress{ height:7px; border-radius:4px; background:#eef2f7; overflow:hidden; margin:6px 0; }
