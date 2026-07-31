@@ -940,6 +940,8 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       <div class="market-toolbar">
         <input type="search" class="market-search viv-search" id="market-search"
                placeholder="Search…" oninput="_renderMarket()">
+        {# Column-count control (Auto slider) sits to the LEFT of the zoom icons. #}
+        <span class="cols-ctl-slot" data-cols-surface="market" title="Cards columns"></span>
         {# Three zoom levels, dense → detailed: List → Cards → Detail. #}
         <span class="registry-zoom market-zoom" role="group" aria-label="View density" title="View density">
           <button class="reg-zoom-btn" data-mkzoom="list" onclick="_setMarketZoom('list')" title="List — dense &amp; sortable" aria-label="List view">
@@ -952,7 +954,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
             <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16.5" x2="13" y2="16.5"/></svg>
           </button>
         </span>
-        <span class="cols-ctl-slot" data-cols-surface="market" title="Cards columns"></span>
       </div>
       {# Provenance facet row (sits under search, like the other pages' Sort row):
          default to THIS repository's own artifacts; other repos are opt-in. #}
@@ -980,7 +981,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
 <section id="page-modules" class="page" data-page="modules">
   <div class="page-fill">
 
-    <button class="icon-btn" onclick="_loadRegistry(true)" title="Refresh registry" aria-label="Refresh registry" style="float:right;margin-top:2px">&#8635;</button>
     <div id="registry-status" class="muted" style="margin:0"></div>
 
     {# Sticky header: the kind tabs + filter/zoom toolbar stay pinned to the top
@@ -994,6 +994,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         <button class="registry-tab"        data-kind="analysis"      onclick="_setRegistryTab('analysis')">Analyses <span class="count-badge" id="registry-analysis-count"></span></button>
         <button class="registry-tab"        data-kind="report_card"   onclick="_setRegistryTab('report_card')">Report Cards <span class="count-badge" id="registry-report_card-count"></span></button>
         <button class="registry-tab"        data-kind="type"          onclick="_setRegistryTab('type')">Types <span class="count-badge" id="registry-type-count"></span></button>
+        <button class="icon-btn" onclick="_loadRegistry(true)" title="Refresh registry" aria-label="Refresh registry" style="margin-left:auto;align-self:center">&#8635;</button>
       </div>
 
       <div class="registry-view-toolbar">

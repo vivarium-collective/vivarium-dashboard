@@ -17,7 +17,7 @@ main{padding:20px;margin:0 auto}
 #page-composite-explore, .viv-content > #page-composite-explore
   {max-width:none;width:auto}
 .viv-content:has(> #page-investigations.active){
-  padding:8px 12px !important;
+  padding:8px 24px !important;   /* 24px horizontal = same left inset as Registry/Modules */
   width:100% !important;
   max-width:none !important;
 }
@@ -1368,7 +1368,7 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .registry-tabs{
   display:flex; gap:24px; align-items:center;
   border-bottom:1px solid #e5e7eb;
-  margin:16px 0 12px;
+  margin:8px 0 12px;
 }
 .registry-tab{
   background:transparent; border:0;
@@ -2669,7 +2669,7 @@ body.pcard-splitting iframe{ pointer-events:none; }
 /* Match the registry (Modules) tab bar: spaced underline tabs, same font/size. */
 .market-facets {
   display: flex; flex-wrap: wrap; align-items: center; gap: 24px;
-  border-bottom: 1px solid #e5e7eb; margin: 16px 0 12px; padding-bottom: 0;
+  border-bottom: 1px solid #e5e7eb; margin: 8px 0 12px; padding-bottom: 0;
 }
 .market-facet {
   appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
@@ -4098,7 +4098,7 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   padding-top:0 !important;
 }
 #page-modules .registry-sticky,
-#page-market .market-sticky{ padding-top:16px; }
+#page-market .market-sticky{ padding-top:8px; }
 /* On the Repositories facet the provenance chips filter installed ("Repository")
    vs available-to-install ("Other repos") repos — see _renderMarketRepos. */
 /* ── Investigation DAG semantic zoom slider ────────────────────────────────── */
@@ -4724,4 +4724,4 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
 
 /* Studies page has no sticky header (unlike Registry/Modules), so its tab row
    needs the extra top gap to line up with those pages' tabs. */
-#page-investigations .iset-browse-tabs.registry-tabs{ margin-top:24px; }
+#page-investigations .iset-browse-tabs.registry-tabs{ margin-top:8px; }

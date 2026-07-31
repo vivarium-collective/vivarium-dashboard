@@ -4257,12 +4257,12 @@
           if (!el) return;
           var wsCount = entries.filter(function(e) { return e.source === 'in_workspace'; }).length;
           var total = entries.length;
-          if (wsCount === total) {
-            el.textContent = total;
-          } else {
-            el.textContent = wsCount + ' / ' + total;
-            el.title = wsCount + ' from this workspace, ' + (total - wsCount) + ' from environment';
-          }
+          // Always show the plain total (like every other tab); the workspace vs
+          // environment split lives in the tooltip rather than a cryptic "0 / 6".
+          el.textContent = total;
+          el.title = (wsCount === total)
+            ? total + ' total'
+            : wsCount + ' from this workspace, ' + (total - wsCount) + ' from environment';
         };
         setCount('registry-process-count', procsAndSteps);
         setCount('registry-emitter-count', byKind.emitter);
