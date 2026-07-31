@@ -28,7 +28,7 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
-import { collapseStores } from './collapse';
+import { collapseStores, collapseProcesses } from './collapse';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
@@ -377,9 +377,11 @@ export default function App() {
   const raw = useMemo(
     () => {
       const base = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
-      // "Collapse stores" → the process-only graph (who feeds whom). "Collapse
-      // processes" is a render mode (glyph tier, below), not a graph transform.
-      return collapseMode === 'stores' ? collapseStores(base.nodes, base.edges) : base;
+      // 'stores' → process-only graph (who feeds whom); 'processes' → store-only
+      // graph (which state feeds which). Both drop the other node type entirely.
+      if (collapseMode === 'stores') return collapseStores(base.nodes, base.edges);
+      if (collapseMode === 'processes') return collapseProcesses(base.nodes, base.edges);
+      return base;
     },
     [state, collapseMode],
   );
@@ -557,9 +559,7 @@ export default function App() {
         return {
           ...n,
           data: {
-            // Hyperedge view: shrink every process to a glyph junction so the
-            // stores it wires read as one hyperedge.
-            ...n.data, _tier: collapseMode === 'processes' ? 'glyph' : tier,
+            ...n.data, _tier: tier,
             // Full-detail ("open") card = explicitly kept-open ∪ the currently
             // selected/locked one. Keep-open persists; selection opens the card
             // you just clicked. Wire-reveal is a separate concept (ctx below).
@@ -1295,18 +1295,16 @@ export default function App() {
                   flexWrap: 'wrap', justifyContent: 'flex-end',
                   maxWidth: 'calc(100% - 16px)',
                 }}>
-                  {/* Flow direction: none (relationship packing) / top-to-bottom /
-                      left-to-right. The directional modes order nodes by the flow
-                      network (ELK layered). */}
+                  {/* Layout: relationship packing (○), or the flow-network DAG
+                      oriented top-to-bottom ("hierarchy") / left-to-right ("flow"). */}
                   <div
                     style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
-                    title="Layout: relationship packing, or order by the flow network (top-to-bottom / left-to-right)"
+                    title="Layout: packing, hierarchy (top→bottom), or flow (left→right)"
                   >
                     {([
-                      { id: 'hierarchy', label: '○', t: 'Relationship packing (no enforced direction)' },
-                      { id: 'flow-tb', label: '↓', t: 'Stack by depth: top to bottom (fast)' },
-                      { id: 'flow-lr', label: '→', t: 'Stack by depth: left to right (fast)' },
-                      { id: 'flow-elk', label: 'ƒ', t: 'Flow network — ELK layered (orders by the step flow)' },
+                      { id: 'hierarchy', label: '○', t: 'Packing — relationship layout, no enforced direction' },
+                      { id: 'flow-down', label: 'hierarchy', t: 'Hierarchy — store dependency, top to bottom (flow-network DAG)' },
+                      { id: 'flow-right', label: 'flow', t: 'Flow — workflow DAG: stores → processes → stores lined up, left to right' },
                     ] as const).map((opt) => {
                       const active = layoutMode.modeId === opt.id;
                       return (
@@ -1335,7 +1333,7 @@ export default function App() {
                     {([
                       { mode: 'none', label: 'both', t: 'Show processes and stores' },
                       { mode: 'stores', label: 'proc', t: 'Process-only graph: collapse stores into direct process to process edges' },
-                      { mode: 'processes', label: 'store', t: 'Store-centric: collapse each process into a hyperedge junction over its stores' },
+                      { mode: 'processes', label: 'store', t: 'Store-only graph: collapse processes into direct store to store edges' },
                     ] as const).map((opt) => {
                       const active = collapseMode === opt.mode;
                       return (
@@ -1355,11 +1353,6 @@ export default function App() {
                       );
                     })}
                   </div>
-                  <ViewsMenu
-                    compositeId={compositeId}
-                    captureCurrentView={captureCurrentView}
-                    applyView={applyView}
-                  />
                   {/* Center on the locked process (inputs left, outputs right,
                       shared stores below). Disabled until a process is locked. */}
                   <button
@@ -1388,6 +1381,12 @@ export default function App() {
                   >
                     Re-layout
                   </button>
+                  {/* The two menus sit together at the end of the toolbar. */}
+                  <ViewsMenu
+                    compositeId={compositeId}
+                    captureCurrentView={captureCurrentView}
+                    applyView={applyView}
+                  />
                   <div style={{ position: 'relative' }}>
                     <button
                       onClick={() => setShowExport((v) => !v)}

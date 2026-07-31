@@ -1,48 +1,27 @@
-// src/layouts/flow.ts - directional layouts beyond the default relationship packing.
+// src/layouts/flow.ts - directional DAG layouts (beyond the default packing).
 //
-//   flow-tb / flow-lr : the fast "Stack stores by depth" arrangement
-//     (depthStackLayout) oriented top-to-bottom / left-to-right. Pure + instant.
-//   flow-elk          : ELK `layered` flow network - ranks nodes by the directed
-//     step-flow wires, orders within layers to cut crossings. HUB-store wires
-//     (bulk/listeners/... wired by ~everything) are excluded so the graph stays
-//     sparse; with that + low thoroughness it is fast (the un-pruned version
-//     jammed the browser ~30s on hub-heavy composites).
+//   flow-down / flow-right : ELK `layered` flow network — ranks nodes by the
+//     directed step-flow wires and orders within layers to cut crossings, so
+//     store -> process -> store dependencies line up. 'hierarchy' orients it
+//     top-to-bottom, 'flow' left-to-right. HUB-store wires (bulk/listeners/…
+//     wired by ~everything) are excluded so the graph stays sparse; with that +
+//     low thoroughness it is fast (the un-pruned version jammed ~30s on
+//     hub-heavy composites).
 
 import ELK from 'elkjs/lib/elk.bundled.js';
 import type { Node, Edge } from '@xyflow/react';
 import { TIERS } from './tiers';
-import { depthStackLayout } from './depthStack';
 import { wireStoreEndpoint, hubStoreIds } from '../storeFacts';
 import { fullFootprint } from './clusterGrid';
 import type { LayoutMode, LayoutResult } from './types';
 
 const elk = new ELK();
 
-// ---- fast stack layouts (down / right) ----------------------------------------
-
-function stackLayout(nodes: Node[], edges: Edge[], direction: 'DOWN' | 'RIGHT'): LayoutResult {
-  if (nodes.length === 0) return { nodes };
-  const res = depthStackLayout(nodes, edges);
-  if (direction === 'DOWN') return res;
-  return {
-    nodes: res.nodes.map((n) => (n.position ? { ...n, position: { x: n.position.y, y: n.position.x } } : n)),
-    bands: res.bands,
-  };
-}
-
-export const flowDownMode: LayoutMode = {
-  id: 'flow-tb', label: 'Stack - top to bottom', tiers: TIERS,
-  run: (nodes, edges) => Promise.resolve(stackLayout(nodes, edges, 'DOWN')),
-};
-
-export const flowRightMode: LayoutMode = {
-  id: 'flow-lr', label: 'Stack - left to right', tiers: TIERS,
-  run: (nodes, edges) => Promise.resolve(stackLayout(nodes, edges, 'RIGHT')),
-};
-
 // ---- ELK layered flow network -------------------------------------------------
 
-async function elkFlowLayout(nodes: Node[], edges: Edge[]): Promise<LayoutResult> {
+async function elkFlowLayout(
+  nodes: Node[], edges: Edge[], direction: 'DOWN' | 'RIGHT' = 'RIGHT',
+): Promise<LayoutResult> {
   if (nodes.length === 0) return { nodes };
 
   const footprint = new Map(nodes.map((n) => [n.id, fullFootprint(n)] as const));
@@ -70,7 +49,7 @@ async function elkFlowLayout(nodes: Node[], edges: Edge[]): Promise<LayoutResult
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',
+      'elk.direction': direction,
       'elk.layered.spacing.nodeNodeBetweenLayers': '90',
       'elk.spacing.nodeNode': '44',
       // Speed on the sparse (hub-free) graph.
@@ -97,7 +76,15 @@ async function elkFlowLayout(nodes: Node[], edges: Edge[]): Promise<LayoutResult
   return { nodes: out };
 }
 
-export const flowElkMode: LayoutMode = {
-  id: 'flow-elk', label: 'Flow network (ELK)', tiers: TIERS,
-  run: (nodes, edges) => elkFlowLayout(nodes, edges),
+// "Hierarchy": ELK layered top-to-bottom — the store dependency hierarchy.
+export const flowElkDownMode: LayoutMode = {
+  id: 'flow-down', label: 'hierarchy', tiers: TIERS,
+  run: (nodes, edges) => elkFlowLayout(nodes, edges, 'DOWN'),
+};
+
+// "Flow": ELK layered left-to-right — the workflow DAG, so store -> process ->
+// store dependencies line up in reading order.
+export const flowElkRightMode: LayoutMode = {
+  id: 'flow-right', label: 'flow', tiers: TIERS,
+  run: (nodes, edges) => elkFlowLayout(nodes, edges, 'RIGHT'),
 };
