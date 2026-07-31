@@ -7,7 +7,7 @@
 // when the node or any ancestor is hidden). The big bulk/listeners subtrees
 // start collapsed: only depth 0 is expanded by default.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isHiddenByAncestor } from './filterHidden';
 
 // --- store-node tree ------------------------------------------------------
@@ -86,6 +86,11 @@ export interface NodesPanelProps {
   hidden: Set<string>;
   onToggleHidden: (id: string) => void;
   onShowAll: (kind: 'process' | 'store') => void;
+  /** Store node id (`path.join('.')`) clicked on the canvas — its row is
+   *  expanded-to, scrolled into view and highlighted so it's easy to toggle. */
+  selectedId?: string | null;
+  /** Bumped on every canvas click so re-clicking the same node re-reveals it. */
+  revealNonce?: number;
 }
 
 export function NodesPanel(props: NodesPanelProps) {
@@ -113,6 +118,25 @@ export function NodesPanel(props: NodesPanelProps) {
       return next;
     });
   };
+
+  // Reveal a canvas-clicked STORE in the tree: expand its ancestor groups so the
+  // row is visible, then scroll it into view (+ highlight, below). Processes
+  // aren't in this tree, so a process click is a no-op here.
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const selectedId = props.selectedId ?? null;
+  useEffect(() => {
+    if (!selectedId) return;
+    const parts = selectedId.split('.');
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join('.'));
+      return next;
+    });
+    const t = setTimeout(() => {
+      rowRefs.current.get(selectedId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }, 40);
+    return () => clearTimeout(t);
+  }, [props.revealNonce, selectedId]);
 
   const total = countTree(tree);
 
@@ -147,12 +171,17 @@ export function NodesPanel(props: NodesPanelProps) {
         // EFFECTIVE visibility: off when the node OR any ancestor is hidden.
         const ancHidden = isHiddenByAncestor(node.path.slice(0, -1), props.hidden);
         const effectivelyHidden = props.hidden.has(node.id) || ancHidden;
+        const isSelected = node.id === selectedId;
         return (
           <div
             key={node.id}
+            ref={(el) => { if (el) rowRefs.current.set(node.id, el); }}
             style={{
               display: 'flex', alignItems: 'flex-start', gap: 4,
-              padding: '3px 0', paddingLeft: depth * 14, fontSize: 12,
+              padding: '3px 4px', paddingLeft: depth * 14 + 4, fontSize: 12,
+              background: isSelected ? '#eff6ff' : undefined,
+              borderRadius: isSelected ? 4 : undefined,
+              boxShadow: isSelected ? 'inset 2px 0 0 #2563eb' : undefined,
             }}
           >
             {/* expand caret (or a spacer to keep checkboxes aligned) */}

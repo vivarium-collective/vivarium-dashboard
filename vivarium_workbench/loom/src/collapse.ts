@@ -60,3 +60,51 @@ export function collapseStores(
 
   return { nodes: nodes.filter((n) => n.type === 'process'), edges: out };
 }
+
+// The dual of collapseStores: the STORE-ONLY graph. Drop process nodes; for every
+// process, connect each store it READS to each store it WRITES (data flows
+// read-store -> process -> write-store). Shows "which state feeds which" directly.
+export function collapseProcesses(
+  nodes: Node[], edges: Edge[],
+): { nodes: Node[]; edges: Edge[] } {
+  const procIds = new Set(nodes.filter((n) => n.type === 'process').map((n) => n.id));
+  const reads = new Map<string, Set<string>>();   // process -> stores it reads (inputs)
+  const writes = new Map<string, Set<string>>();  // process -> stores it writes (outputs)
+
+  for (const e of edges) {
+    const kind = (e.data as { edgeType?: string } | undefined)?.edgeType;
+    if (kind === 'input' && procIds.has(e.target)) {
+      addTo(reads, e.target, e.source);             // store -> proc (read)
+    } else if (kind === 'output' && procIds.has(e.source)) {
+      addTo(writes, e.source, e.target);            // proc -> store (write)
+    } else if (kind === 'bidirectional') {
+      const store = procIds.has(e.source) ? e.target : procIds.has(e.target) ? e.source : null;
+      const proc = procIds.has(e.source) ? e.source : procIds.has(e.target) ? e.target : null;
+      if (store && proc) { addTo(reads, proc, store); addTo(writes, proc, store); }
+    }
+  }
+
+  const out: Edge[] = [];
+  const seen = new Set<string>();
+  for (const proc of new Set<string>([...reads.keys(), ...writes.keys()])) {
+    const rs = reads.get(proc);
+    const ws = writes.get(proc);
+    if (!rs || !ws) continue;
+    for (const r of rs) {
+      for (const w of ws) {
+        if (r === w) continue;
+        const k = r + '' + w;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        out.push({
+          id: 'ss:' + k,
+          source: r,
+          target: w,
+          data: { edgeType: 'output' },
+        } as Edge);
+      }
+    }
+  }
+
+  return { nodes: nodes.filter((n) => n.type !== 'process'), edges: out };
+}

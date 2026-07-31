@@ -36,9 +36,10 @@ interface DockState {
   widths: Record<DockSide, number>;
 }
 
-// v2: Processes moved to the right dock (was left) and Nodes/Inspector default
-// collapsed, so returning users pick up the new layout instead of a stale blob.
-const STORAGE_KEY = 'loom.dock.v2';
+// v3: ALL dock panels (Processes, Inspector, Nodes) default collapsed so the
+// graph gets the full width; bumping the key resets returning users to the new
+// collapsed default instead of resurrecting a stale expanded blob.
+const STORAGE_KEY = 'loom.dock.v3';
 const DEFAULT_WIDTH = 300;
 
 function lsGet(key: string): string | null {

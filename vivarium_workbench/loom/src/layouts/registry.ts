@@ -12,13 +12,14 @@
 
 import type { LayoutMode } from './types';
 import { clusterGridMode } from './clusterGrid';
-import { flowDownMode, flowRightMode, flowElkMode } from './flow';
+import { flowElkDownMode, flowElkRightMode } from './flow';
 
 export const DEFAULT_MODE_ID = 'hierarchy';
 
-// hierarchy = the non-directional relationship packing (default). flow-tb /
-// flow-lr = fast directional stack layouts; flow-elk = ELK layered flow network.
-export const LAYOUT_MODES: LayoutMode[] = [clusterGridMode, flowDownMode, flowRightMode, flowElkMode];
+// hierarchy = the non-directional relationship packing (default). flow-down /
+// flow-right = ELK layered DAG, oriented top-to-bottom ("hierarchy") and
+// left-to-right ("flow").
+export const LAYOUT_MODES: LayoutMode[] = [clusterGridMode, flowElkDownMode, flowElkRightMode];
 
 export function getMode(id: string | null | undefined): LayoutMode {
   return LAYOUT_MODES.find((m) => m.id === id)
