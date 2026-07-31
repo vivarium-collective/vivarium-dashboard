@@ -27,7 +27,13 @@ async function elkFlowLayout(
   const footprint = new Map(nodes.map((n) => [n.id, fullFootprint(n)] as const));
   const nodeIds = new Set(nodes.map((n) => n.id));
 
-  const hubs = hubStoreIds(edges);
+  // Hub-store wires (bulk/listeners wired by ~everything) only jam ELK ~30s on
+  // LARGE composites — exclude them there for speed. On normal composites keep
+  // EVERY store wire so each store sits between the processes that read/write it
+  // (node → process → node), instead of floating free (which scattered the
+  // graph). Threshold picked well above ordinary composites, below v2ecoli-scale.
+  const nProcs = nodes.filter((n) => n.type === 'process').length;
+  const hubs = nProcs > 24 ? hubStoreIds(edges) : new Set<string>();
   const flowEdges: Array<{ source: string; target: string }> = [];
   const seen = new Set<string>();
   const push = (a: string, b: string) => {
