@@ -20396,6 +20396,37 @@
   }
   window._openCompositeCardView = _openCompositeCardView;
 
+  // Reveal a truncated ".sim-loc" cell's full path in place and copy it.
+  function _revealAndCopyLoc(el) {
+    if (!el) return;
+    var full = el.getAttribute('data-loc') || el.textContent || '';
+    if (!full) return;
+    el.textContent = full;
+    el.style.whiteSpace = 'normal';
+    el.style.wordBreak = 'break-all';
+    el.style.overflow = 'visible';
+    el.style.textOverflow = 'clip';
+    el.title = full;
+    var done = function (ok) {
+      var badge = document.createElement('span');
+      badge.textContent = ok ? '  ✓ copied' : '  (copy failed)';
+      badge.style.cssText = 'color:' + (ok ? '#16a34a' : '#b91c1c') + ';font-size:10px;white-space:nowrap';
+      el.appendChild(badge);
+      setTimeout(function () { if (badge.parentNode) badge.parentNode.removeChild(badge); }, 1800);
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(full).then(function () { done(true); }, function () { done(false); });
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = full; document.body.appendChild(ta); ta.select();
+        var ok = false; try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+        document.body.removeChild(ta); done(ok);
+      }
+    } catch (e3) { done(false); }
+  }
+  window._revealAndCopyLoc = _revealAndCopyLoc;
+
   function _renderSimRow(row) { return window.SimTable.renderRow(row, { scope: 'full' }); }
 
   // Client-side column sort for the Simulations DB table. Purely a rendering
@@ -20502,6 +20533,19 @@
     if (tbody && !tbody._simClickWired) {
       tbody._simClickWired = true;
       tbody.addEventListener('click', function (e) {
+        // Composite link → the NEW full composite-card view (not the old
+        // bigraph-loom composite-explore page).
+        var clink = e.target.closest('.sim-composite-link');
+        if (clink) {
+          e.stopPropagation();
+          var crid = clink.getAttribute('data-run-id');
+          var crow = (window._simRows || []).filter(function (r) { return String(r.run_id) === crid; })[0];
+          if (crow && window._openCompositeFromRun) window._openCompositeFromRun(crow);
+          return;
+        }
+        // Location → reveal the full path (wrap) and copy it to the clipboard.
+        var loc = e.target.closest('.sim-loc');
+        if (loc) { e.stopPropagation(); _revealAndCopyLoc(loc); return; }
         if (e.target.closest('a, button, .action-btn')) return;
         var tr = e.target.closest('tr[data-run-id]');
         if (!tr) return;
