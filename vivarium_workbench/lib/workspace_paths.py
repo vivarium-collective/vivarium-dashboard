@@ -21,8 +21,6 @@ Example ``workspace.yaml`` to nest research dirs under ``workspace/``::
       composites: workspace/composites
       references: workspace/references
       datasets: workspace/datasets
-      notes: workspace/notes
-      experiments: workspace/experiments
       reports: workspace/reports
       pbg: workspace/.pbg
 """
@@ -47,8 +45,6 @@ LAYOUT_DEFAULTS: dict[str, str] = {
     "composites": "composites",
     "references": "references",
     "datasets": "datasets",
-    "notes": "notes",
-    "experiments": "experiments",
     "reports": "reports",
     "pbg": ".pbg",
     "scripts": "scripts",
@@ -124,10 +120,6 @@ class WorkspacePaths:
     def references(self) -> Path: return self.dir("references")
     @property
     def datasets(self) -> Path: return self.dir("datasets")
-    @property
-    def notes(self) -> Path: return self.dir("notes")
-    @property
-    def experiments(self) -> Path: return self.dir("experiments")
     @property
     def reports(self) -> Path: return self.dir("reports")
     @property
