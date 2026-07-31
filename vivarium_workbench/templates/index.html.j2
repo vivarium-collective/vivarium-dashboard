@@ -579,7 +579,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
 
     <!-- Brand: fixed Vivarium logo + name (no per-workspace icon/name override). -->
     <div class="viv-rail-header">
-      <a class="viv-rail-brand-link" href="https://vivariumlab.com" target="_blank" rel="noopener" title="vivariumlab.com">
+      <a class="viv-rail-brand-link" href="#about" title="About Vivarium Workbench">
         <img class="viv-rail-logo" src="assets/vivarium-logo.png{% if asset_version %}?v={{ asset_version }}{% endif %}" alt="Vivarium" loading="lazy"
              data-light-src="assets/vivarium-logo.png{% if asset_version %}?v={{ asset_version }}{% endif %}"
              data-dark-src="assets/vivarium-logo-dark.png{% if asset_version %}?v={{ asset_version }}{% endif %}"
@@ -836,6 +836,71 @@ a.viv-bs-commit:hover { text-decoration: underline; }
     <p class="muted" style="font-style:italic">Loading inputs…</p>
   </div>
 
+</section>
+
+<!-- ===== PAGE: ABOUT (opened from the Vivarium brand logo) ===== -->
+<section id="page-about" class="page" data-page="about">
+  <div class="page-fill">
+    <div class="about-page">
+
+      <header class="about-hero">
+        <img class="about-logo" src="assets/vivarium-logo.png{% if asset_version %}?v={{ asset_version }}{% endif %}" alt="Vivarium"
+             data-light-src="assets/vivarium-logo.png{% if asset_version %}?v={{ asset_version }}{% endif %}"
+             data-dark-src="assets/vivarium-logo-dark.png{% if asset_version %}?v={{ asset_version }}{% endif %}"
+             onerror="if(this.dataset.lightSrc&&this.src.indexOf('logo-dark')>=0){this.src=this.dataset.lightSrc;}">
+        <div class="about-hero-text">
+          <h1>Vivarium&nbsp;Workbench</h1>
+          <p class="about-tagline">A local, git-backed workspace for building, running, and sharing
+            multi-scale simulations of cells and other living systems.</p>
+        </div>
+      </header>
+
+      <section class="about-block">
+        <h2>What is Vivarium?</h2>
+        <p><strong>Vivarium</strong> is a framework for <em>integrative, multi-scale</em> modeling. Instead of one
+          monolithic model, you write small, self-contained <strong>Processes</strong> — each describing one
+          mechanism (metabolism, gene expression, physics, transport) — and wire them together into
+          <strong>Composites</strong> that share state through a typed <em>bigraph</em>. Processes advance in time
+          (<em>Temporal</em>) or transform state as dataflow (<em>Steps</em>), and any composite can itself be used
+          as a process inside a larger one. This makes models modular, reusable, and composable across scales —
+          from molecules to whole cells to colonies.</p>
+        <p class="about-fineprint">Built on <code>process-bigraph</code> and <code>bigraph-schema</code>.</p>
+      </section>
+
+      <section class="about-block">
+        <h2>What is the Workbench?</h2>
+        <p>The Workbench is a web UI over a Vivarium <strong>workspace</strong> — a directory of composites,
+          studies, investigations, and data. It reads <em>and writes</em> that workspace, committing every action
+          to a git branch so you get a full audit trail. From here you can browse the registry, configure and run
+          simulations, explore a composite's wiring, organize work into studies and investigations, and view the
+          resulting reports and visualizations.</p>
+      </section>
+
+      <section class="about-block">
+        <h2>How to use it</h2>
+        <ul class="about-steps">
+          <li><strong>Resources</strong> — the datasets, references, and expert notes your work draws on.</li>
+          <li><strong>Registry / Processes</strong> — browse every Composite and Process. Open a card to
+            <em>Configure</em> its parameters, choose <em>Observables</em> and an emitter, <em>Explore</em> its
+            bigraph, and <em>Run</em> it — the run's progress and figures appear under <em>Outputs</em>.</li>
+          <li><strong>Studies</strong> — organize runs into investigations that pose a question and gate on an
+            expected result.</li>
+          <li><strong>Runs</strong> — every simulation you've launched, with its results and artifacts.</li>
+          <li><strong>Analysis</strong> — tools and viewers matched to what your runs produced.</li>
+        </ul>
+        <p class="about-fineprint">Tip: start on <strong>Registry → Composites</strong>, open
+          <code>ecoli_baseline</code> (or any composite), set <strong>Steps</strong>, and hit <strong>▶ Run</strong>.</p>
+      </section>
+
+      <footer class="about-links">
+        <a class="about-link-btn" href="https://vivariumlab.com" target="_blank" rel="noopener">
+          Vivarium Lab website ↗</a>
+        <a class="about-link-btn about-link-ghost" href="https://github.com/vivarium-collective" target="_blank" rel="noopener">
+          GitHub: vivarium-collective ↗</a>
+      </footer>
+
+    </div>
+  </div>
 </section>
 
 <!-- ===== PAGE: AUDIT (read-only L0-L5 reproducibility report) ===== -->
