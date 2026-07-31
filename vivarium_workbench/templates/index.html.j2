@@ -929,8 +929,16 @@ a.viv-bs-commit:hover { text-decoration: underline; }
   <div class="page-fill">
     {# Sticky header: search + facets + zoom stay pinned while results scroll. #}
     <div class="market-sticky">
+      {# Canonical toolbar order: tabs → search+zoom → facets. #}
+      <div class="market-facets" id="market-facets" role="tablist">
+        <button class="market-facet active" data-facet="repo"          onclick="_setMarketFacet('repo')" role="tab" title="Browse whole repositories in the ecosystem">Repositories</button>
+        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes</button>
+        <button class="market-facet"        data-facet="composite"     onclick="_setMarketFacet('composite')" role="tab">Composites</button>
+        <button class="market-facet"        data-facet="study"         onclick="_setMarketFacet('study')" role="tab">Studies</button>
+        <button class="market-facet"        data-facet="investigation" onclick="_setMarketFacet('investigation')" role="tab">Investigations</button>
+      </div>
       <div class="market-toolbar">
-        <input type="search" class="card-browse-search market-search" id="market-search"
+        <input type="search" class="market-search viv-search" id="market-search"
                placeholder="Search…" oninput="_renderMarket()">
         {# Three zoom levels, dense → detailed: List → Cards → Detail. #}
         <span class="registry-zoom market-zoom" role="group" aria-label="View density" title="View density">
@@ -940,17 +948,10 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         </span>
         <span class="cols-ctl-slot" data-cols-surface="market" title="Cards columns"></span>
       </div>
-      {# Facet bar: one artifact type at a time, or All (grouped). Processes,
-         composites, studies and investigations come from the workspace + every
-         installed module across the public repos. #}
-      <div class="market-facets" id="market-facets" role="tablist">
-        <button class="market-facet active" data-facet="repo"          onclick="_setMarketFacet('repo')" role="tab" title="Browse whole repositories in the ecosystem">Repositories</button>
-        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes</button>
-        <button class="market-facet"        data-facet="composite"     onclick="_setMarketFacet('composite')" role="tab">Composites</button>
-        <button class="market-facet"        data-facet="study"         onclick="_setMarketFacet('study')" role="tab">Studies</button>
-        <button class="market-facet"        data-facet="investigation" onclick="_setMarketFacet('investigation')" role="tab">Investigations</button>
-        {# Provenance: default to THIS repository's own artifacts; "Other
-           repos" (dependency / federated content) is opt-in. #}
+      {# Provenance facet row (sits under search, like the other pages' Sort row):
+         default to THIS repository's own artifacts; other repos are opt-in. #}
+      <div class="market-facets-row">
+        <span class="facet-label">Source</span>
         <span class="market-origin-filter">
           <button class="market-origin-chip active" data-origin="all"       onclick="_setMarketOrigin('all')"       title="Everything, grouped by category">All</button>
           <button class="market-origin-chip"        data-origin="workspace" onclick="_setMarketOrigin('workspace')" title="Defined in this workspace's own package">Workspace</button>
@@ -990,7 +991,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       </div>
 
       <div class="registry-view-toolbar">
-        <input type="search" class="registry-search" id="registry-search" placeholder="Filter&hellip;" oninput="_filterRegistry(this.value)">
+        <input type="search" class="registry-search viv-search" id="registry-search" placeholder="Search&hellip;" oninput="_filterRegistry(this.value)">
         {# Three zoom levels: Table (sortable) → Cards (multi-column grid) → Full
            (runnable process). Double-clicking a card also drills in one level. #}
         <span class="cols-ctl-slot" data-cols-surface="registry" title="Cards columns"></span>
@@ -1040,13 +1041,13 @@ a.viv-bs-commit:hover { text-decoration: underline; }
   <!-- Browse toggle: flip the same search + sort + card grid between the
        Investigations and the (flat) Studies views. -->
   <div class="iset-browse-tabs" role="tablist"
-       style="display:flex;gap:2px;margin:0 0 12px;border-bottom:1px solid #e5e7eb">
+       style="display:flex;gap:24px;align-items:center;margin:16px 0 12px;border-bottom:1px solid #e5e7eb">
     <button class="iset-browse-tab active" data-browse="investigations" role="tab"
             onclick="_setIsetBrowseTab('investigations')"
-            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Investigations <span id="iset-tab-inv-count" style="color:#94a3b8;font-weight:600"></span></button>
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 0;font-size:0.95em;cursor:pointer;color:#6b7280;margin-bottom:-1px">Investigations <span id="iset-tab-inv-count" style="color:#94a3b8;font-weight:600"></span></button>
     <button class="iset-browse-tab" data-browse="studies" role="tab"
             onclick="_setIsetBrowseTab('studies')"
-            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 14px;font-size:1em;cursor:pointer;color:#64748b;margin-bottom:-1px">Studies <span id="iset-tab-study-count" style="color:#94a3b8;font-weight:600"></span></button>
+            style="background:none;border:0;border-bottom:2px solid transparent;padding:8px 0;font-size:0.95em;cursor:pointer;color:#6b7280;margin-bottom:-1px">Studies <span id="iset-tab-study-count" style="color:#94a3b8;font-weight:600"></span></button>
     <span class="iset-hdr-actions" style="margin-left:auto;align-self:center;margin-bottom:6px;display:inline-flex;gap:6px">
       <button class="action-btn iset-hdr-btn" onclick="_openBrowseCreate('investigation')" title="Create a new investigation">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" width="15" height="15" aria-hidden="true">
@@ -1065,11 +1066,9 @@ a.viv-bs-commit:hover { text-decoration: underline; }
   <!-- Prominent unified search: matches investigations AND their studies (same
        engine as the side-rail studies search — see _filterInvestigations). -->
   <div style="margin:0 0 10px">
-    <input id="investigations-filter" type="search"
+    <input id="investigations-filter" type="search" class="viv-search"
            placeholder="Search…"
-           aria-label="Search investigations and studies" oninput="_filterInvestigations()"
-           style="width:100%;box-sizing:border-box;padding:6px 12px;border:1px solid #d1d5db;
-                  border-radius:7px;font-size:0.9em;background:#fff;">
+           aria-label="Search investigations and studies" oninput="_filterInvestigations()">
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:0.85em;color:#64748b">
     <label for="iset-sort" style="font-weight:600">Sort</label>

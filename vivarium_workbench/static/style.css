@@ -2666,19 +2666,22 @@ body.pcard-splitting iframe{ pointer-events:none; }
 .market-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
 .market-search { flex: 1 1 auto; box-sizing: border-box; font-size: 0.95em; padding: 8px 12px; }
 .market-zoom { flex: none; }
+/* Match the registry (Modules) tab bar: spaced underline tabs, same font/size. */
 .market-facets {
-  display: flex; flex-wrap: wrap; gap: 4px;
-  border-bottom: 1px solid #e2e8f0; margin: 0; padding-bottom: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 24px;
+  border-bottom: 1px solid #e5e7eb; margin: 16px 0 12px; padding-bottom: 0;
 }
 .market-facet {
-  appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
-  margin-bottom: -1px; padding: 7px 14px; font-size: 0.9em; font-weight: 600;
-  color: #64748b; cursor: pointer; border-radius: 6px 6px 0 0;
-  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 0; margin: 0; font: inherit; font-size: 0.95em;
+  color: #6b7280; cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
 }
-.market-facet:hover { color: #334155; background: #f8fafc; }
-.market-facet.active { color: #2563eb; border-bottom-color: #2563eb; }
-.market-origin-filter { margin-left: auto; display: inline-flex; gap: 3px; align-self: center; padding-bottom: 4px; }
+.market-facet:hover { color: #1f2937; }
+.market-facet.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+/* Source facet row — sits under the search bar (like the Sort row elsewhere). */
+.market-facets-row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.market-origin-filter { display: inline-flex; gap: 4px; }
 .market-origin-chip {
   appearance: none; border: 1px solid #e2e8f0; background: #fff; cursor: pointer;
   font-size: 0.78em; font-weight: 600; color: #64748b; padding: 3px 10px; border-radius: 9999px;
@@ -4706,3 +4709,15 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .col-resize:hover::after{ background:#93b4f5; }
 body.col-resizing{ cursor:col-resize !important; user-select:none; }
 body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry-table.reg-table-fill td{ user-select:none; }
+
+/* ===== Unified page-toolbar search input (Studies / Registry / Modules) =====
+   One look everywhere: full-width in its row, same padding/border/radius/font. */
+.viv-search{
+  flex:1 1 auto; width:100%; box-sizing:border-box; min-width:0; margin:0;
+  padding:8px 14px;
+  border:1px solid #d5dbe6; border-radius:8px;
+  font-size:0.9em; background:#fff; color:#1e293b;
+}
+.viv-search::placeholder{ color:#94a3b8; }
+.viv-search:focus{ outline:none; border-color:#93b4f5; box-shadow:0 0 0 2px rgba(147,180,245,.35); }
+:root[data-theme="dark"] .viv-search{ background:var(--surface); border-color:var(--border); color:var(--text); }
