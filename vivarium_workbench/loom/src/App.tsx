@@ -28,6 +28,7 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
+import { collapseStores } from './collapse';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
@@ -106,6 +107,9 @@ export default function App() {
   // Adding a mode to layouts/registry makes it selectable from the toolbar
   // with no change here.
   const layoutMode = useLayoutMode();
+  // Collapse view: 'none' (both), 'stores' (process-only graph), 'processes'
+  // (stores + processes shrunk to hyperedge junctions).
+  const [collapseMode, setCollapseMode] = useState<'none' | 'stores' | 'processes'>('none');
   // Which processes are "active" (hovered / selected / pinned). Modes that
   // implement `edgeVisibility` use this to cull wires; modes that don't
   // (hierarchy) ignore it entirely and keep drawing every edge.
@@ -371,8 +375,13 @@ export default function App() {
   // the state is ~6 MB / 345 nodes, so this graph walk is expensive; the layout
   // effect, the reset handler, and the sidebar lists all derive from this.
   const raw = useMemo(
-    () => (state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] }),
-    [state],
+    () => {
+      const base = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
+      // "Collapse stores" → the process-only graph (who feeds whom). "Collapse
+      // processes" is a render mode (glyph tier, below), not a graph transform.
+      return collapseMode === 'stores' ? collapseStores(base.nodes, base.edges) : base;
+    },
+    [state, collapseMode],
   );
 
   // (Re)generate nodes + edges whenever the composite state OR the set of
@@ -548,7 +557,9 @@ export default function App() {
         return {
           ...n,
           data: {
-            ...n.data, _tier: tier,
+            // Hyperedge view: shrink every process to a glyph junction so the
+            // stores it wires read as one hyperedge.
+            ...n.data, _tier: collapseMode === 'processes' ? 'glyph' : tier,
             // Full-detail ("open") card = explicitly kept-open ∪ the currently
             // selected/locked one. Keep-open persists; selection opens the card
             // you just clicked. Wire-reveal is a separate concept (ctx below).
@@ -575,7 +586,7 @@ export default function App() {
         },
       };
     });
-  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
+  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops, collapseMode]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -1305,6 +1316,35 @@ export default function App() {
                           title={opt.t}
                           style={{
                             padding: '4px 9px', fontSize: 13, border: 'none', cursor: 'pointer',
+                            background: active ? '#eff6ff' : '#fff',
+                            color: active ? '#2563eb' : '#6b7280',
+                            fontWeight: active ? 700 : 400,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Collapse view: both / process-only (stores collapsed) /
+                      store-centric (processes collapsed into hyperedge junctions). */}
+                  <div
+                    style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
+                    title="Collapse the graph"
+                  >
+                    {([
+                      { mode: 'none', label: 'both', t: 'Show processes and stores' },
+                      { mode: 'stores', label: 'proc', t: 'Process-only graph: collapse stores into direct process to process edges' },
+                      { mode: 'processes', label: 'store', t: 'Store-centric: collapse each process into a hyperedge junction over its stores' },
+                    ] as const).map((opt) => {
+                      const active = collapseMode === opt.mode;
+                      return (
+                        <button
+                          key={opt.mode}
+                          onClick={() => setCollapseMode(opt.mode)}
+                          title={opt.t}
+                          style={{
+                            padding: '4px 9px', fontSize: 12, border: 'none', cursor: 'pointer',
                             background: active ? '#eff6ff' : '#fff',
                             color: active ? '#2563eb' : '#6b7280',
                             fontWeight: active ? 700 : 400,
