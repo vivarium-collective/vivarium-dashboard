@@ -766,7 +766,6 @@ export default function App() {
   // WHITE background. Captures the React Flow viewport element via html-to-image,
   // framed to the full nodes bounds (not just the on-screen viewport).
   const [showExport, setShowExport] = useState(false);
-  const [showAdjust, setShowAdjust] = useState(false);
   // While true, onlyRenderVisibleElements is disabled so the WHOLE graph (all
   // nodes AND edges) is in the DOM for html-to-image to capture. Otherwise the
   // off-viewport edges are culled and the export comes out wireless.
@@ -1320,55 +1319,23 @@ export default function App() {
                     captureCurrentView={captureCurrentView}
                     applyView={applyView}
                   />
-                  {/* "Adjust" — one-shot rearrangements. Each moves the nodes and
-                      leaves them there (persisted); not a mode/toggle. */}
-                  <div style={{ position: 'relative' }}>
-                    <button
-                      onClick={() => setShowAdjust((v) => !v)}
-                      title="Rearrange the layout (moves the nodes and leaves them there)"
-                      style={{
-                        padding: '4px 10px', fontSize: 12,
-                        background: '#fff', border: '1px solid #d1d5db',
-                        borderRadius: 4, cursor: 'pointer', color: '#374151',
-                      }}
-                    >
-                      Adjust ▾
-                    </button>
-                    {showAdjust && (
-                      <div style={{
-                        position: 'absolute', top: '100%', right: 0, marginTop: 4,
-                        background: '#fff', border: '1px solid #d1d5db', borderRadius: 4,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.12)', overflow: 'hidden',
-                        minWidth: 230, zIndex: 20,
-                      }}>
-                        {[
-                          {
-                            label: focus.locked ? '⊹ Center on locked process' : '⊹ Center on this (lock a process first)',
-                            hint: 'Inputs left, outputs right, shared stores below',
-                            enabled: !!focus.locked,
-                            on: () => { if (focus.locked) handleCenterOnProcess(focus.locked); },
-                          },
-                        ].map((it) => (
-                          <button
-                            key={it.label}
-                            disabled={!it.enabled}
-                            onClick={() => { if (it.enabled) { it.on(); setShowAdjust(false); } }}
-                            title={it.hint}
-                            style={{
-                              display: 'block', width: '100%', textAlign: 'left',
-                              padding: '7px 12px', fontSize: 12, border: 0,
-                              background: '#fff', cursor: it.enabled ? 'pointer' : 'default',
-                              color: it.enabled ? '#374151' : '#b8bec9',
-                            }}
-                            onMouseEnter={(e) => { if (it.enabled) e.currentTarget.style.background = '#f3f4f6'; }}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
-                          >
-                            {it.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  {/* Center on the locked process (inputs left, outputs right,
+                      shared stores below). Disabled until a process is locked. */}
+                  <button
+                    onClick={() => { if (focus.locked) handleCenterOnProcess(focus.locked); }}
+                    disabled={!focus.locked}
+                    title={focus.locked
+                      ? 'Center the layout on the locked process (inputs left, outputs right, shared stores below)'
+                      : 'Lock a process first (click it, then the lock), then center the layout on it'}
+                    style={{
+                      padding: '4px 10px', fontSize: 12,
+                      background: '#fff', border: '1px solid #d1d5db',
+                      borderRadius: 4, cursor: focus.locked ? 'pointer' : 'default',
+                      color: focus.locked ? '#374151' : '#b8bec9',
+                    }}
+                  >
+                    ⊹ Center
+                  </button>
                   <button
                     onClick={handleResetLayout}
                     title="Re-run auto-layout on the currently visible nodes and fit the view"
