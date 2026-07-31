@@ -1900,14 +1900,20 @@ body.popcard-mode .pcard-maximize{ display:none; }   /* already full-window */
 :root[data-theme="dark"] .pcard-popout:hover{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
 
 /* persistent Run bar (not an accordion) — always visible at the card's top level */
+/* Run bar: styled like an accordion section head (▶ RUN) with its Steps + Run
+   controls on the right, so it sits uniformly among CONFIGURE/INPUTS/EXPLORE. */
 .pcard-runbar{
-  display:flex; align-items:center; flex-wrap:wrap; gap:12px;
-  padding:9px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
-  background:#fbfcfe;
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+  padding:10px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
+  background:#fff; box-shadow:inset 3px 0 0 #0891b2;   /* cyan run accent */
 }
+.pcard-runbar .pcard-run-glyph{ color:#0891b2; }
+.pcard-runbar .pcard-sec-name{ color:#0891b2; }        /* run-row title in its accent */
+.pcard-runbar .loom-run-field{ margin-left:auto; }     /* push Steps + Run to the right */
+.pcard-runbar .pcard-run-note{ margin-left:auto; }     /* read-only note right-aligns too */
 .pcard-runbar .action-btn{ flex:none; }
 .pcard-run-out{ font-size:0.8em; color:#64748b; }
-:root[data-theme="dark"] .pcard-runbar{ background:var(--surface-2); border-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-runbar{ background:var(--surface-1, #0f1728); border-color:var(--border-faint); }
 
 /* resizable sections: capped, scrollable body + a drag grip (dbl-click = fit) */
 .pcard-sec-resizable.pcard-sec-open > .pcard-sec-body{ max-height:var(--pch,300px); overflow:auto; }

@@ -3030,10 +3030,14 @@
 
     var topNote = '<p class="muted pcard-toplevel-note">Top-level composite — its interface is the internal wiring (see Explore), not bridge ports.</p>';
     var runBar = _pcardRunBar(
-      c.read_only
+      // A titled row matching the accordion section heads (▶ RUN), with the
+      // Steps selector + Run button living on the same bar.
+      '<span class="pcard-sec-caret pcard-run-glyph">▶</span>' +
+      '<span class="pcard-sec-name">Run</span>' +
+      (c.read_only
         ? '<span class="muted pcard-run-note">read-only composite — enable running inside Explore to run in place</span>'
         : '<label class="loom-run-field loom-run-interval-field">Steps <input type="number" step="1" min="1" class="pcard-run-time" placeholder="e.g. 10"></label>' +
-          '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>');
+          '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>'));
 
     // Outputs = the launched run's live status → its visualizations. A composite
     // run is detached; _runComposite stores the run_id and _pollCompositeRun
