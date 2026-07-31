@@ -2099,7 +2099,9 @@
   })();
 
   function _syncRegistryToolbar() {
-    document.querySelectorAll('.reg-zoom-btn').forEach(function (b) {
+    // Scoped to [data-zoom] — .reg-zoom-btn is shared with the Investigations/
+    // Studies zoom toolbar (data-izoom), which must not be touched here.
+    document.querySelectorAll('.reg-zoom-btn[data-zoom]').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-zoom') === window._registryZoom);
     });
   }
@@ -9091,16 +9093,59 @@
   }
   window._showInvestigationList = _showInvestigationList;
 
+  // ── Investigations/Studies semantic zoom ────────────────────────────────
+  // Same 3-level framework as the Registry: 'table' (dense, sortable-looking)
+  // | 'cards' (grid — the historical default) | 'full' (cards with detail
+  // expanded). Drives BOTH the Investigations and Studies browse tabs.
+  // Persists in localStorage, mirroring window._registryZoom.
+  window._isetZoom = (function () {
+    var z; try { z = localStorage.getItem('viv.isetZoom'); } catch (e) { z = null; }
+    return (z === 'table' || z === 'cards' || z === 'full') ? z : 'cards';
+  })();
+  function _syncIsetToolbar() {
+    // Scoped to [data-izoom] — .reg-zoom-btn is shared with the Registry zoom
+    // toolbar (data-zoom), which must not be touched here.
+    document.querySelectorAll('.reg-zoom-btn[data-izoom]').forEach(function (b) {
+      b.classList.toggle('active', b.getAttribute('data-izoom') === window._isetZoom);
+    });
+  }
+  window._syncIsetToolbar = _syncIsetToolbar;
+  function _setIsetZoom(z) {
+    window._isetZoom = z;
+    try { localStorage.setItem('viv.isetZoom', z); } catch (e) { /* private mode */ }
+    _syncIsetToolbar();
+    _renderInvestigationSets();
+  }
+  window._setIsetZoom = _setIsetZoom;
+  // Double-click a card → zoom in one level (table → cards → full), mirroring
+  // the Registry's _zoomInOn.
+  function _isetZoomIn() {
+    var order = ['table', 'cards', 'full'];
+    var i = order.indexOf(window._isetZoom || 'cards');
+    _setIsetZoom(order[Math.min(order.length - 1, i + 1)]);
+  }
+  window._isetZoomIn = _isetZoomIn;
+
   function _renderInvestigationSets() {
     var list = document.getElementById('investigations-list');
     if (!list) return;
+    _syncIsetToolbar();
     if (window._isetBrowseTab === 'studies') {
-      if (window._isetStudyView === 'table') _renderStudyBrowseTable(list);
-      else _renderStudyBrowseCards(list);
+      if (window._isetZoom === 'table') _renderStudyBrowseTable(list);
+      else _renderStudyBrowseCards(list, window._isetZoom === 'full');
       return;
     }
     if (!window._isetIndex.length) {
       list.innerHTML = '<p class="empty-state">No investigations declared. Author one at <code>investigations/&lt;name&gt;/investigation.yaml</code>.</p>';
+      return;
+    }
+    if (window._isetZoom === 'table') {
+      _renderInvestigationTable(window._isetIndex, list);
+      _filterInvestigations();
+      var _icT = document.getElementById('iset-tab-inv-count');
+      if (_icT) _icT.textContent = (window._isetIndex || []).length || '';
+      var _scT = document.getElementById('iset-tab-study-count');
+      if (_scT) _scT.textContent = (window._investigations || []).length || '';
       return;
     }
     // Closed/archived sink to the bottom; baseline floats to the top; else
@@ -9116,9 +9161,10 @@
       return a[1] - b[1];
     });
 
-    function _isetCardHtml(iset) {
+    function _isetCardHtml(iset, full) {
       var closed = (iset.status === 'archived' || iset.status === 'closed');
-      var desc = (iset.description || '').split('\n')[0].slice(0, 240);
+      var descFull = (iset.description || '').split('\n')[0];
+      var desc = full ? descFull : descFull.slice(0, 240);
       // Prefer server effective_status; fall back to author status. Intent
       // divergence goes into the status-pill tooltip (not a separate line).
       var effStatus  = iset.effective_status || iset.status || 'planning';
@@ -9185,13 +9231,14 @@
           '<span style="margin-left:auto;color:#94a3b8">' + _esc(m[1]) + '</span></a>';
       }).join('');
 
+      var qFull = iset.question ? String(iset.question).split('\n')[0] : '';
       var qLine = iset.question
-        ? '<p style="margin:0 0 6px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(String(iset.question).split('\n')[0].slice(0, 200)) + '</p>'
-        : (desc ? '<p style="margin:0 0 6px 0;font-size:0.9em;color:#475569">' + _esc(desc) + (iset.description.length > 240 ? '…' : '') + '</p>' : '');
+        ? '<p style="margin:0 0 6px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(full ? qFull : qFull.slice(0, 200)) + '</p>'
+        : (desc ? '<p style="margin:0 0 6px 0;font-size:0.9em;color:#475569">' + _esc(desc) + (!full && iset.description.length > 240 ? '…' : '') + '</p>' : '');
       var lifeChip = iset.lifecycle && iset.lifecycle !== 'active'
         ? '<span style="font-size:0.72em;color:#64748b;background:#f1f5f9;border-radius:9999px;padding:1px 8px">' + _esc(iset.lifecycle) + '</span>' : '';
 
-      return '<div class="investigation-set-card' + (iset.read_only ? ' federated-readonly' : '') + '" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ' +
+      return '<div class="investigation-set-card' + (full ? ' iset-card-full' : '') + (iset.read_only ? ' federated-readonly' : '') + '" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ondblclick="_isetZoomIn()" ' +
              'title="' + _esc(iset.name) + '" ' +
              'data-iset-title="' + _esc(String(iset.title || iset.name).toLowerCase()) + '" ' +
              'data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" ' +
@@ -9208,7 +9255,7 @@
         '<div style="display:flex;align-items:center;gap:12px;font-size:0.85em;color:#64748b">' +
           '<span class="iset-studies-toggle" role="button" tabindex="0" ' +
             'onclick="event.stopPropagation();var d=this.closest(\'.investigation-set-card\').querySelector(\'.iset-studies-detail\');var open=d.style.display===\'none\';d.style.display=open?\'block\':\'none\';this.querySelector(\'.iset-chev\').textContent=open?\'▾\':\'▸\'" ' +
-            'style="flex:1;cursor:pointer;user-select:none"><strong>' + iset.n_studies + '</strong> stud' + (iset.n_studies === 1 ? 'y' : 'ies') + ' <span class="iset-chev" style="color:#94a3b8">▸</span></span>' +
+            'style="flex:1;cursor:pointer;user-select:none"><strong>' + iset.n_studies + '</strong> stud' + (iset.n_studies === 1 ? 'y' : 'ies') + ' <span class="iset-chev" style="color:#94a3b8">' + (full ? '▾' : '▸') + '</span></span>' +
           '<a href="#" title="Download the rendered HTML report for this investigation" ' +
             'onclick="window._vivReportFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ report</a>' +
@@ -9216,18 +9263,19 @@
             'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ notebook</a>' +
         '</div>' +
-        '<div class="iset-studies-detail" style="display:none;margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">' + (studyRows || '<span class="muted" style="font-size:0.85em">No studies.</span>') + '</div>' +
+        '<div class="iset-studies-detail" style="display:' + (full ? 'block' : 'none') + ';margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">' + (studyRows || '<span class="muted" style="font-size:0.85em">No studies.</span>') + '</div>' +
       '</div>';
     }
 
     var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin:6px 0 14px';
+    var _isetFull = (window._isetZoom === 'full');
     function _groupHtml(label, items) {
       if (!items.length) return '';
       return '<div class="iset-group" data-group-label="' + label + '">' +
         '<h3 class="iset-group-head" style="font-size:0.9em;color:#475569;font-weight:700;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.04em">' +
           label + ' <span class="iset-group-count" style="color:#94a3b8;font-weight:600">(' + items.length + ')</span></h3>' +
         '<div class="investigations-grid" style="' + GRID + '">' +
-          items.map(_isetCardHtml).join('') +
+          items.map(function (iset) { return _isetCardHtml(iset, _isetFull); }).join('') +
         '</div>' +
       '</div>';
     }
@@ -9307,15 +9355,15 @@
     });
     var createBtn = document.getElementById('iset-browse-create');
     if (createBtn) createBtn.textContent = (tab === 'studies') ? '+ Study' : '+ Investigation';
-    // The Cards/Table view toggle + tip are Studies-only.
-    var viewToggle = document.getElementById('iset-study-view-toggle');
-    if (viewToggle) viewToggle.style.display = (tab === 'studies') ? 'inline-flex' : 'none';
+    // The zoom toolbar (#iset-zoom-toolbar) is always visible on both tabs —
+    // only the "click a card's studies count" tip is Studies-only.
     var tip = document.getElementById('iset-list-tip');
     if (tip) tip.style.display = (tab === 'studies') ? 'none' : '';
     var invCount = document.getElementById('iset-tab-inv-count');
     var studyCount = document.getElementById('iset-tab-study-count');
     if (invCount) invCount.textContent = (window._isetIndex || []).length || '';
     if (studyCount) studyCount.textContent = (window._investigations || []).length || '';
+    _syncIsetToolbar();
     _renderInvestigationSets();
   }
   window._setIsetBrowseTab = _setIsetBrowseTab;
@@ -9651,18 +9699,19 @@
   };
   function _studyDotMeta(st) { return _STUDY_DOT[st] || _STUDY_DOT.planned; }
 
-  function _studyBrowseCardHtml(s) {
+  function _studyBrowseCardHtml(s, full) {
     var status = s.effective_status || s.status || 'planned';
     var m = _studyDotMeta(status);
     var inv = _investigationForStudy(s.name);
     var q = s.question || s.objective || '';
+    var qText = String(q).split('\n')[0];
     var nRuns = (s.n_runs !== undefined) ? s.n_runs
               : (s.n_simulations !== undefined ? s.n_simulations : 0);
     var cardStyle = 'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;cursor:pointer;transition:box-shadow 0.1s,border-color 0.1s;';
     var partOf = (s.investigations && s.investigations.length)
       ? '<div style="font-size:0.78em;color:#94a3b8;margin:0 0 6px">part of: ' + _esc(s.investigations.join(', ')) + '</div>'
       : '';
-    return '<div class="investigation-set-card' + (s.read_only ? ' federated-readonly' : '') + '" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ' +
+    return '<div class="investigation-set-card' + (full ? ' iset-card-full' : '') + (s.read_only ? ' federated-readonly' : '') + '" onclick="_openStudyEmbeddedNewTab(\'' + _esc(s.name) + '\')" ondblclick="_isetZoomIn()" ' +
            'title="' + _esc(s.name) + '" ' +
            'data-iset-title="' + _esc(String(s.title || s.name).toLowerCase()) + '" ' +
            'data-iset-slug="' + _esc(String(s.name).toLowerCase()) + '" ' +
@@ -9676,7 +9725,7 @@
       '</div>' +
       (inv ? '<div style="font-size:0.78em;color:#94a3b8;margin:0 0 6px"><span style="color:#cbd5e1">▪</span> ' + _esc(inv) + '</div>' : '') +
       partOf +
-      (q ? '<p style="margin:0 0 8px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(String(q).split('\n')[0].slice(0, 180)) + '</p>' : '') +
+      (q ? '<p style="margin:0 0 8px 0;font-size:0.9em;color:#334155"><span style="color:#94a3b8;font-weight:600">Q</span> ' + _esc(full ? qText : qText.slice(0, 180)) + '</p>' : '') +
       '<div style="display:flex;align-items:center;gap:12px;font-size:0.85em;color:#64748b">' +
         '<span style="flex:1"><strong>' + nRuns + '</strong> run' + (nRuns === 1 ? '' : 's') + '</span>' +
         '<span style="color:#3b82f6">open ↗</span>' +
@@ -9684,7 +9733,7 @@
     '</div>';
   }
 
-  function _renderStudyBrowseCards(list) {
+  function _renderStudyBrowseCards(list, full) {
     var studies = (window._investigations || []).slice();
     if (!studies.length) {
       list.innerHTML = '<p class="empty-state">No studies in this workspace yet.</p>';
@@ -9721,7 +9770,7 @@
         '<h3 class="iset-group-head" style="font-size:0.9em;color:#475569;font-weight:700;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.04em">' +
         _esc(titleFor(inv)) + ' <span style="color:#94a3b8;font-weight:600">(' + items.length + ')</span></h3>' +
         '<div class="investigations-grid" style="' + GRID + '">' +
-        items.map(_studyBrowseCardHtml).join('') + '</div></div>';
+        items.map(function (s) { return _studyBrowseCardHtml(s, full); }).join('') + '</div></div>';
     }).join('') +
       '<p id="investigations-empty" class="empty-state" style="display:none">No studies match the filter.</p>';
     _filterInvestigations();
@@ -9804,20 +9853,61 @@
   }
   window._setStudyTableSort = _setStudyTableSort;
 
-  function _setStudyView(mode) {
-    window._isetStudyView = mode;
-    var cardsBtn = document.getElementById('iset-view-cards');
-    var tableBtn = document.getElementById('iset-view-table');
-    [[cardsBtn, mode === 'cards'], [tableBtn, mode === 'table']].forEach(function (pair) {
-      var btn = pair[0], on = pair[1];
-      if (!btn) return;
-      btn.style.background = on ? '#eef2ff' : '#fff';
-      btn.style.color = on ? '#1e293b' : '#64748b';
-      btn.style.fontWeight = on ? '600' : '400';
-    });
-    _renderInvestigationSets();
+  // Investigations TABLE view — dense, one row per investigation (same look as
+  // _renderStudyBrowseTable). Row click opens the investigation workspace; the
+  // report/notebook links mirror the card actions (_vivReportFromCard /
+  // _vivNotebookFromCard already stopPropagation internally).
+  var _ISET_TABLE_STATUS_META = {
+    planning:    {label:'Planned',     bg:'#f1f5f9', fg:'#475569', bd:'#cbd5e1'},
+    in_progress: {label:'In progress', bg:'#fef9c3', fg:'#854d0e', bd:'#fde047'},
+    running:     {label:'Running now', bg:'#dbeafe', fg:'#1e40af', bd:'#93c5fd'},
+    complete:    {label:'Complete',    bg:'#dcfce7', fg:'#166534', bd:'#86efac'},
+    failed:      {label:'Failed',      bg:'#fee2e2', fg:'#991b1b', bd:'#fca5a5'}
+  };
+  function _renderInvestigationTable(isets, mountEl) {
+    var items = (isets || []).slice();
+    if (!items.length) {
+      mountEl.innerHTML = '<p class="empty-state">No investigations declared. Author one at <code>investigations/&lt;name&gt;/investigation.yaml</code>.</p>';
+      return;
+    }
+    var th = [['Name', 'left'], ['Status', 'left'], ['Studies', 'right'], ['Question', 'left'], ['Links', 'left']]
+      .map(function (c) {
+        return '<th style="text-align:' + c[1] + ';position:sticky;top:0;background:#f8fafc;padding:7px 10px;' +
+          'font-size:0.78em;text-transform:uppercase;letter-spacing:0.03em;color:#475569;' +
+          'border-bottom:1px solid #e5e7eb;white-space:nowrap">' + c[0] + '</th>';
+      }).join('');
+    var rows = items.map(function (iset) {
+      var closed = (iset.status === 'archived' || iset.status === 'closed');
+      var effStatus = iset.effective_status || iset.status || 'planning';
+      var meta = _ISET_TABLE_STATUS_META[effStatus] || {label: effStatus, bg:'#f1f5f9', fg:'#475569', bd:'#cbd5e1'};
+      var pillBase = 'font-size:0.72em;border-radius:9999px;padding:1px 9px;white-space:nowrap;';
+      var statusPill = closed
+        ? '<span class="status-pill" style="' + pillBase + 'background:#e5e7eb;color:#4b5563;border:1px solid #d1d5db">Closed</span>'
+        : '<span class="status-pill" style="' + pillBase + 'background:' + meta.bg + ';color:' + meta.fg + ';border:1px solid ' + meta.bd + '">' + _esc(meta.label) + '</span>';
+      var q = iset.question ? String(iset.question).split('\n')[0].slice(0, 140) : '';
+      var rowText = (String(iset.title || iset.name) + ' ' + effStatus + ' ' + q).toLowerCase();
+      return '<tr data-row-text="' + _esc(rowText) + '" onclick="_showInvestigationWorkspace(\'' + _esc(iset.name) + '\')" ' +
+        'style="cursor:pointer;border-bottom:1px solid #f1f5f9' + (closed ? ';opacity:0.6' : '') + '" ' +
+        'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
+        '<td style="padding:7px 10px;font-weight:600;color:#1e293b">' + _esc(iset.title || iset.name) + '</td>' +
+        '<td style="padding:7px 10px;white-space:nowrap">' + statusPill + '</td>' +
+        '<td style="padding:7px 10px;text-align:right;color:' + (iset.n_studies ? '#1e293b' : '#cbd5e1') + '">' + (iset.n_studies || 0) + '</td>' +
+        '<td style="padding:7px 10px;color:#64748b">' + (q ? _esc(q) : '<span style="color:#cbd5e1">—</span>') + '</td>' +
+        '<td style="padding:7px 10px;white-space:nowrap;font-size:0.85em">' +
+          '<a href="#" title="Download the rendered HTML report for this investigation" ' +
+            'onclick="window._vivReportFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
+            'style="color:#3b82f6;text-decoration:none;margin-right:10px">↓ report</a>' +
+          '<a href="#" title="Download the runnable notebook for this investigation" ' +
+            'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
+            'style="color:#3b82f6;text-decoration:none">↓ notebook</a>' +
+        '</td>' +
+        '</tr>';
+    }).join('');
+    mountEl.innerHTML = '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.9em;' +
+      'background:#fff;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">' +
+      '<thead><tr>' + th + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
-  window._setStudyView = _setStudyView;
+  window._renderInvestigationTable = _renderInvestigationTable;
 
   // Client-side filter for the Investigations landing list. UNIFIED with the
   // side-rail studies search (same _tokensMatch engine, same AND-first/OR-
@@ -9828,8 +9918,8 @@
   function _filterInvestigations() {
     var input = document.getElementById('investigations-filter');
     var tokens = _tokenize(input && input.value);
-    // Studies TABLE view: filter rows directly (each carries data-row-text).
-    if (window._isetBrowseTab === 'studies' && window._isetStudyView === 'table') {
+    // TABLE zoom (either tab): filter rows directly (each carries data-row-text).
+    if (window._isetZoom === 'table') {
       document.querySelectorAll('#investigations-list tr[data-row-text]').forEach(function (tr) {
         tr.style.display = _tokensMatch(tr.getAttribute('data-row-text') || '', tokens) ? '' : 'none';
       });
