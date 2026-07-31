@@ -2668,18 +2668,46 @@
       '</tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
-  // Switch the composite Outputs embed between Visualizations / Results /
-  // Document — reloads the (chromeless) loom at that tab.
+  // Native content for a composite Outputs tab (Visualizations/Results/Document).
+  function _compositeOutContent(view, c) {
+    c = c || {};
+    var runHint = '<a href="#simulations" onclick="_switchPage(\'simulations\');return false;">Runs</a>';
+    if (view === 'document') {
+      var np = (c.parameters && typeof c.parameters === 'object') ? Object.keys(c.parameters).length : 0;
+      var nr = (c.requires && c.requires.processes) ? c.requires.processes.length : 0;
+      var meta = [];
+      if (c.module) meta.push('<span><span class="muted">module</span> <code>' + _esc(c.module) + '</code></span>');
+      meta.push('<span><span class="muted">params</span> <strong>' + np + '</strong></span>');
+      if (nr) meta.push('<span><span class="muted">requires</span> <strong>' + nr + '</strong> process' + (nr === 1 ? '' : 'es') + '</span>');
+      if (c.default_n_steps != null) meta.push('<span><span class="muted">default steps</span> <strong>' + _esc(String(c.default_n_steps)) + '</strong></span>');
+      var tags = (c.tags && c.tags.length) ? '<div class="pcard-out-tags">' + c.tags.map(function (t) { return '<span class="tag-pill">' + _esc(t) + '</span>'; }).join(' ') + '</div>' : '';
+      return '<div class="pcard-out-doc">' +
+        (c.description ? '<p class="pcard-out-desc">' + _esc(c.description) + '</p>' : '<p class="muted">No description.</p>') +
+        '<div class="pcard-out-meta">' + meta.join('') + '</div>' + tags +
+        '<p class="muted pcard-out-hint">Full spec: use the <strong>{ } JSON</strong> button in the header, or open <strong>Explore</strong> for the bigraph.</p>' +
+      '</div>';
+    }
+    if (view === 'results') {
+      return '<div class="pcard-out-empty">' +
+        '<p class="pcard-out-empty-title">No run results yet</p>' +
+        '<p class="muted">Set a <strong>Time</strong> and <strong>▶ Run</strong> above — time-series results and report cards appear in the run, viewable under ' + runHint + '.</p>' +
+      '</div>';
+    }
+    return '<div class="pcard-out-empty">' +
+      '<p class="pcard-out-empty-title">No visualizations yet</p>' +
+      '<p class="muted">The composite\'s declared visualizations are produced by a run. <strong>▶ Run</strong> it above, then open the run under ' + runHint + '.</p>' +
+    '</div>';
+  }
+
+  // Switch the composite Outputs panel between Visualizations / Results / Document.
   function _setCompositeOutView(btn) {
     var body = btn.closest('.pcard-sec-body'); if (!body) return;
     body.querySelectorAll('.pcard-out-tab').forEach(function (b) { b.classList.toggle('active', b === btn); });
     var view = btn.getAttribute('data-view');
-    var embed = body.querySelector('.pcard-out-loom'); if (!embed) return;
-    embed.setAttribute('data-view', view);
-    embed._loomLoaded = false;
-    var host = embed.querySelector('.ccard-loom-frame');
-    if (host) host.innerHTML = '<p class="muted" style="padding:10px;font-size:0.85em">Loading ' + _esc(view) + '…</p>';
-    if (typeof _openCompositeLoomInline === 'function') _openCompositeLoomInline(embed);
+    var card = btn.closest('.registry-entry-full');
+    var c = (window._compositesById || {})[card && card.getAttribute('data-address')] || {};
+    var panel = body.querySelector('[data-role="out-panel"]');
+    if (panel) panel.innerHTML = _compositeOutContent(view, c);
   }
   window._setCompositeOutView = _setCompositeOutView;
 
@@ -2729,17 +2757,16 @@
         : '<label class="loom-run-field loom-run-interval-field">Time <input type="number" step="any" min="0" class="pcard-run-time" placeholder="e.g. 10"></label>' +
           '<button class="action-btn" onclick="_runComposite(this)">▶ Run</button>');
 
-    // Outputs = the composite's declared Visualizations / Results / Document,
-    // folded in from the loom (chromeless, one tab at a time).
+    // Outputs = Visualizations / Results / Document, rendered natively (a
+    // composite run is detached → its outputs live in the run; these panels
+    // point there rather than embedding a read-only loom).
     var outputsBody =
       '<div class="pcard-out-tabs">' +
         '<button class="pcard-out-tab active" type="button" data-view="visualizations" onclick="_setCompositeOutView(this)">Visualizations</button>' +
         '<button class="pcard-out-tab" type="button" data-view="results" onclick="_setCompositeOutView(this)">Results</button>' +
         '<button class="pcard-out-tab" type="button" data-view="document" onclick="_setCompositeOutView(this)">Document</button>' +
       '</div>' +
-      '<div class="ccard-loom-embed pcard-out-loom" data-id="' + _esc(c.id) + '" data-view="visualizations">' +
-        '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Open to load declared visualizations / results…</p></div>' +
-      '</div>';
+      '<div class="pcard-out-panel" data-role="out-panel">' + _compositeOutContent('visualizations', c) + '</div>';
     var addr = c.module ? (c.module + '.' + c.name) : c.id;
 
     return '<div class="registry-entry registry-entry-full loom-runnable pcard pcard-accordion pcard-composite' + sel +
@@ -2764,11 +2791,11 @@
           '</div>' +
         '</div>' +
         '<div class="pcard-acc">' +
-          _pcardSection('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { open: true, resizable: true }) +
+          _pcardSection('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { resizable: true }) +
           _pcardSection('inputs', 'Inputs', '<span class="pcard-sec-count">0</span>', topNote) +
           _pcardSection('explore', 'Explore', '', _compositeLoomExplore(c), { wide: true }) +
           runBar +
-          _pcardSection('outputs', 'Outputs', '', outputsBody, { wide: true }) +
+          _pcardSection('outputs', 'Outputs', '', outputsBody) +
         '</div>' +
       '</div>' +
     '</div>';
