@@ -1120,10 +1120,12 @@ export default function App() {
           hidden={hidden}
           onToggleHidden={toggleHidden}
           onShowAll={showAll}
+          selectedId={selection?.kind === 'store' ? (selection.path.join('.') || '<root>') : null}
+          revealNonce={inspectorReveal}
         />
       ),
     },
-  ] as DockPanelSpec[]).filter((p) => !(chromeless && p.id === 'config')), [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection,
+  ] as DockPanelSpec[]).filter((p) => !(chromeless && p.id === 'config')), [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection, inspectorReveal,
       compositeId, parameters, overrides, handleApplied, STATIC, chromeless]);
 
   if (!state) {
