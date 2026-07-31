@@ -17,7 +17,7 @@ main{padding:20px;margin:0 auto}
 #page-composite-explore, .viv-content > #page-composite-explore
   {max-width:none;width:auto}
 .viv-content:has(> #page-investigations.active){
-  padding:8px 12px !important;
+  padding:8px 24px !important;   /* 24px horizontal = same left inset as Registry/Modules */
   width:100% !important;
   max-width:none !important;
 }
@@ -746,7 +746,9 @@ body.focus-mode.focus-composite-explore .page.active{
 body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .viv-rail-header{
   display:flex; align-items:center; gap:10px;
-  padding:0 16px 14px;
+  /* Left inset 19px = the nav-link icon inset (16px padding + 3px accent border),
+     so the logo's left edge lines up with the nav icons below it. */
+  padding:0 16px 12px 19px;
   border-bottom:1px solid #ececec;
   position:relative;   /* positioning context for the collapse toggle */
 }
@@ -806,7 +808,7 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 }
 
 .viv-rail-section{
-  padding:10px 0 6px;
+  padding:4px 0 6px;
 }
 .viv-rail-section + .viv-rail-section{
   border-top:1px solid #ececec; margin-top:4px;
@@ -1366,7 +1368,7 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .registry-tabs{
   display:flex; gap:24px; align-items:center;
   border-bottom:1px solid #e5e7eb;
-  margin:16px 0 12px;
+  margin:8px 0 12px;
 }
 .registry-tab{
   background:transparent; border:0;
@@ -2664,19 +2666,22 @@ body.pcard-splitting iframe{ pointer-events:none; }
 .market-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
 .market-search { flex: 1 1 auto; box-sizing: border-box; font-size: 0.95em; padding: 8px 12px; }
 .market-zoom { flex: none; }
+/* Match the registry (Modules) tab bar: spaced underline tabs, same font/size. */
 .market-facets {
-  display: flex; flex-wrap: wrap; gap: 4px;
-  border-bottom: 1px solid #e2e8f0; margin: 0; padding-bottom: 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 24px;
+  border-bottom: 1px solid #e5e7eb; margin: 8px 0 12px; padding-bottom: 0;
 }
 .market-facet {
-  appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
-  margin-bottom: -1px; padding: 7px 14px; font-size: 0.9em; font-weight: 600;
-  color: #64748b; cursor: pointer; border-radius: 6px 6px 0 0;
-  transition: color 0.12s, background 0.12s, border-color 0.12s;
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 0; margin: 0; font: inherit; font-size: 0.95em;
+  color: #6b7280; cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
 }
-.market-facet:hover { color: #334155; background: #f8fafc; }
-.market-facet.active { color: #2563eb; border-bottom-color: #2563eb; }
-.market-origin-filter { margin-left: auto; display: inline-flex; gap: 3px; align-self: center; padding-bottom: 4px; }
+.market-facet:hover { color: #1f2937; }
+.market-facet.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+/* Source facet row — sits under the search bar (like the Sort row elsewhere). */
+.market-facets-row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.market-origin-filter { display: inline-flex; gap: 4px; }
 .market-origin-chip {
   appearance: none; border: 1px solid #e2e8f0; background: #fff; cursor: pointer;
   font-size: 0.78em; font-weight: 600; color: #64748b; padding: 3px 10px; border-radius: 9999px;
@@ -4093,7 +4098,7 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   padding-top:0 !important;
 }
 #page-modules .registry-sticky,
-#page-market .market-sticky{ padding-top:16px; }
+#page-market .market-sticky{ padding-top:8px; }
 /* On the Repositories facet the provenance chips filter installed ("Repository")
    vs available-to-install ("Other repos") repos — see _renderMarketRepos. */
 /* ── Investigation DAG semantic zoom slider ────────────────────────────────── */
@@ -4679,6 +4684,47 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] [style*="solid #d1d5db"],
 :root[data-theme="dark"] [style*="solid #eee"],
 :root[data-theme="dark"] [style*="solid #f1f5f9"]{ border-color:var(--border) !important; }
+
+/* ===== Registry: sort bar ===== */
+.registry-facets{ display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin:8px 0 2px; padding:2px 2px 8px; }
+.facet-group{ display:inline-flex; align-items:center; gap:6px; }
+.facet-label{ font-size:0.7em; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#94a3b8; }
+.facet-select{ font-size:0.8em; color:#334155; background:#fff; border:1px solid #d5dbe6; border-radius:7px; padding:3px 8px; cursor:pointer; }
+:root[data-theme="dark"] .facet-select{ background:var(--surface); border-color:var(--border); color:var(--text); }
+
+/* ===== Registry table: fill the window + resizable columns ===== */
+.registry-table-wrap{ overflow-x:auto; width:100%; }
+.registry-table.reg-table-fill{ width:100%; table-layout:fixed; border-collapse:collapse; }
+.registry-table.reg-table-fill th, .registry-table.reg-table-fill td{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.registry-table.reg-table-fill .reg-td-name code{ margin-left:6px; }
+.registry-table.reg-table-fill .reg-th{ position:relative; }
+.registry-table.reg-table-fill .reg-th-label{ display:inline-block; overflow:hidden; text-overflow:ellipsis; max-width:100%; vertical-align:bottom; }
+.col-resize{
+  position:absolute; top:0; right:-4px; width:8px; height:100%; cursor:col-resize;
+  user-select:none; z-index:3;
+}
+.col-resize::after{ content:''; position:absolute; top:20%; right:3px; width:2px; height:60%; background:transparent; border-radius:2px; }
+.col-resize:hover::after{ background:#93b4f5; }
+body.col-resizing{ cursor:col-resize !important; user-select:none; }
+body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry-table.reg-table-fill td{ user-select:none; }
+
+/* ===== Unified page-toolbar search input (Studies / Registry / Modules) =====
+   One look everywhere: full-width in its row, same padding/border/radius/font. */
+.viv-search{
+  flex:1 1 auto; width:100%; box-sizing:border-box; min-width:0; margin:0;
+  padding:8px 14px;
+  border:1px solid #d5dbe6; border-radius:8px;
+  font-size:0.9em; background:#fff; color:#1e293b;
+}
+.viv-search::placeholder{ color:#94a3b8; }
+.viv-search:focus{ outline:none; border-color:#93b4f5; box-shadow:0 0 0 2px rgba(147,180,245,.35); }
+:root[data-theme="dark"] .viv-search{ background:var(--surface); border-color:var(--border); color:var(--text); }
+
+/* Studies page has no sticky header (unlike Registry/Modules), so its tab row
+   needs the extra top gap to line up with those pages' tabs. */
+#page-investigations .iset-browse-tabs.registry-tabs{ margin-top:8px; }
 
 /* ===== About page (opened from the Vivarium brand logo) ===== */
 .about-page{ max-width:760px; margin:0 auto; padding:28px 24px 56px; }

@@ -3781,20 +3781,31 @@
       var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
       return sortDir === 'desc' ? -c : c;
     });
-    function th(key, label, cls) {
+    // Per-column widths (%), persisted across re-renders so a resize sticks.
+    var COLS = ['name', 'kind', 'module', 'use', 'studies', 'success', 'in', 'out', 'source'];
+    var W = (window._registryColWidths && window._registryColWidths.length === COLS.length)
+      ? window._registryColWidths
+      : [30, 9, 13, 8, 9, 10, 6, 6, 9];
+    window._registryColWidths = W;
+    var colgroup = '<colgroup>' + W.map(function (w) { return '<col style="width:' + w + '%">'; }).join('') + '</colgroup>';
+    function th(key, label, cls, idx) {
       var on = sortKey === key;
+      // Resize grip on every column but the last; stops the sort click.
+      var grip = (idx < COLS.length - 1)
+        ? '<span class="col-resize" onmousedown="_startColResize(event,' + idx + ')" onclick="event.stopPropagation()" title="Drag to resize"></span>'
+        : '';
       return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
-        '" onclick="_setRegistryTableSort(\'' + key + '\')">' + label +
-        (on ? (sortDir === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
+        '" onclick="_setRegistryTableSort(\'' + key + '\')"><span class="reg-th-label">' + label +
+        (on ? (sortDir === 'desc' ? ' ▾' : ' ▴') : '') + '</span>' + grip + '</th>';
     }
     var body = rows.map(function (p) {
       var sel = (window._registrySelected && window._registrySelected === p.address) ? ' reg-selected' : '';
       return '<tr class="reg-tr' + sel + '" data-source="' + _esc(p.source || '') + '" data-address="' + _esc(p.address || '') +
           '" onclick="_selectRegistryEntry(\'' + _esc(p.address || '') + '\')" ondblclick="_zoomInOn(\'' + _esc(p.address || '') + '\')"' +
           ' title="Click to select · double-click to zoom in on this process">' +
-        '<td class="reg-td-name"><strong>' + _esc(p.name) + '</strong> <code>' + _esc(p.address || '') + '</code></td>' +
+        '<td class="reg-td-name" title="' + _esc(p.address || p.name || '') + '"><strong>' + _esc(p.name) + '</strong> <code>' + _esc(p.address || '') + '</code></td>' +
         '<td class="reg-td-kind">' + (_procKindBadge(p.kind) || _esc(_procKindLabel(p.kind))) + '</td>' +
-        '<td>' + _esc(mod(p)) + '</td>' +
+        '<td title="' + _esc(mod(p)) + '">' + _esc(mod(p)) + '</td>' +
         '<td class="num">' + (p.use_count || 0) + '</td>' +
         '<td class="num">' + ((p.study_participation || {}).studies || 0) + '</td>' +
         '<td class="num">' + _successCell(p.study_participation) + '</td>' +
@@ -3803,12 +3814,41 @@
         '<td class="reg-td-src">' + _esc(p.source || '') + '</td>' +
       '</tr>';
     }).join('');
-    el.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
-      th('name', 'Name') + th('kind', 'Type') + th('module', 'Module') + th('use', 'Uses', 'num') +
-      th('studies', 'Studies', 'num') + th('success', 'Success', 'num') +
-      th('in', 'In', 'num') + th('out', 'Out', 'num') + th('source', 'Source') +
+    el.innerHTML = '<div class="registry-table-wrap"><table class="registry-table reg-table-fill">' + colgroup + '<thead><tr>' +
+      th('name', 'Name', '', 0) + th('kind', 'Type', '', 1) + th('module', 'Module', '', 2) + th('use', 'Uses', 'num', 3) +
+      th('studies', 'Studies', 'num', 4) + th('success', 'Success', 'num', 5) +
+      th('in', 'In', 'num', 6) + th('out', 'Out', 'num', 7) + th('source', 'Source', '', 8) +
       '</tr></thead><tbody>' + body + '</tbody></table></div>';
   }
+
+  // Drag a column's right-edge grip to resize it, stealing width from the next
+  // column so the table stays exactly as wide as the window (no hidden columns).
+  function _startColResize(e, i) {
+    e.preventDefault(); e.stopPropagation();
+    var table = e.target.closest('table');
+    var cols = table.querySelectorAll('colgroup col');
+    if (!cols[i] || !cols[i + 1]) return;
+    var startX = e.clientX, tableW = table.getBoundingClientRect().width || 1;
+    var wA = parseFloat(cols[i].style.width), wB = parseFloat(cols[i + 1].style.width);
+    function move(ev) {
+      var d = (ev.clientX - startX) / tableW * 100;
+      // Clamp so neither column collapses below a usable minimum.
+      d = Math.max(-(wA - 4), Math.min(wB - 4, d));
+      cols[i].style.width = (wA + d) + '%';
+      cols[i + 1].style.width = (wB - d) + '%';
+    }
+    function up() {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      document.body.classList.remove('col-resizing');
+      var out = []; cols.forEach(function (c) { out.push(parseFloat(c.style.width)); });
+      window._registryColWidths = out;   // persist across re-renders
+    }
+    document.body.classList.add('col-resizing');
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  }
+  window._startColResize = _startColResize;
 
   // Percent-success cell/chip from a study_participation stat (pass/total of
   // report-card outcomes across participating studies). '—' when none ran.
@@ -3826,6 +3866,9 @@
       window._registryTableSort = key;
       window._registryTableDir = (key === 'name' || key === 'module' || key === 'source') ? 'asc' : 'desc';
     }
+    // Keep the Sort dropdown + grid ordering in sync with header clicks.
+    window._registrySort = key;
+    var sel = document.getElementById('registry-sort'); if (sel) sel.value = key;
     _rerenderRegistryKinds();
   }
   window._setRegistryTableSort = _setRegistryTableSort;
@@ -3904,7 +3947,7 @@
       el.innerHTML = '<p class="empty-state">None registered.</p>';
       return;
     }
-    // Apply the (data-driven) search filter uniformly across every layout.
+    // Apply the (data-driven) text filter uniformly across every layout.
     if (window._registryFilter) {
       entries = entries.filter(_registryEntryMatches);
       if (!entries.length) {
@@ -3927,11 +3970,10 @@
     var cardsCls = 'reg-cards reg-cards-' + (zoom === 'full' ? 'full' : 'grid');
     var html = '';
 
-    // In-workspace and framework entries, sorted by USE (most-referenced first).
-    var primary = inWs.concat(framework).sort(function(a, b) {
-      return (b.use_count || 0) - (a.use_count || 0) ||
-             String(a.name || '').localeCompare(String(b.name || ''));
-    });
+    // In-workspace and framework entries, ordered by the current sort control.
+    var _sortKey = window._registrySort || 'use';
+    var primary = inWs.concat(framework).sort(function(a, b) { return _registryGridCmp(a, b, _sortKey); });
+    envOnly.sort(function(a, b) { return _registryGridCmp(a, b, _sortKey); });
     if (primary.length) {
       html += '<div class="' + cardsCls + '">' + primary.map(_renderRegistryEntry).join('') + '</div>';
     } else {
@@ -4052,11 +4094,59 @@
   // Data-driven filter: store the query and re-render so it works uniformly
   // across the Table / Cards / Full layouts (the old per-.registry-entry DOM
   // hide didn't match the new table rows or grid cards).
+  // Sort state (default: most-used first). Ordering — including grouping by
+  // Type or Source — is handled by the Sort control; there is no facet filter.
+  window._registrySort = window._registrySort || 'use';
+
   function _filterRegistry(query) {
-    window._registryFilter = (query || '').toLowerCase().trim();
+    // Pull an optional `sort:` token out; the remainder is a free-text match.
+    var text = (query || '').replace(/\bsort:([a-z_%]+)/gi, function (_m, val) {
+      window._registrySort = val.toLowerCase(); return '';
+    });
+    window._registryFilter = text.toLowerCase().trim();
+    var sel = document.getElementById('registry-sort'); if (sel) sel.value = window._registrySort || 'use';
     _rerenderRegistryKinds();
   }
   window._filterRegistry = _filterRegistry;
+
+  function _setRegistrySort(val) {
+    window._registrySort = val || 'use';
+    // Keep the table's header-sort in sync so the order is stable across zooms.
+    window._registryTableSort = window._registrySort;
+    window._registryTableDir = (val === 'name' || val === 'kind' || val === 'source' || val === 'module') ? 'asc' : 'desc';
+    _rerenderRegistryKinds();
+  }
+  window._setRegistrySort = _setRegistrySort;
+
+  // Shared ordering comparator (grid + full). Table has its own dir-aware sort
+  // via clickable headers, kept in sync through _setRegistrySort.
+  function _registryGridCmp(a, b, key) {
+    function studies(p) { return (p.study_participation || {}).studies || (typeof p.studies === 'number' ? p.studies : 0) || 0; }
+    function succ(p) { var s = (p.study_participation || {}).success_pct; return s == null ? -1 : s; }
+    var byName = String(a.name || '').localeCompare(String(b.name || ''));
+    if (key === 'name') return byName;
+    if (key === 'kind') return _procKindLabel(a.kind).localeCompare(_procKindLabel(b.kind)) || byName;
+    if (key === 'source') return String(a.source || '').localeCompare(String(b.source || '')) || byName;
+    if (key === 'studies') return (studies(b) - studies(a)) || byName;
+    if (key === 'success') return (succ(b) - succ(a)) || byName;
+    return ((b.use_count || 0) - (a.use_count || 0)) || byName;   // 'use' (default)
+  }
+
+  // Composite ordering for the Sort control. Composites carry study info under
+  // `studies` (an object with .studies/.success_pct) and `workspace_local`
+  // instead of a process's `study_participation`/`source`, and have no
+  // Temporal/Step kind or use-count — so they get their own comparator.
+  function _compositeSortCmp(a, b, key) {
+    function studies(c) { return ((c.study_participation || c.studies || {}).studies) || 0; }
+    function succ(c) { var s = (c.study_participation || c.studies || {}).success_pct; return s == null ? -1 : s; }
+    var byName = String(a.name || '').localeCompare(String(b.name || ''));
+    var wsFirst = (a.workspace_local ? 0 : 1) - (b.workspace_local ? 0 : 1);
+    if (key === 'name') return byName;
+    if (key === 'studies') return (studies(b) - studies(a)) || byName;
+    if (key === 'success') return (succ(b) - succ(a)) || byName;
+    if (key === 'source') return wsFirst || byName;
+    return wsFirst || byName;   // 'use' (default) / 'kind' — keep workspace-first, then name
+  }
 
   function _registryEntryMatches(p) {
     var q = window._registryFilter;
@@ -4105,8 +4195,10 @@
   }
 
   function _loadRegistry(refresh) {
+    // The tab panels show their own "Loading…" placeholder, so leave the status
+    // line blank during load (it's still used for error messages below).
     var status = document.getElementById('registry-status');
-    if (status) status.textContent = 'Loading…';
+    if (status) status.textContent = '';
     var _p = window.DataSource
       ? window.DataSource.loadRegistry(refresh)
       : fetch('/api/registry' + (refresh ? '?refresh=1' : '')).then(function(r) { return r.json(); });
@@ -4165,12 +4257,12 @@
           if (!el) return;
           var wsCount = entries.filter(function(e) { return e.source === 'in_workspace'; }).length;
           var total = entries.length;
-          if (wsCount === total) {
-            el.textContent = total;
-          } else {
-            el.textContent = wsCount + ' / ' + total;
-            el.title = wsCount + ' from this workspace, ' + (total - wsCount) + ' from environment';
-          }
+          // Always show the plain total (like every other tab); the workspace vs
+          // environment split lives in the tooltip rather than a cryptic "0 / 6".
+          el.textContent = total;
+          el.title = (wsCount === total)
+            ? total + ' total'
+            : wsCount + ' from this workspace, ' + (total - wsCount) + ' from environment';
         };
         setCount('registry-process-count', procsAndSteps);
         setCount('registry-emitter-count', byKind.emitter);
@@ -4965,11 +5057,9 @@
         : '<p class="empty-state">No composites registered.</p>';
       return;
     }
-    // Workspace-local first, then by name.
-    list = list.slice().sort(function (a, b) {
-      return ((a.workspace_local ? 0 : 1) - (b.workspace_local ? 0 : 1)) ||
-             String(a.name || '').localeCompare(String(b.name || ''));
-    });
+    // Honour the Sort control (default keeps workspace-local first, then name).
+    var _sortKey = window._registrySort || 'use';
+    list = list.slice().sort(function (a, b) { return _compositeSortCmp(a, b, _sortKey); });
     // Semantic zoom: Table (dense) → Cards (grid + usage) → Full (accordion).
     var zoom = window._registryZoom || 'grid';
     if (zoom === 'table') { el.innerHTML = _renderCompositeTableHtml(list); return; }
@@ -9106,11 +9196,9 @@
   function _setIsetBrowseTab(tab) {
     window._isetBrowseTab = tab;
     document.querySelectorAll('.iset-browse-tab').forEach(function (b) {
-      var on = b.getAttribute('data-browse') === tab;
-      b.classList.toggle('active', on);
-      b.style.color = on ? '#1e293b' : '#64748b';
-      b.style.fontWeight = on ? '600' : '400';
-      b.style.borderBottomColor = on ? '#3b82f6' : 'transparent';
+      // Styling comes from the shared .registry-tab / .registry-tab.active CSS
+      // (same as the Modules/Registry tabs) — just toggle the class.
+      b.classList.toggle('active', b.getAttribute('data-browse') === tab);
     });
     var createBtn = document.getElementById('iset-browse-create');
     if (createBtn) createBtn.textContent = (tab === 'studies') ? '+ Study' : '+ Investigation';
@@ -10998,24 +11086,9 @@
   }
   window._setAigBand = _setAigBand;
 
-  // Wheel semantic-zooms bands ONLY when the pointer is over a study card; over
-  // the graph background the wheel is left alone so the page scrolls normally
-  // (so you can scroll past the graph without it hijacking the wheel). One notch
-  // per gesture, with a threshold + cooldown so a single scroll doesn't skip
-  // bands.
-  (function _wireAigWheel() {
-    var lastWheel = 0;
-    document.addEventListener('wheel', function (ev) {
-      var card = ev.target && ev.target.closest && ev.target.closest('.iset-dag-node');
-      if (!card) return;                                  // background → page scrolls
-      ev.preventDefault();
-      var now = Date.now();
-      if (now - lastWheel < 220) return;                  // cooldown between steps
-      if (Math.abs(ev.deltaY) < 4) return;
-      lastWheel = now;
-      _setAigBand(aigBand + (ev.deltaY > 0 ? -1 : 1));    // scroll down = zoom out
-    }, { passive: false });
-  })();
+  // Semantic zoom is driven ONLY by the top-right zoom slider (_setAigBand).
+  // Scroll-to-zoom-into-a-card was removed intentionally — hijacking the wheel
+  // over cards was confusing; the wheel now always scrolls the page normally.
 
   // ── DAG follow-ups popover ───────────────────────────────────────────────
   // Surfaced when phase=Decide. Lists each follow_up_studies entry with a
