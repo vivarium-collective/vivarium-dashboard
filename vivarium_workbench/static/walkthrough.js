@@ -6412,6 +6412,15 @@
     return 'https://github.com/vivarium-collective/' + repo;
   }
   // Merge the catalog (repo universe) with loaded artifacts (fine per-type counts).
+  // viva-* UI label for a module/repo name — mirrors catalog._viva_display_name
+  // so artifact-derived repos (no curated display_name) still read viva-*.
+  // pbg-torch / pbg_torch -> viva-torch; already-viva / non-pbg pass through.
+  function _vivaLabel(name) {
+    if (!name) return name;
+    var s = String(name), low = s.toLowerCase();
+    if (low.indexOf('pbg-') === 0 || low.indexOf('pbg_') === 0) return 'viva-' + s.slice(4).replace(/_/g, '-');
+    return s;
+  }
   function _marketRepoList() {
     var wsName = _marketRepoNorm(window._workspaceName || '');
     var byRepo = {};
@@ -6432,6 +6441,9 @@
       if (m.description && !b.desc) b.desc = m.description;
       if (m.installed === false) b.installed = false;
       if (!b.installName) b.installName = m.name || m.package || '';
+      // viva-* UI label (catalog carries it; name/installName stay pbg-* so
+      // install/uninstall resolution is unchanged). Workspace pkg has none.
+      if (m.display_name && !b.display_name) b.display_name = m.display_name;
       b._cat = m;
     });
     // 2) Per-type counts from the loaded registry/composites/studies/investigations.
@@ -6521,7 +6533,7 @@
     return '<div class="market-card repo-card' + (b.isWorkspace ? ' repo-card-ws' : '') + '">'
       + '<div class="repo-card-head">'
       +   '<span class="repo-ico">📦</span>'
-      +   '<a class="repo-name" href="' + _esc(b.url) + '" target="_blank" rel="noopener">' + _esc(b.repo) + '</a>'
+      +   '<a class="repo-name" href="' + _esc(b.url) + '" target="_blank" rel="noopener">' + _esc(_vivaLabel(b.display_name || b.repo)) + '</a>'
       +   _repoBadge(b)
       + '</div>'
       + (b.desc ? '<div class="repo-desc">' + _esc(b.desc) + '</div>' : '')
@@ -6533,7 +6545,7 @@
     return '<div class="market-card repo-card repo-card-detail' + (b.isWorkspace ? ' repo-card-ws' : '') + '">'
       + '<div class="repo-card-head">'
       +   '<span class="repo-ico">📦</span>'
-      +   '<a class="repo-name" href="' + _esc(b.url) + '" target="_blank" rel="noopener">' + _esc(b.repo) + '</a>'
+      +   '<a class="repo-name" href="' + _esc(b.url) + '" target="_blank" rel="noopener">' + _esc(_vivaLabel(b.display_name || b.repo)) + '</a>'
       +   _repoBadge(b)
       + '</div>'
       + (b.desc ? '<div class="repo-desc repo-desc-full">' + _esc(b.desc) + '</div>' : '')
@@ -6558,7 +6570,7 @@
         ? '<span class="repo-affected" title="studies in your investigations that depend on this repo">' + b.affected + '</span>'
         : '<span class="repo-td-zero">—</span>';
       return '<tr class="repo-tr">'
-        + '<td class="market-td-name">📦 ' + _esc(b.repo)
+        + '<td class="market-td-name">📦 ' + _esc(_vivaLabel(b.display_name || b.repo))
         +   (b.desc ? '<span class="market-td-desc">' + _esc(b.desc) + '</span>' : '') + '</td>'
         + '<td>' + _repoBadge(b) + '</td>'
         + '<td class="repo-td-num">' + (b.process || '—') + '</td>'
