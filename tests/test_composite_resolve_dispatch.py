@@ -205,3 +205,55 @@ def test_resolve_generator_with_corrupt_artifact_degrades(tmp_path, monkeypatch)
     assert out is not None and out["wiring_status"] == "unavailable"
     assert out["state"] is None
     assert "not generated yet" in out["notice"]
+
+
+def test_resolve_generator_override_build_error_surfaces(tmp_path, monkeypatch):
+    """A Config → Apply whose overrides make the generator build RAISE (e.g. a
+    single-value param handed a comma-list) must surface the exception — NOT
+    silently fall back to the default (unoverridden) wiring, which would look
+    like the invalid config had been accepted."""
+    from process_bigraph import composite_spec as cs
+    from vivarium_workbench.lib import composite_resolve as cr
+    cs.clear_registry()
+    spec = cs.CompositeSpec(
+        id="m.g", name="g", builder=lambda core=None, **kw: {"state": {"x": {}}},
+        default_state_ref="m.g.default-state.json",
+        parameters={"simulator": {"type": "string", "default": "simbio"}},
+    )
+    cs.register(spec)
+    monkeypatch.setattr(cr, "_prime_registry", lambda: None)
+    # default_state would happily return the UNOVERRIDDEN wiring — the fix must
+    # not reach it once an override build has failed.
+    monkeypatch.setattr(spec, "default_state", lambda *a, **k: {"simbio_process": {}})
+    monkeypatch.setattr(
+        cr, "_live_generator_build",
+        lambda ws, sid, ov=None: (None, "needs exactly one simulator, got ['copasi', 'tellurium']"),
+    )
+    out = cr.resolve_composite(tmp_path, "m.g", overrides={"simulator": "copasi, tellurium"})
+    assert out["wiring_status"] == "error"
+    assert out["state"] is None                       # NOT the default fallback
+    assert "one simulator" in (out["notice"] or "")
+    assert "one simulator" in (out["error"] or "")
+
+
+def test_resolve_generator_override_build_ok_still_resolves(tmp_path, monkeypatch):
+    """A valid override build resolves normally (the error path must not regress
+    the happy path)."""
+    from process_bigraph import composite_spec as cs
+    from vivarium_workbench.lib import composite_resolve as cr
+    from vivarium_workbench.lib import process_docs
+    cs.clear_registry()
+    spec = cs.CompositeSpec(
+        id="m.g", name="g", builder=lambda core=None, **kw: {"state": {"copasi_process": {}}},
+        parameters={"simulator": {"type": "string", "default": "simbio"}},
+    )
+    cs.register(spec)
+    monkeypatch.setattr(cr, "_prime_registry", lambda: None)
+    monkeypatch.setattr(cr, "_live_generator_build",
+                        lambda ws, sid, ov=None: ({"copasi_process": {}}, None))
+    # attach_process_docs_via_worker needs the env worker; identity for the test.
+    monkeypatch.setattr(process_docs, "attach_process_docs_via_worker",
+                        lambda ws, state, spec_id=None: state)
+    out = cr.resolve_composite(tmp_path, "m.g", overrides={"simulator": "copasi"})
+    assert out["wiring_status"] == "ready"
+    assert out["state"] == {"copasi_process": {}}
