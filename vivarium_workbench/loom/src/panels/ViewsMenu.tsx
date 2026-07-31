@@ -142,7 +142,8 @@ export default function ViewsMenu(props: {
         onClick={() => setOpen((v) => !v)}
         title="Save / restore named views (arrangement + visibility)"
         style={{
-          padding: '4px 10px', fontSize: 12, background: '#fff',
+          height: 28, padding: '0 10px', fontSize: 12, background: '#fff',
+          display: 'inline-flex', alignItems: 'center',
           border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer', color: '#374151',
         }}
       >
