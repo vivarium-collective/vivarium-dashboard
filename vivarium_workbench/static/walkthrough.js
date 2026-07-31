@@ -2780,13 +2780,12 @@
   // {status, progress_step, n_steps, ...} and, on completion, viz_html.
   function _pollCompositeRun(card, runId) {
     var panel = card.querySelector('[data-role="out-panel"]'); if (!panel) return;
-    var api = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
-    var dl = api('/api/composite-run/' + encodeURIComponent(runId) + '/download');
+    var dl = _api('/api/composite-run/' + encodeURIComponent(runId) + '/download');
     var runsLink = '<a href="#simulations" onclick="_switchPage(\'simulations\');return false;">Runs</a>';
     card._pollRun = runId;   // guard: a newer run supersedes this poll
     var tick = function () {
       if (card._pollRun !== runId) return;   // superseded
-      fetch(api('/api/composite-run/' + encodeURIComponent(runId) + '/status'))
+      fetch(_api('/api/composite-run/' + encodeURIComponent(runId) + '/status'))
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {
           if (card._pollRun !== runId) return;
@@ -2808,7 +2807,7 @@
             if (viz && typeof viz === 'object' && !Array.isArray(viz)) {
               Object.keys(viz).forEach(function (k) { if (typeof viz[k] === 'string' && viz[k].trim()) htmls.push(viz[k]); });
             } else if (typeof viz === 'string' && viz.trim()) { htmls.push(viz); }
-            var art = function (name, label) { return '<a href="' + _esc(api('/api/composite-run/' + encodeURIComponent(runId) + '/artifact/' + name)) + '" target="_blank" rel="noopener">' + label + '</a>'; };
+            var art = function (name, label) { return '<a href="' + _esc(_api('/api/composite-run/' + encodeURIComponent(runId) + '/artifact/' + name)) + '" target="_blank" rel="noopener">' + label + '</a>'; };
             var links = ['<a href="' + _esc(dl) + '" target="_blank" rel="noopener">Download ZIP</a>'];
             if (j.has_report) links.push(art('report', 'Report'));
             if (j.has_analyses) links.push(art('analyses', 'Analyses'));
@@ -2978,7 +2977,7 @@
     var payload = { id: id, steps: steps, overrides: overrides, label: (c.name || 'composite') + '-run' };
     var orig = btn.textContent; btn.disabled = true; btn.textContent = 'Launching…';
     if (status) { status.classList.remove('pcard-apply-err'); status.textContent = 'launching run…'; }
-    fetch('/api/composite-test-run', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    fetch(_api('/api/composite-test-run'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
       .then(function (res) {
         btn.disabled = false; btn.textContent = orig;
