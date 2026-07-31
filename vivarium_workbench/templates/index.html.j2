@@ -190,7 +190,9 @@ window.addEventListener('pageshow', function (e) {
 }
 .viv-wsp-trigger-caret { color: #94a3b8; font-size: 11px; flex: 0 0 auto; }
 
-.viv-wsp-dot { flex: 0 0 auto; font-size: 11px; line-height: 1; }
+/* Fixed 20px icon-slot (matches the nav-link icons) so the status dot centers on
+   the same vertical axis in BOTH rail states and never shifts or resizes. */
+.viv-wsp-dot { flex: 0 0 20px; width: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; }
 .viv-wsp-ready { color: #16a34a; } .viv-wsp-stopped { color: #94a3b8; }
 .viv-wsp-stale { color: #d97706; } .viv-wsp-missing { color: #dc2626; } .viv-wsp-remote { color: #7c3aed; }
 /* Read-only snapshot: the status dot is grey (not a running local workspace). */
@@ -206,7 +208,7 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-names,
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-caret { display: none; }
 .viv-rail.viv-rail-collapsed .viv-wsp-trigger-current { flex: 0 0 auto; gap: 0; }
-.viv-rail.viv-rail-collapsed .viv-wsp-dot { font-size: 15px; }
+/* Dot keeps its expanded size in the collapsed rail (no resize on toggle). */
 
 .viv-wsp-menu {
   /* FIXED, not absolute: the rail's overflow-x:hidden would clip an absolute
