@@ -111,11 +111,14 @@
       }
       return esc(k) + "=" + esc(String(v));
     });
-    var shown = parts.slice(0, 3).join(" · ");
-    var more = parts.length > 3 ? " +" + (parts.length - 3) : "";
+    var shown = parts.slice(0, 4).join(" · ");
+    var more = parts.length > 4 ? " +" + (parts.length - 4) : "";
     var full = JSON.stringify(c, null, 2);
-    return '<code style="font-size:11px;color:#6b7280;display:block;overflow:hidden;' +
-      'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(full) + '">' +
+    // Clickable: opens a popover with the full config + "Copy JSON" — wired in
+    // renderTable() and the #simulations delegated handler.
+    return '<code class="sim-config" data-config="' + esc(full) + '" role="button" tabindex="0" ' +
+      'style="font-size:11px;color:#6b7280;display:block;overflow:hidden;text-overflow:ellipsis;' +
+      'white-space:nowrap;cursor:pointer;" title="Click to show the full config &amp; copy JSON">' +
       shown + esc(more) + "</code>";
   }
 
@@ -327,7 +330,7 @@
       'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(runId + (row.db_path ? "\n" + row.db_path : "")) +
       '">' + esc(runLabel) + "</code>", "overflow:hidden;");
     cells += td(composite(row), "overflow:hidden;");
-    cells += td(config(row), "overflow:hidden;max-width:220px;");
+    cells += td(config(row), "overflow:hidden;max-width:320px;");
     cells += td(location(row), "overflow:hidden;");
     cells += td(originPill(row));
     cells += td(emitterPill(row.emitter_type));
@@ -415,6 +418,13 @@
         var rid = link.getAttribute("data-run-id");
         var row = rows.find(function (r) { return (r.run_id || "") === rid; });
         if (row && window._openCompositeFromRun) window._openCompositeFromRun(row);
+      });
+    });
+    // Config cell: click to open a popover with the full config + Copy JSON.
+    mount.querySelectorAll(".sim-config").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (window._showConfigPopover) window._showConfigPopover(el);
       });
     });
     // Location cell: click to reveal the full path (wrap) and copy it.

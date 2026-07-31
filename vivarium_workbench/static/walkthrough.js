@@ -20326,6 +20326,54 @@
   }
   window._revealAndCopyLoc = _revealAndCopyLoc;
 
+  // Popover showing a run's FULL config as formatted JSON, with a Copy button.
+  // Anchored to the clicked ".sim-config" cell; dismissed on outside-click/Esc.
+  function _showConfigPopover(el) {
+    var existing = document.getElementById('sim-config-popover');
+    if (existing) existing.remove();
+    var json = el.getAttribute('data-config') || '{}';
+    var pop = document.createElement('div');
+    pop.id = 'sim-config-popover';
+    pop.style.cssText = 'position:fixed;z-index:3000;min-width:300px;max-width:min(560px,92vw);' +
+      'background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 10px 34px rgba(15,23,42,.20);padding:10px 12px';
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:6px';
+    head.innerHTML = '<strong style="font-size:0.82em;text-transform:uppercase;letter-spacing:0.06em;color:#334155;flex:1">Run config</strong>';
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button'; copyBtn.className = 'btn-mini'; copyBtn.textContent = '⧉ Copy JSON';
+    copyBtn.onclick = function (ev) {
+      ev.stopPropagation();
+      var orig = copyBtn.textContent;
+      var ok = function (good) { copyBtn.textContent = good ? '✓ Copied' : '✗ Failed'; setTimeout(function () { copyBtn.textContent = orig; }, 1400); };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(json).then(function () { ok(true); }, function () { ok(false); });
+        else { var ta = document.createElement('textarea'); ta.value = json; document.body.appendChild(ta); ta.select(); var g = false; try { g = document.execCommand('copy'); } catch (e) { g = false; } document.body.removeChild(ta); ok(g); }
+      } catch (e) { ok(false); }
+    };
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button'; closeBtn.className = 'btn-mini'; closeBtn.textContent = '✕';
+    closeBtn.title = 'Close'; closeBtn.onclick = function (ev) { ev.stopPropagation(); pop.remove(); };
+    head.appendChild(copyBtn); head.appendChild(closeBtn);
+    var pre = document.createElement('pre');
+    pre.textContent = json;
+    pre.style.cssText = 'margin:0;font-size:11.5px;line-height:1.45;color:#1f2937;white-space:pre;' +
+      'max-height:min(60vh,420px);overflow:auto;background:#f8fafc;border:1px solid #eef2f7;border-radius:7px;padding:8px 10px';
+    pop.appendChild(head); pop.appendChild(pre);
+    document.body.appendChild(pop);
+    // Position below the cell, clamped to the viewport.
+    var r = el.getBoundingClientRect();
+    var w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+    var top = (r.bottom + 6 + h > window.innerHeight) ? Math.max(8, r.top - h - 6) : r.bottom + 6;
+    pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    // Dismiss on outside click / Esc.
+    var onDoc = function (ev) { if (!pop.contains(ev.target) && ev.target !== el) { cleanup(); } };
+    var onKey = function (ev) { if (ev.key === 'Escape') cleanup(); };
+    function cleanup() { pop.remove(); document.removeEventListener('mousedown', onDoc, true); document.removeEventListener('keydown', onKey, true); }
+    setTimeout(function () { document.addEventListener('mousedown', onDoc, true); document.addEventListener('keydown', onKey, true); }, 0);
+  }
+  window._showConfigPopover = _showConfigPopover;
+
   function _renderSimRow(row) { return window.SimTable.renderRow(row, { scope: 'full' }); }
 
   // Client-side column sort for the Simulations DB table. Purely a rendering
@@ -20445,6 +20493,9 @@
         // Location → reveal the full path (wrap) and copy it to the clipboard.
         var loc = e.target.closest('.sim-loc');
         if (loc) { e.stopPropagation(); _revealAndCopyLoc(loc); return; }
+        // Config → popover with the full config JSON + Copy JSON.
+        var cfg = e.target.closest('.sim-config');
+        if (cfg) { e.stopPropagation(); _showConfigPopover(cfg); return; }
         if (e.target.closest('a, button, .action-btn')) return;
         var tr = e.target.closest('tr[data-run-id]');
         if (!tr) return;
