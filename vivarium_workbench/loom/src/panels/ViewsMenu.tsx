@@ -146,7 +146,7 @@ export default function ViewsMenu(props: {
           border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer', color: '#374151',
         }}
       >
-        Views ▾
+        Views
       </button>
 
       {open && (
