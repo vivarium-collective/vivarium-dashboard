@@ -95,14 +95,23 @@ and `v2ecoli/docs/superpowers/specs/2026-06-29-study-report-card-modules-design.
 2. **On-disk model:** studies/investigations become **native composite documents** on disk
    with a **one-shot migrator** from the existing `study.yaml` / `investigation.yaml`
    (~250 studies, 13 investigations).
-3. **Study execution:** **one step network + one finalize hook** (corrected 2026-07-31 —
-   *not* "no phases"). `Emitter` gains a `results` output port, so the emitter is an ordinary
-   **producer** and the flush entities are ordinary **consumers**, correctly ordered — proven
-   (PR #160). But `results` is definitionally a **completion-time** value and the step network
-   is definitionally **per-tick**, so flush steps can't just live in the per-tick DAG (they'd
-   fire every tick). The honest win: the barrier stops being a **two-phase document** (Phase 1 /
-   barrier / Phase 2) and becomes **one `finalize()` lifecycle hook on one edge** — flush is
-   ordinary steps wired to an ordinary port, run once at completion.
+3. **Study execution:** **a higher-order DAG — no phases, no finalize marker**
+   (corrected 2026-07-31, then *proven* — supersedes the interim "one finalize hook" wording).
+   `Emitter` gains a `results` output port (PR #160), so the emitter is an ordinary **producer**
+   and flush entities are ordinary **consumers**. The escape from the per-tick trap is
+   **structural, not a lifecycle hook**: the study is an **outer composite** whose step network
+   is `[ sim : Step (outputs results) → flush : Step (inputs results) ]`. The **whole simulation
+   is ONE node** in that outer network — its per-tick processes live *inside* the sim node, so
+   the outer network's `process_paths` is **empty** and the per-tick cadence never reaches the
+   flush steps. `results` crosses the sim node's bridge at **completion** (a composite-as-node
+   completes when its `update()` returns; the emitter handles are read there). Flush steps are
+   then ordered by ordinary step-DAG rules and each fires **exactly once** after the sim node.
+   **Proven** (Fable, `d57ab7b`): flush firings = 1 at sim runtimes 2.0 / 8.0 / 20.0 —
+   independent of length, the signature that the sim is one node; per-tick = 0. **No `_finalize`
+   marker, no scheduler change, no two-phase document.** One caveat that fixes itself: the sim
+   node must be a **Step** (not a Process) — `build_step_network` only orders Steps, so a Process
+   producing `results` is invisible to the step DAG and flush fires twice; as a Step it's in the
+   DAG. This has in-tree ancestry (`RunProcess` in `processes/parameter_scan.py`).
 4. **Emitter seam:** the emitter's `results` port carries the durable handle
    (store ref + `sim_data` context); the **emitter-polymorphic extractor** is a normal step
    that reads it. Durability is a property of one edge, not a stage of the engine.
@@ -135,35 +144,44 @@ Layer-1 spec (`bigraph-schema/docs/superpowers/specs/2026-07-30-template-slot-pr
 - **Blocking prerequisite:** the `compose` link-branch is untested and its wire target is
   suspect (Layer-1 §2/§6 Task 0) — prove it on a real wired document before building up.
 
-### Layer 1 — process-bigraph: Study = one step network
+### Layer 1 — process-bigraph: Study = a higher-order DAG (sim is one node)
 
-One study document, **one** network — no phases, no barrier. The barrier was an artifact of
-a one-line omission: `Emitter.update` returns `{}` (`emitter.py:159`), so
-`build_step_network` gives an emitter no outputs and nothing can depend on it. **Fix: give
-`Emitter` one output port, `results`**, written at finalize, carrying the durable handle
-(store ref + `sim_data` context). Then everything downstream is an ordinary edge:
+One study document, **one outer step network** — no phases, no barrier, no finalize marker.
+The starting defect was a one-line omission: `Emitter.update` returned `{}` (`emitter.py:159`),
+so `build_step_network` gave an emitter no outputs and nothing could depend on it. **Fix: give
+`Emitter` one output port, `results`** (PR #160), carrying the durable handle (store ref +
+`sim_data` context). But the per-tick trap remained — `results` is completion-time, a per-tick
+DAG would flush every tick. The resolution is **structural**: nest the whole simulation as a
+**single node** in an outer study network.
 
 ```
-Study document (one step network, run(0.0)):
-  sim composite(s) ──emit──► emitter [results ●] ──► [extractor] ──► results store (xarray + sim_data)
-                               │ persists → runs.db/zarr        results ──► [ viz_* | analysis_* | report_card_* ]
-                                                                                        └──► artifacts/  ← study OUTPUT
+Study document = OUTER composite (a pure step network; outer process_paths is EMPTY):
+  sim : Step  ── outputs {results} ──►  flush : Step ── inputs {results} ──► artifacts/  ← study OUTPUT
+  └─ the WHOLE simulation composite, one node ─┘        └ viz_* | analysis_* | report_card_*, ordinary steps ┘
+     (its per-tick processes live INSIDE — invisible to the outer step DAG)
 ```
 
-- The emitter's **`results` port** is the persistence boundary *and* a normal producer store;
-  the **extractor** is an ordinary downstream step (emitter-polymorphic, generalizing
-  `gather_emitter_results`) that materializes the standardized **`results` handle** (today's
-  `RunExtract` context). Flush entities read only `results`, never the raw emitter.
-- The composite's declared `visualizations`/`analyses`/`report_cards` are just edges wired to
-  `results` — **the step network *is* the flush DAG**; no separate flush assembler exists.
-- Durability is a property of one edge (the emitter's `results` port), and completion is a
-  single `finalize()` hook — **not** a two-phase document. ("One engine, no phases" is *not*
-  literally achievable: `results` is completion-time, the step network is per-tick. The real,
-  defensible win is barrier-as-two-phases → **one lifecycle hook on one edge**. PR #160.)
+- The **sim node is one Step** whose inner composite runs to completion; its per-tick processes
+  are *inside* it, so the outer network's `process_paths` is empty and the per-tick cadence never
+  reaches the flush steps. **Must be a Step, not a Process** — `build_step_network` only orders
+  Steps; a Process producing `results` is invisible to the step DAG and flush would fire twice.
+  In-tree ancestry: `RunProcess` in `processes/parameter_scan.py` (`SimulationStep` gives it a
+  real home — PR #160 follow-up).
+- `results` **crosses the sim node's bridge at completion** — a composite-as-node completes when
+  its `update()` returns, and the emitters are asked for their handles there. Flush entities read
+  only `results`, never the raw emitter.
+- The composite's declared `visualizations`/`analyses`/`report_cards` are just outer steps wired
+  to `results` — **the outer step network *is* the flush DAG**; no separate flush assembler, no
+  finalize pass. Each fires **exactly once** after the sim node (ordinary step ordering).
+- **Proven** (`d57ab7b`): flush firings = 1 across sim runtimes 2.0 / 8.0 / 20.0 (independent of
+  length ⇒ the sim really is one node); per-tick-during-sim = 0; the single firing holds the live
+  `EmitterResults`, `rows == handle.resolve()`. **No `_finalize`, no scheduler change, no
+  two-phase document** — the earlier "one finalize hook" wording is superseded by this.
 - **Study output = the artifact set** (verdicts, cards, figures, analyses).
-- **Ownership split:** the *generic* machinery (two-phase runner, the `results` contract, the
-  extractor substep, assembling the flush network from a composite's declared
-  `visualizations`/`analyses`/`report_cards`) lives in process-bigraph; the *domain* Steps
+- **Ownership split:** the *generic* machinery (`SimulationStep` = the sim-as-one-node wrapper,
+  the `results` contract, the emitter handle, assembling the outer flush network from a
+  composite's declared `visualizations`/`analyses`/`report_cards`) lives in process-bigraph; the
+  *domain* Steps
   (v2ecoli's cards, viva_munk's viz) stay in their packages and self-register via the existing
   discovery mechanism.
 
@@ -260,9 +278,9 @@ earlier):
 
 1. **bigraph-schema — `fill` + `is_ground`.** Keystone; everything depends on it. Blocking
    Task 0: prove `compose` on a real wired document. *(spec lands in bigraph-schema — PR #174)*
-2. **process-bigraph — Study two-phase composite.** The `results` contract, the
-   emitter-polymorphic extractor substep, and flush-network assembly; replaces the imperative
-   flush/run cores. *(spec lands in process-bigraph)*
+2. **process-bigraph — Study as a higher-order DAG.** The `results` contract, `SimulationStep`
+   (sim-as-one-node), and outer flush-network assembly; replaces the imperative flush/run cores.
+   *(shipped: PR #160, proven `d57ab7b`)*
 3. **process-bigraph — Investigation composite.** Gating-as-wiring (block semantics), gate-store
    convention. *(spec lands in process-bigraph)*
 4. **vivarium-workbench — migrator + orchestrator slimming + UI.** Native composite docs on
@@ -272,8 +290,10 @@ earlier):
 
 ## 8. Risks & things to watch
 
-- **The "fire once after the sim" subtlety is deliberately avoided** by the two-phase barrier;
-  do not let Phase-2 steps get wired to per-tick emitter updates.
+- **The "fire once after the sim" subtlety is handled structurally** by nesting the sim as one
+  Step node — the flush steps are outer-network siblings of that node, not of its per-tick
+  interior. The one trap: make the sim node a **Step**, never a Process (a Process producing
+  `results` is invisible to `build_step_network` → flush fires twice). Proven, `d57ab7b`.
 - **Emitter polymorphism** is the crux of the extractor substep — the `results` contract must be
   rich enough that no flush entity ever needs the raw emitter. If a flush entity needs something
   the contract lacks, extend the contract, not the entity.
