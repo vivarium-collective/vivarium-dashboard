@@ -423,8 +423,8 @@ wheels = [
 
 [[package]]
 name = "bigraph-schema"
-version = "1.4.3"
-source = { git = "https://github.com/vivarium-collective/bigraph-schema.git?branch=main#5004769e01036e88366a510d1a36fa390b284dc4" }
+version = "1.4.5"
+source = { git = "https://github.com/vivarium-collective/bigraph-schema.git?branch=main#d0d5512f7a97a134202db46df73b3f4c7ca6e905" }
 dependencies = [
     { name = "fire", marker = "python_full_version == '3.12.12'" },
     { name = "numpy", marker = "python_full_version == '3.12.12'" },
@@ -1376,7 +1376,7 @@ wheels = [
 [[package]]
 name = "ecoli-sources"
 version = "0.0.1"
-source = { git = "https://github.com/vivarium-collective/ecoli-sources.git?rev=e0fcfab181de59666b9f8ad2d1cb80ffe5c2a314#e0fcfab181de59666b9f8ad2d1cb80ffe5c2a314" }
+source = { git = "https://github.com/vivarium-collective/ecoli-sources.git?rev=6ccbe3e8ea5d985855ae3697979ce565b691a67c#6ccbe3e8ea5d985855ae3697979ce565b691a67c" }
 dependencies = [
     { name = "anndata", marker = "python_full_version == '3.12.12'" },
     { name = "jupyter", marker = "python_full_version == '3.12.12'" },
@@ -4822,8 +4822,8 @@ wheels = [
 
 [[package]]
 name = "process-bigraph"
-version = "1.5.0"
-source = { git = "https://github.com/vivarium-collective/process-bigraph.git?branch=main#355fa15c7ec44d630c5658f96dbfc94980bb7720" }
+version = "1.6.0"
+source = { git = "https://github.com/vivarium-collective/process-bigraph.git?branch=main#130db126cc4989359ed8e3fff3d2d4a7ccc642dc" }
 dependencies = [
     { name = "bigraph-schema", marker = "python_full_version == '3.12.12'" },
     { name = "matplotlib", marker = "python_full_version == '3.12.12'" },
@@ -7234,9 +7234,9 @@ requires-dist = [
     { name = "biopython" },
     { name = "cvxpy" },
     { name = "dill", specifier = ">=0.3" },
-    { name = "ecoli-sources", git = "https://github.com/vivarium-collective/ecoli-sources.git?rev=e0fcfab181de59666b9f8ad2d1cb80ffe5c2a314" },
+    { name = "ecoli-sources", git = "https://github.com/vivarium-collective/ecoli-sources.git?rev=6ccbe3e8ea5d985855ae3697979ce565b691a67c" },
     { name = "investigation-contracts", git = "https://github.com/vivarium-collective/investigation-contracts.git?branch=main" },
-    { name = "numba" },
+    { name = "numba", specifier = ">=0.59" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pbg-bioreactordesign", git = "https://github.com/vivarium-collective/pbg-bioreactordesign.git?branch=main" },
@@ -7244,6 +7244,7 @@ requires-dist = [
     { name = "pbg-emitters", extras = ["parquet"], git = "https://github.com/vivarium-collective/pbg-emitters.git?branch=main" },
     { name = "pbg-emitters", extras = ["xarray"], git = "https://github.com/vivarium-collective/pbg-emitters.git?branch=main" },
     { name = "pbg-ketchup", git = "https://github.com/vivarium-collective/pbg-ketchup.git?branch=main" },
+    { name = "pbg-openmm", marker = "extra == 'relax'", git = "https://github.com/vivarium-collective/pbg-openmm.git?branch=main" },
     { name = "pbg-parsimony", git = "https://github.com/vivarium-collective/pbg-parsimony.git?branch=main" },
     { name = "pbg-superpowers", git = "https://github.com/vivarium-collective/pbg-superpowers.git?branch=main" },
     { name = "pbg-torch", git = "https://github.com/vivarium-collective/pbg-torch.git?branch=main" },
@@ -7255,7 +7256,7 @@ requires-dist = [
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
     { name = "ray", marker = "extra == 'ray'", specifier = ">=2.10" },
     { name = "requests" },
-    { name = "scipy" },
+    { name = "scipy", specifier = "<1.18" },
     { name = "spatio-flux", git = "https://github.com/vivarium-collective/spatio-flux.git?branch=main" },
     { name = "sympy" },
     { name = "unum" },
@@ -7263,7 +7264,7 @@ requires-dist = [
     { name = "vecoli", extras = ["dev"], specifier = ">=1.1.0" },
     { name = "viva-munk", git = "https://github.com/vivarium-collective/Viva-munk.git?branch=main" },
 ]
-provides-extras = ["dev", "parquet", "xarray", "emitters", "ray"]
+provides-extras = ["dev", "parquet", "xarray", "emitters", "ray", "relax"]
 
 [[package]]
 name = "vecoli"
@@ -7376,7 +7377,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/3e/87/794e0b4c5dccbca30
 
 [[package]]
 name = "vivarium-workbench"
-version = "0.3.6"
+version = "0.3.28"
 source = { editable = "." }
 dependencies = [
     { name = "bigraph-schema", marker = "python_full_version == '3.12.12'" },
@@ -7426,7 +7427,7 @@ viz = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bigraph-schema", specifier = ">=1.4.1" },
+    { name = "bigraph-schema", specifier = ">=1.4.3" },
     { name = "fastapi", specifier = ">=0.110" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
     { name = "imageio", marker = "extra == 'viz'" },
