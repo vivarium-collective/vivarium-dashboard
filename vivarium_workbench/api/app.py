@@ -1017,14 +1017,29 @@ def create_app() -> FastAPI:
         summary="Resolved default config + input-port values for a process/step",
     )
     def registry_process_template(
-        address: str, ws: Path = Depends(get_workspace)
+        address: str,
+        config: str = "",
+        ws: Path = Depends(get_workspace),
     ) -> dict:
         """Resolved default ``config`` + ``inputs`` (via the core's ``fill``) for
         the class at ``address`` — real defaults to prefill the run panel instead
-        of null placeholders. Best-effort (never 500s)."""
+        of null placeholders. Best-effort (never 500s).
+
+        Optional ``config`` (a JSON object string) is a config override from the
+        card's "Apply": the class is re-instantiated with it so the returned
+        ``inputs``/``inputs_schema``/``outputs_schema`` reflect config-dependent
+        ports."""
         from vivarium_workbench.lib.env_worker_pool import get_pool
+        params: dict = {"address": address}
+        if config:
+            try:
+                ov = json.loads(config)
+                if isinstance(ov, dict):
+                    params["config"] = ov
+            except (json.JSONDecodeError, TypeError):
+                pass
         try:
-            return get_pool().call(ws, "process_template", {"address": address})
+            return get_pool().call(ws, "process_template", params)
         except Exception as e:  # noqa: BLE001
             return {"ok": False, "error": str(e)}
 

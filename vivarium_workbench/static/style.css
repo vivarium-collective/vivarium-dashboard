@@ -1419,6 +1419,79 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
   white-space:nowrap;
 }
 
+/* Process kind pill: Temporal (a Process, has a timestep) vs Step (dataflow,
+   no timestep). Distinct hues so the two read apart at a glance. */
+.proc-kind-badge{
+  flex:none; display:inline-block;
+  font-size:0.68em; font-weight:600; letter-spacing:0.02em;
+  padding:1px 7px; border-radius:9999px; white-space:nowrap;
+  vertical-align:middle;
+}
+.proc-kind-temporal{  background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
+.proc-kind-step{      background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+.proc-kind-composite{ background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe; }
+.proc-kind-other{ background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+:root[data-theme="dark"] .proc-kind-other{ background:var(--surface-3); color:var(--text-muted); border-color:var(--border); }
+/* static contract rows (non-runnable kinds): name·type only, single column */
+.cfg-list-static .cfg-row{ grid-template-columns:1fr; }
+/* usage stats row inside the full card top */
+.pcard-usage{ margin:5px 0 0; }
+
+/* clickable card stats + config·ports button */
+.reg-stat-btn{ border:none; background:none; cursor:pointer; font:inherit; color:inherit; padding:0; }
+.reg-stat-btn:hover{ color:#2563eb; text-decoration:underline; }
+.reg-cfgports-btn{
+  display:inline-flex; align-items:center; gap:6px; margin-top:8px;
+  border:1px solid #e5e7eb; background:#f8fafc; border-radius:7px; cursor:pointer;
+  font-size:0.78em; font-weight:600; color:#475569; padding:4px 10px;
+}
+.reg-cfgports-btn:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+.reg-cfgports-btn .reg-mid-sum{ font-weight:400; color:#94a3b8; }
+
+/* stacked pass / inconclusive / fail success bar */
+.reg-succbar{ margin:7px 0 0; }
+.reg-succbar-track{ display:flex; height:7px; border-radius:4px; overflow:hidden; background:#eef2f7; }
+.reg-succbar-seg{ display:block; height:100%; }
+.reg-succbar-pass{ background:#16a34a; }
+.reg-succbar-incon{ background:#d97706; }
+.reg-succbar-fail{ background:#dc2626; }
+.reg-succbar-legend{ font-size:0.72em; color:#64748b; margin-top:3px; }
+.reg-succbar-t-pass{ color:#16a34a; font-weight:600; }
+.reg-succbar-t-incon{ color:#b45309; font-weight:600; }
+.reg-succbar-t-fail{ color:#dc2626; font-weight:600; }
+
+/* shared info popup (composites / studies / config·ports) */
+.reg-infopop{
+  position:absolute; z-index:70; max-width:340px; min-width:200px;
+  background:#fff; border:1px solid #e2e8f0; border-radius:10px;
+  box-shadow:0 12px 30px -8px rgba(15,23,42,0.28); padding:12px 14px; font-size:0.85em;
+}
+.reg-infopop-title{ font-weight:600; color:#1e293b; margin:0 0 8px; font-size:0.95em; }
+.reg-infopop-list{ list-style:none; margin:0; padding:0; max-height:220px; overflow:auto; }
+.reg-infopop-list li{ padding:3px 0; border-bottom:1px solid #f1f5f9; }
+.reg-infopop-list li:last-child{ border-bottom:none; }
+.reg-infopop-list a{ color:#2563eb; text-decoration:none; }
+.reg-infopop-list a:hover{ text-decoration:underline; }
+.reg-infopop-sec{ margin:0 0 8px; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline; }
+.reg-infopop-label{ display:block; width:100%; font-size:0.82em; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; }
+.reg-infopop-sec code{ background:#f1f5f9; border-radius:4px; padding:1px 5px; font-size:0.9em; }
+.reg-infopop-port{ display:flex; align-items:baseline; gap:8px; width:100%; padding:1px 0; }
+.reg-infopop-type{ color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.85em; }
+.reg-infopop-stats{ margin:0 0 6px; }
+.reg-infopop-note{ font-size:0.85em; margin:8px 0 0; }
+.reg-infopop-note a{ color:#2563eb; }
+:root[data-theme="dark"] .reg-infopop{ background:var(--surface); border-color:var(--border); }
+:root[data-theme="dark"] .reg-infopop-title{ color:#d3ddeb; }
+:root[data-theme="dark"] .reg-cfgports-btn{ background:var(--surface-2); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .reg-succbar-track{ background:var(--surface-3); }
+/* center the SVG zoom icons in their buttons */
+.reg-zoom-btn{ display:inline-flex; align-items:center; justify-content:center; }
+.reg-zoom-btn svg{ display:block; }
+:root[data-theme="dark"] .proc-kind-temporal{  background:rgba(16,185,129,0.14); color:#6ee7b7; border-color:rgba(16,185,129,0.35); }
+:root[data-theme="dark"] .proc-kind-step{      background:rgba(245,158,11,0.15); color:#fcd34d; border-color:rgba(245,158,11,0.35); }
+:root[data-theme="dark"] .proc-kind-composite{ background:rgba(124,58,237,0.18); color:#c4b5fd; border-color:rgba(124,58,237,0.4); }
+.registry-table .reg-td-kind{ white-space:nowrap; }
+
 /* ── Registry semantic zoom + view mode ─────────────────────────────────── */
 .registry-view-toolbar{ display:flex; align-items:center; gap:10px; margin:0 0 6px; flex-wrap:wrap; }
 .registry-view-toolbar .registry-search{ flex:1 1 220px; margin:0; }
@@ -1684,6 +1757,350 @@ textarea.loom-in-field{
 .loom-out-ports .loom-port-dot{ background:#10b981; }
 .loom-card-stack .loom-run-output:empty{ display:none; }
 .loom-card-stack .loom-run-output{ margin-top:10px; }
+
+/* ── Unified ProcessCard ─────────────────────────────────────────────────────
+   The loom node's grammar as one card: an expandable/settable config top-bar
+   (with Apply that re-derives ports), an inputs-left / contract-middle /
+   outputs-right body row (each region collapsible), and a Run bar at the bottom.
+   Used by the registry Full zoom; the composite card adopts it next. */
+.pcard .loom-card-stack{ position:relative; }
+
+/* config top-bar — a full-width region; double-click the header to expand/collapse */
+.pcard-config-region{ background:#f8fafc; border-bottom:1px solid #eef2f7; padding:0; }
+.pcard-config-region > .pcard-region-head{ padding:8px 16px; margin:0; cursor:pointer; }
+.pcard-config-region > .pcard-region-head:hover{ background:#f1f5f9; }
+.pcard-config-region > .pcard-region-body{ padding:10px 16px 12px; background:#fff; border-top:1px solid #eef2f7; }
+.pcard-caret{ color:#94a3b8; font-size:0.8em; flex:none; width:0.9em; text-align:center; }
+.pcard-sec-label{ text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700; color:#94a3b8; }
+.pcard-config-chips{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-width:0; }
+.pcard-chip{ background:#eff6ff; color:#1e40af; padding:2px 8px; border-radius:5px; font-size:0.78em; border:1px solid #dbeafe; }
+.pcard-chip-more{ font-size:0.78em; }
+.pcard-config-actions{ display:flex; align-items:center; gap:10px; margin-top:10px; }
+/* Filled primary Apply — specificity beats the shared .btn-mini blue theme. */
+.pcard-config-actions .pcard-apply{ background:#2563eb; color:#fff; border:1px solid #2563eb; }
+.pcard-config-actions .pcard-apply:hover{ background:#1d4ed8; border-color:#1d4ed8; }
+.pcard-apply-status{ font-size:0.78em; color:#047857; }
+.pcard-apply-status.pcard-apply-err{ color:#b91c1c; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Unified ProcessCard — accordion layout
+   header (name · badge · address) → summary (info panel + description) →
+   accordion (Configure ▸ Inputs ▸ Run ▸ Outputs, each collapsible).
+   ═══════════════════════════════════════════════════════════════════════ */
+.pcard-accordion .loom-card-stack{ padding:0; overflow:hidden; }
+
+/* compact top band: header + summary in one tight, information-rich block */
+.pcard-top{ padding:9px 14px 9px; }
+.pcard-accordion .pcard-header{
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 8px; padding:0; margin:0 0 5px;
+}
+.pcard-accordion .loom-name{ font-size:0.97rem; font-weight:650; }
+.pcard-accordion .loom-addr{
+  display:inline-block; margin:0; font-size:0.74em; color:#5b6b82;
+  background:#f1f5f9; padding:1px 7px; border-radius:5px;
+  font-family:ui-monospace,Menlo,monospace;
+}
+
+/* summary row: contract line + description (info panel removed) */
+.pcard-summary{ display:block; padding:0; }
+.pcard-infopanel{
+  display:flex; flex-direction:column; gap:0; min-width:100px; align-self:start;
+  background:#f8fafc; border:1px solid #eef2f7; border-radius:8px; padding:2px; overflow:hidden;
+}
+.pcard-info-row{
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  border:none; background:none; cursor:pointer; padding:3px 8px; border-radius:5px;
+  font:inherit; color:#475569; text-align:left; transition:background .12s, color .12s;
+}
+.pcard-info-row:hover{ background:#eff6ff; color:#2563eb; }
+.pcard-info-label{ font-size:0.75em; font-weight:600; letter-spacing:0.01em; }
+.pcard-info-n{ font-size:0.8em; font-weight:700; color:#94a3b8; min-width:1.4em; text-align:right; }
+.pcard-info-row:hover .pcard-info-n{ color:#2563eb; }
+.pcard-desc-col{ min-width:0; }
+.pcard-desc-col .pcard-contract-meta{ margin-top:0; font-size:0.78em; }
+.pcard-desc-col .loom-desc{ margin:4px 0 0; max-width:none; font-size:0.86em; line-height:1.45; color:#475569; }
+/* clamp long descriptions to a few lines; click to expand in place */
+.pcard-desc-clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
+.pcard-desc-clamp.pcard-desc-open{ display:block; -webkit-line-clamp:unset; overflow:visible; }
+
+/* header "{ } JSON" toggle + the revealed spec viewer */
+.pcard-json-btn{
+  margin-left:auto; flex:none; align-self:center;
+  background:none; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer;
+  color:#64748b; font-size:0.72em; font-weight:600; padding:2px 8px;
+  font-family:ui-monospace,Menlo,monospace; letter-spacing:0.02em;
+}
+.pcard-json-btn:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+.pcard-json-btn.active{ background:#2563eb; color:#fff; border-color:#2563eb; }
+.pcard-header .pcard-json-btn + .pcard-popout{ margin-left:6px; }   /* sit side by side */
+.pcard-json-view{
+  margin-top:8px; border:1px solid #eef2f7; border-radius:9px; background:#fbfcfe;
+  max-height:340px; overflow:auto; padding:8px 10px;
+}
+.pcard-json-toolbar{ display:flex; gap:8px; margin:0 0 6px; position:sticky; top:-8px; }
+:root[data-theme="dark"] .pcard-json-btn{ border-color:var(--border-2); color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-json-btn:hover{ background:var(--active); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-json-view{ background:var(--surface-2); border-color:var(--border); }
+
+/* header pop-out control */
+.pcard-popout{
+  margin-left:auto; flex:none; align-self:center;
+  background:none; border:1px solid transparent; border-radius:5px; cursor:pointer;
+  color:#94a3b8; font-size:0.95em; line-height:1; padding:2px 7px;
+}
+.pcard-popout:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+
+/* pop-out (?popcard=) window: focus-mode strips the rail; hide the registry
+   tabs + toolbar too so only the single card shows, full-window. */
+body.popcard-mode .registry-tabs,
+body.popcard-mode .registry-view-toolbar,
+body.popcard-mode .registry-sticky > .registry-tabs{ display:none !important; }
+body.popcard-mode .registry-tab-panel{ padding:0 !important; }
+body.popcard-mode #registry-status,
+body.popcard-mode .registry-imports-section{ display:none !important; }
+body.popcard-mode .popcard-single{ margin:0; }
+body.popcard-mode .popcard-single .pcard{ border-radius:10px; }
+body.popcard-mode .pcard-popout{ display:none; }   /* no nested pop-out */
+:root[data-theme="dark"] .pcard-popout:hover{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
+
+/* persistent Run bar (not an accordion) — always visible at the card's top level */
+.pcard-runbar{
+  display:flex; align-items:center; flex-wrap:wrap; gap:12px;
+  padding:9px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
+  background:#fbfcfe;
+}
+.pcard-runbar .action-btn{ flex:none; }
+.pcard-run-out{ font-size:0.8em; color:#64748b; }
+:root[data-theme="dark"] .pcard-runbar{ background:var(--surface-2); border-color:var(--border-faint); }
+
+/* resizable sections: capped, scrollable body + a drag grip (dbl-click = fit) */
+.pcard-sec-resizable.pcard-sec-open > .pcard-sec-body{ max-height:var(--pch,300px); overflow:auto; }
+.pcard-sec-resizable.pcard-sec-full > .pcard-sec-body{ max-height:none; overflow:visible; }
+.pcard-sec-grip{ display:none; }
+.pcard-sec-resizable.pcard-sec-open > .pcard-sec-grip{
+  display:block; height:11px; cursor:ns-resize; position:relative;
+  border-top:1px solid #f1f5f9;
+}
+.pcard-sec-grip::before{
+  content:''; position:absolute; left:50%; top:4px; transform:translateX(-50%);
+  width:34px; height:3px; border-radius:2px; background:#cbd5e1;
+}
+.pcard-sec-grip:hover::before{ background:#6366f1; }
+body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
+:root[data-theme="dark"] .pcard-sec-grip{ border-top-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-sec-grip::before{ background:var(--border-2); }
+
+/* accordion */
+.pcard-acc{ border-top:1px solid #eef2f7; }
+.pcard-sec{ border-bottom:1px solid #eef2f7; }
+.pcard-sec:last-child{ border-bottom:none; }
+.pcard-sec-head{
+  display:flex; align-items:center; gap:10px; padding:10px 16px;
+  cursor:pointer; user-select:none; transition:background .12s;
+}
+.pcard-sec-head:hover{ background:#f8fafc; }
+.pcard-sec-head:focus-visible{ outline:2px solid #6366f1; outline-offset:-2px; }
+.pcard-sec-caret{ color:#94a3b8; font-size:0.72em; width:0.9em; flex:none; text-align:center; }
+.pcard-sec-name{
+  font-size:0.72em; font-weight:700; text-transform:uppercase; letter-spacing:0.07em;
+  color:#334155; flex:none;
+}
+.pcard-sec-sum{
+  display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-width:0;
+  color:#94a3b8; font-size:0.8em;
+}
+.pcard-sec-count{ font-weight:700; color:#94a3b8; }
+.pcard-sec-head .pcard-dl{ margin-left:auto; flex:none; }
+.pcard-sec-body{ padding:2px 16px 14px 35px; }
+.pcard-sec:not(.pcard-sec-open) > .pcard-sec-body{ display:none; }
+
+/* open state: faint fill + a section-colored accent bar on the left edge */
+.pcard-sec-open{ background:#fcfdff; }
+.pcard-sec-open > .pcard-sec-head .pcard-sec-name{ color:#1d4ed8; }
+.pcard-sec-configure.pcard-sec-open > .pcard-sec-head{ box-shadow:inset 3px 0 0 #2563eb; }
+.pcard-sec-inputs.pcard-sec-open    > .pcard-sec-head{ box-shadow:inset 3px 0 0 #3b82f6; }
+.pcard-sec-explore.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #7c3aed; }
+.pcard-sec-run.pcard-sec-open       > .pcard-sec-head{ box-shadow:inset 3px 0 0 #0891b2; }
+.pcard-sec-outputs.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #10b981; }
+
+.pcard-run-note, .pcard-run-hint{ font-size:0.82em; }
+.pcard-run-status{ font-size:0.82em; }
+.pcard-run-status.pcard-apply-err{ color:#b91c1c; }
+.pcard-run-status a{ color:#2563eb; }
+.pcard-run .loom-run-interval-field{ margin-right:6px; }
+
+/* Organized config list: one row per parameter — name · type · value(default).
+   Shared by process + composite Configure sections. */
+.cfg-list{ display:block; width:100%; box-sizing:border-box; border:1px solid #eef2f7; border-radius:9px; overflow:hidden; }
+/* scoped under .cfg-list — a bare .cfg-row exists elsewhere as display:flex */
+.cfg-list .cfg-row{
+  display:grid; grid-template-columns:210px minmax(0,1fr); column-gap:16px; row-gap:2px;
+  align-items:center; width:100%; box-sizing:border-box;
+  padding:6px 12px; border-bottom:1px solid #f1f5f9;
+}
+.cfg-list .cfg-row:last-child{ border-bottom:none; }
+.cfg-list .cfg-row:hover{ background:#f8fafc; }
+.cfg-row-name{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; min-width:0; }
+.cfg-key{ font-family:ui-monospace,Menlo,monospace; font-size:0.82em; font-weight:600; color:#1e293b; word-break:break-word; }
+.cfg-type{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.72em; color:#7c8698;
+  background:#f1f5f9; border:1px solid #e6ebf1; border-radius:4px; padding:0 5px; flex:none; white-space:nowrap;
+}
+.cfg-row-input{ min-width:0; }
+.cfg-list .cfg-row-input input[type="text"],
+.cfg-list .cfg-row-input input[type="number"],
+.cfg-list .cfg-row-input textarea{ width:100%; box-sizing:border-box; font-size:0.82em; }
+.cfg-list .cfg-row-input input[type="checkbox"]{ width:16px; height:16px; }
+.cfg-row-desc{ grid-column:1 / -1; font-size:0.75em; color:#94a3b8; margin-top:1px; }
+
+/* Set-via-JSON panel */
+.cfg-json{ margin:10px 0 0; }
+.cfg-json-box{
+  width:100%; box-sizing:border-box; font-family:ui-monospace,Menlo,monospace; font-size:0.8em;
+  border:1px solid #d9e0e8; border-radius:7px; padding:8px 10px; background:#fbfcfe; resize:vertical; min-height:64px;
+}
+.cfg-json-actions{ display:flex; align-items:center; gap:10px; margin-top:6px; }
+.cfg-json-status{ font-size:0.78em; }
+.cfg-json-status.pcard-apply-err{ color:#b91c1c; }
+.cfg-json-toggle.active{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+
+:root[data-theme="dark"] .cfg-list{ border-color:var(--border); }
+:root[data-theme="dark"] .cfg-list .cfg-row{ border-bottom-color:var(--border-faint); }
+:root[data-theme="dark"] .cfg-list .cfg-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] .cfg-key{ color:#d3ddeb; }
+:root[data-theme="dark"] .cfg-type{ background:var(--surface-3); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .cfg-json-box{ background:var(--field); border-color:var(--border-2); color:var(--text); }
+:root[data-theme="dark"] .cfg-json-toggle.active{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
+
+/* Composite card: the Explore section is wide (full-bleed loom); top-level
+   Inputs/Outputs carry an explanatory note rather than editable ports. */
+.pcard-toplevel-note{ font-size:0.82em; margin:2px 0 0; }
+
+/* Composite Outputs → embedded loom Visualizations/Results/Document tabs */
+.pcard-out-tabs{ display:flex; gap:4px; padding:8px 12px 0; }
+.pcard-out-tab{
+  border:1px solid transparent; border-bottom:none; background:none; cursor:pointer;
+  font-size:0.76em; font-weight:600; color:#64748b; padding:5px 12px; border-radius:7px 7px 0 0;
+}
+.pcard-out-tab:hover{ color:#2563eb; background:#eff6ff; }
+.pcard-out-tab.active{ color:#1d4ed8; background:#fff; border-color:#eef2f7; }
+.pcard-out-panel{ padding:12px 14px; }
+.pcard-out-empty{ padding:10px 4px; }
+.pcard-out-empty-title{ margin:0 0 4px; font-weight:600; color:#334155; }
+.pcard-out-empty .muted, .pcard-out-hint{ font-size:0.86em; line-height:1.5; }
+.pcard-out-empty a, .pcard-out-hint a{ color:#2563eb; }
+.pcard-out-desc{ margin:0 0 10px; font-size:0.9em; line-height:1.5; color:#475569; }
+.pcard-out-meta{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:0.82em; color:#334155; margin:0 0 8px; }
+.pcard-out-meta code{ font-size:0.95em; }
+.pcard-out-tags{ display:flex; flex-wrap:wrap; gap:5px; margin:0 0 8px; }
+.pcard-out-hint{ margin:6px 0 0; }
+:root[data-theme="dark"] .pcard-out-empty-title{ color:#c8d4e4; }
+:root[data-theme="dark"] .pcard-out-desc, :root[data-theme="dark"] .pcard-out-meta{ color:var(--text); }
+:root[data-theme="dark"] .pcard-out-tab.active{ background:var(--surface); border-color:var(--border); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-out-tab:hover{ background:var(--active); }
+.pcard-sec-wide > .pcard-sec-body{ padding:0; }
+.pcard-sec-wide .pcard-loom{ margin:0; }
+.pcard-sec-wide .ccard-loom-frame{ width:100%; min-height:340px; }
+.pcard-composite .loom-card-composite{ position:relative; }
+.pcard-composite .composite-ws-tag{ margin-left:8px; }
+:root[data-theme="dark"] .proc-kind-composite ~ .composite-ws-tag{ opacity:0.9; }
+
+/* dark theme */
+:root[data-theme="dark"] .pcard-accordion .loom-addr{ background:var(--surface-2); color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-infopanel{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .pcard-info-row{ color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-info-row:hover{ background:var(--active); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-info-row:hover .pcard-info-n{ color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-acc,
+:root[data-theme="dark"] .pcard-sec{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-sec-head:hover{ background:var(--hover); }
+:root[data-theme="dark"] .pcard-sec-name{ color:#c8d4e4; }
+:root[data-theme="dark"] .pcard-sec-open{ background:var(--surface-2); }
+:root[data-theme="dark"] .pcard-sec-open > .pcard-sec-head .pcard-sec-name{ color:#c7d2fe; }
+
+/* title — click to pin */
+.pcard-title{ cursor:pointer; }
+.pcard-title:hover .loom-name{ text-decoration:underline dotted; }
+
+/* full-width header: name + address + description + contract counts */
+.pcard-header{ display:block; }
+.pcard-header .loom-desc, .pcard-header .loom-body-head{ max-width:none; }
+.pcard-contract-meta{ color:#64748b; font-size:0.8em; margin-top:8px; }
+
+/* ports row: inputs | outputs — two mirrored panes split by ONE draggable gutter.
+   inputs width is driven by --pb (percent); outputs takes the rest. */
+.pcard-ports-row{ display:flex; align-items:stretch; border-top:1px solid #eef2f7; }
+.pcard-region{ padding:12px 16px; min-width:0; }
+.pcard-ports-row > .pcard-inputs{ flex:0 0 auto; width:calc(var(--pb,45) * 1%); min-width:0; }
+.pcard-ports-row > .pcard-outputs{ flex:1 1 0; min-width:0; }
+/* draggable gutter — a thin hit-target with a centred rule that thickens on hover */
+.pcard-gutter{ flex:0 0 10px; cursor:col-resize; position:relative; align-self:stretch; }
+.pcard-gutter::before{ content:''; position:absolute; top:8px; bottom:8px; left:4px; width:1px; background:#e2e8f0; transition:background .1s, width .1s; }
+.pcard-gutter:hover::before, body.pcard-splitting .pcard-gutter::before{ background:#6366f1; left:3px; width:3px; }
+.pcard-region-head{
+  display:flex; align-items:center; gap:6px; user-select:none;
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700;
+  color:#94a3b8; margin-bottom:9px;
+}
+.pcard-config-region > .pcard-region-head{ cursor:ns-resize; }
+.pcard-config-region > .pcard-region-head:hover{ color:#64748b; background:#f1f5f9; }
+.pcard-region-count{ margin-left:2px; color:#cbd5e1; font-weight:700; }
+.pcard-region-body{ min-width:0; }
+/* config region uses pull (drag)/click collapse */
+.pcard-collapsed > .pcard-region-body{ display:none; }
+.pcard-collapsed > .pcard-region-head{ margin-bottom:0; }
+body.pcard-splitting{ cursor:col-resize; user-select:none; }
+body.pcard-splitting iframe{ pointer-events:none; }
+
+/* pane semantic-zoom by width (data-level set from px in JS):
+   full → editable body (inputs) / run-output (outputs); info → dot·name·type
+   rail; dots → dots only (click a dot for info). Outputs always shows its rail. */
+.pcard-inputs[data-level="full"] > .pcard-rail{ display:none; }
+.pcard-inputs[data-level="full"] > .pcard-region-body{ display:block; }
+.pcard-inputs:not([data-level="full"]) > .pcard-rail{ display:block; }
+.pcard-inputs:not([data-level="full"]) > .pcard-region-body{ display:none; }
+.pcard-outputs > .pcard-rail{ display:block; }
+.pcard-outputs[data-level="full"] > .pcard-region-body{ display:block; }
+.pcard-outputs:not([data-level="full"]) > .pcard-region-body{ display:none; }
+.pcard-region[data-level="dots"] .pcard-rail-name,
+.pcard-region[data-level="dots"] .pcard-rail-type{ display:none; }
+.pcard-region[data-level="dots"] .pcard-rail-port{ justify-content:center; }
+
+/* compact port list (dot · name · type) */
+.pcard-rail{ margin-top:2px; }
+.pcard-rail-port{ display:flex; align-items:center; gap:6px; padding:3px 2px; cursor:pointer; border-radius:4px; }
+.pcard-rail-port:hover{ background:#f1f5f9; }
+.pcard-rail-dot{ width:8px; height:8px; border-radius:50%; background:#6366f1; flex:none; }
+.pcard-rail-port.loom-port-out .pcard-rail-dot{ background:#10b981; }
+.pcard-rail-name{ font-weight:600; color:#1e40af; font-size:0.8em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcard-rail-type{ color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.72em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.pcard-rail-empty{ color:#cbd5e1; font-size:0.85em; }
+/* outputs mirror inputs: right-aligned rows, dot on the right */
+.pcard-rail-out{ text-align:right; }
+.pcard-rail-out .pcard-rail-port{ flex-direction:row-reverse; justify-content:flex-end; }
+.pcard-outputs[data-level="dots"] .pcard-rail-port{ justify-content:center; }
+.pcard-portpop{ position:absolute; z-index:60; background:#0f172a; color:#fff; padding:5px 9px; border-radius:6px; font-size:0.78em; box-shadow:0 6px 18px -6px rgba(0,0,0,0.45); white-space:nowrap; pointer-events:none; }
+.pcard-portpop code{ color:#c7d2fe; font-weight:600; }
+.pcard-portpop-type{ color:#94a3b8; margin-left:8px; font-family:ui-monospace,Menlo,monospace; }
+.pcard-outputs .pcard-region-head{ justify-content:flex-start; }
+.pcard-dl{ margin-left:auto; padding:1px 7px; }
+.pcard-dl:disabled{ opacity:0.4; cursor:default; }
+.pcard-inputs .loom-inputs-stack .loom-in-row{ flex:1 1 100%; max-width:none; }
+
+/* pinned to the top of the scroll region (sticky) so it lines up */
+/* (header click scrolls the card to the top — see _pinCardTop; no sticky pin) */
+.pcard-header{ cursor:pointer; }
+
+/* responsive: stack the two panes on narrow widths (show full body for both) */
+@media (max-width:820px){
+  .pcard-ports-row{ flex-direction:column; }
+  .pcard-ports-row > .pcard-inputs,
+  .pcard-ports-row > .pcard-outputs{ width:auto; flex:1 1 auto; border-top:1px solid #f1f5f9; }
+  .pcard-ports-row > .pcard-inputs{ border-top:0; }
+  .pcard-gutter{ display:none; }
+  .pcard-inputs > .pcard-rail{ display:none; }
+  .pcard-inputs > .pcard-region-body, .pcard-outputs > .pcard-region-body{ display:block; }
+}
 
 .loom-out-panel{ min-width:0; display:flex; flex-direction:column; gap:10px; }
 .loom-out-panel .loom-run-output:empty{ display:none; }

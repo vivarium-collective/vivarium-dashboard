@@ -12,10 +12,13 @@
 
 import type { LayoutMode } from './types';
 import { clusterGridMode } from './clusterGrid';
+import { flowDownMode, flowRightMode, flowElkMode } from './flow';
 
 export const DEFAULT_MODE_ID = 'hierarchy';
 
-export const LAYOUT_MODES: LayoutMode[] = [clusterGridMode];
+// hierarchy = the non-directional relationship packing (default). flow-tb /
+// flow-lr = fast directional stack layouts; flow-elk = ELK layered flow network.
+export const LAYOUT_MODES: LayoutMode[] = [clusterGridMode, flowDownMode, flowRightMode, flowElkMode];
 
 export function getMode(id: string | null | undefined): LayoutMode {
   return LAYOUT_MODES.find((m) => m.id === id)

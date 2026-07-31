@@ -658,7 +658,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
 
     <!-- Primary nav -->
     <nav class="viv-rail-section" role="tablist">
-      <div class="viv-rail-section-label">Workspace</div>
       <!-- Resources: a stack of documents — a dog-eared front page (two lines)
            over a second page peeking behind. Source material for the workspace. -->
       <a href="#workspace-inputs"  class="viv-rail-link menu-link" data-page="workspace-inputs">
@@ -705,20 +704,22 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         </span>
         <span class="viv-rail-link-label">Processes</span>
       </a>
-      <!-- Composites: composite-as-process — outer boundary containing a process rectangle wired to a store -->
-      <a href="#simulation-setup"  class="viv-rail-link menu-link" data-page="simulation-setup">
+      <!-- Studies: the investigations overview. Sits directly under Composites; the
+           per-investigation study list lives in the search section below. Branching-fan (DAG) icon. -->
+      <a href="#investigations"    class="viv-rail-link menu-link" data-page="investigations">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="2.5" y="6" width="19" height="12" rx="1.25"/>
-            <rect x="5.5" y="9" width="5.5" height="6"/>
-            <circle cx="16.5" cy="12" r="2.4"/>
-            <path d="M11 12h3.1"/>
+            <rect x="2.5" y="9" width="6" height="6"/>
+            <rect x="16" y="3" width="5.5" height="4"/>
+            <rect x="16" y="10" width="5.5" height="4"/>
+            <rect x="16" y="17" width="5.5" height="4"/>
+            <path d="M8.5 12L16 5"/>
+            <path d="M8.5 12h7.5"/>
+            <path d="M8.5 12L16 19"/>
           </svg>
         </span>
-        <span class="viv-rail-link-label">Compositions</span>
+        <span class="viv-rail-link-label">Studies</span>
       </a>
-      {# The Investigations/Studies overview is reached by clicking the STUDIES
-         section header below — no separate top-nav tab. #}
       <a href="#simulations"       class="viv-rail-link menu-link" data-page="simulations">
         <span class="viv-rail-link-icon">
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
@@ -750,23 +751,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
           </svg>
         </span>
         <span class="viv-rail-link-label">Analysis</span>
-      </a>
-      <!-- Studies: the investigations overview. A continuous nav item (also
-           shown in the collapsed rail); the per-investigation study list lives
-           in the search section directly below. Branching-fan (DAG) icon. -->
-      <a href="#investigations"    class="viv-rail-link menu-link" data-page="investigations">
-        <span class="viv-rail-link-icon">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" class="viv-rail-link-svg">
-            <rect x="2.5" y="9" width="6" height="6"/>
-            <rect x="16" y="3" width="5.5" height="4"/>
-            <rect x="16" y="10" width="5.5" height="4"/>
-            <rect x="16" y="17" width="5.5" height="4"/>
-            <path d="M8.5 12L16 5"/>
-            <path d="M8.5 12h7.5"/>
-            <path d="M8.5 12L16 19"/>
-          </svg>
-        </span>
-        <span class="viv-rail-link-label">Studies</span>
       </a>
       <!-- The Branch page (#github) is no longer a rail item — it's reached by
            clicking the workspace source display at the top of the rail (see
@@ -959,7 +943,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
          installed module across the public repos. #}
       <div class="market-facets" id="market-facets" role="tablist">
         <button class="market-facet active" data-facet="repo"          onclick="_setMarketFacet('repo')" role="tab" title="Browse whole repositories in the ecosystem">Repositories</button>
-        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes &amp; Steps</button>
+        <button class="market-facet"        data-facet="process"       onclick="_setMarketFacet('process')" role="tab">Processes</button>
         <button class="market-facet"        data-facet="composite"     onclick="_setMarketFacet('composite')" role="tab">Composites</button>
         <button class="market-facet"        data-facet="study"         onclick="_setMarketFacet('study')" role="tab">Studies</button>
         <button class="market-facet"        data-facet="investigation" onclick="_setMarketFacet('investigation')" role="tab">Investigations</button>
@@ -994,8 +978,8 @@ a.viv-bs-commit:hover { text-decoration: underline; }
        of the scroll area so the long entry list scrolls beneath them. #}
     <div class="registry-sticky">
       <div class="registry-tabs">
-        <button class="registry-tab active" data-kind="process"       onclick="_setRegistryTab('process')">Processes <span class="count-badge" id="registry-process-count"></span></button>
-        <button class="registry-tab"        data-kind="step"          onclick="_setRegistryTab('step')">Steps <span class="count-badge" id="registry-step-count"></span></button>
+        <button class="registry-tab active" data-kind="composite"     onclick="_setRegistryTab('composite')">Composites <span class="count-badge" id="registry-composite-count"></span></button>
+        <button class="registry-tab"        data-kind="process"       onclick="_setRegistryTab('process')">Processes <span class="count-badge" id="registry-process-count"></span></button>
         <button class="registry-tab"        data-kind="emitter"       onclick="_setRegistryTab('emitter')">Emitters <span class="count-badge" id="registry-emitter-count"></span></button>
         <button class="registry-tab"        data-kind="visualization" onclick="_setRegistryTab('visualization')">Visualizations <span class="count-badge" id="registry-visualization-count"></span></button>
         <button class="registry-tab"        data-kind="analysis"      onclick="_setRegistryTab('analysis')">Analyses <span class="count-badge" id="registry-analysis-count"></span></button>
@@ -1009,15 +993,21 @@ a.viv-bs-commit:hover { text-decoration: underline; }
            (runnable process). Double-clicking a card also drills in one level. #}
         <span class="cols-ctl-slot" data-cols-surface="registry" title="Cards columns"></span>
         <div class="registry-zoom" role="group" aria-label="View density" title="View density">
-          <button class="reg-zoom-btn" data-zoom="table" onclick="_setRegistryZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-          <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
-          <button class="reg-zoom-btn" data-zoom="full" onclick="_setRegistryZoom('full')" title="Full — runnable process (config, ports, run)">&#9707;</button>
+          <button class="reg-zoom-btn" data-zoom="table" onclick="_setRegistryZoom('table')" title="Table — dense &amp; sortable" aria-label="Table view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+          </button>
+          <button class="reg-zoom-btn active" data-zoom="grid" onclick="_setRegistryZoom('grid')" title="Cards — grid with usage; adjust columns at left" aria-label="Cards view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.4"/></svg>
+          </button>
+          <button class="reg-zoom-btn" data-zoom="full" onclick="_setRegistryZoom('full')" title="Full — the whole card (config, ports, run)" aria-label="Full card view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16.5" x2="13" y2="16.5"/></svg>
+          </button>
         </div>
       </div>
     </div>
 
-    <div class="registry-tab-panel active" data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>
-    <div class="registry-tab-panel"        data-kind="step"          id="registry-steps-container"></div>
+    <div class="registry-tab-panel active" data-kind="composite"     id="registry-composites-container"><p class="empty-state">Loading&hellip;</p></div>
+    <div class="registry-tab-panel"        data-kind="process"       id="registry-processes-container"><p class="empty-state">Loading&hellip;</p></div>
     <div class="registry-tab-panel"        data-kind="emitter"       id="registry-emitters-container"></div>
     <div class="registry-tab-panel"        data-kind="visualization" id="registry-visualizations-container"></div>
     <div class="registry-tab-panel"        data-kind="analysis"      id="registry-analyses-container"></div>

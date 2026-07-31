@@ -16,7 +16,6 @@ import { useLayoutMode } from './hooks/useLayoutMode';
 import { useFocus } from './hooks/useFocus';
 import { getMode } from './layouts/registry';
 import { egoLayout } from './layouts/egoLayout';
-import { depthStackLayout } from './layouts/depthStack';
 import { pickDrawnEdges } from './layouts/pickDrawnEdges';
 import { tierForZoom } from './layouts/processColumn';
 import type { ZoomTierId } from './layouts/types';
@@ -29,6 +28,7 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
+import { collapseStores } from './collapse';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
@@ -107,6 +107,9 @@ export default function App() {
   // Adding a mode to layouts/registry makes it selectable from the toolbar
   // with no change here.
   const layoutMode = useLayoutMode();
+  // Collapse view: 'none' (both), 'stores' (process-only graph), 'processes'
+  // (stores + processes shrunk to hyperedge junctions).
+  const [collapseMode, setCollapseMode] = useState<'none' | 'stores' | 'processes'>('none');
   // Which processes are "active" (hovered / selected / pinned). Modes that
   // implement `edgeVisibility` use this to cull wires; modes that don't
   // (hierarchy) ignore it entirely and keep drawing every edge.
@@ -124,7 +127,22 @@ export default function App() {
   // drawn-edge seam (drawFocus / culls) still reads it; focusing a process still
   // reveals its hub wires on demand.
   const showHubWires = false;
-  const [tab, setTab] = useState<TabId>('wiring');
+  // Initial tab honours ?tab=<id> (used by the workbench to embed a single
+  // view — e.g. the Visualizations/Results panel inside the card's Outputs).
+  const [tab, setTab] = useState<TabId>(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      const valid: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
+      if (t && (valid as string[]).includes(t)) return t as TabId;
+    } catch { /* no-op */ }
+    return 'wiring';
+  });
+  // Chromeless embed mode (?chrome=off): the workbench ProcessCard already
+  // provides Configure/Run/Outputs, so when embedded we hide the loom's own
+  // breadcrumb + tab strip and show only the Explore (wiring) graph.
+  const chromeless = (() => {
+    try { return new URLSearchParams(window.location.search).get('chrome') === 'off'; } catch { return false; }
+  })();
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
     const p = new URLSearchParams(window.location.search);
@@ -150,6 +168,12 @@ export default function App() {
   const [drillCrumbs, setDrillCrumbs] = useState<string[]>([]);
   const rootIdRef = useRef<string | null>(null);
   const rootNameRef = useRef<string | null>(null);
+  // Persistent drill TABS: double-clicking a Composite Process opens it as a
+  // tab that stays until closed (× ), even after switching back to the root
+  // ("Super-sim"). Replaces the breadcrumb. `activeTabKey` '' = the root.
+  type DrillTab = { key: string; name: string; hops: string[][] };
+  const [openTabs, setOpenTabs] = useState<DrillTab[]>([]);
+  const [activeTabKey, setActiveTabKey] = useState<string>('');
   // Composite parameters + current overrides (for the Configure tab).
   const [parameters, setParameters] = useState<Record<string, ParameterDecl>>({});
   const [overrides, setOverrides] = useState<Record<string, unknown>>({});
@@ -351,8 +375,13 @@ export default function App() {
   // the state is ~6 MB / 345 nodes, so this graph walk is expensive; the layout
   // effect, the reset handler, and the sidebar lists all derive from this.
   const raw = useMemo(
-    () => (state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] }),
-    [state],
+    () => {
+      const base = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
+      // "Collapse stores" → the process-only graph (who feeds whom). "Collapse
+      // processes" is a render mode (glyph tier, below), not a graph transform.
+      return collapseMode === 'stores' ? collapseStores(base.nodes, base.edges) : base;
+    },
+    [state, collapseMode],
   );
 
   // (Re)generate nodes + edges whenever the composite state OR the set of
@@ -528,7 +557,9 @@ export default function App() {
         return {
           ...n,
           data: {
-            ...n.data, _tier: tier,
+            // Hyperedge view: shrink every process to a glyph junction so the
+            // stores it wires read as one hyperedge.
+            ...n.data, _tier: collapseMode === 'processes' ? 'glyph' : tier,
             // Full-detail ("open") card = explicitly kept-open ∪ the currently
             // selected/locked one. Keep-open persists; selection opens the card
             // you just clicked. Wire-reveal is a separate concept (ctx below).
@@ -555,7 +586,7 @@ export default function App() {
         },
       };
     });
-  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
+  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops, collapseMode]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -612,19 +643,8 @@ export default function App() {
     debouncedPersistRef.current?.(compositeId, positionsFromNodes(nodes as any), layoutMode.modeId);
   }, [nodes, compositeId, layoutMode.modeId]);
 
-  // "Adjust ▸ Stack stores by depth": a one-shot arrangement — lay the stores
-  // out as a nesting tree with processes packed below, move the nodes there, and
-  // leave them (the change persists via the effect above). Not a mode/toggle.
-  const handleStackByDepth = useCallback(() => {
-    setNodes((ns: any[]) => {
-      const laid = depthStackLayout(ns as any, edges as any).nodes as any[];
-      const posById = new Map(laid.map((n) => [n.id, n.position]));
-      return ns.map((n) => (posById.has(n.id) ? { ...n, position: posById.get(n.id) } : n));
-    });
-    window.setTimeout(
-      () => rfRef.current?.fitView?.({ padding: 0.2, duration: 400 }), 120,
-    );
-  }, [edges, setNodes]);
+  // ("Stack stores by depth" was retired — the flow-direction switch supersedes
+  // it. `depthStackLayout` remains on disk, exercised by its unit tests.)
 
   // "Adjust ▸ Center on this process": one-shot — its read-only stores to the
   // left, write-only to the right, read+write below, everything else parked out
@@ -757,7 +777,6 @@ export default function App() {
   // WHITE background. Captures the React Flow viewport element via html-to-image,
   // framed to the full nodes bounds (not just the on-screen viewport).
   const [showExport, setShowExport] = useState(false);
-  const [showAdjust, setShowAdjust] = useState(false);
   // While true, onlyRenderVisibleElements is disabled so the WHOLE graph (all
   // nodes AND edges) is in the DOM for html-to-image to capture. Otherwise the
   // off-viewport edges are culled and the export comes out wireless.
@@ -901,18 +920,22 @@ export default function App() {
       setCompositeId(root + ' ▸ ' + newHops.map((h) => h.join('.')).join(' ▸ '));
       setName(data.label);
       setTab('wiring');
+      // Open (or focus) a persistent tab for this drilled composite.
+      const key = newHops.map((h) => h.join('.')).join('▸');
+      setOpenTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, name: data.label, hops: newHops }]));
+      setActiveTabKey(key);
     } catch (e) {
       console.error('[bigraph-loom] drill failed', e);
     }
   }, [drillHops, drillCrumbs, applyLoadedState]);
 
-  // Pop the breadcrumb to `level` (0 = the root composite). Re-fetches that
-  // level so the shown state is always consistent (cached server-side).
-  const popTo = useCallback(async (level: number) => {
+  // Switch to a drill tab (hops:[] = the root "Super-sim"). Re-fetches that
+  // level so the shown state stays consistent (cached server-side).
+  const selectTab = useCallback(async (tab: DrillTab) => {
     const root = rootIdRef.current;
     if (!root) return;
     try {
-      if (level <= 0) {
+      if (!tab.hops.length) {
         const r = await fetch('/api/composite-state?ref=' + encodeURIComponent(root));
         const data = await r.json();
         const st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
@@ -922,20 +945,32 @@ export default function App() {
         setDrillCrumbs([]);
         setCompositeId(root);
         setName(rootNameRef.current);
-        return;
+      } else {
+        const res = await fetchInnerComposite(root, tab.hops);
+        if (!res?.state) return;
+        applyLoadedState(res.state);
+        setDrillHops(tab.hops);
+        setDrillCrumbs(res.crumbs && res.crumbs.length === tab.hops.length ? res.crumbs : tab.hops.map(() => tab.name));
+        setCompositeId(root + ' ▸ ' + tab.hops.map((h) => h.join('.')).join(' ▸ '));
+        setName(tab.name);
       }
-      const newHops = drillHops.slice(0, level);
-      const res = await fetchInnerComposite(root, newHops);
-      if (!res?.state) return;
-      applyLoadedState(res.state);
-      setDrillHops(newHops);
-      setDrillCrumbs(drillCrumbs.slice(0, level));
-      setCompositeId(root + ' ▸ ' + newHops.map((h) => h.join('.')).join(' ▸ '));
-      setName(drillCrumbs[level - 1] ?? null);
+      setActiveTabKey(tab.key);
+      setTab('wiring');
     } catch (e) {
-      console.error('[bigraph-loom] breadcrumb navigation failed', e);
+      console.error('[bigraph-loom] tab switch failed', e);
     }
-  }, [drillHops, drillCrumbs, applyLoadedState]);
+  }, [applyLoadedState]);
+
+  // Close a drill tab; if it was active, fall back to the root "Super-sim".
+  const closeTab = useCallback((key: string, e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    setOpenTabs((ts) => ts.filter((t) => t.key !== key));
+    setActiveTabKey((cur) => {
+      if (cur !== key) return cur;
+      void selectTab({ key: '', name: rootNameRef.current || 'Super-sim', hops: [] });
+      return '';
+    });
+  }, [selectTab]);
 
   // Prefetch every Composite Process's inner composite in the BACKGROUND as soon
   // as the composite loads, so its in-card mini-map renders instantly when the
@@ -1018,7 +1053,7 @@ export default function App() {
   // and Nodes stack on the RIGHT. `render` closes over the latest props so each
   // panel always sees current selection / hidden / focus. Rebuilt when any of
   // those inputs change identity — the DockContainer just calls render().
-  const dockPanels: DockPanelSpec[] = useMemo(() => [
+  const dockPanels: DockPanelSpec[] = useMemo(() => ([
     {
       id: 'config',
       title: 'Config',
@@ -1046,6 +1081,7 @@ export default function App() {
       id: 'process',
       title: 'Processes',
       defaultSide: 'right',
+      defaultCollapsed: true,
       render: () => (
         <ProcessPanel
           nodes={allNodes}
@@ -1087,8 +1123,8 @@ export default function App() {
         />
       ),
     },
-  ], [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection,
-      compositeId, parameters, overrides, handleApplied, STATIC]);
+  ] as DockPanelSpec[]).filter((p) => !(chromeless && p.id === 'config')), [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection,
+      compositeId, parameters, overrides, handleApplied, STATIC, chromeless]);
 
   if (!state) {
     return (
@@ -1128,7 +1164,7 @@ export default function App() {
       <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
         {/* Thin breadcrumb header: composite name + library.
             One layer up from the tabs so the tab strip stays compact. */}
-        {(name || compositeId) && (
+        {!chromeless && (name || compositeId) && (
           <div style={{
             display: 'flex', alignItems: 'baseline', gap: 6,
             padding: '4px 16px',
@@ -1137,54 +1173,22 @@ export default function App() {
             background: '#fff',
             flex: '0 0 auto',
           }}>
-            {drillHops.length > 0 ? (
-              // Drill breadcrumb: root › cell › … › current. Every crumb but the
-              // last pops back to that level (Composite-Process drill-down).
+            {/* Navigation between composite levels is handled by the drill tabs
+                (see the tab strip above the graph); the header just names the
+                current composite. */}
+            <span style={{ fontWeight: 600, color: '#111827' }}>
+              {name || compositeId}
+            </span>
+            {library && (
               <>
-                <span
-                  className="loom-crumb loom-crumb-link"
-                  onClick={() => popTo(0)}
-                  title="Back to the top composite"
-                >
-                  {rootNameRef.current || rootIdRef.current}
-                </span>
-                {drillCrumbs.map((c, i) => {
-                  const isLast = i === drillCrumbs.length - 1;
-                  return (
-                    <span key={i} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
-                      <span style={{ color: '#d1d5db' }}>▸</span>
-                      {isLast ? (
-                        <span className="loom-crumb loom-crumb-current">{c}</span>
-                      ) : (
-                        <span
-                          className="loom-crumb loom-crumb-link"
-                          onClick={() => popTo(i + 1)}
-                          title={`Back to ${c}`}
-                        >
-                          {c}
-                        </span>
-                      )}
-                    </span>
-                  );
-                })}
-              </>
-            ) : (
-              <>
-                <span style={{ fontWeight: 600, color: '#111827' }}>
-                  {name || compositeId}
-                </span>
-                {library && (
-                  <>
-                    <span style={{ color: '#d1d5db' }}>·</span>
-                    <span style={{ color: '#6b7280' }}>{library}</span>
-                  </>
-                )}
+                <span style={{ color: '#d1d5db' }}>·</span>
+                <span style={{ color: '#6b7280' }}>{library}</span>
               </>
             )}
           </div>
         )}
         <nav style={{
-          display: 'flex', gap: 24, alignItems: 'center',
+          display: chromeless ? 'none' : 'flex', gap: 24, alignItems: 'center',
           padding: '4px 16px',
           borderBottom: '1px solid #e5e7eb',
           background: '#fff',
@@ -1216,6 +1220,43 @@ export default function App() {
             display: tab === 'wiring' ? 'flex' : 'none',
             flexDirection: 'column',
           }}>
+            {/* Drill tabs: Super-sim + each opened inner composite (× to close).
+                Shown once you've drilled in; visible even in chromeless embeds. */}
+            {openTabs.length > 0 && (
+              <div style={{
+                display: 'flex', gap: 2, alignItems: 'flex-end',
+                padding: '4px 8px 0', borderBottom: '1px solid #e5e7eb',
+                background: '#fff', flex: '0 0 auto', overflowX: 'auto',
+              }}>
+                {[{ key: '', name: rootNameRef.current || 'Super-sim', hops: [] as string[][] }, ...openTabs].map((t) => {
+                  const active = activeTabKey === t.key;
+                  return (
+                    <div
+                      key={t.key || '__root'}
+                      onClick={() => selectTab(t)}
+                      title={t.name}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '5px 11px', borderRadius: '7px 7px 0 0', cursor: 'pointer', whiteSpace: 'nowrap',
+                        fontSize: 13, fontWeight: active ? 600 : 400,
+                        color: active ? '#2563eb' : '#6b7280',
+                        background: active ? '#eff6ff' : 'transparent',
+                        border: '1px solid ' + (active ? '#bfdbfe' : 'transparent'), borderBottom: 'none',
+                      }}
+                    >
+                      <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+                      {t.key !== '' && (
+                        <span
+                          onClick={(e) => closeTab(t.key, e)}
+                          title="Close tab"
+                          style={{ color: '#9ca3af', fontSize: 15, lineHeight: 1, cursor: 'pointer' }}
+                        >×</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <EmitContext.Provider value={emitSet}>
               {/* Dock row (flex:1) holds the Config/Process/Inspector/Nodes panels
                   flanking the canvas; a slim run bar is pinned along the bottom so
@@ -1254,66 +1295,88 @@ export default function App() {
                   flexWrap: 'wrap', justifyContent: 'flex-end',
                   maxWidth: 'calc(100% - 16px)',
                 }}>
+                  {/* Flow direction: none (relationship packing) / top-to-bottom /
+                      left-to-right. The directional modes order nodes by the flow
+                      network (ELK layered). */}
+                  <div
+                    style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
+                    title="Layout: relationship packing, or order by the flow network (top-to-bottom / left-to-right)"
+                  >
+                    {([
+                      { id: 'hierarchy', label: '○', t: 'Relationship packing (no enforced direction)' },
+                      { id: 'flow-tb', label: '↓', t: 'Stack by depth: top to bottom (fast)' },
+                      { id: 'flow-lr', label: '→', t: 'Stack by depth: left to right (fast)' },
+                      { id: 'flow-elk', label: 'ƒ', t: 'Flow network — ELK layered (orders by the step flow)' },
+                    ] as const).map((opt) => {
+                      const active = layoutMode.modeId === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          onClick={() => layoutMode.setModeId(opt.id)}
+                          title={opt.t}
+                          style={{
+                            padding: '4px 9px', fontSize: 13, border: 'none', cursor: 'pointer',
+                            background: active ? '#eff6ff' : '#fff',
+                            color: active ? '#2563eb' : '#6b7280',
+                            fontWeight: active ? 700 : 400,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* Collapse view: both / process-only (stores collapsed) /
+                      store-centric (processes collapsed into hyperedge junctions). */}
+                  <div
+                    style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
+                    title="Collapse the graph"
+                  >
+                    {([
+                      { mode: 'none', label: 'both', t: 'Show processes and stores' },
+                      { mode: 'stores', label: 'proc', t: 'Process-only graph: collapse stores into direct process to process edges' },
+                      { mode: 'processes', label: 'store', t: 'Store-centric: collapse each process into a hyperedge junction over its stores' },
+                    ] as const).map((opt) => {
+                      const active = collapseMode === opt.mode;
+                      return (
+                        <button
+                          key={opt.mode}
+                          onClick={() => setCollapseMode(opt.mode)}
+                          title={opt.t}
+                          style={{
+                            padding: '4px 9px', fontSize: 12, border: 'none', cursor: 'pointer',
+                            background: active ? '#eff6ff' : '#fff',
+                            color: active ? '#2563eb' : '#6b7280',
+                            fontWeight: active ? 700 : 400,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
                   <ViewsMenu
                     compositeId={compositeId}
                     captureCurrentView={captureCurrentView}
                     applyView={applyView}
                   />
-                  {/* "Adjust" — one-shot rearrangements. Each moves the nodes and
-                      leaves them there (persisted); not a mode/toggle. */}
-                  <div style={{ position: 'relative' }}>
-                    <button
-                      onClick={() => setShowAdjust((v) => !v)}
-                      title="Rearrange the layout (moves the nodes and leaves them there)"
-                      style={{
-                        padding: '4px 10px', fontSize: 12,
-                        background: '#fff', border: '1px solid #d1d5db',
-                        borderRadius: 4, cursor: 'pointer', color: '#374151',
-                      }}
-                    >
-                      Adjust ▾
-                    </button>
-                    {showAdjust && (
-                      <div style={{
-                        position: 'absolute', top: '100%', right: 0, marginTop: 4,
-                        background: '#fff', border: '1px solid #d1d5db', borderRadius: 4,
-                        boxShadow: '0 2px 8px rgba(0,0,0,0.12)', overflow: 'hidden',
-                        minWidth: 230, zIndex: 20,
-                      }}>
-                        {[
-                          {
-                            label: '⤵ Stack stores by depth',
-                            hint: 'Arrange stores as a nesting tree; processes packed below',
-                            enabled: true,
-                            on: () => handleStackByDepth(),
-                          },
-                          {
-                            label: focus.locked ? '⊹ Center on locked process' : '⊹ Center on this (lock a process first)',
-                            hint: 'Inputs left, outputs right, shared stores below',
-                            enabled: !!focus.locked,
-                            on: () => { if (focus.locked) handleCenterOnProcess(focus.locked); },
-                          },
-                        ].map((it) => (
-                          <button
-                            key={it.label}
-                            disabled={!it.enabled}
-                            onClick={() => { if (it.enabled) { it.on(); setShowAdjust(false); } }}
-                            title={it.hint}
-                            style={{
-                              display: 'block', width: '100%', textAlign: 'left',
-                              padding: '7px 12px', fontSize: 12, border: 0,
-                              background: '#fff', cursor: it.enabled ? 'pointer' : 'default',
-                              color: it.enabled ? '#374151' : '#b8bec9',
-                            }}
-                            onMouseEnter={(e) => { if (it.enabled) e.currentTarget.style.background = '#f3f4f6'; }}
-                            onMouseLeave={(e) => (e.currentTarget.style.background = '#fff')}
-                          >
-                            {it.label}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                  {/* Center on the locked process (inputs left, outputs right,
+                      shared stores below). Disabled until a process is locked. */}
+                  <button
+                    onClick={() => { if (focus.locked) handleCenterOnProcess(focus.locked); }}
+                    disabled={!focus.locked}
+                    title={focus.locked
+                      ? 'Center the layout on the locked process (inputs left, outputs right, shared stores below)'
+                      : 'Lock a process first (click it, then the lock), then center the layout on it'}
+                    style={{
+                      padding: '4px 10px', fontSize: 12,
+                      background: '#fff', border: '1px solid #d1d5db',
+                      borderRadius: 4, cursor: focus.locked ? 'pointer' : 'default',
+                      color: focus.locked ? '#374151' : '#b8bec9',
+                    }}
+                  >
+                    ⊹ Center
+                  </button>
                   <button
                     onClick={handleResetLayout}
                     title="Re-run auto-layout on the currently visible nodes and fit the view"
@@ -1411,6 +1474,8 @@ export default function App() {
               </div>
               </DockContainer>
               </div>
+              {/* Run is provided by the workbench card in chromeless embeds. */}
+              {!chromeless && (
               <ExploreRunBar
                 compositeId={compositeId}
                 overrides={overrides}
@@ -1424,6 +1489,7 @@ export default function App() {
                 onCompleted={() => setTab('results')}
                 onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
               />
+              )}
             </EmitContext.Provider>
           </div>
           {tab === 'setup' && (
