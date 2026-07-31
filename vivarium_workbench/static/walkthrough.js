@@ -4179,8 +4179,10 @@
   }
 
   function _loadRegistry(refresh) {
+    // The tab panels show their own "Loading…" placeholder, so leave the status
+    // line blank during load (it's still used for error messages below).
     var status = document.getElementById('registry-status');
-    if (status) status.textContent = 'Loading…';
+    if (status) status.textContent = '';
     var _p = window.DataSource
       ? window.DataSource.loadRegistry(refresh)
       : fetch('/api/registry' + (refresh ? '?refresh=1' : '')).then(function(r) { return r.json(); });
