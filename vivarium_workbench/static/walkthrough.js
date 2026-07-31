@@ -2679,8 +2679,11 @@
       : '<div class="cfg-list" data-role="inputs"><span class="muted loom-load-hint">resolving defaults…</span></div>';
 
     // Run is a persistent bar (not an accordion) — only for runnable kinds.
-    var runBar = nonRun ? '' : _pcardRunBar(timestep +
-      '<button class="action-btn" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+    // Same treatment as the composite card: the ▶ RUN label IS the button, with
+    // the Timestep/step-note beside it (no separate white Run button).
+    var runBar = nonRun ? '' : _pcardRunBar(
+      '<button class="pcard-run-go" type="button" onclick="_runRegistryProcess(this)">▶ Run</button>' +
+      timestep +
       '<span class="pcard-run-out" data-role="run-inline-status"></span>');
 
     var outputsBody = nonRun
