@@ -4679,3 +4679,34 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] [style*="solid #d1d5db"],
 :root[data-theme="dark"] [style*="solid #eee"],
 :root[data-theme="dark"] [style*="solid #f1f5f9"]{ border-color:var(--border) !important; }
+
+/* ===== About page (opened from the Vivarium brand logo) ===== */
+.about-page{ max-width:760px; margin:0 auto; padding:28px 24px 56px; }
+.about-hero{ display:flex; align-items:center; gap:20px; padding-bottom:22px; margin-bottom:8px; border-bottom:1px solid #eef2f7; }
+.about-logo{ width:76px; height:76px; border-radius:16px; flex:none; object-fit:cover; box-shadow:0 2px 10px -4px rgba(15,23,42,.25); }
+.about-hero-text h1{ margin:0 0 6px; font-size:1.6em; letter-spacing:-.01em; color:#0f172a; }
+.about-tagline{ margin:0; color:#475569; font-size:1.02em; line-height:1.5; }
+.about-block{ margin:26px 0 0; }
+.about-block h2{ margin:0 0 8px; font-size:1.06em; color:#1d4ed8; }
+.about-block p{ margin:0 0 10px; color:#334155; line-height:1.62; font-size:0.95em; }
+.about-fineprint{ color:#64748b !important; font-size:0.86em !important; }
+.about-steps{ margin:6px 0 12px; padding-left:20px; }
+.about-steps li{ margin:0 0 8px; color:#334155; line-height:1.55; font-size:0.94em; }
+.about-links{ display:flex; flex-wrap:wrap; gap:12px; margin-top:32px; padding-top:22px; border-top:1px solid #eef2f7; }
+.about-link-btn{
+  display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:9px;
+  background:#2563eb; color:#fff; font-weight:600; font-size:0.92em; text-decoration:none;
+  border:1px solid #2563eb; transition:background .12s ease, box-shadow .12s ease;
+}
+.about-link-btn:hover{ background:#1d4ed8; box-shadow:0 3px 12px -5px rgba(37,99,235,.6); }
+.about-link-ghost{ background:transparent; color:#2563eb; }
+.about-link-ghost:hover{ background:#eff6ff; box-shadow:none; }
+:root[data-theme="dark"] .about-hero,
+:root[data-theme="dark"] .about-links{ border-color:var(--border); }
+:root[data-theme="dark"] .about-hero-text h1{ color:var(--text); }
+:root[data-theme="dark"] .about-tagline,
+:root[data-theme="dark"] .about-block p,
+:root[data-theme="dark"] .about-steps li{ color:var(--text-muted, #cbd5e1); }
+:root[data-theme="dark"] .about-block h2{ color:#93c5fd; }
+:root[data-theme="dark"] .about-link-ghost{ color:#93c5fd; }
+:root[data-theme="dark"] .about-link-ghost:hover{ background:rgba(59,130,246,.12); }
