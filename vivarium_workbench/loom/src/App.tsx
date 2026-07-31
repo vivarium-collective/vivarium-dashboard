@@ -165,6 +165,12 @@ export default function App() {
   const [drillCrumbs, setDrillCrumbs] = useState<string[]>([]);
   const rootIdRef = useRef<string | null>(null);
   const rootNameRef = useRef<string | null>(null);
+  // Persistent drill TABS: double-clicking a Composite Process opens it as a
+  // tab that stays until closed (× ), even after switching back to the root
+  // ("Super-sim"). Replaces the breadcrumb. `activeTabKey` '' = the root.
+  type DrillTab = { key: string; name: string; hops: string[][] };
+  const [openTabs, setOpenTabs] = useState<DrillTab[]>([]);
+  const [activeTabKey, setActiveTabKey] = useState<string>('');
   // Composite parameters + current overrides (for the Configure tab).
   const [parameters, setParameters] = useState<Record<string, ParameterDecl>>({});
   const [overrides, setOverrides] = useState<Record<string, unknown>>({});
@@ -916,18 +922,22 @@ export default function App() {
       setCompositeId(root + ' ▸ ' + newHops.map((h) => h.join('.')).join(' ▸ '));
       setName(data.label);
       setTab('wiring');
+      // Open (or focus) a persistent tab for this drilled composite.
+      const key = newHops.map((h) => h.join('.')).join('▸');
+      setOpenTabs((ts) => (ts.some((t) => t.key === key) ? ts : [...ts, { key, name: data.label, hops: newHops }]));
+      setActiveTabKey(key);
     } catch (e) {
       console.error('[bigraph-loom] drill failed', e);
     }
   }, [drillHops, drillCrumbs, applyLoadedState]);
 
-  // Pop the breadcrumb to `level` (0 = the root composite). Re-fetches that
-  // level so the shown state is always consistent (cached server-side).
-  const popTo = useCallback(async (level: number) => {
+  // Switch to a drill tab (hops:[] = the root "Super-sim"). Re-fetches that
+  // level so the shown state stays consistent (cached server-side).
+  const selectTab = useCallback(async (tab: DrillTab) => {
     const root = rootIdRef.current;
     if (!root) return;
     try {
-      if (level <= 0) {
+      if (!tab.hops.length) {
         const r = await fetch('/api/composite-state?ref=' + encodeURIComponent(root));
         const data = await r.json();
         const st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
@@ -937,20 +947,32 @@ export default function App() {
         setDrillCrumbs([]);
         setCompositeId(root);
         setName(rootNameRef.current);
-        return;
+      } else {
+        const res = await fetchInnerComposite(root, tab.hops);
+        if (!res?.state) return;
+        applyLoadedState(res.state);
+        setDrillHops(tab.hops);
+        setDrillCrumbs(res.crumbs && res.crumbs.length === tab.hops.length ? res.crumbs : tab.hops.map(() => tab.name));
+        setCompositeId(root + ' ▸ ' + tab.hops.map((h) => h.join('.')).join(' ▸ '));
+        setName(tab.name);
       }
-      const newHops = drillHops.slice(0, level);
-      const res = await fetchInnerComposite(root, newHops);
-      if (!res?.state) return;
-      applyLoadedState(res.state);
-      setDrillHops(newHops);
-      setDrillCrumbs(drillCrumbs.slice(0, level));
-      setCompositeId(root + ' ▸ ' + newHops.map((h) => h.join('.')).join(' ▸ '));
-      setName(drillCrumbs[level - 1] ?? null);
+      setActiveTabKey(tab.key);
+      setTab('wiring');
     } catch (e) {
-      console.error('[bigraph-loom] breadcrumb navigation failed', e);
+      console.error('[bigraph-loom] tab switch failed', e);
     }
-  }, [drillHops, drillCrumbs, applyLoadedState]);
+  }, [applyLoadedState]);
+
+  // Close a drill tab; if it was active, fall back to the root "Super-sim".
+  const closeTab = useCallback((key: string, e: { stopPropagation: () => void }) => {
+    e.stopPropagation();
+    setOpenTabs((ts) => ts.filter((t) => t.key !== key));
+    setActiveTabKey((cur) => {
+      if (cur !== key) return cur;
+      void selectTab({ key: '', name: rootNameRef.current || 'Super-sim', hops: [] });
+      return '';
+    });
+  }, [selectTab]);
 
   // Prefetch every Composite Process's inner composite in the BACKGROUND as soon
   // as the composite loads, so its in-card mini-map renders instantly when the
@@ -1152,48 +1174,16 @@ export default function App() {
             background: '#fff',
             flex: '0 0 auto',
           }}>
-            {drillHops.length > 0 ? (
-              // Drill breadcrumb: root › cell › … › current. Every crumb but the
-              // last pops back to that level (Composite-Process drill-down).
+            {/* Navigation between composite levels is handled by the drill tabs
+                (see the tab strip above the graph); the header just names the
+                current composite. */}
+            <span style={{ fontWeight: 600, color: '#111827' }}>
+              {name || compositeId}
+            </span>
+            {library && (
               <>
-                <span
-                  className="loom-crumb loom-crumb-link"
-                  onClick={() => popTo(0)}
-                  title="Back to the top composite"
-                >
-                  {rootNameRef.current || rootIdRef.current}
-                </span>
-                {drillCrumbs.map((c, i) => {
-                  const isLast = i === drillCrumbs.length - 1;
-                  return (
-                    <span key={i} style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
-                      <span style={{ color: '#d1d5db' }}>▸</span>
-                      {isLast ? (
-                        <span className="loom-crumb loom-crumb-current">{c}</span>
-                      ) : (
-                        <span
-                          className="loom-crumb loom-crumb-link"
-                          onClick={() => popTo(i + 1)}
-                          title={`Back to ${c}`}
-                        >
-                          {c}
-                        </span>
-                      )}
-                    </span>
-                  );
-                })}
-              </>
-            ) : (
-              <>
-                <span style={{ fontWeight: 600, color: '#111827' }}>
-                  {name || compositeId}
-                </span>
-                {library && (
-                  <>
-                    <span style={{ color: '#d1d5db' }}>·</span>
-                    <span style={{ color: '#6b7280' }}>{library}</span>
-                  </>
-                )}
+                <span style={{ color: '#d1d5db' }}>·</span>
+                <span style={{ color: '#6b7280' }}>{library}</span>
               </>
             )}
           </div>
@@ -1231,6 +1221,43 @@ export default function App() {
             display: tab === 'wiring' ? 'flex' : 'none',
             flexDirection: 'column',
           }}>
+            {/* Drill tabs: Super-sim + each opened inner composite (× to close).
+                Shown once you've drilled in; visible even in chromeless embeds. */}
+            {openTabs.length > 0 && (
+              <div style={{
+                display: 'flex', gap: 2, alignItems: 'flex-end',
+                padding: '4px 8px 0', borderBottom: '1px solid #e5e7eb',
+                background: '#fff', flex: '0 0 auto', overflowX: 'auto',
+              }}>
+                {[{ key: '', name: rootNameRef.current || 'Super-sim', hops: [] as string[][] }, ...openTabs].map((t) => {
+                  const active = activeTabKey === t.key;
+                  return (
+                    <div
+                      key={t.key || '__root'}
+                      onClick={() => selectTab(t)}
+                      title={t.name}
+                      style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 6,
+                        padding: '5px 11px', borderRadius: '7px 7px 0 0', cursor: 'pointer', whiteSpace: 'nowrap',
+                        fontSize: 13, fontWeight: active ? 600 : 400,
+                        color: active ? '#2563eb' : '#6b7280',
+                        background: active ? '#eff6ff' : 'transparent',
+                        border: '1px solid ' + (active ? '#bfdbfe' : 'transparent'), borderBottom: 'none',
+                      }}
+                    >
+                      <span style={{ maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</span>
+                      {t.key !== '' && (
+                        <span
+                          onClick={(e) => closeTab(t.key, e)}
+                          title="Close tab"
+                          style={{ color: '#9ca3af', fontSize: 15, lineHeight: 1, cursor: 'pointer' }}
+                        >×</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             <EmitContext.Provider value={emitSet}>
               {/* Dock row (flex:1) holds the Config/Process/Inspector/Nodes panels
                   flanking the canvas; a slim run bar is pinned along the bottom so
