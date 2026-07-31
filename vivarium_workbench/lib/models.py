@@ -2757,6 +2757,30 @@ class InvestigationResolveResult(BaseModel):
     error: Optional[str] = None
 
 
+class InvestigationTriggerRequest(BaseModel):
+    """POST /api/investigation-trigger request body (Layer-4 pull-or-compute).
+
+    Wraps ``process_bigraph.templates.trigger`` over an investigation's study
+    graph: build the pbg investigation document, ``trigger`` on ``target_study``
+    (pulling every cached prerequisite, leaving the target to compute, pruning
+    non-ancestors), and — unless ``launch`` is ``False`` — launch the target
+    through the existing detached composite-run subsystem. "Run this study" and
+    "continue from here reusing cached upstream" are the same call with a
+    different ``target_study``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    investigation: str = ""
+    target_study: str = ""
+    # 'error' (default): refuse to silently recompute an uncached prerequisite,
+    # naming it (HTTP 409). 'compute': leave uncached prerequisites to compute.
+    on_missing: str = "error"
+    # When False, return the {pulled, computed, pruned} plan only (no run
+    # spawned) — used by the read-only bundle / for previewing the plan.
+    launch: bool = True
+
+
 class RunTestsRequest(BaseModel):
     """POST /api/run-tests request body — empty ``{}`` (v0.3.0: no model param).
 

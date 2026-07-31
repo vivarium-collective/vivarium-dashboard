@@ -104,6 +104,8 @@ from vivarium_workbench.lib import study_page as _study_page
 from vivarium_workbench.lib import study_runs as _study_runs
 from vivarium_workbench.lib import rerun as _rerun
 from vivarium_workbench.lib import investigation_resolve_views as _investigation_resolve_views
+from vivarium_workbench.lib import investigation_trigger as _investigation_trigger
+from vivarium_workbench.lib import investigation_composite as _investigation_composite
 from vivarium_workbench.lib import run_unblocked_views as _run_unblocked_views
 from vivarium_workbench.lib import test_run_views as _test_run_views
 from vivarium_workbench.lib import study_spec as _study_spec
@@ -315,6 +317,8 @@ from vivarium_workbench.lib.models import (
     # Phase 2 Task 6: investigation-resolve (opt-in topological pull-or-compute)
     InvestigationResolveRequest,
     InvestigationResolveResult,
+    # Layer-4: pull-or-compute trigger (run one study / continue from here)
+    InvestigationTriggerRequest,
     # Misc POST request bodies
     SuggestRequest,
     StudyReportSingleRequest,
@@ -5481,6 +5485,61 @@ def create_app() -> FastAPI:
             ws, req.investigation, force=req.force
         )
         return InvestigationResolveResult(**body)
+
+    @app.get(
+        "/api/investigation-trigger-status",
+        tags=["Investigations"],
+        summary="Per-study cached-vs-compute status for the investigation graph",
+    )
+    def investigation_trigger_status(
+        investigation: str = "",
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Read-only cached/compute badge data for an investigation's studies.
+
+        For each member study, computes its content address (the same formula
+        the pull-or-compute pipeline stores under) and probes
+        ``.pbg/artifacts/<id>/`` to report whether its output artifact is
+        already cached. Returns ``{"investigation", "commit", "nodes": [{"slug",
+        "id", "kind", "cached", "artifact_id", "ancestors"}, ...]}``. An unknown
+        investigation reports ``{"investigation", "nodes": [], "error"}`` (200).
+        """
+        try:
+            body = _investigation_composite.node_cache_status(ws, investigation)
+        except _investigation_composite.InvestigationCompositeError as exc:
+            return JSONResponse(
+                status_code=200,
+                content={"investigation": investigation, "nodes": [],
+                         "error": str(exc)})
+        return JSONResponse(status_code=200, content=body)
+
+    @app.post(
+        "/api/investigation-trigger",
+        tags=["Investigations"],
+        summary="Layer-4 pull-or-compute: run one study / continue from here",
+    )
+    def investigation_trigger(
+        req: InvestigationTriggerRequest,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Trigger a study via process-bigraph's pull-or-compute over its graph.
+
+        Body: ``{"investigation", "target_study", "on_missing"?, "launch"?}``.
+        Builds the pbg investigation document, calls
+        ``process_bigraph.templates.trigger`` on ``target_study`` — filling each
+        cached prerequisite with a ``CachedResults`` reference (pull), leaving
+        the target open (compute), pruning non-ancestors — and (unless
+        ``launch`` is False) launches the target through the existing detached
+        composite-run subsystem, wiring pulled upstream artifact paths into it.
+
+        Returns ``{"investigation", "target", "on_missing", "commit", "report":
+        {target, pulled, computed, pruned}, "run"?, "launch_status"?}`` (200).
+        400 invalid body; 404 unknown investigation/target; 409 an uncached
+        prerequisite under ``on_missing="error"`` (message names it).
+        """
+        body, status = _investigation_trigger.investigation_trigger(
+            ws, req.model_dump(exclude_none=True))
+        return JSONResponse(status_code=status, content=body)
 
     @app.post("/api/save-run-as-variant", tags=["Runs"],
               summary="Save a run (composite+config) as a named study variant")

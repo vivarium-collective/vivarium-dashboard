@@ -30,6 +30,13 @@
   var aigBand = 1;                 // 0=far, 1=mid, 2=near (default = current detail)
   var _lastDagArgs = null;         // [studies, chainsBySlug] for re-render on band change
 
+  // Layer-4 pull-or-compute: per-study cached/compute status for the current
+  // investigation DAG, keyed by study slug, plus the investigation slug the
+  // "Run this study" / "Continue from here" buttons trigger against. Populated
+  // from GET /api/investigation-trigger-status alongside the graph fetch.
+  var _dagTriggerBySlug = {};
+  var _dagInvSlug = '';
+
   // -------------------------------------------------------------------------
   // Investigation DAG orientation (LR = left-to-right, TB = top-to-bottom).
   // Auto-picked per investigation shape (see chooseGraphOrientation in
@@ -10262,14 +10269,31 @@
         (function () {
           var slug = d.slug || d.name || name;
           if (!slug) { _renderInvestigationDag(d.studies || []); return; }
+          _dagInvSlug = slug;
+          _dagTriggerBySlug = {};
+          // Layer-4 cached/compute badges: fetch the per-study trigger status in
+          // parallel with the graph. Live-server only (the query-string endpoint
+          // 404s in the published bundle) and best-effort — a failure just leaves
+          // the badges off; the graph still renders.
+          var _isSnap = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
+          var _statusP = _isSnap ? Promise.resolve(null) :
+            fetch('/api/investigation-trigger-status?investigation=' + encodeURIComponent(slug))
+              .then(function (r) { return r.ok ? r.json() : null; })
+              .catch(function () { return null; });
           // Snapshot-aware: DataSource resolves to /api/investigation-graph/<slug>.json
           // in the published read-only (a raw fetch of the query-string endpoint
           // 404s there, dropping the evidence chains from every card).
-          (window.DataSource && window.DataSource.loadInvestigationGraph
+          var _graphP = (window.DataSource && window.DataSource.loadInvestigationGraph
             ? window.DataSource.loadInvestigationGraph(slug)
             : fetch('/api/investigation-graph?investigation=' + encodeURIComponent(slug))
                 .then(function (r) { if (!r.ok) throw new Error('graph ' + r.status); return r.json(); })
-          )
+          );
+          _statusP.then(function (status) {
+            var by = {};
+            ((status && status.nodes) || []).forEach(function (n) { if (n && n.slug) by[n.slug] = n; });
+            _dagTriggerBySlug = by;
+            return _graphP;
+          }, function () { return _graphP; })
             .then(function (graph) {
               _renderInvestigationDag(d.studies || [], (graph && graph.chains) || {}, (graph && graph.study_edges) || []);
             })
@@ -10632,6 +10656,105 @@
   //   LR (left->right): depth -> x (columns), within-depth index -> y (rows).
   //   TB (top->bottom):  depth -> y (rows),    within-depth index -> x (columns).
   // Cards as absolute-positioned <div>s; edges as SVG cubic-Bezier paths.
+  // ── Layer-4 pull-or-compute affordances on the investigation DAG ─────────
+  //
+  // Each study node gets a cached/compute badge (does its output artifact
+  // already exist in .pbg/artifacts/?) and, on the live server only, two
+  // buttons: "Run this study" (compute it, pulling any cached upstream) and
+  // "Continue from here" (same call — the label reflects that it reuses cached
+  // upstream when the study has ancestors). Both POST /api/investigation-trigger
+  // with the node as target. The buttons carry class `js-authoring` so they
+  // hide automatically in the published snapshot and live read-only modes.
+
+  function _dagCacheBadgeHtml(slug) {
+    var st = _dagTriggerBySlug[slug];
+    if (!st) return '';
+    var cached = !!st.cached;
+    var bg = cached ? '#dcfce7' : '#f1f5f9';
+    var fg = cached ? '#166534' : '#475569';
+    var label = cached ? '● cached' : '○ compute';
+    var tip = cached
+      ? 'Output artifact is in the store — this study is pulled, not recomputed'
+      : 'No cached artifact — this study computes when triggered';
+    return '<span class="dag-cache-badge" title="' + _esc(tip) + '" ' +
+      'style="display:inline-block;font-size:0.62em;font-weight:700;padding:1px 7px;' +
+      'border-radius:9999px;background:' + bg + ';color:' + fg + '">' + label + '</span>';
+  }
+
+  function _dagTriggerControlsHtml(slug) {
+    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return '';
+    if ((window._uiConfig || {}).readonly) return '';
+    var st = _dagTriggerBySlug[slug];
+    var hasUpstream = !!(st && st.ancestors && st.ancestors.length);
+    var btn = 'font-size:0.66em;padding:2px 8px;border-radius:6px;cursor:pointer;' +
+      'border:1px solid #cbd5e1;background:#fff;color:#334155';
+    var out = '<div class="js-authoring dag-trigger-controls" ' +
+      'style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
+      '<button type="button" class="dag-trigger-run" data-slug="' + _esc(slug) + '" ' +
+      'style="' + btn + '">▷ Run this study</button>';
+    if (hasUpstream) {
+      out += '<button type="button" class="dag-trigger-continue" data-slug="' + _esc(slug) + '" ' +
+        'title="Reuse cached upstream results; recompute only this study" ' +
+        'style="' + btn + '">⏵ Continue from here</button>';
+    }
+    return out + '</div>';
+  }
+
+  function _triggerStudy(slug, onMissing, btnEl) {
+    if (!_dagInvSlug) return;
+    var original = btnEl ? btnEl.textContent : '';
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = 'triggering…'; }
+    fetch('/api/investigation-trigger', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        investigation: _dagInvSlug, target_study: slug, on_missing: onMissing,
+      }),
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
+    }).then(function (res) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = original; }
+      if (!res.ok) {
+        // 409 = an uncached prerequisite under on_missing=error; the message
+        // names it. Offer to compute the whole chain instead.
+        if (res.status === 409 &&
+            window.confirm((res.body && res.body.error) + '\n\nCompute the missing upstream too?')) {
+          _triggerStudy(slug, 'compute', btnEl);
+          return;
+        }
+        window.alert('Trigger failed: ' + ((res.body && res.body.error) || res.status));
+        return;
+      }
+      var rep = res.body.report || {};
+      var msg = 'Triggered ' + slug + '\n' +
+        'pulled (reused from cache): ' + ((rep.pulled || []).join(', ') || 'none') + '\n' +
+        'computed (running): ' + ((rep.computed || []).join(', ') || 'none') + '\n' +
+        'pruned (not needed): ' + ((rep.pruned || []).join(', ') || 'none');
+      var run = res.body.run || {};
+      if (run.run_id) msg += '\n\nrun: ' + run.run_id;
+      window.alert(msg);
+      // Refresh badges so newly-cached studies flip to "cached".
+      if (typeof _refreshDagTriggerStatus === 'function') _refreshDagTriggerStatus();
+    }).catch(function (err) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = original; }
+      window.alert('Trigger request failed: ' + err);
+    });
+  }
+
+  function _refreshDagTriggerStatus() {
+    if (!_dagInvSlug) return;
+    fetch('/api/investigation-trigger-status?investigation=' + encodeURIComponent(_dagInvSlug))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (status) {
+        if (!status) return;
+        var by = {};
+        (status.nodes || []).forEach(function (n) { if (n && n.slug) by[n.slug] = n; });
+        _dagTriggerBySlug = by;
+        if (_lastDagArgs) _renderInvestigationDag(_lastDagArgs[0], _lastDagArgs[1], _lastDagArgs[2]);
+      })
+      .catch(function () {});
+  }
+
   function _renderInvestigationDag(studies, chainsBySlug, studyEdges) {
     _lastDagArgs = [studies, chainsBySlug, studyEdges];
     // Prefer the server's computed study_edges for dependency layout: in the
@@ -10871,9 +10994,26 @@
           : '') +
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
-          ? window._chainBlockHtml(chainsBySlug[s.name]) : '');
+          ? window._chainBlockHtml(chainsBySlug[s.name]) : '') +
+        // Layer-4: cached/compute badge + run/continue buttons (live only).
+        _dagCacheBadgeHtml(s.name) +
+        _dagTriggerControlsHtml(s.name);
       node._followUps = followUps;
       nodesHost.appendChild(node);
+      // Wire the pull-or-compute buttons (stopPropagation so the card's own
+      // click-to-open handler doesn't also fire).
+      node.querySelectorAll('.dag-trigger-run').forEach(function (b) {
+        b.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          _triggerStudy(b.getAttribute('data-slug'), 'error', b);
+        });
+      });
+      node.querySelectorAll('.dag-trigger-continue').forEach(function (b) {
+        b.addEventListener('click', function (ev) {
+          ev.stopPropagation();
+          _triggerStudy(b.getAttribute('data-slug'), 'error', b);
+        });
+      });
       var _badge = node.querySelector('.aig-status-badge');
       if (_badge) {
         var _openReason = function (ev) {
