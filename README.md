@@ -24,6 +24,8 @@ venv), see [docs/USAGE.md](docs/USAGE.md).
 ## Getting Started
 
 > **Setting up or driving the Workbench with an AI agent?** See **[docs/ai-onboarding.md](docs/ai-onboarding.md)** — a scaffold-to-run guide plus how the LLM layer (the `viva-superpowers` skills) talks to the HTTP API.
+>
+> **New to studies and investigations?** See **[docs/studies-and-investigations.md](docs/studies-and-investigations.md)** — what the two objects you author actually are, how they lower to runnable process-bigraph composites, and how "run one study / continue from here" (pull-or-compute) works.
 
 ### 1. Install
 
