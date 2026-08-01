@@ -253,7 +253,11 @@ def test_overview_biological_summary_renders_for_legacy_schema_too(tmp_path, das
 # Task 7: Decide tab — "Biological validation" -> "Empirical validation"
 # rename (data-* attrs stay `biological_validation` for back-compat), and
 # strip the two explanatory paragraphs (VERDICT & CONCLUSION intro, and the
-# three-track "Each track is independent..." explainer).
+# three-track "Each track is independent..." explainer). Fix round 1: also
+# covers the "Conclusion logic — gate decision" block's <em>Biological
+# validation:</em> label (rendered only when
+# conclusion_logic.if_primary_tests_pass.biological_validation is set), which
+# round 1 of this task missed.
 # ---------------------------------------------------------------------------
 
 def test_decide_empirical_rename_and_no_prose(tmp_path, dashboard_client):
@@ -269,6 +273,15 @@ def test_decide_empirical_rename_and_no_prose(tmp_path, dashboard_client):
         "variants": [],
         "purpose": {"question": "Does the demo composite run correctly?"},
         "status": "in_progress",
+        # Populate the conclusion-logic gate-decision branch so the
+        # <em>Empirical validation:</em> label (formerly "Biological
+        # validation:") actually renders in served HTML, not just the
+        # three-track verdict card's labels.
+        "conclusion_logic": {
+            "if_primary_tests_pass": {
+                "biological_validation": "Matches the literature band.",
+            },
+        },
     }))
 
     client = dashboard_client(ws)
@@ -281,6 +294,11 @@ def test_decide_empirical_rename_and_no_prose(tmp_path, dashboard_client):
     assert "Synthesises the latest run" not in html
     assert "Each track is independent" not in html
 
-    # Back-compat: the machine-readable attributes must be unchanged.
+    # The conclusion-logic gate-decision line rendered (proves the assertion
+    # above actually covers that block, not just the three-track card).
+    assert "Matches the literature band." in html
+
+    # Back-compat: the machine-readable attributes/dict keys must be
+    # unchanged — only the human-readable label text was renamed.
     assert 'data-verdict-track="biological_validation"' in html
     assert 'data-narrative-path="conclusion_verdicts.biological_validation.basis"' in html
