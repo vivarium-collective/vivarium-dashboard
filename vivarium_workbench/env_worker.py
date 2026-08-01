@@ -2185,20 +2185,38 @@ def _process_template(params: dict) -> dict:
     inputs = {}
     inputs_schema = {}
     outputs_schema = {}
+
+    def _schema(obj, meth):
+        try:
+            s = getattr(obj, meth)()
+            return s if isinstance(s, dict) else {}
+        except Exception:  # noqa: BLE001
+            return {}
+
+    in_schema: dict = {}
+    out_schema: dict = {}
     try:
         inst = cls(config if isinstance(config, dict) else {}, core)
-        in_schema = inst.inputs()
-        if isinstance(in_schema, dict):
-            inputs_schema = _json_safe(in_schema)
-            inputs = core.fill(in_schema, {}) if hasattr(core, "fill") else {}
+        in_schema, out_schema = _schema(inst, "inputs"), _schema(inst, "outputs")
+    except Exception:  # noqa: BLE001
+        # Full instantiation failed — e.g. a Step whose initialize() reads a
+        # composite-injected config key (current_timeline) that isn't a
+        # standalone default. Fall back to the DECLARED interface via __new__
+        # (no __init__), so the run panel still shows input-port defaults for
+        # EVERY process, filled by core.fill of the declared schema.
         try:
-            out_schema = inst.outputs()
-            if isinstance(out_schema, dict):
-                outputs_schema = _json_safe(out_schema)
-        except Exception:
-            outputs_schema = {}
-    except Exception:
-        inputs = {}
+            probe = cls.__new__(cls)
+            in_schema, out_schema = _schema(probe, "inputs"), _schema(probe, "outputs")
+        except Exception:  # noqa: BLE001
+            in_schema, out_schema = {}, {}
+    if in_schema:
+        inputs_schema = _json_safe(in_schema)
+        try:
+            inputs = core.fill(in_schema, {}) if hasattr(core, "fill") else {}
+        except Exception:  # noqa: BLE001
+            inputs = {}
+    if out_schema:
+        outputs_schema = _json_safe(out_schema)
 
     return {
         "ok": True,
@@ -2257,6 +2275,19 @@ def _run_process(params: dict) -> dict:
 
     try:
         inst = cls(config, core)
+    except KeyError as e:  # noqa: BLE001
+        key = str(e).strip("'\"")
+        cs = getattr(cls, "config_schema", {}) or {}
+        if isinstance(cs, dict) and key not in cs:
+            # The process reads a config key it doesn't declare — injected by its
+            # composite at runtime (e.g. current_timeline from ParCa/the timeline).
+            # Can't be defaulted standalone → guide the user to its composite.
+            return {"ok": False, "stage": "config",
+                    "error": (f"'{key}' is not a standalone default — this process reads it "
+                              f"from its composite at runtime. Run it inside its composite, "
+                              f"or set '{key}' in Configure."),
+                    "trace": _tb.format_exc()[-1200:]}
+        return {"ok": False, "stage": "config", "error": str(e), "trace": _tb.format_exc()[-1200:]}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "stage": "config", "error": str(e), "trace": _tb.format_exc()[-1200:]}
 
