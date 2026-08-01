@@ -64,7 +64,7 @@
        Hidden entirely when nothing is set anywhere, so legacy v3 studies
        stay unchanged. #}
     {% set _ns = namespace(any_set=false) %}
-    {% for _g in gate_ladder %}{% if _g.authored_value or _g.computed_value %}{% set _ns.any_set = true %}{% endif %}{% endfor %}
+    {% for _g in gate_ladder %}{% if _g.authored_value or _g.computed_value or _g.viz_gap_reason %}{% set _ns.any_set = true %}{% endif %}{% endfor %}
     {% if study.implementation_status %}{% set _ns.any_set = true %}{% endif %}
     {% set _cgv = study.computed_gate_verdict %}
     {% if _ns.any_set or (_cgv and _cgv.diverges_from_authored) %}
@@ -97,6 +97,9 @@
           {% if _g.diverges %}
           <span class="gate-divergence-chip gate-divergence-chip-inline" title="Code-computed state disagrees with the authored axis.">⚠ diverges from authored</span>
           {% endif %}
+          {% endif %}
+          {% if _g.viz_gap_reason %}
+          <span class="gate-viz-gap-note" style="font-size:0.86em;color:#92400e">visualization gap: {{ _g.viz_gap_reason }}</span>
           {% endif %}
         </div>
         {% endfor %}

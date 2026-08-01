@@ -1289,6 +1289,14 @@ def test_act_rail_dots_reflect_computed_only_passed_state(tmp_path, dashboard_cl
         # -- without this, evaluation_status derives "not_evaluated", not
         # "evaluated", which is a correct not-assessed, not the bug under test.
         "findings": [{"statement": "the run behaved as expected"}],
+        # Task V5: Evidence's computed state now also folds in V4's
+        # visualization-readiness bar (lib.viz_gate.study_visualization_status).
+        # This fixture is about the derived_status roll-up, not visualizations,
+        # so give it a qualifying figure (interactive + run-linked) to keep it
+        # out of scope for that signal — see test_visualization_gap_* below
+        # for the downgrade path itself.
+        "embed_visualizations": [{"url": "/studies/computed-passed-study/viz/plot.html",
+                                    "run_id": "r1"}],
     })
     client = dashboard_client(ws)
     resp = client.get("/studies/computed-passed-study")
@@ -1316,6 +1324,131 @@ def test_act_rail_dots_reflect_computed_only_passed_state(tmp_path, dashboard_cl
     # authored design_status either -> correctly stays "not-assessed", the
     # one dot this fixture gives no data for.
     assert states["design"] == "not-assessed", states
+
+
+# ---------------------------------------------------------------------------
+# Task V5 — fold V4's visualization-readiness signal into Evidence's
+# computed state (§5(B), §6(c.3)). Reuses the existing gate-state vocabulary
+# (`passed-with-conditions` is the gap/conditional tier — NOT a new token,
+# never `blocked`) and the existing worst-of rollup.
+# ---------------------------------------------------------------------------
+
+def test_visualization_gap_downgrades_evidence_gate_and_act_dot(tmp_path, dashboard_client):
+    """A study that fails the viz bar (no figures at all) has its Evidence
+    gate's COMPUTED state downgraded from `passed` to the existing
+    `passed-with-conditions` gap tier -- never a hard `blocked`/`failed`.
+    Authored Evidence == `evaluated` (-> `passed`) so the computed-vs-authored
+    divergence marker must render too, and the act-rail Evidence dot must
+    reflect the downgrade (§13's Execution+Evidence -> "evidence" act)."""
+    import re
+
+    ws = tmp_path / "ws"
+    _write_g2_study(ws, "viz-gap-study", {
+        "evaluation_status": "evaluated",  # authored -> "passed" gate state
+        "behavior_tests": [{"name": "t1"}],
+        "runs": [{"name": "r1", "status": "completed",
+                   "outcomes": {"t1": {"result": "PASS"}}}],
+        "findings": [{"statement": "the run behaved as expected"}],
+        # No visualizations declared anywhere -> viz_gate.study_visualization_status
+        # returns qualifies=False, reason="no figures".
+    })
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-gap-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    panel_i = html.index('class="status-detail-panel"')
+    panel_end = html.index("</details>", panel_i)
+    seg = html[panel_i:panel_end]
+    # The Evidence row's computed chip must show the gap tier, not `passed`
+    # and not a `blocked` state.
+    # Skip past the stepper SUMMARY (which also mentions "3 · Evidence") to
+    # the detail BODY's per-gate rows, where the computed chip/divergence/gap
+    # note actually render.
+    body_i = seg.index("status-stepper-body")
+    evidence_row_i = seg.index("3 · Evidence", body_i)
+    evidence_row = seg[max(0, evidence_row_i - 200):evidence_row_i + 900]
+    assert "gate-computed-chip gate-state-passed-with-conditions" in evidence_row, evidence_row
+    assert "gate-state-blocked" not in evidence_row, evidence_row
+    # Divergence marker: authored says passed, computed says gap-tier.
+    assert "diverges from authored" in evidence_row, evidence_row
+    # The short reason line.
+    assert "visualization gap: no figures" in evidence_row, evidence_row
+
+    dots = re.findall(
+        r'<span class="act-gate-dot" data-gate="([a-z]+)" data-gate-state="([a-z-]+)">',
+        html,
+    )
+    states = {gate: state for gate, state in dots}
+    assert states["evidence"] == "passed-with-conditions", states
+
+
+def test_visualization_gap_qualifying_study_not_downgraded(tmp_path, dashboard_client):
+    """A study that PASSES the viz bar (an interactive, run-linked figure) is
+    not touched by V5 at all: Evidence's computed state stays whatever it
+    already was (`passed`), no divergence marker, no gap note -- no
+    regression to the pre-V5 Evidence signal."""
+    ws = tmp_path / "ws"
+    _write_g2_study(ws, "viz-pass-study", {
+        "evaluation_status": "evaluated",
+        "behavior_tests": [{"name": "t1"}],
+        "runs": [{"name": "r1", "status": "completed",
+                   "outcomes": {"t1": {"result": "PASS"}}}],
+        "findings": [{"statement": "the run behaved as expected"}],
+        "embed_visualizations": [{"url": "/studies/viz-pass-study/viz/plot.html",
+                                    "run_id": "r1"}],
+    })
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-pass-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    panel_i = html.index('class="status-detail-panel"')
+    panel_end = html.index("</details>", panel_i)
+    seg = html[panel_i:panel_end]
+    # Skip past the stepper SUMMARY (which also mentions "3 · Evidence") to
+    # the detail BODY's per-gate rows, where the computed chip/divergence/gap
+    # note actually render.
+    body_i = seg.index("status-stepper-body")
+    evidence_row_i = seg.index("3 · Evidence", body_i)
+    evidence_row = seg[max(0, evidence_row_i - 200):evidence_row_i + 900]
+    assert "gate-computed-chip gate-state-passed" in evidence_row, evidence_row
+    assert "gate-state-passed-with-conditions" not in evidence_row, evidence_row
+    assert "diverges from authored" not in evidence_row, evidence_row
+    assert "visualization gap" not in evidence_row, evidence_row
+
+
+def test_visualization_gap_unreadable_study_no_downgrade_no_500(monkeypatch):
+    """If `study_visualization_status` itself can't compute (simulated here
+    since the real function is internally tolerant and never raises), V5
+    must treat that as NO SIGNAL: no downgrade, and no exception propagates
+    (which is what a live request would turn into a 500) -- matching V4's
+    tolerance for an unreadable study.
+
+    Exercised directly against `build_gate_ladder` (no `dashboard_client`):
+    `dashboard_client` spawns a real server SUBPROCESS (see conftest.py), so
+    an in-process monkeypatch of `study_visualization_status` would silently
+    have no effect there -- this is the only way to actually force the
+    exception path."""
+    import vivarium_workbench.lib.viz_gate as viz_gate_mod
+    from vivarium_workbench.lib.study_page import build_gate_ladder
+
+    def _boom(ws_root, slug):
+        raise RuntimeError("simulated unreadable study")
+
+    monkeypatch.setattr(viz_gate_mod, "study_visualization_status", _boom)
+
+    spec = {
+        "evaluation_status": "evaluated",
+        "derived_status": {
+            "evaluation_status": {"value": "evaluated", "source": "derive_status"},
+        },
+    }
+    gates = build_gate_ladder(spec, ws_root=Path("/nonexistent"), slug="s1")
+    evidence = next(g for g in gates if g["key"] == "evidence")
+    assert evidence["computed_state"] == "passed"
+    assert evidence["viz_gap_reason"] is None
+    assert evidence["diverges"] is False
 
 
 # ---------------------------------------------------------------------------

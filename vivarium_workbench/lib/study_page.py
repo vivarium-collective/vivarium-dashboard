@@ -609,7 +609,61 @@ _GATES: tuple[tuple[str, int, str, str], ...] = (
 )
 
 
-def build_gate_ladder(spec: dict) -> list[dict]:
+# Task V5 (Fable §5(B)/§6(c.3)): the gap/conditional tier a non-qualifying
+# visualization contributes to Evidence's computed state. Reuses the EXISTING
+# "passed-with-conditions" token from _GATE_STATES/_GATE_STATE_RANK above —
+# never a new state, never "blocked" (a missing figure is a SOFT advisory
+# gap, per Fable's decision, not a release blocker).
+_VIZ_GAP_STATE = "passed-with-conditions"
+
+
+def _apply_visualization_gap(gates: list[dict], ws_root, slug: str) -> None:
+    """Fold V4's ``viz_gate.study_visualization_status`` into the Evidence
+    gate entry of *gates* (mutated in place) — the same computed-state slot
+    ``build_gate_ladder`` already populates from ``derived_status``.
+
+    Non-qualifying: downgrades ``computed_state`` via the existing worst-of
+    rank (:func:`_worst_gate_state`) to :data:`_VIZ_GAP_STATE`, appends to
+    ``computed_source``, records the human reason in ``viz_gap_reason``, and
+    flags ``diverges`` when the authored axis says "passed" but the (now
+    downgraded) computed state doesn't. Qualifying: no change at all.
+
+    Tolerant like V4: ``study_visualization_status`` is itself internally
+    tolerant (never raises), but this wraps the call anyway and treats ANY
+    exception as NO SIGNAL — never a downgrade, never a 500. This is
+    deliberately stricter than V4's own report-lint fallback (which treats
+    an error as non-qualifying, i.e. still flags an advisory nudge) — a gate
+    STATE is a stronger signal than a readiness-panel nudge, so an
+    infrastructure error here must not color a gate at all.
+    """
+    try:
+        from vivarium_workbench.lib.viz_gate import study_visualization_status
+        viz_status = study_visualization_status(ws_root, slug)
+    except Exception:  # noqa: BLE001 — unreadable study: no signal, no downgrade, no 500
+        return
+    if not isinstance(viz_status, dict) or viz_status.get("qualifies"):
+        return
+    reason = viz_status.get("reason") or "no qualifying figure"
+    for entry in gates:
+        if entry["key"] != "evidence":
+            continue
+        prior_state = entry["computed_state"]
+        entry["computed_state"] = _worst_gate_state(prior_state, _VIZ_GAP_STATE)
+        if entry["computed_source"]:
+            entry["computed_source"] = (
+                f"{entry['computed_source']} + visualization readiness gate (V4)"
+            )
+        else:
+            entry["computed_source"] = (
+                "visualization readiness gate (viz_gate.study_visualization_status)"
+            )
+        entry["viz_gap_reason"] = reason
+        if entry["authored_state"] == "passed" and entry["computed_state"] != "passed":
+            entry["diverges"] = True
+        entry["state"] = _worst_gate_state(entry["authored_state"], entry["computed_state"])
+
+
+def build_gate_ladder(spec: dict, ws_root=None, slug: Optional[str] = None) -> list[dict]:
     """The ``status ▾`` gate ladder: the six axes relabeled as the six gates,
     each with its authored state plus — where a machine evaluator's value is
     ALREADY attached to *spec* by :func:`study_spec.load_study_detail_spec`
@@ -627,11 +681,19 @@ def build_gate_ladder(spec: dict) -> list[dict]:
     Per the task's "don't invent a computed value" rule, both gates render
     authored-only.
 
+    ``ws_root``/``slug`` (Task V5, both optional so existing spec-only
+    callers/tests are unaffected): when BOTH are given, folds V4's
+    visualization-readiness signal into the Evidence gate's computed state —
+    see :func:`_apply_visualization_gap`. Omit either to skip this (e.g. a
+    unit test that only cares about the authored/derived axes).
+
     Returns a list of 6 dicts, lifecycle order, each with: ``key``, ``number``,
     ``name``, ``axis``, ``authored_value``, ``authored_state``,
     ``computed_value``, ``computed_state``, ``computed_source``, ``diverges``,
-    and ``state`` (the worst of authored/computed, for a single dot/chip
-    color that never hides a red gate behind a green one).
+    ``viz_gap_reason`` (Task V5; ``None`` unless Evidence was downgraded for a
+    non-qualifying visualization), and ``state`` (the worst of
+    authored/computed, for a single dot/chip color that never hides a red
+    gate behind a green one).
     """
     derived = spec.get("derived_status") or {}
     disagreements = {
@@ -649,6 +711,7 @@ def build_gate_ladder(spec: dict) -> list[dict]:
             "authored_state": gate_state(authored_value),
             "computed_value": None, "computed_state": None,
             "computed_source": None, "diverges": False,
+            "viz_gap_reason": None,
         }
         if axis in derived and isinstance(derived.get(axis), dict):
             d = derived[axis]
@@ -666,6 +729,8 @@ def build_gate_ladder(spec: dict) -> list[dict]:
             entry["diverges"] = bool(cgv.get("diverges_from_authored"))
         entry["state"] = _worst_gate_state(entry["authored_state"], entry["computed_state"])
         gates.append(entry)
+    if ws_root is not None and slug is not None:
+        _apply_visualization_gap(gates, ws_root, slug)
     return gates
 
 
@@ -777,7 +842,7 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     # hooks). Pure render-time derivation from fields load_study_detail_spec
     # already attached (derived_status, computed_gate_verdict,
     # status_disagreements) — never modifies study.yaml.
-    gate_ladder = build_gate_ladder(spec)
+    gate_ladder = build_gate_ladder(spec, ws_root=ws_root, slug=name)
     gate_states = act_gate_states(gate_ladder)
     html = tpl.render(study=spec, name=name,
                       display_name=spec.get("title") or _hn["title"],
