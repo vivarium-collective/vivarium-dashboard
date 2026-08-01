@@ -1162,8 +1162,17 @@
        folded in here so Exports is the single "get the data" tab. Same ⬇ Data
        links as the Simulations tab, resolved server-side from run_id.
        `id="exports-downloads"` is the jump target for the Readouts tab's
-       pointer link (Task C4). #}
-    <h3 class="section-title" id="exports-downloads" style="margin-top:22px">Raw simulation data</h3>
+       pointer link (Task C4). `#raw-data-download-all` restores the old
+       Readouts widget's bulk "download all raw runs" convenience — no
+       backend zip endpoint for raw stores exists, so it's a client-side
+       sequential-download button (populated/shown by _loadRawData,
+       triggered by _downloadAllRawExports) scoped to THIS group; the
+       analysis-file zip button above is untouched. #}
+    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:22px">
+      <h3 class="section-title" id="exports-downloads" style="margin-right:auto">Raw simulation data</h3>
+      <button type="button" id="raw-data-download-all" class="btn-mini" style="display:none"
+              onclick="_downloadAllRawExports()">⬇ Download all raw data</button>
+    </div>
     <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
 
     {# Analyses — post-run analysis modules this study's dispatch should compute.

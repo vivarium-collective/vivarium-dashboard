@@ -388,13 +388,23 @@
     if (!mount) return;
     if (_rawDataLoaded && !force) return;
     _rawDataLoaded = true;
+    var bulkBtn = document.getElementById('raw-data-download-all');
     var slug = studyName(), esc = window.SimTable ? window.SimTable.esc : function (x) { return String(x == null ? '' : x); };
     var path = '/api/simulations?study=' + encodeURIComponent(slug);
     var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
     fetch(url).then(function (r) { return r.text(); }).then(function (t) {
       var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) {}
       var rows = d.simulations || [];
-      if (!rows.length) { mount.innerHTML = '<p class="empty-message">No runs with persisted data yet.</p>'; return; }
+      if (!rows.length) {
+        mount.innerHTML = '<p class="empty-message">No runs with persisted data yet.</p>';
+        if (bulkBtn) bulkBtn.style.display = 'none';
+        return;
+      }
+      var withDataCount = rows.filter(function (row) { return !!(row.store_path || row.db_path); }).length;
+      if (bulkBtn) {
+        bulkBtn.style.display = withDataCount ? '' : 'none';
+        bulkBtn.textContent = '⬇ Download all raw data (' + withDataCount + ')';
+      }
       mount.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.88em">' +
         rows.map(function (row) {
           var runId = row.run_id || '', hasData = !!(row.store_path || row.db_path);
@@ -407,9 +417,33 @@
             '<td style="padding:5px 8px">' + loc + '</td>' +
             '<td style="padding:5px 8px;text-align:right">' + dl + '</td></tr>';
         }).join('') + '</table>';
-    }).catch(function () { mount.innerHTML = '<p class="empty-message">Could not load runs.</p>'; });
+    }).catch(function () {
+      mount.innerHTML = '<p class="empty-message">Could not load runs.</p>';
+      if (bulkBtn) bulkBtn.style.display = 'none';
+    });
   }
   window._loadRawData = _loadRawData;
+
+  // One-click "download all raw data": trigger every run's raw-emitter-store
+  // download in sequence (browsers serialise multiple download navigations
+  // from one user gesture). Restores the bulk convenience the old Readouts
+  // widget's _downloadAllRawData offered — scoped here to Exports' raw-run
+  // group (#raw-data-list a[download], the per-run links _loadRawData just
+  // rendered); the analysis-file zip (#data-download-all) is untouched, it
+  // already has its own single-click server-side zip download.
+  function _downloadAllRawExports() {
+    var mount = document.getElementById('raw-data-list');
+    if (!mount) return;
+    var links = Array.prototype.slice.call(mount.querySelectorAll('a[download]'));
+    links.forEach(function (a, i) {
+      setTimeout(function () {
+        var t = document.createElement('a');
+        t.href = a.getAttribute('href'); t.setAttribute('download', '');
+        document.body.appendChild(t); t.click(); document.body.removeChild(t);
+      }, i * 700);
+    });
+  }
+  window._downloadAllRawExports = _downloadAllRawExports;
 
   // Model tab: for each baseline composite, fetch /api/composite-resolve and
   // render the RESOLVED config that actually runs (composite defaults overlaid

@@ -55,6 +55,24 @@ def test_exports_panel_unchanged_download_surfaces_present():
     assert 'id="exports-downloads"' in html
 
 
+def test_exports_bulk_download_button_present_hidden_by_default():
+    """Review round 1 fix: the old Readouts widget's bulk "download all raw
+    runs" convenience is a genuine capability, not just a set of per-run
+    links — restore it AT the Exports raw-download group (not the unrelated
+    analysis-file zip button). Static markup starts hidden; JS reveals it
+    with a run count once /api/simulations resolves."""
+    html = _render()
+    assert 'id="raw-data-download-all"' in html
+    assert 'onclick="_downloadAllRawExports()"' in html
+    # Starts hidden — _loadRawData only reveals it once there's ≥1 run with
+    # raw data (never shown for a study with zero downloadable runs).
+    i = html.index('id="raw-data-download-all"')
+    tag = html[max(0, i - 80):i + 120]
+    assert "display:none" in tag
+    # Scoped to the raw-run group, distinct from the analysis-file zip.
+    assert 'id="data-download-all"' in html
+
+
 # ---------------------------------------------------------------------------
 # JS: old full-widget functions removed; replaced by a lightweight pointer.
 #
@@ -127,6 +145,37 @@ def test_exports_raw_data_loader_unchanged_still_present():
     assert "window._loadRawData = _loadRawData;" in js
     assert "getElementById('raw-data-list')" in js
     assert "/api/simulation-run-download?run_id=" in js
+
+
+def test_loadrawdata_reveals_and_labels_the_bulk_button():
+    """_loadRawData is what knows N (runs with store_path/db_path) — it must
+    reveal #raw-data-download-all with that count when N > 0, and keep it
+    hidden for a study with zero downloadable runs (no bulk button pointing
+    at nothing)."""
+    js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
+    i = js.index("function _loadRawData(")
+    j = js.index("window._loadRawData = _loadRawData;", i)
+    body = js[i:j]
+    assert "getElementById('raw-data-download-all')" in body
+    assert "withDataCount" in body
+    assert "bulkBtn.style.display = withDataCount ? '' : 'none'" in body
+
+
+def test_downloadallrawexports_defined_and_scoped_to_raw_data_list():
+    """Review round 1 fix: restores the old _downloadAllRawData's sequential-
+    download technique (iterate a[download] links, trigger each via a
+    synthetic <a>+click with a stagger), scoped to #raw-data-list — NOT the
+    old #readouts-download host, and NOT the analysis-file zip button."""
+    js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
+    assert "function _downloadAllRawExports(" in js
+    assert "window._downloadAllRawExports = _downloadAllRawExports;" in js
+    i = js.index("function _downloadAllRawExports(")
+    j = js.index("window._downloadAllRawExports", i)
+    body = js[i:j]
+    assert "getElementById('raw-data-list')" in body
+    assert "querySelectorAll('a[download]')" in body
+    assert "setTimeout(" in body
+    assert "readouts-download" not in body
 
 
 def test_simulations_per_row_data_links_left_alone():
