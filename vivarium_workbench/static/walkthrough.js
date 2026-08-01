@@ -9310,22 +9310,16 @@
     var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin:6px 0 14px';
     var _isetFull = (window._isetZoom === 'full');
     if (_isetFull) window._compositesById = window._compositesById || {};
-    // At MAX zoom, an investigation renders "as itself": its summary header
-    // followed by each member study as the SAME interactive composite card the
-    // Modules tab uses — so Explore shows every member study's subcomposites,
-    // emitter, visualizations, and report-card steps. Lower zooms keep the grid.
+    // At MAX zoom, an investigation renders "as itself" — a single interactive
+    // composite card whose Explore loom is the GRAPH of its member studies (each
+    // a drillable node → its own subcomposites). A slim status header sits above
+    // it for context. Lower zooms keep the compact summary grid.
     function _isetFullHtml(iset) {
-      var members = _isetStudyObjs(iset);
-      var studyCards = members.map(function (s) {
-        var sc = _studyCardObj(s);
-        window._compositesById[sc.id] = sc;
-        return _renderCompositeCardFull(sc);
-      }).join('');
-      return '<div class="iset-inv-full" data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" style="margin:0 0 24px">' +
+      var ic = _investigationCardObj(iset);
+      window._compositesById[ic.id] = ic;
+      return '<div class="iset-inv-full" data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" style="margin:0 0 26px">' +
         _isetCardHtml(iset, false) +
-        (studyCards
-          ? '<div class="iset-member-cards" style="display:flex;flex-direction:column;gap:16px;margin:12px 0 0;padding-left:14px;border-left:2px solid #ede9fe">' + studyCards + '</div>'
-          : '<p class="muted" style="font-size:0.85em;padding-left:14px">No member studies to explore.</p>') +
+        '<div class="iset-inv-loom" style="margin:12px 0 0">' + _renderCompositeCardFull(ic) + '</div>' +
       '</div>';
     }
     function _groupHtml(label, items) {
@@ -9779,7 +9773,27 @@
       _isStudy: true,
       _studySlug: slug,
       _stateUrl: '/api/study-composite-state?study=' + encodeURIComponent(slug),
-      _loomRef: s.composite || ''     // real composite ref (when known) → inner-composite drill-in works
+      _loomRef: 'study:' + slug        // drill roots here → composite-inner-state resolves study→composite
+    };
+  }
+
+  // An investigation IS a composite of its member studies. Build a composite-card
+  // object whose Explore loom shows that graph: each member study is a node,
+  // drillable into its own subcomposites (rootId investigation:<slug> →
+  // composite-inner-state resolves each study node to its composite).
+  function _investigationCardObj(iset) {
+    var slug = iset.name;
+    return {
+      id: 'investigation:' + slug,
+      name: iset.title || slug,
+      module: null,
+      description: iset.question || iset.description || '',
+      parameters: {},
+      read_only: true,
+      workspace_local: !iset.read_only,
+      _isInvestigation: true,
+      _stateUrl: '/api/investigation-composite-state?investigation=' + encodeURIComponent(slug),
+      _loomRef: 'investigation:' + slug
     };
   }
 

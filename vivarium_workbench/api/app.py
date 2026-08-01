@@ -1260,6 +1260,36 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=status, content=body)
 
     @app.get(
+        "/api/investigation-composite-state",
+        response_model=CompositeState,
+        tags=["Studies"],
+        summary="An investigation lowered to a composite graph of its studies (loom)",
+    )
+    def investigation_composite_state(
+        investigation: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[CompositeState, JSONResponse]:
+        """Lower an investigation to the composite bigraph its loom renders.
+
+        An investigation is a composite of its member studies: each study is one
+        node (marked ``is_composite_process`` so it's drillable) wired to the
+        studies it depends on. The loom renders this as a graph of studies;
+        drilling a study node resolves that study to its own composite (its
+        subcomposites) via ``/api/composite-inner-state?ref=investigation:<slug>``.
+
+        Library-backed via
+        ``lib.investigation_composite_state.build_investigation_composite_state``.
+        """
+        from vivarium_workbench.lib import investigation_composite_state as _inv_state
+
+        body, status = _inv_state.build_investigation_composite_state(
+            ws, (investigation or "").strip()
+        )
+        if status == 200:
+            return CompositeState.model_validate(body)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
         "/api/composite-inner-state",
         response_model=CompositeState,
         tags=["Composites"],

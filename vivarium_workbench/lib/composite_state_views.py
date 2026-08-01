@@ -126,6 +126,20 @@ def build_inner_composite_state(
     if not ref:
         return {"error": "ref required"}, 400
     ws_root = Path(ws_root)
+    # An investigation is a composite of member studies; drilling a study node
+    # resolves that study to its own composite (and deeper hops walk into it).
+    if ref.startswith("investigation:"):
+        from vivarium_workbench.lib import investigation_composite_state as _inv
+        return _inv.build_investigation_inner_state(ws_root, ref.split(":", 1)[1], hops)
+    # A study card's loom roots at ``study:<slug>``; drilling an inner node
+    # resolves the study to its composite generator and walks the hops there.
+    if ref.startswith("study:"):
+        from vivarium_workbench.lib.study_composite_state import resolve_study_composite
+        resolved = resolve_study_composite(ws_root, ref.split(":", 1)[1])
+        if resolved is None:
+            return {"error": f"study not resolvable: {ref}", "unresolved": True,
+                    "ref": ref}, 404
+        return build_inner_composite_state(ws_root, resolved[0], hops)
     ckey = (str(ws_root), ref, tuple(tuple(h) for h in hops))
     hit = _COMPOSITE_STATE_CACHE.get(ckey)
     if hit is not None and (time.time() - hit[0]) < _COMPOSITE_STATE_TTL_S:
