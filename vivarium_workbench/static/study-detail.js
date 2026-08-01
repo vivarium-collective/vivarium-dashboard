@@ -225,21 +225,41 @@
   function _renderReadoutsTable(j) {
     var e = escapeHtmlForTests;
     var note = j.note ? '<p class="muted" style="color:#92400e">' + e(j.note) + '</p>' : '';
+    var rows = j.rows || [];
+    var idxHtml = function (o) {
+      return o.index_by ? '<code style="font-size:0.85em;">' + e(o.index_by.type) + '=' + e(o.index_by.value) + '</code>'
+                         : '<span class="muted">—</span>';
+    };
+    // Column defs — `html` is the same accessor used to render the cell, so
+    // dropEmptyColumns() (Fable A #2 / spec R3) can judge emptiness from the
+    // exact rendered content. Name/Store path/Emitted? have no accessor and
+    // always stay; Indexed by/Units/Description are the columns that go
+    // empty for studies that don't populate them.
+    var cols = [
+      { id: 'name', label: 'Name' },
+      { id: 'store_path', label: 'Store path' },
+      { id: 'emitted', label: 'Emitted?' },
+      { id: 'indexed_by', label: 'Indexed by', html: idxHtml },
+      { id: 'units', label: 'Units', html: function (o) { return e(o.units || ''); } },
+      { id: 'description', label: 'Description', html: function (o) { return e(o.description || ''); } },
+    ];
+    var dropEmptyColumns = (window.SimTable && window.SimTable.dropEmptyColumns) || function (r, c) { return c; };
+    cols = dropEmptyColumns(rows, cols);
+    var keep = {};
+    cols.forEach(function (c) { keep[c.id] = true; });
     var head = '<table class="observables-table" style="width:100%; border-collapse: collapse;"><thead><tr>'
-      + ['Name', 'Store path', 'Emitted?', 'Indexed by', 'Units', 'Description'].map(function(h) {
-          return '<th style="text-align:left; padding:6px; border-bottom:1px solid #e2e8f0;">' + h + '</th>';
+      + cols.map(function(c) {
+          return '<th style="text-align:left; padding:6px; border-bottom:1px solid #e2e8f0;">' + c.label + '</th>';
         }).join('') + '</tr></thead><tbody>';
-    var body = (j.rows || []).map(function(o) {
-      var idx = o.index_by ? '<code style="font-size:0.85em;">' + e(o.index_by.type) + '=' + e(o.index_by.value) + '</code>'
-                           : '<span class="muted">—</span>';
-      return '<tr style="border-bottom:1px solid #f1f5f9;" data-readout="' + e(o.name) + '">'
-        + '<td style="padding:6px; vertical-align:top;"><code>' + e(o.name) + '</code></td>'
-        + '<td style="padding:6px; vertical-align:top;"><code style="font-size:0.85em;">' + e(o.store_path || '') + '</code></td>'
-        + '<td style="padding:6px; vertical-align:top; font-size:0.75em;">' + _emitStatusBadge(o.emit_status) + '</td>'
-        + '<td style="padding:6px; vertical-align:top;">' + idx + '</td>'
-        + '<td style="padding:6px; vertical-align:top; font-size:0.9em;">' + e(o.units || '') + '</td>'
-        + '<td style="padding:6px; vertical-align:top; max-width:380px; font-size:0.9em;">' + e(o.description || '') + '</td>'
-        + '</tr>';
+    var body = rows.map(function(o) {
+      var tds = '';
+      if (keep.name) tds += '<td style="padding:6px; vertical-align:top;"><code>' + e(o.name) + '</code></td>';
+      if (keep.store_path) tds += '<td style="padding:6px; vertical-align:top;"><code style="font-size:0.85em;">' + e(o.store_path || '') + '</code></td>';
+      if (keep.emitted) tds += '<td style="padding:6px; vertical-align:top; font-size:0.75em;">' + _emitStatusBadge(o.emit_status) + '</td>';
+      if (keep.indexed_by) tds += '<td style="padding:6px; vertical-align:top;">' + idxHtml(o) + '</td>';
+      if (keep.units) tds += '<td style="padding:6px; vertical-align:top; font-size:0.9em;">' + e(o.units || '') + '</td>';
+      if (keep.description) tds += '<td style="padding:6px; vertical-align:top; max-width:380px; font-size:0.9em;">' + e(o.description || '') + '</td>';
+      return '<tr style="border-bottom:1px solid #f1f5f9;" data-readout="' + e(o.name) + '">' + tds + '</tr>';
     }).join('');
     return note + head + body + '</tbody></table>';
   }
