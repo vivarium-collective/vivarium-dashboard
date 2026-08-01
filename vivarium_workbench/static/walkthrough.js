@@ -2937,6 +2937,20 @@
   // Poll a launched composite run and render its progress → visualizations into
   // the card's Outputs panel. /api/composite-run/<id>/status returns
   // {status, progress_step, n_steps, ...} and, on completion, viz_html.
+  // When a composite run finishes: reset the ▶ RUN button from its "Running…"
+  // indicator and drop the Outputs section open so the results are visible.
+  function _endRunIndicator(card, statusText) {
+    var b = card && card._runBtn;
+    if (b) { b.disabled = false; b.textContent = card._runBtnOrig || '▶ Run'; card._runBtn = null; }
+    var st = card && card.querySelector('.pcard-run-status');
+    if (st) { st.classList.remove('pcard-apply-err'); if (statusText != null) st.innerHTML = statusText; }
+  }
+  function _openOutputsSection(card) {
+    var sec = card && card.querySelector('.pcard-sec-outputs');
+    if (sec && !sec.classList.contains('pcard-sec-open')) {
+      var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h);
+    }
+  }
   function _pollCompositeRun(card, runId) {
     var panel = card.querySelector('[data-role="out-panel"]'); if (!panel) return;
     var dl = _api('/api/composite-run/' + encodeURIComponent(runId) + '/download');
@@ -2976,10 +2990,14 @@
                 ? '<iframe class="pcard-out-viz" sandbox="allow-scripts allow-same-origin"></iframe>'
                 : '<p class="muted">This run produced no inline visualization. Use Download ZIP' + (j.has_report || j.has_analyses ? ' / the report/analyses above' : '') + ', or open it in ' + runsLink + '.</p>');
             if (htmls.length) { var f = panel.querySelector('.pcard-out-viz'); if (f) f.srcdoc = htmls.join('\n<hr>\n'); }
+            _endRunIndicator(card, '✓ done — see Outputs');
+            _openOutputsSection(card);   // drop Outputs open now that results are ready
           } else {   // failed / orphaned / error
             panel.innerHTML = '<div class="pcard-out-run"><p class="pcard-out-empty-title loom-run-err">✗ ' + _esc(st) + '</p>' +
               (j.error ? '<pre class="loom-run-pre">' + _esc(String(j.error)) + '</pre>' : '') +
               '<p class="muted">Details under ' + runsLink + '.</p></div>';
+            _endRunIndicator(card, '✗ ' + _esc(st));
+            _openOutputsSection(card);
           }
         })
         .catch(function () { if (card._pollRun === runId) setTimeout(tick, 3000); });
@@ -3174,22 +3192,23 @@
     fetch(_api('/api/composite-test-run'), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, status: r.status, j: j }; }); })
       .then(function (res) {
-        btn.disabled = false; btn.textContent = orig;
         var rid = res.j && res.j.run_id;
-        if (res.status === 202 || rid) {
-          if (status) {
-            status.classList.remove('pcard-apply-err');
-            status.innerHTML = '✓ launched — tracking in Outputs';
-          }
-          if (rid) {
-            // Open Outputs and track the run's progress → visualizations there.
-            var sec = card.querySelector('.pcard-sec-outputs');
-            if (sec && !sec.classList.contains('pcard-sec-open')) { var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h); }
-            _pollCompositeRun(card, rid);
-          }
+        if ((res.status === 202 || rid) && rid) {
+          // Keep the ▶ RUN button as a live "Running…" indicator until the poll
+          // resolves; the Outputs section auto-drops-down when results are READY
+          // (see _pollCompositeRun's completed / failed branches).
+          btn.disabled = true; btn.textContent = '⏳ Running…';
+          card._runBtn = btn; card._runBtnOrig = orig;
+          if (status) { status.classList.remove('pcard-apply-err'); status.innerHTML = '<span class="pcard-run-live">● running…</span>'; }
+          _pollCompositeRun(card, rid);
+        } else if (res.status === 202 || rid) {
+          btn.disabled = false; btn.textContent = orig;
+          if (status) { status.classList.remove('pcard-apply-err'); status.innerHTML = '✓ launched — tracking in Outputs'; }
         } else if (res.status === 429) {
+          btn.disabled = false; btn.textContent = orig;
           setErr('too many runs in progress — try again shortly');
         } else {
+          btn.disabled = false; btn.textContent = orig;
           setErr('✗ ' + ((res.j && res.j.error) || ('HTTP ' + res.status)));
         }
       })
@@ -4916,11 +4935,18 @@
     // (e.g. "visualizations"/"results"/"document") selects which loom tab the
     // embed shows — used by the card's Outputs section.
     var tabParam = det.getAttribute('data-view') ? '&tab=' + encodeURIComponent(det.getAttribute('data-view')) : '';
+    // On a live dashboard the view-only loom still carries the composite id +
+    // live=1 so drilling into an inner Composite (a Composite Process like
+    // EcoliWCM) resolves via the live /api/composite-inner-state endpoint —
+    // static=1 alone (a published snapshot) would look for a pre-built file that
+    // only a snapshot ships. Omit both under body.snapshot (truly no server).
+    var liveInner = document.body.classList.contains('snapshot')
+      ? '' : '&id=' + encodeURIComponent(id) + '&live=1';
     var loomUrl = det._loomLive
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
           (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off' + tabParam
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + '&chrome=off' + tabParam;
+          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + liveInner + '&chrome=off' + tabParam;
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
