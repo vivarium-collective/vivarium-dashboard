@@ -85,10 +85,11 @@ theoretical`.
   - Overview's "BIOLOGY — WHAT THIS STUDY IS ABOUT" section is **removed**
     entirely (redundant with Question & Approach); see Overview below.
   - "Open biological questions" → **"Open questions"** (kind-agnostic).
-  - Decide's "biological_validation" verdict-track *label* becomes kind-aware
-    (e.g. "biological validation" only for `biological`; otherwise a neutral
-    "domain validation"). The underlying three-track structure
-    (regression / domain / explanatory) is unchanged — only the label text.
+  - Decide's "Biological validation" verdict-track *label* is renamed to
+    **"Empirical validation"** — the honest general term (validation against
+    empirical evidence, biological or not), applied universally (not kind-aware).
+    The underlying `conclusion_verdicts.biological_validation` data key stays for
+    back-compat; only the visible label changes.
 
 ### 3. Tabs — 8 pillars stay 8, each redesigned to one job
 
@@ -110,7 +111,7 @@ of a model — see below and §4); the Model+Interventions+Readouts reframe is
 | **Simulations** | The record of what ran | **All** run controls — Configure-&-Run, "Run on remote (smsvpctest)", run-protocol, CLI-reproduce card, and the "Simulation set (planned)" cards; both explanatory paragraphs | A **single read-only table**, one row per run: model/intervention, simulation time, seeds, status, **where the data lives**, **how to retrieve it**, **download**. Launching moves entirely to the header buttons. |
 | **Visualizations** | What the figures show | The "VISUALIZATIONS" explanatory paragraph; the three subsection headings (Baseline analysis gallery / Embedded visualizations / Latest-run charts); the verbose empty-state sentence | **Just the figures** — one continuous gallery merging the three mounts, no section chrome. Minimal quiet empty state (not a tutorial). Per-figure captions stay but muted. |
 | **Tests** | The study's audit — did it pass its own bar | The explanatory paragraph; **the two sub-tabs** | **Merge Report Cards + Behavioral Tests into one tab and one concept** — a single unified list of graded checks, led by the **gate/audit summary** (which checks gate the verdict, and pass/fail). No sub-nav. |
-| **Decide** | The reasoned verdict + what's next | — | Kind-aware verdict-track label (§2); keep three-track reasoning + conclusion logic + follow-ups (this is the depth behind the header's one-word verdict) |
+| **Decide** | The reasoned verdict + what's next | The "VERDICT & CONCLUSION Synthesises…" paragraph and the "Each track is independent…" explainer | **Increment 1:** rename "Biological validation" → **"Empirical validation"** (§2); strip prose. **Increment 3 (§6):** transparent verdict inputs (show the actual run-status / gate-evaluator + report-cards / finding-tier values feeding each PASS/PARTIAL/PENDING, not "computed from X" text); follow-ups **always propose ≥1** derived study, seedable, enforced by a `missing_followup` gap. |
 | **Exports** | Download artifacts | — | Gains the **Analyses** config (relocated from Model), co-located with the analysis outputs it produces. |
 
 ### 4. Readouts (merged into Model — Increment 2) — detail
@@ -185,14 +186,35 @@ design decisions, settled here so nothing is lost:
   intervention into a runnable variant composite — the Increment 2 plan must
   confirm the available primitive (templates/compose in process-bigraph).
 
+### 7. Verdict transparency & follow-up enforcement (Increment 3)
+
+Settled scope (the user chose **transparent inputs only** for verdicts — *not*
+rule-redefinition, *not* gate-coupling — and **derive-and-enforce** follow-ups):
+
+- **Transparent verdict inputs.** Each of the three tracks (Regression
+  compatibility · Empirical validation · Explanatory gain) shows the *actual
+  values* that produced its PASS/PARTIAL/PENDING — run status; gate-evaluator
+  result + which report cards; finding-tier counts — replacing the vague
+  "computed from X" captions. **The computation rules are unchanged**; this is
+  presentation + honesty, not new logic. No new gate coupling.
+- **Follow-ups always propose ≥1.** The Follow-ups & Decisions section derives at
+  least one concrete follow-up study from the verdict state + open findings /
+  epistemic debts (e.g. Empirical = PENDING → a validation study; an open debt →
+  a study that closes it). Each proposal is seedable (new study) or linkable
+  (existing). Enforced by a **`missing_followup`** readiness gap (sibling of
+  `missing_question`, §5) when none is present.
+
 **Increment split:**
-- **Increment 1 (this plan):** header, `kind`, de-biology Overview, enforce
-  Question & Approach, Simulations→read-only table, Visualizations single
-  gallery, Tests merge-to-one-concept, strip explanatory prose. Includes the
+- **Increment 1 (declutter — regenerate this plan):** header, `kind`, de-biology
+  Overview, enforce Question & Approach, Simulations→read-only table,
+  Visualizations single gallery, Tests merge-to-one-concept, **Empirical
+  validation** rename, strip explanatory prose from every tab. Includes the
   backend **readouts excluded-set** (feeds Increment 2's per-model Records).
 - **Increment 2 (separate spec+plan):** the unified Model tab — Runs list,
   interventions (merge/override, replacing variants + migration), per-model
   emitter+readouts, Analyses→Exports relocation, and the 8→7 pillar change.
+- **Increment 3 (separate spec+plan):** Decide — transparent verdict inputs and
+  derive-and-enforce follow-ups (`missing_followup`).
 
 ## Out of scope
 
@@ -204,6 +226,8 @@ design decisions, settled here so nothing is lost:
   redesign is the standalone `study-detail` page only.
 - Renaming pillars. Pillar **count** drops 8 → 7 (Readouts merges into Model);
   no pillar is renamed or reordered.
+- **Redefining the verdict computation rules** or coupling the combined verdict
+  to the header gate — explicitly deferred (Increment 3 does transparency only).
 
 ## Success criteria
 
@@ -228,4 +252,7 @@ design decisions, settled here so nothing is lost:
   each with its emitter + ●saved/○excluded readouts; interventions (merge/override)
   author the extra runs and replace `variants`; the Readouts pillar is gone (7
   pillars total).
+- **Increment 3:** each verdict track shows its actual computed inputs; the
+  "Empirical validation" label replaces "Biological validation"; the Follow-ups
+  section always shows ≥1 proposed study and fires `missing_followup` when empty.
 - No fact rendered in the header is also rendered verbatim in a tab.
