@@ -2363,10 +2363,16 @@ body.pcard-splitting iframe{ pointer-events:none; }
  * readable over content underneath. The -webkit-sticky prefix is
  * still needed for older Safari versions. */
 .study-tabs {
+  /* ACTRAIL fix: rows of `.act-cluster` columns (each cluster carries its
+   * own label + tabs — see the act-rail block below), not a single stacked
+   * column of two independent sibling rows. `overflow-x: auto` lets the
+   * clusters scroll sideways on narrow viewports instead of overflowing the
+   * page; `align-items: flex-end` keeps every cluster's tab row baseline-
+   * aligned even though act labels vary in height. */
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  align-items: flex-end;
+  gap: 20px;
+  overflow-x: auto;
   border-bottom: 1px solid #e5e7eb;
   margin: 0 0 20px;
   position: -webkit-sticky;
@@ -4027,25 +4033,28 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .al-bc { cursor:pointer; color:#9db4d6; }
 .al-bc:hover { color:#fff; text-decoration:underline; }
 
-/* Fable G1 — act rail: a hairline group-label row above `.study-pillars`,
- * grouping the 8 tab buttons into the five acts of spec §9.2/§9.3 (Overview
- * / Model+Readouts / Simulations+Visualizations / Tests / Decide), with
- * Exports set apart as the Record drawer (wider left gap, no gate dot — it
- * isn't a narrative act). Each act label carries a `.act-gate-dot`: a 6px
- * dot that renders neutral/grey here (`data-gate-state="not-assessed"`) —
- * Task G2 recolors it per the six-gate state without touching this markup.
- * flex-grow is proportional to how many tab buttons the act spans (Design
- * and Evidence each cover 2 buttons) so the rule segments roughly track the
- * pillar row beneath, though exact pixel alignment isn't guaranteed since
- * button widths vary with label length. */
-.act-rail { display: flex; align-items: center; margin: 0 0 2px; }
-.act-group {
+/* ACTRAIL fix (Fable G1 originally shipped `.act-rail` labels and
+ * `.study-pillars` tabs as two independent sibling rows with no shared
+ * columns, so the labels never lined up over the tabs they group — user
+ * feedback picked "grouped clusters, aligned"). Each act is now one
+ * `.act-cluster` flex column: its `.act-header` (label + gate dot) sits
+ * directly above its own `.act-tabs`, in the SAME column, so the label
+ * always sits over its own tabs — alignment is structural, not hand-tuned
+ * spacing. The gap between `.act-cluster`s (on `.study-tabs`) is the
+ * inter-act separation; tabs within one cluster sit tight together via the
+ * small `.act-tabs` gap, so the five acts still read as distinct groups.
+ * Each act label carries a `.act-gate-dot`: a 6px dot that renders
+ * neutral/grey here (`data-gate-state="not-assessed"`) — Fable G2 recolors
+ * it per the six-gate state without touching this markup. Exports is set
+ * apart in `.act-cluster-record` (extra left margin/divider): it's the
+ * Record drawer, not a narrative act, so it gets no gate dot. */
+.act-cluster { display: flex; flex-direction: column; }
+.act-cluster-record { margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--border); }
+.act-header {
   display: flex; align-items: center; gap: 5px;
-  padding: 0 14px 5px; border-bottom: 1px solid var(--border);
-  flex: 1 1 0;
+  padding: 0 2px 5px; border-bottom: 1px solid var(--border);
+  margin-bottom: 1px;
 }
-.act-group-design, .act-group-evidence { flex-grow: 2; }
-.act-group-record { flex: 0 0 auto; margin-left: 20px; padding-left: 0; }
 .act-label {
   font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
   letter-spacing: 0.08em; color: #94a3b8; white-space: nowrap;
@@ -4055,11 +4064,13 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   background: #cbd5e1; box-shadow: inset 0 0 0 1px #b6c2cf;
 }
 
-/* Two-level study nav: 5 pillars over a per-pillar sub-nav (tab consolidation). */
-.study-pillars { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 2px; }
+/* Tabs within one act cluster (tab consolidation: the pillar row used to be
+ * its own top-level nav — `.act-tabs` is now the per-cluster tab row). */
+.act-tabs { display: flex; gap: 2px; flex-wrap: nowrap; }
 .study-pillar {
   border: 0; background: none; cursor: pointer; padding: 8px 14px;
   font-weight: 700; font-size: 0.95rem; color: #64748b; border-bottom: 3px solid transparent;
+  white-space: nowrap;
 }
 .study-pillar:hover { color: #334155; }
 .study-pillar.active { color: #1e293b; border-bottom-color: #2563eb; }
@@ -4672,8 +4683,10 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
    pills, finding-id, status chips) are left as readable badges. */
 :root[data-theme="dark"] .study-tabs,
 :root[data-theme="dark"] .finding-card{ background:var(--surface) !important; border-color:var(--border) !important; }
-/* Act rail (Fable G1) */
-:root[data-theme="dark"] .act-group{ border-bottom-color:var(--border) !important; }
+/* Act rail (Fable G1; ACTRAIL fix regrouped `.act-group` into `.act-header`
+   inside each `.act-cluster`) */
+:root[data-theme="dark"] .act-header{ border-bottom-color:var(--border) !important; }
+:root[data-theme="dark"] .act-cluster-record{ border-left-color:var(--border) !important; }
 :root[data-theme="dark"] .act-label{ color:var(--text-muted) !important; }
 :root[data-theme="dark"] .act-gate-dot{ background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--border-2); }
 /* Fable G2: per-gate-state dot colors (§9.3 palette) win over the neutral

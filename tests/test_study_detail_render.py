@@ -782,9 +782,17 @@ def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
 # ---------------------------------------------------------------------------
 
 def test_act_rail_renders_above_tab_nav(tmp_path, dashboard_client):
-    """The five act labels render above `.study-pillars`, each with a
-    gate-dot element carrying a stable `data-gate` hook (state wiring is
-    Task G2's job — here it must be present but neutral/not-assessed)."""
+    """The five act labels render inside `<nav class="study-tabs">`, each
+    with a gate-dot element carrying a stable `data-gate` hook (state wiring
+    is Task G2's job — here it must be present but neutral/not-assessed).
+
+    ACTRAIL fix: the act rail is no longer a standalone `.act-rail` row
+    sitting above an independent `.study-pillars` row (those two sibling
+    rows never lined up — no shared columns). Each act's label and its tabs
+    now live together in one `.act-cluster` column, so this test asserts
+    against the whole `<nav>` rather than a `.act-rail`/`.study-pillars`
+    split. See test_act_clusters_group_label_with_own_tabs below for the
+    per-cluster grouping assertion."""
     ws = tmp_path / "ws"
     sd = ws / "studies" / "act-rail-study"
     sd.mkdir(parents=True)
@@ -804,15 +812,19 @@ def test_act_rail_renders_above_tab_nav(tmp_path, dashboard_client):
     assert resp.status_code == 200
     html = resp.text
 
-    # Act rail sits above the tab nav (before .study-pillars in document order).
-    rail_i = html.index('class="act-rail"')
-    pillars_i = html.index('class="study-pillars"')
-    assert rail_i < pillars_i, "act rail must render above the tab buttons"
+    nav_i = html.index('<nav class="study-tabs"')
+    nav_end = html.index('</nav>', nav_i)
+    nav = html[nav_i:nav_end]
+
+    # The old standalone containers are gone — labels and tabs are grouped
+    # into `.act-cluster` columns instead.
+    assert 'class="act-rail"' not in nav
+    assert 'class="study-pillars"' not in nav
 
     # Five act labels, in order, plus the Record-drawer label set apart.
     for label in ("The Study", "Design", "Evidence", "Assurance", "Decision", "Exports"):
-        assert label in html[rail_i:pillars_i], f"act label {label!r} missing from act rail"
-    order = [html.index(label, rail_i) for label in
+        assert label in nav, f"act label {label!r} missing from act rail"
+    order = [nav.index(label) for label in
              ("The Study", "Design", "Evidence", "Assurance", "Decision", "Exports")]
     assert order == sorted(order), "act labels out of order"
 
@@ -820,9 +832,83 @@ def test_act_rail_renders_above_tab_nav(tmp_path, dashboard_client):
     # class + data-gate attribute, neutral state — G2 recolors it, doesn't
     # need to touch this markup.
     import re
-    dots = re.findall(r'<span class="act-gate-dot" data-gate="([a-z]+)"[^>]*>', html)
+    dots = re.findall(r'<span class="act-gate-dot" data-gate="([a-z]+)"[^>]*>', nav)
     assert dots == ["study", "design", "evidence", "assurance", "decision"], dots
-    assert 'data-gate-state="not-assessed"' in html
+    assert 'data-gate-state="not-assessed"' in nav
+
+
+def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
+    """ACTRAIL fix (user-selected: "grouped clusters, aligned"): each act's
+    label and its own tabs live in ONE `.act-cluster[data-act=...]` column,
+    so alignment is structural rather than hand-tuned spacing. This is the
+    crux assertion — every `.act-cluster` must contain both its `.act-label`
+    text and its own `data-kind` buttons, not just sit near them."""
+    import re
+
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "act-cluster-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "act-cluster-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/act-cluster-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    nav_i = html.index('<nav class="study-tabs"')
+    nav_end = html.index('</nav>', nav_i)
+    nav = html[nav_i:nav_end]
+
+    # Split into per-cluster segments on the `.act-cluster` opening-tag
+    # marker — each segment holds exactly one cluster's content (label +
+    # its tabs) up to the next cluster (or the end of <nav>).
+    segments = nav.split('<div class="act-cluster')
+    clusters = {}
+    for seg in segments[1:]:
+        m = re.match(r'[^>]*data-act="([a-z]+)"', seg)
+        assert m, f"act-cluster segment missing data-act: {seg[:80]!r}"
+        clusters[m.group(1)] = seg
+
+    expected = {
+        "study": {"label": "The Study", "kinds": ["overview"]},
+        "design": {"label": "Design", "kinds": ["compose", "readouts"]},
+        "evidence": {"label": "Evidence", "kinds": ["simulate", "visualize"]},
+        "assurance": {"label": "Assurance", "kinds": ["tests"]},
+        "decision": {"label": "Decision", "kinds": ["conclusions"]},
+        "record": {"label": "Exports", "kinds": ["data"]},
+    }
+    assert set(clusters) == set(expected), clusters.keys()
+
+    for act, spec in expected.items():
+        seg = clusters[act]
+        assert spec["label"] in seg, f"{act} cluster missing label {spec['label']!r}"
+        for kind in spec["kinds"]:
+            assert f'data-kind="{kind}"' in seg, f"{act} cluster missing data-kind={kind!r}"
+            assert f"_setStudyTab('{kind}')" in seg, f"{act} cluster's {kind!r} button missing onclick"
+
+        if act == "record":
+            # Exports is the Record drawer, not a narrative act — no gate dot.
+            assert "act-gate-dot" not in seg, "record cluster must not carry a gate dot"
+        else:
+            assert re.search(r'<span class="act-gate-dot" data-gate="%s" data-gate-state="[a-z-]+">' % act, seg), \
+                f"{act} cluster missing its act-gate-dot with data-gate-state"
+
+    # All 8 `.study-pillar` buttons are present in the nav, unchanged.
+    all_kinds = ["overview", "compose", "readouts", "simulate", "visualize",
+                 "tests", "conclusions", "data"]
+    btns = re.findall(r'<button class="study-pillar[^"]*"[^>]*>', nav)
+    assert len(btns) == 8, f"expected 8 pillar buttons, got {len(btns)}"
+    for kind in all_kinds:
+        assert f'data-kind="{kind}"' in nav and f"_setStudyTab('{kind}')" in nav
 
 
 def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):

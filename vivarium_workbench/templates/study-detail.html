@@ -150,49 +150,73 @@
 {% if _q %}<p id="study-question-headline" class="study-question-headline"><span class="q-glyph">Q</span> {{ _q }}</p>{% endif %}
 
 <nav class="study-tabs" aria-label="Study sections">
-  {# Fable G1: act rail — a hairline group-label row above the tab buttons,
-     grouping the 8 tabs into the five acts of §9.2/§9.3 (spec:
-     2026-08-01-study-design-fable-pass.md). Each act carries a gate dot.
-     Fable G2: the dot state is now wired from `gate_states` (built
-     server-side by lib.study_page.act_gate_states from the six-gate ladder
-     below — see §13.1 "act rail dots show each act's gate state at a
-     glance"), not the neutral placeholder G1 shipped. Exports sits apart:
-     it's the Record drawer, not a narrative act, so it gets no dot. #}
-  <div class="act-rail">
-    <div class="act-group act-group-study" data-act="study">
+  {# Fable G1 shipped the act rail as two independent sibling rows
+     (`.act-rail` group labels above an unrelated `.study-pillars` tab row)
+     — with no shared columns the labels never lined up over the tabs they
+     group. ACTRAIL fix (user-selected: "grouped clusters, aligned"): each
+     act's label and its own tabs now live together in ONE `.act-cluster`
+     column (label row on top, tabs row below, same flex column), so
+     alignment is structural instead of hand-tuned spacing. Each act still
+     carries a gate dot. Fable G2: the dot state is wired from `gate_states`
+     (built server-side by lib.study_page.act_gate_states from the six-gate
+     ladder below — see §13.1 "act rail dots show each act's gate state at a
+     glance"). Exports sits apart in its own cluster: it's the Record
+     drawer, not a narrative act, so it gets no dot. #}
+  <div class="act-cluster" data-act="study">
+    <div class="act-header">
       <span class="act-gate-dot" data-gate="study" data-gate-state="{{ gate_states.study }}"></span>
       <span class="act-label">The Study</span>
     </div>
-    <div class="act-group act-group-design" data-act="design">
+    <div class="act-tabs">
+      <button class="study-pillar active" data-kind="overview" onclick="_setStudyTab('overview')">Overview</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="design">
+    <div class="act-header">
       <span class="act-gate-dot" data-gate="design" data-gate-state="{{ gate_states.design }}"></span>
       <span class="act-label">Design</span>
     </div>
-    <div class="act-group act-group-evidence" data-act="evidence">
+    <div class="act-tabs">
+      <button class="study-pillar" data-kind="compose"  onclick="_setStudyTab('compose')">Model</button>
+      <button class="study-pillar" data-kind="readouts" onclick="_setStudyTab('readouts')">Readouts</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="evidence">
+    <div class="act-header">
       <span class="act-gate-dot" data-gate="evidence" data-gate-state="{{ gate_states.evidence }}"></span>
       <span class="act-label">Evidence</span>
     </div>
-    <div class="act-group act-group-assurance" data-act="assurance">
+    <div class="act-tabs">
+      <button class="study-pillar" data-kind="simulate"  onclick="_setStudyTab('simulate')">Simulations</button>
+      <button class="study-pillar" data-kind="visualize" onclick="_setStudyTab('visualize')">Visualizations</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="assurance">
+    <div class="act-header">
       <span class="act-gate-dot" data-gate="assurance" data-gate-state="{{ gate_states.assurance }}"></span>
       <span class="act-label">Assurance</span>
     </div>
-    <div class="act-group act-group-decision" data-act="decision">
+    <div class="act-tabs">
+      <button class="study-pillar" data-kind="tests" onclick="_setStudyTab('tests')">Tests</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="decision">
+    <div class="act-header">
       <span class="act-gate-dot" data-gate="decision" data-gate-state="{{ gate_states.decision }}"></span>
       <span class="act-label">Decision</span>
     </div>
-    <div class="act-group act-group-record" data-act="record">
-      <span class="act-label">Exports</span>
+    <div class="act-tabs">
+      {# "Decide" pillar's panel kind is "conclusions" (was a sub-tab under Hypotheses). #}
+      <button class="study-pillar" data-kind="conclusions" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
     </div>
   </div>
-  <div class="study-pillars">
-    <button class="study-pillar active" data-kind="overview"    onclick="_setStudyTab('overview')">Overview</button>
-    <button class="study-pillar"        data-kind="compose"     onclick="_setStudyTab('compose')">Model</button>
-    <button class="study-pillar"        data-kind="readouts"    onclick="_setStudyTab('readouts')">Readouts</button>
-    <button class="study-pillar"        data-kind="simulate"    onclick="_setStudyTab('simulate')">Simulations</button>
-    <button class="study-pillar"        data-kind="visualize"   onclick="_setStudyTab('visualize')">Visualizations</button>
-    <button class="study-pillar"        data-kind="tests"       onclick="_setStudyTab('tests')">Tests</button>
-    {# "Decide" pillar's panel kind is "conclusions" (was a sub-tab under Hypotheses). #}
-    <button class="study-pillar"        data-kind="conclusions" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
-    <button class="study-pillar"        data-kind="data"        onclick="_setStudyTab('data')">Exports</button>
+  <div class="act-cluster act-cluster-record" data-act="record">
+    <div class="act-header">
+      <span class="act-label">Exports</span>
+    </div>
+    <div class="act-tabs">
+      <button class="study-pillar" data-kind="data" onclick="_setStudyTab('data')">Exports</button>
+    </div>
   </div>
 </nav>
 <style>
