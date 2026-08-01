@@ -469,3 +469,56 @@ def test_exports_functional_no_prose(tmp_path, dashboard_client):
     assert 'Click a file to' not in html
     assert "Each run's raw emitter store" not in html
     assert 'Analysis outputs above are derived' not in html
+
+
+# ---------------------------------------------------------------------------
+# Fable Increment A, Task 1: model_change.modified_processes must render as
+# formatted fields, never as a bare Python dict repr (R1 — never render a
+# raw Python dict or JSON blob in the default view).
+# ---------------------------------------------------------------------------
+
+def test_modified_processes_renders_fields_not_dict_repr(tmp_path, dashboard_client):
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "modified-processes-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "modified-processes-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        "model_change": {
+            "base_model": "pkg.composites.core",
+            "modified_processes": [
+                {
+                    "name": "EcoliWCM._handle_division",
+                    "why": "Daughter cells were not rehydrating water mass on split.\nFixed by recomputing hydration post-division.",
+                    "status": "required",
+                    "requirement_id": "req-2-daughter-hydration-fix",
+                },
+                "a legacy plain-string entry",
+            ],
+        },
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/modified-processes-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Never a raw Python dict repr.
+    assert "{'name':" not in html
+    assert "'requirement_id':" not in html
+    assert "{&#39;name&#39;" not in html
+
+    # Fields rendered individually.
+    assert "<code>EcoliWCM._handle_division</code>" in html
+    assert "Daughter cells were not rehydrating water mass on split." in html
+    assert "required" in html
+    assert "req-2-daughter-hydration-fix" in html
+
+    # Plain-string entries (the `is mapping` guard's else branch) still render.
+    assert "a legacy plain-string entry" in html

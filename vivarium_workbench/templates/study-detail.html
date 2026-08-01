@@ -879,8 +879,21 @@
     {% endif %}
     {% if study.model_change.modified_processes %}
     <p><strong>Modified processes:</strong></p>
-    <ul style="margin:0 0 8px 18px">
-      {% for m in study.model_change.modified_processes %}<li>{{ m }}</li>{% endfor %}
+    <ul style="margin:0 0 8px 18px;list-style:none;padding-left:0">
+      {% for m in study.model_change.modified_processes %}
+      <li style="margin:0 0 8px 0;padding:8px 10px;background:#fff;border:1px solid #e5e7eb;border-radius:6px">
+        {% if m is mapping %}
+        <div>
+          <code>{{ m.name }}</code>
+          {% if m.status %}<span class="status-chip" style="margin-left:6px">{{ m.status }}</span>{% endif %}
+          {% if m.requirement_id %}<code class="muted" style="margin-left:6px;font-size:0.85em">req: {{ m.requirement_id }}</code>{% endif %}
+        </div>
+        {% if m.why %}<div class="muted" style="margin-top:4px;font-size:0.88em;white-space:pre-wrap;line-height:1.5">{{ m.why }}</div>{% endif %}
+        {% else %}
+        {{ m }}
+        {% endif %}
+      </li>
+      {% endfor %}
     </ul>
     {% endif %}
     {% if study.model_change.notes %}<p class="muted" style="font-size:0.88em">{{ study.model_change.notes }}</p>{% endif %}
