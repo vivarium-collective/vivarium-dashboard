@@ -50,45 +50,62 @@
        mount point — Task 5 rewires its populator. #}
     <div id="readiness-panel" data-slug="{{ name }}"></div>
 
-    {# Pass A: multi-axis Status Detail panel — one chip per axis that is set on the study spec.
-       Hidden entirely when none of the six axes are set, so legacy v3 studies stay unchanged.
-       Task 4: this is now the "status ▾" disclosure — collapsed by default, holding both the
-       6-axis stepper and the computed-divergence chip (moved out of the <h1>). #}
-    {% set _axes = [
-      ('design_status',         'Design'),
-      ('implementation_status', 'Implementation'),
-      ('simulation_status',     'Simulation'),
-      ('evaluation_status',     'Evaluation'),
-      ('gate_status',           'Gate'),
-      ('expert_review_status',  'Expert review'),
-    ] %}
+    {# Fable G2 (§13): "status ▾" is now the six-GATE ladder — Plan / Execution
+       / Evidence / Quality / Decision / Release — relabeling the six status
+       axes per §13's table (`gate_ladder`, built server-side by
+       lib.study_page.build_gate_ladder). Each gate shows its authored state
+       and, where a machine evaluator's value is already attached to the spec
+       (derived_status / computed_gate_verdict — see build_gate_ladder's
+       docstring for exactly which gates have one today), a `◆ computed:`
+       chip + a divergence marker when authored and computed disagree.
+       `implementation_status` maps to no gate in §13's table, so it still
+       renders as a plain (un-gated) axis chip, same as before this task, so
+       no authored data silently disappears from the panel.
+       Hidden entirely when nothing is set anywhere, so legacy v3 studies
+       stay unchanged. #}
     {% set _ns = namespace(any_set=false) %}
-    {% for _k, _ in _axes %}{% if study[_k] %}{% set _ns.any_set = true %}{% endif %}{% endfor %}
+    {% for _g in gate_ladder %}{% if _g.authored_value or _g.computed_value %}{% set _ns.any_set = true %}{% endif %}{% endfor %}
+    {% if study.implementation_status %}{% set _ns.any_set = true %}{% endif %}
     {% set _cgv = study.computed_gate_verdict %}
     {% if _ns.any_set or (_cgv and _cgv.diverges_from_authored) %}
-    <details class="status-detail-panel" aria-label="Multi-axis lifecycle status">
+    <details class="status-detail-panel" aria-label="Six-gate lifecycle status">
       <summary>
         <span class="status-stepper-more">status</span>
         {% if _cgv and _cgv.diverges_from_authored %}
         <span class="gate-divergence-chip" title="Code-computed verdict (spine study_verdict, not human-authored) disagrees with the authored gate_status." style="display:inline-block;font-size:0.78em;font-weight:700;padding:3px 9px;border-radius:9999px;vertical-align:middle;background:#fffbeb;border:1px solid #f59e0b;color:#92400e">⚠ code: {{ _cgv.result }} · authored: {{ study.gate_status }}</span>
         {% endif %}
         <span class="status-stepper">
-          {% for _key, _label in _axes %}
-          <span class="status-step axis-{{ _key }}{% if study[_key] %} set{% endif %}{% if _key == 'gate_status' and study[_key] %} gate-status-{{ study[_key] }}{% endif %}">
-            <span class="dot"></span>{{ _label }}{% if study[_key] %}<span class="step-val">{{ study[_key] }}</span>{% endif %}
+          {% for _g in gate_ladder %}
+          <span class="status-step gate-step axis-{{ _g.axis }} gate-state-{{ _g.state }}{% if _g.authored_value or _g.computed_value %} set{% endif %}" title="Gate {{ _g.number }} · {{ _g.name }}">
+            <span class="dot"></span>{{ _g.number }}&nbsp;·&nbsp;{{ _g.name }}{% if _g.authored_value %}<span class="step-val">{{ _g.authored_value }}</span>{% endif %}
           </span>
           {% endfor %}
+          {% if study.implementation_status %}
+          <span class="status-step axis-implementation_status set">
+            <span class="dot"></span>Implementation<span class="step-val">{{ study.implementation_status }}</span>
+          </span>
+          {% endif %}
         </span>
       </summary>
       <div class="status-stepper-body">
-        {% for _key, _label in _axes %}
-        {% if study[_key] %}
+        {% for _g in gate_ladder %}
+        <div class="status-detail-row gate-row gate-state-{{ _g.state }}">
+          <span class="status-detail-axis">{{ _g.number }} · {{ _g.name }}</span>
+          <span class="status-chip gate-state-{{ _g.authored_state }}">{{ _g.authored_value or 'not set' }}</span>
+          {% if _g.computed_value %}
+          <span class="gate-computed-chip gate-state-{{ _g.computed_state }}" title="{{ _g.computed_source }}">◆ computed: {{ _g.computed_value }}</span>
+          {% if _g.diverges %}
+          <span class="gate-divergence-chip gate-divergence-chip-inline" title="Code-computed state disagrees with the authored axis.">⚠ diverges from authored</span>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% if study.implementation_status %}
         <div class="status-detail-row">
-          <span class="status-detail-axis">{{ _label }}</span>
-          <span class="status-chip {% if _key == 'gate_status' %}gate-status-{{ study[_key] }}{% endif %}">{{ study[_key] }}</span>
+          <span class="status-detail-axis">Implementation</span>
+          <span class="status-chip">{{ study.implementation_status }}</span>
         </div>
         {% endif %}
-        {% endfor %}
       </div>
     </details>
     {% endif %}
@@ -135,30 +152,31 @@
 <nav class="study-tabs" aria-label="Study sections">
   {# Fable G1: act rail — a hairline group-label row above the tab buttons,
      grouping the 8 tabs into the five acts of §9.2/§9.3 (spec:
-     2026-08-01-study-design-fable-pass.md). Each act carries a gate dot; the
-     dot's STATE is neutral/"not-assessed" here — G2 wires the real per-gate
-     state onto `data-gate-state` (and whatever class it needs) without
-     touching this markup. Exports sits apart: it's the Record drawer, not a
-     narrative act, so it gets no dot. #}
+     2026-08-01-study-design-fable-pass.md). Each act carries a gate dot.
+     Fable G2: the dot state is now wired from `gate_states` (built
+     server-side by lib.study_page.act_gate_states from the six-gate ladder
+     below — see §13.1 "act rail dots show each act's gate state at a
+     glance"), not the neutral placeholder G1 shipped. Exports sits apart:
+     it's the Record drawer, not a narrative act, so it gets no dot. #}
   <div class="act-rail">
     <div class="act-group act-group-study" data-act="study">
-      <span class="act-gate-dot" data-gate="study" data-gate-state="not-assessed"></span>
+      <span class="act-gate-dot" data-gate="study" data-gate-state="{{ gate_states.study }}"></span>
       <span class="act-label">The Study</span>
     </div>
     <div class="act-group act-group-design" data-act="design">
-      <span class="act-gate-dot" data-gate="design" data-gate-state="not-assessed"></span>
+      <span class="act-gate-dot" data-gate="design" data-gate-state="{{ gate_states.design }}"></span>
       <span class="act-label">Design</span>
     </div>
     <div class="act-group act-group-evidence" data-act="evidence">
-      <span class="act-gate-dot" data-gate="evidence" data-gate-state="not-assessed"></span>
+      <span class="act-gate-dot" data-gate="evidence" data-gate-state="{{ gate_states.evidence }}"></span>
       <span class="act-label">Evidence</span>
     </div>
     <div class="act-group act-group-assurance" data-act="assurance">
-      <span class="act-gate-dot" data-gate="assurance" data-gate-state="not-assessed"></span>
+      <span class="act-gate-dot" data-gate="assurance" data-gate-state="{{ gate_states.assurance }}"></span>
       <span class="act-label">Assurance</span>
     </div>
     <div class="act-group act-group-decision" data-act="decision">
-      <span class="act-gate-dot" data-gate="decision" data-gate-state="not-assessed"></span>
+      <span class="act-gate-dot" data-gate="decision" data-gate-state="{{ gate_states.decision }}"></span>
       <span class="act-label">Decision</span>
     </div>
     <div class="act-group act-group-record" data-act="record">
@@ -214,6 +232,27 @@
 .status-step.gate-status-passed .dot{background:#10b981;box-shadow:none}
 .status-step.gate-status-failed .dot{background:#ef4444;box-shadow:none}
 .status-step.gate-status-stale .dot{background:#8b5cf6;box-shadow:none}
+/* Fable G2 (§13.2 gate-state vocab; §9.3 palette: grey/green/amber/red/violet).
+   One palette for the gate-ladder stepper dots + detail rows AND (via the
+   [data-gate-state] selectors below) the act-rail dots, so "how urgent is
+   this gate" reads identically in both places. Rules below `.status-step.set
+   .dot` on purpose so a "set" gate's real state wins over the generic green. */
+.status-step.gate-state-not-assessed .dot{background:#cbd5e1;box-shadow:inset 0 0 0 1px #b6c2cf}
+.status-step.gate-state-passed .dot{background:#10b981;box-shadow:none}
+.status-step.gate-state-passed-with-conditions .dot{background:#f59e0b;box-shadow:none}
+.status-step.gate-state-blocked .dot{background:#ef4444;box-shadow:none}
+.status-step.gate-state-waived .dot{background:#8b5cf6;box-shadow:none}
+.status-chip.gate-state-not-assessed{background:#e2e8f0;color:#334155}
+.status-chip.gate-state-passed{background:#d1fae5;color:#065f46}
+.status-chip.gate-state-passed-with-conditions{background:#fef3c7;color:#92400e}
+.status-chip.gate-state-blocked{background:#fee2e2;color:#991b1b}
+.status-chip.gate-state-waived{background:#ede9fe;color:#5b21b6}
+.gate-computed-chip{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;margin-left:6px;font-family:ui-monospace,monospace;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+.gate-divergence-chip-inline{display:inline-block;font-size:0.78em;font-weight:700;padding:2px 9px;border-radius:9999px;margin-left:6px;background:#fffbeb;border:1px solid #f59e0b;color:#92400e}
+.act-gate-dot[data-gate-state="passed"]{background:#10b981;box-shadow:none}
+.act-gate-dot[data-gate-state="passed-with-conditions"]{background:#f59e0b;box-shadow:none}
+.act-gate-dot[data-gate-state="blocked"]{background:#ef4444;box-shadow:none}
+.act-gate-dot[data-gate-state="waived"]{background:#8b5cf6;box-shadow:none}
 .status-stepper-more{font-size:0.82em;font-weight:600;color:#475569;white-space:nowrap}
 .status-detail-panel[open] .status-stepper-more::after{content:" \25be"}
 .status-detail-panel:not([open]) .status-stepper-more::after{content:" \25b8"}

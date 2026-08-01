@@ -251,6 +251,179 @@ def outcome_glyph(token) -> str:
 
 
 # ---------------------------------------------------------------------------
+# G2 — the gating model (Fable §13, docs/superpowers/specs/
+# 2026-08-01-study-design-fable-pass.md). The six status axes ARE the six
+# gates already (design/implementation/simulation/evaluation/gate/
+# expert_review) — §13's table maps them:
+#   Plan ← design_status · Execution ← simulation_status ·
+#   Evidence ← evaluation_status · Quality ← evaluation_status (yes, the
+#   SAME axis backs both Evidence and Quality — that's the spec's table, not
+#   a bug here) · Decision ← gate_status · Release ← expert_review_status.
+# `implementation_status` has no gate — §13's table simply never assigns it
+# one (it stays a plain authored axis, unchanged from before this task).
+# ---------------------------------------------------------------------------
+
+# §13.2 gate-state vocabulary. Axis values are free-authored strings (not a
+# closed enum), so classification is a heuristic token map; anything
+# unrecognized degrades to "not-assessed" rather than guessing a pass —
+# mirrors outcome_label's "never invent, never blank" rule.
+_GATE_STATE_TOKENS: dict[str, str] = {
+    # passed — the axis (or computed evaluator) is done and clean
+    "passed": "passed", "pass": "passed", "ok": "passed", "approved": "passed",
+    "complete": "passed", "completed": "passed", "ran": "passed",
+    "evaluated": "passed", "done": "passed", "designed": "passed",
+    "implemented": "passed", "signed_off": "passed",
+    # passed-with-conditions — assessed, open findings / partial credit
+    "needs_calibration": "passed-with-conditions", "partial": "passed-with-conditions",
+    "mixed": "passed-with-conditions", "drift": "passed-with-conditions",
+    # blocked — assessed and failing
+    "blocked": "blocked", "failed": "blocked", "fail": "blocked",
+    "mismatch": "blocked", "stale": "blocked", "failed_evaluation": "blocked",
+    # waived — explicitly accepted as residual risk (D1.3; not authored
+    # anywhere on this page yet, kept for forward-compat with §13.2's vocab)
+    "waived": "waived",
+    # not-assessed — nothing decided yet (includes "in progress"/"pending":
+    # not yet a finding, just not started or not finished)
+    "not_started": "not-assessed", "not_run": "not-assessed",
+    "not_evaluated": "not-assessed", "planning": "not-assessed",
+    "planned": "not-assessed", "pending": "not-assessed",
+    "in_progress": "not-assessed", "running": "not-assessed",
+}
+_GATE_STATES = ("not-assessed", "passed", "passed-with-conditions", "blocked", "waived")
+# Severity rank for combining sub-gate states into one dot/roll-up (higher =
+# more in need of attention): a red gate must never hide behind a green one.
+_GATE_STATE_RANK = {
+    "blocked": 4, "passed-with-conditions": 3, "not-assessed": 2,
+    "waived": 1, "passed": 0,
+}
+_GATE_STATE_GLYPH = {
+    "not-assessed": "○", "passed": "✓", "passed-with-conditions": "◐",
+    "blocked": "✗", "waived": "⚑",
+}
+
+
+def gate_state(token) -> str:
+    """Classify a raw axis/computed status token into the §13.2 gate-state
+    vocabulary (``not-assessed`` / ``passed`` / ``passed-with-conditions`` /
+    ``blocked`` / ``waived``). Unset or unrecognized tokens degrade to
+    ``not-assessed``. Registered as the Jinja filter ``gate_state``."""
+    if not token:
+        return "not-assessed"
+    return _GATE_STATE_TOKENS.get(str(token).strip().lower(), "not-assessed")
+
+
+def gate_state_glyph(token) -> str:
+    """Single-character glyph for ``gate_state(token)``. Registered as the
+    Jinja filter ``gate_state_glyph``."""
+    return _GATE_STATE_GLYPH[gate_state(token)]
+
+
+def _worst_gate_state(*states: str | None) -> str:
+    """The most attention-demanding state among *states* (§_GATE_STATE_RANK),
+    defaulting to ``not-assessed`` when none are set."""
+    present = [s for s in states if s]
+    if not present:
+        return "not-assessed"
+    return max(present, key=lambda s: _GATE_STATE_RANK.get(s, 2))
+
+
+# (key, gate number, gate name, backing axis) — order is lifecycle order,
+# exactly §13's table.
+_GATES: tuple[tuple[str, int, str, str], ...] = (
+    ("plan",      1, "Plan",      "design_status"),
+    ("execution", 2, "Execution", "simulation_status"),
+    ("evidence",  3, "Evidence",  "evaluation_status"),
+    ("quality",   4, "Quality",   "evaluation_status"),
+    ("decision",  5, "Decision",  "gate_status"),
+    ("release",   6, "Release",   "expert_review_status"),
+)
+
+
+def build_gate_ladder(spec: dict) -> list[dict]:
+    """The ``status ▾`` gate ladder: the six axes relabeled as the six gates,
+    each with its authored state plus — where a machine evaluator's value is
+    ALREADY attached to *spec* by :func:`study_spec.load_study_detail_spec`
+    (``derived_status`` from ``viva_superpowers.study_status.derive_status``;
+    ``computed_gate_verdict`` from the persisted/rolled-up gate evaluator) — a
+    computed state and a computed-vs-authored divergence flag.
+
+    Plan and Release have NO computed source wired into *spec* today:
+    ``study_verify`` (§13's named Plan evaluator) doesn't exist as an
+    importable function in this codebase, and the report-linter's
+    ``missing_question``/``undeclared_readouts`` checks are only fetched
+    client-side (``GET /api/report-lint``) for the readiness panel, not
+    attached to the render-time spec. The conclusion-card freeze (§13's named
+    Release evaluator) isn't surfaced as a field yet either (that's task G8).
+    Per the task's "don't invent a computed value" rule, both gates render
+    authored-only.
+
+    Returns a list of 6 dicts, lifecycle order, each with: ``key``, ``number``,
+    ``name``, ``axis``, ``authored_value``, ``authored_state``,
+    ``computed_value``, ``computed_state``, ``computed_source``, ``diverges``,
+    and ``state`` (the worst of authored/computed, for a single dot/chip
+    color that never hides a red gate behind a green one).
+    """
+    derived = spec.get("derived_status") or {}
+    disagreements = {
+        d.get("axis"): d for d in (spec.get("status_disagreements") or [])
+        if isinstance(d, dict)
+    }
+    cgv = spec.get("computed_gate_verdict") or {}
+
+    gates: list[dict] = []
+    for key, number, name, axis in _GATES:
+        authored_value = spec.get(axis)
+        entry = {
+            "key": key, "number": number, "name": name, "axis": axis,
+            "authored_value": authored_value,
+            "authored_state": gate_state(authored_value),
+            "computed_value": None, "computed_state": None,
+            "computed_source": None, "diverges": False,
+        }
+        if axis in derived and isinstance(derived.get(axis), dict):
+            d = derived[axis]
+            entry["computed_value"] = d.get("value")
+            entry["computed_state"] = gate_state(d.get("value"))
+            entry["computed_source"] = d.get("source") or "derived from execution state"
+            entry["diverges"] = axis in disagreements
+        elif axis == "gate_status" and cgv.get("result"):
+            entry["computed_value"] = cgv.get("result")
+            entry["computed_state"] = gate_state(cgv.get("result"))
+            entry["computed_source"] = (
+                "spine gate evaluator (study_verdict.roll_up_verdict / "
+                "pipeline_gate.gate_evaluator)"
+            )
+            entry["diverges"] = bool(cgv.get("diverges_from_authored"))
+        entry["state"] = _worst_gate_state(entry["authored_state"], entry["computed_state"])
+        gates.append(entry)
+    return gates
+
+
+def act_gate_states(gates: list[dict]) -> dict[str, str]:
+    """Roll the six per-gate states up into the five act-rail dot states fed
+    to G1's ``.act-gate-dot[data-gate=...]`` hooks (§9.3: "six gates, five
+    dots"). Per §13's Act column: Design←Plan(I); Evidence←Execution+
+    Evidence(II); Assurance←Quality(III); Decision←Decision+Release(IV).
+    'study' (the Overview act — §9.2 lists it as "(abstract)", outside the
+    four numbered acts, so §13 assigns it no gate) is rendered here as the
+    worst state across all six gates: the closest single-dot reading of
+    "furthest gate passed" (§13.1) available without reimplementing the
+    header pill's logic, which this task explicitly leaves alone.
+
+    Each roll-up picks the worst state (§_GATE_STATE_RANK), never an average,
+    so a dot never hides a blocked gate behind a passed one.
+    """
+    by_key = {g["key"]: g["state"] for g in gates}
+    return {
+        "study": _worst_gate_state(*by_key.values()),
+        "design": by_key.get("plan", "not-assessed"),
+        "evidence": _worst_gate_state(by_key.get("execution"), by_key.get("evidence")),
+        "assurance": by_key.get("quality", "not-assessed"),
+        "decision": _worst_gate_state(by_key.get("decision"), by_key.get("release")),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -301,6 +474,8 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     env.filters["outcome_label"] = outcome_label
     env.filters["outcome_class"] = outcome_class
     env.filters["outcome_glyph"] = outcome_glyph
+    env.filters["gate_state"] = gate_state
+    env.filters["gate_state_glyph"] = gate_state_glyph
     tpl = env.get_template("study-detail.html")
     _hn = _humanize_study_name(name)
     # W15 — open epistemic debts, computed server-side via the deterministic
@@ -321,11 +496,20 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
             spec, known_composite_ids(ws_root)) or []
     except Exception:
         unresolved_composites = []
+    # Fable G2: the six status axes relabeled as the six gates (§13), plus
+    # the act-rail dot states they feed (G1's `.act-gate-dot[data-gate=...]`
+    # hooks). Pure render-time derivation from fields load_study_detail_spec
+    # already attached (derived_status, computed_gate_verdict,
+    # status_disagreements) — never modifies study.yaml.
+    gate_ladder = build_gate_ladder(spec)
+    gate_states = act_gate_states(gate_ladder)
     html = tpl.render(study=spec, name=name,
                       display_name=spec.get("title") or _hn["title"],
                       name_chip=_hn["chip"],
                       epistemic_debts=epistemic_debts,
                       unresolved_composites=unresolved_composites,
+                      gate_ladder=gate_ladder,
+                      gate_states=gate_states,
                       base_path=base_path)
     from vivarium_workbench.lib.report import _apply_live_base_path, _normalize_asset_urls
     html = _normalize_asset_urls(html)

@@ -4676,6 +4676,12 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .act-group{ border-bottom-color:var(--border) !important; }
 :root[data-theme="dark"] .act-label{ color:var(--text-muted) !important; }
 :root[data-theme="dark"] .act-gate-dot{ background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--border-2); }
+/* Fable G2: per-gate-state dot colors (§9.3 palette) win over the neutral
+   dark default above — same selector specificity, later in the cascade. */
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="passed"]{ background:#10b981; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="passed-with-conditions"]{ background:#f59e0b; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="blocked"]{ background:#ef4444; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="waived"]{ background:#8b5cf6; box-shadow:none; }
 :root[data-theme="dark"] .status-detail,
 :root[data-theme="dark"] .status-detail-panel,
 :root[data-theme="dark"] .overview-section,

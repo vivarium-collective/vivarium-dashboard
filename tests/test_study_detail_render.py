@@ -857,3 +857,118 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     # All 8 pillars still present and wired to _setStudyTab.
     for kind in kinds_in_order:
         assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html
+
+
+# ---------------------------------------------------------------------------
+# Fable G2: six status axes → six gates in `status ▾`, computed-vs-authored,
+# and feeding the act-rail gate dots (G1). Spec: 2026-08-01-study-design-
+# fable-pass.md §13 (gating model), §13.1 (where gates live), §13.2 (states).
+# ---------------------------------------------------------------------------
+
+def _write_g2_study(ws, slug, extra_spec):
+    sd = ws / "studies" / slug
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    spec = {
+        "schema_version": 3,
+        "name": slug,
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+    }
+    spec.update(extra_spec)
+    (sd / "study.yaml").write_text(yaml.safe_dump(spec))
+
+
+def test_status_ladder_shows_six_gate_names(tmp_path, dashboard_client):
+    """`status ▾` relabels the six axes as the six gates (§13's table):
+    Plan / Execution / Evidence / Quality / Decision / Release — not the old
+    axis words (Design/Implementation/Simulation/Evaluation/Gate/Expert
+    review)."""
+    ws = tmp_path / "ws"
+    _write_g2_study(ws, "gate-names-study", {"design_status": "designed"})
+    client = dashboard_client(ws)
+    resp = client.get("/studies/gate-names-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    panel_i = html.index('class="status-detail-panel"')
+    panel_end = html.index("</details>", panel_i)
+    seg = html[panel_i:panel_end]
+    for gate_name in ("Plan", "Execution", "Evidence", "Quality", "Decision", "Release"):
+        assert gate_name in seg, f"gate name {gate_name!r} missing from status ladder"
+
+
+def test_status_ladder_shows_authored_axis_state(tmp_path, dashboard_client):
+    """A study with an authored axis (design_status) shows that gate's
+    (Plan's) authored value in the ladder."""
+    ws = tmp_path / "ws"
+    _write_g2_study(ws, "authored-axis-study", {"design_status": "designed"})
+    client = dashboard_client(ws)
+    resp = client.get("/studies/authored-axis-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    panel_i = html.index('class="status-detail-panel"')
+    panel_end = html.index("</details>", panel_i)
+    seg = html[panel_i:panel_end]
+    assert "1 · Plan" in seg
+    assert "designed" in seg
+    assert 'gate-state-passed' in seg
+
+
+def test_status_ladder_shows_computed_vs_authored_indicator(tmp_path, dashboard_client):
+    """Where a computed value exists for a gate (Execution/Evidence, sourced
+    from viva_superpowers.study_status.derive_status, already attached to the
+    spec as `derived_status` by load_study_detail_spec) a `◆ computed:`
+    indicator renders in the gate ladder body."""
+    ws = tmp_path / "ws"
+    _write_g2_study(ws, "computed-axis-study", {
+        "behavior_tests": [{"name": "t1"}],
+        "runs": [{"name": "r1", "status": "completed",
+                   "outcomes": {"t1": {"result": "PASS"}}}],
+    })
+    client = dashboard_client(ws)
+    resp = client.get("/studies/computed-axis-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    panel_i = html.index('class="status-detail-panel"')
+    panel_end = html.index("</details>", panel_i)
+    seg = html[panel_i:panel_end]
+    assert "gate-computed-chip" in seg
+    assert "◆ computed:" in seg
+    # Execution's computed value is sourced from run history (derived_status).
+    assert "2 · Execution" in seg
+
+
+def test_act_rail_dots_reflect_gate_states(tmp_path, dashboard_client):
+    """A study with real gate data does NOT render every act dot as
+    not-assessed — G2 feeds `data-gate-state` from the computed gate ladder
+    (G1 shipped the hooks neutral; this is the wiring)."""
+    import re
+
+    ws = tmp_path / "ws"
+    _write_g2_study(ws, "act-dots-study", {
+        "design_status": "designed",
+        "gate_status": "passed",
+        "behavior_tests": [{"name": "t1"}],
+        "runs": [{"name": "r1", "status": "completed",
+                   "outcomes": {"t1": {"result": "FAIL"}}}],
+    })
+    client = dashboard_client(ws)
+    resp = client.get("/studies/act-dots-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    dots = re.findall(
+        r'<span class="act-gate-dot" data-gate="([a-z]+)" data-gate-state="([a-z-]+)">',
+        html,
+    )
+    assert len(dots) == 5, dots
+    states = {gate: state for gate, state in dots}
+    # design_status: designed -> Plan passes -> the "design" act dot is "passed".
+    assert states["design"] == "passed"
+    # Not every dot is the G1 placeholder "not-assessed" for a study with data.
+    assert set(states.values()) != {"not-assessed"}
