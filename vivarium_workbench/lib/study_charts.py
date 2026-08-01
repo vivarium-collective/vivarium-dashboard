@@ -1320,6 +1320,15 @@ def _embed_gif_chart(gif_path: Path, key: str, title: str, caption: str) -> dict
             'style="max-width:100%; height:auto; border:1px solid #e2e8f0; '
             'border-radius:4px"></div>'
         ),
+        # Explicit type marker (Fable §5(A), Task V4 review fix round 1):
+        # the panel renders this record from its `svg` field (an <img> tag,
+        # not literal SVG markup — HTML works fine there too), so without
+        # this the record was indistinguishable from a static inline-SVG
+        # chart to lib.viz_gate's classifier, which would then treat a
+        # genuinely-animated GIF as a non-qualifying static figure. `media`
+        # is additive — the `svg` field is untouched and still what the
+        # gallery/chart-card renders.
+        "media": "gif",
     }
 
 

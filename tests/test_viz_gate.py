@@ -133,6 +133,54 @@ def test_gif_linked_to_run_qualifies(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Review fix round 1: `_embed_gif_chart` (study_charts.py, the perf-sweep
+# colony-animation chart) puts its GIF <img> tag in the `svg` field with no
+# `media` key of its own — before the fix, viz_gate's `("svg" if c.get("svg")
+# else None)` fallback misclassified that as a STATIC svg figure, defeating
+# has_interactive for a genuinely-animated GIF. Exercise the function's REAL
+# output shape (not a synthetic dict) to guard the fix at the integration
+# point, and pin the companion guard: a real static .svg chart (no `media`
+# key, just an inline `svg` field) must still classify as static — the fix
+# must not flip svg-field charts to interactive wholesale.
+# ---------------------------------------------------------------------------
+
+def test_embed_gif_chart_shape_classifies_as_interactive(tmp_path, monkeypatch):
+    from vivarium_workbench.lib.study_charts import _embed_gif_chart
+
+    gif_path = tmp_path / "colony.gif"
+    gif_path.write_bytes(b"GIF89aFAKE")
+    gif_chart = _embed_gif_chart(gif_path, key="colony-animation",
+                                 title="Colony growth", caption="...")
+    assert gif_chart is not None
+    assert gif_chart["media"] == "gif"  # the fix: explicit type marker
+    assert "svg" in gif_chart  # additive: the renderer still gets its <img> markup
+    gif_chart["run_id"] = "run-7"  # simulate provenance for the qualifying case
+
+    ws = _empty_study(tmp_path)
+    _patch_sources(monkeypatch, charts={"charts": [gif_chart]})
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["has_interactive"] is True
+    assert status["qualifies"] is True
+
+
+def test_real_static_svg_chart_still_classifies_as_static(tmp_path, monkeypatch):
+    """Guard: a genuine static SVG chart (svg field, no media key — the same
+    shape live/v4-test charts use) must NOT be flipped to interactive by the
+    gif-classification fix."""
+    ws = _empty_study(tmp_path)
+    _patch_sources(
+        monkeypatch,
+        charts={"charts": [
+            {"key": "mass", "svg": "<svg><rect/></svg>", "run_id": "run-1"},
+        ]},
+    )
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["has_interactive"] is False
+    assert status["qualifies"] is False
+    assert status["reason"] == "no interactive figure (only static images)"
+
+
+# ---------------------------------------------------------------------------
 # Native gallery panels are interactive and share the gallery's run_id.
 # ---------------------------------------------------------------------------
 
