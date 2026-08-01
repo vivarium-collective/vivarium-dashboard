@@ -261,6 +261,107 @@ def outcome_glyph(token) -> str:
 
 
 # ---------------------------------------------------------------------------
+# G7 — honest attribution from existing fields (Fable §11.2, §14.1(5)).
+#
+# Confirmed actor-bearing fields (grepped, not invented) that are actually
+# plumbed to the study-detail spec/template context:
+#   - feedback_tracked.items[].author / .ts                — who raised a
+#     tracked feedback item / when (viva_superpowers.feedback_tracking
+#     .study_feedback_tracked, attached at study_spec.py's
+#     spec["feedback_tracked"]).
+#   - feedback_tracked.items[].responded_by / .responded_at — who answered /
+#     when (same source; only present when a response exists).
+#   - expert_decisions_needed[].asked_to                    — who a decision
+#     is routed to (investigations._project_v4_redesign_to_legacy_view /
+#     the mirrored design_pivot_required list). No timestamp field exists
+#     for this one — the compact renderer omits "when" when absent.
+#
+# Checked and deliberately NOT rendered as attribution (no real actor
+# identity behind them):
+#   - computed_gate_verdict.evaluated_by (persisted pipeline_gate.gate_evaluator
+#     / viva_superpowers.study_verdict.roll_up_verdict) is ALWAYS the literal
+#     string "code" — a machine-evaluator marker, not a person/agent identity.
+#     Rendering "by code" on every gate row would be decorative, not honest
+#     attribution, so the six-gate ladder carries no per-gate actor here.
+#   - conclusion.verdict.json (vivarium_workbench.lib.conclusion_card
+#     .build_conclusion_verdict) is `{schema, overall, tracks, insight}` —
+#     no actor, no timestamp field at all. G8 is the task that adds the
+#     freeze-time surface; G7 only reads what's already there, so the
+#     verdict card's attribution line renders the literal "unattributed"
+#     token until that field exists.
+#   - findings[] and spine_acceptance.criteria[] (study_acceptance_criterion /
+#     viva_superpowers.investigation_status.roll_up_acceptance) carry no
+#     author/responded_by/decided_by field in the current schema — only
+#     {study, behavior, result}.
+#
+# Human vs agent: never inferred from a bare person-name guess. The ONLY
+# thing that classifies a recorded name as "agent" is it matching a
+# well-known LLM/automation naming token — the same category of signal
+# viva_superpowers.investigation_close.derive_contributors already uses
+# (there: an email's "noreply@anthropic.com" / "bot" / "ci" substring flags
+# a git co-author as an agent). Every other non-empty name defaults to
+# "human" — a documented DEFAULT, not a claim about who that person is:
+# these fields are free-text names filled in by whoever authored them,
+# historically human reviewers/authors. Empty/None -> "unattributed".
+# ---------------------------------------------------------------------------
+
+_KNOWN_AGENT_NAME_TOKENS: frozenset[str] = frozenset({
+    "claude", "gpt", "chatgpt", "codex", "copilot", "gemini", "llama",
+    "mistral", "deepseek", "qwen", "grok", "bot", "ci",
+})
+
+
+def actor_kind(actor) -> str:
+    """Classify a recorded actor value as ``"human"`` / ``"agent"`` /
+    ``"unattributed"``. See the module comment above for the honesty rule:
+    only a known agent/automation naming TOKEN flips the classification to
+    ``"agent"``; every other non-empty name defaults to ``"human"``; empty/
+    None is ``"unattributed"`` (never blank, never raises)."""
+    s = str(actor).strip() if actor is not None else ""
+    if not s:
+        return "unattributed"
+    low = s.lower()
+    first_token = re.split(r"[\s\-_/]+", low)[0]
+    if low in _KNOWN_AGENT_NAME_TOKENS or first_token in _KNOWN_AGENT_NAME_TOKENS:
+        return "agent"
+    return "human"
+
+
+def actor_model(actor) -> Optional[str]:
+    """The model string for an ``"agent"``-classified actor, else ``None``.
+
+    Never fabricated: this is exactly the recorded actor string (e.g.
+    ``"claude-opus-4-8"``) — the same value ``actor_kind`` classified,
+    re-surfaced under a clearer name. No lookup, no version guess."""
+    if actor_kind(actor) != "agent":
+        return None
+    return str(actor).strip()
+
+
+_ACTOR_KIND_GLYPH: dict[str, str] = {
+    "human": "◇", "agent": "⚙", "unattributed": "○",
+}
+
+
+def actor_glyph(actor) -> str:
+    """Single-character glyph for ``actor_kind(actor)``. Registered as the
+    Jinja filter ``actor_glyph`` — mirrors ``outcome_glyph``'s style."""
+    return _ACTOR_KIND_GLYPH[actor_kind(actor)]
+
+
+def attribution_text(actor, when=None) -> str:
+    """Compact ``"by <actor> · <when>"`` string, or the literal
+    ``"unattributed"`` token when no actor is recorded — never blank (see
+    module comment: absent != empty). ``when`` is omitted from the string
+    when absent/falsy. Registered as the Jinja filter ``attribution_text``."""
+    if actor_kind(actor) == "unattributed":
+        return "unattributed"
+    label = str(actor).strip()
+    when_s = str(when).strip() if when else ""
+    return f"by {label} · {when_s}" if when_s else f"by {label}"
+
+
+# ---------------------------------------------------------------------------
 # G2 — the gating model (Fable §13, docs/superpowers/specs/
 # 2026-08-01-study-design-fable-pass.md). The six status axes ARE the six
 # gates already (design/implementation/simulation/evaluation/gate/
@@ -499,6 +600,9 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     env.filters["outcome_glyph"] = outcome_glyph
     env.filters["gate_state"] = gate_state
     env.filters["gate_state_glyph"] = gate_state_glyph
+    env.filters["actor_kind"] = actor_kind
+    env.filters["actor_glyph"] = actor_glyph
+    env.filters["attribution_text"] = attribution_text
     tpl = env.get_template("study-detail.html")
     _hn = _humanize_study_name(name)
     # W15 — open epistemic debts, computed server-side via the deterministic

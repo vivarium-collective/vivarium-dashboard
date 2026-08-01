@@ -610,7 +610,11 @@
             <div class="expert-question-header">
               <span class="expert-question-id">{{ q.id }}</span>
               <span class="expert-question-status">{{ q.status or 'open' }}</span>
-              {% if q.asked_to %}<span class="expert-question-asked-to">asked to: {{ q.asked_to }}</span>{% endif %}
+              {# G7: honest attribution — asked_to is the only actor field this
+                 card carries (no timestamp field exists for it). Never blank:
+                 the literal "unattributed" token renders when asked_to is unset,
+                 with the human/agent glyph on whatever actor IS recorded. #}
+              <span class="expert-question-asked-to actor-kind-{{ q.asked_to | actor_kind }}" title="actor kind: {{ q.asked_to | actor_kind }}">asked to: <span class="actor-glyph">{{ q.asked_to | actor_glyph }}</span> {{ q.asked_to if q.asked_to else 'unattributed' }}</span>
             </div>
             <div class="expert-question-text"><strong>Q.</strong> {{ q.question }}</div>
             {% if q.alternatives %}
@@ -1280,6 +1284,16 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
 
   {# ── Group 1: Verdict & conclusion ───────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Verdict &amp; conclusion</h2>
+    {# G7: honest attribution for the frozen verdict. No actor/timestamp field
+       is currently persisted with the conclusion card
+       (viz/report_card/conclusion.verdict.json is {schema, overall, tracks,
+       insight} — checked, not guessed) so this always renders the literal
+       "unattributed" token today; G8 adds the freeze-time surface this will
+       then pick up. `none` is passed explicitly — no field is read here yet,
+       per the "no new schema fields" constraint. #}
+    <p class="muted small verdict-attribution" style="margin:0 0 8px 0" title="actor kind: {{ none | actor_kind }}">
+      <span class="actor-glyph">{{ none | actor_glyph }}</span> {{ none | attribution_text }}
+    </p>
 
     <div class="overview-section narrative-card" data-narrative-card="conclusion_verdicts" style="margin-bottom:18px">
       <h3 class="overview-label">⚖️ Verdicts — three-track outcome

@@ -37,6 +37,41 @@
   window.outcomeClass = outcomeClass;
   window.outcomeGlyph = outcomeGlyph;
 
+  // ── G7: honest attribution from existing fields (Fable §11.2, §14.1(5)) ──
+  // JS mirror of vivarium_workbench/lib/study_page.py's actor_kind/_glyph/
+  // attribution_text — SAME never-guess-a-name rule, so client-rendered
+  // attribution (the feedback_tracked panel below) reads identically to any
+  // server-rendered attribution. Only a known LLM/automation naming TOKEN
+  // (claude, gpt-4o, ci, ...) flips a recorded name to "agent" — the same
+  // category of signal viva_superpowers.investigation_close.derive_contributors
+  // already uses for git co-authors (there: an email's "noreply@anthropic.com"
+  // / "bot" / "ci" substring). Every other non-empty name defaults to "human"
+  // — a documented DEFAULT, not a claim about who that person is. Empty/None
+  // -> "unattributed" (never blank).
+  var _KNOWN_AGENT_NAME_TOKENS = {
+    claude: 1, gpt: 1, chatgpt: 1, codex: 1, copilot: 1, gemini: 1, llama: 1,
+    mistral: 1, deepseek: 1, qwen: 1, grok: 1, bot: 1, ci: 1
+  };
+  function actorKind(actor) {
+    var s = (actor === null || actor === undefined) ? '' : String(actor).trim();
+    if (!s) return 'unattributed';
+    var low = s.toLowerCase();
+    var firstToken = low.split(/[\s\-_/]+/)[0];
+    if (_KNOWN_AGENT_NAME_TOKENS[low] || _KNOWN_AGENT_NAME_TOKENS[firstToken]) return 'agent';
+    return 'human';
+  }
+  var _ACTOR_KIND_GLYPH = {human: '◇', agent: '⚙', unattributed: '○'};
+  function actorGlyph(actor) { return _ACTOR_KIND_GLYPH[actorKind(actor)]; }
+  function attributionText(actor, when) {
+    if (actorKind(actor) === 'unattributed') return 'unattributed';
+    var label = String(actor).trim();
+    var whenS = when ? String(when).trim() : '';
+    return whenS ? ('by ' + label + ' · ' + whenS) : ('by ' + label);
+  }
+  window.actorKind = actorKind;
+  window.actorGlyph = actorGlyph;
+  window.attributionText = attributionText;
+
   function api(method, path, body) {
     return fetch(path, {
       method: method,
@@ -1806,9 +1841,18 @@
         'font-family:ui-monospace,monospace;margin-right:6px">' +
         _esc(status) + '</span>';
 
+      // G7: honest attribution — item.author is feedback_tracking's recorded
+      // raiser (viva_superpowers.feedback_tracking.study_feedback_tracked);
+      // item.ts is its timestamp. Never blank: attributionText renders the
+      // literal "unattributed" token when author is absent, with a human/
+      // agent glyph on whatever actor IS recorded (never guessed from the
+      // bare name — see the actorKind comment above).
+      var authorWhen = (item.ts || '').replace('T', ' ').replace('Z', ' UTC');
       var metaHtml =
         '<span class="muted" style="font-size:0.82em">' +
-        _esc(item.author || '') + ' · ' + _esc((item.ts || '').replace('T', ' ').replace('Z', ' UTC')) +
+        '<span class="actor-glyph" title="actor kind: ' + _esc(actorKind(item.author)) + '">' +
+        actorGlyph(item.author) + '</span> ' +
+        _esc(attributionText(item.author, authorWhen)) +
         ' · <code style="font-size:0.9em">' + _esc(item.section || '') + '</code>' +
         '</span>';
 
@@ -1816,12 +1860,16 @@
 
       var responseHtml = '';
       if (status === 'addressed' && item.response) {
+        // G7: honest attribution for the responder (item.responded_by /
+        // .responded_at, same source). Always rendered — "unattributed" when
+        // no responder is recorded, never silently omitted.
         responseHtml =
           '<div style="margin:6px 0 0 0;padding:8px 12px;background:#f0fdf4;' +
           'border-left:3px solid #10b981;border-radius:4px;font-size:0.88em">' +
-          '<strong style="font-size:0.85em;color:#065f46">Response' +
-          (item.responded_by ? ' (' + _esc(item.responded_by) + ')' : '') +
-          (item.responded_at ? ' — ' + _esc(item.responded_at) : '') +
+          '<strong style="font-size:0.85em;color:#065f46">Response — ' +
+          '<span class="actor-glyph" title="actor kind: ' + _esc(actorKind(item.responded_by)) + '">' +
+          actorGlyph(item.responded_by) + '</span> ' +
+          _esc(attributionText(item.responded_by, item.responded_at)) +
           ':</strong>' +
           '<pre style="white-space:pre-wrap;margin:4px 0 0 0;font-family:inherit;' +
           'font-size:0.92em;color:#374151">' + _esc(item.response) + '</pre>' +
