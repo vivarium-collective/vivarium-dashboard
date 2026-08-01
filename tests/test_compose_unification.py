@@ -25,6 +25,12 @@ def _panel_compose():
     return HTML[i: nxt if nxt != -1 else len(HTML)]
 
 
+def _panel_data():
+    i = HTML.index('id="panel-data"')
+    nxt = HTML.find('class="study-tab-panel"', i + 10)
+    return HTML[i: nxt if nxt != -1 else len(HTML)]
+
+
 def test_inner_hooks_preserved_in_compose():
     p = _panel_compose()
     # The legacy v2 baseline/variants/interventions CRUD was retired; the Model
@@ -69,10 +75,11 @@ def test_build_guard_preserves_conditions_and_baseline():
 def test_analyses_section_present_and_reachable_on_the_study_page():
     # Regression: an earlier "Analyses" authoring control was wired only into
     # the legacy Investigation-detail panel (#investigation-detail inside
-    # #page-studies), which no current navigation path opens — dead UI. This
-    # one lives on the Model (compose) tab of the Study page, which every
-    # study (grouped or ungrouped) is actually reachable through.
-    p = _panel_compose()
+    # #page-studies), which no current navigation path opens — dead UI. The
+    # control must stay reachable on the Study page. It was relocated from the
+    # Model (compose) tab to the Exports (data) tab — a dispatch/output concern
+    # co-located with the analysis outputs — so it now lives in #panel-data.
+    p = _panel_data()
     assert 'id="study-analyses-list"' in p
     assert 'onclick="_saveStudyAnalyses()"' in p
     assert 'id="study-analyses-status"' in p
