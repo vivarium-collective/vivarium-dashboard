@@ -474,6 +474,81 @@ def test_tests_merged_single_concept(tmp_path, dashboard_client):
 
 
 # ---------------------------------------------------------------------------
+# Fable Increment A, Task 5 (change #4): Tests tab used to render its gate
+# set twice — a client-side "N/M gates passed" strip that ALSO built its own
+# per-gate ✓/✗ `<li>` rows (_renderTestsGateSummary), stacked directly above
+# the server-rendered "Behavioral tests" list (#tests-list) that lists the
+# same gates again, richer (requires/Assertion). Fable §4.6: merge into one
+# score line + one list. The gate-summary mount (#tests-gate-summary) stays
+# as the score-line container, but its render function must no longer build
+# a second per-gate list — that detail lives ONCE, in #tests-list.
+# ---------------------------------------------------------------------------
+
+def test_tests_gate_summary_not_duplicated_by_behavioral_list(tmp_path, dashboard_client):
+    import re
+    from pathlib import Path
+    import vivarium_workbench
+
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "gate-dedup-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "gate-dedup-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        "behavior_tests": [
+            {"name": "daughters_hydrated", "classification": "primary",
+             "measure": "daughter_mass_ratio", "pass_if": "ratio <= 2.0"},
+            {"name": "two_generations_complete", "classification": "primary",
+             "requires_simulation": "baseline_2gen"},
+        ],
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/gate-dedup-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+
+    # Exactly one score-line mount and one per-gate detail list in the
+    # server-rendered markup — no second copy of either.
+    assert tests_panel.count('id="tests-gate-summary"') == 1
+    assert tests_panel.count('id="tests-list"') == 1
+
+    # Each declared gate gets exactly one row (id="bt-<name>") in the served
+    # panel — in the behavioral list; nothing pre-renders a second row for
+    # it into the gate-summary strip server-side.
+    assert tests_panel.count('id="bt-daughters_hydrated"') == 1
+    assert tests_panel.count('id="bt-two_generations_complete"') == 1
+
+    # The client-side gate-summary renderer (_renderTestsGateSummary) must
+    # build the score line only, not a second per-gate list — assert its
+    # function body no longer iterates the gate/test set to emit rows (the
+    # duplication this task removes) while still emitting the score line.
+    js = (Path(vivarium_workbench.__file__).parent / "static" / "study-detail.js").read_text(
+        encoding="utf-8"
+    )
+    m = re.search(
+        r"function _renderTestsGateSummary\(spec\) \{(.*?)\n  \}",
+        js,
+        re.DOTALL,
+    )
+    assert m, "_renderTestsGateSummary not found in study-detail.js"
+    fn_body = m.group(1)
+    assert "gates passed" in fn_body
+    # No per-gate row construction left in the summary renderer (the old
+    # duplicate list): no per-test iteration building <li> rows.
+    assert "tests.map(" not in fn_body
+    assert "<li" not in fn_body
+
+
+# ---------------------------------------------------------------------------
 # Task 11: Exports — strip explanatory prose. Keeps its function (result-files
 # list, "Download all (.zip)" link, raw simulation-data list) but loses the
 # tutorial-style paragraphs; gets a plain `<h2>Exports</h2>` heading.

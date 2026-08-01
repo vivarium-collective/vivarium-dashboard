@@ -1447,17 +1447,19 @@
   }
   window._loadTestsPanel = _loadTestsPanel;
 
-  // "N/M gates passed" + a per-gate ✓/✗ list. Every declared behavior test
-  // (kind: behavioral or report_card) is a gate; its latest authored result
-  // comes from spec.latest_outcomes (same source the row pills below read),
-  // and the aggregate count from spec.outcome_rollup so the two can't drift.
+  // "N/M gates passed" score line ONLY. Every declared behavior test (kind:
+  // behavioral or report_card) is a gate; the aggregate count comes from
+  // spec.outcome_rollup (falling back to spec.latest_outcomes) so it can't
+  // drift from the per-gate detail. The per-gate detail itself renders ONCE,
+  // below, in the behavioral-tests list (#tests-list, server-rendered from
+  // the same source) — this strip must not re-list the gates (Fable §4.6:
+  // "one score line + one list", not the gate set rendered twice).
   function _renderTestsGateSummary(spec) {
     var host = document.getElementById('tests-gate-summary');
     if (!host) return;
     var tests = (spec && (spec.behavior_tests || spec.expected_behavior || spec.tests)) || [];
     var outcomes = (spec && spec.latest_outcomes) || {};
     var roll = (spec && spec.outcome_rollup) || null;
-    var e = escapeHtmlForTests;
 
     if (!tests.length) {
       host.innerHTML = '<p class="empty-message">No gates declared for this study yet.</p>';
@@ -1473,23 +1475,7 @@
       });
     }
 
-    var rows = tests.map(function (t) {
-      var name = (t && t.name) || '(unnamed)';
-      var o = outcomes[name];
-      var res = o && o.result;
-      var ok = res === 'PASS';
-      var glyph = ok ? '✓' : (res === 'FAIL' ? '✗' : (res ? '◐' : '⏳'));
-      var color = ok ? '#16a34a' : (res === 'FAIL' ? '#dc2626' : '#94a3b8');
-      return '<li style="display:flex;align-items:center;gap:8px;padding:3px 0">'
-        + '<span style="color:' + color + ';font-weight:700">' + glyph + '</span>'
-        + '<code style="font-size:0.9em">' + e(name) + '</code>'
-        + '<span class="muted" style="font-size:0.8em">' + e(res || 'pending') + '</span>'
-        + '</li>';
-    }).join('');
-
-    host.innerHTML =
-      '<div style="font-weight:600">' + passed + '/' + total + ' gates passed</div>'
-      + '<ul style="list-style:none;padding:0;margin:6px 0 0 0">' + rows + '</ul>';
+    host.innerHTML = '<div style="font-weight:600">' + passed + '/' + total + ' gates passed</div>';
   }
 
   function loadTestsTab(spec) {

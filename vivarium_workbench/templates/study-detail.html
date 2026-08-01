@@ -1021,9 +1021,11 @@
   <h2>Tests</h2>
   <p class="muted" style="margin:0 0 12px 0">Audit — does this study pass its own bar (report cards + behavioral gates).</p>
 
-  {# Gate/audit summary strip — "N/M gates passed" + a per-gate ✓/✗ list, filled
-     client-side by _renderTestsGateSummary from spec.outcome_rollup +
-     spec.latest_outcomes so it can't drift from the row pills below. #}
+  {# Gate/audit score line — "N/M gates passed", filled client-side by
+     _renderTestsGateSummary from spec.outcome_rollup so it can't drift from
+     the per-gate list below. The per-gate detail is NOT repeated here — it
+     renders once, in the "Behavioral tests" list (#tests-list) below
+     (Fable §4.6: one score line + one list, not the gate set twice). #}
   <div class="tests-gate-summary" id="tests-gate-summary"><p class="empty-message">Loading gate summary…</p></div>
 
   <div class="report-cards-section" style="margin-top:22px">
