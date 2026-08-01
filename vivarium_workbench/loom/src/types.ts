@@ -46,6 +46,23 @@ export interface ProcessNodeData {
    *  loom view. The backend sets `is_composite_process`; double-clicking such a
    *  card opens its inner composite (App's drill-down). */
   isCompositeProcess?: boolean;
+  /** Investigation study-node card metadata. When `studyStatusLabel` is present
+   *  the node is an investigation member study and ProcessNode renders a rich
+   *  knowledge-graph card (status pill, title, Asks/Finds, evidence chain at full
+   *  zoom) instead of the default process box. */
+  studyStatusLabel?: string;
+  studyStatusColor?: string;
+  studyTitle?: string;
+  asks?: string;
+  finds?: string;
+  nFindings?: number;
+  evidence?: Array<{
+    glyphs: Array<[string, boolean]>;
+    text: string;
+    status: string;
+    color: string;
+  }>;
+  evidenceDerived?: boolean;
 }
 
 export type BigraphNodeData = StoreNodeData | ProcessNodeData;

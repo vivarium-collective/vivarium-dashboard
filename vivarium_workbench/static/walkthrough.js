@@ -2802,7 +2802,8 @@
     // visualizations, report-card steps) — the loom is purely state-driven.
     var stateAttr = c._stateUrl
       ? ' data-stateurl="' + _esc(c._stateUrl) + '"' +
-        (c._loomRef ? ' data-loomref="' + _esc(c._loomRef) + '"' : '')
+        (c._loomRef ? ' data-loomref="' + _esc(c._loomRef) + '"' : '') +
+        (c._loomParams ? ' data-loomparams="' + _esc(c._loomParams) + '"' : '')
       : '';
     return '<div class="ccard-loom-embed pcard-loom" data-id="' + _esc(c.id) + '"' + stateAttr + '>' +
       '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the bigraph…</p></div>' +
@@ -4967,11 +4968,13 @@
     var liveInner = (document.body.classList.contains('snapshot') || !innerRef)
       ? '' : '&id=' + encodeURIComponent(innerRef) + '&live=1';
     var stateUrl = stateUrlOverride || _compositeStateUrl(id, det._overrides);
+    // Extra loom params (e.g. &dir=LR&nodes=proc) for study/investigation graphs.
+    var extraParams = det.getAttribute('data-loomparams') || '';
     var loomUrl = det._loomLive
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
-          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off' + tabParam
+          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off' + tabParam + extraParams
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(stateUrl) + liveInner + '&chrome=off' + tabParam;
+          encodeURIComponent(stateUrl) + liveInner + '&chrome=off' + tabParam + extraParams;
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
@@ -9317,9 +9320,21 @@
     function _isetFullHtml(iset) {
       var ic = _investigationCardObj(iset);
       window._compositesById[ic.id] = ic;
+      // Objective / overview at the top, styled like the Investigation-graph view.
+      var overview = String(iset.description || iset.question || '').split('\n')[0].trim();
+      var qLine = iset.question ? String(iset.question).split('\n')[0].trim() : '';
+      var objHtml = '';
+      if (overview || qLine) {
+        objHtml = '<div class="iset-inv-objective">' +
+          '<span class="iset-inv-obj-label">Objective</span>' +
+          (qLine ? '<p class="iset-inv-obj-q"><span class="iset-inv-obj-qmark">Q</span> ' + _esc(qLine) + '</p>' : '') +
+          (overview && overview !== qLine ? '<p class="iset-inv-obj-text">' + _esc(overview) + '</p>' : '') +
+        '</div>';
+      }
       return '<div class="iset-inv-full" data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" style="margin:0 0 26px">' +
         _isetCardHtml(iset, false) +
-        '<div class="iset-inv-loom" style="margin:12px 0 0">' + _renderCompositeCardFull(ic) + '</div>' +
+        objHtml +
+        '<div class="iset-inv-loom" style="margin:10px 0 0">' + _renderCompositeCardFull(ic) + '</div>' +
       '</div>';
     }
     function _groupHtml(label, items) {
@@ -9787,13 +9802,14 @@
       id: 'investigation:' + slug,
       name: iset.title || slug,
       module: null,
-      description: iset.question || iset.description || '',
+      description: '',                  // objective shown in the header block above the card
       parameters: {},
       read_only: true,
       workspace_local: !iset.read_only,
       _isInvestigation: true,
       _stateUrl: '/api/investigation-composite-state?investigation=' + encodeURIComponent(slug),
-      _loomRef: 'investigation:' + slug
+      _loomRef: 'investigation:' + slug,
+      _loomParams: '&dir=LR&nodes=proc'   // left-to-right workflow, studies only (no result stores)
     };
   }
 

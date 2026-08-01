@@ -312,6 +312,22 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           // A Composite Process (its inner model is itself a composite) — the
           // card gets a drill-in affordance; double-click opens the inner view.
           isCompositeProcess: node.is_composite_process === true,
+          // Investigation study-node metadata: when the backend stamps these on a
+          // node (an investigation's member study), ProcessNode renders a rich
+          // knowledge-graph study card (status pill, title, Asks/Finds, evidence
+          // chain) instead of the default process box.
+          ...((node as { _study_status_label?: string })._study_status_label
+            ? {
+                studyStatusLabel: (node as any)._study_status_label,
+                studyStatusColor: (node as any)._study_status_color,
+                studyTitle: (node as any)._study_title,
+                asks: (node as any)._asks,
+                finds: (node as any)._finds,
+                nFindings: (node as any)._n_findings,
+                evidence: (node as any)._evidence,
+                evidenceDerived: (node as any)._evidence_derived,
+              }
+            : {}),
           // Extra schema data consumed by ProcessNode (as any cast in the component)
           ...(Object.keys(inputPortsSchema).length ? { inputPortsSchema, inputPortsTarget } : {}),
           ...(Object.keys(outputPortsSchema).length ? { outputPortsSchema, outputPortsTarget } : {}),

@@ -106,10 +106,23 @@ export default function App() {
   // Which layout mode arranges the graph, and the dispatcher that runs it.
   // Adding a mode to layouts/registry makes it selectable from the toolbar
   // with no change here.
-  const layoutMode = useLayoutMode();
+  // ?dir=LR|TB seeds the initial layout orientation (left-to-right / top-down);
+  // used by the workbench to embed an investigation graph as a clear L→R workflow.
+  const _dirParam = (() => {
+    try { return new URLSearchParams(window.location.search).get('dir'); } catch { return null; }
+  })();
+  const layoutMode = useLayoutMode(
+    _dirParam === 'LR' ? 'flow-right' : _dirParam === 'TB' ? 'flow-down' : undefined,
+  );
   // Collapse view: 'none' (both), 'stores' (process-only graph), 'processes'
-  // (stores + processes shrunk to hyperedge junctions).
-  const [collapseMode, setCollapseMode] = useState<'none' | 'stores' | 'processes'>('none');
+  // (stores + processes shrunk to hyperedge junctions). ?nodes=proc|store seeds
+  // it (proc → collapse stores → process-only graph, the investigation default).
+  const [collapseMode, setCollapseMode] = useState<'none' | 'stores' | 'processes'>(() => {
+    try {
+      const n = new URLSearchParams(window.location.search).get('nodes');
+      return n === 'proc' ? 'stores' : n === 'store' ? 'processes' : 'none';
+    } catch { return 'none'; }
+  });
   // Which processes are "active" (hovered / selected / pinned). Modes that
   // implement `edgeVisibility` use this to cull wires; modes that don't
   // (hierarchy) ignore it entirely and keep drawing every edge.

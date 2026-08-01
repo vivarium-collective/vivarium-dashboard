@@ -110,10 +110,76 @@ function LegacyBody({ data, stepKind }: {
   );
 }
 
+/**
+ * Investigation study-node card — renders a member study like the knowledge-graph
+ * "Investigation graph" cards: a status pill, the study title, Asks/Finds lines,
+ * and (at full zoom) an evidence chain. Semantic zoom is driven by the same
+ * stamped `_tier` the process cards use, so the evidence chain only appears when
+ * you zoom all the way in (or the card is selected/pinned open).
+ */
+function StudyCard({ data }: { data: ProcessNodeData }) {
+  const d = data as any;
+  const tier = (d._tier ?? 'ports') as 'glyph' | 'ports' | 'types' | 'contract' | 'full';
+  const t = d._pinnedOpen ? 'full' : tier;
+  const showLines = t !== 'glyph';
+  const showEvidence = t === 'full';
+  const color: string = d.studyStatusColor || '#2563eb';
+  const evidence = (d.evidence as ProcessNodeData['evidence']) || [];
+  const nFindings: number = d.nFindings || 0;
+  return (
+    <div className="study-node" style={{ borderTopColor: color }}>
+      <Handle type="target" position={Position.Left} className="port-handle port-handle-input" />
+      <Handle type="source" position={Position.Right} className="port-handle port-handle-output" />
+      <div className="study-node-head">
+        <span className="study-node-dot" style={{ borderColor: color }} />
+        <span className="study-node-pill" style={{ color, borderColor: color }}>
+          {d.studyStatusLabel}
+        </span>
+        {data.isCompositeProcess && (
+          <span className="process-node-drill study-node-drill" title="Composite study — double-click to open its composite">⤢</span>
+        )}
+      </div>
+      <div className="study-node-title">{d.studyTitle || data.label}</div>
+      {showLines && d.asks && (
+        <p className="study-node-line"><span className="study-node-lbl">Asks:</span> {d.asks}</p>
+      )}
+      {showLines && d.finds && (
+        <p className="study-node-line study-node-finds">
+          <span className="study-node-lbl">Finds:</span> {d.finds}
+          {nFindings > 1 && <span className="study-node-more"> +{nFindings - 1} more finding{nFindings - 1 > 1 ? 's' : ''}</span>}
+        </p>
+      )}
+      {showEvidence && evidence.length > 0 && (
+        <div className="study-node-evidence">
+          <div className="study-node-evidence-head">
+            Evidence chain{d.evidenceDerived ? ' · derived' : ''} ({evidence.length} claim{evidence.length > 1 ? 's' : ''})
+          </div>
+          {evidence.map((c, i) => (
+            <div key={i} className="study-node-claim">
+              <span className="study-node-glyphs">
+                {c.glyphs.map(([g, on], j) => (
+                  <span key={j} style={{ color: on ? '#475569' : '#d1d5db' }}>{g}</span>
+                ))}
+              </span>
+              <span className="study-node-claim-text">{c.text}</span>
+              <span className="study-node-claim-status" style={{ color: c.color, borderColor: c.color }}>{c.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const inputPorts = data.inputPorts ?? [];
   const outputPorts = data.outputPorts ?? [];
   const stepKind = _classifyStep((data as any).address, data.label);
+
+  // Investigation member-study node → rich knowledge-graph study card.
+  if ((data as any).studyStatusLabel) {
+    return <StudyCard data={data} />;
+  }
 
   // Semantic zoom is opt-in: only process-column mode stamps `_tier` (or
   // `_pinnedOpen`). Absent both, render the legacy fixed card so hierarchy mode

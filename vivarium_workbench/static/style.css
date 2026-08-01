@@ -1992,6 +1992,21 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 :root[data-theme="dark"] .pcard-sec-feature > .pcard-sec-head:hover{ background:rgba(124,58,237,.16); }
 :root[data-theme="dark"] .pcard-sec-hint{ color:#c4b5fd; background:rgba(124,58,237,.18); border-color:rgba(124,58,237,.35); }
 
+/* Investigation full-zoom: the Objective/overview block above the graph card. */
+.iset-inv-objective{
+  background:linear-gradient(90deg,#f8fafc,#fcfdff);
+  border:1px solid #e5e7eb; border-left:3px solid #2563eb;
+  border-radius:8px; padding:11px 14px; margin:10px 0 0;
+}
+.iset-inv-obj-label{
+  font-size:0.68em; font-weight:700; text-transform:uppercase; letter-spacing:0.06em;
+  color:#64748b;
+}
+.iset-inv-obj-q{ margin:4px 0 0; font-size:0.95em; color:#1e293b; line-height:1.5; }
+.iset-inv-obj-qmark{ color:#94a3b8; font-weight:700; margin-right:2px; }
+.iset-inv-obj-text{ margin:6px 0 0; font-size:0.9em; color:#475569; line-height:1.5; }
+:root[data-theme="dark"] .iset-inv-objective{ background:var(--surface-1,#0f1728); border-color:var(--border-faint); }
+
 .pcard-run-note, .pcard-run-hint{ font-size:0.82em; }
 .pcard-run-status{ font-size:0.82em; }
 .pcard-run-status.pcard-apply-err{ color:#b91c1c; }
