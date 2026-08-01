@@ -468,7 +468,12 @@
         {% set _rtok = (f.evidence.from_run or '').split(' ')[0] %}
         <div class="finding-evidence">
           {% if f.evidence.observed is defined %}<strong>observed:</strong> {{ f.evidence.observed }}{% if f.evidence.units %} {{ f.evidence.units }}{% endif %} · {% endif %}
-          {% if f.evidence.from_test %}via test <a href="#bt-{{ _ftok }}"><code>{{ f.evidence.from_test }}</code></a> · {% endif %}
+          {# C1: from_test cites a #bt-<id> row that lives in the (currently
+             hidden) Tests panel — _gotoStudyTab switches to it via the
+             existing _setStudyTab path, then scrolls, instead of a plain
+             href="#anchor" that silently fails on a display:none panel.
+             C2 wires findings evidence links to this. #}
+          {% if f.evidence.from_test %}via test <a href="#bt-{{ _ftok }}" onclick="_gotoStudyTab('tests','bt-{{ _ftok }}');return false;"><code>{{ f.evidence.from_test }}</code></a> · {% endif %}
           {% if f.evidence.from_run %}in run <a href="#run-{{ _rtok }}"><code>{{ f.evidence.from_run }}</code></a>{% endif %}
           {% if f.evidence.window %} ({{ f.evidence.window }}){% endif %}
           {% if f.evidence.smoking_gun %}<details style="display:inline-block;margin-left:4px"><summary>smoking gun</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;padding:6px 8px;background:#fff;border-radius:3px;font-size:0.85em;font-family:inherit">{{ f.evidence.smoking_gun }}</pre></details>{% endif %}

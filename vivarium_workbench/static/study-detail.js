@@ -105,6 +105,22 @@
   }
   window._setStudyTab = _setStudyTab;
 
+  // Cross-tab link helper (Fable §6 #15, Task C1): a link on any tab can
+  // point at an anchor that lives inside a DIFFERENT, currently-hidden tab
+  // panel (e.g. an Overview finding's "via test <a>" citing a Tests-tab
+  // #bt-<id> row). A plain href="#anchor" silently fails there because the
+  // target is inside a display:none panel. Reuses _setStudyTab for the
+  // actual show/hide (no duplicated switch logic) and then scrolls once the
+  // panel is visible. C2 (findings ledger) wires the primary callers.
+  function _gotoStudyTab(kind, anchor) {
+    _setStudyTab(kind);
+    if (!anchor) return;
+    var el = document.getElementById(anchor);
+    if (!el || !el.scrollIntoView) return;
+    try { el.scrollIntoView({behavior: 'smooth', block: 'start'}); } catch (e) {}
+  }
+  window._gotoStudyTab = _gotoStudyTab;
+
   // ── Readouts table (emit plan + authored annotations) ───────────────────────
   // Fetch /api/study-readouts and render the table async (the composite build is
   // ~3s, TTL-cached). Tolerates failure (leaves the loading message).
