@@ -30,6 +30,8 @@ import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
+from vivarium_workbench.lib.investigation_order import prerequisite_order, CycleError
+from vivarium_workbench.lib.investigations import normalize_dag_edges
 
 
 def _dashboard_url(ws: Path, override: str | None = None) -> str:
@@ -80,6 +82,14 @@ def _study_slugs(ws: Path, inv_slug: str) -> list[str]:
     for s in investigation_member_slugs(spec):
         out.append(s if isinstance(s, str) else (s.get("study") or s.get("name")))
     return [s for s in out if s]
+
+
+def _study_prereqs(ws: Path, slug: str) -> list[str]:
+    p = WorkspacePaths.load(ws).studies / slug / "study.yaml"
+    if not p.exists():
+        return []
+    spec = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    return [e["study"] for e in normalize_dag_edges(spec) if e.get("study")]
 
 
 def prepare_study(ws: Path, slug: str, dash: str, steps: int | None,
@@ -183,6 +193,8 @@ def prepare_investigation(workspace: Path | str, *,
 
     dash = _dashboard_url(ws, dashboard_url)
     studies = [study] if study else _study_slugs(ws, inv)
+    if study is None:
+        studies = prerequisite_order(studies, lambda s: _study_prereqs(ws, s))
     ps = Path(param_set) if param_set else None
 
     # Open (or reuse) the coordinated generation BEFORE running anything.
