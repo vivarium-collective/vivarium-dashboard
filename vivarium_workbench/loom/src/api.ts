@@ -128,7 +128,12 @@ export async function fetchInnerComposite(
   // state committed by publish under api/composite-inner-state/<key>.json.
   // `apiBase` prefixes the bundle's subpath (e.g. GitHub Pages project sites).
   const params = new URLSearchParams(window.location.search);
-  if (params.get('static') === '1') {
+  // ``static=1`` alone means a published snapshot (no live server) → read the
+  // pre-built inner-state file. But the dashboard's in-card VIEW-ONLY loom also
+  // sets static=1 (to load the top-level from ?stateUrl= and skip the heavy live
+  // param re-resolve) while the server IS present — it signals that with
+  // ``live=1`` so inner-composite drill-in uses the live endpoint below.
+  if (params.get('static') === '1' && params.get('live') !== '1') {
     const apiBase = params.get('apiBase') || '';
     const url =
       apiBase + '/api/composite-inner-state/' + innerCompositeKey(rootId, hops) + '.json';
