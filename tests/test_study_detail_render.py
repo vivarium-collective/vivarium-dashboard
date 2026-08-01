@@ -386,6 +386,51 @@ def test_visualizations_stripped_to_gallery(tmp_path, dashboard_client):
     assert 'No baseline figures yet' not in html
 
 
+def test_visualizations_empty_state_unions_all_three_sources(tmp_path, dashboard_client):
+    """Fable A #3: the "No figures yet." empty state must not be baked into
+    the served HTML as visible text next to real figures. It lives in a
+    single shared #figures-empty-message element, hidden by default, that JS
+    only reveals once the native gallery AND latest-run charts (both loaded
+    async) AND the embed_visualizations iframes (server-rendered here) have
+    all reported empty. A study WITH embed_visualizations must still
+    server-render the embed markup, so the union has content even though the
+    (async, JS-only) native gallery can't be observed from served HTML."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "viz-gallery-study-embeds"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "viz-gallery-study-embeds",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        "embed_visualizations": [
+            {"name": "Preview", "url": "/reports/figures/viz-gallery-study-embeds/preview.html"},
+        ],
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-gallery-study-embeds")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # The embed renders as real figure content in the union.
+    assert 'embed-viz-card' in html
+    assert 'Preview' in html
+
+    # The empty-state text exists exactly once, as the shared element, and
+    # starts hidden — it is not painted unconditionally by any one source.
+    assert html.count('No figures yet.') == 1
+    assert 'id="figures-empty-message"' in html
+    empty_idx = html.index('id="figures-empty-message"')
+    tag_start = html.rindex('<p', 0, empty_idx)
+    tag_end = html.index('>', empty_idx)
+    assert 'style="display:none"' in html[tag_start:tag_end]
+
+
 # ---------------------------------------------------------------------------
 # Task 10: Tests — merge Report Cards + Behavioral Tests into ONE concept.
 # The Tests pillar now has a single sub-nav member; report cards + behavioral

@@ -262,6 +262,27 @@
     return '<div class="chart-card">' + title + media +
            '<div class="chart-caption">' + (c.caption || '') + '</div></div>';
   }
+  // Figures tab (Fable A #3): the empty state is computed over the UNION of
+  // the three figure sources — native gallery, embed_visualizations iframes
+  // (server-rendered, present in the DOM from page load), and latest-run
+  // charts — instead of each source painting its own "no figures" text.
+  // _loadNativeGallery used to write "No figures yet." into its own panel
+  // whenever ITS fetch came back empty, even when embeds/charts below it had
+  // real content. Each async loader now reports whether it produced content;
+  // the shared #figures-empty-message only appears once both async sources
+  // have reported AND neither they nor the (synchronous) embeds have any.
+  var _figuresSourceState = { native: null, charts: null };
+  function _figuresHasEmbeds() {
+    return !!document.querySelector('#visualize-section .embed-viz-card');
+  }
+  function _updateFiguresEmptyState() {
+    var msg = document.getElementById('figures-empty-message');
+    if (!msg) return;
+    var allReported = _figuresSourceState.native !== null && _figuresSourceState.charts !== null;
+    var allEmpty = allReported && !_figuresSourceState.native && !_figuresSourceState.charts && !_figuresHasEmbeds();
+    msg.style.display = allEmpty ? '' : 'none';
+  }
+
   // Baseline native-analysis gallery — the study's latest completed run's
   // viz.json panels (mass fractions, cell mass, replication, …). Each panel is
   // a self-contained Altair/Plotly doc, so it renders in its own srcdoc iframe
@@ -278,7 +299,11 @@
         var panels = (d && d.panels) || {};
         var names = Object.keys(panels);
         if (!names.length) {
-          host.innerHTML = '<p class="empty-message">No figures yet.</p>';
+          // No message here — the shared empty state (below) speaks for the
+          // whole Figures section once embeds/charts have also reported.
+          host.innerHTML = '';
+          _figuresSourceState.native = false;
+          _updateFiguresEmptyState();
           _nativeGalleryLoaded = false;  // allow a retry after a run completes
           return;
         }
@@ -291,9 +316,13 @@
             + 'style="width:100%;height:480px;border:1px solid #e2e8f0;border-radius:8px;background:#fff"></iframe>'
             + '</div>';
         }).join('');
+        _figuresSourceState.native = true;
+        _updateFiguresEmptyState();
       })
       .catch(function () {
         host.innerHTML = '<p class="muted" style="padding:8px">Failed to load baseline figures.</p>';
+        _figuresSourceState.native = false;
+        _updateFiguresEmptyState();
         _nativeGalleryLoaded = false;
       });
   }
@@ -484,6 +513,10 @@
               ? '<p class="muted" style="margin:0">No <code>runs.db</code> and no static charts under <code>studies/' + studyName() + '/charts/</code>.</p>'
               : '<p class="muted" style="margin:0">No chart data available for this study.</p>';
           }
+          if (panelId === 'viz-charts-panel') {
+            _figuresSourceState.charts = false;
+            _updateFiguresEmptyState();
+          }
           return;
         }
         // Render every pre-rendered chart — 'live' (runs.db), 'declared'
@@ -504,9 +537,17 @@
           html += stat.map(_renderChartCard).join('');
         }
         panel.innerHTML = html;
+        if (panelId === 'viz-charts-panel') {
+          _figuresSourceState.charts = true;
+          _updateFiguresEmptyState();
+        }
       })
       .catch(function(e) {
         panel.innerHTML = '<p class="muted" style="color:#dc2626">Chart load failed: ' + (e && e.message || e) + '</p>';
+        if (panelId === 'viz-charts-panel') {
+          _figuresSourceState.charts = false;
+          _updateFiguresEmptyState();
+        }
       });
   }
 

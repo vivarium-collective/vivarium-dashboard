@@ -976,6 +976,13 @@
     {% endif %}
 
     <div id="viz-charts-panel" class="charts-panel"></div>
+
+    {# Shared empty state for the Figures section (Fable A #3). The native
+       gallery and latest-run charts each resolve async and embeds render
+       synchronously above; JS shows this line only once all three have
+       reported and none produced content — never while any one of them
+       still holds actual figures. #}
+    <p id="figures-empty-message" class="empty-message" style="display:none">No figures yet.</p>
   </div>
 </section>
 
