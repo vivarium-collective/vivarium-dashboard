@@ -426,3 +426,46 @@ def test_tests_merged_single_concept(tmp_path, dashboard_client):
     assert 'id="report-cards-panel"' in tests_panel
     assert '<h2>Tests</h2>' in tests_panel
     assert 'Audit —' in tests_panel
+
+
+# ---------------------------------------------------------------------------
+# Task 11: Exports — strip explanatory prose. Keeps its function (result-files
+# list, "Download all (.zip)" link, raw simulation-data list) but loses the
+# tutorial-style paragraphs; gets a plain `<h2>Exports</h2>` heading.
+# ---------------------------------------------------------------------------
+
+def test_exports_functional_no_prose(tmp_path, dashboard_client):
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "exports-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "exports-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/exports-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Functional bits kept.
+    assert 'id="data-files"' in html
+    assert 'id="raw-data-list"' in html
+    assert 'id="data-download-all"' in html
+    assert '/api/study-analysis-zip?study=exports-study' in html
+
+    # Plain heading kept, in the right panel.
+    data_panel = html[html.index('id="panel-data"'):html.index('id="panel-tests"')]
+    assert '<h2>Exports</h2>' in data_panel
+
+    # Explanatory/tutorial prose is gone.
+    assert 'Tabular outputs' not in html
+    assert 'Click a file to' not in html
+    assert "Each run's raw emitter store" not in html
+    assert 'Analysis outputs above are derived' not in html
