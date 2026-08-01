@@ -1900,20 +1900,30 @@ body.popcard-mode .pcard-maximize{ display:none; }   /* already full-window */
 :root[data-theme="dark"] .pcard-popout:hover{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
 
 /* persistent Run bar (not an accordion) — always visible at the card's top level */
-/* Run bar: styled like an accordion section head (▶ RUN) with its Steps + Run
-   controls on the right, so it sits uniformly among CONFIGURE/INPUTS/EXPLORE. */
+/* Run bar: the ▶ RUN label IS the run button (cyan, matching a section head),
+   with the Steps selector beside it — one compact group at the bar's start. */
 .pcard-runbar{
   display:flex; align-items:center; flex-wrap:wrap; gap:10px;
-  padding:10px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
+  padding:6px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
   background:#fff; box-shadow:inset 3px 0 0 #0891b2;   /* cyan run accent */
 }
-.pcard-runbar .pcard-run-glyph{ color:#0891b2; }
-.pcard-runbar .pcard-sec-name{ color:#0891b2; }        /* run-row title in its accent */
-.pcard-runbar .loom-run-field{ margin-left:auto; }     /* push Steps + Run to the right */
-.pcard-runbar .pcard-run-note{ margin-left:auto; }     /* read-only note right-aligns too */
-.pcard-runbar .action-btn{ flex:none; }
+/* The RUN button: looks like the section-head label, acts like a button. */
+.pcard-run-go{
+  display:inline-flex; align-items:center; gap:6px; flex:none;
+  font-family:inherit; font-size:0.72em; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.07em; line-height:1;
+  color:#0891b2; background:none;
+  border:1px solid transparent; border-radius:6px;
+  padding:6px 12px; cursor:pointer; transition:background .12s, border-color .12s;
+}
+.pcard-run-go:hover{ background:#ecfeff; border-color:#a5f3fc; }
+.pcard-run-go:active{ background:#cffafe; }
+.pcard-run-go:disabled, .pcard-run-go-disabled{ opacity:.5; cursor:default; }
+.pcard-runbar .loom-run-field{ margin-left:6px; }      /* Steps sits next to the button */
+.pcard-runbar .pcard-run-note{ margin-left:10px; }     /* read-only note next to the button */
 .pcard-run-out{ font-size:0.8em; color:#64748b; }
 :root[data-theme="dark"] .pcard-runbar{ background:var(--surface-1, #0f1728); border-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-run-go:hover{ background:rgba(8,145,178,.15); border-color:#0e7490; }
 
 /* resizable sections: capped, scrollable body + a drag grip (dbl-click = fit) */
 .pcard-sec-resizable.pcard-sec-open > .pcard-sec-body{ max-height:var(--pch,300px); overflow:auto; }
