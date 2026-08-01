@@ -94,32 +94,40 @@ theoretical`.
 
 Narrative order preserved: *what we asked & found → what system → what runs →
 what it saves → what the figures show → what the evidence says → the verdict →
-the data.* Principle: **each tab owns its facts; nothing is restated across
-tabs.**
+the data.* Principles: **(a) each tab owns its facts; nothing is restated across
+tabs; (b) strip the explanatory/tutorial paragraphs from every tab** — the
+primary reader (frame B) does not need them, and they are pure noise on Model,
+Simulations, and Report Cards alike.
+
+**Pillar count drops 8 → 7:** Readouts merges into Model (readouts are a property
+of a model — see below and §4); the Model+Interventions+Readouts reframe is
+**Increment 2** (§6). Tests' two sub-tabs merge into one concept.
 
 | Pillar | One job | Cut | Enhance |
 |---|---|---|---|
 | **Overview** | The answer, one screen | The **entire** "Biology — what this study is about" block (both the auto-derived restatement *and* the standalone heading — redundant with Q&A above it and visually sloppy); the counts strip | Keep **"Question & Approach"** as the polished, enforced lead section (see §5) — three color-coded cards (Question / Hypothesis-Expected outcome / Mechanism-Model change). Fold an authored `biological_summary` in as a **matching fourth "Summary" card**, never its own section. Then Findings → Conclusion. |
-| **Model** | What system was simulated | "Implementation requirements" moves into the collapsed "Plan & provenance"; "Model change" hidden when empty | Lead with the interactive composite card, then Conditions as a clean table |
-| **Simulations** | What runs executed + how to run more | The in-tab Reproduce card (duplicate of the header button) | Runs table leads; fold the scattered run controls (Configure-&-Run widget, remote-run form, sweep summary) into **one** "Run" panel below the table |
-| **Readouts** | What this study observes | The flat wall-of-paths list | See §4 — selected emitter + ●saved / ○excluded, browsable, **read-only** |
+| **Model (+Readouts)** | What runs, and what it records | The explanatory paragraph; **Analyses** (→ Exports); the redundant "Config that runs" vs "Conditions/Baseline" split | **Increment 2 (§6).** One **Runs** list of composite/config pairs (baseline first; interventions add pairs), each showing its **emitter + ●saved/○excluded readouts**; **interventions** (merge/override) replace `variants`; a "needs a value" callout. Absorbs the Readouts pillar. |
+| **Simulations** | The record of what ran | **All** run controls — Configure-&-Run, "Run on remote (smsvpctest)", run-protocol, CLI-reproduce card, and the "Simulation set (planned)" cards; both explanatory paragraphs | A **single read-only table**, one row per run: model/intervention, simulation time, seeds, status, **where the data lives**, **how to retrieve it**, **download**. Launching moves entirely to the header buttons. |
 | **Visualizations** | What the figures show | Three separate mounts (native gallery / embedded HTML / latest-run charts) as distinct sections | Merge into **one** figure gallery |
-| **Tests** | The study's audit — did it pass its own bar | — (keep both sub-tabs) | Lead with the **gate result**: which report cards / behavioral tests gate the verdict and which passed/failed, so the audit is legible at the top rather than reconstructed from a list. Report Cards + Behavioral Tests stay as sub-tabs. |
+| **Tests** | The study's audit — did it pass its own bar | The explanatory paragraph; **the two sub-tabs** | **Merge Report Cards + Behavioral Tests into one tab and one concept** — a single unified list of graded checks, led by the **gate/audit summary** (which checks gate the verdict, and pass/fail). No sub-nav. |
 | **Decide** | The reasoned verdict + what's next | — | Kind-aware verdict-track label (§2); keep three-track reasoning + conclusion logic + follow-ups (this is the depth behind the header's one-word verdict) |
-| **Exports** | Download artifacts | — | Unchanged. Readouts is **not** merged in — the observables surface is a first-class concern (§4). |
+| **Exports** | Download artifacts | — | Gains the **Analyses** config (relocated from Model), co-located with the analysis outputs it produces. |
 
-### 4. Readouts redesign (read-only) — detail
+### 4. Readouts (merged into Model — Increment 2) — detail
 
-Job: *"what this study observes, and what it deliberately does not."* Today the
-tab only shows what **is** saved, as a long flat list; the excluded set is
-invisible, so a reader cannot tell whether an omission was deliberate.
+Job: *"what a model records, and what it deliberately does not."* Readouts are a
+property of a model (a composite has an observable surface; its emitter selects
+what is saved), so they render **per-model inside the Model tab's Runs list**,
+not as a standalone pillar. Today the old Readouts tab only shows what **is**
+saved, as a long flat list; the excluded set is invisible, so a reader cannot
+tell whether an omission was deliberate.
 
-New surface, top to bottom:
+Per-model **Records** subsection, top to bottom:
 
-1. **Selected emitter** — the emitter name + type chosen for this study.
+1. **Selected emitter** — the emitter name + type for that model.
 2. **● Saved** — the observables that will be written (store path + authored
-   name + units); the current tab's content, but browsable rather than flat.
-3. **○ Not saved** — the rest of the composite's observable surface that is
+   name + units), browsable rather than flat.
+3. **○ Not saved** — the rest of that composite's observable surface that is
    *available but excluded* from the emitter selection.
 
 Interaction (read-only for this iteration):
@@ -153,13 +161,49 @@ skippable. Enforce it:
 - This is a **soft gate** (a readiness gap), consistent with the other linter
   findings — it flags, it does not block save. No new hard validation error.
 
+### 6. Interventions & the unified Model tab (Increment 2)
+
+The Model-tab reframe is large enough to be its own spec+plan increment. Its
+design decisions, settled here so nothing is lost:
+
+- **Runs list.** The redundant "Config that runs" (resolved params) and
+  "Conditions/Baseline" (composite + override chips) collapse into **one** list
+  of `(composite, resolved config)` pairs that execute — the baseline is pair 1.
+  Each row shows the composite address (explore & run), a collapsible resolved
+  config table (with override markers), and the per-model **Records** subsection
+  (§4: emitter + ●saved/○excluded).
+- **Interventions** author the additional pairs. An intervention is
+  `base composite + operation + operand`, where **operation ∈ {merge, override}**:
+  - `merge` — compose another composite subtree into the base (structural).
+  - `override` — apply parameter overrides (parametric).
+- **Interventions replace `variants`.** They are the typed successor; existing
+  loose `variants` migrate to `override` interventions (a bare param-variant
+  `{name, params}` → `{name, base: <baseline>, op: override, operand: <params>}`).
+- **"Needs a value"** callout retains the one genuinely-unique bit of the old
+  Conditions block: `model_settings` still lacking a human-set value.
+- Requires process-bigraph merge/compose semantics to resolve a `merge`
+  intervention into a runnable variant composite — the Increment 2 plan must
+  confirm the available primitive (templates/compose in process-bigraph).
+
+**Increment split:**
+- **Increment 1 (this plan):** header, `kind`, de-biology Overview, enforce
+  Question & Approach, Simulations→read-only table, Visualizations single
+  gallery, Tests merge-to-one-concept, strip explanatory prose. Includes the
+  backend **readouts excluded-set** (feeds Increment 2's per-model Records).
+- **Increment 2 (separate spec+plan):** the unified Model tab — Runs list,
+  interventions (merge/override, replacing variants + migration), per-model
+  emitter+readouts, Analyses→Exports relocation, and the 8→7 pillar change.
+
 ## Out of scope
 
 - Editable/interactive emitter selection (Readouts write path) — deferred.
-- Any change to the run subsystem, `runs.db`, or the composite model itself.
+- Any change to `runs.db` or the composite model itself. (Increment 2 *does* add
+  intervention resolution via existing process-bigraph compose primitives — no
+  new run-subsystem behavior beyond producing variant composites to run.)
 - Restructuring the SPA investigation-detail view (`walkthrough.js`) — this
   redesign is the standalone `study-detail` page only.
-- Reordering or renaming pillars (8 stay 8, names unchanged).
+- Renaming pillars. Pillar **count** drops 8 → 7 (Readouts merges into Model);
+  no pillar is renamed or reordered.
 
 ## Success criteria
 
@@ -174,7 +218,14 @@ skippable. Enforce it:
   "Question & Approach" (no auto-derived restatement of findings anywhere).
 - "Question & Approach" is the enforced lead section of Overview; a study with
   no question surfaces a deterministic `missing_question` readiness gap.
-- Readouts shows the selected emitter and both ●saved and ○excluded observables
-  in a searchable, collapsible tree.
-- Tests leads with the gate result.
+- **Increment 1:** Simulations is a single read-only table of runs (time, seeds,
+  status, location, retrieval, download) with **no** run/launch/remote controls;
+  launching is header-only.
+- **Increment 1:** Tests is one merged concept (Report Cards + Behavioral Tests),
+  no sub-nav, led by the gate/audit summary.
+- **Increment 1:** every tab's explanatory/tutorial paragraph is removed.
+- **Increment 2:** the Model tab shows one Runs list of composite/config pairs,
+  each with its emitter + ●saved/○excluded readouts; interventions (merge/override)
+  author the extra runs and replace `variants`; the Readouts pillar is gone (7
+  pillars total).
 - No fact rendered in the header is also rendered verbatim in a tab.

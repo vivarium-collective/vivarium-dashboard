@@ -1,5 +1,14 @@
 # Study Detail Page Declutter Implementation Plan
 
+> ⚠️ **STALE — do not execute as-is.** The design evolved after this plan was
+> written (see the spec, which is the live source of truth). Changes not yet
+> reflected below: Simulations becomes a read-only runs table (no run controls);
+> Tests merges Report Cards + Behavioral Tests into one concept; Readouts merges
+> into Model and the Model reframe (Runs list + interventions) moves to
+> **Increment 2**; explanatory paragraphs are stripped from every tab; pillars
+> drop 8 → 7. This plan will be regenerated (Increment 1) once the tab walkthrough
+> settles. Tasks 1–7, 10 are largely intact; Task 8/9/11/12 will change.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the study detail page lead with the science — collapse the seven-element header to three, remove the biology lean, enforce Question & Approach, and give each of the 8 tabs one job (including a saved/excluded Readouts view).
