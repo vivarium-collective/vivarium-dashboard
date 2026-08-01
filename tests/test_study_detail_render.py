@@ -10,6 +10,8 @@ markup that doesn't exist yet.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import jinja2
 import yaml
 import pytest
@@ -704,3 +706,62 @@ def test_overview_deleted_blocks_absent_core_content_kept(tmp_path, dashboard_cl
     assert 'Daughter cells hydrate within one tick.' in overview
     assert '<h2 class="overview-label">Conclusion</h2>' in overview
     assert 'The model reproduces the expected behavior.' in overview
+
+
+# ---------------------------------------------------------------------------
+# Fable A #6: delete #study-subnav + the pillar/member indirection — the top
+# `.study-pillar` buttons drive tab switching directly.
+# ---------------------------------------------------------------------------
+
+def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
+    """Real served-HTML assertion (not just static grep): the second tab
+    row (#study-subnav) must be entirely absent, all 8 `.study-pillar`
+    buttons must be present and wired to call `_setStudyTab(<kind>)`
+    directly, and the deleted pillar/member-indirection JS functions must
+    not appear anywhere in the served page or its JS asset.
+    """
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "pillars-direct-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "pillars-direct-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/pillars-direct-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Second tab row is gone.
+    assert 'id="study-subnav"' not in html
+    assert 'study-subnav' not in html
+
+    # All 8 pillar buttons present, each carrying data-kind and calling
+    # _setStudyTab(kind) directly (pillar name == kind, except
+    # "decide" -> "conclusions").
+    pillar_to_kind = {
+        "understand": "overview", "compose": "compose", "simulate": "simulate",
+        "readouts": "readouts", "visualize": "visualize", "tests": "tests",
+        "decide": "conclusions", "data": "data",
+    }
+    for pillar, kind in pillar_to_kind.items():
+        assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html, \
+            f"pillar {pillar!r} not wired to _setStudyTab('{kind}')"
+    import re
+    assert len(re.findall(r'<button class="study-pillar[^"]*"', html)) == 8
+
+    # No pillar/member indirection left anywhere (grep-proven, both served
+    # HTML and the JS asset it references).
+    for fn in ("_setStudyPillar", "_showPillarSubnav", "_pillarForKind"):
+        assert fn not in html
+    js_path = Path(__file__).resolve().parents[1] / "vivarium_workbench" / "static" / "study-detail.js"
+    js = js_path.read_text()
+    for fn in ("_setStudyPillar", "_showPillarSubnav", "_pillarForKind"):
+        assert fn not in js, f"{fn} should have been deleted from study-detail.js"

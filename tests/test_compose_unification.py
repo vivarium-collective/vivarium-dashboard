@@ -11,10 +11,13 @@ def test_panel_compose_exists_and_old_wrappers_gone():
 
 
 def test_single_compose_member_button():
+    # Post pillar/member-indirection removal (Fable A #6): the top
+    # `.study-pillar` button for Model IS the compose tab — no subnav member
+    # button underneath it anymore.
     import re
-    compose_btns = re.findall(r'<button class="study-tab"[^>]*data-pillar="compose"[^>]*>', HTML)
-    assert len(compose_btns) == 1, f"expected 1 compose member button, got {len(compose_btns)}"
-    assert 'data-kind="compose" data-pillar="compose"' in HTML
+    compose_btns = re.findall(r'<button class="study-pillar"[^>]*data-kind="compose"[^>]*>', HTML)
+    assert len(compose_btns) == 1, f"expected 1 compose pillar button, got {len(compose_btns)}"
+    assert "_setStudyTab('compose')" in HTML
     for old in ["_setStudyTab('build')", "_setStudyTab('baseline')", "_setStudyTab('variants')", "_setStudyTab('interventions')"]:
         assert old not in HTML, f"old compose tab button call still present: {old}"
 
@@ -51,14 +54,14 @@ def test_other_panels_untouched():
         assert f'id="panel-{k}"' in HTML, f"unrelated panel disturbed: panel-{k}"
 
 
-def test_subnav_hidden_for_single_member_pillar():
+def test_subnav_and_pillar_indirection_removed():
+    # Fable A #6: the second tab row + pillar/member indirection were always
+    # vestigial (every pillar had exactly one member) and are now deleted —
+    # the top `.study-pillar` buttons drive _setStudyTab directly.
+    assert 'id="study-subnav"' not in HTML
     js = (ROOT / "vivarium_workbench/static/study-detail.js").read_text()
-    # _showPillarSubnav hides the sub-nav row when the pillar has <= 1 member
-    i = js.index("function _showPillarSubnav")
-    block = js[i:i + 700]
-    assert "study-subnav" in block
-    # a count of the pillar's members + a conditional hide of the container
-    assert ("<= 1" in block) or ("< 2" in block) or ("=== 1" in block) or (".length" in block and "display" in block)
+    for fn in ("_setStudyPillar", "_showPillarSubnav", "_pillarForKind"):
+        assert fn not in js, f"{fn} should have been deleted from study-detail.js"
 
 
 def test_build_guard_preserves_conditions_and_baseline():

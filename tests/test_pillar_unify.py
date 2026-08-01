@@ -12,10 +12,12 @@ def test_merged_panels_exist_and_old_gone():
 
 
 def test_single_member_buttons():
+    # Post pillar/member-indirection removal (Fable A #6): there is exactly
+    # one `.study-pillar` button per kind — no subnav member buttons left.
     import re
     for p in ("simulate", "visualize"):
-        btns = re.findall(r'<button class="study-tab"[^>]*data-pillar="%s"[^>]*>' % p, HTML)
-        assert len(btns) == 1, f"{p}: expected 1 member button, got {len(btns)}"
+        btns = re.findall(r'<button class="study-pillar"[^>]*data-kind="%s"[^>]*>' % p, HTML)
+        assert len(btns) == 1, f"{p}: expected 1 pillar button, got {len(btns)}"
     for old in ["_setStudyTab('simulations')", "_setStudyTab('observables')"]:
         assert old not in HTML
 

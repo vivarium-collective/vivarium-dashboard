@@ -134,27 +134,15 @@
 
 <nav class="study-tabs" aria-label="Study sections">
   <div class="study-pillars">
-    <button class="study-pillar active" data-pillar="understand" onclick="_setStudyPillar('understand')">Overview</button>
-    <button class="study-pillar"        data-pillar="compose"    onclick="_setStudyPillar('compose')">Model</button>
-    <button class="study-pillar"        data-pillar="simulate"   onclick="_setStudyPillar('simulate')">Simulations</button>
-    <button class="study-pillar"        data-pillar="readouts"   onclick="_setStudyPillar('readouts')">Readouts</button>
-    <button class="study-pillar"        data-pillar="visualize"  onclick="_setStudyPillar('visualize')">Visualizations</button>
-    <button class="study-pillar"        data-pillar="tests"      onclick="_setStudyPillar('tests')">Tests</button>
-    <button class="study-pillar"        data-pillar="decide"     onclick="_setStudyPillar('decide')">Decide</button>
-    <button class="study-pillar"        data-pillar="data"       onclick="_setStudyPillar('data')">Exports</button>
-  </div>
-  <div class="study-subnav" id="study-subnav">
-    <button class="study-tab active" data-kind="overview" data-pillar="understand" onclick="_setStudyTab('overview')">Overview</button>
-    <button class="study-tab" data-kind="compose" data-pillar="compose" onclick="_setStudyTab('compose')">Model</button>
-    <button class="study-tab" data-kind="simulate" data-pillar="simulate" onclick="_setStudyTab('simulate')">Simulations</button>
-    <button class="study-tab" data-kind="readouts" data-pillar="readouts" onclick="_setStudyTab('readouts')">Readouts</button>
-    <button class="study-tab" data-kind="visualize" data-pillar="visualize" onclick="_setStudyTab('visualize')">Visualizations</button>
-    {# Tests pillar: ONE merged concept — the study's audit (report cards + behavioral
-       gates) — not two sub-tabs. Single member -> _showPillarSubnav auto-hides this row. #}
-    <button class="study-tab" data-kind="tests" data-pillar="tests" onclick="_setStudyTab('tests')">Tests</button>
-    {# Decide pillar: the decide / conclusions materials (was a sub-tab under Hypotheses). #}
-    <button class="study-tab" data-kind="conclusions" data-pillar="decide" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
-    <button class="study-tab" data-kind="data" data-pillar="data" onclick="_setStudyTab('data')">Exports</button>
+    <button class="study-pillar active" data-kind="overview"    onclick="_setStudyTab('overview')">Overview</button>
+    <button class="study-pillar"        data-kind="compose"     onclick="_setStudyTab('compose')">Model</button>
+    <button class="study-pillar"        data-kind="simulate"    onclick="_setStudyTab('simulate')">Simulations</button>
+    <button class="study-pillar"        data-kind="readouts"    onclick="_setStudyTab('readouts')">Readouts</button>
+    <button class="study-pillar"        data-kind="visualize"   onclick="_setStudyTab('visualize')">Visualizations</button>
+    <button class="study-pillar"        data-kind="tests"       onclick="_setStudyTab('tests')">Tests</button>
+    {# "Decide" pillar's panel kind is "conclusions" (was a sub-tab under Hypotheses). #}
+    <button class="study-pillar"        data-kind="conclusions" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
+    <button class="study-pillar"        data-kind="data"        onclick="_setStudyTab('data')">Exports</button>
   </div>
 </nav>
 <style>

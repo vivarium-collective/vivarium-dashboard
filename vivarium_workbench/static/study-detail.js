@@ -12,34 +12,10 @@
 
   // --- Tab navigation ---
 
-  // Map a panel kind -> its pillar by reading the member button's data-pillar
-  // (DOM is the source of truth, so v3/v4 conditional tab sets are always correct).
-  function _pillarForKind(kind) {
-    var btn = document.querySelector('.study-tab[data-kind="' + kind + '"]');
-    return btn ? (btn.dataset.pillar || '') : '';
-  }
-
-  function _showPillarSubnav(pillar) {
-    // pillar buttons
-    document.querySelectorAll('.study-pillar').forEach(function (b) {
-      b.classList.toggle('active', b.dataset.pillar === pillar);
-    });
-    // member buttons: only the active pillar's are visible
-    var members = 0;
-    document.querySelectorAll('#study-subnav .study-tab').forEach(function (b) {
-      var mine = b.dataset.pillar === pillar;
-      b.style.display = mine ? '' : 'none';
-      if (mine) members++;
-    });
-    // Single-member pillar (e.g. Compose) → hide the sub-nav row.
-    var subnav = document.getElementById('study-subnav');
-    if (subnav) subnav.style.display = (members <= 1) ? 'none' : '';
-  }
-
+  // The `.study-pillar` buttons ARE the tabs (one level, no pillar/member
+  // indirection) — each drives _setStudyTab(kind) directly via its data-kind.
   function _setStudyTab(kind) {
-    var pillar = _pillarForKind(kind);
-    if (pillar) _showPillarSubnav(pillar);
-    document.querySelectorAll('.study-tab').forEach(function (b) {
+    document.querySelectorAll('.study-pillar').forEach(function (b) {
       b.classList.toggle('active', b.dataset.kind === kind);
     });
     document.querySelectorAll('.study-tab-panel').forEach(function (p) {
@@ -56,14 +32,6 @@
     if (window._autoGrowTextareas) window._autoGrowTextareas();
   }
   window._setStudyTab = _setStudyTab;
-
-  // Click a pillar -> reveal its member sub-nav and open its first member panel.
-  function _setStudyPillar(pillar) {
-    _showPillarSubnav(pillar);
-    var first = document.querySelector('#study-subnav .study-tab[data-pillar="' + pillar + '"]');
-    if (first) _setStudyTab(first.dataset.kind);
-  }
-  window._setStudyPillar = _setStudyPillar;
 
   // ── Readouts table (emit plan + authored annotations) ───────────────────────
   // Fetch /api/study-readouts and render the table async (the composite build is
@@ -2007,14 +1975,13 @@
     _renderFeedbackTrackedPanel();
     _renderReadinessPanel();
     _populateConclusionVerdictBadges();
-    // Open Understand/Overview and show only Understand's sub-nav on load —
-    // unless a ?tab=<kind> deep-link asks for a specific tab. Needs-attention
-    // items link here with ?tab=conclusions so a click lands on the verdict
-    // that triggered the alert.
+    // Open the Overview tab on load — unless a ?tab=<kind> deep-link asks
+    // for a specific tab. Needs-attention items link here with
+    // ?tab=conclusions so a click lands on the verdict that triggered the alert.
     var _tab = 'overview';
     try {
       var _q = new URLSearchParams(window.location.search).get('tab');
-      if (_q && document.querySelector('.study-tab[data-kind="' + _q + '"]')) _tab = _q;
+      if (_q && document.querySelector('.study-pillar[data-kind="' + _q + '"]')) _tab = _q;
     } catch (_e) { /* no URLSearchParams — keep overview */ }
     _setStudyTab(_tab);
   }
