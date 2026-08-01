@@ -247,3 +247,40 @@ def test_overview_biological_summary_renders_for_legacy_schema_too(tmp_path, das
 
     assert "Legacy-schema plain-English mechanism narrative." in html
     assert "<strong>Summary.</strong>" in html
+
+
+# ---------------------------------------------------------------------------
+# Task 7: Decide tab — "Biological validation" -> "Empirical validation"
+# rename (data-* attrs stay `biological_validation` for back-compat), and
+# strip the two explanatory paragraphs (VERDICT & CONCLUSION intro, and the
+# three-track "Each track is independent..." explainer).
+# ---------------------------------------------------------------------------
+
+def test_decide_empirical_rename_and_no_prose(tmp_path, dashboard_client):
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "decide-empirical-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "decide-empirical-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/decide-empirical-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "Empirical validation" in html
+    assert "Biological validation" not in html
+    assert "Synthesises the latest run" not in html
+    assert "Each track is independent" not in html
+
+    # Back-compat: the machine-readable attributes must be unchanged.
+    assert 'data-verdict-track="biological_validation"' in html
+    assert 'data-narrative-path="conclusion_verdicts.biological_validation.basis"' in html

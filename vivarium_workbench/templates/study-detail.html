@@ -1407,26 +1407,10 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
   {# ── Group 1: Verdict & conclusion ───────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Verdict &amp; conclusion</h2>
 
-    {% if _is_v3 %}
-    <p class="muted" style="margin:0 0 16px 0;font-size:0.9em">
-      Synthesises the latest run's outcomes against the pre-stated
-      <code>conclusion_logic</code>, then surfaces concrete follow-up actions
-      you can either review (existing studies) or seed (new ones).
-    </p>
-    {% endif %}
-
     <div class="overview-section narrative-card" data-narrative-card="conclusion_verdicts" style="margin-bottom:18px">
       <h3 class="overview-label">⚖️ Verdicts — three-track outcome
-        <span class="narrative-card-hint">(regression / biological / explanatory)</span>
+        <span class="narrative-card-hint">(regression / empirical / explanatory)</span>
       </h3>
-      <p class="muted" style="margin:0 0 10px 0;font-size:0.88em">
-        Each track is independent. <em>Regression</em> answers "does the code
-        still build and run cleanly?", <em>biological</em> answers "does the
-        model match the literature?", <em>explanatory</em> answers "did we
-        learn something new?". Each <strong>result is computed</strong> from
-        canonical fields (gate evaluator, run status, finding tiers) — author
-        only the <em>basis</em> (the rationale) for each track.
-      </p>
       <div class="narrative-grid">
         <label class="narrative-row">
           <span class="narrative-label">Regression compatibility</span>
@@ -1442,14 +1426,14 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
                     placeholder="e.g. Builds cleanly; tests pass; pyproject deps unchanged.">{{ _reg.basis or '' }}</textarea>
         </label>
         <label class="narrative-row">
-          <span class="narrative-label">Biological validation</span>
+          <span class="narrative-label">Empirical validation</span>
           <span class="narrative-input verdict-badge-computed" data-verdict-track="biological_validation"
                 title="Computed from the gate evaluator (read-only)"
                 style="display:inline-block;padding:2px 12px;border-radius:9999px;font-weight:700;font-size:0.85em;background:#f1f5f9;color:#475569">{{ _bio.result or 'PENDING' }}</span>
           <span class="muted small" style="margin-left:6px">computed from gate evaluator</span>
         </label>
         <label class="narrative-row narrative-row-wide">
-          <span class="narrative-label">Biological basis</span>
+          <span class="narrative-label">Empirical basis</span>
           <textarea class="narrative-input narrative-textarea" rows="2"
                     data-narrative-path="conclusion_verdicts.biological_validation.basis"
                     placeholder="e.g. atp_fraction = 0.997, outside Boesen 2024 band [0.2, 0.5].">{{ _bio.basis or '' }}</textarea>
