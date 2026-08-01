@@ -5988,11 +5988,11 @@ def create_app() -> FastAPI:
 
     @app.get("/api/remote-run-config", tags=["Runs"],
              summary="Whether pinned remote runs are enabled + the resolved build")
-    def remote_run_config() -> JSONResponse:
+    def remote_run_config(ws: Path = Depends(get_workspace)) -> JSONResponse:
         """Report pinned-run config so the client can relabel the run card. When
         pinned mode is on, eagerly resolves the build so the UI can show the
         commit; degrades to ``pinned:true`` w/o a build rather than erroring."""
-        body, status = _remote_run_views.remote_run_config()
+        body, status = _remote_run_views.remote_run_config(ws)
         return JSONResponse(status_code=status, content=body)
 
     # -----------------------------------------------------------------------
