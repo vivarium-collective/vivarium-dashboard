@@ -1046,6 +1046,17 @@ class StudyReadouts(BaseModel):
     # local ParCa cache) so the UI can show a soft notice instead of a hard error.
     degraded: bool = False
     remote_build: bool = False
+    # Fable Increment A #5 (docs/superpowers/specs/2026-08-01-study-design-fable-pass.md
+    # §5.2): the real saved/excluded split — ``excluded`` = the full observable
+    # surface minus ``composite_runs.collect_emit_paths_from_spec(spec)`` — plus
+    # the R2 three-state marker so the UI can say "unknown" rather than "empty"
+    # when the split could not be computed.
+    excluded: list[dict] = []
+    excluded_state: Optional[Literal["computed", "empty", "unavailable"]] = None
+    emit_selection: Optional[Literal["total", "subset"]] = None
+    reason: str = ""
+    # Deprecated alias for ``emit_selection == "total"``; keep for one release.
+    emit_is_total: bool = False
 
 
 class LinkageIndex(BaseModel):
