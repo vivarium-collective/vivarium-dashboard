@@ -179,6 +179,78 @@ def _jinja_markdown(text):
 
 
 # ---------------------------------------------------------------------------
+# G3 — shared outcome vocabulary (Fable §10.1, §14.1(4))
+# ---------------------------------------------------------------------------
+# ONE display mapping from the existing verdict/test tokens onto the four-value
+# audit vocabulary: met / conditional-pass / not met / not assessable. This is
+# a DISPLAY-ONLY remap — it never changes a stored token or a computation, and
+# every later G task (G4-G8) reuses it so the vocabulary reads identically
+# everywhere on the study page.
+#
+# Two token families feed it (confirmed by grep, not invented):
+#   - test/verdict tokens — study.tests[]/runs[].outcomes[].result,
+#     conclusion_card tracks: PASS / FAIL / PARTIAL / SKIP / PENDING / GAP
+#     (study_spec._latest_outcomes, study_derivations.GATE_RESULT_NORM,
+#     conclusion_card._RESULT_TO_CANON).
+#   - report-card verdict tokens — study_spec._REPORT_CARD_VERDICTS:
+#     within_tol / drift / mismatch / ungraded.
+# Matching is case-insensitive. Anything outside these two families — an
+# unknown token, empty string, or None — degrades to "not assessable" (spec
+# §2 R2: absent != empty; never blank, never a crash).
+_OUTCOME_TOKEN_MAP: dict[str, str] = {
+    # test/verdict tokens
+    "PASS": "met",
+    "FAIL": "not met",
+    "PARTIAL": "conditional-pass",
+    "SKIP": "not assessable",
+    "PENDING": "not assessable",
+    "GAP": "not assessable",
+    # report-card tokens (study_spec._REPORT_CARD_VERDICTS)
+    "WITHIN_TOL": "met",
+    "DRIFT": "conditional-pass",
+    "MISMATCH": "not met",
+    "UNGRADED": "not assessable",
+}
+
+# CSS-class-safe slug + single-character glyph per audit outcome, so every
+# caller renders the same color/glyph instead of re-deriving one.
+_OUTCOME_CLASS: dict[str, str] = {
+    "met": "met",
+    "conditional-pass": "conditional",
+    "not met": "not-met",
+    "not assessable": "not-assessable",
+}
+_OUTCOME_GLYPH: dict[str, str] = {
+    "met": "✓",
+    "conditional-pass": "◐",
+    "not met": "✗",
+    "not assessable": "○",
+}
+
+
+def outcome_label(token) -> str:
+    """Map an existing verdict/test token to the four-value audit vocabulary.
+
+    ``met`` / ``conditional-pass`` / ``not met`` / ``not assessable`` — see
+    ``_OUTCOME_TOKEN_MAP`` above for the confirmed token set. Case-insensitive;
+    ``None``/empty/unknown tokens map to ``"not assessable"`` (never raises,
+    never blank). Registered as the Jinja filter ``outcome_label``.
+    """
+    key = str(token).strip().upper() if token is not None else ""
+    return _OUTCOME_TOKEN_MAP.get(key, "not assessable")
+
+
+def outcome_class(token) -> str:
+    """CSS-class-safe slug for ``outcome_label(token)`` (e.g. ``"conditional"``)."""
+    return _OUTCOME_CLASS[outcome_label(token)]
+
+
+def outcome_glyph(token) -> str:
+    """Single-character glyph for ``outcome_label(token)`` (e.g. ``"◐"``)."""
+    return _OUTCOME_GLYPH[outcome_label(token)]
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -226,6 +298,9 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     env.filters["fmt_ts"] = _jinja_fmt_ts
     env.filters["fmt_duration"] = _jinja_fmt_duration
     env.filters["markdown"] = _jinja_markdown
+    env.filters["outcome_label"] = outcome_label
+    env.filters["outcome_class"] = outcome_class
+    env.filters["outcome_glyph"] = outcome_glyph
     tpl = env.get_template("study-detail.html")
     _hn = _humanize_study_name(name)
     # W15 — open epistemic debts, computed server-side via the deterministic

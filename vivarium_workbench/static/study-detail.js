@@ -1,5 +1,38 @@
 // study-detail.js — wires the six-card Study Detail page to /api/study-* routes.
 (function() {
+  // ── G3: shared outcome vocabulary (Fable §10.1, §14.1(4)) ────────────────
+  // JS mirror of vivarium_workbench/lib/study_page.py's outcome_label/_class/
+  // _glyph — SAME token map, so client-rendered outcomes (e.g. verdict pills
+  // filled from /api/study-* JSON) read identically to server-rendered ones.
+  // Display-only remap; never touches a stored token. Confirmed token
+  // families: test/verdict PASS/FAIL/PARTIAL/SKIP/PENDING/GAP and report-card
+  // within_tol/drift/mismatch/ungraded (case-insensitive). Unknown/missing
+  // tokens degrade to "not assessable" — never blank, never throws.
+  var _OUTCOME_TOKEN_MAP = {
+    PASS: 'met', FAIL: 'not met', PARTIAL: 'conditional-pass',
+    SKIP: 'not assessable', PENDING: 'not assessable', GAP: 'not assessable',
+    WITHIN_TOL: 'met', DRIFT: 'conditional-pass', MISMATCH: 'not met',
+    UNGRADED: 'not assessable'
+  };
+  var _OUTCOME_CLASS = {
+    'met': 'met', 'conditional-pass': 'conditional',
+    'not met': 'not-met', 'not assessable': 'not-assessable'
+  };
+  var _OUTCOME_GLYPH = {
+    'met': '✓', 'conditional-pass': '◐',
+    'not met': '✗', 'not assessable': '○'
+  };
+  function outcomeLabel(token) {
+    var key = (token === null || token === undefined) ? '' : String(token).trim().toUpperCase();
+    var v = _OUTCOME_TOKEN_MAP[key];
+    return v === undefined ? 'not assessable' : v;
+  }
+  function outcomeClass(token) { return _OUTCOME_CLASS[outcomeLabel(token)]; }
+  function outcomeGlyph(token) { return _OUTCOME_GLYPH[outcomeLabel(token)]; }
+  window.outcomeLabel = outcomeLabel;
+  window.outcomeClass = outcomeClass;
+  window.outcomeGlyph = outcomeGlyph;
+
   function api(method, path, body) {
     return fetch(path, {
       method: method,
