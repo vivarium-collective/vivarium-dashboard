@@ -1452,6 +1452,46 @@ def latest_run_row(runs_db) -> dict | None:
         return None
 
 
+def _compute_db_exists(
+    spec: dict | None, runs_db: Path, study_dir: Path | None,
+) -> tuple[bool, str | None]:
+    """Honest ``db_exists``: True iff a PLOTTABLE run store exists.
+
+    ``runs.db`` is created for run *metadata* on every run regardless of
+    emitter (see ``composite_runs.connect``) — its mere existence tells you a
+    run happened, not that it holds trajectory data. This resolves the
+    workspace's actual configured emitter via the broker
+    (``emitters.default_emitter`` / ``emitters.output_kind``, the same
+    dispatch ``render_v4_test_charts`` uses to pick a read source) and probes
+    THAT store's on-disk presence, reusing the existing store-detection
+    helpers (``_latest_zarr_for_study`` / ``_latest_parquet_for_study`` /
+    ``_pick_first_nonempty_db``) rather than reimplementing detection.
+
+    The sqlite ``history`` table is always checked as a fallback — mirroring
+    ``render_v4_test_charts``'s own per-test fallback order (alternate store
+    first, then study sqlite, then workspace default-baseline) — so a study
+    still lands ``True`` when it has real sqlite trajectory data even though
+    the workspace's *declared* default emitter is xarray/parquet (e.g. an
+    older run predates a later emitter-default change).
+
+    Returns ``(exists, data_store)`` where ``data_store`` is
+    ``"zarr" | "parquet" | "sqlite" | None`` — the second element is an
+    optional richer diagnostic, not required by any existing consumer.
+    """
+    out_kind = emitters.output_kind(emitters.default_emitter(spec, runs_db))
+    if out_kind == "zarr" and study_dir is not None:
+        if _latest_zarr_for_study(study_dir) is not None:
+            return True, "zarr"
+    elif out_kind == "parquet" and study_dir is not None:
+        if _latest_parquet_for_study(study_dir) is not None:
+            return True, "parquet"
+    if runs_db is not None and runs_db.is_file():
+        db, _label = _pick_first_nonempty_db(runs_db, None)
+        if db is not None:
+            return True, "sqlite"
+    return False, None
+
+
 def build_study_charts_payload(ws_root, name: str, *, hide_superseded: bool = False) -> dict:
     """Build the ``GET /api/study-charts/<name>`` payload (pure, unit-testable).
 
@@ -1534,11 +1574,14 @@ def build_study_charts_payload(ws_root, name: str, *, hide_superseded: bool = Fa
         else:
             c["freshness"] = chart_freshness(study_dir, entry, latest)
 
+    db_exists, data_store = _compute_db_exists(spec, runs_db, study_dir)
+
     return {
         "study": name,
         "schema_version": (spec or {}).get("schema_version"),
         "charts": live_charts + static_charts,
-        "db_exists": runs_db.exists(),
+        "db_exists": db_exists,
+        "data_store": data_store,
         "static_count": len(static_charts),
         "live_count": len(live_charts),
     }

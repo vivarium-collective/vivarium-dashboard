@@ -597,7 +597,7 @@
             panel.innerHTML = '<p class="muted" style="margin:0">No pre-rendered charts published for this study.</p>';
           } else {
             panel.innerHTML = (d && d.db_exists === false)
-              ? '<p class="muted" style="margin:0">No <code>runs.db</code> and no static charts under <code>studies/' + studyName() + '/charts/</code>.</p>'
+              ? '<p class="muted" style="margin:0">No run data or figures yet for this study.</p>'
               : '<p class="muted" style="margin:0">No chart data available for this study.</p>';
           }
           if (panelId === 'viz-charts-panel') {

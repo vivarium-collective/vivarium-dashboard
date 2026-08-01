@@ -324,7 +324,7 @@ def test_study_charts_empty_workspace(client):
     body = r.json()
     assert body == {
         "study": "dnaa-1", "schema_version": None, "charts": [],
-        "db_exists": False, "static_count": 0, "live_count": 0,
+        "db_exists": False, "data_store": None, "static_count": 0, "live_count": 0,
     }
 
 

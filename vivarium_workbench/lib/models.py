@@ -172,6 +172,7 @@ class StudyChartsPayload(BaseModel):
     schema_version: Optional[Any] = None
     charts: list[ChartPayload]
     db_exists: bool
+    data_store: Optional[str] = None
     static_count: int
     live_count: int
 

@@ -84,6 +84,7 @@ export interface StudyChartsPayload {
   schema_version: any | null;
   charts: ChartPayload[];
   db_exists: boolean;
+  data_store: string | null;
   static_count: number;
   live_count: number;
 }
