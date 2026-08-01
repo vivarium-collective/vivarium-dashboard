@@ -83,7 +83,7 @@ def test_native_gallery_card_uses_figure_card_and_conditional_run_link():
 
 def test_chart_card_uses_figure_card_not_chart_card_box():
     i = JS.index("function _renderChartCard")
-    block = JS[i:i + 900]
+    block = JS[i:i + 1800]
     assert '"figure-card"' in block
     assert 'class="chart-card"' not in block
     assert 'figure-caption-row' in block and 'figure-source-chip' in block
@@ -96,3 +96,37 @@ def test_loadcharts_wires_figure_run_links():
     i = JS.index("function _loadCharts")
     block = JS[i:i + 2600]
     assert '_wireFigureRunLinks(panel)' in block
+
+
+# ---------------------------------------------------------------------------
+# Task V6: a declared threejs:/html: figure (study_charts.
+# discover_declared_figure_charts) carries an `iframe_url` instead of
+# img/svg. _renderChartCard must render it as an IFRAME figure-card — not an
+# <img> — reusing the embed_visualizations iframe's trust model (a plain
+# same-origin `src` iframe, no `sandbox` attribute) and the same auto-height
+# onload resizer. A record with `c.img` (static image) must still render an
+# <img>, not an iframe — no regression on the existing static-image path.
+# ---------------------------------------------------------------------------
+
+def test_chart_card_renders_iframe_for_declared_interactive_figure():
+    i = JS.index("function _renderChartCard")
+    block = JS[i:i + 1800]
+    assert 'c.iframe_url' in block
+    assert "'<iframe " in block
+    assert 'figure-media-frame' in block
+    # Same trust model as the embed_visualizations iframe: src (not srcdoc),
+    # no `sandbox` attribute beyond what embeds already use.
+    assert 'sandbox=' not in block
+    assert 'srcdoc' not in block
+    # Title/name is escaped before landing in the iframe's `title` attribute
+    # and the caption row's figure-title span.
+    assert 'escapeHtmlForTests(title)' in block
+    assert 'escapeHtmlForTests(c.title)' in block
+
+
+def test_chart_card_static_image_path_unchanged():
+    i = JS.index("function _renderChartCard")
+    block = JS[i:i + 1800]
+    # The img branch (PNG/GIF) is still reachable and unconditioned on
+    # iframe_url — a static image record still renders <img>, not an iframe.
+    assert "'<img class=\"chart-img figure-media\"" in block

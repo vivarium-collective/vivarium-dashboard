@@ -142,6 +142,63 @@ def test_declared_figure_found_in_charts_subdir(tmp_path):
     assert rec["img"].startswith("data:image/png;base64,")
 
 
+# ── Task V6: threejs:/html: self-contained-HTML declared figures ──────────
+#
+# A `visualizations:` entry whose address is `threejs:<file>.html` or
+# `html:<file>.html` resolves to a chart record that renders as an IFRAME
+# (not an <img>/inline <svg>) and carries the interactive marker viz_gate's
+# `_INTERACTIVE_KINDS` already recognises for `threejs`/`html`.
+
+def test_declared_threejs_address_resolves_to_iframe_record(tmp_path):
+    (tmp_path / "scene.html").write_text("<html><body>3D</body></html>")
+    viz = [{"name": "colony-3d", "address": "threejs:scene.html",
+            "description": "Interactive colony render"}]
+    [rec] = discover_declared_figure_charts(tmp_path, viz)
+    assert rec["media"] == "threejs"
+    assert rec["iframe_url"] == "/scene.html"
+    assert rec["title"] == "colony-3d"
+    assert rec["caption"] == "Interactive colony render"
+    assert rec["source"] == "declared"
+    assert rec["run_id"] is None
+    # Not a static-image record — no img/svg payload.
+    assert "img" not in rec
+    assert "svg" not in rec
+
+
+def test_declared_html_address_resolves_to_iframe_record(tmp_path):
+    (tmp_path / "page.html").write_text("<html><body>self-contained</body></html>")
+    [rec] = discover_declared_figure_charts(tmp_path, [{"address": "html:page.html"}])
+    assert rec["media"] == "html"
+    assert rec["iframe_url"] == "/page.html"
+    assert "img" not in rec
+    assert "svg" not in rec
+
+
+def test_declared_iframe_missing_file_skipped(tmp_path):
+    assert discover_declared_figure_charts(tmp_path, [{"address": "threejs:gone.html"}]) == []
+
+
+def test_declared_iframe_found_in_viz_subdir(tmp_path):
+    (tmp_path / "viz").mkdir()
+    (tmp_path / "viz" / "b.html").write_text("<html></html>")
+    [rec] = discover_declared_figure_charts(tmp_path, [{"address": "html:b.html"}])
+    assert rec["iframe_url"] == "/viz/b.html"
+
+
+def test_declared_iframe_url_relative_to_ws_root_when_study_nested(tmp_path):
+    """When the study lives under investigations/<inv>/studies/<slug> (nested
+    layout), the iframe URL must be relative to the workspace root — the
+    catch-all static route (`lib.static_serving.resolve_asset`) resolves
+    every URL against `ws_root`, not the study dir."""
+    ws_root = tmp_path / "ws"
+    study_dir = ws_root / "investigations" / "inv1" / "studies" / "demo"
+    study_dir.mkdir(parents=True)
+    (study_dir / "scene.html").write_text("<html></html>")
+    [rec] = discover_declared_figure_charts(
+        study_dir, [{"address": "threejs:scene.html"}], ws_root=ws_root)
+    assert rec["iframe_url"] == "/investigations/inv1/studies/demo/scene.html"
+
+
 # ---------------------------------------------------------------------------
 # run_id provenance (Fable §4.5, Task V3): a static chart's <name>.meta.json
 # sidecar (viz_freshness.stamp_meta) is the genuine, already-recorded link to

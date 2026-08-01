@@ -407,6 +407,14 @@ _FIGURE_SUFFIX_MIME = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
 }
 
+# Interactive-figure address schemes (Task V6): a ``visualizations[]`` entry
+# whose address points at a SELF-CONTAINED HTML file (a three.js/WebGL scene
+# or any other standalone interactive page) — resolved the same way as the
+# static schemes above, but rendered as an iframe rather than an <img>/inline
+# <svg>. The scheme string doubles as the emitted ``media`` marker, which is
+# already in ``viz_gate._INTERACTIVE_KINDS`` ("threejs", "html").
+_IFRAME_ADDR_SCHEMES = {"threejs", "html"}
+
 
 def _resolve_figure_path(study_dir: Path, ref: str) -> Path | None:
     """Find a declared figure file relative to a study dir.
@@ -428,9 +436,11 @@ def _resolve_figure_path(study_dir: Path, ref: str) -> Path | None:
 
 
 def discover_declared_figure_charts(study_dir: Path,
-                                    visualizations: list) -> list[dict]:
+                                    visualizations: list,
+                                    ws_root: Path | None = None) -> list[dict]:
     """Resolve ``visualizations[]`` entries that point at a static figure file
-    into self-contained chart records (data-URI img / inline svg).
+    into self-contained chart records (data-URI img / inline svg), OR at a
+    self-contained interactive HTML file into an iframe-figure record.
 
     The investigation report embeds ``chartsByStudy`` (this payload) inline, so a
     study that declares e.g. ``address: gif:colony.gif`` gets its animation into
@@ -439,23 +449,44 @@ def discover_declared_figure_charts(study_dir: Path,
     sources were ``charts/*.svg`` + a populated ``runs.db``, so a study with just
     a loose ``colony.gif`` and no run produced ZERO figures.
 
-    A declared entry is treated as a figure when its ``address`` uses a
+    A declared entry is treated as a STATIC figure when its ``address`` uses a
     ``gif:``/``png:``/``svg:``/``image:``/``file:`` scheme, or when its
-    ``chart``/``file``/``path`` field names an image/svg file on disk. Live
+    ``chart``/``file``/``path`` field names an image/svg file on disk. It is
+    treated as an INTERACTIVE iframe figure (Task V6) when its ``address``
+    uses a ``threejs:``/``html:`` scheme pointing at a self-contained HTML
+    file — that record carries ``media: "threejs"``/``"html"`` (already in
+    ``viz_gate._INTERACTIVE_KINDS``) and an ``iframe_url`` instead of an
+    ``img``/``svg`` payload, so the gallery renders it as an iframe. Live
     renderer addresses (``local:``/``dashboard:``) are left to the live-render
     path and skipped here. Best-effort: unreadable/missing files are skipped.
+
+    ``ws_root`` (optional) is the workspace root the ``iframe_url`` is made
+    relative to — the catch-all static route resolves every URL against the
+    workspace root, not the study dir, and a study can live nested under
+    ``investigations/<inv>/studies/<slug>`` rather than flat ``studies/<slug>``.
+    Defaults to ``study_dir`` when omitted (the common flat-layout case, and
+    back-compat for callers/tests that only ever passed a study dir that
+    doubled as the workspace root).
     """
     out: list[dict] = []
     seen_keys: set[str] = set()
+    url_base = Path(ws_root) if ws_root is not None else Path(study_dir)
     for entry in (visualizations or []):
         if not isinstance(entry, dict):
             continue
         ref = ""
+        is_iframe = False
+        iframe_media = None
         addr = str(entry.get("address") or "").strip()
         if ":" in addr:
             scheme, _, rest = addr.partition(":")
-            if scheme.strip().lower() in _FIGURE_ADDR_SCHEMES:
+            scheme_l = scheme.strip().lower()
+            if scheme_l in _FIGURE_ADDR_SCHEMES:
                 ref = rest.strip()
+            elif scheme_l in _IFRAME_ADDR_SCHEMES:
+                ref = rest.strip()
+                is_iframe = True
+                iframe_media = scheme_l
         if not ref:
             # No figure scheme on address; try explicit file-pointer fields, but
             # only if they look like an image/svg (so we don't grab a live
@@ -480,19 +511,26 @@ def discover_declared_figure_charts(study_dir: Path,
             meta["title"] = str(entry["name"])
         if entry.get("description") and not meta.get("caption"):
             meta["caption"] = " ".join(str(entry["description"]).split())
-        try:
-            if suffix == ".svg":
-                rec = {**meta, "key": key, "svg": fig.read_text(encoding="utf-8"),
-                       "media": "svg"}
-            elif suffix in _FIGURE_SUFFIX_MIME:
-                b64 = base64.b64encode(fig.read_bytes()).decode("ascii")
-                rec = {**meta, "key": key,
-                       "img": f"data:{_FIGURE_SUFFIX_MIME[suffix]};base64,{b64}",
-                       "media": suffix.lstrip(".")}
-            else:
+        if is_iframe:
+            try:
+                rel = fig.relative_to(url_base).as_posix()
+            except ValueError:
+                rel = fig.name
+            rec = {**meta, "key": key, "iframe_url": f"/{rel}", "media": iframe_media}
+        else:
+            try:
+                if suffix == ".svg":
+                    rec = {**meta, "key": key, "svg": fig.read_text(encoding="utf-8"),
+                           "media": "svg"}
+                elif suffix in _FIGURE_SUFFIX_MIME:
+                    b64 = base64.b64encode(fig.read_bytes()).decode("ascii")
+                    rec = {**meta, "key": key,
+                           "img": f"data:{_FIGURE_SUFFIX_MIME[suffix]};base64,{b64}",
+                           "media": suffix.lstrip(".")}
+                else:
+                    continue
+            except Exception:
                 continue
-        except Exception:
-            continue
         rec["source"] = "declared"
         rec["freshness"] = "declared"
         # Declared/hand-authored (Fable §4.5, Task V3): this record is a
@@ -1573,7 +1611,7 @@ def build_study_charts_payload(ws_root, name: str, *, hide_superseded: bool = Fa
     # they embed in both the live dashboard and the static report snapshot.
     # Deduped against static_charts by key.
     declared_figs = discover_declared_figure_charts(
-        study_dir, (spec or {}).get("visualizations") or [])
+        study_dir, (spec or {}).get("visualizations") or [], ws_root=ws_root)
     if declared_figs:
         static_keys = {c.get("key") for c in static_charts}
         static_charts = static_charts + [

@@ -157,12 +157,16 @@ def study_visualization_status(ws_root: Path, slug: str) -> dict:
             continue
         _mark("html", e.get("run_id"))
 
-    # Source 4 (future, V6): declared `visualizations:` entries using a
-    # threejs:/html: address scheme — not resolved by
-    # discover_declared_figure_charts (which only handles static-image
-    # schemes), so they'd otherwise be invisible to this gate. No current
-    # source produces these; wiring them here means V6 only needs to start
-    # emitting them, no gate change.
+    # Source 4 (Task V6): declared `visualizations:` entries using a
+    # threejs:/html: address scheme. As of V6, `discover_declared_figure_
+    # charts` (Source 2, via `build_study_charts_payload`) also resolves
+    # these — but only when the referenced file exists on disk. This source
+    # reads the raw spec directly (no file-existence check), so an entry
+    # whose figure file hasn't landed yet still counts toward
+    # `has_interactive` (matching how the OTHER interactive sources here
+    # tolerate not-yet-materialized state) rather than silently vanishing
+    # from the gate. Harmlessly redundant with Source 2 when the file does
+    # exist (`_mark` just re-marks the same kind).
     for v in (spec.get("visualizations") or []):
         if not isinstance(v, dict):
             continue

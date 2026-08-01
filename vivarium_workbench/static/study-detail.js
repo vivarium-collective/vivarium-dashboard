@@ -311,12 +311,40 @@
   // chart's stamped meta sidecar) — this render is conditional on it so a
   // chart with no recorded provenance omits the link rather than fabricate
   // one (Task V3).
+  // Auto-height resizer (Task V6): byte-identical logic to the
+  // embed_visualizations iframe's onload handler in
+  // templates/study-detail.html — grows an iframe to its content's
+  // scrollHeight (or a CSS-pinned overflow:hidden height) so a three.js
+  // canvas / self-contained HTML figure isn't clipped inside a fixed box,
+  // without giving it a scrollbar. Reused rather than re-derived so the two
+  // iframe call sites can't drift.
+  var _FIGURE_IFRAME_ONLOAD =
+    "(function(f){try{var d=f.contentDocument;if(!d)return;var b=d.body,e=d.documentElement;" +
+    "var bStyle=b&&d.defaultView&&d.defaultView.getComputedStyle?d.defaultView.getComputedStyle(b):null;" +
+    "var pinnedH=0;if(bStyle&&(bStyle.overflow||'').indexOf('hidden')>=0){" +
+    "var hm=(bStyle.height||'').match(/^(\\d+(?:\\.\\d+)?)px$/);if(hm)pinnedH=Math.round(parseFloat(hm[1]));}" +
+    "var h=pinnedH>0?pinnedH:Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0);" +
+    "if(h>0)f.style.height=(h+24)+'px';}catch(e){}})(this)";
+
   function _renderChartCard(c) {
     // SVG records carry inline markup in c.svg; PNG/GIF records carry a
-    // self-contained data-URI in c.img (rendered as <img>).
-    var media = c.img
-      ? '<img class="chart-img figure-media" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
-      : (c.svg || '');
+    // self-contained data-URI in c.img (rendered as <img>). A declared
+    // threejs:/html: figure (Task V6, study_charts.discover_declared_figure_
+    // charts) carries neither — just an `iframe_url` pointing at a self-
+    // contained HTML file — and renders as an iframe, reusing the
+    // embed_visualizations iframe pattern: same trust model (a same-origin
+    // `src` iframe, no `sandbox` attribute beyond what embeds already use)
+    // and the same auto-height onload resizer.
+    var title = c.title || c.key || 'figure';
+    var media = c.iframe_url
+      ? '<iframe src="' + escapeHtmlForTests(c.iframe_url) + '" '
+        + 'class="figure-media-frame figure-media-frame--embed" '
+        + 'loading="lazy" title="' + escapeHtmlForTests(title) + '" '
+        + 'onload="' + _FIGURE_IFRAME_ONLOAD + '"'
+        + '></iframe>'
+      : (c.img
+        ? '<img class="chart-img figure-media" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
+        : (c.svg || ''));
     var desc = c.caption ? '<div class="chart-caption">' + c.caption + '</div>' : '';
     var runLink = c.run_id
       ? '<a href="#" class="figure-run-link" data-run-id="' + escapeHtmlForTests(String(c.run_id)) + '">from run '
@@ -325,7 +353,7 @@
     return '<div class="figure-card">' + media + desc
       + '<div class="figure-caption-row">'
       + '<span class="figure-source-chip">chart</span>'
-      + (c.title ? '<span class="figure-title">' + c.title + '</span>' : '')
+      + (c.title ? '<span class="figure-title">' + (c.iframe_url ? escapeHtmlForTests(c.title) : c.title) + '</span>' : '')
       + runLink
       + '</div></div>';
   }
