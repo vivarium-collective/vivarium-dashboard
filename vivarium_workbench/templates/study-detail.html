@@ -314,7 +314,7 @@
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
   <div class="study-overview">
 
-    {# ─── v4 narrative spine. Reading order: Question → Biology → Findings
+    {# ─── v4 narrative spine. Reading order: Question & approach → Findings
        → Debts → Conclusion. Every field edits in place and saves via
        /api/study-narrative-set; empty optional fields collapse to a quiet
        "+ Add …" affordance (progressive disclosure). Verdict + readiness are
@@ -356,6 +356,11 @@
         <strong>Mechanism / Model change.</strong> {{ study.purpose.mechanism }}
       </div>
       {% endif %}
+      {% if study.biological_summary %}
+      <div class="purpose-callout" style="background:#f8fafc;border-left:4px solid #94a3b8">
+        <strong>Summary.</strong> {{ study.biological_summary }}
+      </div>
+      {% endif %}
     </div>
     {% else %}
     {# Legacy narrative fields — each id rendered exactly once; empty ones show
@@ -368,27 +373,6 @@
       <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective or '' }}</div>
     </div>
     {% endif %}
-
-    {# ─── Biology — what this study is about ──────────────────────────── #}
-    <div class="overview-section biology-summary-callout">
-      <h2 class="biology-glance-label">Biology — what this study is about</h2>
-      {% if study.biological_summary %}
-      <textarea class="biology-prose narrative-input narrative-textarea" rows="4"
-                data-narrative-path="biological_summary"
-                placeholder="Plain-English mechanism narrative.">{{ study.biological_summary }}</textarea>
-      {% else %}
-      {% if study.findings %}
-      <div class="biology-derived-preview muted small" style="margin-top:2px;padding:8px 12px;background:#f8fafc;border-left:3px solid #cbd5e1;border-radius:4px">
-        <em>Derived from findings (shown until you write an override):</em>
-        {% for _bf in study.findings %}{% if _bf.statement or _bf.summary %}<p style="margin:4px 0 0">{{ _bf.statement or _bf.summary }}</p>{% endif %}{% endfor %}
-      </div>
-      {% endif %}
-      <button type="button" class="add-field-btn" data-reveal-field="biological_summary" style="margin-top:8px">+ Add biology narrative</button>
-      <textarea class="biology-prose narrative-input narrative-textarea is-hidden" rows="4"
-                data-narrative-path="biological_summary" data-field-editor="biological_summary"
-                placeholder="Plain-English mechanism narrative — the 'textbook write-up' a non-modeler would read."></textarea>
-      {% endif %}
-    </div>
 
     {# ─── Group 3: Findings & open debts ─────────────────────────────── #}
     {% if study.findings %}
@@ -673,25 +657,6 @@
         {% if study.phase %}
         <p class="muted" style="margin:6px 0 0 0;font-size:0.85em">Lifecycle phase: <strong>{{ study.phase }}</strong> (Design → Build → Simulate → Evaluate → Decide).</p>
         {% endif %}
-      </div>
-
-      <div class="study-counts-strip">
-        <div class="count-cell">
-          <strong>{{ (study.simulation_set or study.variants or [])|length }}</strong>
-          <span class="count-label">{{ "simulations" if study.simulation_set else "variants" }}</span>
-        </div>
-        <div class="count-cell">
-          <strong>{{ (study.readouts or study.observables or [])|length }}</strong>
-          <span class="count-label">readouts</span>
-        </div>
-        <div class="count-cell">
-          <strong>{{ (study.implementation_requirements or study.gaps or [])|length }}</strong>
-          <span class="count-label">requirements</span>
-        </div>
-        <div class="count-cell">
-          <strong>{{ (study.runs or [])|length }}</strong>
-          <span class="count-label">runs</span>
-        </div>
       </div>
 
     </details>

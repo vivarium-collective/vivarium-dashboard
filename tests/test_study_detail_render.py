@@ -133,3 +133,84 @@ def test_readiness_is_inline_not_banner(tmp_path, dashboard_client):
     assert 'id="spine-summary"' not in html
     assert 'spine-summary' not in html
     assert 'spine-row' not in html
+
+
+# ---------------------------------------------------------------------------
+# Task 6: overview de-biology — delete biology section, fold authored
+# biological_summary into a fourth "Summary" card in Question & Approach,
+# drop the counts strip.
+# ---------------------------------------------------------------------------
+
+def test_overview_no_biology_lean(tmp_path, dashboard_client):
+    """The standalone biology block (heading + derived-from-findings
+    restatement) and the counts strip must both be gone."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "no-biology-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "no-biology-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "findings": [{"statement": "Something was found."}],
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/no-biology-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "Biology — what this study is about" not in html
+    assert "Derived from findings" not in html
+    assert "study-counts-strip" not in html
+
+
+def test_overview_biological_summary_folds_into_qa_card(tmp_path, dashboard_client):
+    """An authored `biological_summary` renders as a fourth card inside the
+    Question & Approach section (same `purpose-callout` class family as the
+    Question/Hypothesis/Mechanism cards), not as a standalone "Biology"
+    section/heading."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "qa-summary-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "qa-summary-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {
+            "question": "Does the demo composite run correctly?",
+            "expected_outcome": "Yes, it runs without error.",
+            "mechanism": "Swap the metabolism process for a reduced model.",
+        },
+        "biological_summary": "Plain-English mechanism narrative for a non-modeler.",
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/qa-summary-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "Biology — what this study is about" not in html
+    assert "Derived from findings" not in html
+    assert "study-counts-strip" not in html
+
+    # The Summary card appears, styled as a `purpose-callout` (same class as
+    # the Question/Hypothesis/Mechanism cards it sits alongside).
+    assert "Plain-English mechanism narrative for a non-modeler." in html
+    summary_idx = html.index("Plain-English mechanism narrative for a non-modeler.")
+    card_start = html.rindex('<div class="purpose-callout"', 0, summary_idx)
+    assert card_start != -1
+    assert "<strong>Summary.</strong>" in html[card_start:summary_idx + 40]
+
+    # It lives near the Question card, inside the Question & Approach
+    # section — not under its own "Biology" heading.
+    question_idx = html.index("Question &amp; approach")
+    assert question_idx < card_start
