@@ -984,44 +984,37 @@
 
 <section class="study-tab-panel" data-kind="visualize" id="panel-visualize" hidden>
 
-  <div class="viz-section">
+  <div class="overview-section study-figures" id="visualize-section">
+    <h2>Figures</h2>
 
-    <h3 class="section-title">Visualizations</h3>
-    <p class="muted" style="margin:0 0 12px 0;font-size:0.88em">Figures for this study: the native analysis gallery from its latest run, any embedded HTML artefacts, and charts auto-rendered from <code>runs.db</code>.</p>
-    <div class="native-gallery-section" style="margin-bottom:22px">
-      <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Baseline analysis gallery <span style="font-weight:normal">— latest completed run</span></h4>
-      <div id="native-gallery-panel"><p class="empty-message">Loading baseline figures…</p></div>
-    </div>
+    <div id="native-gallery-panel"><p class="empty-message">Loading figures…</p></div>
 
     {# ─── Embedded HTML visualizations (e.g. pre-execution preview pages
          produced by a runner script). study.embed_visualizations is a list of
-         {name, url, description} entries; each renders as an inline iframe at
-         the top of the Visualizations tab so a biologist gets immediate
-         payoff without waiting for runs.db / Visualization-class plumbing.
+         {name, url, description} entries; each renders as an inline iframe
+         alongside the native gallery / auto-rendered charts, so a biologist
+         gets immediate payoff without waiting for runs.db / Visualization-
+         class plumbing.
     #}
     {% if study.embed_visualizations %}
-    <div class="embed-viz-section" style="margin-bottom:22px">
-      <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Embedded visualizations <span style="font-weight:normal">— self-contained HTML</span></h4>
-      {% for v in study.embed_visualizations %}
-      <div class="embed-viz-card" style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:14px;background:#fff">
-        <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid #e5e7eb;background:#f9fafb">
-          <strong style="flex:1">{{ v.name }}</strong>
-          <a href="{{ v.url }}" target="_blank" class="btn-mini">Open in new tab ↗</a>
-        </div>
-        {% if v.description %}
-        <p class="muted" style="margin:6px 12px;font-size:0.88em">{{ v.description }}</p>
-        {% endif %}
-        <iframe src="{{ v.url }}"
-                style="width:100%;min-height:200px;border:0;display:block"
-                loading="lazy" title="{{ v.name }}"
-                onload="(function(f){try{var d=f.contentDocument;if(!d)return;var b=d.body,e=d.documentElement;var bStyle=b&&d.defaultView&&d.defaultView.getComputedStyle?d.defaultView.getComputedStyle(b):null;var pinnedH=0;if(bStyle&&(bStyle.overflow||'').indexOf('hidden')>=0){var hm=(bStyle.height||'').match(/^(\d+(?:\.\d+)?)px$/);if(hm)pinnedH=Math.round(parseFloat(hm[1]));}var h=pinnedH>0?pinnedH:Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0);if(h>0)f.style.height=(h+24)+'px';}catch(e){}})(this)"
-                ></iframe>
+    {% for v in study.embed_visualizations %}
+    <div class="embed-viz-card" style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:14px;background:#fff">
+      <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid #e5e7eb;background:#f9fafb">
+        <strong style="flex:1">{{ v.name }}</strong>
+        <a href="{{ v.url }}" target="_blank" class="btn-mini">Open in new tab ↗</a>
       </div>
-      {% endfor %}
+      {% if v.description %}
+      <p class="muted" style="margin:6px 12px;font-size:0.88em">{{ v.description }}</p>
+      {% endif %}
+      <iframe src="{{ v.url }}"
+              style="width:100%;min-height:200px;border:0;display:block"
+              loading="lazy" title="{{ v.name }}"
+              onload="(function(f){try{var d=f.contentDocument;if(!d)return;var b=d.body,e=d.documentElement;var bStyle=b&&d.defaultView&&d.defaultView.getComputedStyle?d.defaultView.getComputedStyle(b):null;var pinnedH=0;if(bStyle&&(bStyle.overflow||'').indexOf('hidden')>=0){var hm=(bStyle.height||'').match(/^(\d+(?:\.\d+)?)px$/);if(hm)pinnedH=Math.round(parseFloat(hm[1]));}var h=pinnedH>0?pinnedH:Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0);if(h>0)f.style.height=(h+24)+'px';}catch(e){}})(this)"
+              ></iframe>
     </div>
+    {% endfor %}
     {% endif %}
 
-    <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Latest-run charts <span style="font-weight:normal">— re-rendered from <code>runs.db</code></span></h4>
     <div id="viz-charts-panel" class="charts-panel"></div>
   </div>
 </section>

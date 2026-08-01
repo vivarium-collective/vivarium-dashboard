@@ -346,4 +346,41 @@ def test_simulations_is_readonly_table(tmp_path, dashboard_client):
     assert 'Run on remote' not in html
     assert 'Simulation set' not in html
     assert 'study-configure-run' not in html
+
+
+def test_visualizations_stripped_to_gallery(tmp_path, dashboard_client):
+    """Task 9: Visualizations tab is one figure gallery — no explanatory
+    prose and no per-mount section chrome (headings), just the three mounts
+    (native gallery, embedded-viz iframes, latest-run charts) under a single
+    `study-figures` wrapper + `<h2>Figures</h2>`."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "viz-gallery-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "viz-gallery-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-gallery-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert 'id="panel-visualize"' in html
+    assert 'study-figures' in html
+    assert 'id="native-gallery-panel"' in html
+    assert 'id="viz-charts-panel"' in html
+
+    assert 'Figures for this study' not in html
+    assert 'native-gallery-section' not in html
+    assert 'Baseline analysis gallery' not in html
+    assert 'Embedded visualizations' not in html
+    assert 'Latest-run charts' not in html
+    assert 'No baseline figures yet' not in html
     assert 'id="study-sim-table"' in html

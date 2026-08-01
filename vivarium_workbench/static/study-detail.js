@@ -279,9 +279,7 @@
         var panels = (d && d.panels) || {};
         var names = Object.keys(panels);
         if (!names.length) {
-          host.innerHTML = '<p class="muted" style="padding:8px">No baseline '
-            + 'figures yet — run this study to generate its analysis gallery '
-            + '(the run renders them into <code>viz.json</code>).</p>';
+          host.innerHTML = '<p class="empty-message">No figures yet.</p>';
           _nativeGalleryLoaded = false;  // allow a retry after a run completes
           return;
         }
