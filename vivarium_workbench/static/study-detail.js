@@ -1071,35 +1071,52 @@
     });
   }
 
-  // Render EVERY generated report card for this study as its own labelled,
-  // verdict-pilled iframe — independent of whether the study declared a
-  // `kind: report_card` test entry (the Tests-tab path only shows test-linked
-  // cards, so cards on studies without those entries were otherwise invisible).
+  // C6: each `kind: report_card` row (Behavioral tests, below) now expands
+  // INLINE with its own full _renderRichReportCard(card) — this top panel
+  // would double-render every card if it ALSO emitted the per-card stack
+  // (rc.url / rc.groups tables etc.). So it is narrowed to ONLY the
+  // cross-card interactive plotly comparison, which has no per-row
+  // equivalent and must not be lost. The host mount only exists in the DOM
+  // when the template server-gated it on `comparison_plotly_url` (absent !=
+  // empty — no empty box when there's no comparison to show); when there IS
+  // a mount but no plotly URL (e.g. stale client-side spec), clear it rather
+  // than leave the "Loading…" placeholder stuck.
   function _fillReportCardsTab(spec) {
     var host = document.getElementById('report-cards-panel');
     if (!host) return;
-    var urls = (spec && spec.report_card_urls) || {};
-    var cards = Object.keys(urls).sort();
-    if (!cards.length) {
-      host.innerHTML = '<p class="muted" style="padding:8px">No report cards '
-        + 'generated for this study yet. They are produced during the post-sim '
-        + 'flush from the study\'s <code>report_cards:</code> declaration into '
-        + '<code>viz/report_card/</code>.</p>';
+    var pUrl = spec && spec.comparison_plotly_url;
+    if (!pUrl) {
+      host.innerHTML = '';
       return;
     }
-    // Study-level interactive comparison (plotly, v2ecoli vs vEcoli) shown once
-    // above the per-card scorecards when the study has one.
-    var plotly = '';
-    var pUrl = spec && spec.comparison_plotly_url;
-    if (pUrl) {
-      plotly = '<details open style="margin:0 0 22px 0">'
-        + '<summary style="cursor:pointer;font-weight:700;color:#111827;font-size:1.02em">'
-        + 'Interactive comparison — v2ecoli vs vEcoli (plotly)</summary>'
-        + '<iframe class="viz-embed" src="' + escapeHtmlForTests(pUrl) + '" loading="lazy" '
-        + 'style="width:100%;height:900px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;margin-top:8px"></iframe>'
-        + '</details>';
-    }
-    host.innerHTML = plotly + cards.map(_renderRichReportCard).join('');
+    host.innerHTML = '<details open style="margin:0">'
+      + '<summary style="cursor:pointer;font-weight:700;color:#111827;font-size:1.02em">'
+      + 'Interactive comparison — v2ecoli vs vEcoli (plotly)</summary>'
+      + '<iframe class="viz-embed" src="' + escapeHtmlForTests(pUrl) + '" loading="lazy" '
+      + 'style="width:100%;height:900px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;margin-top:8px"></iframe>'
+      + '</details>';
+  }
+
+  // C6: bind each report_card-kind row's inline <details> expander to
+  // lazily mount that card's rich content — reusing _renderRichReportCard,
+  // the SAME renderer the (now plotly-only) top panel used to call for
+  // every card, so there is exactly one renderer and it fires once per card
+  // (on first expand), not once per card PLUS once at the top. Idempotent —
+  // safe to call again after the tests list re-renders.
+  function _bindReportCardRowExpanders() {
+    var rows = document.querySelectorAll('details.report-card-row-expander[data-card]');
+    Array.prototype.forEach.call(rows, function (row) {
+      if (row.dataset.bound) return;
+      row.dataset.bound = '1';
+      row.addEventListener('toggle', function () {
+        if (!row.open) return;
+        var mount = row.querySelector('.report-card-row-mount');
+        if (!mount || mount.dataset.filled) return;
+        mount.dataset.filled = '1';
+        var card = row.getAttribute('data-card');
+        mount.innerHTML = _renderRichReportCard(card);
+      });
+    });
   }
 
   // Verdict vocab: colour + glyph (matches the grade_card / render_html palette).
@@ -1676,6 +1693,7 @@
       });
     }
     _fillReportCardModules(spec);
+    _bindReportCardRowExpanders();
   }
 
   // Render one test's code-computed outcome as a styled row: the measured

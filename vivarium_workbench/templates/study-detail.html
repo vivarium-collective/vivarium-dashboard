@@ -1067,33 +1067,46 @@
   <h2>Tests</h2>
   <p class="muted" style="margin:0 0 12px 0">Audit — does this study pass its own bar (report cards + behavioral gates).</p>
 
-  {# C5: literature_anchors relocated verbatim from the dissolved Overview
-     "Plan & provenance" group. These are the biological expectations this
-     study tests, mapped to the model observable that measures each — they
-     belong in the Tests act. Raw move; C6 restyles this as "Expectations".
-     Guarded so absent renders nothing. #}
+  {# C5 moved literature_anchors here verbatim from the dissolved Overview
+     "Plan & provenance" group. C6 restyles it as an "Expectations" band: each
+     anchor is a stated expectation this study is measured against, and where
+     it carries a status (`status_in_v2ecoli`) that status is routed through
+     the SAME G3 outcome_label/_class/_glyph filters the acceptance-criteria
+     band below uses — met / conditional-pass / not met / not assessable —
+     instead of a raw free-text string, so it reads in the page's one shared
+     vocabulary. Read-only (editing anchors is out of scope, §7). Placed
+     immediately before the acceptance-criteria band: a coherent "what we
+     expected, then what the predefined bar is" grouping. Guarded so absent
+     renders nothing (§2 R2). #}
   {% if study.literature_anchors %}
-  <div class="overview-section literature-anchors">
-    <h3 class="overview-label">Literature anchors</h3>
-    <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-      The biological expectations this study tests, mapped to the
-      model observable that will measure each one. Full citations
-      live in the Tests tab.
-    </p>
-    <ul class="literature-anchor-list">
+  {% set _exp_outcome_colors = {
+      'met':            {'bg': '#d1fae5', 'fg': '#065f46'},
+      'conditional':    {'bg': '#fef3c7', 'fg': '#92400e'},
+      'not-met':        {'bg': '#fee2e2', 'fg': '#991b1b'},
+      'not-assessable': {'bg': '#f1f5f9', 'fg': '#475569'},
+  } %}
+  <div class="overview-section expectations-band" id="expectations-band">
+    <h3 class="section-title">Expectations
+      <span class="muted" style="font-size:0.85em;font-weight:normal">— from literature, mapped to the model observable that measures each</span>
+    </h3>
+    <ul class="literature-anchor-list" style="list-style:none;padding-left:0">
     {% for anchor in study.literature_anchors %}
-      <li class="literature-anchor-card">
-        <div class="anchor-expectation">{{ anchor.expectation }}</div>
+      {% set _ocls = anchor.status_in_v2ecoli|outcome_class if anchor.status_in_v2ecoli else None %}
+      <li class="literature-anchor-card expectation-item">
+        <div class="anchor-expectation" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span>{{ anchor.expectation }}</span>
+          {% if anchor.status_in_v2ecoli %}
+          {% set _oc = _exp_outcome_colors[_ocls] %}
+          <span class="outcome-chip outcome-{{ _ocls }}"
+                title="raw status: {{ anchor.status_in_v2ecoli }}"
+                style="font-size:0.78em;font-weight:600;padding:2px 9px;border-radius:9999px;background:{{ _oc.bg }};color:{{ _oc.fg }}">{{ anchor.status_in_v2ecoli|outcome_glyph }}&nbsp;{{ anchor.status_in_v2ecoli|outcome_label }}</span>
+          {% endif %}
+        </div>
         <div class="anchor-observable">
           <em>Model observable:</em> <code>{{ anchor.model_observable }}</code>
         </div>
         {% if anchor.source %}
         <div class="anchor-source"><em>Source:</em> {{ anchor.source }}</div>
-        {% endif %}
-        {% if anchor.status_in_v2ecoli %}
-        <div class="anchor-status">
-          <em>Current status:</em> {{ anchor.status_in_v2ecoli }}
-        </div>
         {% endif %}
       </li>
     {% endfor %}
@@ -1182,10 +1195,21 @@
     </div>
   </div>
 
-  <div class="report-cards-section" style="margin-top:22px">
-    <h3 class="section-title">Report cards</h3>
-    <div id="report-cards-panel"><p class="empty-message">Loading report cards…</p></div>
+  {# C6: each report_card-kind row (below, in Behavioral tests) now carries
+     its own inline expander rendering the FULL card in place — so this top
+     panel would double-render every card if it also emitted the per-card
+     stack. It is narrowed to ONLY the cross-card plotly comparison overview
+     (no per-row equivalent exists for that), and — per absent != empty
+     (§2 R2) — the whole section is server-gated on comparison_plotly_url so
+     a study with no comparison plot renders no empty box here at all. #}
+  {% if study.comparison_plotly_url %}
+  <div class="report-cards-section" id="report-cards-section" style="margin-top:22px">
+    <h3 class="section-title">Report cards
+      <span class="muted" style="font-size:0.85em;font-weight:normal">— cross-card comparison; each card's full scorecard is inline at its row in Behavioral tests below</span>
+    </h3>
+    <div id="report-cards-panel"><p class="empty-message">Loading comparison…</p></div>
   </div>
+  {% endif %}
 
   <div class="behavioral-tests-section" style="margin-top:22px">
     <h3 class="section-title">Behavioral tests</h3>
@@ -1223,14 +1247,23 @@
         data-result="{{ _res or 'pending' }}"
         style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {{ _border }}; background: #f8fafc; border-radius: 4px;">
       {% if (b.kind or 'behavioral') == 'report_card' %}
-        {# De-duplicated: the full card lives in the Report cards subsection above
-           (same Tests tab now); here we show the name + its verdict pill (set by
-           _fillReportCardModules) + a same-page anchor link. #}
-        <div class="bt-head" style="display:flex;align-items:center;gap:8px">
-          <code>{{ b.name }}</code>
-          <span class="report-card-verdict" data-card="{{ b.card }}" style="font-size:0.75em;font-family:monospace;padding:2px 8px;border-radius:9999px;background:#e2e8f0;color:#334155">report card</span>
-          <a href="#report-cards-panel" class="btn-mini" style="margin-left:auto;font-size:0.78em">View report card ↑</a>
-        </div>
+        {# C6: the card expands INLINE at this row via a native <details> —
+           reveals the same rich content _renderRichReportCard(card) renders
+           on the Report Cards tab, mounted lazily on first expand (JS binds
+           a `toggle` listener; avoids paying for hidden Plotly/markup for
+           cards nobody opens). The verdict pill stays on the summary
+           (recoloured by the existing _fillReportCardModules); there is no
+           more "View report card ↑" scroll-away link — the top panel is now
+           plotly-comparison-only, so there is nothing up there to jump to
+           for this card any more. #}
+        <details class="report-card-row-expander" data-card="{{ b.card }}">
+          <summary class="bt-head" style="display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none">
+            <code>{{ b.name }}</code>
+            <span class="report-card-verdict" data-card="{{ b.card }}" style="font-size:0.75em;font-family:monospace;padding:2px 8px;border-radius:9999px;background:#e2e8f0;color:#334155">report card</span>
+            <span class="muted report-card-row-toggle-hint" style="margin-left:auto;font-size:0.78em">expand ▾</span>
+          </summary>
+          <div class="report-card-row-mount" data-card="{{ b.card }}" style="margin-top:10px"></div>
+        </details>
       {% else %}
         {# --- existing behavioral rendering, UNCHANGED, kept verbatim below --- #}
       <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">

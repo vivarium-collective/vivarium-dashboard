@@ -454,6 +454,13 @@ def test_tests_merged_single_concept(tmp_path, dashboard_client):
         "purpose": {"question": "Does the demo composite run correctly?"},
         "status": "in_progress",
     }))
+    # C6: the top report-cards mount is now server-gated on
+    # comparison_plotly_url (absent != empty — no empty box when there's
+    # nothing to show there any more, since per-card content moved inline to
+    # each report_card row). Give the study a comparison plot so this test
+    # can still verify placement of the mount inside the Tests panel.
+    (sd / "viz").mkdir(parents=True)
+    (sd / "viz" / "comparison_plotly.html").write_text("<div>plotly</div>", encoding="utf-8")
 
     client = dashboard_client(ws)
     resp = client.get("/studies/tests-merged-study")
