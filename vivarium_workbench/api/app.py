@@ -1228,6 +1228,38 @@ def create_app() -> FastAPI:
         return _composite_state_response(ref, fresh, ws)
 
     @app.get(
+        "/api/study-composite-state",
+        response_model=CompositeState,
+        tags=["Studies"],
+        summary="A study lowered to its composite-state document (for the loom)",
+    )
+    def study_composite_state(
+        study: Optional[str] = None,
+        fresh: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[CompositeState, JSONResponse]:
+        """Lower a single study to the composite bigraph state its loom renders.
+
+        A study's ``study.yaml`` declares an execution interface — a composite
+        generator id + config (``study_spec.study_interface``). This resolves the
+        study slug to ``{composite, config}`` and reuses
+        ``composite_state_views.build_composite_state`` (warm-worker
+        ``build_generator``), so the ``{state, kind, ...}`` envelope is identical
+        to ``/api/composite-state``. The embedded loom then shows the study's
+        subcomposites, emitter, visualizations, and report-card steps unchanged.
+
+        Library-backed via ``lib.study_composite_state.build_study_composite_state``.
+        """
+        from vivarium_workbench.lib import study_composite_state as _study_state
+
+        body, status = _study_state.build_study_composite_state(
+            ws, (study or "").strip(), fresh=fresh in ("1", "true", "yes")
+        )
+        if status == 200:
+            return CompositeState.model_validate(body)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
         "/api/composite-inner-state",
         response_model=CompositeState,
         tags=["Composites"],

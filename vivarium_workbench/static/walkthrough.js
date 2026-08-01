@@ -2553,9 +2553,11 @@
     var id = card.getAttribute('data-address');
     var body = panel.querySelector('.pcard-json-body');
     if (body) body.innerHTML = '<span class="muted" style="font-size:0.85em">Resolving composite JSON…</span>';
-    var url = (typeof _compositeStateUrl === 'function')
-      ? _compositeStateUrl(id)
-      : '/api/composite-resolve?id=' + encodeURIComponent(id);
+    // Study/investigation cards resolve their lowered state from data-stateurl.
+    var url = card.getAttribute('data-stateurl')
+      || (typeof _compositeStateUrl === 'function'
+        ? _compositeStateUrl(id)
+        : '/api/composite-resolve?id=' + encodeURIComponent(id));
     fetch(url).then(function (r) { return r.json(); }).then(function (j) {
       var doc = (j && j.state) ? j.state : j;
       if (body) {
@@ -2794,7 +2796,15 @@
   function _compositeLoomExplore(c) {
     // The loom is a read-only VIEWER: config is edited in the Configure section
     // and running is the ▶ RUN bar below — so no "Enable running" / live toggle.
-    return '<div class="ccard-loom-embed pcard-loom" data-id="' + _esc(c.id) + '">' +
+    // ``c._stateUrl`` (optional) overrides where the loom fetches its state:
+    // study/investigation cards point it at /api/study-composite-state so the
+    // SAME loom renders the study's lowered composite (subcomposites, emitter,
+    // visualizations, report-card steps) — the loom is purely state-driven.
+    var stateAttr = c._stateUrl
+      ? ' data-stateurl="' + _esc(c._stateUrl) + '"' +
+        (c._loomRef ? ' data-loomref="' + _esc(c._loomRef) + '"' : '')
+      : '';
+    return '<div class="ccard-loom-embed pcard-loom" data-id="' + _esc(c.id) + '"' + stateAttr + '>' +
       '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the bigraph…</p></div>' +
     '</div>';
   }
@@ -2910,7 +2920,10 @@
     card._obsLoaded = true;
     var box = card.querySelector('[data-role="out-observables"]'); if (!box) return;
     var id = card.getAttribute('data-address');
-    fetch(_api('/api/composite-resolve?id=' + encodeURIComponent(id)))
+    // Study/investigation cards read observables from their lowered state URL;
+    // build_composite_state embeds _declared_emit_paths there too.
+    var obsUrl = card.getAttribute('data-stateurl') || ('/api/composite-resolve?id=' + encodeURIComponent(id));
+    fetch(_api(obsUrl))
       .then(function (r) { return r.json(); })
       .then(function (d) {
         var st = (d && d.state) ? d.state : d;
@@ -3065,8 +3078,11 @@
       '<div class="pcard-out-panel" data-role="out-panel">' + _compositeOutIdle() + '</div>';
     var addr = c.module ? (c.module + '.' + c.name) : c.id;
 
+    // Study/investigation cards carry the lowered-state URL on the root too, so
+    // the { } JSON viewer and Outputs observables read the SAME state as Explore.
+    var rootStateAttr = c._stateUrl ? ' data-stateurl="' + _esc(c._stateUrl) + '"' : '';
     return '<div class="registry-entry registry-entry-full loom-runnable pcard pcard-accordion pcard-composite' + sel +
-        '" data-address="' + _esc(c.id) + '" data-kind="composite">' +
+        '" data-address="' + _esc(c.id) + '" data-kind="composite"' + rootStateAttr + '>' +
       '<div class="loom-card loom-card-stack loom-card-composite">' +
         '<div class="pcard-top">' +
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" ondblclick="event.stopPropagation();_maximizeCardFromHeader(this)" title="Click to pin to top · double-click to maximize">' +
@@ -4941,13 +4957,21 @@
     // EcoliWCM) resolves via the live /api/composite-inner-state endpoint —
     // static=1 alone (a published snapshot) would look for a pre-built file that
     // only a snapshot ships. Omit both under body.snapshot (truly no server).
-    var liveInner = document.body.classList.contains('snapshot')
-      ? '' : '&id=' + encodeURIComponent(id) + '&live=1';
+    // data-stateurl overrides where the loom fetches its state (study /
+    // investigation cards point it at /api/study-composite-state). Inner-
+    // composite drill-in still needs a REAL composite ref (data-loomref); when
+    // that's unknown for a study card, omit &id so the loom just skips drill
+    // rather than fetching /api/composite-inner-state against a non-composite id.
+    var stateUrlOverride = det.getAttribute('data-stateurl');
+    var innerRef = stateUrlOverride ? (det.getAttribute('data-loomref') || '') : id;
+    var liveInner = (document.body.classList.contains('snapshot') || !innerRef)
+      ? '' : '&id=' + encodeURIComponent(innerRef) + '&live=1';
+    var stateUrl = stateUrlOverride || _compositeStateUrl(id, det._overrides);
     var loomUrl = det._loomLive
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
           (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off' + tabParam
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + liveInner + '&chrome=off' + tabParam;
+          encodeURIComponent(stateUrl) + liveInner + '&chrome=off' + tabParam;
     var f = document.createElement('iframe');
     f.className = 'ccard-loom-iframe';
     f.setAttribute('title', 'Loom — ' + id);
@@ -9285,14 +9309,36 @@
 
     var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px;margin:6px 0 14px';
     var _isetFull = (window._isetZoom === 'full');
+    if (_isetFull) window._compositesById = window._compositesById || {};
+    // At MAX zoom, an investigation renders "as itself": its summary header
+    // followed by each member study as the SAME interactive composite card the
+    // Modules tab uses — so Explore shows every member study's subcomposites,
+    // emitter, visualizations, and report-card steps. Lower zooms keep the grid.
+    function _isetFullHtml(iset) {
+      var members = _isetStudyObjs(iset);
+      var studyCards = members.map(function (s) {
+        var sc = _studyCardObj(s);
+        window._compositesById[sc.id] = sc;
+        return _renderCompositeCardFull(sc);
+      }).join('');
+      return '<div class="iset-inv-full" data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" style="margin:0 0 24px">' +
+        _isetCardHtml(iset, false) +
+        (studyCards
+          ? '<div class="iset-member-cards" style="display:flex;flex-direction:column;gap:16px;margin:12px 0 0;padding-left:14px;border-left:2px solid #ede9fe">' + studyCards + '</div>'
+          : '<p class="muted" style="font-size:0.85em;padding-left:14px">No member studies to explore.</p>') +
+      '</div>';
+    }
     function _groupHtml(label, items) {
       if (!items.length) return '';
+      var body = _isetFull
+        ? items.map(_isetFullHtml).join('')
+        : '<div class="investigations-grid" style="' + GRID + '">' +
+            items.map(function (iset) { return _isetCardHtml(iset, _isetFull); }).join('') +
+          '</div>';
       return '<div class="iset-group" data-group-label="' + label + '">' +
         '<h3 class="iset-group-head" style="font-size:0.9em;color:#475569;font-weight:700;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.04em">' +
           label + ' <span class="iset-group-count" style="color:#94a3b8;font-weight:600">(' + items.length + ')</span></h3>' +
-        '<div class="investigations-grid" style="' + GRID + '">' +
-          items.map(function (iset) { return _isetCardHtml(iset, _isetFull); }).join('') +
-        '</div>' +
+        body +
       '</div>';
     }
 
@@ -9715,6 +9761,28 @@
   };
   function _studyDotMeta(st) { return _STUDY_DOT[st] || _STUDY_DOT.planned; }
 
+  // Build a composite-card object for a study so it renders with the SAME
+  // interactive card + loom as a Modules composite (Explore shows the study's
+  // subcomposites, emitter, visualizations, report-card steps). The state is
+  // lowered server-side from the study's execution interface — the card points
+  // Explore/JSON/observables at /api/study-composite-state?study=<slug>.
+  function _studyCardObj(s) {
+    var slug = s.name;
+    return {
+      id: 'study:' + slug,
+      name: s.title || slug,
+      module: null,
+      description: s.description || s.question || s.objective || '',
+      parameters: {},                 // study params live server-side; Explore is the truth
+      read_only: true,                // studies execute via trigger/pull-or-compute, not the composite run bar
+      workspace_local: !s.read_only,
+      _isStudy: true,
+      _studySlug: slug,
+      _stateUrl: '/api/study-composite-state?study=' + encodeURIComponent(slug),
+      _loomRef: s.composite || ''     // real composite ref (when known) → inner-composite drill-in works
+    };
+  }
+
   function _studyBrowseCardHtml(s, full) {
     var status = s.effective_status || s.status || 'planned';
     var m = _studyDotMeta(status);
@@ -9774,22 +9842,34 @@
     var order = (window._isetIndex || []).map(function (i) { return i.name; })
       .filter(function (n) { return groups[n]; });
     if (groups.__ungrouped__) order.push('__ungrouped__');
-    var GRID = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:6px 0 14px';
+    // At MAX zoom (full) each study renders as the interactive composite card
+    // (stacked, one per row) so its Explore loom, Configure, and Outputs are the
+    // same as a Modules composite; lower zooms keep the compact summary grid.
+    var GRID = full
+      ? 'display:flex;flex-direction:column;gap:16px;margin:6px 0 18px'
+      : 'display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px;margin:6px 0 14px';
     var titleFor = function (inv) {
       if (inv === '__ungrouped__') return 'Ungrouped';
       var it = (window._isetIndex || []).find(function (i) { return i.name === inv; });
       return (it && (it.title || it.name)) || inv;
     };
+    if (full) window._compositesById = window._compositesById || {};
     list.innerHTML = order.map(function (inv) {
       var items = groups[inv].slice().sort(cmp);
+      var cards = items.map(function (s) {
+        if (!full) return _studyBrowseCardHtml(s, full);
+        var sc = _studyCardObj(s);
+        window._compositesById[sc.id] = sc;   // so lookups resolve the study card
+        return _renderCompositeCardFull(sc);
+      }).join('');
       return '<div class="iset-group" data-study-group="' + _esc(inv) + '">' +
         '<h3 class="iset-group-head" style="font-size:0.9em;color:#475569;font-weight:700;margin:10px 0 2px;text-transform:uppercase;letter-spacing:0.04em">' +
         _esc(titleFor(inv)) + ' <span style="color:#94a3b8;font-weight:600">(' + items.length + ')</span></h3>' +
-        '<div class="investigations-grid" style="' + GRID + '">' +
-        items.map(function (s) { return _studyBrowseCardHtml(s, full); }).join('') + '</div></div>';
+        '<div class="investigations-grid' + (full ? ' investigations-grid-full' : '') + '" style="' + GRID + '">' +
+        cards + '</div></div>';
     }).join('') +
       '<p id="investigations-empty" class="empty-state" style="display:none">No studies match the filter.</p>';
-    _filterInvestigations();
+    if (!full) _filterInvestigations();
   }
 
   // Investigation title for a slug (Studies table's Investigation column).
