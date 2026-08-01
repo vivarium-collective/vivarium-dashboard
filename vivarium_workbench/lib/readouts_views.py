@@ -76,6 +76,37 @@ def _short_name(leaf: str) -> str:
     return last
 
 
+def _split_saved_excluded(emitted_leaves, available_leaves):
+    """Partition the observable surface into saved (emitted) and excluded rows.
+
+    Both args are lists of dotted store paths. Comparison is on lineage-stripped
+    keys so `_strip_lineage`-equivalent paths match. Returns (saved, excluded)
+    where each is a list of {store_path, name} dicts.
+
+    Step-0 finding (see task-3-report.md / commit message): in this codebase
+    ``readouts_views._available_observables_for_ref`` and
+    ``observables_views.build_observables`` route to the SAME env-worker RPC
+    (``observables{ref}``), both ultimately backed by
+    ``viva_superpowers.readout_validation.available_observables`` →
+    ``collect_input_ports(state)`` — a structural walk of the ENTIRE built
+    state tree (every leaf under a non-Process/Step node), not a per-run
+    emitter selection. So "available" and "emitted" are literally the same
+    leaf set for a given ref; calling this with ``emitted_leaves ==
+    available_leaves`` (the common case here) always yields ``excluded ==
+    []``. The general (available ⊇ emitted) case is still implemented so a
+    future narrower "actual emit plan" source plugs in without changing this
+    helper's contract.
+    """
+    emitted_keys = {_strip_lineage(l) for l in emitted_leaves}
+    saved = [{"store_path": l, "name": _short_name(l)} for l in sorted(emitted_leaves)]
+    excluded = [
+        {"store_path": l, "name": _short_name(l)}
+        for l in sorted(available_leaves)
+        if _strip_lineage(l) not in emitted_keys
+    ]
+    return saved, excluded
+
+
 def _merge_readouts(spec: dict, available: dict, *, plan_available: bool = True) -> list[dict]:
     """Pure merge of emit-plan leaves + authored readouts → ordered row dicts.
 
@@ -213,13 +244,29 @@ def build_study_readouts(ws_root: Path, slug: str) -> tuple[dict, int]:
         # design. That's expected, not an error: degrade softly (200) with a clear
         # note instead of a 422 + a raw filesystem traceback.
         if (ws_root / ".viv-build.json").is_file():
-            return {"composite": ref, "rows": rows, "degraded": True, "remote_build": True,
+            return {"composite": ref, "rows": rows, "excluded": [], "degraded": True, "remote_build": True,
                     "note": "Emit-plan verification is unavailable on a remote build "
                             "(no local ParCa cache); showing authored readouts."}, 200
-        return {"composite": ref, "rows": rows, "degraded": True,
+        return {"composite": ref, "rows": rows, "excluded": [], "degraded": True,
                 "note": f"composite {ref!r} could not be built — rows unverified: {e}"}, 422
 
-    payload = {"composite": ref, "rows": _merge_readouts(spec, available), "note": ""}
+    payload = {"composite": ref, "rows": _merge_readouts(spec, available), "excluded": [], "note": ""}
+    try:
+        # Step-0 finding: this worker's "available" leaf source IS the same
+        # env-worker call `observables_views.build_observables` uses (both
+        # route to `observables{ref}` → `available_observables()` →
+        # `collect_input_ports(state)`, a full structural walk of the built
+        # state tree). There is no narrower "actual emit plan" leaf set to
+        # diff against in this codebase, so emitted == available here and
+        # `excluded` is genuinely empty — surfaced via `emit_is_total` so the
+        # (future) UI can render "all observables are saved" rather than an
+        # empty-looking excluded list.
+        leaves = list(available.get("leaves") or [])
+        _saved, excluded = _split_saved_excluded(leaves, leaves)
+        payload["excluded"] = excluded
+        payload["emit_is_total"] = True
+    except Exception:  # noqa: BLE001 — degrade, never 500
+        payload["excluded"] = []
     _READOUTS_CACHE[ckey] = (_time.time(), payload)
     if len(_READOUTS_CACHE) > 32:
         _READOUTS_CACHE.pop(next(iter(_READOUTS_CACHE)))
