@@ -95,6 +95,28 @@ def test_check_detects_drift(ws: Path):
     assert "Beta Investigation" in (ws / "README.md").read_text()
 
 
+def test_dashboard_block_local_fallback(ws: Path):
+    # A README with only the dashboard marker + no git remote → the prominent
+    # callout falls back to the local-serve instruction (no Pages URL to link).
+    _write(ws / "README.md", """\
+        # demo
+
+        <!-- BEGIN:dashboard -->
+        <!-- END:dashboard -->
+    """)
+    assert gen_readme.generate(ws) == 0
+    text = (ws / "README.md").read_text()
+    assert "read-only dashboard" in text.lower()
+    assert "vivarium-workbench serve" in text  # no remote → local-serve instruction
+    assert gen_readme.GEN_NOTE in text
+
+
+def test_render_dashboard_with_base():
+    out = gen_readme.render_dashboard("https://owner.github.io/repo")
+    assert "https://owner.github.io/repo/dashboard/" in out
+    assert "Explore the interactive read-only dashboard" in out
+
+
 def test_only_present_markers_are_generated(ws: Path):
     # A README with only the composites marker gets only that block.
     _write(ws / "README.md", """\

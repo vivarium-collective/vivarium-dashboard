@@ -343,6 +343,10 @@ def _annotate_use_counts(data: dict, ws_root: "Path") -> None:
                 pct = round(100.0 * s.get("pass", 0) / total) if total else None
                 p["study_participation"] = {
                     "studies": s.get("studies", 0),
+                    # Slugs of the studies participating this process, so the
+                    # Registry popup can list + link each (clicking navigates
+                    # to that study). Empty when unknown.
+                    "study_list": s.get("study_slugs", []),
                     "pass": s.get("pass", 0),
                     "inconclusive": s.get("inconclusive", 0),
                     "fail": s.get("fail", 0),
