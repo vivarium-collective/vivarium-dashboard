@@ -59,7 +59,7 @@ def test_happy_200_passes_callables_and_inputs(tmp_path, monkeypatch, fake_regis
     captured = {}
 
     def _fake_run_investigation(ws_root, name, *, run_one_composite,
-                                inputs_by_class, build_and_run):
+                                inputs_by_class, build_and_run, steps_override=None):
         captured["ws_root"] = ws_root
         captured["name"] = name
         captured["run_one_composite"] = run_one_composite
@@ -139,7 +139,7 @@ def _capture_run_one_composite(ws, monkeypatch, fake_registry):
     holder = {}
 
     def _fake_run_investigation(ws_root, name, *, run_one_composite,
-                                inputs_by_class, build_and_run):
+                                inputs_by_class, build_and_run, steps_override=None):
         holder["fn"] = run_one_composite
         return {"ok": True}
 

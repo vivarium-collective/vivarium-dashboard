@@ -277,7 +277,7 @@ def cmd_run_investigation(args) -> int:
     studies = args.studies.split(",") if args.studies else None
     resp, code = cli_runs.run_investigation(
         Path(args.workspace).resolve(), args.slug,
-        studies=studies, server=args.server)
+        studies=studies, steps=args.steps, server=args.server)
     _emit(resp, args.json)
     return 0 if code < 400 else 1
 
@@ -949,6 +949,8 @@ def main(argv: list[str] | None = None) -> int:
     ri = run_sub.add_parser("investigation", help="Run all studies in an investigation")
     ri.add_argument("slug")
     ri.add_argument("--studies", default=None, help="comma-separated subset")
+    ri.add_argument("--steps", type=int, default=None,
+                    help="force every study to this many ticks (overrides per-study lengths)")
     ri.add_argument("--server", default=None)
     _add_common(ri)
     ri.set_defaults(func=cmd_run_investigation)

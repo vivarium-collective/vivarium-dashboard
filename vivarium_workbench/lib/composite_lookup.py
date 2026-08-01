@@ -341,6 +341,54 @@ def _study_composite_refs(spec: dict) -> list[str]:
     return refs
 
 
+def composite_steps_index(ws_root: Path, package_path: str | None = None) -> dict[str, int]:
+    """Map composite id / trailing-name / ``name`` → positive ``default_n_steps``.
+
+    Best-effort (empty dict on any discovery failure). Powers the ``--steps N``
+    hint on a study's/investigation's run command so a study stays "runnable
+    like a composite" — N is its baseline composite's natural run length.
+    """
+    ws_root = Path(ws_root)
+    if package_path is None:
+        try:
+            ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8")) or {}
+            package_path = ws_data.get("package_path") or (
+                "pbg_" + str(ws_data.get("name", "")).replace("-", "_"))
+        except Exception:  # noqa: BLE001
+            package_path = ""
+    idx: dict[str, int] = {}
+    try:
+        for cid, rec in discover_all_composites(ws_root, package_path).items():
+            n = rec.get("default_n_steps")
+            if isinstance(n, bool) or not isinstance(n, int) or n <= 0:
+                continue
+            idx[cid] = n
+            idx[cid.split(".")[-1]] = n
+            nm = rec.get("name")
+            if isinstance(nm, str) and nm:
+                idx[nm] = n
+    except Exception:  # noqa: BLE001
+        pass
+    return idx
+
+
+def baseline_steps_for_study(spec: dict, steps_index: dict) -> "int | None":
+    """The study baseline composite's ``default_n_steps`` (or ``None``).
+
+    Matches the study's first declared composite ref (baseline first, per
+    :func:`_study_composite_refs`) against ``steps_index`` by full ref, the part
+    after a ``local:``-style protocol, and the trailing name segment.
+    """
+    if not steps_index:
+        return None
+    for ref in _study_composite_refs(spec):
+        for key in (ref, ref.split(":")[-1], ref.split(".")[-1]):
+            n = steps_index.get(key)
+            if n:
+                return n
+    return None
+
+
 def _ref_resolves(ref: str, known_ids: set[str]) -> bool:
     """A declared ref resolves if it's a known spec id, OR shares the trailing
     ``.composites.<slug>`` segment with one (so a short ``slug`` alias matches

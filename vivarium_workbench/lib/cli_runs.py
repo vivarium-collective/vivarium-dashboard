@@ -55,10 +55,12 @@ def run_study(ws_root, study, *, variant=None, steps=None, params=None,
     return study_runs.run_study_baseline(ws_root, body)
 
 
-def run_investigation(ws_root, name, *, studies=None, server=None) -> tuple[dict, int]:
+def run_investigation(ws_root, name, *, studies=None, steps=None, server=None) -> tuple[dict, int]:
     body = {"name": name}
     if studies:
         body["studies"] = list(studies)
+    if steps is not None:
+        body["steps"] = int(steps)
     if server:
         return _post_server(server, "/api/investigation-run", body)
     from vivarium_workbench.lib import investigation_run_views

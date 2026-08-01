@@ -19,13 +19,23 @@ from __future__ import annotations
 CLI = "vwb"
 
 
-def study_run_commands(spec: dict, slug: str) -> dict:
+def _steps_suffix(steps) -> str:
+    """`` --steps N`` for a positive int step count, else ``""`` (bool rejected)."""
+    if isinstance(steps, bool) or not isinstance(steps, int) or steps <= 0:
+        return ""
+    return f" --steps {steps}"
+
+
+def study_run_commands(spec: dict, slug: str, *, steps=None) -> dict:
     """Build the run-command strings for one study spec.
 
     Returns ``{"baseline", "variants": [{name, cmd}], "simulations":
-    [{name, cmd}], "rerun_hint"}``. Pure; tolerant of missing sections.
+    [{name, cmd}], "rerun_hint"}``. Pure; tolerant of missing sections. When
+    ``steps`` is a positive int (typically the study's baseline composite
+    ``default_n_steps``) it's appended as ``--steps N`` so the study reads as
+    runnable-like-a-composite.
     """
-    base = f"{CLI} run study {slug}"
+    base = f"{CLI} run study {slug}{_steps_suffix(steps)}"
     conds = spec.get("conditions") or {}
     variants = []
     for v in (conds.get("variants") or []):
@@ -70,10 +80,15 @@ def composite_run_command(rec: dict) -> str:
     return cmd
 
 
-def investigation_run_command(slug: str) -> str:
-    """``vwb run investigation <slug>`` — runs every study in the investigation."""
+def investigation_run_command(slug: str, *, steps=None) -> str:
+    """``vwb run investigation <slug> [--steps N]`` — runs every study in it.
+
+    ``steps`` (a positive int) forces every study to run that many ticks — a
+    quick whole-investigation smoke run; omit it and each study uses the length
+    declared in its own simulation spec.
+    """
     slug = (slug or "").strip()
-    return f"{CLI} run investigation {slug}" if slug else ""
+    return f"{CLI} run investigation {slug}{_steps_suffix(steps)}" if slug else ""
 
 
 def process_run_command(address: str) -> str:

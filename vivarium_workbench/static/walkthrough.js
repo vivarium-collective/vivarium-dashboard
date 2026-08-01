@@ -11029,11 +11029,15 @@
     if (shellEl) { shellEl.classList.remove('aig-zoom-far','aig-zoom-mid','aig-zoom-near'); shellEl.classList.add(_opts.cls); }
 
     // Investigation-level "run in your terminal" command — always shown (above
-    // the graph) whenever we have the investigation slug.
+    // the graph) whenever we have the investigation slug. Appends a `--steps N`
+    // hint (longest member study's baseline composite run) when the payload
+    // carries one, matching the composite-style command.
     var _dagRunEl = document.getElementById('investigation-dag-run');
     if (_dagRunEl) {
-      _dagRunEl.innerHTML = _dagInvSlug
-        ? _runCmdChip('vwb run investigation ' + _dagInvSlug) : '';
+      var _invSteps = (window._currentIsetData || {}).default_n_steps;
+      var _invCmd = 'vwb run investigation ' + _dagInvSlug +
+        ((typeof _invSteps === 'number' && _invSteps > 0) ? (' --steps ' + _invSteps) : '');
+      _dagRunEl.innerHTML = _dagInvSlug ? _runCmdChip(_invCmd) : '';
     }
 
     var nodesHost = document.getElementById('investigation-dag-nodes');
@@ -11248,10 +11252,10 @@
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
           ? window._chainBlockHtml(chainsBySlug[s.name]) : '') +
-        // "Run this study in your terminal" — single-line CLI command (mirrors
-        // lib/run_commands.study_run_commands baseline). Shown at every zoom band
-        // (not gated) so it's never hidden on the study node.
-        _runCmdChip('vwb run study ' + s.name) +
+        // "Run this study in your terminal" — the server-built baseline command
+        // (carries a `--steps N` hint from the study's baseline composite); falls
+        // back to the bare command. Shown at every zoom band (not gated).
+        _runCmdChip((s.run_commands && s.run_commands.baseline) || ('vwb run study ' + s.name)) +
         // Layer-4: cached/compute badge + run/continue buttons (live only).
         _dagCacheBadgeHtml(s.name) +
         _dagTriggerControlsHtml(s.name);

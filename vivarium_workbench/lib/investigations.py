@@ -876,7 +876,7 @@ def load_spec(path: Path) -> dict:
     return spec
 
 
-def expand_simulations(spec: dict) -> list[dict]:
+def expand_simulations(spec: dict, *, steps_override: "int | None" = None) -> list[dict]:
     """Flatten ``spec.simulations`` into a list of concrete runs.
 
     Each returned entry has keys:
@@ -888,7 +888,7 @@ def expand_simulations(spec: dict) -> list[dict]:
     out: list[dict] = []
     for sim in spec.get("simulations") or []:
         kind = sim["kind"]
-        steps = int(sim["steps"])
+        steps = int(steps_override) if steps_override else int(sim["steps"])
         if kind == "single":
             out.append({
                 "sim_name": sim["name"],
@@ -1623,7 +1623,8 @@ def run_investigation(ws_root: Path, name: str, *,
                       run_one_composite: callable,
                       core_registry: "dict | None" = None,
                       inputs_by_class: "dict | None" = None,
-                      build_and_run=None) -> dict:
+                      build_and_run=None,
+                      steps_override: "int | None" = None) -> dict:
     """Top-level orchestrator. Returns a summary dict.
 
     Supports two spec shapes:
@@ -1706,7 +1707,7 @@ def run_investigation(ws_root: Path, name: str, *,
             for run_entry in spec.get("runs") or []:
                 composite_name = run_entry["composite"]
                 overrides = dict(run_entry.get("params") or {})
-                steps = int(run_entry.get("steps", 1))
+                steps = int(steps_override) if steps_override else int(run_entry.get("steps", 1))
 
                 try:
                     raw_doc = _load_composite_doc(inv_dir, composite_name)
@@ -1752,7 +1753,7 @@ def run_investigation(ws_root: Path, name: str, *,
             # Legacy single-composite path: expand simulations, dispatch by
             # spec_id without a pre-built state_doc.
             # ----------------------------------------------------------------
-            expanded = expand_simulations(spec)
+            expanded = expand_simulations(spec, steps_override=steps_override)
             n_runs = len(expanded)
             for run in expanded:
                 run_id = cr.generate_run_id(spec["composite"], run["overrides"])

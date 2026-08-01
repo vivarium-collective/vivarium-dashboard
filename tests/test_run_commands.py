@@ -61,6 +61,28 @@ def test_investigation_run_command():
     assert investigation_run_command(None) == ""
 
 
+def test_study_run_commands_with_steps():
+    spec = {
+        "name": "s",
+        "conditions": {"variants": [{"name": "ko"}]},
+        "simulation_set": [{"name": "sim-a"}],
+    }
+    c = study_run_commands(spec, "s", steps=2700)
+    assert c["baseline"] == "vwb run study s --steps 2700"
+    assert c["variants"] == [{"name": "ko", "cmd": "vwb run study s --steps 2700 --variant ko"}]
+    assert c["simulations"] == [{"name": "sim-a", "cmd": "vwb run study s --steps 2700"}]
+    # Non-positive / bool / None → no --steps (backward compatible).
+    assert study_run_commands(spec, "s")["baseline"] == "vwb run study s"
+    assert study_run_commands(spec, "s", steps=0)["baseline"] == "vwb run study s"
+    assert study_run_commands(spec, "s", steps=True)["baseline"] == "vwb run study s"
+
+
+def test_investigation_run_command_with_steps():
+    assert investigation_run_command("colonies", steps=2700) == "vwb run investigation colonies --steps 2700"
+    assert investigation_run_command("colonies", steps=None) == "vwb run investigation colonies"
+    assert investigation_run_command("colonies", steps=0) == "vwb run investigation colonies"
+
+
 def test_process_run_command():
     assert (
         process_run_command("pbg_demo.processes.Grow")
