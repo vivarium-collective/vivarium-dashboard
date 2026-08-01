@@ -123,29 +123,24 @@ def test_study_page_is_a_fetch_shell_not_an_embed(_ws):
     assert "window._study = {" not in html and "window._study={" not in html
 
 
-def test_study_detail_page_includes_progress_track_assets(_ws):
-    """Plan 7 (WS-2): the study-detail page wires the reusable ProgressTrack
-    component that drives the pinned-build run card's progress bar — the
-    stylesheet and script must both be referenced, and the script must load
-    BEFORE study-detail.js (the adapter depends on window.ProgressTrack).
-
-    Task 8 (Simulations declutter) removed the remote-run form/panel — and
-    with it the `#remote-run-progress` mount point — from the Simulate tab
-    (launching now lives in the header buttons), so that assertion is gone;
-    the ProgressTrack asset-wiring assertions stand on their own."""
+def test_study_detail_page_drops_progress_track_script(_ws):
+    """Fable A #7: the ProgressTrack component (Plan 7 / WS-2) drove the
+    pinned-build remote-run card's progress bar via `_renderRemoteRunProgress`
+    in study-detail.js. That whole remote-run thin-client subsystem was
+    already-dead JS — Task 8 (Simulations declutter) had removed its DOM
+    anchors (`#remote-run-panel`/`-btn`/`-progress`) from this template,
+    leaving `_renderRemoteRunProgress`/`_initRemoteRunPinned`/etc. permanently
+    unreachable — so Fable A #7 deleted that subsystem from study-detail.js
+    and, with its only caller gone, the `<script src="/progress-track.js">`
+    include on this page too (see test_remote_run_panel.py for the JS-side
+    assertion). The stylesheet link stays (harmless, shared asset; not
+    reintroduced by any of this page's code)."""
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    # The render rewrites bare "/foo.js" asset refs to "/assets/foo.js" (which
-    # resolve_asset strips back to the bundled STATIC_DIR), so match the file
-    # name, not a fixed prefix.
-    assert 'progress-track.css' in html
-    assert 'progress-track.js' in html
-    # load order: the progress-track.js <script> must precede the study-detail.js
-    # <script>. Anchor on the closing tag, which only the real <script> tags have
-    # (the file names are also mentioned in prose/comments).
-    assert html.index('progress-track.js"></script>') < html.index('study-detail.js"></script>')
+    assert 'progress-track.js' not in html
+    assert 'ProgressTrack' not in html
 
 
 def test_study_detail_page_loads_set_tab_helper(_ws):

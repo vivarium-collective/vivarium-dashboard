@@ -1615,9 +1615,6 @@ window._seedFollowupStudy = _seedFollowupStudy;
 window._seedFollowupProposal = _seedFollowupProposal;
 </script>
 <script src="/configure-run.js"></script>
-<!-- ProgressTrack must load BEFORE study-detail.js: _renderRemoteRunProgress
-     (the pinned-build run card's progress adapter) depends on window.ProgressTrack. -->
-<script src="/progress-track.js"></script>
 <script src="/sim-table.js"></script>
 <script src="/study-detail.js"></script>
 <script>
@@ -1632,7 +1629,12 @@ window._seedFollowupProposal = _seedFollowupProposal;
   // Task 8: the Configure & Run mount and the remote-run (smsvpctest) panel
   // were both removed from the Simulate tab — launching now lives entirely
   // in the header buttons (Reproduce / Run current spec). This block used
-  // to also mount ConfigureRun into the (now-deleted) mount div; only the
+  // to also mount ConfigureRun into the (now-deleted) mount div and, in an
+  // else-if, relabel the remote-run card via window._initRemoteRunPinned()
+  // if pinned mode was enabled; Fable A #7 deleted that now-fully-dormant
+  // remote-run subsystem from study-detail.js (its DOM anchors — the
+  // #remote-run-panel/-btn/-progress mounts — never existed in this
+  // template to begin with), so the else-if branch is gone too. Only the
   // still-relevant header-button snapshot handling remains below, now
   // unconditional (it used to be gated behind a lookup of that deleted div).
   //
@@ -1644,12 +1646,6 @@ window._seedFollowupProposal = _seedFollowupProposal;
     if (reproduceBtn) reproduceBtn.style.display = "none";
     var runCurrentBtn = document.getElementById("study-run-current-spec");
     if (runCurrentBtn) runCurrentBtn.style.display = "none";
-  } else if (window._initRemoteRunPinned) {
-    // Live backend: relabel the remote-run card if pinned mode is enabled.
-    // No-op now that the remote-run panel is gone from this template — kept
-    // in case a header remote-run trigger is reintroduced later (see
-    // task-8-report.md follow-up note).
-    window._initRemoteRunPinned();
   }
 })();
 </script>

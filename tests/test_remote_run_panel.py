@@ -18,9 +18,10 @@ def test_runs_tab_has_no_remote_run_form():
     was removed from the Simulate tab by design — launching now lives
     entirely in the header buttons (#study-reproduce /
     #study-run-current-spec). Its markup must be fully absent from the
-    template source. (The thin-client JS handlers below stay dormant in
-    study-detail.js — see test_js_has_remote_run_handlers_and_endpoints —
-    pending a decision on whether remote-run gets a header entry point.)"""
+    template source. (The thin-client JS handlers were left dormant in
+    study-detail.js pending a decision on whether remote-run gets a header
+    entry point; Fable A #7 resolved that by deleting them as dead code —
+    see test_js_has_no_remote_run_handlers below.)"""
     t = _template_text()
     assert 'id="remote-run-form"' not in t
     assert 'id="remote-run-panel"' not in t
@@ -33,35 +34,28 @@ def _js_text():
     return (Path(vivarium_workbench.__file__).parent / "static" / "study-detail.js").read_text(encoding="utf-8")
 
 
-def test_js_has_remote_run_handlers_and_endpoints():
+def test_js_has_no_remote_run_handlers():
+    """Fable A #7 (study-design-fable-pass §1.1-I / §6 #7): the WS1 two-phase
+    remote-run thin client (build → poll → submit → poll → land) had zero
+    live callers once its DOM anchors (#remote-run-panel/-btn/-progress) were
+    removed from study-detail.html by Task 8 — `_initRemoteRunPinned` was
+    still invoked from the template but its own `getElementById('remote-run-
+    panel')` guard made it an unconditional no-op. Deleted as dead code,
+    replacing the presence-assertions this test used to make (see git
+    history for the prior `test_js_has_remote_run_handlers_and_endpoints`)."""
     js = _js_text()
-    # WS1 two-phase thin-client handlers (build → poll → submit → poll → land)
-    assert "_submitRemoteRun" in js
-    assert "_pollBuild" in js
-    assert "_pollRun" in js
-    assert "_submitRun" in js
-    assert "_landRemoteRun" in js
-    assert "_renderRemoteRunProgress" in js
-    # the four thin-client endpoints
-    assert "/api/remote-run-build" in js
-    assert "/api/remote-run-submit" in js
-    assert "/api/remote-run-land" in js
-    assert "/api/remote-run-poll" in js
-    # exposed for inline onsubmit/onclick
-    assert "window._submitRemoteRun" in js
-    assert "window._landRemoteRun" in js
-    # login gate + network handling
-    assert "401" in js
-    assert ".catch(" in js
-    # phase transitions: build 'built' → submit; run 'done' → land; 'failed' stops
-    assert "'built'" in js or '"built"' in js
-    assert "'done'" in js or '"done"' in js
-    assert "'failed'" in js or '"failed"' in js
-    # transient-tunnel tolerance + queued label + reachable=false handling + sim surfaced
-    assert "consecutiveErrors" in js
-    assert "Queued" in js
-    assert "reachable" in js
-    assert "simulation_id" in js
+    for name in (
+        "_submitRemoteRun", "_pollBuild", "_pollRun", "_submitRun",
+        "_landRemoteRun", "_renderRemoteRunProgress", "_initRemoteRunPinned",
+        "_renderRemoteRunProgressLegacy", "_rrDeriveStages", "_remoteRunState",
+    ):
+        assert name not in js, f"{name} should have been deleted as dead code"
+    # the thin-client endpoints are gone from the JS too (backend routes may
+    # still exist for other callers — not asserted here)
+    assert "/api/remote-run-build" not in js
+    assert "/api/remote-run-submit" not in js
+    assert "/api/remote-run-land" not in js
+    assert "/api/remote-run-poll" not in js
 
 
 def test_rendered_study_detail_has_no_remote_run_panel():
