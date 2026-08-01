@@ -327,6 +327,51 @@ def _question_approach_findings(ws_root: Path) -> list[dict]:
     return out
 
 
+def _visualization_gap_findings(ws_root: Path) -> list[dict]:
+    """Deterministic 'visualization_gap' readiness gaps (Fable §5(A)/§6(c),
+    Task V4) — one per study whose visualizations don't clear the quality bar
+    (``lib.viz_gate.study_visualization_status``): at least one *interactive*
+    figure AND at least one figure genuinely linked to a run. Mirrors
+    ``_question_approach_findings``: reuses ``_iter_study_slugs`` (tolerant of
+    unreadable specs) and is itself best-effort per study — a study whose
+    composite/runs can't be read never raises, it just reads as "no figures".
+    Soft (severity ``warning``, never ``error``) — this is a nudge, not a
+    block.
+    """
+    from vivarium_workbench.lib.viz_gate import study_visualization_status
+
+    out: list[dict] = []
+    for slug, spec in _iter_study_slugs(ws_root):
+        try:
+            status = study_visualization_status(ws_root, slug)
+        except Exception:  # noqa: BLE001 — never let one study 500 the lint
+            status = {"qualifies": False, "reason": "no figures"}
+        if status.get("qualifies"):
+            continue
+        reason = status.get("reason") or "no qualifying figure"
+        if reason == "no figures":
+            message = ("Study has no visualizations — add a chart, embed, or "
+                       "run to produce a figure.")
+        elif reason == "no interactive figure (only static images)":
+            message = ("Study's figures are all static images — add an "
+                       "interactive figure (embedded Plotly/HTML, a native "
+                       "gallery panel, or a .gif) so it qualifies.")
+        elif reason == "no figure linked to a run":
+            message = ("Study has an interactive figure but none is linked "
+                       "to a run — link a figure to a real run for genuine "
+                       "provenance.")
+        else:
+            message = f"Study's visualizations don't qualify ({reason})."
+        out.append({
+            "study": spec.get("name") or slug,
+            "check": "visualization_gap",
+            "severity": "warning",
+            "message": message,
+            "field_path": "visualizations",
+        })
+    return out
+
+
 def _linkage_cached_index(ws_root: Path) -> Optional[dict]:
     """Return the cached linkage index for ``ws_root`` (TTL-cached), or build
     and cache it.  Returns ``None`` when the index module is unavailable or
@@ -381,6 +426,7 @@ def build_report_lint(ws_root: Path) -> tuple[dict, int]:
     findings.extend(_composite_resolution_findings(ws_root))
     findings.extend(_readout_emit_plan_findings(ws_root))
     findings.extend(_question_approach_findings(ws_root))
+    findings.extend(_visualization_gap_findings(ws_root))
     return {"findings": findings}, 200
 
 
