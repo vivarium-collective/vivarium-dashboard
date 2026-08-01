@@ -735,12 +735,22 @@
   {% set _has_build = study.model_change or study.implementation_requirements or study.conditions or study.baseline %}
   {% if _has_build %}
 
-  {# Model — every study runs at least one composite. Auto-shown from the
-     study's baseline (composite + parameters) so the Build tab is never empty,
-     with a one-click pop-out to the bigraph-loom STATIC (read-only) view. #}
-  {% if study.baseline %}
+  {# Runnable models (Fable §4.2, §6 #14) — every study runs at least one
+     composite. This is the SINGLE render of the baseline model(s): it used
+     to appear a second time (thinner) under Conditions -> Baseline; that
+     block is folded in here so a reader sees the composite/params once.
+     Sourced from study.baseline[] (rich, per-entry) when present, falling
+     back to study.conditions.baseline (v4-redesign studies with no
+     top-level baseline[] list) so every shape still shows its model. #}
+  {% set _cond = study.conditions %}
+  {# Backward-compat: the new field is ``model_settings``; older yamls may
+     still carry the legacy ``expert_inputs`` alias. #}
+  {% set _model_settings = (_cond.model_settings if _cond and _cond.model_settings is defined else (_cond.expert_inputs if _cond else None)) %}
+  {% set _cond_baseline = (_cond.baseline if _cond and _cond.baseline else None) %}
+  {% set _ns = namespace(cond_baseline_folded=false) %}
+  {% if study.baseline or _cond_baseline %}
   <div class="overview-section" id="model-section">
-    <h3>Model <span class="muted" style="font-size:0.85em;font-weight:normal">— the composite(s) this study simulates</span></h3>
+    <h3>Runnable models <span class="muted" style="font-size:0.85em;font-weight:normal">— the composite(s) this study simulates</span></h3>
     {% for b in study.baseline %}
     <div class="cond-block" data-model-composite="{{ b.composite or '' }}" data-model-overrides='{{ (b.params or {}) | tojson }}'>
       <div class="cond-block-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -763,6 +773,23 @@
                 data-baseline-name="{{ b.name or 'baseline' }}">Set composite</button>
       </div>
       <div class="baseline-composite-status muted" data-baseline-name="{{ b.name or 'baseline' }}" style="font-size:0.8em;margin-top:2px"></div>
+      {# Fold in study.conditions.baseline's params when it names the SAME
+         composite as this entry — only the params not already shown here
+         are surfaced, so nothing renders twice (Fable #14). #}
+      {% if _cond_baseline and _cond_baseline.composite == b.composite %}
+      {% set _ns.cond_baseline_folded = true %}
+      {% set _extra_params = {} %}
+      {% for k, v in (_cond_baseline.params or {}).items() %}
+        {% if not (b.params and k in b.params) %}{% set _ = _extra_params.update({k: v}) %}{% endif %}
+      {% endfor %}
+      {% if _extra_params %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        {% for k, v in _extra_params.items() %}
+        <span class="cond-pill"><span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code></span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endif %}
       {# Config that runs — resolved params (composite defaults ⊕ this study's
          overrides), fetched on demand from /api/composite-resolve. #}
       <div class="model-config-mount" style="margin-top:8px">
@@ -779,33 +806,50 @@
       {% endif %}
     </div>
     {% endfor %}
-  </div>
-  {% endif %}
-
-  {# Conditions (v4): baseline + variants + model_settings. Edit a value in
-     the Current column and the next pbg_runner invocation picks it up. #}
-  {% if study.conditions %}
-  {# Backward-compat: the new field is ``model_settings``; older yamls may
-     still carry the legacy ``expert_inputs`` alias. #}
-  {% set _model_settings = study.conditions.model_settings if study.conditions.model_settings is defined else study.conditions.expert_inputs %}
-  <div class="overview-section" id="conditions-section">
-    <h3>Conditions <span class="muted" style="font-size:0.85em;font-weight:normal">— what we set up to test it</span></h3>
-    <p class="muted" style="font-size:0.88em">The experimental knobs: which composite forms the baseline, how variants perturb it, and which model settings still need a human-set value.</p>
-
-    {% set _cond = study.conditions %}
-    {% if _cond.baseline %}
-    <div class="cond-block">
-      <div class="cond-block-title">Baseline</div>
-      <div style="font-size:0.92em;margin-bottom:4px">Composite: <code>{{ _cond.baseline.composite or '?' }}</code></div>
-      {% if _cond.baseline.params %}
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        {% for k, v in _cond.baseline.params.items() %}
+    {% if _cond_baseline and not _ns.cond_baseline_folded %}
+    {# study.conditions.baseline names a composite not covered by any
+       study.baseline[] entry (or there IS no study.baseline[] at all, e.g.
+       a v4-redesign study) — still show it, once, as its own model card. #}
+    <div class="cond-block" data-model-composite="{{ _cond_baseline.composite or '' }}" data-model-overrides='{{ (_cond_baseline.params or {}) | tojson }}'>
+      <div class="cond-block-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong>baseline</strong>
+        {% if _cond_baseline.composite %}
+        <code style="font-size:0.82em;color:#374151;background:#f1f5f9;padding:1px 6px;border-radius:3px">{{ _cond_baseline.composite }}</code>
+        <button type="button" class="action-btn" style="font-size:0.8em"
+                onclick="_openCompositeLoom('{{ _cond_baseline.composite }}')">🧬 explore &amp; run ↗</button>
+        {% else %}<span class="muted">no composite declared</span>{% endif %}
+      </div>
+      {% if _cond_baseline.params %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        {% for k, v in _cond_baseline.params.items() %}
         <span class="cond-pill"><span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code></span>
         {% endfor %}
       </div>
       {% endif %}
+      <div class="model-config-mount" style="margin-top:8px">
+        <p class="muted" style="font-size:0.85em;margin:0">Loading configuration…</p></div>
+      {% set _r = (study.runs[0] if study.runs else None) %}
+      {% if study.robustness or _r %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:0.8em">
+        {% if study.robustness %}<span class="cond-pill"><span class="cond-pill-k">seeds</span>={{ study.robustness.seeds|length if study.robustness.seeds else (study.robustness.n_replicates or 1) }}{{ ' (sweep)' if study.robustness.parameter_sweep else '' }}</span>{% endif %}
+        {% if _r and _r.n_steps %}<span class="cond-pill"><span class="cond-pill-k">steps</span>={{ _r.n_steps }}</span>{% endif %}
+        {% if _r and _r.emitter %}<span class="cond-pill"><span class="cond-pill-k">emitter</span>={{ _r.emitter }}</span>{% endif %}
+        {% if _r and _r.status %}<span class="cond-pill"><span class="cond-pill-k">status</span>={{ _r.status }}</span>{% endif %}
+      </div>
+      {% endif %}
     </div>
     {% endif %}
+  </div>
+  {% endif %}
+
+  {# Conditions (v4): variants + model_settings. (baseline is now folded into
+     Runnable models above, so this section is skipped when it would
+     otherwise render empty — Absent ≠ empty.) Edit a value in the Current
+     column and the next pbg_runner invocation picks it up. #}
+  {% if _cond and (_cond.variants or _model_settings) %}
+  <div class="overview-section" id="conditions-section">
+    <h3>Conditions <span class="muted" style="font-size:0.85em;font-weight:normal">— what we set up to test it</span></h3>
+    <p class="muted" style="font-size:0.88em">The experimental knobs: how variants perturb the baseline, and which model settings still need a human-set value.</p>
 
     {% if _cond.variants %}
     <div class="cond-block">
@@ -873,6 +917,11 @@
                      {% if e.range and e.range[0] is defined %}min="{{ e.range[0] }}" max="{{ e.range[1] }}"{% endif %}
                      step="{{ _step }}"
                      style="width:100%;padding:3px 6px;border:1px solid #cbd5e1;border-radius:3px;font:inherit">
+              {# Fable #14 — reuse the SAME required-before-run gate signal
+                 the header badge above is computed from, inline per-row. #}
+              {% if e.gate == 'required-before-run' and (e.current is none or e.current == '') %}
+              <span class="cond-ei-needs-value" style="display:inline-block;margin-top:3px;font-size:0.8em;color:#92400e">⚠ needs a value</span>
+              {% endif %}
             </td>
             <td>
               {% if e.range %}<code>[{{ e.range[0] }}, {{ e.range[1] }}]</code>
