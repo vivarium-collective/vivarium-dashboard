@@ -1,17 +1,16 @@
-# Study Detail Page Declutter Implementation Plan
+# Study Detail Page Declutter — Increment 1 Implementation Plan
 
-> ⚠️ **STALE — do not execute as-is.** The design evolved after this plan was
-> written (see the spec, which is the live source of truth). Changes not yet
-> reflected below: Simulations becomes a read-only runs table (no run controls);
-> Tests merges Report Cards + Behavioral Tests into one concept; Readouts merges
-> into Model and the Model reframe (Runs list + interventions) moves to
-> **Increment 2**; explanatory paragraphs are stripped from every tab; pillars
-> drop 8 → 7. This plan will be regenerated (Increment 1) once the tab walkthrough
-> settles. Tasks 1–7, 10 are largely intact; Task 8/9/11/12 will change.
+> **Increment 1 of 3.** This is the executable declutter pass. Increment 2 (Model
+> + interventions + readouts) and Increment 3 (Decide verdict transparency +
+> follow-up enforcement) are separate spec+plan files; their scope is summarized
+> at the end of this plan and in the design spec §6/§7. The Model tab and the
+> standalone Readouts frontend are **deliberately not** touched here — they move
+> to Increment 2. Increment 1 *does* include the backend readouts excluded-set
+> (Task 3), which feeds Increment 2.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Make the study detail page lead with the science — collapse the seven-element header to three, remove the biology lean, enforce Question & Approach, and give each of the 8 tabs one job (including a saved/excluded Readouts view).
+**Goal:** Make the study detail page lead with the science — collapse the seven-element header to three, remove the biology lean, enforce Question & Approach, strip explanatory prose from every tab, turn Simulations into a read-only runs table, unify the figure gallery, and merge Tests into one concept.
 
 **Architecture:** The page is a server-rendered Jinja template (`templates/study-detail.html`) hydrated by `static/study-detail.js`, fed by `lib/study_spec.load_study_detail_spec` (also served at `GET /api/study/{slug}` as `window._study`) and `lib/study_page.build_study_detail_page`. Backend data changes go in `lib/` (unit-testable); presentation changes go in the template + JS (verified by fetching the rendered page via the `dashboard_client` fixture and asserting on HTML). No new endpoints except where noted; the readouts excluded-set reuses existing observable introspection.
 
@@ -21,8 +20,8 @@
 
 - **No new hard validation.** "Question & Approach" enforcement is a *soft* readiness gap (linter finding), never a save-blocking error.
 - **Kind default is `computational`**, never silently `biological`. Values: `biological | computational | theoretical`.
-- **8 pillars stay 8**; no pillar is renamed, removed, merged, or reordered.
-- **Readouts is read-only** this iteration — no emitter write path.
+- **Pillars unchanged in Increment 1** (still 8): the 8→7 Readouts→Model merge is Increment 2. Tests' two sub-tabs merge into one concept, but Tests remains one pillar.
+- **Readouts frontend is untouched in Increment 1** (redesigned + merged into Model in Increment 2). Only the backend excluded-set (Task 3) lands here.
 - **Every governance fact renders once.** The question is the single allowed headline echo (header headline + Overview lead section).
 - **Follow existing patterns:** new `lib/` logic is pure and unit-testable; route logic stays thin in `api/app.py`; mutating endpoints (none added here) would need `_csrf_ok()`.
 - **Tests** run via `pytest`; the live-server fixture is `dashboard_client` (`tests/conftest.py`); set `VIVARIUM_WORKBENCH_DISABLE_CSRF=1` only if a test posts.
@@ -40,7 +39,7 @@
 - Test: `tests/test_study_kind.py`
 
 **Interfaces:**
-- Produces: `study_kind.infer_study_kind(spec: dict) -> str` returning one of `"biological" | "computational" | "theoretical"`. Consumed by the template as `study.kind` and by Task 4 (title tag) and Task 7 (verdict-track label).
+- Produces: `study_kind.infer_study_kind(spec: dict) -> str` returning one of `"biological" | "computational" | "theoretical"`. Consumed by the template as `study.kind` by Task 4 (title tag). (Decide's label rename in Task 7 is universal — it does not depend on `kind`.)
 
 **Rule:** if `spec.get("kind")` is an explicit valid value, use it. Else inspect `spec.get("findings")`: collect each finding's `kind`; if all present findings agree on one value, use it; if mixed or none, return `"computational"`. Never return `"biological"` unless explicitly authored or unanimously inferred.
 
@@ -234,7 +233,11 @@ git commit -m "feat: missing_question readiness gap enforcing Question & Approac
 
 ---
 
-### Task 3: Readouts excluded-set (available − emitted)
+### Task 3: Readouts excluded-set (available − emitted) — backend only
+
+> **Scope note:** Increment 1 ships only the *backend* excluded-set (this task).
+> The per-model Records UI that consumes it is built in Increment 2 (Model tab
+> reframe). This task stands alone and is independently testable.
 
 **Files:**
 - Modify: `vivarium_workbench/lib/readouts_views.py` (`build_study_readouts` at `:150`; `_merge_readouts` at `:79`)
@@ -495,29 +498,200 @@ git commit -m "refactor: overview de-biology (neutral heading, drop derived prev
 
 ---
 
-### Task 7: Decide — kind-aware verdict-track label
+### Task 7: Decide — rename to "Empirical validation", strip prose
 
 **Files:**
-- Modify: `vivarium_workbench/templates/study-detail.html` — verdict track label (`:1478`) and basis label (`:1485`)
+- Modify: `vivarium_workbench/templates/study-detail.html` — Decide panel (`:1425`+): the "VERDICT & CONCLUSION Synthesises…" paragraph; the "Each track is independent…" explainer (~`:1453`-`:1457`); the verdict-track label (`:1478`) and basis label (`:1485`).
 
-- [ ] **Step 1:** Make the "Biological validation" / "Biological basis" labels kind-aware. The `data-verdict-track="biological_validation"` and `data-narrative-path="conclusion_verdicts.biological_validation.basis"` attributes **stay** (data model unchanged); only the visible label text changes:
+**Interfaces:**
+- Consumes: `study.kind` is *not* needed here — the rename is universal.
+
+- [ ] **Step 1: Rename the label (data key unchanged)**
+
+The `data-verdict-track="biological_validation"` and `data-narrative-path="conclusion_verdicts.biological_validation.basis"` attributes **stay** (back-compat). Only the visible text changes:
 
 ```html
-{% set _domain_label = "Biological" if study.kind == "biological" else "Domain" %}
-<span class="narrative-label">{{ _domain_label }} validation</span>
+<span class="narrative-label">Empirical validation</span>
 ...
-<span class="narrative-label">{{ _domain_label }} basis</span>
+<span class="narrative-label">Empirical basis</span>
 ```
 
-Apply the same to the explanatory text at `:1457`/`:1519` if it hardcodes "biological" ("does the model reproduce known **biology**?" → "does the model reproduce the known **domain** behavior?" when not biological). Keep it "biological" for `study.kind == "biological"`.
+Update the `placeholder` on the empirical basis textarea if it hardcodes biology (`:1489` "e.g. atp_fraction = …" is a fine domain-neutral example; leave it).
+
+- [ ] **Step 2: Strip the two explanatory paragraphs**
+
+Grep the Decide panel for these exact strings and delete their containing block:
+- "Synthesises the latest run's outcomes against the pre-stated" (the VERDICT & CONCLUSION intro paragraph).
+- "Each track is independent." (the three-track explainer paragraph, ~`:1453`-`:1457`). Keep the `VERDICTS — THREE-TRACK OUTCOME` heading; drop only the prose sentence(s) under it.
+
+Also fix the three-track heading's parenthetical if it reads `(REGRESSION / BIOLOGICAL / EXPLANATORY)` → `(REGRESSION / EMPIRICAL / EXPLANATORY)`.
+
+- [ ] **Step 3: Render assertion**
+
+```python
+def test_decide_empirical_rename_and_no_prose(dashboard_client):
+    slug = "<fixture-study>"
+    html = dashboard_client.get(f"/studies/{slug}").text
+    assert "Empirical validation" in html
+    assert "Biological validation" not in html
+    assert "Synthesises the latest run" not in html
+    assert "Each track is independent" not in html
+```
+Run: `pytest tests/test_study_detail_render.py -v` → PASS.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add vivarium_workbench/templates/study-detail.html tests/test_study_detail_render.py
+git commit -m "refactor: decide — Empirical validation rename + strip prose"
+```
+
+> Deeper Decide work (transparent verdict inputs, derive-and-enforce follow-ups) is **Increment 3** — not here.
+
+---
+
+### Task 8: Simulations — read-only runs table (remove ALL run controls)
+
+**Files:**
+- Modify: `vivarium_workbench/templates/study-detail.html` — Simulations panel (`:975`-`:1208`)
+- Modify: `vivarium_workbench/static/study-detail.js` — `_setStudyTab('simulate')` branch (`:48`-`:54`), `_renderReproduceCard` (`:61`-`:84`), `_loadStudySims` (`:426`-`:442`)
+- Read first: `vivarium_workbench/static/sim-table.js` (`window.SimTable.renderTable`)
+
+**Interfaces:**
+- Consumes: `GET /api/simulations?study=<slug>` (existing) — the runs record.
+
+- [ ] **Step 1: Read `:975`-`:1208` in full**, and skim `sim-table.js` to learn `SimTable.renderTable`'s column set.
+
+- [ ] **Step 2: Delete everything except the runs table.** Remove from the Simulations panel:
+  - the Reproduce/CLI card `#reproduce-card` (`:977`-`:979`) — launching lives in the header now;
+  - both explanatory paragraphs ("Every run recorded for this study…", "Each entry is a concrete run plan…");
+  - the entire `simulation_set` / "Simulation set (N runs planned)" cards block (`:996`-`:1190`);
+  - the Configure-&-Run mount `#study-configure-run` (`:1192`);
+  - the remote-run form (`:1193`-`:1206`).
+
+  Keep **only** the `#study-sim-table` mount (`:985`-`:994`) and a plain `<h2>Simulations</h2>` heading (no "— this study's runs" prose).
+
+- [ ] **Step 3: Confirm the table carries the required columns.** The spec wants: model/intervention, simulation time, seeds, status, **where the data lives**, **how to retrieve**, **download**. Inspect `SimTable.renderTable`'s columns:
+  - If those fields are already rendered (they come from `/api/simulations` rows), no change.
+  - If **location / retrieval / download** are missing, add them as columns sourced from the existing row fields (grep a row's keys via `curl 'localhost:<port>/api/simulations?study=<slug>' | python -m json.tool`). If a field genuinely isn't in the payload, **log it in the commit message** as a known follow-up rather than fabricating data — do not invent columns without a backing field.
+
+- [ ] **Step 4: Remove the now-dead JS.** In `_setStudyTab('simulate')`, drop the `_renderReproduceCard()` call and any configure-run / remote-form / sweep-summary render calls; keep `_loadStudySims()`. Delete `_renderReproduceCard` if unused elsewhere (grep first).
+
+- [ ] **Step 5: Render assertion**
+
+```python
+def test_simulations_is_readonly_table(dashboard_client):
+    slug = "<fixture-study>"
+    html = dashboard_client.get(f"/studies/{slug}").text
+    assert 'id="reproduce-card"' not in html
+    assert 'Run on remote' not in html
+    assert 'Simulation set' not in html
+    assert 'study-configure-run' not in html
+    assert 'id="study-sim-table"' in html
+```
+Run → PASS. Manual: open Simulations — only a runs table; launch via the header buttons.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add vivarium_workbench/templates/study-detail.html vivarium_workbench/static/study-detail.js tests/test_study_detail_render.py
+git commit -m "refactor: simulations is a read-only runs table (launch moves to header)"
+```
+
+---
+
+### Task 9: Visualizations — just the figures (strip prose + section chrome)
+
+**Files:**
+- Modify: `vivarium_workbench/templates/study-detail.html` — Visualizations panel (`:1238`-`:1280`)
+
+- [ ] **Step 1:** Read `:1238`-`:1280`. Remove:
+  - the "VISUALIZATIONS Figures for this study: the native analysis gallery…" paragraph;
+  - the three subsection headings — "Baseline analysis gallery — latest completed run", "Embedded visualizations — self-contained HTML", "Latest-run charts — re-rendered from runs.db";
+  - the verbose empty-state sentence "No baseline figures yet — run this study to generate its analysis gallery…".
+
+- [ ] **Step 2:** Keep all three mounts — `#native-gallery-panel`, the `study.embed_visualizations` iframe loop (`:1255`-`:1275`), and `#viz-charts-panel` — but wrap them in one `<section class="study-figures">` with a single `<h2>Figures</h2>` and no per-mount section chrome. The `#native-gallery-panel` empty message becomes a minimal quiet `<p class="empty-message">No figures yet.</p>` (loader already sets it). Per-figure captions (the "625 KB from reports/figures/…" line) stay but keep the `muted` class.
+
+- [ ] **Step 3: Render assertion**
+
+```python
+def test_visualizations_stripped_to_gallery(dashboard_client):
+    slug = "<fixture-study>"
+    html = dashboard_client.get(f"/studies/{slug}").text
+    assert 'study-figures' in html
+    assert 'Figures for this study' not in html
+    assert 'native-gallery-section' not in html
+    assert 'Baseline analysis gallery' not in html
+```
+Run → PASS. Manual: open Visualizations — one continuous gallery, no prose.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add vivarium_workbench/templates/study-detail.html tests/test_study_detail_render.py
+git commit -m "refactor: visualizations — one figure gallery, prose + section chrome removed"
+```
+
+---
+
+### Task 10: Tests — merge Report Cards + Behavioral Tests into one concept
+
+**Files:**
+- Modify: `vivarium_workbench/templates/study-detail.html` — sub-nav (`:187`-`:199`), report-cards panel (`:1282`-`:1293`), behavioral-tests panel (`:1323`-`:1423`)
+- Modify: `vivarium_workbench/static/study-detail.js` — `_pillarForKind` (`:17`-`:20`), `_showPillarSubnav` (`:22`-`:37`), `_setStudyTab` (`:39`-`:59`), `_fillReportCardsTab` (`:1292`), `loadTestsTab` (`:1425`+)
+
+**Interfaces:**
+- Consumes: `window._study.report_card_urls`, `study.behavior_tests`/`expected_behavior`/`tests`, `spec.outcome_rollup`, `spec.latest_outcomes`.
+
+- [ ] **Step 1:** Read the two panels + the sub-nav block first. Decide the single surviving member: keep `data-kind="tests"` as the one Tests panel; the `report-cards` member is removed.
+
+- [ ] **Step 2: Collapse the sub-nav.** In `:187`-`:199`, remove the `report-cards` `.study-tab` button so the Tests pillar has a single member (`tests`). `_showPillarSubnav` already auto-hides the sub-nav row for single-member pillars (`:34`-`:36`), so no sub-nav renders for Tests.
+
+- [ ] **Step 3: One merged panel body.** In the `data-kind="tests"` panel, render top-to-bottom:
+  1. a **gate/audit summary strip** `<div class="tests-gate-summary">` — `N/M gates passed` with a per-gate ✓/✗ list, from `spec.outcome_rollup` + `spec.latest_outcomes` (already read by `loadTestsTab`);
+  2. the **report cards** (formerly the `report-cards` panel, `#report-cards-panel` mount) as a subsection;
+  3. the **behavioral tests** list (`:1343`+) as a subsection.
+  Remove the "REPORT CARDS Graded comparison scorecards…" explanatory paragraph and its empty-state prose, and any "Behavioral Tests" explainer prose. One heading: `<h2>Tests</h2>` with a one-line caption "Audit — does this study pass its own bar (report cards + behavioral gates)."
+
+- [ ] **Step 4: JS.** Merge the two loaders: have `_setStudyTab('tests')` call one function that renders the gate summary, fills `#report-cards-panel` (reuse `_fillReportCardsTab` logic), and renders the behavioral list (reuse `loadTestsTab` logic). Remove the `report-cards` branch from `_setStudyTab`/`_pillarForKind`. Grep for any other reference to the `report-cards` kind and update.
+
+- [ ] **Step 5: Render assertion**
+
+```python
+def test_tests_merged_single_concept(dashboard_client):
+    slug = "<fixture-study>"
+    html = dashboard_client.get(f"/studies/{slug}").text
+    assert 'tests-gate-summary' in html
+    assert 'Graded comparison scorecards' not in html
+    # the report-cards sub-nav member is gone
+    assert 'data-kind="report-cards"' not in html
+```
+Run → PASS. Manual: open Tests — one tab, gate summary on top, report cards + behavioral tests below, no sub-nav.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add vivarium_workbench/templates/study-detail.html vivarium_workbench/static/study-detail.js tests/test_study_detail_render.py
+git commit -m "feat: tests — one merged concept (report cards + behavioral) led by gate summary"
+```
+
+---
+
+### Task 11: Exports — strip prose
+
+**Files:**
+- Modify: `vivarium_workbench/templates/study-detail.html` — Exports panel (`:1295`-`:1321`)
+
+- [ ] **Step 1:** Read `:1295`-`:1321`. Remove any explanatory/tutorial paragraph, keeping the functional bits: the analysis result-files list `#data-files`, the "Download all (.zip)" link (`:1299`-`:1300`), and the raw simulation-data list `#raw-data-list`. Keep a plain `<h2>Exports</h2>`.
 
 - [ ] **Step 2: Render assertion**
 
 ```python
-def test_decide_label_neutral_for_computational(dashboard_client):
-    slug = "<computational-fixture-study>"
+def test_exports_functional_no_prose(dashboard_client):
+    slug = "<fixture-study>"
     html = dashboard_client.get(f"/studies/{slug}").text
-    assert "Domain validation" in html
+    assert 'id="data-files"' in html
+    assert 'id="raw-data-list"' in html
 ```
 Run → PASS.
 
@@ -525,179 +699,24 @@ Run → PASS.
 
 ```bash
 git add vivarium_workbench/templates/study-detail.html tests/test_study_detail_render.py
-git commit -m "refactor: decide verdict-track label is kind-aware (Domain vs Biological)"
+git commit -m "refactor: exports — strip explanatory prose"
 ```
 
----
-
-### Task 8: Model — implementation requirements → provenance; hide empty model-change
-
-**Files:**
-- Modify: `vivarium_workbench/templates/study-detail.html` — implementation requirements (`:917`-`:949`), model change (`:878`-`:915`), Plan & provenance details (`:508`-`:698`)
-
-- [ ] **Step 1:** Read `:878`-`:949` in full first. Move the "Implementation requirements" section (`:917`-`:949`) out of the Model tab body and into the collapsed "Plan & provenance" `<details>` in Overview (`:508`-`:698`) — cut the markup block and paste it inside that details element. It is a checklist, not the model definition.
-
-- [ ] **Step 2:** Wrap the "Model change" section (`:878`-`:915`) in `{% if study.model_change and (study.model_change.what or study.model_change.why) %}…{% endif %}` so it is hidden when empty.
-
-- [ ] **Step 3: Render assertion**
-
-```python
-def test_model_tab_lean(dashboard_client):
-    slug = "<fixture-study-no-model-change>"
-    html = dashboard_client.get(f"/studies/{slug}").text
-    # implementation requirements no longer in the Model (compose) panel body
-    # (assert on a stable heading string you moved; adjust to the real text)
-    assert html.count("Implementation requirements") <= 1
-```
-Run → PASS. Manual: open Model tab, confirm it leads with the composite card + conditions; open Overview → Plan & provenance, confirm the requirements list is there.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add vivarium_workbench/templates/study-detail.html tests/test_study_detail_render.py
-git commit -m "refactor: model tab leads with composite; impl-reqs to provenance; hide empty model-change"
-```
-
----
-
-### Task 9: Simulations — remove duplicate Reproduce card, consolidate run controls
-
-**Files:**
-- Modify: `vivarium_workbench/templates/study-detail.html` — reproduce card `#reproduce-card` (`:977`-`:979`), Configure-&-Run mount (`:1192`), remote-run form (`:1193`-`:1206`), sweep summary (`:996`-`:1190`)
-- Modify: `vivarium_workbench/static/study-detail.js` — `_renderReproduceCard` (`:61`-`:84`) call site
-
-- [ ] **Step 1:** Read `:975`-`:1208` in full first. Remove the in-tab `#reproduce-card` (`:977`-`:979`) and its `_renderReproduceCard` call — the header already has ↻ Reproduce (Task 4 keeps it). Keep the CLI/reproduce *command text* only if it is not otherwise reachable; if the header button covers it, delete the card.
-
-- [ ] **Step 2:** Group the three run controls (Configure-&-Run mount `:1192`, remote-run form `:1193`-`:1206`, and the Pass-B sweep summary header) under one `<section class="study-run-controls">` with a single "Run" heading, placed *below* the `#study-sim-table` runs table so the table (what actually ran) leads.
-
-- [ ] **Step 3: Render assertion**
-
-```python
-def test_simulations_single_run_panel(dashboard_client):
-    slug = "<fixture-study>"
-    html = dashboard_client.get(f"/studies/{slug}").text
-    assert 'id="reproduce-card"' not in html
-    assert 'study-run-controls' in html
-```
-Run → PASS. Manual: open Simulations, confirm runs table on top, one "Run" panel below, no duplicate Reproduce.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add vivarium_workbench/templates/study-detail.html vivarium_workbench/static/study-detail.js tests/test_study_detail_render.py
-git commit -m "refactor: simulations tab — runs table leads, one Run panel, drop duplicate reproduce card"
-```
-
----
-
-### Task 10: Visualizations — merge three mounts into one gallery
-
-**Files:**
-- Modify: `vivarium_workbench/templates/study-detail.html` — viz sections (`:1244`-`:1280`)
-- Modify: `vivarium_workbench/static/study-detail.js` — `_loadCharts`/`_loadNativeGallery` (`:492`-`:540`, `:296`-`:330`)
-
-- [ ] **Step 1:** Unify the three separate `<h4>`-headed sections — "Baseline analysis gallery" (`#native-gallery-panel`), "Embedded visualizations" (iframes), and "Latest-run charts" (`#viz-charts-panel`) — into one `<section class="study-figures">` with a single "Figures" heading. Keep all three mount ids (the loaders target them) but drop the three separate section chrome/headings; render them as one continuous gallery. The embedded-iframe loop (`:1255`-`:1275`) stays but under the unified heading.
-
-- [ ] **Step 2:** No loader logic change needed (same mount ids); just confirm `_loadCharts`/`_loadNativeGallery` still fire on the `visualize` tab.
-
-- [ ] **Step 3: Render assertion**
-
-```python
-def test_visualizations_single_gallery(dashboard_client):
-    slug = "<fixture-study>"
-    html = dashboard_client.get(f"/studies/{slug}").text
-    assert 'study-figures' in html
-    # the three separate section headings collapsed to one
-    assert html.count('native-gallery-section') == 0
-```
-Run → PASS. Manual: open Visualizations, confirm one gallery flow.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add vivarium_workbench/templates/study-detail.html vivarium_workbench/static/study-detail.js tests/test_study_detail_render.py
-git commit -m "refactor: visualizations — one unified figure gallery"
-```
-
----
-
-### Task 11: Tests — lead with the gate result
-
-**Files:**
-- Modify: `vivarium_workbench/templates/study-detail.html` — behavioral-tests panel (`:1323`-`:1423`), report-cards mount (`:1282`-`:1293`)
-- Modify: `vivarium_workbench/static/study-detail.js` — `loadTestsTab` (`:1425`+), `_fillReportCardsTab` (`:1292`)
-
-- [ ] **Step 1:** Read `:1282`-`:1423` and `study-detail.js:1425`-`1470` first. Add a **gate-result summary strip** at the top of the Tests pillar (above the Report Cards / Behavioral Tests sub-nav): which report cards / behavioral tests gate the verdict and their pass/fail, sourced from `spec.outcome_rollup` + `spec.latest_outcomes` (already read by `loadTestsTab`). Render as `N/M gates passed` with a per-gate ✓/✗ list.
-
-- [ ] **Step 2:** Frame the pillar as the study's audit: a one-line caption under the heading ("Audit: does this study pass its own bar — report cards + behavioral gates"). Keep both sub-tabs intact.
-
-- [ ] **Step 3: Render/behavior assertion**
-
-```python
-def test_tests_tab_leads_with_gate_summary(dashboard_client):
-    slug = "<fixture-study-with-outcomes>"
-    html = dashboard_client.get(f"/studies/{slug}").text
-    assert 'tests-gate-summary' in html  # the new strip's container id/class
-```
-(The pass/fail counts are JS-rendered; assert the container exists in markup. Manual: open Tests, confirm the gate summary is on top.)
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add vivarium_workbench/templates/study-detail.html vivarium_workbench/static/study-detail.js tests/test_study_detail_render.py
-git commit -m "feat: tests tab leads with gate/audit summary"
-```
-
----
-
-### Task 12: Readouts — saved/excluded browsable tree (read-only)
-
-**Files:**
-- Modify: `vivarium_workbench/templates/study-detail.html` — readouts panel (`:1210`-`:1236`)
-- Modify: `vivarium_workbench/static/study-detail.js` — `_loadReadouts` (`:98`-`:118`), `_renderReadoutsTable` (`:251`)
-- Test: `tests/test_readouts_excluded.py` (extend with an API-shape assertion)
-
-**Interfaces:**
-- Consumes: `GET /api/study-readouts?study=<slug>` payload now carrying `rows` (saved) + `excluded` (Task 3).
-
-- [ ] **Step 1:** Add a "Selected emitter" header line to the readouts panel. Source the emitter name/type from the study spec's emitter config (grep how the composite/emitter is named in `study_spec` / the readouts payload; if not already present, add `emitter` to the `build_study_readouts` payload in Task 3 — a small addition, note it there).
-
-- [ ] **Step 2:** Rewrite `_renderReadoutsTable` to render a **collapsible tree grouped by store-path prefix**, not a flat table. Each leaf row shows a glyph: `●` for saved (`rows`), `○` for excluded (`excluded`), plus name/units. Group by the first 1–2 path segments into `<details>` groups.
-
-- [ ] **Step 3:** Add a search/filter `<input>` above the tree that filters visible leaves by path or name (client-side, on `input`). No write path — rows are display-only.
-
-- [ ] **Step 4: API-shape assertion**
-
-```python
-def test_study_readouts_api_has_excluded(dashboard_client):
-    slug = "<fixture-study>"
-    data = dashboard_client.get(f"/api/study-readouts?study={slug}").json()
-    assert "excluded" in data
-    assert isinstance(data["excluded"], list)
-```
-Run → PASS. Manual: open Readouts, confirm selected emitter line, ●saved + ○excluded leaves in a collapsible searchable tree.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add vivarium_workbench/templates/study-detail.html vivarium_workbench/static/study-detail.js tests/test_readouts_excluded.py
-git commit -m "feat: readouts saved/excluded browsable tree with emitter + search (read-only)"
-```
+> The **Analyses** config relocation (Model → Exports) is **Increment 2**, not here.
 
 ---
 
 ## Final verification
 
-- [ ] Run the full suite: `pytest -q`. Expected: green (fix any fixture-slug placeholders you filled).
-- [ ] Serve a real workspace and eyeball the study page end-to-end:
+- [ ] Run the full suite: `pytest -q`. Fix any fixture-slug placeholders you filled.
+- [ ] Serve a real workspace and eyeball the page against the spec's Increment-1 success criteria:
   ```bash
   vivarium-workbench serve --workspace <a workspace with studies> --port 8799
   ```
-  Confirm against the success criteria in the spec: header shows status/readiness/verdict once each; no yellow banner, no spine table; question at top; a computational study shows no "Biology" heading and a `kind` tag; Overview "What this study is about" only when authored; Readouts shows emitter + ●/○ tree; Tests leads with the gate result.
+  Confirm: header status/readiness/verdict each render once (no yellow banner, no spine table); the question is the first content; a computational study shows a `kind` tag and no "Biology" heading; Overview leads with Question & Approach (no biology section); Simulations is a read-only table with launch only in the header; Visualizations is one gallery with no prose; Tests is one merged tab led by the gate summary; Decide says "Empirical validation" with no intro prose; every tab's explanatory paragraph is gone.
 - [ ] `git log --oneline da4736f..HEAD` shows only your task commits.
 
-## Self-review notes (author)
+## Downstream increments (separate spec+plan files — not in this plan)
 
-- **Spec coverage:** header dedup (T4/T5), kind + de-biology (T1/T6/T7), Question & Approach enforcement (T2), each tab's one job (T6–T12), Readouts saved/excluded read-only (T3/T12). All spec sections map to a task.
-- **Known implementer to-dos flagged inline (not placeholders — decisions the code confirms):** exact `workspace_paths` studies-dir accessor (T2), whether emit-plan == available surface for the target workspace (T3 Step 0), real fixture study slugs (T1 Step 6). Each has a concrete command to resolve it.
-- **Type consistency:** `infer_study_kind` → `study.kind` used in T4/T7; `_split_saved_excluded` → `excluded` payload key used in T12; `_question_approach_findings` → `check:"missing_question"` rendered by the existing gaps link.
+- **Increment 2 — Model + Interventions + Readouts** (design spec §6): unify "Config that runs" + Conditions into one **Runs** list of composite/config pairs; each run shows its emitter + ●saved/○excluded readouts (consuming Task 3's backend); **interventions** (`base + op(merge|override) + operand`) author extra runs and **replace `variants`** (with migration); remove the Model explanatory paragraph; relocate **Analyses → Exports**; drop the Readouts pillar (8 → 7).
+- **Increment 3 — Decide verdict transparency + follow-up enforcement** (design spec §7): each track shows its **actual computed inputs** (run status / gate-evaluator + report cards / finding-tier counts), rules unchanged; the Follow-ups & Decisions section **always proposes ≥1** derived study (from verdict state + open findings/debts), seedable/linkable, enforced by a **`missing_followup`** readiness gap.
