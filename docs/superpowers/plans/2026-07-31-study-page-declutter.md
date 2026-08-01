@@ -423,36 +423,45 @@ git commit -m "refactor: readiness as inline link, drop spine-at-a-glance (singl
 
 ## Phase 3 — Tabs
 
-### Task 6: Overview — remove biology lean, keep enforced Question & Approach
+### Task 6: Overview — drop the sloppy biology section, fold authored summary into Question & Approach
 
 **Files:**
 - Modify: `vivarium_workbench/templates/study-detail.html` — biology block (`:373`-`:392`), counts strip (`:679`), Question & Approach section (`:340`-`:371`)
 - Test: `tests/test_study_detail_render.py`
 
-- [ ] **Step 1:** Replace the biology block (`:373`-`:392`). Keep the authored-override branch and the `+ Add … narrative` control, but:
-  - Change the `<h2>` from `Biology — what this study is about` to `What this study is about`.
-  - **Delete** the `{% else %}{% if study.findings %}…biology-derived-preview…{% endif %}` auto-derived preview entirely (it restates the Findings cards).
-  - Show the whole `overview-section` **only** when `study.biological_summary` is authored (wrap the section in `{% if study.biological_summary %}`), plus the add-narrative affordance when absent — but no derived prose.
+**Design intent (from the 11:27 screenshot):** "Question & Approach" is the
+polished, structured lead — three color-coded cards: **Question** (blue),
+**Hypothesis / Expected outcome** (green), **Mechanism / Model change**
+(yellow). It already answers "what this study is about." The separate
+"BIOLOGY — WHAT THIS STUDY IS ABOUT" block directly below it is redundant *and*
+visually sloppy (an unstyled derived-from-findings restatement). **Delete the
+biology section entirely.** Preserve an authored `biological_summary` by folding
+it in as a **matching fourth card** in the Q&A group ("Summary", neutral slate
+styling) — never as its own heading.
+
+- [ ] **Step 1:** **Delete the entire biology block** (`:373`-`:392`) — both the
+  authored-override branch and the `{% else %}…biology-derived-preview…` derived
+  restatement. No "Biology" or "What this study is about" heading remains.
+
+- [ ] **Step 2:** In the "Question & Approach" section (`:340`-`:371`), after the
+  Mechanism/Model-change card, add a fourth card that renders **only when
+  `study.biological_summary` is authored**, matching the existing card styling
+  (same `.narrative-*` / left-border-callout classes the Q/Hypothesis/Mechanism
+  cards use — read `:340`-`:371` to copy the exact class + inline-style pattern of
+  a card, then swap the label/colour to a neutral slate):
 
 ```html
 {% if study.biological_summary %}
-<div class="overview-section about-summary-callout">
-  <h2 class="about-glance-label">What this study is about</h2>
-  <textarea class="about-prose narrative-input narrative-textarea" rows="4"
-            data-narrative-path="biological_summary"
-            placeholder="Plain-English narrative of what this study is about.">{{ study.biological_summary }}</textarea>
-</div>
-{% else %}
-<div class="overview-section about-summary-empty">
-  <button type="button" class="add-field-btn" data-reveal-field="biological_summary">+ Add narrative</button>
-  <textarea class="about-prose narrative-input narrative-textarea is-hidden" rows="4"
-            data-narrative-path="biological_summary" data-field-editor="biological_summary"
-            placeholder="Plain-English narrative — the 'textbook write-up' a non-specialist would read."></textarea>
+<div class="qa-card qa-card-summary">  {# match the Q/Hypothesis/Mechanism card markup at :340-:371 #}
+  <strong>Summary.</strong> {{ study.biological_summary }}
 </div>
 {% endif %}
 ```
 
-- [ ] **Step 2:** Ensure "Question & Approach" (`:340`-`:371`) remains the first Overview section, unchanged in content. (Enforcement is the Task 2 linter gap; nothing to add here.)
+  (Use the real card wrapper markup from `:340`-`:371`, not this schematic — the
+  point is one more card in the same visual family, slate/grey border, shown only
+  when authored. The `data-narrative-path="biological_summary"` editor affordance
+  may be kept inside this card if inline editing is desired, styled to match.)
 
 - [ ] **Step 3:** Delete the `<div class="study-counts-strip">` block at `:679` (noise).
 

@@ -59,10 +59,15 @@ Q   <the study's question>
 - **"Spine at a glance" is deleted.** Its three rows had no unique content:
   Verdict = the status pill, Why = the lead finding (shown in Overview →
   Findings), Readiness = the inline gaps link.
-- **The Question is promoted into the header**, above the tab bar, so the page
-  opens with the science rather than governance metadata.
+- **The Question is promoted into the header** as the page headline, above the
+  tab bar, so the page opens with the science rather than governance metadata.
+  The full **"Question & Approach"** section is *retained* in Overview (see
+  below) — the header carries the one-line question as the headline; Overview
+  carries the question plus the approach (expected outcome + mechanism).
 
-Every fact now appears exactly once.
+Every governance fact now appears exactly once. (The question intentionally
+appears as the header headline and again, with its approach, as Overview's lead
+section — a headline echo, not a governance duplicate.)
 
 ### 2. Study `kind` — remove the biology lean
 
@@ -77,8 +82,8 @@ theoretical`.
 - **Rendered as a small tag beside the title** so the reader knows the study's
   nature at a glance.
 - **Neutralizes hardcoded biology chrome:**
-  - Overview heading "BIOLOGY — WHAT THIS STUDY IS ABOUT" → neutral
-    **"What this study is about"** (see Overview below).
+  - Overview's "BIOLOGY — WHAT THIS STUDY IS ABOUT" section is **removed**
+    entirely (redundant with Question & Approach); see Overview below.
   - "Open biological questions" → **"Open questions"** (kind-agnostic).
   - Decide's "biological_validation" verdict-track *label* becomes kind-aware
     (e.g. "biological validation" only for `biological`; otherwise a neutral
@@ -94,7 +99,7 @@ tabs.**
 
 | Pillar | One job | Cut | Enhance |
 |---|---|---|---|
-| **Overview** | The answer, one screen | The auto-derived "Biology — derived from findings" block (it echoes the Findings cards below it); the counts strip | Kind-aware **"What this study is about"** shown *only when authored* (`biological_summary`); otherwise omit and lead straight into Findings → Conclusion. Question already lives in the header. |
+| **Overview** | The answer, one screen | The **entire** "Biology — what this study is about" block (both the auto-derived restatement *and* the standalone heading — redundant with Q&A above it and visually sloppy); the counts strip | Keep **"Question & Approach"** as the polished, enforced lead section (see §5) — three color-coded cards (Question / Hypothesis-Expected outcome / Mechanism-Model change). Fold an authored `biological_summary` in as a **matching fourth "Summary" card**, never its own section. Then Findings → Conclusion. |
 | **Model** | What system was simulated | "Implementation requirements" moves into the collapsed "Plan & provenance"; "Model change" hidden when empty | Lead with the interactive composite card, then Conditions as a clean table |
 | **Simulations** | What runs executed + how to run more | The in-tab Reproduce card (duplicate of the header button) | Runs table leads; fold the scattered run controls (Configure-&-Run widget, remote-run form, sweep summary) into **one** "Run" panel below the table |
 | **Readouts** | What this study observes | The flat wall-of-paths list | See §4 — selected emitter + ●saved / ○excluded, browsable, **read-only** |
@@ -134,6 +139,20 @@ emitter config. The implementation plan must confirm the available-surface
 source can be computed for a study's baseline composite and reconcile it against
 the saved set (set difference on resolved store paths).
 
+### 5. Enforce "Question & Approach"
+
+The "Question & Approach" section is the study's science lead and must not be
+skippable. Enforce it:
+
+- The **report linter** (`/api/report-lint`, `lib/report_views.py`) gains a
+  deterministic gap when a study has no question (and no approach /
+  expected-outcome). Surfaces in the header's `⚠ N gaps` link like the existing
+  `incomplete_summaries` / `missing_readouts` findings.
+- The gap keys are stable slugs (e.g. `missing_question`) so the header link and
+  any CI over the linter can reference them.
+- This is a **soft gate** (a readiness gap), consistent with the other linter
+  findings — it flags, it does not block save. No new hard validation error.
+
 ## Out of scope
 
 - Editable/interactive emitter selection (Readouts write path) — deferred.
@@ -150,8 +169,11 @@ the saved set (set difference on resolved store paths).
 - The study's Question is the first content on the page, above the tabs.
 - A `computational` (or `theoretical`) study shows **no** "Biology" headings and
   carries a visible `kind` tag.
-- Overview shows the "What this study is about" block **only** when authored;
-  otherwise it is absent (no auto-derived restatement of findings).
+- Overview has **no** "Biology / What this study is about" section; an authored
+  `biological_summary` appears only as a matching "Summary" card inside
+  "Question & Approach" (no auto-derived restatement of findings anywhere).
+- "Question & Approach" is the enforced lead section of Overview; a study with
+  no question surfaces a deterministic `missing_question` readiness gap.
 - Readouts shows the selected emitter and both ●saved and ○excluded observables
   in a searchable, collapsible tree.
 - Tests leads with the gate result.
