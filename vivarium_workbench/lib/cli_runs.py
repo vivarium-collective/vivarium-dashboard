@@ -1,4 +1,4 @@
-"""Run/inspect seam behind the `vdash run/rerun/runs/status/logs` commands.
+"""Run/inspect seam behind the `vwb run/rerun/runs/status/logs` commands.
 
 Local-first: study/investigation/composite runs reuse the same lib orchestration
 the dashboard server uses. `server=<url>` delegates to the existing HTTP
@@ -55,10 +55,12 @@ def run_study(ws_root, study, *, variant=None, steps=None, params=None,
     return study_runs.run_study_baseline(ws_root, body)
 
 
-def run_investigation(ws_root, name, *, studies=None, server=None) -> tuple[dict, int]:
+def run_investigation(ws_root, name, *, studies=None, steps=None, server=None) -> tuple[dict, int]:
     body = {"name": name}
     if studies:
         body["studies"] = list(studies)
+    if steps is not None:
+        body["steps"] = int(steps)
     if server:
         return _post_server(server, "/api/investigation-run", body)
     from vivarium_workbench.lib import investigation_run_views
@@ -80,6 +82,28 @@ def run_composite(ws_root, spec_id, *, steps=5, emit_paths=None,
             "overrides": dict(params or {}),
             "run_id": run_id}}, 200
     return composite_test_run_views.composite_test_run(ws_root, body)
+
+
+def run_process(ws_root, address, *, config=None) -> tuple[dict, int]:
+    """Instantiate one registry process/step from the workspace core and run a
+    single ``update()``, returning its outputs.
+
+    Delegates to the warm env-worker (the same ``run_process`` path the dashboard
+    uses), so class resolution, config/port filling, and Step-vs-Process dispatch
+    stay identical to the UI. ``config`` is an optional dict of config overrides
+    (empty by default). Returns ``(payload, status)`` like the other run seams.
+    """
+    from vivarium_workbench.lib.env_worker_pool import get_pool, EnvWorkerUnavailable
+    params = {"address": address, "config": dict(config or {}),
+              "inputs": {}, "interval": 1.0}
+    try:
+        r = get_pool().call(Path(ws_root).resolve(), "run_process", params)
+    except EnvWorkerUnavailable as e:
+        return {"error": f"environment worker unavailable: {e}"}, 503
+    if isinstance(r, dict) and r.get("ok") is False:
+        # Surface the worker's structured {stage, error} as a non-zero result.
+        return {"error": r.get("error"), "stage": r.get("stage")}, 400
+    return (r if isinstance(r, dict) else {"result": r}), 200
 
 
 def find_run(ws_root, run_id) -> tuple[str | None, dict | None]:

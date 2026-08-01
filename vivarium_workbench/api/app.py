@@ -1089,6 +1089,16 @@ def create_app() -> FastAPI:
                     c["studies"] = s
         except Exception:  # noqa: BLE001
             pass
+        # Attach a single-line "run this composite" command per record (the same
+        # canonical string the study/investigation surfaces use). Best-effort.
+        try:
+            from vivarium_workbench.lib.run_commands import composite_run_command
+            for c in raw_composites:
+                cmd = composite_run_command(c)
+                if cmd:
+                    c["run_command"] = cmd
+        except Exception:  # noqa: BLE001
+            pass
         return CompositesPayload(
             composites=[CompositeRecord.model_validate(c) for c in raw_composites],
             workspace_package=data.get("workspace_package"),

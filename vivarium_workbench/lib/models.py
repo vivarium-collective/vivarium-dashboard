@@ -195,6 +195,7 @@ class InvestigationSummary(BaseModel):
     studies: list[str] = []
     lifecycle: Any = None
     current: Optional[bool] = None
+    run_command: Optional[str] = None
     error: Optional[str] = None
     origin_repo: Optional[str] = None
     read_only: Optional[bool] = None

@@ -17,7 +17,7 @@ main{padding:20px;margin:0 auto}
 #page-composite-explore, .viv-content > #page-composite-explore
   {max-width:none;width:auto}
 .viv-content:has(> #page-investigations.active){
-  padding:8px 12px !important;
+  padding:8px 24px !important;   /* 24px horizontal = same left inset as Registry/Modules */
   width:100% !important;
   max-width:none !important;
 }
@@ -237,21 +237,82 @@ img{max-width:100%}
   display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr));
   gap:14px; margin:8px 0;
 }
+/* Semantic-zoom module rows (Cards / Full): full-row cards, content across the
+   bar — identity | description | stats | install-action. */
+.mrows{ display:flex; flex-direction:column; gap:9px; margin:8px 0; }
+.module-card.mrow{ width:100%; padding:11px 15px; gap:0; }
+.module-card.mrow.reg-selected{ border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,0.22); }
+.mrow-grid{
+  display:grid; grid-template-columns:minmax(160px,1fr) minmax(0,2.2fr) minmax(150px,1fr) auto;
+  gap:20px; align-items:center;
+}
+@media (max-width:900px){ .mrow-grid{ grid-template-columns:1fr; gap:6px; } }
+.mrow-identity{ min-width:0; }
+/* Name truncates; the GitHub link stays visible (flex:none) instead of being
+   clipped along with a long name. */
+.mrow-name{ display:flex; align-items:baseline; gap:6px; min-width:0; }
+.mrow-name-text{
+  font-size:1.0em; color:#0f172a; font-weight:700; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.mrow-name .module-link{ flex:none; white-space:nowrap; }
+.mrow-desc{
+  color:#475569; font-size:0.86em; line-height:1.45; min-width:0;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+.mrow-stats{ min-width:0; }
+.mrow-stats .module-stats-row{ margin:0; }
+.mrow-action{ display:flex; align-items:center; justify-content:flex-end; }
+.mrow-meta{ margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9; }
 .module-card{
-  background:#fff; border:1px solid #e5e7eb; border-radius:8px;
-  padding:14px 16px; display:flex; flex-direction:column; gap:8px;
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  padding:14px 16px; display:flex; flex-direction:column; gap:9px;
+  transition:box-shadow .16s ease, border-color .16s ease, transform .16s ease;
+}
+.module-card:hover{
+  border-color:#c7d2fe;
+  box-shadow:0 6px 20px -6px rgba(30,41,59,.16);
+  transform:translateY(-1px);
 }
 .module-card-header{
-  display:flex; justify-content:space-between; align-items:center;
+  display:flex; justify-content:space-between; align-items:center; gap:8px;
 }
-.module-card-header strong{ font-size:1.05em }
+.module-card-header strong{ font-size:1.06em; letter-spacing:-0.01em; color:#0f172a }
 .module-link{
   font-size:0.85em; color:#1e40af; text-decoration:none;
 }
 .module-link:hover{ text-decoration:underline }
-.module-desc{ color:#4b5563; font-size:0.9em; margin:0; line-height:1.4 }
-.module-tags{ display:flex; gap:4px; flex-wrap:wrap }
-.tag-pill{
+.module-desc{ color:#475569; font-size:0.88em; margin:0; line-height:1.45 }
+.module-tags{ display:flex; gap:5px; flex-wrap:wrap }
+
+/* Config-parameter chips — these are code identifiers, so a crisp monospace
+   "code chip" reads far better than a washed-out pill. */
+.param-block{ margin-top:2px }
+.param-label{
+  font-size:0.68em; text-transform:uppercase; letter-spacing:.06em;
+  color:#94a3b8; font-weight:600; margin-bottom:5px;
+  display:flex; align-items:center; gap:6px;
+}
+.param-count{
+  background:#eef2f7; color:#64748b; border-radius:999px;
+  padding:0 6px; font-size:0.95em; font-weight:600; letter-spacing:0;
+}
+.param-list{ display:flex; gap:5px; flex-wrap:wrap }
+.param-pill{
+  font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background:#f1f5f9; border:1px solid #e2e8f0; color:#475569;
+  padding:2px 7px; border-radius:6px; font-size:0.75em; line-height:1.5;
+}
+.param-pill:hover{ background:#e8eef6; border-color:#cbd5e1 }
+
+/* Topic tags — colored rounded pills, distinct from the code-chip params. */
+.topic-list{ margin-top:1px }
+.topic-pill{
+  background:#eef2ff; color:#4338ca; border:1px solid #e0e7ff;
+  padding:2px 9px; border-radius:999px; font-size:0.74em; font-weight:500;
+}
+
+.tag-pill{  /* legacy — retained for any other consumers */
   background:#eff6ff; color:#1e40af; padding:2px 8px;
   border-radius:999px; font-size:0.78em;
 }
@@ -315,6 +376,23 @@ body.focus-mode .viv-content{
   display:block !important;
 }
 body.focus-mode .page.active{ display:block !important; min-height:0 !important }
+
+/* …except for pages whose whole content is ONE fill-the-viewport app (the loom
+ * iframe). The rules above force .viv-content to display:block, which breaks the
+ * flex chain those pages size themselves with — and an iframe with height:auto
+ * in a block container falls back to its intrinsic 150px, so the Composite
+ * Explorer opened via ?focus=composite-explore rendered a ~150px letterbox with
+ * its own scrollbar inside a page of empty space. Restore the flex column (and
+ * the single-scrollbar contract) for exactly those pages. */
+body.focus-mode.focus-composite-explore .viv-content{
+  display:flex !important; flex-direction:column !important;
+  overflow:hidden !important;
+  padding:8px 12px !important;
+}
+body.focus-mode.focus-composite-explore .page.active{
+  display:flex !important; flex-direction:column !important;
+  flex:1 1 auto !important; min-height:0 !important;
+}
 
 /* ── Composite explorer diagram (v0.5.1.6) ─────────────────────────────
  * Server preserves graphviz's natural pt dimensions; CSS only shrinks
@@ -445,6 +523,14 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
   margin:0 0 12px; padding:10px 12px;
   background:#f8fafc; border:1px solid #e5e7eb; border-radius:6px;
 }
+/* Two-row variant: search + zoom pinned to the top row (zoom stays fixed at
+   the top-right in every zoom setting); chips + sort wrap on row two. */
+.card-browse-toolbar.cbt-2row{ flex-direction:column; align-items:stretch; gap:10px; }
+.cbt-top{ display:flex; align-items:center; gap:10px; }
+.cbt-top .card-browse-search{ flex:1 1 auto; max-width:none; }
+.cbt-top .registry-zoom{ flex:none; }
+.cbt-bottom{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+.cbt-bottom .card-browse-chips{ flex:1 1 auto; }
 .card-browse-search{
   flex:1 1 220px; min-width:200px; max-width:380px;
   padding:6px 10px; border:1px solid #cbd5e1; border-radius:4px;
@@ -494,16 +580,18 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 /* Module-source line + kind badge for composite cards/rows (Sim Setup) */
 .composite-list-row .composite-module,
 .module-card .composite-module{
-  font-size:0.84em; color:#4b5563;
-  margin-top:4px;
+  font-size:0.8em; color:#94a3b8;
+  margin-top:2px; display:flex; align-items:center; flex-wrap:wrap; gap:6px;
 }
+.composite-module small{ text-transform:uppercase; letter-spacing:.05em; font-size:0.92em; }
 .composite-module code{
-  background:#f3f4f6; padding:1px 6px; border-radius:4px; font-size:0.95em;
+  background:#f8fafc; border:1px solid #eef2f7; color:#475569;
+  padding:1px 6px; border-radius:5px; font-size:0.92em;
 }
 .kind-badge{
-  background:#dbeafe; color:#1e40af;
-  padding:1px 6px; border-radius:4px;
-  font-size:0.78em; font-weight:600;
+  background:#eef2ff; color:#4338ca; text-transform:uppercase; letter-spacing:.03em;
+  padding:1px 7px; border-radius:999px;
+  font-size:0.72em; font-weight:600;
   margin-left:6px;
 }
 .composites-sort-select{
@@ -572,6 +660,11 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 }
 .investigation-card .ic-title{
   font-weight:600; font-size:1.02em; color:#111827;
+  /* A flex item's min-width defaults to its CONTENT width, so a long unbroken
+     slug ("colonies-03-wcm-rss-leak") refused to shrink and shoved the
+     flex:none status pill past the card's right edge — 16px of page-wide
+     horizontal scrollbar on the Studies grid, from one card. */
+  min-width:0; overflow-wrap:anywhere;
 }
 .investigation-card .ic-status{
   flex:none;
@@ -630,7 +723,7 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 
 /* Left rail ----------------------------------------------------------------- */
 .viv-rail{
-  width:240px; flex:0 0 240px;
+  width:var(--rail-w, 240px); flex:0 0 var(--rail-w, 240px);
   display:flex; flex-direction:column;
   background:#fafafa; border-right:1px solid #e5e7eb;
   padding:16px 0 8px;
@@ -638,19 +731,42 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
   position:relative;
   overflow:hidden;
 }
+/* While actively dragging the resize handle, kill the width transition so the
+   rail tracks the pointer 1:1 instead of lagging behind. */
+.viv-rail.viv-rail-resizing{ transition:none; }
+/* Right-edge drag handle: widen the rail to see full study names/details.
+   Snaps to normal width; dragging narrower snaps to the collapsed bar. */
+.viv-rail-resize-handle{
+  position:absolute; top:0; right:0; bottom:0; width:6px;
+  cursor:col-resize; z-index:6; background:transparent;
+  transition:background .12s ease;
+}
+.viv-rail-resize-handle:hover,
+.viv-rail.viv-rail-resizing .viv-rail-resize-handle{ background:#c7d2fe; }
+body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 .viv-rail-header{
   display:flex; align-items:center; gap:10px;
-  padding:0 16px 14px;
+  /* Left inset 19px = the nav-link icon inset (16px padding + 3px accent border),
+     so the logo's left edge lines up with the nav icons below it. */
+  padding:0 16px 12px 19px;
   border-bottom:1px solid #ececec;
   position:relative;   /* positioning context for the collapse toggle */
 }
+/* Logo + brand link to vivariumlab.com (collapse toggle stays separate). */
+.viv-rail-brand-link{
+  display:flex; align-items:center; gap:10px;
+  flex:1 1 auto; min-width:0; text-decoration:none; color:inherit;
+}
+.viv-rail-brand-link:hover .viv-rail-brand strong{ text-decoration:underline; }
 .viv-rail-logo{
-  width:36px; height:36px; flex:0 0 36px;
-  border-radius:6px;
+  width:46px; height:46px; flex:0 0 46px;
+  border-radius:8px;
   display:block;
   object-fit:contain;
   background:#fff;
 }
+/* Dark logo art has its own dark background — no white plate behind it. */
+:root[data-theme="dark"] .viv-rail-logo{ background:transparent; }
 .viv-rail-logo[role="presentation"]{
   /* Fallback emoji rendering when no img is provided */
   display:flex; align-items:center; justify-content:center;
@@ -682,22 +798,66 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 }
 .viv-workspace-switcher .viv-ws-caret{ color:#9ca3af; font-size:0.78em }
 
+/* The single scroll region: everything from the Workspace nav down lives here
+   and scrolls as one, so a long study list pushes the nav up off the top rather
+   than clipping. Only the brand + workspace chip above stay fixed. */
 .viv-rail-scroll{
-  flex:1 1 auto; overflow-y:auto; overflow-x:hidden;
-  padding:8px 0 4px;
+  flex:1 1 auto; min-height:0;
+  overflow-y:auto; overflow-x:hidden;
+  padding:0;
 }
 
 .viv-rail-section{
-  padding:10px 0 6px;
+  padding:4px 0 6px;
 }
 .viv-rail-section + .viv-rail-section{
   border-top:1px solid #ececec; margin-top:4px;
 }
+/* Studies is now a continuous nav item; its search/list section flows straight
+   under the Workspace nav with no divider break. */
+.viv-rail-section + #viv-rail-studies-section{ border-top:none; margin-top:0; }
+:root[data-theme="dark"] .viv-rail-section + #viv-rail-studies-section{ border-top:none; }
+/* Studies flow naturally within the shared scroll region (no inner scrollbar).
+   Its header (label + search) is sticky so it pins to the top of the scroll
+   region as the study list scrolls beneath — ChatGPT-sidebar style. */
+#viv-rail-studies-section{
+  display:flex; flex-direction:column;
+}
+.viv-rail-studies-head{
+  position:sticky; top:0; z-index:5;
+  background:#fafafa;
+  padding-top:4px;
+  box-shadow:0 1px 0 #ececec;
+}
+#viv-rail-investigations{
+  overflow-x:hidden;
+}
+
+/* Clickable "Needs attention" items — hover affordance so it reads as a link
+   to the associated study (each opens that study at its verdict). */
+.na-item-click{ transition:background 0.12s ease, box-shadow 0.12s ease; }
+.na-item-click:hover{ background:rgba(0,0,0,0.05); box-shadow:inset 0 0 0 1px rgba(0,0,0,0.10); }
+.na-item-click:hover span[style*="float:right"]{ opacity:0.9 !important; }
+/* "Needs attention" starts collapsed; hide the "click to expand" hint once open. */
+.needs-attention-banner[open] .na-toggle-hint{ display:none; }
 .viv-rail-section-label{
   padding:0 16px 6px;
   font-size:0.68em; font-weight:600; letter-spacing:0.08em;
   text-transform:uppercase; color:#9ca3af;
 }
+/* STUDIES section header — clickable → Studies overview. Aligned to the
+   WORKSPACE nav items (same left inset, icon slot, and gap). */
+.viv-rail-studies-link{
+  display:flex; align-items:center; gap:12px; width:100%;
+  margin:0 0 2px; padding:8px 16px;
+  background:none; border:none; border-left:3px solid transparent; cursor:pointer;
+  font-family:inherit; color:#374151; text-align:left; font-size:0.92em;
+  transition:background 0.12s, color 0.12s;
+}
+.viv-rail-studies-link:hover{ background:#eef2ff; color:#4338ca; }
+.viv-rail-studies-ico{ width:20px; height:20px; flex:0 0 20px; color:#6b7280; }
+.viv-rail-studies-link:hover .viv-rail-studies-ico{ color:#4338ca; }
+.viv-rail-studies-txt{ flex:1 1 auto; font-size:1em; font-weight:400; letter-spacing:0; text-transform:none; }
 .viv-rail-link{
   display:flex; align-items:center; gap:12px;
   padding:8px 16px;
@@ -744,6 +904,12 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
   cursor:pointer; user-select:none;
 }
 .viv-rail-investigations-group-header:hover{ background:#f3f4f6 }
+/* Investigation pin: hover-reveal in the group header (mirrors the study pins). */
+.viv-rail-investigations-group-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.viv-rail-inv-pin{ opacity:0; flex:none; font-size:0.82em; }
+.viv-rail-investigations-group-header:hover .viv-rail-inv-pin{ opacity:0.5; }
+.viv-rail-inv-pin:hover{ opacity:0.95 !important; transform:scale(1.15); }
+.viv-rail-inv-pin.pinned{ opacity:1 !important; }
 .viv-rail-investigations-group-arrow{
   display:inline-block; width:10px; color:#9ca3af; font-size:0.78em;
   transition:transform 0.15s ease;
@@ -788,6 +954,45 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
   display:block; font-size:0.74em; color:#9ca3af;
   margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
+
+/* Study-row pin toggle + Pinned strip + flat Ungrouped list -------------- */
+.viv-rail-sublink { position: relative; }
+.viv-rail-sublink:hover { background:#f3f4f6; }
+.viv-rail-pin {
+  flex: none;
+  font-size: 0.82em;
+  line-height: 1;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0;              /* hidden by default — only appears on row hover */
+  transition: opacity .12s ease, filter .12s ease, transform .12s ease;
+}
+.viv-rail-sublink:hover .viv-rail-pin { opacity: 0.5; }
+.viv-rail-pin:hover { opacity: 0.9 !important; transform: scale(1.15); }
+/* A pinned study keeps its pin visible even when not hovering. */
+.viv-rail-pin.pinned { filter: none; opacity: 1; }
+.viv-rail-sublink:hover .viv-rail-pin.pinned { opacity: 1; }
+
+.viv-rail-section-subheader {
+  font-size: 0.68em;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 6px 14px 2px;
+}
+.viv-rail-pinned-section {
+  background: #fffdf5;
+  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 3px;
+}
+.viv-rail-pinned-section .viv-rail-sublink-pinned { color: #78716c; }
+.viv-rail-ungrouped-divider {
+  height: 1px;
+  background: var(--border, #e2e8f0);
+  margin: 8px 12px 4px;
+}
+.viv-rail-ungrouped-section .viv-rail-sublink { color: #475569; }
 
 /* Focused-study rail state (single-investigation view) -------------------- */
 .viv-rail-focused-study{
@@ -923,6 +1128,11 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
   background:var(--bg);
   overflow:hidden;
 }
+/* The content pane must fill .viv-main's width. Without this it shrink-wrapped
+   to the active page's content and read as centered — invisible on content-rich
+   pages (Studies) but narrow on sparse ones (a Registry facet with few cards).
+   Stretch it so every page renders full-bleed regardless of how much it holds. */
+.viv-content{ align-self:stretch; width:100%; }
 
 /* Slim topbar -------------------------------------------------------------- */
 .viv-topbar{
@@ -1158,7 +1368,7 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 .registry-tabs{
   display:flex; gap:24px; align-items:center;
   border-bottom:1px solid #e5e7eb;
-  margin:16px 0 12px;
+  margin:8px 0 12px;
 }
 .registry-tab{
   background:transparent; border:0;
@@ -1195,6 +1405,954 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 .registry-entry strong{ font-size:1.02em; color:#1f2937 }
 .registry-entry code{ font-size:0.88em }
 .registry-entry pre{ margin:4px 0; max-height:200px; overflow:auto }
+
+/* Rich registry entry: description + ports (contract) + config schema, a more
+   accessible take on the loom composite viewer's process view. */
+.reg-entry-head{
+  display:flex; align-items:baseline; justify-content:space-between;
+  gap:10px; margin-bottom:2px;
+}
+.reg-entry-name{ min-width:0 }
+.registry-use-badge{
+  flex:none;
+  font-size:0.72em; font-weight:600;
+  padding:2px 9px; border-radius:9999px;
+  background:#eef2ff; color:#4338ca; border:1px solid #e0e7ff;
+  white-space:nowrap;
+}
+
+/* Process kind pill: Temporal (a Process, has a timestep) vs Step (dataflow,
+   no timestep). Distinct hues so the two read apart at a glance. */
+.proc-kind-badge{
+  flex:none; display:inline-block;
+  font-size:0.68em; font-weight:600; letter-spacing:0.02em;
+  padding:1px 7px; border-radius:9999px; white-space:nowrap;
+  vertical-align:middle;
+}
+.proc-kind-temporal{  background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; }
+.proc-kind-step{      background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+.proc-kind-composite{ background:#f5f3ff; color:#6d28d9; border:1px solid #ddd6fe; }
+.proc-kind-other{ background:#f1f5f9; color:#475569; border:1px solid #e2e8f0; }
+:root[data-theme="dark"] .proc-kind-other{ background:var(--surface-3); color:var(--text-muted); border-color:var(--border); }
+/* static contract rows (non-runnable kinds): name·type only, single column */
+.cfg-list-static .cfg-row{ grid-template-columns:1fr; }
+/* usage stats row inside the full card top */
+.pcard-usage{ margin:5px 0 0; }
+
+/* clickable card stats + config·ports button */
+.reg-stat-btn{ border:none; background:none; cursor:pointer; font:inherit; color:inherit; padding:0; }
+.reg-stat-btn:hover{ color:#2563eb; text-decoration:underline; }
+.reg-cfgports-btn{
+  display:inline-flex; align-items:center; gap:6px; margin-top:8px;
+  border:1px solid #e5e7eb; background:#f8fafc; border-radius:7px; cursor:pointer;
+  font-size:0.78em; font-weight:600; color:#475569; padding:4px 10px;
+}
+.reg-cfgports-btn:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+.reg-cfgports-btn .reg-mid-sum{ font-weight:400; color:#94a3b8; }
+
+/* stacked pass / inconclusive / fail success bar */
+.reg-succbar{ margin:7px 0 0; }
+.reg-succbar-track{ display:flex; height:7px; border-radius:4px; overflow:hidden; background:#eef2f7; }
+.reg-succbar-seg{ display:block; height:100%; }
+.reg-succbar-pass{ background:#16a34a; }
+.reg-succbar-incon{ background:#d97706; }
+.reg-succbar-fail{ background:#dc2626; }
+.reg-succbar-legend{ font-size:0.72em; color:#64748b; margin-top:3px; }
+.reg-succbar-t-pass{ color:#16a34a; font-weight:600; }
+.reg-succbar-t-incon{ color:#b45309; font-weight:600; }
+.reg-succbar-t-fail{ color:#dc2626; font-weight:600; }
+
+/* shared info popup (composites / studies / config·ports) */
+.reg-infopop{
+  position:absolute; z-index:70; max-width:340px; min-width:200px;
+  background:#fff; border:1px solid #e2e8f0; border-radius:10px;
+  box-shadow:0 12px 30px -8px rgba(15,23,42,0.28); padding:12px 14px; font-size:0.85em;
+}
+.reg-infopop-title{ font-weight:600; color:#1e293b; margin:0 0 8px; font-size:0.95em; }
+.reg-infopop-list{ list-style:none; margin:0; padding:0; max-height:220px; overflow:auto; }
+.reg-infopop-list li{ padding:3px 0; border-bottom:1px solid #f1f5f9; }
+.reg-infopop-list li:last-child{ border-bottom:none; }
+.reg-infopop-list a{ color:#2563eb; text-decoration:none; }
+.reg-infopop-list a:hover{ text-decoration:underline; }
+.reg-infopop-sec{ margin:0 0 8px; display:flex; flex-wrap:wrap; gap:5px; align-items:baseline; }
+.reg-infopop-label{ display:block; width:100%; font-size:0.82em; font-weight:600; color:#94a3b8; text-transform:uppercase; letter-spacing:0.04em; }
+.reg-infopop-sec code{ background:#f1f5f9; border-radius:4px; padding:1px 5px; font-size:0.9em; }
+.reg-infopop-port{ display:flex; align-items:baseline; gap:8px; width:100%; padding:1px 0; }
+.reg-infopop-type{ color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.85em; }
+.reg-infopop-stats{ margin:0 0 6px; }
+.reg-infopop-note{ font-size:0.85em; margin:8px 0 0; }
+.reg-infopop-note a{ color:#2563eb; }
+:root[data-theme="dark"] .reg-infopop{ background:var(--surface); border-color:var(--border); }
+:root[data-theme="dark"] .reg-infopop-title{ color:#d3ddeb; }
+:root[data-theme="dark"] .reg-cfgports-btn{ background:var(--surface-2); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .reg-succbar-track{ background:var(--surface-3); }
+/* center the SVG zoom icons in their buttons */
+.reg-zoom-btn{ display:inline-flex; align-items:center; justify-content:center; }
+.reg-zoom-btn svg{ display:block; }
+:root[data-theme="dark"] .proc-kind-temporal{  background:rgba(16,185,129,0.14); color:#6ee7b7; border-color:rgba(16,185,129,0.35); }
+:root[data-theme="dark"] .proc-kind-step{      background:rgba(245,158,11,0.15); color:#fcd34d; border-color:rgba(245,158,11,0.35); }
+:root[data-theme="dark"] .proc-kind-composite{ background:rgba(124,58,237,0.18); color:#c4b5fd; border-color:rgba(124,58,237,0.4); }
+.registry-table .reg-td-kind{ white-space:nowrap; }
+
+/* ── Registry semantic zoom + view mode ─────────────────────────────────── */
+.registry-view-toolbar{ display:flex; align-items:center; gap:10px; margin:0 0 6px; flex-wrap:wrap; }
+.registry-view-toolbar .registry-search{ flex:1 1 220px; margin:0; }
+.registry-zoom, .registry-viewmode{
+  display:inline-flex; border:1px solid #e5e7eb; border-radius:6px; overflow:hidden; flex:none;
+}
+.reg-zoom-btn, .reg-view-btn{
+  border:none; background:#fff; color:#64748b; cursor:pointer;
+  padding:5px 11px; font-size:0.85em; border-right:1px solid #e5e7eb; line-height:1.2;
+}
+.reg-zoom-btn:last-child, .reg-view-btn:last-child{ border-right:none; }
+.reg-zoom-btn.active, .reg-view-btn.active{ background:#eef2ff; color:#4338ca; font-weight:600; }
+.reg-zoom-btn:hover, .reg-view-btn:hover{ background:#f8fafc; }
+.registry-view-toolbar.view-table .registry-zoom{ opacity:0.4; pointer-events:none; }
+
+/* Card containers: both middle (Cards) and Full span a full row now. */
+.reg-cards-grid{ display:flex; flex-direction:column; gap:10px; padding:4px 0; }
+.reg-cards-full{ display:flex; flex-direction:column; gap:14px; padding:4px 0; }
+
+/* ── Multi-column cards grid (shared: registry / composites / modules) ──
+   Applied inline (grid-template-columns) by _applyCardCols; default is 'auto'
+   (auto-fill to width), overridable with the toolbar column slider. In a
+   narrow grid cell the cards' horizontal internal layouts stack vertically. */
+.cards-grid-cols{ display:grid !important; gap:12px; align-items:start; padding:4px 0; }
+/* Column mode: stretch children to the card width so a long address column
+   ellipsises to the card, instead of sizing the column to the address. */
+.cards-grid-cols .reg-card-row{ flex-direction:column; gap:8px; align-items:stretch; }
+.cards-grid-cols .reg-card-main{ width:100%; }
+.cards-grid-cols .reg-card-stats{ flex-flow:row wrap; gap:6px; }
+.cards-grid-cols .ccc-grid{ grid-template-columns:1fr !important; gap:6px; }
+.cards-grid-cols .ccard.ccard-compact{ width:auto; }
+.cards-grid-cols .mrow-grid{ grid-template-columns:1fr !important; gap:6px; }
+.cards-grid-cols .module-card.mrow{ width:auto; }
+
+/* Column control: Auto toggle + slider + count. */
+.cols-ctl-slot{ display:inline-flex; align-items:center; gap:6px; margin-right:10px; }
+.cols-auto-btn{
+  border:1px solid #e2e8f0; background:#fff; color:#475569; border-radius:5px;
+  padding:2px 9px; cursor:pointer; font-size:0.8em; font-weight:600;
+}
+.cols-auto-btn.active{ background:#eef2ff; color:#3730a3; border-color:#c7d2fe; }
+.cols-slider{ width:84px; accent-color:#6366f1; cursor:pointer; }
+.cols-count{ min-width:30px; text-align:center; font-size:0.76em; color:#64748b; font-variant-numeric:tabular-nums; }
+
+/* Middle card: full-row — identity + description on the left, usage stats on the
+   right, config/ports one click down. Denser than Full, richer than the table. */
+.registry-card{
+  background:#fff; border:1px solid #e5e7eb; border-radius:10px;
+  padding:12px 15px; display:flex; flex-direction:column; gap:8px; min-width:0;
+  overflow:hidden;  /* nothing escapes the rounded card in narrow grid columns */
+  transition:border-color .12s ease, box-shadow .12s ease;
+}
+.registry-card:hover{ border-color:#c7d2fe; box-shadow:0 3px 12px -6px rgba(30,41,59,.18); }
+.reg-card-row{ display:flex; align-items:flex-start; gap:18px; }
+.reg-card-main{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.reg-card-stats{
+  flex:none; display:flex; flex-wrap:wrap; gap:5px 14px; align-items:center;
+  justify-content:flex-end; max-width:360px;
+}
+.reg-stat{ font-size:0.8em; color:#64748b; white-space:nowrap; }
+.reg-stat-glyph{ opacity:0.6; margin-right:4px; }
+.reg-stat strong{ color:#334155; font-weight:600; }
+.reg-card-head{ display:flex; align-items:baseline; gap:8px; overflow:hidden; }
+.reg-card-name{ font-size:1.02em; color:#0f172a; min-width:0; flex:0 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Badges/pills keep their size but never push past the card edge. */
+.reg-card-head .proc-kind-badge, .reg-card-head .composite-ws-tag{ flex:none; }
+.reg-card-addr{
+  display:block; max-width:100%; box-sizing:border-box;
+  color:#94a3b8; font-size:0.78em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+/* Narrow grid columns: let the badge/pill wrap under the (ellipsised) name
+   instead of clipping mid-word. */
+.cards-grid-cols .reg-card-head{ flex-wrap:wrap; row-gap:4px; }
+.reg-card-desc{
+  margin:2px 0 0; color:#475569; font-size:0.87em; line-height:1.5;
+  display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
+}
+
+/* Selection (click a row/card) — highlighted, and re-focused on zoom change. */
+.registry-card.reg-selected{ border-color:#6366f1; box-shadow:0 0 0 2px rgba(99,102,241,0.25); }
+.registry-entry-full.reg-selected .loom-card{ box-shadow:0 0 0 2px #6366f1, 0 1px 3px rgba(15,23,42,0.06); }
+.registry-table tr.reg-selected, .registry-table tr.reg-selected td{ background:#eef2ff; }
+.reg-card-details{ margin-top:3px; }
+.reg-card-details > summary{
+  cursor:pointer; user-select:none; color:#64748b; font-size:0.8em; list-style:none;
+}
+.reg-card-details > summary::-webkit-details-marker{ display:none; }
+.reg-card-details > summary::before{ content:'▸ '; color:#94a3b8; }
+.reg-card-details[open] > summary::before{ content:'▾ '; }
+.reg-card-ports-meta{ color:#94a3b8; font-weight:400; }
+.reg-card-portsonly{ color:#94a3b8; font-size:0.8em; }
+.reg-card-cfg{ margin:6px 0 0; max-height:200px; overflow:auto; }
+.reg-ports-compact{ margin:6px 0 2px; }
+
+/* Full zoom: loom-style process view — inputs in the left margin, outputs in the
+   right margin (with types), a rich middle taking the full row. */
+.registry-entry-full{ min-width:0; }
+/* Process node — a clean rectangle (no rounded corners) with a kind-colored top
+   rule, matching the workbench's soft-gray + indigo palette (process-bigraph /
+   loom aesthetic) rather than a heavy dark bar. */
+.loom-card{
+  --loom-accent:#6366f1;
+  background:#fff; border:1px solid #cbd5e1; border-radius:0; overflow:hidden;
+  border-top:2.5px solid var(--loom-accent);
+  box-shadow:0 1px 3px rgba(15,23,42,0.06);
+  transition:box-shadow .14s ease, border-color .14s ease;
+}
+.loom-card:hover{ border-color:#94a3b8; box-shadow:0 4px 14px -4px rgba(15,23,42,0.14); }
+.loom-card-emitter{ --loom-accent:#f97316; }
+.loom-card-visualization{ --loom-accent:#a855f7; }
+.loom-card-step{ --loom-accent:#14b8a6; }
+.loom-card-report_card{ --loom-accent:#f59e0b; }
+.loom-config{
+  display:flex; flex-wrap:wrap; gap:5px; align-items:center;
+  padding:8px 16px; background:#f8fafc; border-bottom:1px solid #eef2f7; font-size:0.74em;
+}
+.loom-config-label{
+  text-transform:uppercase; letter-spacing:.08em; font-weight:700;
+  color:#94a3b8; font-size:0.85em; margin-right:4px;
+}
+.loom-config code{
+  background:#eef2ff; color:#3730a3; padding:2px 8px; border-radius:5px;
+  font-size:0.94em; border:1px solid #e0e7ff;
+}
+.loom-config .muted{ color:#94a3b8; }
+.loom-row{
+  display:grid; grid-template-columns:max-content minmax(0,1fr) max-content;
+  align-items:start; gap:22px; padding:16px 18px;
+}
+.loom-ports{ display:flex; flex-direction:column; gap:7px; min-width:0; padding-top:4px; }
+/* Inputs hug the LEFT edge (dot then name); outputs hug the RIGHT edge (name
+   then dot) — like the port handles on a loom process rectangle. */
+.loom-ports-in{ align-items:flex-start; text-align:left; }
+.loom-ports-out{ align-items:flex-end; text-align:right; }
+.loom-port{ display:inline-flex; align-items:center; gap:7px; font-size:0.82em; max-width:260px; }
+.loom-ports-out .loom-port{ flex-direction:row-reverse; }
+.loom-port-dot{ width:7px; height:7px; border-radius:50%; background:#6366f1; flex:none; }
+.loom-ports-out .loom-port-dot{ background:#10b981; }
+.loom-port-name{ font-weight:600; color:#1e40af; white-space:nowrap; }
+.loom-port-type{
+  color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.85em;
+  max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.loom-port-empty{ color:#cbd5e1; font-size:0.82em; }
+.loom-body{ text-align:left; min-width:0; }
+.loom-body-head{ display:flex; align-items:baseline; gap:10px; }
+.loom-name{ font-weight:700; color:#0f172a; font-size:1.12em; }
+.loom-body .loom-addr{ display:block; margin:3px 0 0; color:#94a3b8; font-size:0.8em; }
+.loom-desc{
+  margin:8px 0 0; color:#475569; font-size:0.9em; line-height:1.55; white-space:pre-line;
+}
+
+/* Interactive run panel (Full card): editable config + inputs → Run → outputs. */
+.loom-run{ border-top:1px solid #eef2f7; }
+.loom-run > summary{
+  cursor:pointer; user-select:none; padding:8px 18px; font-size:0.85em; color:#4338ca;
+  font-weight:600; list-style:none; background:#f8fafc;
+}
+.loom-run > summary::-webkit-details-marker{ display:none; }
+.loom-run > summary::before{ content:'▸ '; }
+.loom-run[open] > summary::before{ content:'▾ '; }
+.loom-run-form{ display:flex; flex-direction:column; gap:12px; padding:12px 18px 16px; }
+.loom-run-section{ display:flex; flex-direction:column; gap:6px; }
+.loom-run-legend{
+  font-size:0.72em; text-transform:uppercase; letter-spacing:0.06em;
+  font-weight:700; color:#94a3b8;
+}
+/* Config as a per-field form (typed from the resolved defaults). */
+.loom-cfg-fields{
+  display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:6px 14px;
+}
+.loom-cfg-row{ display:flex; align-items:center; gap:8px; font-size:0.82em; min-width:0; }
+.loom-cfg-key{
+  flex:0 0 40%; color:#334155; font-weight:600; font-family:ui-monospace,Menlo,monospace;
+  font-size:0.92em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.loom-cfg-field{
+  flex:1 1 auto; min-width:0; padding:4px 8px; border:1px solid #e2e8f0; border-radius:6px;
+  font-size:0.95em; color:#1e293b; background:#fff;
+}
+.loom-cfg-field[type="checkbox"]{ flex:none; width:16px; height:16px; }
+/* Input ports: one row each — name + expected TYPE, then an editable default.
+   Nested/complex values get an auto-growing box (no scrollbar). */
+.loom-in-fields{ display:flex; flex-direction:column; gap:8px; }
+.loom-in-row{ display:flex; flex-direction:column; gap:3px; }
+.loom-in-head{ display:flex; align-items:baseline; gap:8px; }
+.loom-in-key{ color:#1e40af; font-weight:600; font-family:ui-monospace,Menlo,monospace; font-size:0.85em; }
+.loom-in-type{
+  color:#64748b; font-size:0.76em; font-family:ui-monospace,Menlo,monospace;
+  background:#f1f5f9; padding:1px 6px; border-radius:4px;
+}
+.loom-in-field{
+  padding:5px 9px; border:1px solid #e2e8f0; border-radius:6px; font-size:0.85em;
+  color:#1e293b; background:#fff; width:100%;
+}
+textarea.loom-in-field{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.82em; line-height:1.4;
+  resize:none; overflow:hidden; min-height:30px;
+}
+.loom-in-field[type="checkbox"]{ width:16px; height:16px; }
+.loom-copy-btn{ margin-left:10px; font-weight:500; }
+.loom-run-field{ display:flex; flex-direction:column; gap:4px; font-size:0.78em; color:#64748b; font-weight:600; }
+.loom-run-field textarea{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.82em; line-height:1.4;
+  padding:8px 10px; border:1px solid #e2e8f0; border-radius:6px; resize:vertical;
+  color:#1e293b; background:#fff; font-weight:400;
+}
+.loom-run-interval-field{ flex-direction:row; align-items:center; gap:8px; }
+.loom-run-interval-field input{
+  width:90px; padding:4px 8px; border:1px solid #e2e8f0; border-radius:6px; font-weight:400;
+}
+.loom-run-actions{ margin-top:2px; }
+.loom-run-actions .action-btn{ margin-top:0; }
+.loom-run-output{ margin-top:4px; }
+.loom-run-ok{ color:#047857; font-size:0.85em; font-weight:600; margin-bottom:4px; }
+.loom-run-err{
+  color:#b91c1c; font-size:0.85em; font-weight:600;
+  background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:8px 10px;
+}
+.loom-run-pre{ margin:4px 0 0; max-height:280px; overflow:auto; background:#f8fafc; border:1px solid #eef2f7; border-radius:6px; padding:8px 10px; }
+.loom-run-trace{ font-size:0.78em; color:#7f1d1d; background:#fef2f2; border-color:#fecaca; }
+
+/* ── Runnable Full card ──────────────────────────────────────────────────
+   The config bar IS the editable config, the left port column IS the editable
+   inputs, and Run lives in the body — one unified runnable card (no dropdown). */
+.loom-config-edit{ padding:9px 16px; }
+.loom-cfg-inline{ display:flex; flex-wrap:wrap; gap:6px 14px; flex:1 1 auto; align-items:center; }
+.loom-cfg-inline .loom-cfg-row{
+  flex:0 0 auto; background:#fff; border:1px solid #e7ecf3; border-radius:7px; padding:3px 8px;
+}
+.loom-cfg-inline .loom-cfg-key{ flex:0 0 auto; max-width:150px; }
+.loom-cfg-inline .loom-cfg-field{ flex:0 0 auto; width:118px; }
+.loom-cfg-inline .loom-cfg-field[type="checkbox"]{ width:16px; }
+.loom-load-hint{ font-size:0.85em; }
+/* Wider left column so editable input fields are usable (static loom cards keep
+   the narrow max-content margin). */
+/* Runnable card: editable inputs left, body center, and a wider RIGHT panel
+   holding the output ports + the run results (collapsible JSON viewer). */
+.loom-runnable .loom-row{ grid-template-columns:280px minmax(0,1fr) minmax(300px,0.95fr); }
+.loom-inputs-edit{ width:100%; gap:9px; }
+.loom-inputs-edit .loom-in-row{ width:100%; }
+.loom-inputs-edit .loom-in-field{ width:100%; }
+.loom-runnable .loom-run-actions{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  margin-top:12px; padding-top:12px; border-top:1px solid #eef2f7;
+}
+/* Runnable Full card as a vertical stack: info → config → inputs → run →
+   outputs (ports + collapsible JSON) at the bottom. */
+.loom-card-stack{ display:flex; flex-direction:column; }
+.loom-card-stack .loom-info{ padding:14px 18px 12px; }
+.loom-card-stack .loom-info .loom-addr{ display:block; margin:3px 0 0; }
+.loom-card-stack .loom-sec{ padding:12px 18px; border-top:1px solid #eef2f7; }
+.loom-card-stack .loom-sec-label{
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.66em;
+  font-weight:700; color:#94a3b8; margin-bottom:9px;
+}
+.loom-card-stack .loom-cfg-inline{ display:flex; flex-wrap:wrap; gap:7px 16px; }
+.loom-inputs-stack{ display:flex; flex-wrap:wrap; gap:10px 18px; width:auto; }
+.loom-inputs-stack .loom-in-row{ flex:1 1 240px; min-width:0; max-width:380px; }
+.loom-inputs-stack .loom-in-field{ width:100%; }
+.loom-card-stack .loom-run-actions{
+  display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding:12px 18px; border-top:1px solid #eef2f7; margin:0;
+}
+.loom-card-stack .loom-run-actions .action-btn{ margin-top:0; }
+.loom-sec-out{ background:#fbfcfe; }
+.loom-out-ports{ display:flex; flex-wrap:wrap; gap:6px 10px; }
+.loom-out-ports:empty{ display:none; }
+.loom-out-ports .loom-port{
+  background:#f8fafc; border:1px solid #eef2f7; border-radius:5px;
+  padding:2px 8px; font-size:0.8em;
+}
+.loom-out-ports .loom-port-dot{ background:#10b981; }
+.loom-card-stack .loom-run-output:empty{ display:none; }
+.loom-card-stack .loom-run-output{ margin-top:10px; }
+
+/* ── Unified ProcessCard ─────────────────────────────────────────────────────
+   The loom node's grammar as one card: an expandable/settable config top-bar
+   (with Apply that re-derives ports), an inputs-left / contract-middle /
+   outputs-right body row (each region collapsible), and a Run bar at the bottom.
+   Used by the registry Full zoom; the composite card adopts it next. */
+.pcard .loom-card-stack{ position:relative; }
+
+/* config top-bar — a full-width region; double-click the header to expand/collapse */
+.pcard-config-region{ background:#f8fafc; border-bottom:1px solid #eef2f7; padding:0; }
+.pcard-config-region > .pcard-region-head{ padding:8px 16px; margin:0; cursor:pointer; }
+.pcard-config-region > .pcard-region-head:hover{ background:#f1f5f9; }
+.pcard-config-region > .pcard-region-body{ padding:10px 16px 12px; background:#fff; border-top:1px solid #eef2f7; }
+.pcard-caret{ color:#94a3b8; font-size:0.8em; flex:none; width:0.9em; text-align:center; }
+.pcard-sec-label{ text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700; color:#94a3b8; }
+.pcard-config-chips{ display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-width:0; }
+.pcard-chip{ background:#eff6ff; color:#1e40af; padding:2px 8px; border-radius:5px; font-size:0.78em; border:1px solid #dbeafe; }
+.pcard-chip-more{ font-size:0.78em; }
+.pcard-config-actions{ display:flex; align-items:center; gap:10px; margin-top:10px; }
+/* Filled primary Apply — specificity beats the shared .btn-mini blue theme. */
+.pcard-config-actions .pcard-apply{ background:#2563eb; color:#fff; border:1px solid #2563eb; }
+.pcard-config-actions .pcard-apply:hover{ background:#1d4ed8; border-color:#1d4ed8; }
+.pcard-apply-status{ font-size:0.78em; color:#047857; }
+.pcard-apply-status.pcard-apply-err{ color:#b91c1c; }
+
+/* ════════════════════════════════════════════════════════════════════════
+   Unified ProcessCard — accordion layout
+   header (name · badge · address) → summary (info panel + description) →
+   accordion (Configure ▸ Inputs ▸ Run ▸ Outputs, each collapsible).
+   ═══════════════════════════════════════════════════════════════════════ */
+.pcard-accordion .loom-card-stack{ padding:0; overflow:hidden; }
+
+/* compact top band: header + summary in one tight, information-rich block */
+.pcard-top{ padding:9px 14px 9px; }
+.pcard-accordion .pcard-header{
+  display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 8px; padding:0; margin:0 0 5px;
+}
+.pcard-accordion .loom-name{ font-size:0.97rem; font-weight:650; }
+.pcard-accordion .loom-addr{
+  display:inline-block; margin:0; font-size:0.74em; color:#5b6b82;
+  background:#f1f5f9; padding:1px 7px; border-radius:5px;
+  font-family:ui-monospace,Menlo,monospace;
+}
+
+/* summary row: contract line + description (info panel removed) */
+.pcard-summary{ display:block; padding:0; }
+.pcard-infopanel{
+  display:flex; flex-direction:column; gap:0; min-width:100px; align-self:start;
+  background:#f8fafc; border:1px solid #eef2f7; border-radius:8px; padding:2px; overflow:hidden;
+}
+.pcard-info-row{
+  display:flex; align-items:center; justify-content:space-between; gap:14px;
+  border:none; background:none; cursor:pointer; padding:3px 8px; border-radius:5px;
+  font:inherit; color:#475569; text-align:left; transition:background .12s, color .12s;
+}
+.pcard-info-row:hover{ background:#eff6ff; color:#2563eb; }
+.pcard-info-label{ font-size:0.75em; font-weight:600; letter-spacing:0.01em; }
+.pcard-info-n{ font-size:0.8em; font-weight:700; color:#94a3b8; min-width:1.4em; text-align:right; }
+.pcard-info-row:hover .pcard-info-n{ color:#2563eb; }
+.pcard-desc-col{ min-width:0; }
+.pcard-desc-col .pcard-contract-meta{ margin-top:0; font-size:0.78em; }
+.pcard-desc-col .loom-desc{ margin:4px 0 0; max-width:none; font-size:0.86em; line-height:1.45; color:#475569; }
+/* clamp long descriptions to a few lines; click to expand in place */
+.pcard-desc-clamp{ display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; cursor:pointer; }
+.pcard-desc-clamp.pcard-desc-open{ display:block; -webkit-line-clamp:unset; overflow:visible; }
+
+/* header "{ } JSON" toggle + the revealed spec viewer */
+.pcard-json-btn{
+  margin-left:auto; flex:none; align-self:center;
+  background:none; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer;
+  color:#64748b; font-size:0.72em; font-weight:600; padding:2px 8px;
+  font-family:ui-monospace,Menlo,monospace; letter-spacing:0.02em;
+}
+.pcard-json-btn:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+.pcard-json-btn.active{ background:#2563eb; color:#fff; border-color:#2563eb; }
+.pcard-header .pcard-json-btn + .pcard-popout{ margin-left:6px; }   /* sit side by side */
+.pcard-json-view{
+  margin-top:8px; border:1px solid #eef2f7; border-radius:9px; background:#fbfcfe;
+  max-height:340px; overflow:auto; padding:8px 10px;
+}
+.pcard-json-toolbar{ display:flex; gap:8px; margin:0 0 6px; position:sticky; top:-8px; }
+:root[data-theme="dark"] .pcard-json-btn{ border-color:var(--border-2); color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-json-btn:hover{ background:var(--active); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-json-view{ background:var(--surface-2); border-color:var(--border); }
+
+/* header maximize + pop-out controls (sit together at the right edge) */
+.pcard-maximize,
+.pcard-popout{
+  flex:none; align-self:center;
+  background:none; border:1px solid transparent; border-radius:5px; cursor:pointer;
+  color:#94a3b8; font-size:0.95em; line-height:1; padding:2px 7px;
+}
+.pcard-maximize{ margin-left:auto; }                 /* push the pair to the right */
+.pcard-maximize + .pcard-popout{ margin-left:6px; }  /* pop-out sits beside maximize */
+.pcard-popout{ margin-left:auto; }                   /* still right-aligned when alone */
+.pcard-maximize:hover,
+.pcard-popout:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+.pcard-maximized .pcard-maximize{ background:#2563eb; color:#fff; border-color:#2563eb; }
+
+/* Maximized card: fills the content pane (right of the rail). Geometry is
+   CSS-driven off --vw-rail-right (published by JS) so a card re-render can't
+   strip the positioning. Lock page scroll so only the card scrolls. */
+body.pcard-maximized{ overflow:hidden; }
+.registry-entry-full.pcard-maximized{
+  position:fixed !important;
+  top:0 !important; right:0 !important; bottom:0 !important;
+  left:var(--vw-rail-right, 240px) !important;
+  width:auto !important; height:auto !important;
+  max-width:none !important; z-index:900;
+  margin:0 !important; border-radius:0;
+  background:#fff; overflow:auto;
+  box-shadow:-4px 0 18px rgba(15,23,42,.10);
+}
+:root[data-theme="dark"] .registry-entry-full.pcard-maximized{ background:var(--surface-1, #0f1728); }
+
+/* pop-out (?popcard=) window: focus-mode strips the rail; hide the registry
+   tabs + toolbar too so only the single card shows, full-window. */
+body.popcard-mode .registry-tabs,
+body.popcard-mode .registry-view-toolbar,
+body.popcard-mode .registry-facets,
+body.popcard-mode .registry-sticky > .registry-tabs{ display:none !important; }
+body.popcard-mode .registry-tab-panel{ padding:0 !important; }
+body.popcard-mode #registry-status,
+body.popcard-mode .registry-imports-section{ display:none !important; }
+body.popcard-mode .popcard-single{ margin:0; }
+body.popcard-mode .popcard-single .pcard{ border-radius:10px; }
+body.popcard-mode .pcard-popout,
+body.popcard-mode .pcard-maximize{ display:none; }   /* already full-window */
+:root[data-theme="dark"] .pcard-popout:hover{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
+
+/* persistent Run bar (not an accordion) — always visible at the card's top level */
+/* Run bar: the ▶ RUN label IS the run button (cyan, matching a section head),
+   with the Steps selector beside it — one compact group at the bar's start. */
+.pcard-runbar{
+  display:flex; align-items:center; flex-wrap:wrap; gap:10px;
+  padding:6px 16px; border-top:1px solid #eef2f7; border-bottom:1px solid #eef2f7;
+  background:#fff; box-shadow:inset 3px 0 0 #0891b2;   /* cyan run accent */
+}
+/* The RUN button: looks like the section-head label, acts like a button. */
+.pcard-run-go{
+  display:inline-flex; align-items:center; gap:6px; flex:none;
+  font-family:inherit; font-size:0.72em; font-weight:700;
+  text-transform:uppercase; letter-spacing:0.07em; line-height:1;
+  color:#0891b2; background:none;
+  border:1px solid transparent; border-radius:6px;
+  padding:6px 12px; cursor:pointer; transition:background .12s, border-color .12s;
+}
+.pcard-run-go:hover{ background:#ecfeff; border-color:#a5f3fc; }
+.pcard-run-go:active{ background:#cffafe; }
+.pcard-run-go:disabled, .pcard-run-go-disabled{ opacity:.5; cursor:default; }
+.pcard-runbar .loom-run-field{ margin-left:6px; }      /* Steps sits next to the button */
+.pcard-runbar .pcard-run-note{ margin-left:10px; }     /* read-only note next to the button */
+.pcard-run-out{ font-size:0.8em; color:#64748b; }
+:root[data-theme="dark"] .pcard-runbar{ background:var(--surface-1, #0f1728); border-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-run-go:hover{ background:rgba(8,145,178,.15); border-color:#0e7490; }
+
+/* resizable sections: capped, scrollable body + a drag grip (dbl-click = fit) */
+.pcard-sec-resizable.pcard-sec-open > .pcard-sec-body{ max-height:var(--pch,300px); overflow:auto; }
+.pcard-sec-resizable.pcard-sec-full > .pcard-sec-body{ max-height:none; overflow:visible; }
+.pcard-sec-grip{ display:none; }
+.pcard-sec-resizable.pcard-sec-open > .pcard-sec-grip{
+  display:block; height:11px; cursor:ns-resize; position:relative;
+  border-top:1px solid #f1f5f9;
+}
+.pcard-sec-grip::before{
+  content:''; position:absolute; left:50%; top:4px; transform:translateX(-50%);
+  width:34px; height:3px; border-radius:2px; background:#cbd5e1;
+}
+.pcard-sec-grip:hover::before{ background:#6366f1; }
+body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
+:root[data-theme="dark"] .pcard-sec-grip{ border-top-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-sec-grip::before{ background:var(--border-2); }
+
+/* accordion */
+.pcard-acc{ border-top:1px solid #eef2f7; }
+.pcard-sec{ border-bottom:1px solid #eef2f7; }
+.pcard-sec:last-child{ border-bottom:none; }
+.pcard-sec-head{
+  display:flex; align-items:center; gap:10px; padding:10px 16px;
+  cursor:pointer; user-select:none; transition:background .12s;
+}
+.pcard-sec-head:hover{ background:#f8fafc; }
+.pcard-sec-head:focus-visible{ outline:2px solid #6366f1; outline-offset:-2px; }
+.pcard-sec-caret{ color:#94a3b8; font-size:0.72em; width:0.9em; flex:none; text-align:center; }
+.pcard-sec-name{
+  font-size:0.72em; font-weight:700; text-transform:uppercase; letter-spacing:0.07em;
+  color:#334155; flex:none;
+}
+.pcard-sec-sum{
+  display:flex; flex-wrap:wrap; gap:5px; align-items:center; min-width:0;
+  color:#94a3b8; font-size:0.8em;
+}
+.pcard-sec-count{ font-weight:700; color:#94a3b8; }
+.pcard-sec-head .pcard-dl{ margin-left:auto; flex:none; }
+.pcard-sec-body{ padding:2px 16px 14px 35px; }
+.pcard-sec:not(.pcard-sec-open) > .pcard-sec-body{ display:none; }
+
+/* open state: faint fill + a section-colored accent bar on the left edge */
+.pcard-sec-open{ background:#fcfdff; }
+.pcard-sec-open > .pcard-sec-head .pcard-sec-name{ color:#1d4ed8; }
+.pcard-sec-configure.pcard-sec-open > .pcard-sec-head{ box-shadow:inset 3px 0 0 #2563eb; }
+.pcard-sec-inputs.pcard-sec-open    > .pcard-sec-head{ box-shadow:inset 3px 0 0 #3b82f6; }
+.pcard-sec-explore.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #7c3aed; }
+.pcard-sec-run.pcard-sec-open       > .pcard-sec-head{ box-shadow:inset 3px 0 0 #0891b2; }
+.pcard-sec-outputs.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #10b981; }
+
+/* Feature section (Explore): the primary way in, so it reads as a call-to-action
+   even when collapsed — violet accent bar + tint + colored caret/name always on,
+   and an inline "click to open" hint pill. */
+.pcard-sec-feature{ background:linear-gradient(90deg,#faf7ff,#fcfbff); }
+.pcard-sec-feature > .pcard-sec-head{ box-shadow:inset 3px 0 0 #7c3aed; padding-top:12px; padding-bottom:12px; }
+.pcard-sec-feature > .pcard-sec-head:hover{ background:#f4efff; }
+.pcard-sec-feature > .pcard-sec-head .pcard-sec-caret{ color:#7c3aed; }
+.pcard-sec-feature > .pcard-sec-head .pcard-sec-name{ color:#6d28d9; }
+.pcard-sec-hint{
+  font-size:0.78em; font-weight:600; color:#7c3aed;
+  background:#f1e9ff; border:1px solid #e2d3ff; border-radius:999px;
+  padding:2px 9px; white-space:nowrap;
+}
+:root[data-theme="dark"] .pcard-sec-feature{ background:linear-gradient(90deg,rgba(124,58,237,.10),rgba(124,58,237,.04)); }
+:root[data-theme="dark"] .pcard-sec-feature > .pcard-sec-head:hover{ background:rgba(124,58,237,.16); }
+:root[data-theme="dark"] .pcard-sec-hint{ color:#c4b5fd; background:rgba(124,58,237,.18); border-color:rgba(124,58,237,.35); }
+
+.pcard-run-note, .pcard-run-hint{ font-size:0.82em; }
+.pcard-run-status{ font-size:0.82em; }
+.pcard-run-status.pcard-apply-err{ color:#b91c1c; }
+.pcard-run-status a{ color:#2563eb; }
+.pcard-run .loom-run-interval-field{ margin-right:6px; }
+
+/* Organized config list: one row per parameter — name · type · value(default).
+   Shared by process + composite Configure sections. */
+.cfg-list{ display:block; width:100%; box-sizing:border-box; border:1px solid #eef2f7; border-radius:9px; overflow:hidden; }
+/* scoped under .cfg-list — a bare .cfg-row exists elsewhere as display:flex */
+.cfg-list .cfg-row{
+  display:grid; grid-template-columns:210px minmax(0,1fr); column-gap:16px; row-gap:2px;
+  align-items:center; width:100%; box-sizing:border-box;
+  padding:6px 12px; border-bottom:1px solid #f1f5f9;
+}
+.cfg-list .cfg-row:last-child{ border-bottom:none; }
+.cfg-list .cfg-row:hover{ background:#f8fafc; }
+.cfg-row-name{ display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 8px; min-width:0; }
+.cfg-key{ font-family:ui-monospace,Menlo,monospace; font-size:0.82em; font-weight:600; color:#1e293b; word-break:break-word; }
+.cfg-type{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.72em; color:#7c8698;
+  background:#f1f5f9; border:1px solid #e6ebf1; border-radius:4px; padding:0 5px; flex:none; white-space:nowrap;
+}
+.cfg-row-input{ min-width:0; }
+.cfg-list .cfg-row-input input[type="text"],
+.cfg-list .cfg-row-input input[type="number"],
+.cfg-list .cfg-row-input textarea{ width:100%; box-sizing:border-box; font-size:0.82em; }
+.cfg-list .cfg-row-input input[type="checkbox"]{ width:16px; height:16px; }
+.cfg-row-desc{ grid-column:1 / -1; font-size:0.75em; color:#94a3b8; margin-top:1px; }
+
+/* Set-via-JSON panel */
+.cfg-json{ margin:10px 0 0; }
+.cfg-json-box{
+  width:100%; box-sizing:border-box; font-family:ui-monospace,Menlo,monospace; font-size:0.8em;
+  border:1px solid #d9e0e8; border-radius:7px; padding:8px 10px; background:#fbfcfe; resize:vertical; min-height:64px;
+}
+.cfg-json-actions{ display:flex; align-items:center; gap:10px; margin-top:6px; }
+.cfg-json-status{ font-size:0.78em; }
+.cfg-json-status.pcard-apply-err{ color:#b91c1c; }
+.cfg-json-toggle.active{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
+
+:root[data-theme="dark"] .cfg-list{ border-color:var(--border); }
+:root[data-theme="dark"] .cfg-list .cfg-row{ border-bottom-color:var(--border-faint); }
+:root[data-theme="dark"] .cfg-list .cfg-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] .cfg-key{ color:#d3ddeb; }
+:root[data-theme="dark"] .cfg-type{ background:var(--surface-3); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .cfg-json-box{ background:var(--field); border-color:var(--border-2); color:var(--text); }
+:root[data-theme="dark"] .cfg-json-toggle.active{ background:var(--active); color:#c7d2fe; border-color:var(--border-2); }
+
+/* Composite card: the Explore section is wide (full-bleed loom); top-level
+   Inputs/Outputs carry an explanatory note rather than editable ports. */
+.pcard-toplevel-note{ font-size:0.82em; margin:2px 0 0; }
+
+/* Composite Outputs → embedded loom Visualizations/Results/Document tabs */
+.pcard-out-tabs{ display:flex; gap:4px; padding:8px 12px 0; }
+.pcard-out-tab{
+  border:1px solid transparent; border-bottom:none; background:none; cursor:pointer;
+  font-size:0.76em; font-weight:600; color:#64748b; padding:5px 12px; border-radius:7px 7px 0 0;
+}
+.pcard-out-tab:hover{ color:#2563eb; background:#eff6ff; }
+.pcard-out-tab.active{ color:#1d4ed8; background:#fff; border-color:#eef2f7; }
+/* Outputs controls: emitter sink + observables checklist (above the run panel) */
+.pcard-out-controls{ padding:12px 14px 4px; display:flex; flex-direction:column; gap:8px; border-bottom:1px solid #eef2f7; }
+.pcard-out-ctl-row{ display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.pcard-out-ctl-lbl{ font-size:0.72em; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:#64748b; min-width:74px; }
+.pcard-out-emitter{ font-size:0.85em; padding:2px 6px; border:1px solid #d5dbe6; border-radius:6px; background:#fff; color:#1e293b; }
+.pcard-out-emitter-static{ font-size:0.85em; color:#1e293b; }
+.pcard-out-ctl-hint{ font-size:0.78em; }
+.pcard-out-obs-row{ align-items:flex-start; }
+.pcard-out-obs{ display:flex; flex-wrap:wrap; gap:4px 14px; font-size:0.85em; }
+.pcard-out-obs-hint{ font-size:0.82em; }
+.pcard-obs-item{ display:inline-flex; align-items:center; gap:5px; color:#334155; cursor:pointer; }
+.pcard-obs-item input{ margin:0; }
+.pcard-obs-fixed{ color:#94a3b8; cursor:default; }
+:root[data-theme="dark"] .pcard-out-controls{ border-color:var(--border); }
+:root[data-theme="dark"] .pcard-out-emitter{ background:var(--surface); border-color:var(--border); color:var(--text); }
+:root[data-theme="dark"] .pcard-out-emitter-static,
+:root[data-theme="dark"] .pcard-obs-item{ color:var(--text); }
+.pcard-out-panel{ padding:12px 14px; }
+.pcard-out-run{ padding:2px; }
+.pcard-out-progress{ height:7px; border-radius:4px; background:#eef2f7; overflow:hidden; margin:6px 0; }
+.pcard-out-progress span{ display:block; height:100%; background:#2563eb; transition:width .3s; }
+.pcard-out-runhead{ font-size:0.85em; margin:0 0 8px; color:#334155; }
+.pcard-out-runhead a{ color:#2563eb; }
+.pcard-out-viz{ width:100%; min-height:440px; border:1px solid #eef2f7; border-radius:8px; background:#fff; display:block; }
+:root[data-theme="dark"] .pcard-out-progress{ background:var(--surface-3); }
+:root[data-theme="dark"] .pcard-out-viz{ background:var(--surface); border-color:var(--border); }
+.pcard-out-empty{ padding:10px 4px; }
+.pcard-out-empty-title{ margin:0 0 4px; font-weight:600; color:#334155; }
+.pcard-out-empty .muted, .pcard-out-hint{ font-size:0.86em; line-height:1.5; }
+.pcard-out-empty a, .pcard-out-hint a{ color:#2563eb; }
+.pcard-out-desc{ margin:0 0 10px; font-size:0.9em; line-height:1.5; color:#475569; }
+.pcard-out-meta{ display:flex; flex-wrap:wrap; gap:6px 18px; font-size:0.82em; color:#334155; margin:0 0 8px; }
+.pcard-out-meta code{ font-size:0.95em; }
+.pcard-out-tags{ display:flex; flex-wrap:wrap; gap:5px; margin:0 0 8px; }
+.pcard-out-hint{ margin:6px 0 0; }
+:root[data-theme="dark"] .pcard-out-empty-title{ color:#c8d4e4; }
+:root[data-theme="dark"] .pcard-out-desc, :root[data-theme="dark"] .pcard-out-meta{ color:var(--text); }
+:root[data-theme="dark"] .pcard-out-tab.active{ background:var(--surface); border-color:var(--border); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-out-tab:hover{ background:var(--active); }
+.pcard-sec-wide > .pcard-sec-body{ padding:0; }
+.pcard-sec-wide .pcard-loom{ margin:0; }
+.pcard-sec-wide .ccard-loom-frame{ width:100%; min-height:340px; }
+.pcard-composite .loom-card-composite{ position:relative; }
+.pcard-composite .composite-ws-tag{ margin-left:8px; }
+:root[data-theme="dark"] .proc-kind-composite ~ .composite-ws-tag{ opacity:0.9; }
+
+/* dark theme */
+:root[data-theme="dark"] .pcard-accordion .loom-addr{ background:var(--surface-2); color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-infopanel{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .pcard-info-row{ color:var(--text-muted); }
+:root[data-theme="dark"] .pcard-info-row:hover{ background:var(--active); color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-info-row:hover .pcard-info-n{ color:#c7d2fe; }
+:root[data-theme="dark"] .pcard-acc,
+:root[data-theme="dark"] .pcard-sec{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .pcard-sec-head:hover{ background:var(--hover); }
+:root[data-theme="dark"] .pcard-sec-name{ color:#c8d4e4; }
+:root[data-theme="dark"] .pcard-sec-open{ background:var(--surface-2); }
+:root[data-theme="dark"] .pcard-sec-open > .pcard-sec-head .pcard-sec-name{ color:#c7d2fe; }
+
+/* title — click to pin */
+.pcard-title{ cursor:pointer; }
+.pcard-title:hover .loom-name{ text-decoration:underline dotted; }
+
+/* full-width header: name + address + description + contract counts */
+.pcard-header{ display:block; }
+.pcard-header .loom-desc, .pcard-header .loom-body-head{ max-width:none; }
+.pcard-contract-meta{ color:#64748b; font-size:0.8em; margin-top:8px; }
+
+/* ports row: inputs | outputs — two mirrored panes split by ONE draggable gutter.
+   inputs width is driven by --pb (percent); outputs takes the rest. */
+.pcard-ports-row{ display:flex; align-items:stretch; border-top:1px solid #eef2f7; }
+.pcard-region{ padding:12px 16px; min-width:0; }
+.pcard-ports-row > .pcard-inputs{ flex:0 0 auto; width:calc(var(--pb,45) * 1%); min-width:0; }
+.pcard-ports-row > .pcard-outputs{ flex:1 1 0; min-width:0; }
+/* draggable gutter — a thin hit-target with a centred rule that thickens on hover */
+.pcard-gutter{ flex:0 0 10px; cursor:col-resize; position:relative; align-self:stretch; }
+.pcard-gutter::before{ content:''; position:absolute; top:8px; bottom:8px; left:4px; width:1px; background:#e2e8f0; transition:background .1s, width .1s; }
+.pcard-gutter:hover::before, body.pcard-splitting .pcard-gutter::before{ background:#6366f1; left:3px; width:3px; }
+.pcard-region-head{
+  display:flex; align-items:center; gap:6px; user-select:none;
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.66em; font-weight:700;
+  color:#94a3b8; margin-bottom:9px;
+}
+.pcard-config-region > .pcard-region-head{ cursor:ns-resize; }
+.pcard-config-region > .pcard-region-head:hover{ color:#64748b; background:#f1f5f9; }
+.pcard-region-count{ margin-left:2px; color:#cbd5e1; font-weight:700; }
+.pcard-region-body{ min-width:0; }
+/* config region uses pull (drag)/click collapse */
+.pcard-collapsed > .pcard-region-body{ display:none; }
+.pcard-collapsed > .pcard-region-head{ margin-bottom:0; }
+body.pcard-splitting{ cursor:col-resize; user-select:none; }
+body.pcard-splitting iframe{ pointer-events:none; }
+
+/* pane semantic-zoom by width (data-level set from px in JS):
+   full → editable body (inputs) / run-output (outputs); info → dot·name·type
+   rail; dots → dots only (click a dot for info). Outputs always shows its rail. */
+.pcard-inputs[data-level="full"] > .pcard-rail{ display:none; }
+.pcard-inputs[data-level="full"] > .pcard-region-body{ display:block; }
+.pcard-inputs:not([data-level="full"]) > .pcard-rail{ display:block; }
+.pcard-inputs:not([data-level="full"]) > .pcard-region-body{ display:none; }
+.pcard-outputs > .pcard-rail{ display:block; }
+.pcard-outputs[data-level="full"] > .pcard-region-body{ display:block; }
+.pcard-outputs:not([data-level="full"]) > .pcard-region-body{ display:none; }
+.pcard-region[data-level="dots"] .pcard-rail-name,
+.pcard-region[data-level="dots"] .pcard-rail-type{ display:none; }
+.pcard-region[data-level="dots"] .pcard-rail-port{ justify-content:center; }
+
+/* compact port list (dot · name · type) */
+.pcard-rail{ margin-top:2px; }
+.pcard-rail-port{ display:flex; align-items:center; gap:6px; padding:3px 2px; cursor:pointer; border-radius:4px; }
+.pcard-rail-port:hover{ background:#f1f5f9; }
+.pcard-rail-dot{ width:8px; height:8px; border-radius:50%; background:#6366f1; flex:none; }
+.pcard-rail-port.loom-port-out .pcard-rail-dot{ background:#10b981; }
+.pcard-rail-name{ font-weight:600; color:#1e40af; font-size:0.8em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.pcard-rail-type{ color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.72em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
+.pcard-rail-empty{ color:#cbd5e1; font-size:0.85em; }
+/* outputs mirror inputs: right-aligned rows, dot on the right */
+.pcard-rail-out{ text-align:right; }
+.pcard-rail-out .pcard-rail-port{ flex-direction:row-reverse; justify-content:flex-end; }
+.pcard-outputs[data-level="dots"] .pcard-rail-port{ justify-content:center; }
+.pcard-portpop{ position:absolute; z-index:60; background:#0f172a; color:#fff; padding:5px 9px; border-radius:6px; font-size:0.78em; box-shadow:0 6px 18px -6px rgba(0,0,0,0.45); white-space:nowrap; pointer-events:none; }
+.pcard-portpop code{ color:#c7d2fe; font-weight:600; }
+.pcard-portpop-type{ color:#94a3b8; margin-left:8px; font-family:ui-monospace,Menlo,monospace; }
+.pcard-outputs .pcard-region-head{ justify-content:flex-start; }
+.pcard-dl{ margin-left:auto; padding:1px 7px; }
+.pcard-dl:disabled{ opacity:0.4; cursor:default; }
+.pcard-inputs .loom-inputs-stack .loom-in-row{ flex:1 1 100%; max-width:none; }
+
+/* pinned to the top of the scroll region (sticky) so it lines up */
+/* (header click scrolls the card to the top — see _pinCardTop; no sticky pin) */
+.pcard-header{ cursor:pointer; }
+
+/* responsive: stack the two panes on narrow widths (show full body for both) */
+@media (max-width:820px){
+  .pcard-ports-row{ flex-direction:column; }
+  .pcard-ports-row > .pcard-inputs,
+  .pcard-ports-row > .pcard-outputs{ width:auto; flex:1 1 auto; border-top:1px solid #f1f5f9; }
+  .pcard-ports-row > .pcard-inputs{ border-top:0; }
+  .pcard-gutter{ display:none; }
+  .pcard-inputs > .pcard-rail{ display:none; }
+  .pcard-inputs > .pcard-region-body, .pcard-outputs > .pcard-region-body{ display:block; }
+}
+
+.loom-out-panel{ min-width:0; display:flex; flex-direction:column; gap:10px; }
+.loom-out-panel .loom-run-output:empty{ display:none; }
+.loom-out-panel .loom-run-output{
+  border-top:1px solid #eef2f7; padding-top:10px; min-width:0;
+}
+
+/* Collapsible JSON viewer for run outputs. */
+.loom-run-ok{ display:flex; align-items:center; gap:10px; color:#047857; font-size:0.85em; font-weight:600; margin-bottom:6px; }
+.json-viewer{
+  font-family:ui-monospace,Menlo,monospace; font-size:0.8em; line-height:1.55;
+  max-height:320px; overflow:auto; background:#f8fafc; border:1px solid #eef2f7;
+  border-radius:6px; padding:8px 10px;
+}
+.json-viewer .jt-row{ white-space:pre-wrap; word-break:break-word; padding-left:14px; }
+.json-viewer .jt-branch{ }
+.json-viewer .jt-branch > summary{
+  cursor:pointer; list-style:none; white-space:nowrap;
+}
+.json-viewer .jt-branch > summary::-webkit-details-marker{ display:none; }
+.json-viewer .jt-branch > summary::before{ content:'▸'; color:#94a3b8; display:inline-block; width:12px; }
+.json-viewer .jt-branch[open] > summary::before{ content:'▾'; }
+.json-viewer .jt-children{ border-left:1px solid #e5e7eb; margin-left:5px; padding-left:6px; }
+.jt-key{ color:#0369a1; }
+.jt-colon{ color:#94a3b8; }
+.jt-punct{ color:#94a3b8; }
+.jt-count{ color:#cbd5e1; font-size:0.85em; margin:0 2px; }
+.jt-str{ color:#15803d; }
+.jt-num{ color:#b45309; }
+.jt-bool{ color:#7c3aed; }
+.jt-null{ color:#9ca3af; font-style:italic; }
+.loom-copy-btn{ margin-left:auto; }
+
+/* Per-process cross-study track record: studies participated + percent success. */
+.reg-succ, .reg-succ-inline{ font-weight:700; border-radius:4px; padding:0 5px; font-size:0.9em; }
+.reg-succ-inline{ margin-left:2px; font-size:0.82em; }
+.reg-succ-hi{ color:#047857; background:#ecfdf5; }
+.reg-succ-mid{ color:#b45309; background:#fffbeb; }
+.reg-succ-lo{ color:#b91c1c; background:#fef2f2; }
+.reg-stat-part .reg-stat-glyph{ color:#6366f1; }
+
+/* Middle (grid) zoom: config + ports collapsed behind a click-to-expand summary. */
+.reg-mid-details{ margin-top:8px; border-top:1px solid #f1f5f9; }
+.reg-mid-details > summary{
+  cursor:pointer; list-style:none; padding:7px 0 2px; display:flex; align-items:center; gap:8px;
+  font-size:0.72em; text-transform:uppercase; letter-spacing:.05em; font-weight:700; color:#94a3b8;
+}
+.reg-mid-details > summary::-webkit-details-marker{ display:none; }
+.reg-mid-details > summary::before{ content:'▸'; color:#cbd5e1; font-size:1.15em; }
+.reg-mid-details[open] > summary::before{ content:'▾'; }
+.reg-mid-details > summary:hover{ color:#64748b; }
+.reg-mid-sum{ text-transform:none; letter-spacing:0; font-weight:500; color:#cbd5e1; font-size:0.95em; }
+.reg-mid-details .reg-mid{ margin-top:2px; border-top:none; padding-top:2px; }
+:root[data-theme="dark"] .reg-mid-details{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .reg-mid-details > summary{ color:var(--text-muted); }
+:root[data-theme="dark"] .reg-mid-sum{ color:#8494a8; }
+
+/* Middle (grid) zoom: compact bigraph-loom-style node — config strip on top,
+   input ports down the left, output ports down the right (read-only). */
+.reg-mid{
+  margin-top:8px; padding-top:8px; border-top:1px solid #f1f5f9;
+  display:flex; flex-direction:column; gap:7px;
+}
+.reg-mid-config{ display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.reg-mid-label{
+  text-transform:uppercase; letter-spacing:.06em; font-size:0.62em;
+  font-weight:700; color:#94a3b8; margin-right:3px;
+}
+.reg-mid-config code{
+  background:#eef2ff; color:#3730a3; border:1px solid #e0e7ff; border-radius:4px;
+  padding:1px 6px; font-size:0.72em;
+}
+.reg-mid-ports{ display:flex; gap:24px; align-items:flex-start; }
+.reg-mid-col{
+  flex:1 1 0; min-width:0; display:flex; flex-wrap:wrap; gap:4px;
+  align-items:baseline; align-content:flex-start;
+}
+.reg-mid-out{ justify-content:flex-end; }
+.reg-ip-title{
+  flex:0 0 100%; text-transform:uppercase; letter-spacing:.06em; font-size:0.62em;
+  font-weight:700; color:#94a3b8; margin-bottom:1px;
+}
+.reg-mid-out .reg-ip-title{ text-align:right; }
+.reg-ip{
+  display:inline-flex; align-items:center; gap:4px; background:#f8fafc;
+  border:1px solid #eef2f7; border-radius:5px; padding:1px 6px; max-width:100%;
+  font-size:0.75em;
+}
+.reg-ip-dot{ width:6px; height:6px; border-radius:50%; background:#6366f1; flex:none; }
+.reg-ip-out .reg-ip-dot{ background:#10b981; }
+.reg-ip code{ color:#1e40af; font-weight:600; font-size:0.95em; }
+.reg-ip-type{
+  color:#94a3b8; font-family:ui-monospace,Menlo,monospace; font-size:0.82em;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:130px;
+}
+.reg-ip-na{ color:#cbd5e1; font-size:0.75em; }
+
+/* Table view. */
+.registry-table-wrap{ overflow-x:auto; }
+/* Modules table: installed-vs-marketplace section header rows + action column. */
+.module-table-section td{
+  background:#f1f5f9; color:#475569; font-weight:700; font-size:0.74em;
+  text-transform:uppercase; letter-spacing:.05em; padding:7px 12px;
+  border-top:1px solid #e2e8f0; border-bottom:1px solid #e2e8f0;
+}
+.module-table-section td .muted{ font-weight:600; letter-spacing:0; text-transform:none; }
+.modules-table .reg-td-action{ white-space:nowrap; text-align:right; }
+.modules-table .reg-td-action .btn-mini,
+.modules-table .reg-td-action .action-btn{ margin:0; }
+.modules-table .reg-td-name .module-link{ font-size:0.8em; margin-left:6px; font-weight:500; }
+.registry-table{ width:100%; border-collapse:collapse; font-size:0.88em; }
+.registry-table th, .registry-table td{ padding:6px 10px; text-align:left; border-bottom:1px solid #f1f5f9; }
+.registry-table th{
+  position:sticky; top:0; z-index:1; background:#fff; color:#475569; font-weight:600;
+  cursor:pointer; user-select:none; white-space:nowrap;
+}
+.registry-table th.num, .registry-table td.num{ text-align:right; }
+.registry-table th.active{ color:#4338ca; }
+.registry-table th:hover{ background:#f8fafc; }
+.registry-table tbody tr:hover{ background:#f8fafc; }
+.registry-table .reg-td-name code{ color:#94a3b8; font-size:0.85em; }
+.registry-table .reg-td-src{ color:#94a3b8; font-size:0.9em; }
+.registry-table tr[data-source="environment_only"]{ opacity:0.6; }
+.reg-entry-desc{
+  margin:6px 0 8px; color:#475569; font-size:0.92em; line-height:1.5;
+  white-space:pre-line; max-height:8.5em; overflow:auto;
+  border-left:2px solid #e5e7eb; padding-left:10px;
+}
+.reg-ports{
+  display:grid; grid-template-columns:1fr 1fr; gap:10px;
+  margin:8px 0; background:#f8fafc; border:1px solid #eef2f7;
+  border-radius:8px; padding:8px 10px;
+}
+@media (max-width:640px){ .reg-ports{ grid-template-columns:1fr } }
+.reg-port-col{ min-width:0 }
+.reg-port-title{
+  font-size:0.7em; text-transform:uppercase; letter-spacing:0.06em;
+  font-weight:700; color:#94a3b8; margin-bottom:4px;
+}
+.reg-port-list{ margin:0; padding:0; list-style:none }
+.reg-port-list li{
+  display:flex; align-items:baseline; gap:6px; padding:1px 0;
+  font-size:0.86em; line-height:1.4; flex-wrap:wrap;
+}
+/* Port names are single tokens (external_concentrations) — never break them
+   letter-by-letter; wrap the whole name to the next line when it can't fit. */
+.reg-port-name{ color:#1e40af; font-weight:600; word-break:normal; overflow-wrap:normal; }
+.reg-port-type{ color:#64748b; font-size:0.92em; font-family:ui-monospace,Menlo,monospace; word-break:break-word; min-width:0; }
+.reg-port-na{ color:#cbd5e1; font-size:0.86em }
+
+/* Compact ports (grid card's "config & ports" dropdown): stack Inputs then
+   Outputs in ONE column so each port gets the full card width — the 2-column
+   layout squeezed names into vertical letter-stacks in a narrow grid card. */
+.reg-ports.reg-ports-compact{ grid-template-columns:1fr; gap:8px; }
+.reg-ports-compact .reg-port-type{
+  max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.reg-config summary{ cursor:pointer; user-select:none; color:#64748b; font-size:0.85em; margin-top:2px }
 
 /* ===== Study Detail — 5-tab redesign (Plan 3) ===== */
 
@@ -1250,9 +2408,28 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 .study-title { display: flex; align-items: center; gap: 12px; margin: 0; font-size: 1.6em; }
 .study-title .study-name { font-weight: 600; }
 
-/* Overview tab — notebook layout */
-.study-overview { max-width: 760px; }
-.overview-section { margin-bottom: 24px; }
+/* Overview tab — full-width, streamlined layout */
+.study-overview { max-width: none; }
+/* The Overview boxes (caveat/conclusion/biology/purpose) fill the full content
+   width — no reading-measure cap — so wide screens are used and the right-hand
+   dead space is gone. Auto-grow (study-detail.js) removes the inner scrollbars. */
+.study-overview .overview-prose,
+.study-overview .narrative-textarea,
+.study-overview .biology-derived-preview,
+.study-overview .purpose-callout { max-width: none; width: 100%; box-sizing: border-box; }
+/* Auto-grown textareas: no inner scrollbar, grow to content. */
+.study-overview .narrative-textarea { overflow: hidden; }
+.overview-section { margin-bottom: 20px; }
+/* Report-summary card: tile fields across the full width (label above input)
+   instead of one tall skinny column. Scoped to the Overview so the Decide tab's
+   narrative-grid is unaffected. */
+.study-overview .narrative-grid {
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px 22px;
+}
+.study-overview .narrative-row { display: flex; flex-direction: column; gap: 4px; }
+.study-overview .narrative-label { padding-top: 0; }
+.study-overview .narrative-row-wide { grid-column: 1 / -1; }
 .overview-label { font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gray); margin: 0 0 6px; }
 .overview-prose {
   background: var(--panel);
@@ -1477,6 +2654,371 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
 .inv-lead ul, .inv-lead ol { margin: 6px 0 10px 22px; padding: 0; }
 .inv-lead li { margin: 2px 0; }
 .inv-lead strong { color: #0f172a; }
+
+/* ── Inquiry brief — the redesigned investigation opening ──────────────────
+   Question headline → verdict answer line → meta → flat tab strip. One level
+   of hierarchy, no nested boxes. Verdict-status colour is carried on the
+   .inv-vs-* container as --vs / --vs-bg / --vs-fg custom properties. */
+.inv-brief { margin: 0 0 8px; }
+.inv-brief-q {
+  font-family: 'Charter', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  font-size: 1.55em; line-height: 1.28; font-weight: 600; letter-spacing: -0.01em;
+  color: #0f172a; margin: 2px 0 14px;
+}
+.inv-brief-verdict {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  border-left: 4px solid var(--vs, #64748b);
+  background: #f8fafc; border-radius: 0 8px 8px 0;
+  padding: 11px 16px; margin: 0 0 14px;
+  font-size: 0.95em; line-height: 1.55; color: #334155;
+}
+.inv-vs-pill {
+  display: inline-block; font-size: 0.66em; font-weight: 700; letter-spacing: 0.05em;
+  background: var(--vs-bg, #e2e8f0); color: var(--vs-fg, #475569);
+  padding: 2px 9px; border-radius: 9999px; margin-right: 8px; vertical-align: 1px;
+}
+.inv-brief-verdict-label { font-weight: 700; color: #1e293b; }
+.inv-brief-framing {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.9em; line-height: 1.55; color: #64748b; margin: 0 0 12px;
+}
+.inv-brief-meta {
+  font-family: -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.9em; line-height: 1.55; color: #475569; margin: 0 0 16px;
+}
+.inv-brief-meta-item em { font-style: normal; font-weight: 700; color: #334155; margin-right: 5px; }
+.inv-brief-meta-item + .inv-brief-meta-item::before { content: "·"; margin: 0 9px; color: #cbd5e1; }
+.inv-brief-tabs {
+  display: flex; flex-wrap: wrap; gap: 2px;
+  border-bottom: 1px solid #e2e8f0; margin: 0 0 14px;
+  font-family: -apple-system, "Segoe UI", sans-serif;
+}
+.inv-brief-tab {
+  appearance: none; background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; padding: 6px 13px; font-size: 0.87em; font-weight: 600;
+  color: #64748b; cursor: pointer; border-radius: 6px 6px 0 0;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.inv-brief-tab:hover { color: #334155; background: #f8fafc; }
+.inv-brief-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+.inv-brief-panels { font-family: -apple-system, "Segoe UI", sans-serif; }
+.inv-brief-prose { font-size: 0.95em; line-height: 1.62; color: #334155; }
+.inv-brief-prose p { margin: 0 0 10px; }
+.inv-brief-prose p:last-child { margin-bottom: 0; }
+.inv-brief-howto { margin: 0 0 4px 20px; padding: 0; font-size: 0.92em; line-height: 1.5; color: #334155; }
+.inv-brief-howto li { margin: 3px 0; }
+.inv-brief-glossary { margin: 0; font-size: 0.92em; }
+.inv-brief-glossary dt { font-weight: 700; color: #1e293b; margin-top: 9px; }
+.inv-brief-glossary dt:first-child { margin-top: 0; }
+.inv-brief-glossary dd { margin: 2px 0 0; color: #475569; line-height: 1.5; }
+/* Verdict-status palettes (light). --vs is the accent rule; -bg/-fg the pill. */
+.inv-brief.inv-vs-passed   { --vs: #16a34a; --vs-bg: #dcfce7; --vs-fg: #166534; }
+.inv-brief.inv-vs-progress { --vs: #d97706; --vs-bg: #fef9c3; --vs-fg: #854d0e; }
+.inv-brief.inv-vs-blocked  { --vs: #dc2626; --vs-bg: #fee2e2; --vs-fg: #991b1b; }
+.inv-brief.inv-vs-planning { --vs: #2563eb; --vs-bg: #dbeafe; --vs-fg: #1e40af; }
+.inv-brief.inv-vs-default  { --vs: #64748b; --vs-bg: #e2e8f0; --vs-fg: #475569; }
+
+/* ── Market — faceted artifact browser (processes / composites / studies /
+   investigations / modules) ─────────────────────────────────────────────── */
+.market-toolbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; }
+.market-search { flex: 1 1 auto; box-sizing: border-box; font-size: 0.95em; padding: 8px 12px; }
+.market-zoom { flex: none; }
+/* Match the registry (Modules) tab bar: spaced underline tabs, same font/size. */
+.market-facets {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 24px;
+  border-bottom: 1px solid #e5e7eb; margin: 8px 0 12px; padding-bottom: 0;
+}
+.market-facet {
+  appearance: none; background: none; border: 0; border-bottom: 2px solid transparent;
+  padding: 8px 0; margin: 0; font: inherit; font-size: 0.95em;
+  color: #6b7280; cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.market-facet:hover { color: #1f2937; }
+.market-facet.active { color: #2563eb; border-bottom-color: #2563eb; font-weight: 600; }
+/* Source facet row — sits under the search bar (like the Sort row elsewhere). */
+.market-facets-row { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; }
+.market-origin-filter { display: inline-flex; gap: 4px; }
+.market-origin-chip {
+  appearance: none; border: 1px solid #e2e8f0; background: #fff; cursor: pointer;
+  font-size: 0.78em; font-weight: 600; color: #64748b; padding: 3px 10px; border-radius: 9999px;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+.market-origin-chip:hover { color: #334155; border-color: #cbd5e1; }
+.market-origin-chip.active { background: #eef2ff; color: #4338ca; border-color: #c7d2fe; }
+.market-group { margin: 0 0 22px; }
+.market-group-head {
+  font-size: 0.78em; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase;
+  color: #94a3b8; margin: 0 0 10px; display: flex; align-items: center; gap: 8px;
+}
+.market-count {
+  font-weight: 600; letter-spacing: 0; font-size: 0.92em;
+  background: #eef1f5; color: #64748b; border-radius: 9999px; padding: 0 8px;
+}
+.market-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;
+}
+.market-card {
+  display: flex; flex-direction: column; gap: 6px;
+  border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; background: #fff;
+  border-left: 3px solid #cbd5e1; transition: box-shadow 0.12s, border-color 0.12s;
+}
+.market-card:hover { box-shadow: 0 2px 10px rgba(15, 23, 42, 0.08); }
+.market-card.market-type-process      { border-left-color: #6366f1; }
+.market-card.market-type-composite    { border-left-color: #0ea5e9; }
+.market-card.market-type-study        { border-left-color: #10b981; }
+.market-card.market-type-investigation{ border-left-color: #f59e0b; }
+.market-card.market-type-module       { border-left-color: #8b5cf6; }
+.market-card-head { display: flex; align-items: center; gap: 8px; }
+.market-type-ico { font-size: 0.95em; opacity: 0.75; flex: none; }
+.market-name {
+  font-weight: 650; color: #1e293b; font-size: 0.96em; line-height: 1.25;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 auto;
+}
+/* Cards (middle zoom): name gets its own line and can wrap — no ellipsis. */
+.market-card-x { cursor: pointer; }
+.market-card-title { display: flex; align-items: baseline; gap: 7px; }
+.market-name-full {
+  flex: 1 1 auto; min-width: 0; font-weight: 680; color: #0f172a;
+  font-size: 0.98em; line-height: 1.28; overflow-wrap: anywhere;
+}
+.market-card-caret {
+  flex: none; color: #cbd5e1; font-size: 0.8em; transition: transform 0.12s, color 0.12s;
+}
+.market-card-x:hover .market-card-caret { color: #94a3b8; }
+.market-card-x.mk-expanded .market-card-caret { transform: rotate(90deg); color: #6366f1; }
+.market-card-x.mk-expanded { border-color: #c7d2fe; box-shadow: 0 2px 12px rgba(99,102,241,0.10); }
+.market-card-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+/* Click-to-expand detail region inside a card. */
+.market-card-detail { margin-top: 4px; padding-top: 8px; border-top: 1px solid #eef2f7; }
+.market-card-detail[hidden] { display: none; }
+/* Long-form description inside an expanded card: capped + scrollable so the
+   attribute rows / member studies above it stay in view. */
+.market-card-detail .mk-detail-desc {
+  margin-top: 8px; max-height: 160px; overflow-y: auto; padding-right: 4px;
+}
+:root[data-theme="dark"] .market-name-full { color: var(--heading); }
+:root[data-theme="dark"] .market-card-detail { border-top-color: var(--border); }
+/* Investigation member-studies list (in detail / expanded card). */
+.mk-studies { margin-top: 8px; }
+.mk-studies-head {
+  font-size: 0.74em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: #64748b; margin-bottom: 5px; display: flex; align-items: center; gap: 6px;
+}
+.mk-study-summary { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mk-study-bar {
+  flex: 1 1 auto; height: 6px; border-radius: 3px; background: #eef2f7; overflow: hidden; max-width: 180px;
+}
+.mk-study-bar > span { display: block; height: 100%; background: #22c55e; }
+.mk-study-summary-txt { font-size: 0.76em; color: #64748b; white-space: nowrap; }
+.mk-study-row {
+  display: flex; align-items: center; gap: 8px; padding: 3px 4px; border-radius: 5px;
+  cursor: pointer; font-size: 0.84em;
+}
+.mk-study-row:hover { background: #f1f5f9; }
+.mk-study-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; }
+.mk-study-name { flex: 1 1 auto; min-width: 0; color: #334155; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mk-study-status { flex: none; font-size: 0.82em; color: #94a3b8; text-transform: lowercase; }
+:root[data-theme="dark"] .mk-study-row:hover { background: var(--surface-3); }
+:root[data-theme="dark"] .mk-study-name { color: var(--text); }
+:root[data-theme="dark"] .mk-study-bar { background: var(--surface-3); }
+.market-repo {
+  flex: none; font-size: 0.72em; font-weight: 600; color: #475569;
+  background: #f1f5f9; border-radius: 9999px; padding: 1px 8px; white-space: nowrap;
+}
+.market-avail {
+  flex: none; font-size: 0.68em; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.02em; color: #92400e; background: #fef3c7;
+  border-radius: 6px; padding: 1px 7px; white-space: nowrap;
+}
+:root[data-theme="dark"] .market-avail { color: #fde68a; background: #78350f; }
+/* Provenance category chip on artifact cards (workspace / imported / available). */
+.market-cat {
+  flex: none; font-size: 0.66em; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.02em; border-radius: 6px; padding: 1px 7px; white-space: nowrap;
+}
+.market-cat-workspace { color: #4338ca; background: #e0e7ff; }
+.market-cat-imported  { color: #0369a1; background: #e0f2fe; }
+.market-cat-available  { color: #92400e; background: #fef3c7; }
+:root[data-theme="dark"] .market-cat-workspace { color: #c7d2fe; background: #312e81; }
+:root[data-theme="dark"] .market-cat-imported  { color: #bae6fd; background: #0c4a6e; }
+:root[data-theme="dark"] .market-cat-available  { color: #fde68a; background: #78350f; }
+.market-desc {
+  font-size: 0.85em; line-height: 1.45; color: #64748b;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.market-card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; padding-top: 4px;
+}
+.market-meta { font-size: 0.78em; color: #94a3b8; }
+.market-usage { font-size: 0.78em; color: #94a3b8; }
+.market-open { flex: none; }
+
+/* Repositories facet — whole-ecosystem repo cards (List / Cards / Detail). */
+.repo-card { padding: 14px 16px; gap: 8px; border-left-width: 3px; border-left-color: #cbd5e1; }
+.repo-card-ws { border-left-color: #6366f1; background: linear-gradient(180deg, #fbfbff, #fff); }
+.repo-card-head { display: flex; align-items: center; gap: 8px; }
+.repo-ico { font-size: 1.1em; flex: none; }
+.repo-name {
+  font-weight: 680; color: #1e293b; font-size: 1.02em; letter-spacing: -0.01em;
+  text-decoration: none; flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.repo-name:hover { color: #4f46e5; text-decoration: underline; }
+.repo-badge {
+  flex: none; font-size: 0.68em; font-weight: 700; letter-spacing: 0.02em;
+  text-transform: uppercase; border-radius: 6px; padding: 2px 8px; white-space: nowrap;
+}
+.repo-badge-ws { color: #4338ca; background: #e0e7ff; }
+.repo-badge-imported { color: #0369a1; background: #e0f2fe; }
+.repo-badge-avail { color: #92400e; background: #fef3c7; }
+.repo-desc {
+  font-size: 0.86em; line-height: 1.45; color: #64748b;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.repo-desc-full { -webkit-line-clamp: unset; display: block; }
+.repo-stats { display: flex; flex-wrap: wrap; gap: 5px 8px; margin: 2px 0; }
+.repo-stat {
+  font-size: 0.78em; color: #475569; background: #f1f5f9;
+  border-radius: 6px; padding: 2px 9px; white-space: nowrap;
+}
+.repo-stat b { color: #0f172a; font-variant-numeric: tabular-nums; font-weight: 700; }
+.repo-stat.zero { color: #94a3b8; background: transparent; padding-left: 0; padding-right: 4px; }
+.repo-stat.zero b { color: #94a3b8; font-weight: 600; }
+.repo-card-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin-top: auto; padding-top: 6px; border-top: 1px solid #f1f5f9;
+}
+.repo-meta { font-size: 0.78em; color: #94a3b8; }
+.repo-actions { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.repo-gh { flex: none; text-decoration: none; }
+.repo-install {
+  border-color: #16a34a; color: #166534; background: #f0fdf4; font-weight: 600;
+}
+.repo-install:hover { background: #dcfce7; }
+.repo-uninstall {
+  border-color: #fca5a5; color: #b91c1c; background: #fef2f2; font-weight: 600;
+}
+.repo-uninstall:hover { background: #fee2e2; }
+.repo-td-actions { white-space: nowrap; text-align: right; }
+.repo-td-actions .repo-actions { justify-content: flex-end; }
+/* Affected-studies emphasis in the table + card foot. */
+.repo-affected { font-variant-numeric: tabular-nums; font-weight: 700; color: #b45309; }
+.repo-td-zero { color: #cbd5e1; }
+.repo-card-foot .repo-meta b { color: #b45309; font-weight: 700; }
+:root[data-theme="dark"] .repo-install { border-color: #16a34a; color: #86efac; background: #052e16; }
+:root[data-theme="dark"] .repo-uninstall { border-color: #7f1d1d; color: #fca5a5; background: #450a0a; }
+:root[data-theme="dark"] .repo-affected, :root[data-theme="dark"] .repo-card-foot .repo-meta b { color: #fbbf24; }
+.repo-sample { font-size: 0.82em; color: #64748b; }
+.repo-sample-lbl { font-weight: 600; color: #475569; margin-right: 2px; }
+.repo-sample code { font-size: 0.92em; }
+/* Repo List (dense table) */
+.repo-table { width: 100%; }
+.repo-th {
+  text-align: left; font-size: 0.72em; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: #94a3b8; padding: 4px 10px; border-bottom: 2px solid #e2e8f0;
+}
+.repo-tr:hover { background: #f8fafc; }
+.repo-tr td { padding: 8px 10px; border-bottom: 1px solid #eef1f5; vertical-align: middle; }
+.repo-td-num { text-align: left; font-variant-numeric: tabular-nums; color: #334155; }
+:root[data-theme="dark"] .repo-name { color: var(--text); }
+:root[data-theme="dark"] .repo-desc, :root[data-theme="dark"] .repo-stat { color: var(--text-muted); }
+:root[data-theme="dark"] .repo-stat { background: var(--hover); }
+:root[data-theme="dark"] .repo-stat b { color: var(--text); }
+:root[data-theme="dark"] .repo-badge-ws { color: #c7d2fe; background: #312e81; }
+:root[data-theme="dark"] .repo-badge-imported { color: #bae6fd; background: #0c4a6e; }
+:root[data-theme="dark"] .repo-badge-avail { color: #fde68a; background: #78350f; }
+:root[data-theme="dark"] .repo-card-foot { border-top-color: var(--border); }
+:root[data-theme="dark"] .repo-card-ws { background: var(--panel); }
+
+/* Studies-overview header action cluster: + Investigation / + Study / Audit Report */
+.iset-hdr-btn { display: inline-flex; align-items: center; gap: 5px; }
+.iset-hdr-btn svg { flex: none; }
+.market-results { margin-top: 14px; }
+/* Keep the Registry results full-width and vertically reserved so switching
+   facets or waiting on a slow load doesn't reflow the card columns or bounce
+   the page height (the "Loading…" state occupies the same box as the grid). */
+#page-market.active .market-results { width: 100% !important; min-height: 62vh; }
+.market-grid { align-content: start; }
+#page-market.active .market-results > .empty-state { padding: 24px 2px; }
+
+/* List (dense) zoom */
+.market-list { display: flex; flex-direction: column; }
+.market-row {
+  display: flex; align-items: center; gap: 12px;
+  padding: 7px 10px; border-left: 3px solid #cbd5e1;
+  border-bottom: 1px solid #eef1f5;
+}
+.market-row:hover { background: #f8fafc; }
+.market-row.market-type-process       { border-left-color: #6366f1; }
+.market-row.market-type-composite     { border-left-color: #0ea5e9; }
+.market-row.market-type-study         { border-left-color: #10b981; }
+.market-row.market-type-investigation { border-left-color: #f59e0b; }
+.market-row-main { display: flex; align-items: baseline; gap: 8px; flex: 1 1 auto; min-width: 0; }
+.market-row-main .market-name { flex: 0 1 auto; }
+.market-row-desc {
+  color: #94a3b8; font-size: 0.85em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.market-row .market-usage { flex: none; white-space: nowrap; }
+
+/* Detail (full) zoom */
+/* Detail (max zoom): one full-row card per item, like the composites cards view. */
+.market-grid-detail { grid-template-columns: 1fr; gap: 12px; }
+/* Double-click-to-zoom focus ring — cleared on the next render. */
+.market-card.mk-focused, .market-tr.mk-focused > td {
+  box-shadow: inset 0 0 0 2px #6366f1;
+}
+.market-card.mk-focused { border-color: #6366f1; }
+.market-desc-full { -webkit-line-clamp: unset; display: block; }
+.market-detail .market-card-head .market-open { margin-left: auto; }
+.market-dl {
+  display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px;
+  margin-top: 4px; font-size: 0.85em; align-items: baseline;
+}
+.market-dl-k { color: #94a3b8; font-weight: 600; white-space: nowrap; }
+.market-dl-v { color: #475569; }
+.market-dl-v code, .market-desc code {
+  background: #f1f5f9; border-radius: 3px; padding: 1px 5px; font-size: 0.92em; color: #334155;
+}
+
+/* List (minimized) zoom = sortable table — columns roll up, no horizontal scroll */
+.market-table { width: 100%; border-collapse: collapse; font-size: 0.88em; table-layout: fixed; }
+/* Draggable column widths — a grip on each header's right edge. */
+.col-resizer {
+  position: absolute; top: 0; right: -4px; width: 9px; height: 100%;
+  cursor: col-resize; z-index: 3; user-select: none;
+}
+.col-resizer::after {
+  content: ''; position: absolute; top: 20%; right: 4px; width: 2px; height: 60%;
+  background: transparent; border-radius: 1px;
+}
+.col-resizer:hover::after { background: #6366f1; }
+body.col-resizing { cursor: col-resize; user-select: none; }
+body.col-resizing .col-resizer::after { background: #6366f1; }
+.market-table th, .market-table td {
+  text-align: left; padding: 6px 10px; border-bottom: 1px solid #eef1f5;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.market-th {
+  position: sticky; top: 0; z-index: 1; cursor: pointer; user-select: none;
+  font-size: 0.82em; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+  color: #64748b; background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+}
+.market-th:hover { color: #334155; background: #eef2ff; }
+.market-th.sorted { color: #2563eb; }
+.market-tr { cursor: pointer; }
+.market-tr:hover { background: #f8fafc; }
+.market-td-type { text-align: center; }
+.market-td-type .market-type-ico { opacity: 0.7; }
+.market-td-name { font-weight: 600; color: #1e293b; }
+.market-td-desc { color: #94a3b8; font-weight: 400; margin-left: 8px; font-size: 0.92em; }
+.market-td-use { text-align: right; color: #64748b; font-variant-numeric: tabular-nums; }
+.market-origin {
+  font-size: 0.82em; font-weight: 600; border-radius: 9999px; padding: 1px 9px;
+}
+.market-origin-workspace { background: #e0e7ff; color: #4338ca; }
+.market-origin-external { background: #dcfce7; color: #166534; }
 
 .inv-at-a-glance {
   display: grid;
@@ -1944,6 +3486,16 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
   background: none; border-radius: 0; box-shadow: none; }
 .registry-subtab-panel.active { display: block; }
 
+/* Sources, Composites, and Analysis Tools wrapped their whole page in a bordered
+   `.panel` card, leaving a buffer margin around the operating space. Registry and
+   Investigations fill the pane flush — match that by stripping the card chrome
+   from these pages' outermost panel (nested panels keep their chrome). */
+#page-workspace-inputs > .panel,
+#page-simulation-setup > .panel,
+#page-visualizations > .panel {
+  background: none; border: none; border-radius: 0; padding: 0; margin: 0;
+}
+
 /* ───────────────────────────────────────────────────────────────────
  * Catalog grid — workspace-package + installed-first chrome.
  *
@@ -2039,6 +3591,111 @@ body.focus-mode .page.active{ display:block !important; min-height:0 !important 
   background: #fee2e2;        /* light red — orphaned venv install; user CAN uninstall */
   color: #991b1b;
   border: 1px solid rgba(220, 38, 38, 0.3);
+}
+
+/* ───────────────────────────────────────────────────────────────────
+ * Module content-count chips (composites / studies / investigations /
+ * "used here") + install/uninstall action row. Replaces the old
+ * middot-joined muted text line with scannable, colour-coded chips; the
+ * "used here" chip is emphasized because it answers "do WE depend on this".
+ * =================================================================== */
+.module-stats-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 2px;
+}
+/* "Used by N studies" — the headline usage signal (replaces the ★ chip). A
+   quiet green pill with a status dot; shown only when actually used. */
+.module-usage {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  align-self: flex-start;
+  font-size: 0.78em;
+  font-weight: 500;
+  padding: 3px 10px 3px 8px;
+  border-radius: 9999px;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+.module-usage strong { font-weight: 700; }
+.module-usage-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #10b981; flex: none;
+  box-shadow: 0 0 0 3px rgba(16,185,129,0.15);
+}
+/* What the module PROVIDES — a quiet, evenly-spaced count strip. */
+.module-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 0.8em;
+  color: #64748b;
+}
+.module-count strong { color: #334155; font-weight: 600; }
+
+/* Installed-card action row: keeps the install-source badge and the
+   Uninstall button on one baseline. */
+.module-action-installed {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.module-uninstall-btn {
+  color: #b91c1c;
+  border-color: rgba(185, 28, 28, 0.35);
+  background: #fff;
+}
+.module-uninstall-btn:hover {
+  background: #fef2f2;
+  border-color: #b91c1c;
+}
+.action-btn.danger {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+}
+.action-btn.danger:hover { background: #b91c1c; border-color: #b91c1c; }
+.action-btn.danger:disabled { opacity: 0.6; cursor: default; }
+
+/* ───────────────────────────────────────────────────────────────────
+ * Uninstall-impact confirmation modal (reuses .modal-overlay/.modal-box).
+ * =================================================================== */
+.uninstall-impact-h {
+  margin: 12px 0 6px;
+  font-size: 0.9em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+.uninstall-impact-body { max-height: 46vh; overflow-y: auto; }
+.uninstall-impact-group { margin: 6px 0 10px; }
+.uninstall-impact-group-title {
+  font-size: 0.85em;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 3px;
+}
+.uninstall-impact-list {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+.uninstall-impact-list code { font-size: 0.92em; }
+.uninstall-impact-warn {
+  margin: 12px 0 4px;
+  padding: 9px 12px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 3px solid #f59e0b;
+  border-radius: 6px;
+  color: #92400e;
+  font-size: 0.9em;
+  line-height: 1.5;
 }
 
 /* Collapsible lead blocks (condense the lead-up to the studies) */
@@ -2292,11 +3949,10 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 /* ── Analyses gallery (saved interactive visualizations) ────────────────── */
 .analyses-gallery {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 16px;
-}
-@media (min-width: 1100px) {
-  .analyses-gallery { grid-template-columns: 1fr 1fr; }
+  /* Compact launcher cards in a responsive grid — scales as viewers are added. */
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+  align-items: start;
 }
 .analyses-card {
   border: 1px solid #e2e8f0;
@@ -2312,6 +3968,24 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   margin-bottom: 2px;
 }
 .analyses-card .viz-embed { display: block; }
+
+/* Compact tool card: header · description · footer (result selector + Open). */
+.tool-card { display: flex; flex-direction: column; }
+.tool-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tool-head strong { font-size: 0.95em; }
+.tool-need { font-size: 0.72em; text-transform: uppercase; letter-spacing: 0.03em; white-space: nowrap; }
+.tool-desc { font-size: 0.82em; line-height: 1.35; margin: 4px 0 10px; }
+.tool-foot { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.tool-select { flex: 1; min-width: 0; font-size: 0.82em; padding: 3px 6px;
+  border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; }
+.tool-one { flex: 1; min-width: 0; font-size: 0.82em; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.tool-empty { font-size: 0.82em; }
+.tool-open { flex-shrink: 0; }
+
+.tool-requires { color: var(--gray); font-size: 0.82em; }
+.tool-matches { display: flex; flex-direction: column; gap: 4px; }
+.tool-row + .tool-row { margin-top: 8px; }
 .viewer-target-list { display: flex; flex-direction: column; gap: 4px; }
 .explorer { display:flex; flex-direction:column; gap:10px; }
 /* top bar: run picker · view tabs · pop-out */
@@ -2442,21 +4116,48 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
   width:100% !important; max-width:none !important;
 }
 .viv-content > #page-registry.active,
-#page-registry.active{
+#page-modules.active, #page-market.active{
   max-width:none !important; width:100% !important; margin:0 !important;
   box-sizing:border-box;
 }
-#page-registry.active .registry-subtabs,
-#page-registry.active .registry-subtab-panel.active,
-#page-registry.active .registry-tabs,
-#page-registry.active .registry-tab-panel,
-#page-registry.active .card-browse-toolbar,
-#page-registry.active .module-grid,
-#page-registry.active .registry-search{
+#page-modules.active .registry-tabs,
+#page-modules.active .registry-tab-panel,
+#page-modules.active .registry-view-toolbar,
+#page-modules.active .registry-search,
+#page-modules.active .registry-sticky,
+#page-modules.active .page-fill,
+#page-market.active .page-fill,
+#page-market.active .market-sticky,
+#page-market.active .market-facets,
+#page-market.active .market-results,
+#page-market.active .market-toolbar{
   width:100% !important; max-width:none !important;
   margin-left:0 !important; margin-right:0 !important;
   box-sizing:border-box;
 }
+/* Pin the header (tabs/facets + filter/zoom) to the top of the scroll area so
+   the long list scrolls beneath it. The pages carry no panel box, so the sticky
+   header sits on the page background and spans the content width. */
+#page-modules .registry-sticky,
+#page-market .market-sticky{
+  position:sticky; top:0; z-index:20;
+  background:var(--bg);
+  margin:0 0 10px; padding:8px 0 4px;
+  border-bottom:1px solid var(--border);
+}
+/* The scroll container (.viv-content) carries 24px top padding; a sticky header
+   pins at top:0 = the padding edge, leaving a transparent strip above it through
+   which the scrolling cards show ("cards scrolled up under the search bar"). Drop
+   the container's top padding on these pages and let the sticky header sit flush
+   at the very top of the scroll area; the sticky supplies its own top gap. */
+.viv-content:has(> #page-market.active),
+.viv-content:has(> #page-modules.active){
+  padding-top:0 !important;
+}
+#page-modules .registry-sticky,
+#page-market .market-sticky{ padding-top:8px; }
+/* On the Repositories facet the provenance chips filter installed ("Repository")
+   vs available-to-install ("Other repos") repos — see _renderMarketRepos. */
 /* ── Investigation DAG semantic zoom slider ────────────────────────────────── */
 #aig-zoom-slider {
   cursor: pointer;
@@ -2489,3 +4190,626 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .aig-status-badge:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
 /* Far (overview) band: tighter cards so the whole DAG reads at a glance. */
 #investigation-dag-shell.aig-zoom-far .iset-dag-node { padding: 6px 8px; }
+
+/* ── Composites page: compact, informative cards ──────────────────────────── */
+.ccard-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+/* Semantic-zoom Cards / Loom: full-row composite cards (one per row). */
+.ccard-rows { display: flex; flex-direction: column; gap: 10px; }
+.ccard-rows .ccard { width: 100%; }
+/* Compact full-row card: content distributed across the bar into subareas, so
+   each card is short. identity | description | stats | actions. */
+.ccard-compact { padding: 10px 14px; gap: 0; }
+.ccard-compact.reg-selected { border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.22); }
+.ccc-grid {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.2fr) minmax(0, 2.4fr) minmax(150px, 1fr) auto;
+  gap: 20px; align-items: start;
+}
+@media (max-width: 900px) { .ccc-grid { grid-template-columns: 1fr; gap: 6px; } }
+.ccc-identity { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ccc-name-row { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.ccc-name { font-weight: 700; color: #0f172a; font-size: 1.0em; }
+.ccc-addr {
+  font-family: ui-monospace, Menlo, monospace; font-size: 0.74em; color: #94a3b8;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.ccc-desc {
+  color: #475569; font-size: 0.86em; line-height: 1.45; min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ccc-stats { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ccc-stats .ccard-meta { margin: 0; font-size: 0.78em; }
+.ccc-stats .ccard-track { margin: 2px 0 0; }
+.ccc-stats .ccard-bar { height: 5px; }
+.ccc-actions { display: flex; align-items: flex-start; justify-content: flex-end; }
+/* Config / structure / tags collapse into a short strip under the grid. */
+.ccc-details-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px;
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #f1f5f9;
+}
+.ccc-details-row > details { margin: 0; }
+.ccc-details-row > details > summary { font-size: 0.82em; }
+.ccc-details-row .ccard-tags { margin: 0; }
+/* Loom (Full) zoom: an inline, on-demand bigraph embed per composite card. */
+.ccard-loom-embed { border-top: 1px solid #f1f5f9; margin-top: 4px; }
+.ccard-loom-embed > summary {
+  cursor: pointer; user-select: none; color: #4338ca; font-weight: 600;
+  font-size: 0.85em; padding: 6px 0 2px; list-style: none;
+}
+.ccard-loom-embed > summary::-webkit-details-marker { display: none; }
+.ccard-loom-embed > summary::before { content: '▸ '; }
+.ccard-loom-embed[open] > summary::before { content: '▾ '; }
+.ccard-loom-frame {
+  border: 1px solid #cbd5e1; border-radius: 0; background: #fbfcfe;
+  margin: 6px 0 2px; overflow: hidden;
+  display: flex; flex-direction: column;
+  height: 460px; min-height: 220px; max-height: 92vh;
+}
+.ccard-loom-iframe { width: 100%; flex: 1 1 auto; height: auto; min-height: 0; border: 0; display: block; }
+/* Inline-loom mode bar: read-only preview ⇄ "Enable running" (live). */
+.ccard-loom-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 4px 8px; border: 1px solid #cbd5e1; border-bottom: 0; background: #f8fafc;
+  font-size: 12px; margin: 6px 0 0;
+}
+.ccard-loom-bar + .ccard-loom-frame { margin-top: 0; }
+.ccard-loom-mode { color: #64748b; }
+.ccard-loom-mode.live { color: #047857; font-weight: 600; }
+.ccard-loom-live-btn {
+  font-size: 12px; color: #fff; background: #059669; border: 1px solid #059669;
+  border-radius: 5px; padding: 3px 11px; cursor: pointer;
+}
+.ccard-loom-live-btn:hover { background: #047857; }
+/* Drag-to-resize grip at the bottom of an embedded loom — grow/shrink the panel
+   (and the card with it). Full-width bar so the gesture is obvious. */
+.ccard-loom-resize {
+  flex: 0 0 11px; cursor: ns-resize; background: #eef2f7;
+  border-top: 1px solid #d5dde8; position: relative; touch-action: none;
+  user-select: none;
+}
+.ccard-loom-resize::before {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 34px; height: 3px; margin: -1.5px 0 0 -17px; border-radius: 2px;
+  background: #9aa7b8;
+}
+.ccard-loom-resize:hover { background: #e2e8f2; }
+.ccard-loom-resize:hover::before { background: #6b7a90; }
+.ccard-loom-frame.is-resizing { user-select: none; }
+.ccard {
+  display: flex; flex-direction: column; gap: 7px;
+  border: 1px solid #e5e7eb; border-radius: 8px; background: #fff;
+  padding: 11px 13px; min-height: 0;
+  transition: box-shadow .12s ease, border-color .12s ease;
+}
+.ccard:hover { box-shadow: 0 3px 12px rgba(15,23,42,.07); border-color: #cbd5e1; }
+.ccard-ws-card { border-left: 3px solid #22c55e; }
+/* Name takes the FULL card width (no badge squeeze); badges wrap to the row
+   below it so the composite name is never folded into a narrow column. */
+.ccard-top { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.ccard-name { font-weight: 700; font-size: 14px; color: #0f172a; line-height: 1.3; overflow-wrap: anywhere; flex: 1 1 100%; }
+.ccard-badges { display: flex; gap: 5px; flex-wrap: wrap; }
+.ccard-kind, .ccard-src {
+  font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  padding: 1px 7px; border-radius: 10px; white-space: nowrap;
+}
+.ccard-kind-generator { color: #1d4ed8; background: #eff6ff; border: 1px solid #bfdbfe; }
+.ccard-kind-spec { color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.ccard-src { color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+.ccard-src-ws { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.ccard-id {
+  font-size: 10.5px; color: #94a3b8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: -2px;
+}
+.ccard-desc {
+  font-size: 12px; color: #475569; line-height: 1.45; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.ccard-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: #64748b; align-items: center; }
+.ccard-meta i { color: #cbd5e1; font-style: normal; }
+.ccard-params { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ccard-param {
+  font-size: 10px; color: #475569; background: #f1f5f9; border-radius: 4px;
+  padding: 1px 5px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.ccard-more { font-size: 10px; color: #94a3b8; font-weight: 600; }
+.ccard-tags { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.ccard-tag {
+  font-size: 10px; color: #7c3aed; background: #f5f3ff; border: 1px solid #ede9fe;
+  border-radius: 10px; padding: 0 7px; line-height: 1.6;
+}
+.ccard-foot { margin-top: auto; padding-top: 5px; }
+.ccard-explore {
+  font-size: 12px; color: #2563eb; background: #fff; border: 1px solid #bfdbfe;
+  border-radius: 5px; padding: 3px 12px; cursor: pointer; transition: background .12s;
+}
+.ccard-explore:hover { background: #eff6ff; }
+/* View — the primary card action (opens the loom inline at full detail). Filled
+   to read as primary next to the outline "Pop out ↗". */
+.ccard-view {
+  font-size: 12px; color: #fff; background: #2563eb; border: 1px solid #2563eb;
+  border-radius: 5px; padding: 3px 14px; cursor: pointer; transition: background .12s;
+  margin-right: 6px;
+}
+.ccard-view:hover { background: #1d4ed8; }
+/* The inline loom is now opened via the card's "View" action, so its own
+   "Open loom" disclosure summary is redundant — hide it (the embed still
+   toggles open/closed programmatically). */
+.ccard-loom-embed > summary { display: none; }
+/* Pin-to-top toggle — hover-revealed on each card/row; stays lit once pinned. */
+.ccard-pin {
+  border: 0; background: transparent; cursor: pointer; font-size: 13px; line-height: 1;
+  padding: 2px 5px; margin-right: 2px; border-radius: 4px;
+  opacity: 0; filter: grayscale(1) opacity(0.55); transition: opacity .12s, filter .12s, background .12s;
+}
+.ccard:hover .ccard-pin,
+.composite-list-row:hover .ccard-pin,
+.reg-tr:hover .ccard-pin { opacity: 1; }
+.ccard-pin:hover { background: #f1f5f9; }
+.ccard-pin.pinned { opacity: 1; filter: none; }
+/* Composites table: narrow leading pin column. */
+.reg-th-pin { width: 26px; padding: 0 !important; }
+.reg-td-pin { width: 26px; text-align: center; padding: 0 !important; }
+.reg-td-pin .ccard-pin { margin: 0; padding: 2px; }
+/* Composite card — expandable config (param · type · default · description). */
+.ccard-cfg { font-size: 11px; }
+.ccard-cfg > summary {
+  cursor: pointer; color: #2563eb; font-weight: 600; list-style: none;
+  padding: 2px 0; user-select: none;
+}
+.ccard-cfg > summary::-webkit-details-marker { display: none; }
+.ccard-cfg > summary::before { content: '▸ '; color: #94a3b8; }
+.ccard-cfg[open] > summary::before { content: '▾ '; }
+.ccard-cfg-body {
+  margin-top: 4px; border-top: 1px solid #f1f5f9; padding-top: 5px;
+  display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto;
+}
+.ccard-cfg-row { display: flex; flex-direction: column; gap: 1px; }
+.ccard-cfg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.ccard-cfg-name { font-size: 11px; color: #1e293b; font-weight: 600; font-family: ui-monospace, monospace; }
+.ccard-cfg-type { font-size: 10px; color: #7c3aed; font-family: ui-monospace, monospace; }
+.ccard-cfg-def { font-size: 10px; color: #64748b; font-family: ui-monospace, monospace; }
+.ccard-cfg-desc { font-size: 10.5px; color: #64748b; line-height: 1.4; padding-left: 2px; }
+/* Composite card — cross-study track record (usage + pass/inconclusive/fail). */
+.ccard-track { display: flex; flex-direction: column; gap: 3px; }
+.ccard-track-top { font-size: 11px; color: #475569; }
+.ccard-track-top strong { color: #0f172a; }
+.ccard-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: #f1f5f9; }
+.ccard-bar .seg { height: 100%; }
+.ccard-bar .seg.pass { background: #22c55e; }
+.ccard-bar .seg.inc  { background: #f59e0b; }
+.ccard-bar .seg.fail { background: #ef4444; }
+.ccard-track-counts { display: flex; gap: 8px; font-size: 10.5px; font-weight: 600; }
+.ccard-track-counts .pass { color: #15803d; }
+.ccard-track-counts .inc  { color: #b45309; }
+.ccard-track-counts .fail { color: #b91c1c; }
+/* Composite card — lazy structure (process/store counts). */
+.ccard-struct { font-size: 11px; }
+.ccard-struct > summary {
+  cursor: pointer; color: #2563eb; font-weight: 600; list-style: none; padding: 2px 0; user-select: none;
+}
+.ccard-struct > summary::-webkit-details-marker { display: none; }
+.ccard-struct > summary::before { content: '▸ '; color: #94a3b8; }
+.ccard-struct[open] > summary::before { content: '▾ '; }
+.ccard-struct-body { font-size: 11px; color: #475569; padding: 3px 0 1px 2px; }
+
+/* Federated (foreign-module) content — origin-repo provenance badge +
+   read-only treatment on composite / study / investigation-set cards. */
+.origin-badge{display:inline-block;font-size:0.72em;font-weight:600;color:#5b21b6;
+  background:#ede9fe;border:1px solid #ddd6fe;border-radius:10px;padding:1px 7px;
+  margin-left:6px;vertical-align:middle;white-space:nowrap}
+.federated-readonly{opacity:0.92}
+.federated-readonly .action-btn,.federated-readonly .btn-mini{display:none}
+
+/* ═══════════════ Light / dark theme ═══════════════ */
+/* Rail toggle switch (sun ↔ moon sliding pill). */
+.viv-rail-footer{ padding:10px 16px; border-top:1px solid #ececec; display:flex; }
+.viv-rail.viv-rail-collapsed .viv-rail-footer{ justify-content:center; padding:10px 4px; }
+/* Theme-toggle footer only: a compact, low-key corner. The pill is invisible
+   until the corner is hovered (or keyboard-focused), so it's unobtrusive and
+   gives the studies list more room. Its own class so the shared .viv-rail-footer
+   (reused by the GitHub account chip) is untouched. */
+.viv-rail-theme-footer{ padding:0 16px 6px; border-top:none; align-items:center; }
+.viv-rail.viv-rail-collapsed .viv-rail-theme-footer{ padding:0 4px 6px; }
+.viv-rail-theme-footer .viv-theme-toggle{
+  opacity:0; transform:scale(0.94); transform-origin:left center;
+  transition:opacity .16s ease, transform .16s ease;
+}
+.viv-rail-theme-footer:hover .viv-theme-toggle,
+.viv-rail-theme-footer:focus-within .viv-theme-toggle{ opacity:1; transform:none; }
+.viv-theme-toggle{
+  position:relative; display:inline-flex; align-items:center; justify-content:space-between;
+  width:56px; height:26px; padding:0 7px; border-radius:14px;
+  border:1px solid #d8dee6; background:#eef1f5; cursor:pointer;
+}
+.viv-theme-ico{ display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; z-index:1; }
+.viv-theme-ico svg{ width:13px; height:13px; display:block; }
+.viv-theme-sun{ color:#f59e0b; }
+.viv-theme-moon{ color:#94a3b8; }
+.viv-theme-thumb{
+  position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+  background:#fff; box-shadow:0 1px 3px rgba(0,0,0,.28); transition:left .18s ease;
+}
+
+/* ── Dark theme (dark-blue) ──────────────────────────────────────────────
+   The whole palette lives in the variables below — tweak the look from one
+   place. Rules below reference them. The workbench has many INLINE styles
+   (background:#fff;, color:#334155, …), so a final block retargets those by
+   substring with !important; colored status pills are left as readable badges. */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0b1220;          /* page background (darkest) */
+  --rail:#0f1728;        /* rail, header, STUDIES head */
+  --surface:#18233c;     /* cards / panels — a bit brighter so they stand out */
+  --field:#0d1526;       /* inputs / config+port fields — darker, recede below the card */
+  --surface-2:#12203a;   /* subtle sections: code, config bar, outputs, toolbars */
+  --surface-3:#1c2946;   /* small buttons, chips */
+  --border:#26324c;
+  --border-2:#2c3a58;    /* input borders */
+  --border-faint:#1e2b44;/* table rows, rail dividers */
+  --hover:#182339;
+  --active:#20304f;
+  --text:#d3ddeb;
+  --text-muted:#93a3b6;
+  --heading:#eef2f8;
+  --link:#8ab4ff;
+  --accent:#6366f1;
+  /* map the light-mode var names so existing var(--panel)/var(--gray) rules follow */
+  --panel:var(--surface); --gray:var(--text-muted);
+}
+:root[data-theme="dark"] body{ color:var(--text); background:var(--bg); }
+:root[data-theme="dark"] a{ color:var(--link); }
+:root[data-theme="dark"] .viv-theme-toggle{ background:#22304a; border-color:var(--border-2); }
+:root[data-theme="dark"] .viv-theme-thumb{ left:32px; background:var(--bg); }
+:root[data-theme="dark"] .viv-theme-moon{ color:#c7d2fe; }
+:root[data-theme="dark"] .viv-theme-sun{ color:#64748b; }
+
+/* Chrome + content */
+:root[data-theme="dark"] .viv-rail,
+:root[data-theme="dark"] header,
+:root[data-theme="dark"] .viv-rail-studies-head{ background:var(--rail) !important; border-color:var(--border-faint) !important; color:var(--text); }
+:root[data-theme="dark"] .viv-content,
+:root[data-theme="dark"] .page{ background:var(--bg); }
+:root[data-theme="dark"] .viv-rail-section-label{ color:#7788a0; }
+:root[data-theme="dark"] .viv-rail-studies-link{ color:var(--text); }
+:root[data-theme="dark"] .viv-rail-studies-link:hover{ background:var(--active); color:var(--link); }
+
+/* Rail nav + study lists */
+:root[data-theme="dark"] .viv-rail-link,
+:root[data-theme="dark"] .viv-rail-investigations-group-header,
+:root[data-theme="dark"] .viv-rail-investigations-group-name,
+:root[data-theme="dark"] .viv-rail-investigations-group-items .viv-rail-link,
+:root[data-theme="dark"] .viv-rail-ungrouped-section .viv-rail-sublink,
+:root[data-theme="dark"] .viv-rail-pinned-section{ background:var(--surface-2) !important; border-bottom-color:var(--border) !important; }
+:root[data-theme="dark"] .viv-rail-pinned-section .viv-rail-sublink-pinned{ color:#c6d1e0; }
+:root[data-theme="dark"] .viv-rail-link:hover,
+:root[data-theme="dark"] .viv-rail-investigations-group-header:hover,
+:root[data-theme="dark"] .viv-rail-sublink:hover{ background:var(--hover); }
+:root[data-theme="dark"] .viv-rail-link.active,
+:root[data-theme="dark"] .viv-rail-investigations-group-items .viv-rail-link.active{ background:var(--active); color:#eaf1ff; }
+:root[data-theme="dark"] .viv-rail-investigations-group-items .viv-rail-link-sub,
+:root[data-theme="dark"] .count-badge,
+:root[data-theme="dark"] .muted,
+:root[data-theme="dark"] .reg-ip-type, :root[data-theme="dark"] .loom-port-type,
+:root[data-theme="dark"] .cols-count, :root[data-theme="dark"] .page-lead,
+:root[data-theme="dark"] .card-browse-options{ color:var(--text-muted); }
+:root[data-theme="dark"] .viv-rail-investigations-group-count{ background:var(--border); color:#c3cfdd; }
+:root[data-theme="dark"] .viv-rail-investigations-group.rail-iset-active{ background:#161f38; border-left-color:#818cf8; }
+:root[data-theme="dark"] .viv-rail-investigations-group.rail-iset-active .viv-rail-investigations-group-count{ background:var(--accent); color:#fff; }
+
+/* Surfaces: cards, panels, tables, code, toolbars, buttons */
+:root[data-theme="dark"] .panel,
+:root[data-theme="dark"] .registry-card,
+:root[data-theme="dark"] .ccard,
+:root[data-theme="dark"] .module-card,
+:root[data-theme="dark"] .registry-table,
+:root[data-theme="dark"] .loom-card,
+:root[data-theme="dark"] .investigation-card,
+:root[data-theme="dark"] .analyses-card,
+:root[data-theme="dark"] .tool-card{ background:var(--surface); border-color:var(--border); color:var(--text); }
+:root[data-theme="dark"] .loom-config,
+:root[data-theme="dark"] .loom-sec-out,
+:root[data-theme="dark"] .reg-ip,
+:root[data-theme="dark"] .json-viewer,
+:root[data-theme="dark"] .card-browse-toolbar,
+:root[data-theme="dark"] pre, :root[data-theme="dark"] code,
+:root[data-theme="dark"] th, :root[data-theme="dark"] .reg-th{ background:var(--surface-2); border-color:var(--border); color:#c8d4e4; }
+:root[data-theme="dark"] td{ border-color:var(--border-faint); }
+:root[data-theme="dark"] .reg-tr:hover{ background:#16223a; }
+:root[data-theme="dark"] .cols-auto-btn,
+:root[data-theme="dark"] .reg-zoom-btn,
+:root[data-theme="dark"] .btn-mini,
+:root[data-theme="dark"] .action-btn,
+:root[data-theme="dark"] .card-browse-chip{ background:var(--surface-3); border-color:var(--border-2); color:#cdd9e8; }
+:root[data-theme="dark"] .card-browse-chip.active{ background:#3b82f6; border-color:#3b82f6; color:#fff; }
+:root[data-theme="dark"] .registry-zoom,
+:root[data-theme="dark"] .registry-viewmode{ border-color:var(--border-2); }
+/* Neutral chrome badges + icon buttons (colored status pills stay as-is). */
+:root[data-theme="dark"] .registry-tab .count-badge{ background:var(--surface-3); color:#c6d1e0; }
+:root[data-theme="dark"] .icon-btn,
+:root[data-theme="dark"] .viv-icon-btn{ background:var(--surface-3); border-color:var(--border-2); color:#c6d1e0; }
+:root[data-theme="dark"] .icon-btn:hover,
+:root[data-theme="dark"] .viv-icon-btn:hover{ background:var(--hover); color:var(--heading); }
+:root[data-theme="dark"] .install-src-pill,
+:root[data-theme="dark"] .install-src-venv,
+:root[data-theme="dark"] .install-src-pyproject,
+:root[data-theme="dark"] .install-src-unmanaged{ background:var(--surface-3) !important; border-color:var(--border-2) !important; color:#c6d1e0 !important; }
+
+/* Headings + card names (class-colored, not inline) */
+:root[data-theme="dark"] h1, :root[data-theme="dark"] h2, :root[data-theme="dark"] h3,
+:root[data-theme="dark"] h4, :root[data-theme="dark"] .page-title,
+:root[data-theme="dark"] .reg-card-name, :root[data-theme="dark"] .loom-name,
+:root[data-theme="dark"] .mrow-name-text, :root[data-theme="dark"] .ccard-name,
+:root[data-theme="dark"] .ccc-name{ color:var(--heading); }
+:root[data-theme="dark"] .mrow-desc,
+:root[data-theme="dark"] .ccard-desc{ color:#a9b6c6; }
+/* Investigation card titles were dark-on-dark (strong inherits, no inline color). */
+:root[data-theme="dark"] .investigation-set-card strong,
+:root[data-theme="dark"] .investigation-card .name{ color:var(--heading); }
+
+/* Registry Full runnable card: config-field chips had a white surround and the
+   port type badges (map[millimolar], string, …) were light. */
+:root[data-theme="dark"] .loom-cfg-inline .loom-cfg-row{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .loom-in-type,
+:root[data-theme="dark"] .reg-mid-config code{ background:var(--surface-3); color:#aeb9c8; }
+:root[data-theme="dark"] .loom-cfg-key{ color:#aeb9c8; }
+:root[data-theme="dark"] .loom-in-key{ color:#9db4e6; }
+:root[data-theme="dark"] .loom-out-ports .loom-port{ background:var(--surface-3); border-color:var(--border-2); }
+:root[data-theme="dark"] .loom-port-name{ color:#9db4e6; }
+
+/* Investigation view: biology story, graph canvas, and study-DAG node cards. */
+:root[data-theme="dark"] .inv-bio-story{ background:var(--surface-2) !important; border-color:var(--border) !important; color:var(--text); }
+:root[data-theme="dark"] .aig-zoom-mid,
+:root[data-theme="dark"] .aig-graph,
+:root[data-theme="dark"] .aig-orient-lr,
+:root[data-theme="dark"] .aig-orient-tb{ background:var(--bg) !important; }
+:root[data-theme="dark"] .iset-dag-node{ background:var(--surface) !important; border-color:var(--border) !important; color:var(--text); }
+:root[data-theme="dark"] .iset-dag-node .aig-claim-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] #investigation-dag-lead{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] #investigation-dag-lead strong{ color:var(--text) !important; }
+:root[data-theme="dark"] .inv-lead-details summary{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] .viv-info-chip{ background:var(--surface-3) !important; color:var(--text-muted) !important; border-color:var(--border) !important; }
+/* Inquiry brief (investigation opening) — dark. Accent --vs keeps its vivid
+   colour; the pill bg/fg get dark-tinted variants. */
+:root[data-theme="dark"] .inv-brief-q{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-verdict{ background:var(--surface-2); color:var(--text); }
+:root[data-theme="dark"] .inv-brief-verdict-label{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-framing{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-meta{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-meta-item em{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-meta-item + .inv-brief-meta-item::before{ color:var(--border-2); }
+:root[data-theme="dark"] .inv-brief-tabs{ border-bottom-color:var(--border); }
+:root[data-theme="dark"] .inv-brief-tab{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief-tab:hover{ color:var(--text); background:var(--hover); }
+:root[data-theme="dark"] .inv-brief-tab.active{ color:var(--link); border-bottom-color:var(--link); }
+:root[data-theme="dark"] .inv-brief-prose{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-howto{ color:var(--text); }
+:root[data-theme="dark"] .inv-brief-glossary dt{ color:var(--heading); }
+:root[data-theme="dark"] .inv-brief-glossary dd{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-brief.inv-vs-passed   { --vs-bg:#12351f; --vs-fg:#86efac; }
+:root[data-theme="dark"] .inv-brief.inv-vs-progress { --vs-bg:#2a2113; --vs-fg:#fcd34d; }
+:root[data-theme="dark"] .inv-brief.inv-vs-blocked  { --vs-bg:#3a1518; --vs-fg:#fca5a5; }
+:root[data-theme="dark"] .inv-brief.inv-vs-planning { --vs-bg:#14243f; --vs-fg:#93c5fd; }
+:root[data-theme="dark"] .inv-brief.inv-vs-default  { --vs-bg:var(--surface-3); --vs-fg:var(--text); }
+/* Market (faceted artifact browser) — dark. */
+:root[data-theme="dark"] .market-facets{ border-bottom-color:var(--border); }
+:root[data-theme="dark"] .market-facet{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-facet:hover{ color:var(--text); background:var(--hover); }
+:root[data-theme="dark"] .market-facet.active{ color:var(--link); border-bottom-color:var(--link); }
+:root[data-theme="dark"] .market-origin-chip{ background:var(--surface-3); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .market-origin-chip:hover{ color:var(--text); border-color:var(--border-2); }
+:root[data-theme="dark"] .market-origin-chip.active{ background:var(--active); color:var(--link); border-color:var(--border-2); }
+:root[data-theme="dark"] .market-group-head{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-count{ background:var(--surface-3); color:var(--text-muted); }
+:root[data-theme="dark"] .market-card{ background:var(--surface); border-color:var(--border); }
+:root[data-theme="dark"] .market-card:hover{ box-shadow:0 2px 12px rgba(0,0,0,0.45); }
+:root[data-theme="dark"] .market-name{ color:var(--heading); }
+:root[data-theme="dark"] .market-repo{ background:var(--surface-3); color:var(--text-muted); }
+:root[data-theme="dark"] .market-desc{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-meta{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-usage{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-row{ border-bottom-color:var(--border-faint); }
+:root[data-theme="dark"] .market-row:hover{ background:var(--hover); }
+:root[data-theme="dark"] .market-row-desc{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-dl-k{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-dl-v{ color:var(--text); }
+:root[data-theme="dark"] .market-dl-v code,
+:root[data-theme="dark"] .market-desc code{ background:var(--surface-3); color:var(--text); }
+:root[data-theme="dark"] .market-table th,
+:root[data-theme="dark"] .market-table td{ border-bottom-color:var(--border-faint); }
+:root[data-theme="dark"] .market-th{ color:var(--text-muted); background:var(--surface-2); border-bottom-color:var(--border); }
+:root[data-theme="dark"] .market-th:hover{ color:var(--text); background:var(--active); }
+:root[data-theme="dark"] .market-th.sorted{ color:var(--link); }
+:root[data-theme="dark"] .market-tr:hover{ background:var(--hover); }
+:root[data-theme="dark"] .market-td-name{ color:var(--heading); }
+:root[data-theme="dark"] .market-td-use{ color:var(--text-muted); }
+:root[data-theme="dark"] .market-origin-workspace{ background:#1e2547; color:#a5b4fc; }
+:root[data-theme="dark"] .market-origin-external{ background:#12351f; color:#86efac; }
+/* Modals → dark surface (base .modal-box ships background:#fff). */
+:root[data-theme="dark"] .modal-box{ background:var(--surface) !important; color:var(--text) !important; box-shadow:0 8px 32px rgba(0,0,0,0.6) !important; border:1px solid var(--border); }
+:root[data-theme="dark"] .modal-box h1,
+:root[data-theme="dark"] .modal-box h2,
+:root[data-theme="dark"] .modal-box h3,
+:root[data-theme="dark"] .modal-box h4,
+:root[data-theme="dark"] .modal-box label{ color:var(--heading) !important; }
+:root[data-theme="dark"] .modal-close{ color:var(--text-muted) !important; }
+
+/* ── Study-detail page (loaded in the study/investigation iframe) ──────────
+   Comprehensive dark pass: neutral containers → surface tokens, dark text →
+   text tokens. Small colored/gray badges (status/classification/finding-kind
+   pills, finding-id, status chips) are left as readable badges. */
+:root[data-theme="dark"] .study-tabs,
+:root[data-theme="dark"] .finding-card{ background:var(--surface) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .spine-summary,
+:root[data-theme="dark"] .status-detail,
+:root[data-theme="dark"] .status-detail-panel,
+:root[data-theme="dark"] .overview-section,
+:root[data-theme="dark"] .findings-section,
+:root[data-theme="dark"] .purpose-callout,
+:root[data-theme="dark"] .finding-evidence,
+:root[data-theme="dark"] .finding-expected,
+:root[data-theme="dark"] .finding-exp-summary{ background:var(--surface-2) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .finding-next{ background:#0f2417 !important; border-color:#1c3a28 !important; }
+/* Container text → tokens (small pills keep their own colors). */
+:root[data-theme="dark"] .study-name,
+:root[data-theme="dark"] .spine-val,
+:root[data-theme="dark"] .study-pillar,
+:root[data-theme="dark"] .finding-statement,
+:root[data-theme="dark"] .finding-explanation,
+:root[data-theme="dark"] .finding-title,
+:root[data-theme="dark"] .overview-section h2,
+:root[data-theme="dark"] .overview-section h3,
+:root[data-theme="dark"] .spine-at-glance-head{ color:var(--heading) !important; }
+:root[data-theme="dark"] .status-detail-axis,
+:root[data-theme="dark"] .spine-summary-head,
+:root[data-theme="dark"] .spine-key,
+:root[data-theme="dark"] .narrative-label,
+:root[data-theme="dark"] .finding-evidence,
+:root[data-theme="dark"] .finding-expected,
+:root[data-theme="dark"] .finding-exp-summary,
+:root[data-theme="dark"] .finding-evidence .em,
+:root[data-theme="dark"] .finding-meta{ color:var(--text-muted) !important; }
+/* Badges → dark-tinted pills (dark bg + light coloured text) so semantic
+   colour survives on a dark surface without the light pill glare. */
+:root[data-theme="dark"] .status-chip,
+:root[data-theme="dark"] .finding-id{ background:var(--surface-3) !important; color:var(--text) !important; border-color:var(--border) !important; }
+:root[data-theme="dark"] .phase-pill.phase-decide,
+:root[data-theme="dark"] .status-pill.gate-status-passed,
+:root[data-theme="dark"] .status-chip.gate-status-passed{ background:#12351f !important; color:#86efac !important; border-color:#1c4a2c !important; }
+:root[data-theme="dark"] .finding-kind{ background:#1e2547 !important; color:#a5b4fc !important; border-color:#2c3566 !important; }
+:root[data-theme="dark"] .classification-pill.classification-primary{ background:#3a1518 !important; color:#fca5a5 !important; border-color:#5a2226 !important; }
+:root[data-theme="dark"] .classification-pill.classification-supporting{ background:#14243f !important; color:#93c5fd !important; border-color:#22375c !important; }
+:root[data-theme="dark"] .readiness-banner{ background:#2a2113 !important; color:#fcd34d !important; border-color:#3d3418 !important; }
+:root[data-theme="dark"] .finding-next,
+:root[data-theme="dark"] .finding-next strong,
+:root[data-theme="dark"] .finding-next *{ color:#86efac !important; }
+:root[data-theme="dark"] .sim-status-pill.sim-status-ready{ color:#86efac !important; }
+:root[data-theme="dark"] .finding-explanation em{ color:var(--text-muted) !important; }
+/* Inline-styled severity/result pills (background baked into the element
+   style). Templates use both spaced (`background: #x`) and unspaced forms. */
+:root[data-theme="dark"] [style*="background:#fee2e2"],
+:root[data-theme="dark"] [style*="background: #fee2e2"]{ background:#3a1518 !important; color:#fca5a5 !important; }
+:root[data-theme="dark"] [style*="background:#fef3c7"],
+:root[data-theme="dark"] [style*="background: #fef3c7"]{ background:#2a2113 !important; color:#fcd34d !important; }
+:root[data-theme="dark"] [style*="background:#dcfce7"],
+:root[data-theme="dark"] [style*="background: #dcfce7"]{ background:#12351f !important; color:#86efac !important; }
+:root[data-theme="dark"] [style*="background:#dbeafe"],
+:root[data-theme="dark"] [style*="background: #dbeafe"]{ background:#14243f !important; color:#93c5fd !important; }
+:root[data-theme="dark"] [style*="background:#f1f5f9"],
+:root[data-theme="dark"] [style*="background: #f1f5f9"]{ background:var(--surface-3) !important; color:var(--text-muted) !important; }
+:root[data-theme="dark"] [style*="background:#f3f4f6"],
+:root[data-theme="dark"] [style*="background: #f3f4f6"]{ background:var(--surface-3) !important; color:var(--text) !important; }
+
+/* Form controls: native dark rendering + explicit dark (beats inline #fff;
+   appearance:none so WebKit search inputs honor the background). */
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .card-browse-search{
+  -webkit-appearance:none; appearance:none; color-scheme:dark;
+  background:var(--field) !important; color:var(--text) !important; border-color:var(--border-2) !important;
+}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder{ color:#6c7c90 !important; }
+
+/* Inline-style retargeting (semicolon-anchored so amber pills like #fffbeb
+   aren't caught by the #fff prefix). */
+:root[data-theme="dark"] [style*="background:#fff;"],
+:root[data-theme="dark"] [style*="background: #fff;"],
+:root[data-theme="dark"] [style*="background:#ffffff"],
+:root[data-theme="dark"] [style*="background:white"]{ background:var(--surface) !important; }
+:root[data-theme="dark"] [style*="background:#f8fafc"],
+:root[data-theme="dark"] [style*="background:#f1f5f9"],
+:root[data-theme="dark"] [style*="background:#fafafa"],
+:root[data-theme="dark"] [style*="background:#f9fafb"]{ background:var(--surface-2) !important; }
+:root[data-theme="dark"] [style*="color:#0f172a"],
+:root[data-theme="dark"] [style*="color:#111827"],
+:root[data-theme="dark"] [style*="color:#1e293b"],
+:root[data-theme="dark"] [style*="color:#334155"],
+:root[data-theme="dark"] [style*="color:#374151"],
+:root[data-theme="dark"] [style*="color:#475569"]{ color:#cdd8e6 !important; }
+:root[data-theme="dark"] [style*="color:#64748b"],
+:root[data-theme="dark"] [style*="color:#6b7280"],
+:root[data-theme="dark"] [style*="color:#94a3b8"],
+:root[data-theme="dark"] [style*="color:#9ca3af"]{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] [style*="solid #e5e7eb"],
+:root[data-theme="dark"] [style*="solid #e2e8f0"],
+:root[data-theme="dark"] [style*="solid #d1d5db"],
+:root[data-theme="dark"] [style*="solid #eee"],
+:root[data-theme="dark"] [style*="solid #f1f5f9"]{ border-color:var(--border) !important; }
+
+/* ===== Registry: sort bar ===== */
+.registry-facets{ display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; margin:8px 0 2px; padding:2px 2px 8px; }
+.facet-group{ display:inline-flex; align-items:center; gap:6px; }
+.facet-label{ font-size:0.7em; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:#94a3b8; }
+.facet-select{ font-size:0.8em; color:#334155; background:#fff; border:1px solid #d5dbe6; border-radius:7px; padding:3px 8px; cursor:pointer; }
+:root[data-theme="dark"] .facet-select{ background:var(--surface); border-color:var(--border); color:var(--text); }
+
+/* ===== Registry table: fill the window + resizable columns ===== */
+.registry-table-wrap{ overflow-x:auto; width:100%; }
+.registry-table.reg-table-fill{ width:100%; table-layout:fixed; border-collapse:collapse; }
+.registry-table.reg-table-fill th, .registry-table.reg-table-fill td{
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.registry-table.reg-table-fill .reg-td-name code{ margin-left:6px; }
+.registry-table.reg-table-fill .reg-th{ position:relative; }
+.registry-table.reg-table-fill .reg-th-label{ display:inline-block; overflow:hidden; text-overflow:ellipsis; max-width:100%; vertical-align:bottom; }
+.col-resize{
+  position:absolute; top:0; right:-4px; width:8px; height:100%; cursor:col-resize;
+  user-select:none; z-index:3;
+}
+.col-resize::after{ content:''; position:absolute; top:20%; right:3px; width:2px; height:60%; background:transparent; border-radius:2px; }
+.col-resize:hover::after{ background:#93b4f5; }
+body.col-resizing{ cursor:col-resize !important; user-select:none; }
+body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry-table.reg-table-fill td{ user-select:none; }
+
+/* ===== Unified page-toolbar search input (Studies / Registry / Modules) =====
+   One look everywhere: full-width in its row, same padding/border/radius/font. */
+.viv-search{
+  flex:1 1 auto; width:100%; box-sizing:border-box; min-width:0; margin:0;
+  padding:8px 14px;
+  border:1px solid #d5dbe6; border-radius:8px;
+  font-size:0.9em; background:#fff; color:#1e293b;
+}
+.viv-search::placeholder{ color:#94a3b8; }
+.viv-search:focus{ outline:none; border-color:#93b4f5; box-shadow:0 0 0 2px rgba(147,180,245,.35); }
+:root[data-theme="dark"] .viv-search{ background:var(--surface); border-color:var(--border); color:var(--text); }
+
+/* Studies page has no sticky header (unlike Registry/Modules), so its tab row
+   needs the extra top gap to line up with those pages' tabs. */
+#page-investigations .iset-browse-tabs.registry-tabs{ margin-top:8px; }
+
+/* ===== About page (opened from the Vivarium brand logo) ===== */
+.about-page{ max-width:760px; margin:0 auto; padding:28px 24px 56px; }
+.about-hero{ display:flex; align-items:center; gap:20px; padding-bottom:22px; margin-bottom:8px; border-bottom:1px solid #eef2f7; }
+.about-logo{ width:76px; height:76px; border-radius:16px; flex:none; object-fit:cover; box-shadow:0 2px 10px -4px rgba(15,23,42,.25); }
+.about-hero-text h1{ margin:0 0 6px; font-size:1.6em; letter-spacing:-.01em; color:#0f172a; }
+.about-tagline{ margin:0; color:#475569; font-size:1.02em; line-height:1.5; }
+.about-block{ margin:26px 0 0; }
+.about-block h2{ margin:0 0 8px; font-size:1.06em; color:#1d4ed8; }
+.about-block p{ margin:0 0 10px; color:#334155; line-height:1.62; font-size:0.95em; }
+.about-fineprint{ color:#64748b !important; font-size:0.86em !important; }
+.about-steps{ margin:6px 0 12px; padding-left:20px; }
+.about-steps li{ margin:0 0 8px; color:#334155; line-height:1.55; font-size:0.94em; }
+.about-links{ display:flex; flex-wrap:wrap; gap:12px; margin-top:32px; padding-top:22px; border-top:1px solid #eef2f7; }
+.about-link-btn{
+  display:inline-flex; align-items:center; gap:6px; padding:9px 16px; border-radius:9px;
+  background:#2563eb; color:#fff; font-weight:600; font-size:0.92em; text-decoration:none;
+  border:1px solid #2563eb; transition:background .12s ease, box-shadow .12s ease;
+}
+.about-link-btn:hover{ background:#1d4ed8; box-shadow:0 3px 12px -5px rgba(37,99,235,.6); }
+.about-link-ghost{ background:transparent; color:#2563eb; }
+.about-link-ghost:hover{ background:#eff6ff; box-shadow:none; }
+:root[data-theme="dark"] .about-hero,
+:root[data-theme="dark"] .about-links{ border-color:var(--border); }
+:root[data-theme="dark"] .about-hero-text h1{ color:var(--text); }
+:root[data-theme="dark"] .about-tagline,
+:root[data-theme="dark"] .about-block p,
+:root[data-theme="dark"] .about-steps li{ color:var(--text-muted, #cbd5e1); }
+:root[data-theme="dark"] .about-block h2{ color:#93c5fd; }
+:root[data-theme="dark"] .about-link-ghost{ color:#93c5fd; }
+:root[data-theme="dark"] .about-link-ghost:hover{ background:rgba(59,130,246,.12); }

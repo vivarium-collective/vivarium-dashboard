@@ -100,6 +100,7 @@ export interface InvestigationSummary {
   studies: string[];
   lifecycle: any;
   current: boolean | null;
+  run_command: string | null;
   error: string | null;
   origin_repo: string | null;
   read_only: boolean | null;

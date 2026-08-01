@@ -225,6 +225,7 @@ def build_iset_summary(
 ) -> list[dict]:
     """Build the ``/api/investigation-summaries`` payload: one summary dict per investigation,
     each carrying an ``effective_status`` derived from its member studies."""
+    from vivarium_workbench.lib.run_commands import investigation_run_command
     out: list[dict] = []
     current_slug = current_branch_slug(ws_root)
     for d in iter_iset_dirs(ws_root):
@@ -257,6 +258,9 @@ def build_iset_summary(
             "studies":          study_slugs,
             "lifecycle":        iset_lifecycle(ws_root, spec.get("name", d.name)),
             "current":          (d.name == current_slug),
+            # Single-line "run this investigation" command for the card (runs
+            # every member study; add `--steps N` to force a length).
+            "run_command":      investigation_run_command(spec.get("name", d.name)),
             "origin_repo":      None,
             "read_only":        False,
         })
@@ -277,6 +281,7 @@ def build_iset_summary(
             "studies":          [m.split("::", 1)[-1] for m in fi.get("member_studies", [])],
             "lifecycle":        "",
             "current":          False,
+            "run_command":      investigation_run_command(fi["name"]),
             "origin_repo":      fi["origin_repo"],
             "read_only":        True,
         })
