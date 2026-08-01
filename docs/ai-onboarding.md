@@ -14,13 +14,13 @@
 
 ---
 
-## 1. Create the new workspace repo (scaffold from `pbg-template`)
+## 1. Create the new workspace repo (scaffold from `viva-template`)
 A workspace is a self-contained research repo (its own Python package + specs). Don't hand-roll it — scaffold from the template:
 
 ```bash
-# Option A: "Use this template" on github.com/vivarium-collective/pbg-template, then clone your new repo.
+# Option A: "Use this template" on github.com/vivarium-collective/viva-template, then clone your new repo.
 # Option B: clone the template directly:
-git clone https://github.com/vivarium-collective/pbg-template my-workspace
+git clone https://github.com/vivarium-collective/viva-template my-workspace
 cd my-workspace
 
 bash use-this-template-init.sh     # prompts for a workspace name; renders the .j2 files
@@ -118,7 +118,7 @@ Four features that look like separate machinery are that one idea in different p
 ## 5. Quick reference
 ```bash
 # --- one-time, new repo ---
-git clone https://github.com/vivarium-collective/pbg-template my-workspace && cd my-workspace
+git clone https://github.com/vivarium-collective/viva-template my-workspace && cd my-workspace
 bash use-this-template-init.sh
 uv venv && source .venv/bin/activate && uv pip install -e ".[dev]"
 python3 scripts/lint-workspace.py           # -> "workspace lint: OK"

@@ -40,7 +40,7 @@ The mental model is three layers:
    + AI TOOLING      pbg-superpowers (/pbg-* Claude skills)
       │
    DATA              a workspace directory                (the only source of truth)
-                     (scaffolded from pbg-template)
+                     (scaffolded from viva-template)
 ```
 
 The dashboard's job is to **author** the workspace's YAML specs through a UI,
@@ -198,7 +198,7 @@ map in `workspace.yaml`. Defaults (`LAYOUT_DEFAULTS`):
 ├── references/                 # papers.bib + uploaded PDFs (+ .cache.json enrichment, gitignored)
 ├── datasets/  notes/  experiments/  reports/  scripts/  tests/  docs/
 └── .pbg/                       # derived/transient state — gitignored
-    ├── schemas/                #   JSON-Schema validators (shipped by pbg-template)
+    ├── schemas/                #   JSON-Schema validators (shipped by viva-template)
     ├── runs/<run_id>/          #   per-run scratch: request.json, run.log, viz.json, emitter output
     ├── composite-runs.db       #   SQLite — Composite Explorer scratch runs
     ├── state.json              #   per-developer workstream state (active branch, PR)
@@ -219,7 +219,7 @@ under `investigations/<inv>/studies/<slug>/`. Resolution is nested-first
 | Model definition | `*.composite.yaml` / generator fn | workspace package / installed pbg-* / pbg-superpowers |
 | **Run results** | `studies/<slug>/runs.db` (or backend emitter output) | written by process-bigraph emitter during a run |
 | Audit trail | the workspace's **git history** (+ `.pbg/events.jsonl` event log) | dashboard commits most mutations; catalog ops are an exception (see §6) |
-| Validation schemas | `.pbg/schemas/*.json` | **pbg-template** (read-only here) |
+| Validation schemas | `.pbg/schemas/*.json` | **viva-template** (read-only here) |
 | Cross-dashboard discovery | `~/.pbg/servers/` | `pbg_superpowers.workspace_catalog` |
 | Derived status/verdicts | *(not persisted — computed on read)* | `pbg_superpowers` rollups |
 
@@ -422,7 +422,7 @@ model assumes a trusted-localhost deployment. See the deep-dive §10.
 | Composite instantiation & **simulation execution** | **process-bigraph** | `Composite(state, core).run(n)` inside the detached run subprocess. The dashboard never simulates anything itself. |
 | Bigraph **type system** + JSON (de)serialization | **bigraph-schema** | `BigraphJSONEncoder` / `bigraph_json_hook` when persisting/transporting state. |
 | Interactive **state-tree (bigraph) explorer** | **bigraph-loom** | Embedded viewer; the dashboard feeds it composite-state JSON. Assets copied into the publish bundle. |
-| Workspace **scaffold** + `.pbg/schemas/` validators | **pbg-template** | Read-only here. Schemas are loaded at save time (`lib/workspace_yaml.py` → `Draft7Validator`); invalid YAML is rejected with HTTP 400 *before* any commit. pbg-template owns the schema versions. |
+| Workspace **scaffold** + `.pbg/schemas/` validators | **viva-template** | Read-only here. Schemas are loaded at save time (`lib/workspace_yaml.py` → `Draft7Validator`); invalid YAML is rejected with HTTP 400 *before* any commit. viva-template owns the schema versions. |
 | **AI-assisted authoring** + many runtime computations | **pbg-superpowers** | A *runtime library*, not just a plugin. Provides `workspace_catalog` (multi-dashboard discovery via `~/.pbg/servers/`), `composite_generator`, visualization discovery, and the verdict/status/rigor rollups the dashboard computes on read. Its `/pbg-*` Claude Code skills write the **same** workspace files the dashboard does. |
 
 > **⚠ Coupling note:** this is the deepest and leakiest dependency in the repo —
@@ -462,7 +462,7 @@ orchestrates simulations — either as detached `run-composite` processes
 (Explorer scratch runs) or as synchronous in-request subprocesses (study runs;
 see the §4 correction) that delegate to process-bigraph and write `runs.db` —
 then renders specs+results into verdicts and charts, for both the live server
-and a static read-only bundle. It is schema-validated by pbg-template,
+and a static read-only bundle. It is schema-validated by viva-template,
 AI-co-authored by pbg-superpowers, and uses bigraph-loom to visualize state
 trees. The dashboard itself stores nothing outside the workspace. For the
 code-verified detail behind every claim here, see

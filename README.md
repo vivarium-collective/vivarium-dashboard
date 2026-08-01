@@ -24,6 +24,8 @@ venv), see [docs/USAGE.md](docs/USAGE.md).
 ## Getting Started
 
 > **Setting up or driving the Workbench with an AI agent?** See **[docs/ai-onboarding.md](docs/ai-onboarding.md)** — a scaffold-to-run guide plus how the LLM layer (the `viva-superpowers` skills) talks to the HTTP API.
+>
+> **New to studies and investigations?** See **[docs/studies-and-investigations.md](docs/studies-and-investigations.md)** — what the two objects you author actually are, how they lower to runnable process-bigraph composites, and how "run one study / continue from here" (pull-or-compute) works.
 
 ### 1. Install
 
@@ -48,11 +50,11 @@ git clone https://github.com/vivarium-collective/vivarium-workbench.git ~/code/v
 
 ### 2. Get a workspace
 
-The dashboard serves a [pbg-template](https://github.com/vivarium-collective/pbg-template)
+The dashboard serves a [viva-template](https://github.com/vivarium-collective/viva-template)
 workspace. Two ways to scaffold one — same files either way, pick whichever
 interface you prefer:
 
-**Standalone (no AI required).** On the pbg-template GitHub page, click
+**Standalone (no AI required).** On the viva-template GitHub page, click
 **Use this template → Create a new repository**, clone your new repo, then run:
 
 ```bash
@@ -173,7 +175,7 @@ These three planes — and the round-trip between them — are specified in
 ## Companion repos
 
 - **[pbg-superpowers](https://github.com/vivarium-collective/pbg-superpowers)** — the Claude Code plugin whose `/pbg-*` skills drive this dashboard's HTTP API. Use it for AI-assisted authoring.
-- **[pbg-template](https://github.com/vivarium-collective/pbg-template)** — the workspace scaffold this dashboard serves. Includes the canonical `.pbg/schemas/` validators.
+- **[viva-template](https://github.com/vivarium-collective/viva-template)** — the workspace scaffold this dashboard serves. Includes the canonical `.pbg/schemas/` validators.
 - **investigation-contracts** — event-log contracts shared by both spines. Not yet on PyPI; install editable from the repo: `pip install -e /path/to/investigation-contracts`.
 
 ## Migrating an older workspace

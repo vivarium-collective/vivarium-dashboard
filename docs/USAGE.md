@@ -6,7 +6,7 @@ obtained, where it runs, and why. For the conceptual data model see
 [ARCHITECTURE.md](ARCHITECTURE.md).
 
 > The prototype workspace scaffold is
-> [pbg-template](https://github.com/vivarium-collective/pbg-template); the facts
+> [viva-template](https://github.com/vivarium-collective/viva-template); the facts
 > below come from its `template/pyproject.toml.j2`, `template-init.sh`, and
 > `scripts/serve.sh`.
 
@@ -26,7 +26,7 @@ obtained, where it runs, and why. For the conceptual data model see
   *other* environment could not see those.
 
 ```
-  workspace repo (e.g. my-project, scaffolded from pbg-template)
+  workspace repo (e.g. my-project, scaffolded from viva-template)
     pyproject.toml  ──depends-on──▶  vivarium-workbench  (pip package)
     .venv/                                    │
       ├── vivarium_workbench/   ◀─ installed ─┘
@@ -61,7 +61,7 @@ dependencies = [
 allow-direct-references = true     # permits the git source below
 ```
 
-Because the dashboard is **not on PyPI during beta**, `pbg-template`'s
+Because the dashboard is **not on PyPI during beta**, `viva-template`'s
 `template-init.sh` appends a `[tool.uv.sources]` pin to a git URL at scaffold
 time (it always uses the git source — never a committed local path — so CI,
 Docker, and collaborators all resolve identically):
@@ -150,7 +150,7 @@ The dashboard ships no science. The workspace supplies, into the shared venv:
 - its **own package** (`package_path` in `workspace.yaml`) exposing
   `build_core()` — the registry of types/processes the dashboard instantiates
   composites against;
-- the **`.pbg/schemas/`** JSON-Schema validators (shipped by pbg-template) the
+- the **`.pbg/schemas/`** JSON-Schema validators (shipped by viva-template) the
   dashboard enforces at save time;
 - any installed **`pbg-*` simulation stacks** (e.g. a `v2ecoli` workflow) the
   dashboard discovers and can delegate runs to.
