@@ -528,6 +528,15 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
         # Freshness reference: the latest recorded run time (WAL-immune), not the
         # db file mtime. A small grace absorbs sub-second render/commit ordering.
         fresh_ref = _latest_run_timestamp(runs_db)
+        # Provenance (Fable §4.5, Task V3): these HTML files are auto-rendered
+        # by render_visualizations FROM this study's runs.db, so they
+        # genuinely represent the same latest-run reference the staleness
+        # check above compares against. Reuse study_charts' existing
+        # run-lookup helper (also used by the native gallery) rather than add
+        # a new run-scanning path.
+        from vivarium_workbench.lib.study_charts import latest_run_row  # noqa: PLC0415
+        _latest = latest_run_row(runs_db)
+        latest_run_id = _latest.get("run_id") if _latest else None
         grace_s = 5.0
         for html_file in sorted(viz_dir.glob("*.html")):
             mtime = html_file.stat().st_mtime
@@ -549,10 +558,13 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
                 "url": f"/{rel}",
                 "description": desc,
                 "stale": stale,
+                "run_id": latest_run_id,
             })
 
     # Source 2: reports/figures/<name>/*.html (hand-authored cross-skill output).
-    # No runs.db gate — these aren't auto-rendered.
+    # No runs.db gate — these aren't auto-rendered. No genuine run association
+    # either (Task V3): a hand-authored file isn't tied to a specific run, so
+    # run_id stays null rather than fabricate one.
     figures_dir = wp.reports / "figures" / name
     if figures_dir.is_dir():
         for html_file in sorted(figures_dir.glob("*.html")):
@@ -565,6 +577,7 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
                     f"Hand-authored figure ({size_kb} KB) from reports/figures/{name}/."
                 ),
                 "stale": False,
+                "run_id": None,
             })
 
     return out

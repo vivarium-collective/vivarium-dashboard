@@ -278,9 +278,18 @@ _RASTER_CHART_MIME = {".png": "image/png", ".gif": "image/gif"}
 
 
 def _static_chart_meta(asset_path: Path) -> dict:
-    """Read the optional ``<name>.meta.json`` sidecar for a chart asset."""
+    """Read the optional ``<name>.meta.json`` sidecar for a chart asset.
+
+    ``source_run_id`` (written by ``viz_freshness.stamp_meta``, the same
+    provenance field the freshness badge above already reads) is surfaced
+    here as ``run_id`` (Fable §4.5, Task V3) — it's the genuine, already-
+    recorded link between a static chart and the run that produced it, so
+    reading it is not a guess/fabrication. Absent when there's no sidecar or
+    it doesn't carry the field.
+    """
     meta_path = asset_path.with_suffix(".meta.json")
     title, caption, simulations, interpretation = asset_path.stem, "", "", ""
+    run_id = None
     if meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
@@ -289,10 +298,12 @@ def _static_chart_meta(asset_path: Path) -> dict:
                 caption = str(meta.get("caption", "")) or ""
                 simulations = str(meta.get("simulations", "")) or ""
                 interpretation = str(meta.get("interpretation", "")) or ""
+                run_id = meta.get("source_run_id") or None
         except Exception:
             pass
     return {"title": title, "caption": caption,
-            "simulations": simulations, "interpretation": interpretation}
+            "simulations": simulations, "interpretation": interpretation,
+            "run_id": run_id}
 
 
 def discover_static_study_charts(
@@ -484,6 +495,12 @@ def discover_declared_figure_charts(study_dir: Path,
             continue
         rec["source"] = "declared"
         rec["freshness"] = "declared"
+        # Declared/hand-authored (Fable §4.5, Task V3): this record is a
+        # study-author's `visualizations:` declaration pointing at a checked-
+        # in image, not a run-derived artifact — never claim a run_id here,
+        # even if the resolved file happens to carry a stamped meta sidecar
+        # (that would attribute provenance the study author didn't declare).
+        rec["run_id"] = None
         out.append(rec)
         seen_keys.add(key)
     return out

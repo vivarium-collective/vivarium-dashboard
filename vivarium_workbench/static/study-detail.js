@@ -303,14 +303,14 @@
   //   live   — generated from runs.db at request time
   //   static — pre-rendered SVGs under studies/<name>/charts/
   var _chartsLoadedFor = {};
-  // Fable §4.5 (Task V2): one `.figure-card` shell shared with the native
+  // Fable §4.5 (Task V2/V3): one `.figure-card` shell shared with the native
   // gallery / embed sources — a bordered figure container + a muted
   // caption-row footer (source chip + title + optional run link), not the
-  // old boxed `.chart-card` with its own title bar. `c.run_id` isn't
-  // threaded through by the server for chart-sourced figures yet (Task V3
-  // adds it) — the run-link slot is rendered conditionally so it lights up
-  // on its own once V3 ships; V2 just omits it rather than fabricate
-  // provenance.
+  // old boxed `.chart-card` with its own title bar. `c.run_id` is populated
+  // by build_study_charts_payload only when genuinely derivable (a static
+  // chart's stamped meta sidecar) — this render is conditional on it so a
+  // chart with no recorded provenance omits the link rather than fabricate
+  // one (Task V3).
   function _renderChartCard(c) {
     // SVG records carry inline markup in c.svg; PNG/GIF records carry a
     // self-contained data-URI in c.img (rendered as <img>).
@@ -2241,6 +2241,14 @@
   (async function () {
     if (await _bootstrapStudy()) { _runStudyInit(); }
   })();
+
+  // Embed-viz cards (Fable §4.5, Task V3): unlike the native gallery / chart
+  // sources (async, wired via _wireFigureRunLinks after their fetch lands),
+  // embed cards are server-rendered directly into the template — present in
+  // the DOM as soon as this script (loaded at the end of <body>) runs. Wire
+  // their run-links once here with the same delegated listener rather than
+  // duplicate the click handling.
+  _wireFigureRunLinks(document.getElementById('visualize-section'));
 
   // --- URL hash → Runs tab + scroll to run row ---
   // Links from the Simulations DB (walkthrough.js) land at

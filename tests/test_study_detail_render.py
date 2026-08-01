@@ -486,6 +486,56 @@ def test_visualizations_gallery_one_figure_card_no_source_chrome(tmp_path, dashb
     assert 'class="figure-run-link"' not in html
 
 
+def test_visualizations_embed_with_run_id_renders_run_link(tmp_path, dashboard_client):
+    """Task V3: an embed sourced from studies/<name>/viz/*.html (auto-rendered
+    by render_visualizations against runs.db) carries a genuine run_id, and
+    the server-rendered card must render the `from run … ↗` link — reading
+    v.run_id in the template — same as the native gallery / chart sources."""
+    import sqlite3
+
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "viz-gallery-study-run-embed"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "viz-gallery-study-run-embed",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    # A completed run recorded in runs.db …
+    db = sd / "runs.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE runs_meta (run_id TEXT, spec_id TEXT, started_at REAL, "
+        "completed_at REAL, status TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO runs_meta VALUES (?, ?, ?, ?, ?)",
+        ("run-embed-1", "viz-gallery-study-run-embed", 0.0, 10.0, "completed"),
+    )
+    conn.commit()
+    conn.close()
+
+    # … and a matching auto-rendered viz HTML file, discovered + tagged with
+    # that run's id by discover_viz_html_files.
+    viz_dir = sd / "viz"
+    viz_dir.mkdir()
+    (viz_dir / "trace.html").write_text("<html>hi</html>")
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-gallery-study-run-embed")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert 'class="figure-run-link" data-run-id="run-embed-1"' in html
+    assert "from run run-embed-1" in html
+
+
 def test_visualizations_empty_study_shows_empty_state_element(tmp_path, dashboard_client):
     """Regression guard (Fable A #3 union logic, unaffected by Task V2): a
     study with no embed_visualizations still server-renders the shared,

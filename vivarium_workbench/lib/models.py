@@ -158,6 +158,7 @@ class ChartPayload(BaseModel):
     simulations: Optional[str] = None
     interpretation: Optional[str] = None
     data_source: Optional[str] = None
+    run_id: Optional[str] = None
 
 
 class StudyChartsPayload(BaseModel):

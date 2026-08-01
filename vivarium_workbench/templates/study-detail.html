@@ -1036,10 +1036,18 @@
          Fable §4.5 (Task V2): same `.figure-card` shell as the other two
          figure sources — no bordered/backgrounded header bar. The name +
          "Open in new tab" affordance move into the caption row footer,
-         alongside a muted `embed` source chip. This source doesn't carry a
-         run_id yet (Task V3 threads it through), so its caption never
-         fabricates a run link — `embed-viz-card` stays as a second class for
-         `_figuresHasEmbeds()` / existing hooks to key on.
+         alongside a muted `embed` source chip. `embed-viz-card` stays as a
+         second class for `_figuresHasEmbeds()` / existing hooks to key on.
+
+         Task V3: `v.run_id` is populated only for the auto-rendered
+         studies/<name>/viz/*.html source (discover_viz_html_files attaches
+         the run whose data the file represents); hand-authored
+         reports/figures/ entries and study.yaml-declared embeds have no
+         run_id key, so `{% if v.run_id %}` omits the link rather than
+         fabricate one. The anchor is server-rendered here (unlike the
+         async native/chart sources) and wired via the SAME delegated
+         `_wireFigureRunLinks` listener, called once at load in
+         study-detail.js since these cards exist in the DOM from page load.
     #}
     {% if study.embed_visualizations %}
     {% for v in study.embed_visualizations %}
@@ -1055,6 +1063,9 @@
       <div class="figure-caption-row">
         <span class="figure-source-chip">embed</span>
         <span class="figure-title">{{ v.name }}</span>
+        {% if v.run_id %}
+        <a href="#" class="figure-run-link" data-run-id="{{ v.run_id }}">from run {{ v.run_id }} ↗</a>
+        {% endif %}
         <a href="{{ v.url }}" target="_blank" class="figure-open-link">Open in new tab ↗</a>
       </div>
     </div>

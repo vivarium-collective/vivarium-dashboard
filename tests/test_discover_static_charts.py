@@ -140,3 +140,47 @@ def test_declared_figure_found_in_charts_subdir(tmp_path):
     (tmp_path / "charts" / "a.png").write_bytes(b"\x89PNG")
     [rec] = discover_declared_figure_charts(tmp_path, [{"address": "png:a.png"}])
     assert rec["img"].startswith("data:image/png;base64,")
+
+
+# ---------------------------------------------------------------------------
+# run_id provenance (Fable §4.5, Task V3): a static chart's <name>.meta.json
+# sidecar (viz_freshness.stamp_meta) is the genuine, already-recorded link to
+# the run that produced it — reuse it rather than guess. A chart with no
+# stamped source_run_id, or one resolved via a hand-authored `visualizations:`
+# declaration, carries no run association and must stay null.
+# ---------------------------------------------------------------------------
+
+
+def test_static_chart_with_stamped_meta_carries_run_id(tmp_path):
+    d = _charts_dir(tmp_path)
+    (d / "01_photo.png").write_bytes(b"\x89PNG")
+    (d / "01_photo.meta.json").write_text('{"source_run_id":"run-42"}')
+    [rec] = discover_static_study_charts(d)
+    assert rec["run_id"] == "run-42"
+
+
+def test_static_chart_without_meta_run_id_is_null(tmp_path):
+    d = _charts_dir(tmp_path)
+    (d / "00_a.svg").write_text("<svg/>")
+    [rec] = discover_static_study_charts(d)
+    assert rec["run_id"] is None
+
+
+def test_static_chart_with_meta_but_no_source_run_id_is_null(tmp_path):
+    d = _charts_dir(tmp_path)
+    (d / "01_photo.png").write_bytes(b"\x89PNG")
+    (d / "01_photo.meta.json").write_text('{"title":"Photo T"}')
+    [rec] = discover_static_study_charts(d)
+    assert rec["run_id"] is None
+
+
+def test_declared_figure_chart_run_id_always_null(tmp_path):
+    """Declared/hand-authored visualizations[] figures never carry a run_id,
+    even when the resolved file happens to have a stamped meta sidecar — the
+    author declared it, so no run derivation is claimed."""
+    (tmp_path / "charts").mkdir()
+    fig = tmp_path / "charts" / "a.png"
+    fig.write_bytes(b"\x89PNG")
+    (tmp_path / "charts" / "a.meta.json").write_text('{"source_run_id":"run-1"}')
+    [rec] = discover_declared_figure_charts(tmp_path, [{"address": "png:a.png"}])
+    assert rec["run_id"] is None

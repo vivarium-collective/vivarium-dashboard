@@ -152,3 +152,35 @@ def test_both_sources_concat(_ws):
     out = discover_viz_html_files(_ws, "s1")
     names = sorted(e["name"] for e in out)
     assert names == ["auto (auto)", "hand"]
+
+
+# ---------------------------------------------------------------------------
+# run_id provenance (Fable §4.5, Task V3): studies/<name>/viz/*.html is
+# auto-rendered by render_visualizations FROM the study's runs.db, so it
+# genuinely represents the latest recorded run's data — attach that run_id.
+# reports/figures/<name>/*.html is hand-authored cross-skill output with no
+# run association — run_id must stay null, never fabricated.
+# ---------------------------------------------------------------------------
+
+
+def test_auto_viz_gets_run_id_of_latest_run(_ws):
+    """studies/<name>/viz/*.html carries the run_id of the run whose data it
+    represents — the same latest-run reference the staleness check compares
+    against (r1 from the _runs_db fixture)."""
+    from vivarium_workbench.lib.study_spec import discover_viz_html_files
+    now = time.time()
+    _runs_db(_ws / "studies" / "s1" / "runs.db", latest_completed_at=now - 10)
+    _touch(_ws / "studies" / "s1" / "viz" / "coupling-trace.html", mtime=now)
+    [rec] = discover_viz_html_files(_ws, "s1")
+    assert rec["run_id"] == "r1"
+
+
+def test_hand_authored_figures_have_null_run_id(_ws):
+    """reports/figures/<name>/*.html has no genuine run association — never
+    fabricate one, even when the study has run."""
+    from vivarium_workbench.lib.study_spec import discover_viz_html_files
+    now = time.time()
+    _runs_db(_ws / "studies" / "s1" / "runs.db", latest_completed_at=now)
+    _touch(_ws / "reports" / "figures" / "s1" / "hand.html", mtime=now)
+    [rec] = discover_viz_html_files(_ws, "s1")
+    assert rec["run_id"] is None
