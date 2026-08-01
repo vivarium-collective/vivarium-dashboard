@@ -290,11 +290,16 @@ _GATE_STATE_TOKENS: dict[str, str] = {
     "in_progress": "not-assessed", "running": "not-assessed",
 }
 _GATE_STATES = ("not-assessed", "passed", "passed-with-conditions", "blocked", "waived")
-# Severity rank for combining sub-gate states into one dot/roll-up (higher =
-# more in need of attention): a red gate must never hide behind a green one.
+# Severity rank among the states that carry a REAL assessment (higher = more
+# in need of attention): a blocked/at-risk state must never hide behind a
+# clean pass. "not-assessed" has no rank here — it isn't a severity, it's the
+# absence of an opinion, and _worst_gate_state below treats it as neutral
+# (filtered out before ranking) rather than as a value that can outrank
+# "passed". See _worst_gate_state's docstring — this was Fable G2's fix-round-1
+# bug: not-assessed used to outrank passed and collapsed every gate with an
+# empty authored axis + a passing COMPUTED value down to grey.
 _GATE_STATE_RANK = {
-    "blocked": 4, "passed-with-conditions": 3, "not-assessed": 2,
-    "waived": 1, "passed": 0,
+    "blocked": 4, "passed-with-conditions": 3, "waived": 1, "passed": 0,
 }
 _GATE_STATE_GLYPH = {
     "not-assessed": "○", "passed": "✓", "passed-with-conditions": "◐",
@@ -319,12 +324,20 @@ def gate_state_glyph(token) -> str:
 
 
 def _worst_gate_state(*states: str | None) -> str:
-    """The most attention-demanding state among *states* (§_GATE_STATE_RANK),
-    defaulting to ``not-assessed`` when none are set."""
-    present = [s for s in states if s]
-    if not present:
+    """Combine gate states, treating ``not-assessed`` as NEUTRAL/absorbing.
+
+    An empty/unassessed side must defer to whichever OTHER side actually
+    carries an assessment — never drag a real ``passed`` down to grey just
+    because, say, the authored axis is empty while the COMPUTED value says
+    ``passed``. Among states that DO carry a real assessment (``passed`` /
+    ``passed-with-conditions`` / ``blocked`` / ``waived``), the worst one
+    wins (§_GATE_STATE_RANK) — a blocked/at-risk state must still dominate a
+    clean pass. Returns ``not-assessed`` only when every input is absent or
+    itself ``not-assessed``."""
+    assessed = [s for s in states if s and s != "not-assessed"]
+    if not assessed:
         return "not-assessed"
-    return max(present, key=lambda s: _GATE_STATE_RANK.get(s, 2))
+    return max(assessed, key=lambda s: _GATE_STATE_RANK.get(s, 0))
 
 
 # (key, gate number, gate name, backing axis) — order is lifecycle order,

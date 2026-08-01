@@ -972,3 +972,57 @@ def test_act_rail_dots_reflect_gate_states(tmp_path, dashboard_client):
     assert states["design"] == "passed"
     # Not every dot is the G1 placeholder "not-assessed" for a study with data.
     assert set(states.values()) != {"not-assessed"}
+
+
+def test_act_rail_dots_reflect_computed_only_passed_state(tmp_path, dashboard_client):
+    """Fix round 1 (Fable G2): the common real-world study has NO
+    hand-authored axes — only a derived/computed path (a completed run with a
+    PASS outcome + `computed_gate_verdict.result == "passed"`). The act-rail
+    dots and the gate-ladder's own per-gate `state` must NOT collapse to the
+    grey `not-assessed` placeholder just because the AUTHORED side is empty;
+    an empty authored axis must defer to a real computed `passed`, not
+    outrank it. This is the direction `test_act_rail_dots_reflect_gate_states`
+    above does NOT cover (that test only authors a failing/blocked path, so
+    it passed even when `not-assessed` incorrectly outranked `passed` in the
+    combining rank)."""
+    import re
+
+    ws = tmp_path / "ws"
+    _write_g2_study(ws, "computed-passed-study", {
+        # No design_status / simulation_status / evaluation_status /
+        # gate_status / expert_review_status authored at all.
+        "behavior_tests": [{"name": "t1"}],
+        "runs": [{"name": "r1", "status": "completed",
+                   "outcomes": {"t1": {"result": "PASS"}}}],
+        # derive_evaluation_status requires a completed run AND recorded
+        # verdicts/findings (viva_superpowers.study_status._has_recorded_verdicts)
+        # -- without this, evaluation_status derives "not_evaluated", not
+        # "evaluated", which is a correct not-assessed, not the bug under test.
+        "findings": [{"statement": "the run behaved as expected"}],
+    })
+    client = dashboard_client(ws)
+    resp = client.get("/studies/computed-passed-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    dots = re.findall(
+        r'<span class="act-gate-dot" data-gate="([a-z]+)" data-gate-state="([a-z-]+)">',
+        html,
+    )
+    assert len(dots) == 5, dots
+    states = {gate: state for gate, state in dots}
+    # Execution + Evidence (derived_status: simulation ran, evaluation
+    # evaluated) roll up into the "evidence" act dot -> must read "passed",
+    # not grey "not-assessed".
+    assert states["evidence"] == "passed", states
+    # Quality shares evaluation_status's computed value with Evidence per
+    # §13's table -> the "assurance" act dot must also read "passed".
+    assert states["assurance"] == "passed", states
+    # Decision (computed_gate_verdict.result == "passed", no persisted
+    # gate_evaluator so no divergence) -> "decision" act dot reads "passed".
+    assert states["decision"] == "passed", states
+    # "design" (Plan) has no computed source wired in at all (only
+    # simulation_status/evaluation_status/gate_status are derivable) and no
+    # authored design_status either -> correctly stays "not-assessed", the
+    # one dot this fixture gives no data for.
+    assert states["design"] == "not-assessed", states
