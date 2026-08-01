@@ -147,6 +147,35 @@ def _jinja_fmt_duration(seconds) -> str:
     return f"{h}h {m}m" if m else f"{h}h"
 
 
+def _jinja_markdown(text):
+    """Render authored prose (e.g. ``study.conclusion``) as Markdown.
+
+    Authors often hard-wrap conclusion text at ~80 columns; rendered in a
+    ``<pre>`` that produces a narrow column with wasted width. Markdown reflows
+    soft-wrapped lines within a paragraph to fill the container, keeps
+    blank-line paragraph breaks, and turns ``1. 2. 3.`` into an ordered list.
+
+    Defensive: raw HTML in the source is NOT interpreted (CommonMark's default
+    ``html=False``) so it is safe for study-authored content, and if
+    ``markdown-it-py`` is unavailable/errors it falls back to the previous
+    escaped, newline-preserving ``<pre>`` rendering.
+    """
+    from markupsafe import Markup, escape
+    if text is None:
+        return Markup("")
+    s = str(text)
+    if not s.strip():
+        return Markup("")
+    try:
+        from markdown_it import MarkdownIt
+        return Markup(MarkdownIt("commonmark").render(s))
+    except Exception:  # noqa: BLE001 — degrade to the old pre-wrap behavior
+        return Markup(
+            '<pre style="white-space:pre-wrap;font-family:inherit;margin:0">'
+            + str(escape(s)) + '</pre>'
+        )
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -194,6 +223,7 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     )
     env.filters["fmt_ts"] = _jinja_fmt_ts
     env.filters["fmt_duration"] = _jinja_fmt_duration
+    env.filters["markdown"] = _jinja_markdown
     tpl = env.get_template("study-detail.html")
     _hn = _humanize_study_name(name)
     # W15 — open epistemic debts, computed server-side via the deterministic
