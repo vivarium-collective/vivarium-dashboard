@@ -765,3 +765,95 @@ def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
     js = js_path.read_text()
     for fn in ("_setStudyPillar", "_showPillarSubnav", "_pillarForKind"):
         assert fn not in js, f"{fn} should have been deleted from study-detail.js"
+
+
+# ---------------------------------------------------------------------------
+# Fable G1: act rail (five acts + per-act gate dots) + reposition Readouts to
+# slot 3, so the acts group contiguously (Design = Model+Readouts, Evidence =
+# Simulations+Visualizations). Spec: 2026-08-01-study-design-fable-pass.md
+# §9.2 (five acts), §9.3 (revised tab bar + act rail).
+# ---------------------------------------------------------------------------
+
+def test_act_rail_renders_above_tab_nav(tmp_path, dashboard_client):
+    """The five act labels render above `.study-pillars`, each with a
+    gate-dot element carrying a stable `data-gate` hook (state wiring is
+    Task G2's job — here it must be present but neutral/not-assessed)."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "act-rail-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "act-rail-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/act-rail-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Act rail sits above the tab nav (before .study-pillars in document order).
+    rail_i = html.index('class="act-rail"')
+    pillars_i = html.index('class="study-pillars"')
+    assert rail_i < pillars_i, "act rail must render above the tab buttons"
+
+    # Five act labels, in order, plus the Record-drawer label set apart.
+    for label in ("The Study", "Design", "Evidence", "Assurance", "Decision", "Exports"):
+        assert label in html[rail_i:pillars_i], f"act label {label!r} missing from act rail"
+    order = [html.index(label, rail_i) for label in
+             ("The Study", "Design", "Evidence", "Assurance", "Decision", "Exports")]
+    assert order == sorted(order), "act labels out of order"
+
+    # Each of the five acts (not Exports) carries a gate-dot hook: a stable
+    # class + data-gate attribute, neutral state — G2 recolors it, doesn't
+    # need to touch this markup.
+    import re
+    dots = re.findall(r'<span class="act-gate-dot" data-gate="([a-z]+)"[^>]*>', html)
+    assert dots == ["study", "design", "evidence", "assurance", "decision"], dots
+    assert 'data-gate-state="not-assessed"' in html
+
+
+def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
+    """Tab order is now Overview, Model, Readouts, Simulations,
+    Visualizations, Tests, Decide, Exports — Readouts moves so Design
+    (Model+Readouts) and Evidence (Simulations+Visualizations) each group
+    contiguously per act. Panel switching is unaffected (`_setStudyTab`
+    selects by `data-kind`, not position)."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "readouts-order-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "readouts-order-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/readouts-order-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    kinds_in_order = [
+        "overview", "compose", "readouts", "simulate", "visualize",
+        "tests", "conclusions", "data",
+    ]
+    positions = [html.index(f'data-kind="{k}"') for k in kinds_in_order]
+    assert positions == sorted(positions), (
+        f"expected pillar order {kinds_in_order}, got positions {positions}"
+    )
+    # Readouts now precedes Simulations in the pillar row.
+    assert html.index('data-kind="readouts"') < html.index('data-kind="simulate"')
+
+    # All 8 pillars still present and wired to _setStudyTab.
+    for kind in kinds_in_order:
+        assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html

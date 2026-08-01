@@ -133,11 +133,43 @@
 {% if _q %}<p id="study-question-headline" class="study-question-headline"><span class="q-glyph">Q</span> {{ _q }}</p>{% endif %}
 
 <nav class="study-tabs" aria-label="Study sections">
+  {# Fable G1: act rail — a hairline group-label row above the tab buttons,
+     grouping the 8 tabs into the five acts of §9.2/§9.3 (spec:
+     2026-08-01-study-design-fable-pass.md). Each act carries a gate dot; the
+     dot's STATE is neutral/"not-assessed" here — G2 wires the real per-gate
+     state onto `data-gate-state` (and whatever class it needs) without
+     touching this markup. Exports sits apart: it's the Record drawer, not a
+     narrative act, so it gets no dot. #}
+  <div class="act-rail">
+    <div class="act-group act-group-study" data-act="study">
+      <span class="act-gate-dot" data-gate="study" data-gate-state="not-assessed"></span>
+      <span class="act-label">The Study</span>
+    </div>
+    <div class="act-group act-group-design" data-act="design">
+      <span class="act-gate-dot" data-gate="design" data-gate-state="not-assessed"></span>
+      <span class="act-label">Design</span>
+    </div>
+    <div class="act-group act-group-evidence" data-act="evidence">
+      <span class="act-gate-dot" data-gate="evidence" data-gate-state="not-assessed"></span>
+      <span class="act-label">Evidence</span>
+    </div>
+    <div class="act-group act-group-assurance" data-act="assurance">
+      <span class="act-gate-dot" data-gate="assurance" data-gate-state="not-assessed"></span>
+      <span class="act-label">Assurance</span>
+    </div>
+    <div class="act-group act-group-decision" data-act="decision">
+      <span class="act-gate-dot" data-gate="decision" data-gate-state="not-assessed"></span>
+      <span class="act-label">Decision</span>
+    </div>
+    <div class="act-group act-group-record" data-act="record">
+      <span class="act-label">Exports</span>
+    </div>
+  </div>
   <div class="study-pillars">
     <button class="study-pillar active" data-kind="overview"    onclick="_setStudyTab('overview')">Overview</button>
     <button class="study-pillar"        data-kind="compose"     onclick="_setStudyTab('compose')">Model</button>
-    <button class="study-pillar"        data-kind="simulate"    onclick="_setStudyTab('simulate')">Simulations</button>
     <button class="study-pillar"        data-kind="readouts"    onclick="_setStudyTab('readouts')">Readouts</button>
+    <button class="study-pillar"        data-kind="simulate"    onclick="_setStudyTab('simulate')">Simulations</button>
     <button class="study-pillar"        data-kind="visualize"   onclick="_setStudyTab('visualize')">Visualizations</button>
     <button class="study-pillar"        data-kind="tests"       onclick="_setStudyTab('tests')">Tests</button>
     {# "Decide" pillar's panel kind is "conclusions" (was a sub-tab under Hypotheses). #}
