@@ -29,6 +29,7 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.investigation_analyses import run_investigation_analyses
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib.investigation_order import prerequisite_order, CycleError
 from vivarium_workbench.lib.investigations import normalize_dag_edges
@@ -217,6 +218,11 @@ def prepare_investigation(workspace: Path | str, *,
 
     results = [prepare_study(ws, slug, dash, steps, render_only) for slug in studies]
 
+    inv_spec_path = WorkspacePaths.load(ws).investigations / inv / "investigation.yaml"
+    inv_spec = yaml.safe_load(inv_spec_path.read_text(encoding="utf-8")) or {} \
+        if inv_spec_path.is_file() else {}
+    analysis_files, analysis_errors = run_investigation_analyses(ws, inv, inv_spec, results)
+
     full_run = not study
     print("\n=== SUMMARY ===")
     if generation_id:
@@ -237,4 +243,5 @@ def prepare_investigation(workspace: Path | str, *,
             print(f"  {r['study']}: {nr} run(s), {nv} comparative(s) rendered")
 
     return {"investigation": inv, "generation_id": generation_id,
-            "studies": results}
+            "studies": results,
+            "analysis_files": analysis_files, "analysis_errors": analysis_errors}
