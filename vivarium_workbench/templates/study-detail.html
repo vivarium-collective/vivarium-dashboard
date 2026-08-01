@@ -306,6 +306,13 @@
 .finding-card.finding-status-partial{border-left-color:#f59e0b}
 .finding-card.finding-status-contradicts{border-left-color:#dc2626}
 .finding-card.finding-status-novel{border-left-color:#8b5cf6}
+/* C2: compact ledger row (<summary>) + native <details> evidence drawer */
+.finding-details{border:none}
+.finding-details>summary{list-style:none;cursor:pointer}
+.finding-details>summary::-webkit-details-marker{display:none}
+.finding-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.finding-chip{font-size:0.78em;color:#475569;background:#f1f5f9;padding:2px 8px;border-radius:9999px;white-space:nowrap}
+.finding-drawer{margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0}
 .finding-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
 .finding-status-glyph{font-size:1.2em;width:24px;text-align:center}
 .finding-status-confirms .finding-status-glyph{color:#10b981}
@@ -316,6 +323,7 @@
 .finding-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-weight:500}
 .finding-status-text{font-size:0.78em;color:#64748b;margin-left:auto;font-style:italic}
 .finding-statement{font-size:1em;line-height:1.5;font-weight:500;color:#0f172a;margin:4px 0 8px 0}
+.finding-claim{flex:1;min-width:200px;margin:0}
 .finding-evidence,.finding-expected{font-size:0.86em;color:#475569;padding:6px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:3px;margin:6px 0;line-height:1.5}
 .finding-exp-summary{font-size:0.9em;color:#475569;padding:6px 10px;background:#fafbff;border-left:3px solid #6366f1;border-radius:3px;margin:6px 0;line-height:1.5}
 .finding-explanation{font-size:0.92em;color:#1e293b;margin:6px 0;line-height:1.5}
@@ -445,69 +453,86 @@
     {% endif %}
 
     {# ─── Group 3: Findings & open debts ─────────────────────────────── #}
+    {# C2: a compact LEDGER — one row per finding (glyph · claim · evidence
+       chip), each opening a native <details> drawer for the fuller detail.
+       Nothing from the old always-expanded card was dropped, only
+       relocated into the drawer — see task-C2-brief.md's "preserve every
+       existing detail" list. Dict-shaped assertion values (evidence.observed,
+       the cited test's pass_if/expect band) are routed through
+       humanize_assertion so a dict never renders as a Python repr. #}
     {% if study.findings %}
     <div class="overview-section findings-section">
       <h2 class="overview-label">🔬 Findings — what this study taught us</h2>
       {% for f in study.findings %}
       {% set _status = f.status or 'novel' %}
       {% set _glyph = {'confirms': '✓', 'partial': '◐', 'contradicts': '✗', 'novel': '◆'}.get(_status, '◆') %}
+      {% set _ftok = (f.evidence.from_test or '').split(' ')[0] if f.evidence else '' %}
+      {% set _rtok = (f.evidence.from_run or '').split(' ')[0] if f.evidence else '' %}
       <div class="finding-card finding-kind-{{ f.kind or 'other' }} finding-status-{{ _status }}">
-        <div class="finding-header">
-          <span class="finding-status-glyph">{{ _glyph }}</span>
-          <span class="finding-id">{{ f.id or '' }}</span>
-          <span class="finding-kind">{{ f.kind or 'other' }}</span>
-          <span class="finding-status-text">{{ _status }} literature</span>
-        </div>
-        <div class="finding-statement">{{ f.statement }}</div>
-        {% if f.evidence %}
-        {# Spine B1: the cited test/run are CLICKABLE (anchor to its #test-/#run-
-           card), the headline computed number divergence_factor is surfaced,
-           provenance.run_ids are linked, and the cited test's pass_if band is
-           inlined so "passing" is legible without hunting. #}
-        {% set _ftok = (f.evidence.from_test or '').split(' ')[0] %}
-        {% set _rtok = (f.evidence.from_run or '').split(' ')[0] %}
-        <div class="finding-evidence">
-          {% if f.evidence.observed is defined %}<strong>observed:</strong> {{ f.evidence.observed }}{% if f.evidence.units %} {{ f.evidence.units }}{% endif %} · {% endif %}
-          {# C1: from_test cites a #bt-<id> row that lives in the (currently
-             hidden) Tests panel — _gotoStudyTab switches to it via the
-             existing _setStudyTab path, then scrolls, instead of a plain
-             href="#anchor" that silently fails on a display:none panel.
-             C2 wires findings evidence links to this. #}
-          {% if f.evidence.from_test %}via test <a href="#bt-{{ _ftok }}" onclick="_gotoStudyTab('tests','bt-{{ _ftok }}');return false;"><code>{{ f.evidence.from_test }}</code></a> · {% endif %}
-          {% if f.evidence.from_run %}in run <a href="#run-{{ _rtok }}"><code>{{ f.evidence.from_run }}</code></a>{% endif %}
-          {% if f.evidence.window %} ({{ f.evidence.window }}){% endif %}
-          {% if f.evidence.smoking_gun %}<details style="display:inline-block;margin-left:4px"><summary>smoking gun</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;padding:6px 8px;background:#fff;border-radius:3px;font-size:0.85em;font-family:inherit">{{ f.evidence.smoking_gun }}</pre></details>{% endif %}
-        </div>
-        {% set _runids = (f.provenance or {}).run_ids %}
-        {% if f.evidence.divergence_factor is defined or _runids %}
-        <div class="finding-traceability" style="font-size:0.84em;color:#475569;padding:4px 10px;margin:4px 0">
-          {% if f.evidence.divergence_factor is defined %}<span class="finding-divergence" style="font-weight:600">×{{ f.evidence.divergence_factor }} vs expected</span>{% endif %}
-          {% if f.evidence.divergence_factor is defined and _runids %} · {% endif %}
-          {% if _runids %}runs: {% for rid in _runids %}<a href="#run-{{ rid }}"><code>{{ rid }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-        </div>
-        {% endif %}
-        {% set _citedtest = (study.behavior_tests or study.expected_behavior or [])|selectattr('name','equalto', _ftok)|first %}
-        {% if _citedtest and (_citedtest.pass_if or _citedtest.expect) %}
-        <div class="pass_if-band muted small" style="font-size:0.82em;padding:2px 10px">judged against <code>pass_if: {{ (_citedtest.pass_if or _citedtest.expect) | tojson }}</code></div>
-        {% endif %}
-        {% endif %}
-        {% if f.expected %}
-        <div class="finding-expected">
-          {% if f.expected.range %}<strong>expected:</strong> {{ f.expected.range }} · {% endif %}
-          {% if f.expected.threshold is defined %}<strong>threshold:</strong> {{ f.expected.threshold }} · {% endif %}
-          {% if f.expected.cites %}cites: {% for c in f.expected.cites %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-        </div>
-        {% if f.expected.summary %}<div class="finding-exp-summary"><em>Reference says:</em> {{ f.expected.summary }}</div>{% endif %}
-        {% endif %}
-        {% if f.explanation %}<div class="finding-explanation"><em>Why:</em> {{ f.explanation }}</div>{% endif %}
-        {% if f.expert_reference %}
-        <details class="finding-expert">
-          <summary>Expert ref: <code>{{ f.expert_reference.doc }}</code>{% if f.expert_reference.section %} ({{ f.expert_reference.section }}){% endif %}</summary>
-          {% if f.expert_reference.quote %}<blockquote class="finding-expert-quote">{{ f.expert_reference.quote }}</blockquote>{% endif %}
-          {% if f.expert_reference.note %}<div class="finding-expert-note">{{ f.expert_reference.note }}</div>{% endif %}
+        <details class="finding-details">
+          <summary class="finding-row">
+            <span class="finding-status-glyph">{{ _glyph }}</span>
+            <span class="finding-claim finding-statement">{{ f.statement }}</span>
+            {% if f.evidence and f.evidence.from_test %}
+            <span class="finding-chip">via <code>{{ f.evidence.from_test }}</code></span>
+            {% elif f.evidence and f.evidence.from_run %}
+            <span class="finding-chip">in run <code>{{ f.evidence.from_run }}</code></span>
+            {% endif %}
+          </summary>
+          <div class="finding-drawer">
+            <div class="finding-header">
+              <span class="finding-id">{{ f.id or '' }}</span>
+              <span class="finding-kind">{{ f.kind or 'other' }}</span>
+              <span class="finding-status-text">{{ _status }} literature</span>
+            </div>
+            {% if f.evidence %}
+            {# Spine B1: the cited test/run are CLICKABLE (anchor to its #test-/#run-
+               card), the headline computed number divergence_factor is surfaced,
+               provenance.run_ids are linked, and the cited test's pass_if band is
+               inlined so "passing" is legible without hunting. #}
+            <div class="finding-evidence">
+              {% if f.evidence.observed is defined %}<strong>observed:</strong> {{ f.evidence.observed | humanize_assertion }}{% if f.evidence.units %} {{ f.evidence.units }}{% endif %} · {% endif %}
+              {# C1: from_test cites a #bt-<id> row that lives in the (currently
+                 hidden) Tests panel — _gotoStudyTab switches to it via the
+                 existing _setStudyTab path, then scrolls, instead of a plain
+                 href="#anchor" that silently fails on a display:none panel. #}
+              {% if f.evidence.from_test %}via test <a href="#bt-{{ _ftok }}" onclick="_gotoStudyTab('tests','bt-{{ _ftok }}');return false;"><code>{{ f.evidence.from_test }}</code></a> · {% endif %}
+              {% if f.evidence.from_run %}in run <a href="#run-{{ _rtok }}"><code>{{ f.evidence.from_run }}</code></a>{% endif %}
+              {% if f.evidence.window %} ({{ f.evidence.window }}){% endif %}
+              {% if f.evidence.smoking_gun %}<details style="display:inline-block;margin-left:4px"><summary>smoking gun</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;padding:6px 8px;background:#fff;border-radius:3px;font-size:0.85em;font-family:inherit">{{ f.evidence.smoking_gun }}</pre></details>{% endif %}
+            </div>
+            {% set _runids = (f.provenance or {}).run_ids %}
+            {% if f.evidence.divergence_factor is defined or _runids %}
+            <div class="finding-traceability" style="font-size:0.84em;color:#475569;padding:4px 10px;margin:4px 0">
+              {% if f.evidence.divergence_factor is defined %}<span class="finding-divergence" style="font-weight:600">×{{ f.evidence.divergence_factor }} vs expected</span>{% endif %}
+              {% if f.evidence.divergence_factor is defined and _runids %} · {% endif %}
+              {% if _runids %}runs: {% for rid in _runids %}<a href="#run-{{ rid }}"><code>{{ rid }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+            </div>
+            {% endif %}
+            {% set _citedtest = (study.behavior_tests or study.expected_behavior or [])|selectattr('name','equalto', _ftok)|first %}
+            {% if _citedtest and (_citedtest.pass_if or _citedtest.expect) %}
+            <div class="pass_if-band muted small" style="font-size:0.82em;padding:2px 10px">judged against <code>pass_if: {{ (_citedtest.pass_if or _citedtest.expect) | humanize_assertion }}</code></div>
+            {% endif %}
+            {% endif %}
+            {% if f.expected %}
+            <div class="finding-expected">
+              {% if f.expected.range %}<strong>expected:</strong> {{ f.expected.range }} · {% endif %}
+              {% if f.expected.threshold is defined %}<strong>threshold:</strong> {{ f.expected.threshold | humanize_assertion }} · {% endif %}
+              {% if f.expected.cites %}cites: {% for c in f.expected.cites %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+            </div>
+            {% if f.expected.summary %}<div class="finding-exp-summary"><em>Reference says:</em> {{ f.expected.summary }}</div>{% endif %}
+            {% endif %}
+            {% if f.explanation %}<div class="finding-explanation"><em>Why:</em> {{ f.explanation }}</div>{% endif %}
+            {% if f.expert_reference %}
+            <details class="finding-expert">
+              <summary>Expert ref: <code>{{ f.expert_reference.doc }}</code>{% if f.expert_reference.section %} ({{ f.expert_reference.section }}){% endif %}</summary>
+              {% if f.expert_reference.quote %}<blockquote class="finding-expert-quote">{{ f.expert_reference.quote }}</blockquote>{% endif %}
+              {% if f.expert_reference.note %}<div class="finding-expert-note">{{ f.expert_reference.note }}</div>{% endif %}
+            </details>
+            {% endif %}
+            {% if f.next_action %}<div class="finding-next"><strong>→ Next:</strong> {{ f.next_action }}</div>{% endif %}
+          </div>
         </details>
-        {% endif %}
-        {% if f.next_action %}<div class="finding-next"><strong>→ Next:</strong> {{ f.next_action }}</div>{% endif %}
       </div>
       {% endfor %}
     </div>
@@ -1241,9 +1266,18 @@
       {% if b.measure or b.pass_if or b.given or b.expect %}
       <details style="margin-top: 6px; font-size: 0.82em;">
         <summary class="muted" style="cursor: pointer;">Assertion</summary>
+        {# `measure` and (in the else branch) `expect` are rendered
+           unconditionally here — only `given`/`pass_if`/`requires`/`cites`
+           are behind their own `{% if %}`. When one of those two is simply
+           absent, Jinja's Undefined sentinel isn't JSON-serializable and a
+           bare `| tojson` raised `TypeError: Object of type Undefined is
+           not JSON serializable` (a real, reproducible 500 for any behavior
+           test that declares `pass_if` but no `measure`). `default(none)`
+           converts the sentinel to a real `None` -> `null` first, matching
+           the JSON-dump style of the rest of this block. #}
         <pre style="background:#fff; padding:8px; margin:4px 0 0 0; border:1px solid #e2e8f0; border-radius:3px; overflow-x:auto;">{% if b.given %}given:   {{ b.given|tojson }}
-{% endif %}measure: {{ b.measure|tojson }}
-{% if b.pass_if %}pass_if: {{ b.pass_if|tojson }}{% else %}expect:  {{ b.expect|tojson }}{% endif %}{% if b.requires %}
+{% endif %}measure: {{ b.measure|default(none)|tojson }}
+{% if b.pass_if %}pass_if: {{ b.pass_if|tojson }}{% else %}expect:  {{ b.expect|default(none)|tojson }}{% endif %}{% if b.requires %}
 requires: {{ b.requires|tojson }}{% endif %}{% if b.cites %}
 cites:   {{ b.cites|tojson }}{% endif %}</pre>
       </details>

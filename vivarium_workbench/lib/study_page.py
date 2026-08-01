@@ -28,6 +28,7 @@ import vivarium_workbench as _vd_pkg
 _TEMPLATES_DIR: Path = Path(_vd_pkg.__file__).parent / "templates"
 
 from vivarium_workbench.lib.study_spec import SLUG_RE as _SLUG_RE  # noqa: E402
+from markupsafe import Markup as _Markup, escape as _escape  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +474,102 @@ def gate_state_glyph(token) -> str:
     return _GATE_STATE_GLYPH[gate_state(token)]
 
 
+# ---------------------------------------------------------------------------
+# C2 — findings-ledger assertion formatters (Fable §4.1, §6 #12).
+#
+# `study.findings[*].evidence.observed` and the cited behavior test's
+# `pass_if`/`expect` band are both sometimes an assertion-shaped DICT (e.g.
+# ``{"observed": 0.42, "op": "<=", "pass_if": 0.5}``) rather than a scalar.
+# The old template rendered these two ways, both broken for a dict value:
+# a bare ``{{ ... }}`` interpolation (prints a Python dict repr,
+# ``{'op': '<=', ...}``, into the page) or a ``| tojson`` filter (crashes
+# outright — ``TypeError: Object of type Undefined is not JSON serializable``
+# — when a *related but absent* key, e.g. a behavior test's `measure`, is
+# Jinja's Undefined sentinel rather than a real value; see the `study-detail
+# .html` Tests-tab "Assertion" dump this task also guards).
+#
+# `humanize_assertion` never emits a `{...}` dict repr and never raises on a
+# missing key; `kv` is its small-dict fallback (also used standalone in the
+# drawer for any residual dict) and HTML-escapes every value itself (so it
+# is safe even called outside the autoescaped Jinja context the unit tests
+# exercise it in directly). Both are pure formatting — no schema/back-end
+# change.
+# ---------------------------------------------------------------------------
+
+_ASSERTION_OP_SYMBOLS: dict[str, str] = {
+    "<=": "≤", ">=": "≥", "==": "=", "!=": "≠", "<": "<", ">": ">",
+}
+
+# Preference order for the "target" half of the phrase when the dict doesn't
+# use the canonical `pass_if` key (e.g. a raw `expected_behavior` band).
+_ASSERTION_TARGET_KEYS = ("pass_if", "threshold", "expected", "value")
+
+
+def kv(d) -> str:
+    """Inline ``k: v · k: v`` text for a small dict, values HTML-escaped.
+
+    Non-dict input is stringified as-is (``None`` -> ``""``). Nested dict
+    values recurse through ``kv`` itself rather than falling back to a
+    Python dict repr. Returns a ``Markup`` (pre-escaped) so it renders
+    correctly whether called from Python or interpolated in the (already
+    autoescaped) Jinja template without double-escaping. Registered as the
+    Jinja filter ``kv``."""
+    if not isinstance(d, dict):
+        return str(d) if d is not None else ""
+    parts = []
+    for key, val in d.items():
+        val_s = kv(val) if isinstance(val, dict) else _escape(str(val))
+        parts.append(f"{_escape(str(key))}: {val_s}")
+    return _Markup(" · ".join(parts))
+
+
+def humanize_assertion(a) -> str:
+    """Readable phrase for a finding/test assertion value that may be a dict.
+
+    Handles the shapes actually seen on ``evidence.observed`` and a cited
+    test's ``pass_if``/``expect`` band: ``{"observed": 0.42, "op": "<=",
+    "pass_if": 0.5}`` -> ``"observed 0.42 ≤ 0.5"``; a bare comparator band
+    like ``{"op": ">=", "threshold": 3}`` -> ``"≥ 3"``. Ops are mapped to
+    their symbol (``<=``->``≤``, ``>=``->``≥``, ``==``->``=``); an
+    unrecognized op string passes through unchanged. Missing keys degrade
+    gracefully (never raises); a dict with nothing usable falls back to
+    ``kv()`` rather than a Python dict repr — ``{`` never appears in the
+    output. A scalar/str input is returned stringified (``None`` -> ``""``).
+    Registered as the Jinja filter ``humanize_assertion``."""
+    if a is None:
+        return ""
+    if not isinstance(a, dict):
+        return str(a)
+
+    op = a.get("op")
+    op_symbol = _ASSERTION_OP_SYMBOLS.get(str(op).strip(), str(op)) if op is not None else ""
+
+    parts = []
+    observed = a.get("observed")
+    measure = a.get("measure")
+    if observed is not None and not isinstance(observed, dict):
+        parts.append(f"observed {observed}")
+    elif measure is not None:
+        parts.append(f"measure {kv(measure) if isinstance(measure, dict) else measure}")
+
+    target = None
+    target_label = None
+    for key in _ASSERTION_TARGET_KEYS:
+        val = a.get(key)
+        if val is not None and not isinstance(val, dict):
+            target, target_label = val, key
+            break
+
+    if target is not None and op_symbol:
+        parts.append(f"{op_symbol} {target}")
+    elif target is not None:
+        parts.append(f"{target_label}: {target}")
+
+    if parts:
+        return " ".join(parts)
+    return kv(a)
+
+
 def _worst_gate_state(*states: str | None) -> str:
     """Combine gate states, treating ``not-assessed`` as NEUTRAL/absorbing.
 
@@ -643,6 +740,8 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     env.filters["actor_glyph"] = actor_glyph
     env.filters["attribution_text"] = attribution_text
     env.filters["conclusion_digest"] = conclusion_digest
+    env.filters["humanize_assertion"] = humanize_assertion
+    env.filters["kv"] = kv
     tpl = env.get_template("study-detail.html")
     _hn = _humanize_study_name(name)
     # W15 — open epistemic debts, computed server-side via the deterministic
