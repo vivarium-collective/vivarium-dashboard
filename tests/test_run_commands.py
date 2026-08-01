@@ -61,19 +61,12 @@ def test_investigation_run_command():
     assert investigation_run_command(None) == ""
 
 
-def test_process_run_command_is_a_single_python_line():
-    cmd = process_run_command("pbg_demo.processes.Grow", "pbg_demo")
-    # Single line, uses the workspace core, resolves the class by its address,
-    # and references the address for the fallback match + assert message.
-    assert cmd.startswith('python3 -c "')
-    assert cmd.endswith('"')
-    assert "\n" not in cmd
-    assert "import pbg_demo.core as _m" in cmd
-    assert "build_core()" in cmd
-    assert "'pbg_demo.processes.Grow'" in cmd  # full address
-    assert "'Grow'" in cmd  # short-name fallback
-    # local: protocol addresses strip to the bare name for the short match.
-    cmd2 = process_run_command("local:RAMEmitter", "pbg_demo")
-    assert "'RAMEmitter'" in cmd2
-    assert process_run_command("", "pbg_demo") == ""
-    assert process_run_command("local:X", "") == ""
+def test_process_run_command():
+    assert (
+        process_run_command("pbg_demo.processes.Grow")
+        == "vwb run process pbg_demo.processes.Grow"
+    )
+    # local: protocol addresses are passed through verbatim.
+    assert process_run_command("local:RAMEmitter") == "vwb run process local:RAMEmitter"
+    assert process_run_command("") == ""
+    assert process_run_command("  ") == ""

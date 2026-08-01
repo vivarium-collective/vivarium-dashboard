@@ -296,6 +296,15 @@ def cmd_run_composite(args) -> int:
     return 0 if code < 400 else 1
 
 
+def cmd_run_process(args) -> int:
+    from vivarium_workbench.lib import cli_runs
+    config = _parse_params(args.config) if args.config else None
+    resp, code = cli_runs.run_process(
+        Path(args.workspace).resolve(), args.address, config=config)
+    _emit(resp, args.json)
+    return 0 if code < 400 else 1
+
+
 def cmd_rerun(args) -> int:
     # Single canonical rerun path (reproducible-rerun-spine Task 1):
     # lib.rerun.run_rerun replays the recorded manifest verbatim (exact
@@ -952,6 +961,12 @@ def main(argv: list[str] | None = None) -> int:
     rc.add_argument("--detach", action="store_true")
     _add_common(rc)
     rc.set_defaults(func=cmd_run_composite)
+
+    rp = run_sub.add_parser("process", help="Run one registry process/step once (single update)")
+    rp.add_argument("address", help="registry address, e.g. pkg.processes.Foo or local:Foo")
+    rp.add_argument("--config", action="append", help="config key=value (repeatable)")
+    _add_common(rp)
+    rp.set_defaults(func=cmd_run_process)
 
     pr = sub.add_parser("rerun", help="Re-run a recorded run (replays its composite + recorded params/steps)")
     pr.add_argument("run_id")

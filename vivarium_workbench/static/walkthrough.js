@@ -11028,11 +11028,11 @@
     var shellEl = document.getElementById('investigation-dag-shell');
     if (shellEl) { shellEl.classList.remove('aig-zoom-far','aig-zoom-mid','aig-zoom-near'); shellEl.classList.add(_opts.cls); }
 
-    // Investigation-level "run in your terminal" command — shown at intermediate
-    // + high zoom (band-gated), hidden at the far/overview band.
+    // Investigation-level "run in your terminal" command — always shown (above
+    // the graph) whenever we have the investigation slug.
     var _dagRunEl = document.getElementById('investigation-dag-run');
     if (_dagRunEl) {
-      _dagRunEl.innerHTML = (_opts.run && _dagInvSlug)
+      _dagRunEl.innerHTML = _dagInvSlug
         ? _runCmdChip('vwb run investigation ' + _dagInvSlug) : '';
     }
 
@@ -11248,10 +11248,10 @@
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
           ? window._chainBlockHtml(chainsBySlug[s.name]) : '') +
-        // "Run this study in your terminal" — single-line CLI command, shown at
-        // intermediate + high zoom (mirrors lib/run_commands.study_run_commands
-        // baseline). Gated on _opts.run so the far/overview band stays clean.
-        (_opts.run ? _runCmdChip('vwb run study ' + s.name) : '') +
+        // "Run this study in your terminal" — single-line CLI command (mirrors
+        // lib/run_commands.study_run_commands baseline). Shown at every zoom band
+        // (not gated) so it's never hidden on the study node.
+        _runCmdChip('vwb run study ' + s.name) +
         // Layer-4: cached/compute badge + run/continue buttons (live only).
         _dagCacheBadgeHtml(s.name) +
         _dagTriggerControlsHtml(s.name);
