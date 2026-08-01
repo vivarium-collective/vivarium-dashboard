@@ -20356,11 +20356,127 @@
   // Open a run in the Composite Explorer (in-app, left nav preserved) with its
   // saved config seeded into the Configure form so Run reproduces the run.
   function _openCompositeFromRun(row) {
-    if (!row || !row.run_id || !row.spec_id) return;
+    if (!row || !row.spec_id) return;
     window._ceIncomingOverrides = _runConfigToOverrides(row);
-    _openSimulationInExplorer(row.run_id, row.spec_id);
+    _openCompositeCardView(row.spec_id);
   }
   window._openCompositeFromRun = _openCompositeFromRun;
+
+  // Open a registered composite in the NEW full composite-card view (Modules →
+  // Composites tab, Full zoom), focused on it with its Explore/loom opened —
+  // instead of the old standalone bigraph-loom composite-explore page.
+  function _openCompositeCardView(spec_id) {
+    if (!spec_id) return;
+    if (typeof _openCompositesTab === 'function') _openCompositesTab();
+    window._registryZoom = 'full';
+    try { localStorage.setItem('viv.registryZoom', 'full'); } catch (e) { /* private mode */ }
+    if (typeof _syncRegistryToolbar === 'function') _syncRegistryToolbar();
+    var esc = (window.CSS && CSS.escape) ? CSS.escape(spec_id) : spec_id;
+    var reveal = function () {
+      if (typeof _renderRegistryComposites === 'function') _renderRegistryComposites();
+      var card = document.querySelector('.pcard-composite[data-address="' + esc + '"]');
+      if (!card) return false;
+      try { card.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) { /* ignore */ }
+      var sec = card.querySelector('.pcard-sec-explore');
+      if (sec && !sec.classList.contains('pcard-sec-open')) {
+        var h = sec.querySelector('.pcard-sec-head'); if (h) _pcardToggleSec(h);
+      }
+      return true;
+    };
+    // Composites may not be loaded yet on a cold Modules page — load, then reveal.
+    if (window._composites && window._composites.length) {
+      setTimeout(function () { reveal(); }, 60);
+    } else if (typeof _loadComposites === 'function') {
+      _loadComposites();
+      var tries = 0;
+      var poll = setInterval(function () {
+        tries++;
+        if (reveal() || tries > 20) clearInterval(poll);
+      }, 250);
+    } else {
+      setTimeout(function () { reveal(); }, 200);
+    }
+  }
+  window._openCompositeCardView = _openCompositeCardView;
+
+  // Reveal a truncated ".sim-loc" cell's full path in place and copy it.
+  function _revealAndCopyLoc(el) {
+    if (!el) return;
+    var full = el.getAttribute('data-loc') || el.textContent || '';
+    if (!full) return;
+    el.textContent = full;
+    el.style.whiteSpace = 'normal';
+    el.style.wordBreak = 'break-all';
+    el.style.overflow = 'visible';
+    el.style.textOverflow = 'clip';
+    el.title = full;
+    var done = function (ok) {
+      var badge = document.createElement('span');
+      badge.textContent = ok ? '  ✓ copied' : '  (copy failed)';
+      badge.style.cssText = 'color:' + (ok ? '#16a34a' : '#b91c1c') + ';font-size:10px;white-space:nowrap';
+      el.appendChild(badge);
+      setTimeout(function () { if (badge.parentNode) badge.parentNode.removeChild(badge); }, 1800);
+    };
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(full).then(function () { done(true); }, function () { done(false); });
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = full; document.body.appendChild(ta); ta.select();
+        var ok = false; try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+        document.body.removeChild(ta); done(ok);
+      }
+    } catch (e3) { done(false); }
+  }
+  window._revealAndCopyLoc = _revealAndCopyLoc;
+
+  // Popover showing a run's FULL config as formatted JSON, with a Copy button.
+  // Anchored to the clicked ".sim-config" cell; dismissed on outside-click/Esc.
+  function _showConfigPopover(el) {
+    var existing = document.getElementById('sim-config-popover');
+    if (existing) existing.remove();
+    var json = el.getAttribute('data-config') || '{}';
+    var pop = document.createElement('div');
+    pop.id = 'sim-config-popover';
+    pop.style.cssText = 'position:fixed;z-index:3000;min-width:300px;max-width:min(560px,92vw);' +
+      'background:#fff;border:1px solid #cbd5e1;border-radius:10px;box-shadow:0 10px 34px rgba(15,23,42,.20);padding:10px 12px';
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:6px';
+    head.innerHTML = '<strong style="font-size:0.82em;text-transform:uppercase;letter-spacing:0.06em;color:#334155;flex:1">Run config</strong>';
+    var copyBtn = document.createElement('button');
+    copyBtn.type = 'button'; copyBtn.className = 'btn-mini'; copyBtn.textContent = '⧉ Copy JSON';
+    copyBtn.onclick = function (ev) {
+      ev.stopPropagation();
+      var orig = copyBtn.textContent;
+      var ok = function (good) { copyBtn.textContent = good ? '✓ Copied' : '✗ Failed'; setTimeout(function () { copyBtn.textContent = orig; }, 1400); };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(json).then(function () { ok(true); }, function () { ok(false); });
+        else { var ta = document.createElement('textarea'); ta.value = json; document.body.appendChild(ta); ta.select(); var g = false; try { g = document.execCommand('copy'); } catch (e) { g = false; } document.body.removeChild(ta); ok(g); }
+      } catch (e) { ok(false); }
+    };
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button'; closeBtn.className = 'btn-mini'; closeBtn.textContent = '✕';
+    closeBtn.title = 'Close'; closeBtn.onclick = function (ev) { ev.stopPropagation(); pop.remove(); };
+    head.appendChild(copyBtn); head.appendChild(closeBtn);
+    var pre = document.createElement('pre');
+    pre.textContent = json;
+    pre.style.cssText = 'margin:0;font-size:11.5px;line-height:1.45;color:#1f2937;white-space:pre;' +
+      'max-height:min(60vh,420px);overflow:auto;background:#f8fafc;border:1px solid #eef2f7;border-radius:7px;padding:8px 10px';
+    pop.appendChild(head); pop.appendChild(pre);
+    document.body.appendChild(pop);
+    // Position below the cell, clamped to the viewport.
+    var r = el.getBoundingClientRect();
+    var w = pop.offsetWidth, h = pop.offsetHeight;
+    var left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+    var top = (r.bottom + 6 + h > window.innerHeight) ? Math.max(8, r.top - h - 6) : r.bottom + 6;
+    pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    // Dismiss on outside click / Esc.
+    var onDoc = function (ev) { if (!pop.contains(ev.target) && ev.target !== el) { cleanup(); } };
+    var onKey = function (ev) { if (ev.key === 'Escape') cleanup(); };
+    function cleanup() { pop.remove(); document.removeEventListener('mousedown', onDoc, true); document.removeEventListener('keydown', onKey, true); }
+    setTimeout(function () { document.addEventListener('mousedown', onDoc, true); document.addEventListener('keydown', onKey, true); }, 0);
+  }
+  window._showConfigPopover = _showConfigPopover;
 
   function _renderSimRow(row) { return window.SimTable.renderRow(row, { scope: 'full' }); }
 
@@ -20468,6 +20584,22 @@
     if (tbody && !tbody._simClickWired) {
       tbody._simClickWired = true;
       tbody.addEventListener('click', function (e) {
+        // Composite link → the NEW full composite-card view (not the old
+        // bigraph-loom composite-explore page).
+        var clink = e.target.closest('.sim-composite-link');
+        if (clink) {
+          e.stopPropagation();
+          var crid = clink.getAttribute('data-run-id');
+          var crow = (window._simRows || []).filter(function (r) { return String(r.run_id) === crid; })[0];
+          if (crow && window._openCompositeFromRun) window._openCompositeFromRun(crow);
+          return;
+        }
+        // Location → reveal the full path (wrap) and copy it to the clipboard.
+        var loc = e.target.closest('.sim-loc');
+        if (loc) { e.stopPropagation(); _revealAndCopyLoc(loc); return; }
+        // Config → popover with the full config JSON + Copy JSON.
+        var cfg = e.target.closest('.sim-config');
+        if (cfg) { e.stopPropagation(); _showConfigPopover(cfg); return; }
         if (e.target.closest('a, button, .action-btn')) return;
         var tr = e.target.closest('tr[data-run-id]');
         if (!tr) return;
