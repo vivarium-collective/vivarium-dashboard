@@ -317,12 +317,31 @@
 .followup-hypothesis{padding:6px 10px;background:#fff;border-radius:3px;border:1px dashed #cbd5e1}
 .btn-seed-followup{font-size:0.85em;padding:4px 12px;border:1px solid #3b82f6;background:#fff;color:#3b82f6;border-radius:4px;cursor:pointer}
 .btn-seed-followup:hover{background:#3b82f6;color:#fff}
-.charts-panel{margin-top:18px;display:flex;flex-direction:column;gap:18px}
-.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px 12px 12px}
-/* SVGs scale to fit their card; preserves aspect ratio so a 1400×484
+/* ── One flowing figure gallery (Fable §4.5, Task V2) ──────────────────
+   The native gallery, embedded-HTML previews, and latest-run charts all
+   render as the same `.figure-card`: a bordered figure container + a muted
+   caption-row footer (source chip + title + optional run link), instead of
+   three differently-chrome'd sections under their own headings. The three
+   async mounts stay separate (`#native-gallery-panel`, the embed cards,
+   `#viz-charts-panel`) but each is a flex column with the same gap, so they
+   read as one continuous gallery. */
+.figure-gallery{display:flex;flex-direction:column;gap:16px}
+.figure-mount{display:flex;flex-direction:column;gap:16px}
+.charts-panel{display:flex;flex-direction:column;gap:16px}
+.figure-card{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff}
+.figure-media-frame{display:block;width:100%;border:0;background:#fff}
+.figure-media-frame--native{height:480px}
+.figure-media-frame--embed{min-height:200px}
+/* SVGs/PNGs scale to fit their card; preserves aspect ratio so a 1400×484
    chart shrinks instead of overflowing horizontally + clipping. */
-.chart-card svg,.chart-card img.chart-img{display:block;width:100%;max-width:100%;height:auto}
-.chart-caption{font-size:0.83em;color:#475569;margin-top:4px;line-height:1.4}
+.figure-card svg,.figure-card img.chart-img{display:block;width:100%;max-width:100%;height:auto}
+.figure-desc{margin:8px 12px 0;font-size:0.85em;color:#475569}
+.figure-caption-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 12px;font-size:0.85em;color:#475569;border-top:1px solid #f1f5f9;background:#f8fafc}
+.figure-source-chip{font-size:0.68em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#64748b;flex-shrink:0}
+.figure-title{font-weight:600;color:#334155;flex:1;min-width:100px}
+.figure-run-link,.figure-open-link{font-size:0.85em;color:#2563eb;text-decoration:none;white-space:nowrap;cursor:pointer}
+.figure-run-link:hover,.figure-open-link:hover{text-decoration:underline}
+.chart-caption{font-size:0.83em;color:#475569;margin:8px 12px 0;line-height:1.4}
 /* findings */
 .findings-section{padding:14px 16px;background:#fafbff;border:1px solid #c7d2fe;border-radius:8px}
 .finding-card{padding:12px 14px;margin:10px 0;border:1px solid #e2e8f0;border-left:5px solid #6366f1;border-radius:6px;background:#fff}
@@ -1003,10 +1022,9 @@
 
 <section class="study-tab-panel" data-kind="visualize" id="panel-visualize" hidden>
 
-  <div class="overview-section study-figures" id="visualize-section">
-    <h2>Figures</h2>
+  <div class="overview-section study-figures figure-gallery" id="visualize-section">
 
-    <div id="native-gallery-panel"><p class="empty-message">Loading figures…</p></div>
+    <div id="native-gallery-panel" class="figure-mount"><p class="empty-message">Loading figures…</p></div>
 
     {# ─── Embedded HTML visualizations (e.g. pre-execution preview pages
          produced by a runner script). study.embed_visualizations is a list of
@@ -1014,27 +1032,36 @@
          alongside the native gallery / auto-rendered charts, so a biologist
          gets immediate payoff without waiting for runs.db / Visualization-
          class plumbing.
+
+         Fable §4.5 (Task V2): same `.figure-card` shell as the other two
+         figure sources — no bordered/backgrounded header bar. The name +
+         "Open in new tab" affordance move into the caption row footer,
+         alongside a muted `embed` source chip. This source doesn't carry a
+         run_id yet (Task V3 threads it through), so its caption never
+         fabricates a run link — `embed-viz-card` stays as a second class for
+         `_figuresHasEmbeds()` / existing hooks to key on.
     #}
     {% if study.embed_visualizations %}
     {% for v in study.embed_visualizations %}
-    <div class="embed-viz-card" style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:14px;background:#fff">
-      <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid #e5e7eb;background:#f9fafb">
-        <strong style="flex:1">{{ v.name }}</strong>
-        <a href="{{ v.url }}" target="_blank" class="btn-mini">Open in new tab ↗</a>
-      </div>
-      {% if v.description %}
-      <p class="muted" style="margin:6px 12px;font-size:0.88em">{{ v.description }}</p>
-      {% endif %}
+    <div class="figure-card embed-viz-card">
       <iframe src="{{ v.url }}"
-              style="width:100%;min-height:200px;border:0;display:block"
+              class="figure-media-frame figure-media-frame--embed"
               loading="lazy" title="{{ v.name }}"
               onload="(function(f){try{var d=f.contentDocument;if(!d)return;var b=d.body,e=d.documentElement;var bStyle=b&&d.defaultView&&d.defaultView.getComputedStyle?d.defaultView.getComputedStyle(b):null;var pinnedH=0;if(bStyle&&(bStyle.overflow||'').indexOf('hidden')>=0){var hm=(bStyle.height||'').match(/^(\d+(?:\.\d+)?)px$/);if(hm)pinnedH=Math.round(parseFloat(hm[1]));}var h=pinnedH>0?pinnedH:Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0);if(h>0)f.style.height=(h+24)+'px';}catch(e){}})(this)"
               ></iframe>
+      {% if v.description %}
+      <p class="figure-desc muted">{{ v.description }}</p>
+      {% endif %}
+      <div class="figure-caption-row">
+        <span class="figure-source-chip">embed</span>
+        <span class="figure-title">{{ v.name }}</span>
+        <a href="{{ v.url }}" target="_blank" class="figure-open-link">Open in new tab ↗</a>
+      </div>
     </div>
     {% endfor %}
     {% endif %}
 
-    <div id="viz-charts-panel" class="charts-panel"></div>
+    <div id="viz-charts-panel" class="charts-panel figure-mount"></div>
 
     {# Shared empty state for the Figures section (Fable A #3). The native
        gallery and latest-run charts each resolve async and embeds render

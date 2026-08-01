@@ -433,6 +433,91 @@ def test_visualizations_empty_state_unions_all_three_sources(tmp_path, dashboard
     assert 'style="display:none"' in html[tag_start:tag_end]
 
 
+def test_visualizations_gallery_one_figure_card_no_source_chrome(tmp_path, dashboard_client):
+    """Task V2 (Fable §4.5): the three figure sources collapse into ONE
+    flowing gallery of a single `.figure-card` style — the `<h2>Figures</h2>`
+    and the old `.embed-viz-card` header-bar chrome are gone, and every card
+    carries a caption row with a muted source chip. A figure with no run_id
+    (a hand-authored embed) renders no run-link — no fabricated provenance
+    (the embed/chart sources get run_id in Task V3, next)."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "viz-gallery-study-v2"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "viz-gallery-study-v2",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        "embed_visualizations": [
+            {"name": "Preview", "url": "/reports/figures/viz-gallery-study-v2/preview.html",
+             "description": "Hand-authored preview page, no run_id."},
+        ],
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-gallery-study-v2")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "<h2>Figures</h2>" not in html
+
+    # One card style, dual-classed for the union empty-state's
+    # `.embed-viz-card` selector (`_figuresHasEmbeds`) — but the old
+    # header-bar/border/background chrome is gone.
+    assert 'class="figure-card embed-viz-card"' in html
+    assert 'border-bottom:1px solid #e5e7eb;background:#f9fafb' not in html
+    assert 'border:1px solid #e2e8f0;border-radius:6px;margin-bottom:14px;background:#fff' not in html
+
+    # Caption row: muted source chip + title + "Open in new tab ↗" affordance.
+    assert 'figure-caption-row' in html
+    assert 'figure-source-chip">embed<' in html
+    assert 'Preview' in html
+    assert 'Open in new tab' in html
+
+    # No run_id on this source in V2 — the caption must omit the run link
+    # rather than fabricate one. (`.figure-run-link` itself appears once, as
+    # the CSS selector in the page's <style> block, since it's shared with
+    # the JS-rendered sources — checking for the actual anchor markup, not
+    # the bare class-name substring, is what proves nothing was fabricated.)
+    assert 'class="figure-run-link"' not in html
+
+
+def test_visualizations_empty_study_shows_empty_state_element(tmp_path, dashboard_client):
+    """Regression guard (Fable A #3 union logic, unaffected by Task V2): a
+    study with no embed_visualizations still server-renders the shared,
+    hidden `#figures-empty-message` line (JS reveals it once the async
+    native gallery + charts sources also report empty)."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "viz-gallery-study-empty"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "viz-gallery-study-empty",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-gallery-study-empty")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert 'id="figures-empty-message"' in html
+    idx = html.index('id="figures-empty-message"')
+    tag_start = html.rindex('<p', 0, idx)
+    tag_end = html.index('>', idx)
+    assert 'style="display:none"' in html[tag_start:tag_end]
+    assert 'embed-viz-card' not in html
+
+
 # ---------------------------------------------------------------------------
 # Task 10: Tests — merge Report Cards + Behavioral Tests into ONE concept.
 # The Tests pillar now has a single sub-nav member; report cards + behavioral

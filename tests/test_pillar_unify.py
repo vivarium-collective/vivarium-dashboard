@@ -58,3 +58,41 @@ def test_readouts_and_visualize_load_their_own_content():
 def test_callers_repointed():
     assert "_setStudyTab('runs')" not in JS
     assert "_setStudyTab('visualizations')" not in JS
+
+
+# ---------------------------------------------------------------------------
+# Task V2 (Fable §4.5): the native gallery + inline charts sources render the
+# same `.figure-card` shell (template already gives the embed source that
+# class), with a caption row (muted source chip, title, and a run-link
+# rendered conditionally on run_id). Card markup is built client-side, so
+# these assert against the JS source rather than served HTML.
+
+def test_native_gallery_card_uses_figure_card_and_conditional_run_link():
+    i = JS.index("function _loadNativeGallery")
+    block = JS[i:i + 2400]
+    assert '"figure-card"' in block
+    assert 'font-weight:600;font-size:0.92em' not in block  # old bold native label gone
+    assert 'figure-caption-row' in block and 'figure-source-chip' in block
+    assert 'figure-run-link' in block and 'data-run-id' in block
+    # build_study_native_gallery returns one run_id for the whole gallery;
+    # the caption is built conditionally so a study with no completed run
+    # (run_id is None) omits the link instead of fabricating one.
+    assert 'runId\n' in block or 'var runCaption = runId' in block
+    assert '_wireFigureRunLinks(host)' in block
+
+
+def test_chart_card_uses_figure_card_not_chart_card_box():
+    i = JS.index("function _renderChartCard")
+    block = JS[i:i + 900]
+    assert '"figure-card"' in block
+    assert 'class="chart-card"' not in block
+    assert 'figure-caption-row' in block and 'figure-source-chip' in block
+    # V3 threads run_id into chart-sourced figures next; V2 already renders
+    # the slot conditionally so it lights up without another JS change.
+    assert 'c.run_id' in block
+
+
+def test_loadcharts_wires_figure_run_links():
+    i = JS.index("function _loadCharts")
+    block = JS[i:i + 2600]
+    assert '_wireFigureRunLinks(panel)' in block

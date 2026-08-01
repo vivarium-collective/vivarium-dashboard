@@ -303,17 +303,31 @@
   //   live   — generated from runs.db at request time
   //   static — pre-rendered SVGs under studies/<name>/charts/
   var _chartsLoadedFor = {};
+  // Fable §4.5 (Task V2): one `.figure-card` shell shared with the native
+  // gallery / embed sources — a bordered figure container + a muted
+  // caption-row footer (source chip + title + optional run link), not the
+  // old boxed `.chart-card` with its own title bar. `c.run_id` isn't
+  // threaded through by the server for chart-sourced figures yet (Task V3
+  // adds it) — the run-link slot is rendered conditionally so it lights up
+  // on its own once V3 ships; V2 just omits it rather than fabricate
+  // provenance.
   function _renderChartCard(c) {
-    var title = c.title
-      ? '<div class="chart-title">' + c.title + '</div>'
-      : '';
     // SVG records carry inline markup in c.svg; PNG/GIF records carry a
     // self-contained data-URI in c.img (rendered as <img>).
     var media = c.img
-      ? '<img class="chart-img" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
+      ? '<img class="chart-img figure-media" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
       : (c.svg || '');
-    return '<div class="chart-card">' + title + media +
-           '<div class="chart-caption">' + (c.caption || '') + '</div></div>';
+    var desc = c.caption ? '<div class="chart-caption">' + c.caption + '</div>' : '';
+    var runLink = c.run_id
+      ? '<a href="#" class="figure-run-link" data-run-id="' + escapeHtmlForTests(String(c.run_id)) + '">from run '
+        + escapeHtmlForTests(String(c.run_id)) + ' ↗</a>'
+      : '';
+    return '<div class="figure-card">' + media + desc
+      + '<div class="figure-caption-row">'
+      + '<span class="figure-source-chip">chart</span>'
+      + (c.title ? '<span class="figure-title">' + c.title + '</span>' : '')
+      + runLink
+      + '</div></div>';
   }
   // Figures tab (Fable A #3): the empty state is computed over the UNION of
   // the three figure sources — native gallery, embed_visualizations iframes
@@ -334,6 +348,23 @@
     var allReported = _figuresSourceState.native !== null && _figuresSourceState.charts !== null;
     var allEmpty = allReported && !_figuresSourceState.native && !_figuresSourceState.charts && !_figuresHasEmbeds();
     msg.style.display = allEmpty ? '' : 'none';
+  }
+
+  // Figure caption run-links (Fable §4.5, Task V2): a `.figure-card`'s
+  // caption row carries a `from run <id> ↗` link, built by each source's
+  // card markup as `<a class="figure-run-link" data-run-id="...">` when a
+  // run_id is available. Wiring the click via a delegated listener AFTER
+  // innerHTML is set (rather than an inline onclick with the id baked into
+  // the attribute string) avoids round-tripping the id through HTML
+  // attribute parsing before it reaches JS.
+  function _wireFigureRunLinks(container) {
+    if (!container) return;
+    container.querySelectorAll('.figure-run-link[data-run-id]').forEach(function (a) {
+      a.addEventListener('click', function (e) {
+        e.preventDefault();
+        _gotoStudyTab('simulate', 'run-' + a.getAttribute('data-run-id'));
+      });
+    });
   }
 
   // Baseline native-analysis gallery — the study's latest completed run's
@@ -361,14 +392,28 @@
           return;
         }
         function attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+        // build_study_native_gallery returns ONE run_id for the whole
+        // gallery (the study's latest completed run) — every panel below
+        // shares the same caption. Rendered conditionally: a study with no
+        // completed run (run_id is None) omits the link instead of
+        // fabricating provenance.
+        var runId = d && d.run_id;
+        var runCaption = runId
+          ? '<a href="#" class="figure-run-link" data-run-id="' + attr(runId) + '">from run '
+            + escapeHtmlForTests(String(runId)) + ' ↗</a>'
+          : '';
         host.innerHTML = names.map(function (n) {
-          return '<div class="native-fig" style="margin-bottom:18px">'
-            + '<div style="font-weight:600;font-size:0.92em;margin:0 0 5px 2px;color:#334155">'
-            + escapeHtmlForTests(n) + '</div>'
+          return '<div class="figure-card">'
             + '<iframe srcdoc="' + attr(panels[n]) + '" loading="lazy" '
-            + 'style="width:100%;height:480px;border:1px solid #e2e8f0;border-radius:8px;background:#fff"></iframe>'
+            + 'class="figure-media-frame figure-media-frame--native"></iframe>'
+            + '<div class="figure-caption-row">'
+            + '<span class="figure-source-chip">native</span>'
+            + '<span class="figure-title">' + escapeHtmlForTests(n) + '</span>'
+            + runCaption
+            + '</div>'
             + '</div>';
         }).join('');
+        _wireFigureRunLinks(host);
         _figuresSourceState.native = true;
         _updateFiguresEmptyState();
       })
@@ -624,6 +669,7 @@
           html += stat.map(_renderChartCard).join('');
         }
         panel.innerHTML = html;
+        _wireFigureRunLinks(panel);
         if (panelId === 'viz-charts-panel') {
           _figuresSourceState.charts = true;
           _updateFiguresEmptyState();
