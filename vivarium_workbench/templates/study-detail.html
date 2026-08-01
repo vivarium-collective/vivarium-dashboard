@@ -490,9 +490,9 @@
       </div>
     </div>
 
-    {# ─── Group 4: Plan & provenance (collapsed) ─────────────────────── #}
-    <details class="overview-section">
-      <summary class="overview-label">Plan &amp; provenance</summary>
+    {# ─── Group 4: Plan & provenance (always shown) ─────────────────────── #}
+    <div class="overview-section">
+      <h2 class="overview-label">Plan &amp; provenance</h2>
 
       {% if study.pipeline_gate %}
       <div class="overview-section">
@@ -661,7 +661,7 @@
         {% endif %}
       </div>
 
-    </details>
+    </div>
 
     {# Stage-3c: feedback panel — populated by JS from window._study.feedback_tracked.
        Rendered nothing when there is no feedback (JS checks items.length). #}
