@@ -2301,7 +2301,7 @@
     var html = '<div class="reg-infopop-title">Composites using <code>' + _esc(name || '') + '</code></div>';
     html += comps.length
       ? '<ul class="reg-infopop-list">' + comps.map(function (c) {
-          return '<li><a href="#" onclick="_setRegistryTab(\'composite\');return false;">' + _esc(c.name) + '</a> <span class="muted">' + _esc(c.module || '') + '</span></li>';
+          return '<li><a href="#" onclick="_openCompositeExplorer(\'' + _esc(c.id) + '\');return false;" title="Open in the Composite Explorer">' + _esc(c.name) + '</a> <span class="muted">' + _esc(c.module || '') + '</span></li>';
         }).join('') + '</ul>'
       : '<p class="muted">Not required by any loaded composite spec' + (p.composite_uses ? ' (used via generators — open the Composites tab).' : '.') + '</p>';
     _regInfoPop(e, html);
@@ -2312,12 +2312,20 @@
   function _showProcessStudies(e, address) {
     var p = _registryEntryByAddress(address) || {};
     var sp = p.study_participation || p.studies || {};
+    var list = (sp && Array.isArray(sp.study_list)) ? sp.study_list : [];
+    var n = sp.studies || 0;
     var html = '<div class="reg-infopop-title">Study participation</div>' +
       '<div class="reg-infopop-stats">' +
-        '<div><strong>' + (sp.studies || 0) + '</strong> studies participated</div>' +
-      '</div>' + _successBar(sp) +
-      '<p class="muted reg-infopop-note">Individual study names aren\'t in the registry index yet — browse them under ' +
+        '<div><strong>' + n + '</strong> stud' + (n === 1 ? 'y' : 'ies') + ' participated</div>' +
+      '</div>' + _successBar(sp);
+    if (list.length) {
+      html += '<ul class="reg-infopop-list">' + list.map(function (slug) {
+        return '<li><a href="#" onclick="_openStudyEmbeddedNewTab(\'' + _esc(slug) + '\');return false;" title="Open this study">' + _esc(slug) + '</a></li>';
+      }).join('') + '</ul>';
+    } else {
+      html += '<p class="muted reg-infopop-note">Individual study names aren\'t indexed for this process yet — browse them under ' +
         '<a href="#investigations" onclick="_switchPage(\'investigations\');return false;">Studies</a>.</p>';
+    }
     _regInfoPop(e, html);
   }
   window._showProcessStudies = _showProcessStudies;

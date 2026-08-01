@@ -129,8 +129,9 @@ def process_study_stats(ws_root, procs) -> "dict[str, dict]":
                 res = v.get("result") if isinstance(v, dict) else v
                 b[_bucket(res)] += 1
         for addr in participants:
-            e = acc.setdefault(addr, {"_studies": set(), "pass": 0, "inconclusive": 0, "fail": 0})
+            e = acc.setdefault(addr, {"_studies": set(), "_slugs": set(), "pass": 0, "inconclusive": 0, "fail": 0})
             e["_studies"].add(str(f.parent))
+            e["_slugs"].add(f.parent.name)
             e["pass"] += b["pass"]
             e["inconclusive"] += b["inconclusive"]
             e["fail"] += b["fail"]
@@ -140,6 +141,9 @@ def process_study_stats(ws_root, procs) -> "dict[str, dict]":
         p_, i_, fa_ = e["pass"], e["inconclusive"], e["fail"]
         out[addr] = {
             "studies": len(e["_studies"]),
+            # Study slugs (dir names) participating this process, so the
+            # Registry can list + link them (not just show a count).
+            "study_slugs": sorted(e.get("_slugs", set())),
             "pass": p_, "inconclusive": i_, "fail": fa_,
             "total": p_ + i_ + fa_,
         }
