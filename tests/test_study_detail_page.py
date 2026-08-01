@@ -74,25 +74,29 @@ def test_study_detail_spec_returns_none_for_missing(_ws):
 
 
 def test_study_detail_page_has_eight_tabs(_ws):
-    """The 8 pillar tabs are present: Overview · Tests · Model (compose) ·
-    Simulations (simulate) · Results (visualize) · Report Cards · Decide
+    """The pillar tabs are present: Overview · Tests · Model (compose) ·
+    Simulations (simulate) · Readouts · Results (visualize) · Decide
     (conclusions) · Exports (data).
 
-    (The contract this test guards is "the eight pillar tabs are all present",
-    not "exactly eight" — the count check was brittle as tabs accreted.)
+    (The contract this test guards is "the required pillar tabs are all
+    present", not "exactly N" — the count check was brittle as tabs accreted.
+    Task 10 merged Report Cards into Tests as one concept, so it is no longer
+    a separate tab/kind.)
     """
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    # Eight required pillar buttons
+    # Required pillar buttons
     for kind in ("overview", "tests", "compose", "simulate", "readouts",
-                 "visualize", "report-cards", "conclusions", "data"):
+                 "visualize", "conclusions", "data"):
         assert f'class="study-tab' in html
         assert f'data-kind="{kind}"' in html
-    # At least eight panels
+    # Report Cards is no longer its own tab — it's a subsection of Tests.
+    assert 'data-kind="report-cards"' not in html
+    # At least seven panels
     panels = html.count('class="study-tab-panel')
-    assert panels >= 8, f"expected at least 8 panel elements, got {panels}"
+    assert panels >= 7, f"expected at least 7 panel elements, got {panels}"
     # The Overview tab is active by default — must have both active class and overview kind on a button
     assert 'class="study-tab active" data-kind="overview"' in html or \
            'data-kind="overview" class="study-tab active"' in html or \
@@ -265,10 +269,12 @@ def test_full_study_renders_all_tabs(_rich_ws):
     spec = _study_detail_spec(_rich_ws, "rich")
     html = _render_study_detail_html(_rich_ws, "rich", spec)
 
-    # 8 pillar tabs scaffolded
+    # Pillar tabs scaffolded (Report Cards merged into Tests — Task 10 — so it
+    # is no longer a separate data-kind).
     for kind in ("overview", "tests", "compose", "simulate", "readouts",
-                 "visualize", "report-cards", "conclusions", "data"):
+                 "visualize", "conclusions", "data"):
         assert f'data-kind="{kind}"' in html
+    assert 'data-kind="report-cards"' not in html
 
     # Overview: objective text renders.
     assert "Compare growth kinetics" in html
@@ -314,8 +320,11 @@ def test_simulate_tab_does_not_render_charts_panel(_rich_ws):
         "Simulations tab should not contain the inline charts panel — charts "
         "belong to the Results (visualize) tab."
     )
-    # Sanity: the Results tab still has its chart panel.
-    viz_panel = _section(html, 'id="panel-visualize"', 'id="panel-report-cards"')
+    # Sanity: the Results tab still has its chart panel. (Task 10 removed the
+    # standalone Report Cards panel that used to follow Visualizations in
+    # document order — Report Cards is now a subsection of Tests — so the
+    # next panel marker is Exports/data.)
+    viz_panel = _section(html, 'id="panel-visualize"', 'id="panel-data"')
     assert 'id="viz-charts-panel"' in viz_panel
 
 

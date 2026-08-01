@@ -384,3 +384,45 @@ def test_visualizations_stripped_to_gallery(tmp_path, dashboard_client):
     assert 'Embedded visualizations' not in html
     assert 'Latest-run charts' not in html
     assert 'No baseline figures yet' not in html
+
+
+# ---------------------------------------------------------------------------
+# Task 10: Tests — merge Report Cards + Behavioral Tests into ONE concept.
+# The Tests pillar now has a single sub-nav member; report cards + behavioral
+# gates render top-to-bottom in one `data-kind="tests"` panel, led by a
+# gate/audit summary strip. No separate "Report Cards" tab/pillar remains.
+# ---------------------------------------------------------------------------
+
+def test_tests_merged_single_concept(tmp_path, dashboard_client):
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "tests-merged-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "tests-merged-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/tests-merged-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    # Gate/audit summary strip mount is present.
+    assert 'tests-gate-summary' in html
+    # The old explanatory prose is gone.
+    assert 'Graded comparison scorecards' not in html
+    # The report-cards sub-nav member / pillar-tab / standalone panel are gone.
+    assert 'data-kind="report-cards"' not in html
+    assert 'id="panel-report-cards"' not in html
+    assert '_setStudyTab(\'report-cards\')' not in html
+    # The report-cards mount now lives INSIDE the tests panel (one concept).
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+    assert 'id="report-cards-panel"' in tests_panel
+    assert '<h2>Tests</h2>' in tests_panel
+    assert 'Audit —' in tests_panel

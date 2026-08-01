@@ -45,10 +45,9 @@
     document.querySelectorAll('.study-tab-panel').forEach(function (p) {
       p.classList.toggle('active', p.dataset.kind === kind);
     });
-    if (kind === 'tests') { loadTestsTab(window._study); }
+    if (kind === 'tests') { _loadTestsPanel(window._study); }
     if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownload(); }
     if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
-    if (kind === 'report-cards') { _fillReportCardsTab(window._study); }
     if (kind === 'data') { _loadAnalysisOutputs(); _loadRawData(); }
     if (kind === 'compose') { _loadModelConfig(); }
     if (kind === 'simulate') { _loadStudySims(); }
@@ -1393,6 +1392,63 @@
 
     return '<div class="report-card-block" style="margin-bottom:28px;border-radius:10px;'
       + 'box-shadow:0 1px 3px rgba(0,0,0,0.06)">' + header + sections + '</div>' + viz;
+  }
+
+  // Tests tab entry point (Task 10): ONE audit for report cards + behavioral
+  // gates. Renders the gate/audit summary strip, then fills the report-cards
+  // subsection and the behavioral-tests list — each via its existing renderer,
+  // single-sourced from spec.outcome_rollup / spec.latest_outcomes so the
+  // strip can't drift from the row pills below it.
+  function _loadTestsPanel(spec) {
+    _renderTestsGateSummary(spec);
+    _fillReportCardsTab(spec);
+    loadTestsTab(spec);
+  }
+  window._loadTestsPanel = _loadTestsPanel;
+
+  // "N/M gates passed" + a per-gate ✓/✗ list. Every declared behavior test
+  // (kind: behavioral or report_card) is a gate; its latest authored result
+  // comes from spec.latest_outcomes (same source the row pills below read),
+  // and the aggregate count from spec.outcome_rollup so the two can't drift.
+  function _renderTestsGateSummary(spec) {
+    var host = document.getElementById('tests-gate-summary');
+    if (!host) return;
+    var tests = (spec && (spec.behavior_tests || spec.expected_behavior || spec.tests)) || [];
+    var outcomes = (spec && spec.latest_outcomes) || {};
+    var roll = (spec && spec.outcome_rollup) || null;
+    var e = escapeHtmlForTests;
+
+    if (!tests.length) {
+      host.innerHTML = '<p class="empty-message">No gates declared for this study yet.</p>';
+      return;
+    }
+
+    var passed = roll ? (roll.PASS || 0) : 0;
+    var total = roll ? (roll.total || tests.length) : tests.length;
+    if (!roll) {
+      tests.forEach(function (t) {
+        var o = t && t.name ? outcomes[t.name] : null;
+        if (o && o.result === 'PASS') passed++;
+      });
+    }
+
+    var rows = tests.map(function (t) {
+      var name = (t && t.name) || '(unnamed)';
+      var o = outcomes[name];
+      var res = o && o.result;
+      var ok = res === 'PASS';
+      var glyph = ok ? '✓' : (res === 'FAIL' ? '✗' : (res ? '◐' : '⏳'));
+      var color = ok ? '#16a34a' : (res === 'FAIL' ? '#dc2626' : '#94a3b8');
+      return '<li style="display:flex;align-items:center;gap:8px;padding:3px 0">'
+        + '<span style="color:' + color + ';font-weight:700">' + glyph + '</span>'
+        + '<code style="font-size:0.9em">' + e(name) + '</code>'
+        + '<span class="muted" style="font-size:0.8em">' + e(res || 'pending') + '</span>'
+        + '</li>';
+    }).join('');
+
+    host.innerHTML =
+      '<div style="font-weight:600">' + passed + '/' + total + ' gates passed</div>'
+      + '<ul style="list-style:none;padding:0;margin:6px 0 0 0">' + rows + '</ul>';
   }
 
   function loadTestsTab(spec) {

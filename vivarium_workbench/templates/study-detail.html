@@ -149,9 +149,9 @@
     <button class="study-tab" data-kind="simulate" data-pillar="simulate" onclick="_setStudyTab('simulate')">Simulations</button>
     <button class="study-tab" data-kind="readouts" data-pillar="readouts" onclick="_setStudyTab('readouts')">Readouts</button>
     <button class="study-tab" data-kind="visualize" data-pillar="visualize" onclick="_setStudyTab('visualize')">Visualizations</button>
-    {# Tests pillar: the report cards + the behavioral tests (each a test/report-card) live together. #}
-    <button class="study-tab" data-kind="report-cards" data-pillar="tests" onclick="_setStudyTab('report-cards')">Report Cards</button>
-    <button class="study-tab" data-kind="tests" data-pillar="tests" onclick="_setStudyTab('tests')">Behavioral Tests</button>
+    {# Tests pillar: ONE merged concept — the study's audit (report cards + behavioral
+       gates) — not two sub-tabs. Single member -> _showPillarSubnav auto-hides this row. #}
+    <button class="study-tab" data-kind="tests" data-pillar="tests" onclick="_setStudyTab('tests')">Tests</button>
     {# Decide pillar: the decide / conclusions materials (was a sub-tab under Hypotheses). #}
     <button class="study-tab" data-kind="conclusions" data-pillar="decide" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
     <button class="study-tab" data-kind="data" data-pillar="data" onclick="_setStudyTab('data')">Exports</button>
@@ -1019,19 +1019,6 @@
   </div>
 </section>
 
-<section class="study-tab-panel" data-kind="report-cards" id="panel-report-cards" hidden>
-  <div class="report-cards-section">
-    <h3 class="section-title">Report cards</h3>
-    <p class="muted" style="margin:0 0 10px 0;font-size:0.9em">
-      Graded comparison scorecards for this study (v2ecoli vs vEcoli / literature).
-      Each card's verdict summarises whether the compared observables fall within
-      tolerance. Cards are produced during the post-sim flush from the study's
-      <code>report_cards:</code> declaration into <code>viz/report_card/</code>.
-    </p>
-    <div id="report-cards-panel"><p class="empty-message">Loading report cards…</p></div>
-  </div>
-</section>
-
 <section class="study-tab-panel" data-kind="data" id="panel-data" hidden>
   <div class="data-section">
     <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
@@ -1061,24 +1048,31 @@
 </section>
 
 <section class="study-tab-panel" data-kind="tests" id="panel-tests" hidden>
-  <div class="tests-header">
-    <h3>Behavioral Tests</h3>
-    <p class="muted" style="margin: 0 0 8px 0;">
-      Each prediction below is paired with a precise <code>given / measure / expect</code>
-      rule so one English sentence auto-generates one pytest assertion. The
-      generic evaluator in <code>tests/_behaviors.py</code> dispatches on
-      <code>measure.kind</code> + <code>expect.op</code> to compute pass/fail
-      against the latest simulation run.
-    </p>
-    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-      <button id="run-tests-btn" class="btn-primary">Run tests</button>
-      <div class="tests-summary muted" id="tests-summary">— no test results yet —</div>
-    </div>
-    <div class="tests-config" style="margin-top: 6px;">
-      <span class="badge">auto_discover: <code id="tests-auto-discover">true</code></span>
-      <span class="badge">data_source: <code id="tests-data-source">latest_run</code></span>
-    </div>
+  <h2>Tests</h2>
+  <p class="muted" style="margin:0 0 12px 0">Audit — does this study pass its own bar (report cards + behavioral gates).</p>
+
+  {# Gate/audit summary strip — "N/M gates passed" + a per-gate ✓/✗ list, filled
+     client-side by _renderTestsGateSummary from spec.outcome_rollup +
+     spec.latest_outcomes so it can't drift from the row pills below. #}
+  <div class="tests-gate-summary" id="tests-gate-summary"><p class="empty-message">Loading gate summary…</p></div>
+
+  <div class="report-cards-section" style="margin-top:22px">
+    <h3 class="section-title">Report cards</h3>
+    <div id="report-cards-panel"><p class="empty-message">Loading report cards…</p></div>
   </div>
+
+  <div class="behavioral-tests-section" style="margin-top:22px">
+    <h3 class="section-title">Behavioral tests</h3>
+    <div class="tests-header">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <button id="run-tests-btn" class="btn-primary">Run tests</button>
+        <div class="tests-summary muted" id="tests-summary">— no test results yet —</div>
+      </div>
+      <div class="tests-config" style="margin-top: 6px;">
+        <span class="badge">auto_discover: <code id="tests-auto-discover">true</code></span>
+        <span class="badge">data_source: <code id="tests-data-source">latest_run</code></span>
+      </div>
+    </div>
 
   {% set _bt = study.behavior_tests or study.expected_behavior or study.tests %}
   {# Latest test outcomes per test — single-sourced from study_spec._latest_outcomes
@@ -1103,12 +1097,13 @@
         data-result="{{ _res or 'pending' }}"
         style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {{ _border }}; background: #f8fafc; border-radius: 4px;">
       {% if (b.kind or 'behavioral') == 'report_card' %}
-        {# De-duplicated: the full card lives on the Report Cards tab; here we show
-           the name + its verdict pill (set by _fillReportCardModules) + a link. #}
+        {# De-duplicated: the full card lives in the Report cards subsection above
+           (same Tests tab now); here we show the name + its verdict pill (set by
+           _fillReportCardModules) + a same-page anchor link. #}
         <div class="bt-head" style="display:flex;align-items:center;gap:8px">
           <code>{{ b.name }}</code>
           <span class="report-card-verdict" data-card="{{ b.card }}" style="font-size:0.75em;font-family:monospace;padding:2px 8px;border-radius:9999px;background:#e2e8f0;color:#334155">report card</span>
-          <a href="#" onclick="_setStudyPillar('report-cards');return false" class="btn-mini" style="margin-left:auto;font-size:0.78em">View on Report Cards ↗</a>
+          <a href="#report-cards-panel" class="btn-mini" style="margin-left:auto;font-size:0.78em">View report card ↑</a>
         </div>
       {% else %}
         {# --- existing behavioral rendering, UNCHANGED, kept verbatim below --- #}
@@ -1160,6 +1155,7 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
       the auto-generated assertions.</li>
   </ul>
   {% endif %}
+  </div>
 </section>
 
 <section class="study-tab-panel" data-kind="conclusions" id="panel-conclusions" hidden>
