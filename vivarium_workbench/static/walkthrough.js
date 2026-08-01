@@ -1803,7 +1803,9 @@
     } else if (m.href) {
       window.open(m.href, '_blank', 'noopener');
     } else {
-      _launchViewer(t.id, m.study || m.ref || '');  // resolves via endpoint / snapshot note
+      // Contributed launcher viewers are keyed by full uid (package::id) at the
+      // launch endpoint; t.id is the bare id, so prefer t.uid.
+      _launchViewer(t.uid || t.id, m.study || m.ref || '');  // resolves via endpoint / snapshot note
     }
   }
   window._openTool = _openTool;
