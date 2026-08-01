@@ -9321,6 +9321,8 @@
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ notebook</a>' +
         '</div>' +
         '<div class="iset-studies-detail" style="display:' + (full ? 'block' : 'none') + ';margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">' + (studyRows || '<span class="muted" style="font-size:0.85em">No studies.</span>') + '</div>' +
+        // "Run this investigation in your terminal" chip (like the composite/process card).
+        _runCmdChip(iset.run_command || ('vwb run investigation ' + iset.name)) +
       '</div>';
     }
 
@@ -9787,6 +9789,8 @@
         '<span style="flex:1"><strong>' + nRuns + '</strong> run' + (nRuns === 1 ? '' : 's') + '</span>' +
         '<span style="color:#3b82f6">open ↗</span>' +
       '</div>' +
+      // "Run this study in your terminal" chip (like the composite/process card).
+      _runCmdChip(s.run_command || ('vwb run study ' + s.name)) +
     '</div>';
   }
 
@@ -11028,17 +11032,6 @@
     var shellEl = document.getElementById('investigation-dag-shell');
     if (shellEl) { shellEl.classList.remove('aig-zoom-far','aig-zoom-mid','aig-zoom-near'); shellEl.classList.add(_opts.cls); }
 
-    // Investigation-level "run in your terminal" command — always shown (above
-    // the graph) whenever we have the investigation slug. Appends a `--steps N`
-    // hint (longest member study's baseline composite run) when the payload
-    // carries one, matching the composite-style command.
-    var _dagRunEl = document.getElementById('investigation-dag-run');
-    if (_dagRunEl) {
-      var _invSteps = (window._currentIsetData || {}).default_n_steps;
-      var _invCmd = 'vwb run investigation ' + _dagInvSlug +
-        ((typeof _invSteps === 'number' && _invSteps > 0) ? (' --steps ' + _invSteps) : '');
-      _dagRunEl.innerHTML = _dagInvSlug ? _runCmdChip(_invCmd) : '';
-    }
 
     var nodesHost = document.getElementById('investigation-dag-nodes');
     var edgesSvg  = document.getElementById('investigation-dag-edges');
@@ -11252,10 +11245,6 @@
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
           ? window._chainBlockHtml(chainsBySlug[s.name]) : '') +
-        // "Run this study in your terminal" — the server-built baseline command
-        // (carries a `--steps N` hint from the study's baseline composite); falls
-        // back to the bare command. Shown at every zoom band (not gated).
-        _runCmdChip((s.run_commands && s.run_commands.baseline) || ('vwb run study ' + s.name)) +
         // Layer-4: cached/compute badge + run/continue buttons (live only).
         _dagCacheBadgeHtml(s.name) +
         _dagTriggerControlsHtml(s.name);
