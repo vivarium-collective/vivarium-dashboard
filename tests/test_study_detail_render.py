@@ -346,6 +346,7 @@ def test_simulations_is_readonly_table(tmp_path, dashboard_client):
     assert 'Run on remote' not in html
     assert 'Simulation set' not in html
     assert 'study-configure-run' not in html
+    assert 'id="study-sim-table"' in html
 
 
 def test_visualizations_stripped_to_gallery(tmp_path, dashboard_client):
@@ -383,4 +384,3 @@ def test_visualizations_stripped_to_gallery(tmp_path, dashboard_client):
     assert 'Embedded visualizations' not in html
     assert 'Latest-run charts' not in html
     assert 'No baseline figures yet' not in html
-    assert 'id="study-sim-table"' in html
