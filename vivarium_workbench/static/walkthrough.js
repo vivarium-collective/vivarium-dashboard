@@ -3087,17 +3087,23 @@
       '<div class="loom-card loom-card-stack loom-card-composite">' +
         '<div class="pcard-top">' +
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" ondblclick="event.stopPropagation();_maximizeCardFromHeader(this)" title="Click to pin to top · double-click to maximize">' +
-            '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + wsPill + roPill +
-            '<code class="loom-addr">' + _esc(addr) + '</code>' +
+            '<span class="loom-name">' + _esc(c.name) + '</span>' +
+            // Investigation cards supply their own status badges (Failed/merged/…)
+            // in place of the generic Composite / read-only badges.
+            (c._titleBadges != null ? c._titleBadges : (_compositeBadge() + wsPill + roPill)) +
+            (c._hideAddr ? '' : '<code class="loom-addr">' + _esc(addr) + '</code>') +
             _compositeJsonBtn() +
             _cardMaximizeBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
           '<div class="pcard-summary">' +
             '<div class="pcard-desc-col">' +
-              '<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
-              (function () { var s = _regStatsHtml(c); return s ? '<div class="reg-card-stats pcard-usage">' + s + '</div>' : ''; })() +
-              (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
+              // Investigations replace the "composite · N params" meta + desc with
+              // their fused summary (objective + study breakdown + downloads).
+              (c._summaryHtml != null ? c._summaryHtml :
+                ('<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
+                 (function () { var s = _regStatsHtml(c); return s ? '<div class="reg-card-stats pcard-usage">' + s + '</div>' : ''; })() +
+                 (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : ''))) +
             '</div>' +
           '</div>' +
           '<div class="pcard-json-view" data-role="composite-json" hidden>' +
@@ -9320,21 +9326,17 @@
     function _isetFullHtml(iset) {
       var ic = _investigationCardObj(iset);
       window._compositesById[ic.id] = ic;
-      // Objective / overview at the top, styled like the Investigation-graph view.
-      var overview = String(iset.description || iset.question || '').split('\n')[0].trim();
-      var qLine = iset.question ? String(iset.question).split('\n')[0].trim() : '';
-      var objHtml = '';
-      if (overview || qLine) {
-        objHtml = '<div class="iset-inv-objective">' +
-          '<span class="iset-inv-obj-label">Objective</span>' +
-          (qLine ? '<p class="iset-inv-obj-q"><span class="iset-inv-obj-qmark">Q</span> ' + _esc(qLine) + '</p>' : '') +
-          (overview && overview !== qLine ? '<p class="iset-inv-obj-text">' + _esc(overview) + '</p>' : '') +
-        '</div>';
-      }
-      return '<div class="iset-inv-full" data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" style="margin:0 0 26px">' +
-        _isetCardHtml(iset, false) +
-        objHtml +
-        '<div class="iset-inv-loom" style="margin:10px 0 0">' + _renderCompositeCardFull(ic) + '</div>' +
+      // ONE integrated card: the investigation summary (status, objective, study
+      // breakdown, report/notebook downloads) is fused into the composite card's
+      // header, with the study-graph loom in Explore below.
+      var _fstatus = (iset.status === 'archived' || iset.status === 'closed')
+        ? 'closed' : (iset.effective_status || iset.status || 'planning');
+      return '<div class="iset-inv-full" ' +
+          'data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" ' +
+          'data-iset-title="' + _esc(String(iset.title || iset.name).toLowerCase()) + '" ' +
+          'data-iset-status="' + _esc(String(_fstatus).toLowerCase()) + '" ' +
+          'style="margin:0 0 22px">' +
+        _renderCompositeCardFull(ic) +
       '</div>';
     }
     function _groupHtml(label, items) {
@@ -9792,21 +9794,79 @@
     };
   }
 
+  // Fused investigation-card header: the status badges (Failed/merged/…) and the
+  // summary (objective + per-study breakdown + N studies + report/notebook
+  // downloads) that used to sit in a SEPARATE card above the composite card —
+  // now injected into the single integrated card via _titleBadges/_summaryHtml.
+  function _investigationCardHeader(iset) {
+    var closed = (iset.status === 'archived' || iset.status === 'closed');
+    var effStatus = iset.effective_status || iset.status || 'planning';
+    var META = {
+      planning:    { label: 'Planned',     bg: '#f1f5f9', fg: '#475569', bd: '#cbd5e1' },
+      in_progress: { label: 'In progress',  bg: '#fef9c3', fg: '#854d0e', bd: '#fde047' },
+      running:     { label: 'Running now',  bg: '#dbeafe', fg: '#1e40af', bd: '#93c5fd' },
+      complete:    { label: 'Complete',     bg: '#dcfce7', fg: '#166534', bd: '#86efac' },
+      evaluated:   { label: 'Evaluated',    bg: '#dcfce7', fg: '#166534', bd: '#86efac' },
+      failed:      { label: 'Failed',       bg: '#fee2e2', fg: '#991b1b', bd: '#fca5a5' }
+    };
+    var m = META[effStatus] || { label: effStatus, bg: '#f1f5f9', fg: '#475569', bd: '#cbd5e1' };
+    var pill = 'font-size:0.72em;border-radius:9999px;padding:1px 9px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap;';
+    var currentPill = iset.current
+      ? '<span style="' + pill + 'background:#eef2ff;color:#4338ca;border:1px solid #c7d2fe;font-weight:600">⎇ current branch</span>' : '';
+    var statusPill = closed
+      ? '<span class="status-pill" style="' + pill + 'background:#e5e7eb;color:#4b5563;border:1px solid #d1d5db">Closed</span>'
+      : '<span class="status-pill" style="' + pill + 'background:' + m.bg + ';color:' + m.fg + ';border:1px solid ' + m.bd + '">' + _esc(m.label) + '</span>';
+    var lifeChip = (iset.lifecycle && iset.lifecycle !== 'active')
+      ? '<span style="font-size:0.72em;color:#64748b;background:#f1f5f9;border-radius:9999px;padding:1px 8px">' + _esc(iset.lifecycle) + '</span>' : '';
+    var badges = currentPill + statusPill + lifeChip + (typeof _originBadge === 'function' ? _originBadge(iset.origin_repo) : '');
+
+    var qLine = iset.question ? String(iset.question).split('\n')[0]
+              : (iset.description ? String(iset.description).split('\n')[0] : '');
+    var studyObjs = (typeof _isetStudyObjs === 'function') ? _isetStudyObjs(iset) : [];
+    var byStatus = {};
+    studyObjs.forEach(function (s) { var st = (s && (s.effective_status || s.status)) || 'planning'; byStatus[st] = (byStatus[st] || 0) + 1; });
+    var SD = { complete: ['#16a34a', 'done'], evaluated: ['#16a34a', 'done'], running: ['#2563eb', 'running'],
+               in_progress: ['#d97706', 'in progress'], failed: ['#dc2626', 'failed'], planning: ['#94a3b8', 'planned'] };
+    var breakdown = Object.keys(byStatus).map(function (st) {
+      var sm = SD[st] || SD.planning;
+      return '<span style="display:inline-flex;align-items:center;gap:4px;white-space:nowrap">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + sm[0] + '"></span>' + byStatus[st] + ' ' + _esc(sm[1]) + '</span>';
+    }).join('<span style="color:#cbd5e1">·</span>');
+    var nStud = (iset.n_studies != null) ? iset.n_studies : studyObjs.length;
+    var esc = _esc(iset.name);
+    var dls = '<a href="#" title="Download the rendered HTML report" onclick="window._vivReportFromCard(event,\'' + esc + '\');return false;" style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ report</a>' +
+              '<a href="#" title="Download the runnable notebook" onclick="window._vivNotebookFromCard(event,\'' + esc + '\');return false;" style="color:#3b82f6;text-decoration:none;white-space:nowrap;margin-left:14px">↓ notebook</a>';
+    var summary =
+      (qLine ? '<div class="iset-card-objective"><span class="iset-inv-obj-qmark">Q</span> ' + _esc(qLine) + '</div>' : '') +
+      '<div class="iset-card-meta">' +
+        (breakdown ? '<span class="iset-card-breakdown">' + breakdown + '</span>' : '') +
+        '<span class="iset-card-studies"><strong>' + nStud + '</strong> stud' + (nStud === 1 ? 'y' : 'ies') + '</span>' +
+        '<span class="iset-card-dls">' + dls + '</span>' +
+      '</div>';
+    return { badges: badges, summary: summary };
+  }
+
   // An investigation IS a composite of its member studies. Build a composite-card
   // object whose Explore loom shows that graph: each member study is a node,
   // drillable into its own subcomposites (rootId investigation:<slug> →
-  // composite-inner-state resolves each study node to its composite).
+  // composite-inner-state resolves each study node to its composite). The card
+  // header is fused with the investigation summary (status + objective + studies
+  // + report/notebook downloads) via _titleBadges / _summaryHtml.
   function _investigationCardObj(iset) {
     var slug = iset.name;
+    var hdr = _investigationCardHeader(iset);
     return {
       id: 'investigation:' + slug,
       name: iset.title || slug,
       module: null,
-      description: '',                  // objective shown in the header block above the card
+      description: '',
       parameters: {},
       read_only: true,
       workspace_local: !iset.read_only,
       _isInvestigation: true,
+      _titleBadges: hdr.badges,
+      _summaryHtml: hdr.summary,
+      _hideAddr: true,
       _stateUrl: '/api/investigation-composite-state?investigation=' + encodeURIComponent(slug),
       _loomRef: 'investigation:' + slug,
       _loomParams: '&dir=LR&nodes=proc'   // left-to-right workflow, studies only (no result stores)
@@ -10051,7 +10111,9 @@
       });
       return;
     }
-    var cards = document.querySelectorAll('#investigations-list .investigation-set-card');
+    // Full-zoom fused investigation cards are `.iset-inv-full` wrappers (they
+    // carry the same data-iset-* attrs); lower zooms use `.investigation-set-card`.
+    var cards = document.querySelectorAll('#investigations-list .investigation-set-card, #investigations-list .iset-inv-full');
 
     // iset slug -> member study objects, for study-aware matching.
     var studiesByIset = {};
@@ -10085,7 +10147,7 @@
     });
     document.querySelectorAll('#investigations-list .iset-group').forEach(function(group) {
       var n = 0;
-      group.querySelectorAll('.investigation-set-card').forEach(function(c) {
+      group.querySelectorAll('.investigation-set-card, .iset-inv-full').forEach(function(c) {
         if (c.style.display !== 'none') n++;
       });
       var countEl = group.querySelector('.iset-group-count');

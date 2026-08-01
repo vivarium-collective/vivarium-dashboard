@@ -2007,6 +2007,15 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 .iset-inv-obj-text{ margin:6px 0 0; font-size:0.9em; color:#475569; line-height:1.5; }
 :root[data-theme="dark"] .iset-inv-objective{ background:var(--surface-1,#0f1728); border-color:var(--border-faint); }
 
+/* Fused investigation card: objective + meta row (breakdown · studies · downloads). */
+.iset-card-objective{ font-size:0.95em; color:#1e293b; line-height:1.5; margin:2px 0 8px; }
+.iset-card-meta{
+  display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px;
+  font-size:0.82em; color:#64748b;
+}
+.iset-card-breakdown{ display:inline-flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.iset-card-dls{ margin-left:auto; display:inline-flex; align-items:center; }
+
 .pcard-run-note, .pcard-run-hint{ font-size:0.82em; }
 .pcard-run-status{ font-size:0.82em; }
 .pcard-run-status.pcard-apply-err{ color:#b91c1c; }
