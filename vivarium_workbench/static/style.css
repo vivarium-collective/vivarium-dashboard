@@ -1975,6 +1975,23 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 .pcard-sec-run.pcard-sec-open       > .pcard-sec-head{ box-shadow:inset 3px 0 0 #0891b2; }
 .pcard-sec-outputs.pcard-sec-open   > .pcard-sec-head{ box-shadow:inset 3px 0 0 #10b981; }
 
+/* Feature section (Explore): the primary way in, so it reads as a call-to-action
+   even when collapsed — violet accent bar + tint + colored caret/name always on,
+   and an inline "click to open" hint pill. */
+.pcard-sec-feature{ background:linear-gradient(90deg,#faf7ff,#fcfbff); }
+.pcard-sec-feature > .pcard-sec-head{ box-shadow:inset 3px 0 0 #7c3aed; padding-top:12px; padding-bottom:12px; }
+.pcard-sec-feature > .pcard-sec-head:hover{ background:#f4efff; }
+.pcard-sec-feature > .pcard-sec-head .pcard-sec-caret{ color:#7c3aed; }
+.pcard-sec-feature > .pcard-sec-head .pcard-sec-name{ color:#6d28d9; }
+.pcard-sec-hint{
+  font-size:0.78em; font-weight:600; color:#7c3aed;
+  background:#f1e9ff; border:1px solid #e2d3ff; border-radius:999px;
+  padding:2px 9px; white-space:nowrap;
+}
+:root[data-theme="dark"] .pcard-sec-feature{ background:linear-gradient(90deg,rgba(124,58,237,.10),rgba(124,58,237,.04)); }
+:root[data-theme="dark"] .pcard-sec-feature > .pcard-sec-head:hover{ background:rgba(124,58,237,.16); }
+:root[data-theme="dark"] .pcard-sec-hint{ color:#c4b5fd; background:rgba(124,58,237,.18); border-color:rgba(124,58,237,.35); }
+
 .pcard-run-note, .pcard-run-hint{ font-size:0.82em; }
 .pcard-run-status{ font-size:0.82em; }
 .pcard-run-status.pcard-apply-err{ color:#b91c1c; }
