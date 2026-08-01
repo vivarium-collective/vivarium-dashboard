@@ -47,6 +47,18 @@ def _empty_study(tmp_path) -> Path:
     return ws
 
 
+def _patch_runs(monkeypatch, runs: list[dict]) -> None:
+    """Patch ``has_runs``'s data source (Task Vcal): ``viz_gate`` imports
+    ``read_runs_db_for_study`` lazily inside the function body, same pattern
+    as ``_patch_sources`` above, so patch the source attribute."""
+    import vivarium_workbench.lib.study_spec as _spec_mod
+
+    monkeypatch.setattr(
+        _spec_mod, "read_runs_db_for_study",
+        lambda ws_root, name: list(runs),
+    )
+
+
 # ---------------------------------------------------------------------------
 # (i) embed HTML linked to a run -> qualifies
 # ---------------------------------------------------------------------------
@@ -252,3 +264,101 @@ def test_unreadable_study_yaml_does_not_raise(tmp_path, monkeypatch):
     status = viz_gate.study_visualization_status(ws, "does-not-exist")
     assert status["qualifies"] is False
     assert status["n_figures"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Task Vcal — recalibrate the visualization gap into three outcomes via a new
+# `gap_severity` field, driven by a new `has_runs` signal. Kills the 56/56
+# noise: a study that was never RUN can't satisfy "run-linked" and shouldn't
+# be scolded for it (silent), but a genuinely empty/boring study (no
+# interactive figure) still warns, and a run study that just hasn't linked
+# provenance yet gets a soft info nudge.
+# ---------------------------------------------------------------------------
+
+def test_vcal_case_a_static_only_gap_severity_warning(tmp_path, monkeypatch):
+    """(a) static-only study -> gap_severity == 'warning' regardless of
+    has_runs (the no-interactive case is the genuine empty/boring problem)."""
+    ws = _empty_study(tmp_path)
+    _patch_sources(
+        monkeypatch,
+        charts={"charts": [
+            {"key": "mass", "media": "svg", "svg": "<svg/>", "run_id": "run-1"},
+        ]},
+    )
+    _patch_runs(monkeypatch, [{"run_id": "run-1", "status": "completed"}])
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["has_interactive"] is False
+    assert status["gap_severity"] == "warning"
+
+
+def test_vcal_case_b_interactive_no_run_link_has_runs_gap_severity_info(tmp_path, monkeypatch):
+    """(b) interactive + no run-linked + HAS >=1 recorded run ->
+    gap_severity == 'info' (soft provenance nudge, not a hard warning)."""
+    ws = _empty_study(tmp_path)
+    _patch_sources(
+        monkeypatch,
+        embeds=[{"name": "plot", "url": "/x.html", "run_id": None}],
+    )
+    _patch_runs(monkeypatch, [{"run_id": "run-1", "status": "completed"}])
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["has_interactive"] is True
+    assert status["has_run_linked"] is False
+    assert status["has_runs"] is True
+    assert status["gap_severity"] == "info"
+
+
+def test_vcal_case_c_interactive_no_run_link_no_runs_gap_severity_none(tmp_path, monkeypatch):
+    """(c) interactive + no run-linked + NO recorded runs at all ->
+    gap_severity is None (silent — an unrun study isn't a viz problem, this
+    is exactly the 37-noise-case fix)."""
+    ws = _empty_study(tmp_path)
+    _patch_sources(
+        monkeypatch,
+        embeds=[{"name": "plot", "url": "/x.html", "run_id": None}],
+    )
+    _patch_runs(monkeypatch, [])
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["has_interactive"] is True
+    assert status["has_run_linked"] is False
+    assert status["has_runs"] is False
+    assert status["gap_severity"] is None
+
+
+def test_vcal_case_d_fully_qualifying_gap_severity_none(tmp_path, monkeypatch):
+    """(d) fully qualifying (interactive + run-linked) -> gap_severity is
+    None, whether or not other runs are on record."""
+    ws = _empty_study(tmp_path)
+    _patch_sources(
+        monkeypatch,
+        embeds=[{"name": "plot", "url": "/x.html", "run_id": "run-1"}],
+    )
+    _patch_runs(monkeypatch, [{"run_id": "run-1", "status": "completed"}])
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["qualifies"] is True
+    assert status["gap_severity"] is None
+
+
+def test_vcal_case_e_empty_study_gap_severity_warning(tmp_path, monkeypatch):
+    """(e) empty study (zero figures) -> gap_severity == 'warning', even
+    with zero recorded runs (no-interactive always wins over has_runs)."""
+    ws = _empty_study(tmp_path)
+    _patch_sources(monkeypatch)
+    _patch_runs(monkeypatch, [])
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["n_figures"] == 0
+    assert status["gap_severity"] == "warning"
+
+
+def test_vcal_has_runs_default_derivation_reads_runs_db(tmp_path, monkeypatch):
+    """Without patching has_runs's own source, `has_runs` is derived from
+    the real (empty, since no runs.db/study.yaml runs: exist)
+    `read_runs_db_for_study` — proving the field is actually wired to a real
+    signal, not hardcoded."""
+    ws = _empty_study(tmp_path)
+    _patch_sources(
+        monkeypatch,
+        embeds=[{"name": "plot", "url": "/x.html", "run_id": None}],
+    )
+    status = viz_gate.study_visualization_status(ws, "s1")
+    assert status["has_runs"] is False
+    assert status["gap_severity"] is None

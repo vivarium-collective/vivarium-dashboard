@@ -622,11 +622,19 @@ def _apply_visualization_gap(gates: list[dict], ws_root, slug: str) -> None:
     gate entry of *gates* (mutated in place) — the same computed-state slot
     ``build_gate_ladder`` already populates from ``derived_status``.
 
-    Non-qualifying: downgrades ``computed_state`` via the existing worst-of
-    rank (:func:`_worst_gate_state`) to :data:`_VIZ_GAP_STATE`, appends to
+    Task Vcal: downgrades ONLY on the ``gap_severity == "warning"`` case (no
+    interactive figure at all — the genuine empty/boring problem). The
+    ``"info"`` provenance nudge (has an interactive figure + has runs, just
+    nothing's run-linked yet) and the silent unrun case (``gap_severity is
+    None``) never touch Evidence — a study that simply hasn't been run yet
+    isn't a visualization problem, and the soft nudge isn't a gate-worthy
+    signal.
+
+    On downgrade: mutates ``computed_state`` via the existing worst-of rank
+    (:func:`_worst_gate_state`) to :data:`_VIZ_GAP_STATE`, appends to
     ``computed_source``, records the human reason in ``viz_gap_reason``, and
     flags ``diverges`` when the authored axis says "passed" but the (now
-    downgraded) computed state doesn't. Qualifying: no change at all.
+    downgraded) computed state doesn't.
 
     Tolerant like V4: ``study_visualization_status`` is itself internally
     tolerant (never raises), but this wraps the call anyway and treats ANY
@@ -641,7 +649,7 @@ def _apply_visualization_gap(gates: list[dict], ws_root, slug: str) -> None:
         viz_status = study_visualization_status(ws_root, slug)
     except Exception:  # noqa: BLE001 — unreadable study: no signal, no downgrade, no 500
         return
-    if not isinstance(viz_status, dict) or viz_status.get("qualifies"):
+    if not isinstance(viz_status, dict) or viz_status.get("gap_severity") != "warning":
         return
     reason = viz_status.get("reason") or "no qualifying figure"
     for entry in gates:

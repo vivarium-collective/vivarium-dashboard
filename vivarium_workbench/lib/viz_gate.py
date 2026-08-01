@@ -85,15 +85,29 @@ def study_visualization_status(ws_root: Path, slug: str) -> dict:
         {
           "has_interactive": bool,
           "has_run_linked":  bool,
+          "has_runs":        bool,        # Task Vcal
           "qualifies":       bool,
           "n_figures":       int,
           "reason":          str | None,  # why qualifies is False
+          "gap_severity":    str | None,  # Task Vcal: "warning" | "info" | None
         }
 
     ``reason`` (most-informative-first when multiple apply):
       "no figures" > "no interactive figure (only static images)"
                    > "no figure linked to a run"
     ``None`` when ``qualifies`` is True.
+
+    ``gap_severity`` (Task Vcal — recalibrates the V4 bar so an unrun study
+    isn't scolded just for not having been executed yet):
+      * ``"warning"`` — NOT ``has_interactive`` (no figures, or static-only).
+        The genuine "empty/boring study" problem; downgrades the Evidence
+        gate (V5).
+      * ``"info"``    — ``has_interactive`` AND NOT ``has_run_linked`` AND
+        the study HAS >=1 recorded run. A soft provenance nudge; never
+        downgrades Evidence.
+      * ``None``      — either fully qualifying, OR the not-run-linked case
+        for a study with NO recorded runs at all (silent — an unrun study
+        isn't a visualization problem).
     """
     ws_root = Path(ws_root)
     n_figures = 0
@@ -184,10 +198,30 @@ def study_visualization_status(ws_root: Path, slug: str) -> dict:
     else:
         reason = None
 
+    # Task Vcal: "has this study been run at all?" — reuses the existing
+    # `read_runs_db_for_study` call (the same one `build_study_native_gallery`
+    # already calls internally) rather than a new scan. Tolerant: an
+    # unreadable runs.db/study.yaml reads as "no runs", never raises.
+    has_runs = False
+    try:
+        from vivarium_workbench.lib.study_spec import read_runs_db_for_study
+        has_runs = bool(read_runs_db_for_study(ws_root, slug))
+    except Exception:  # noqa: BLE001
+        has_runs = False
+
+    if not has_interactive:
+        gap_severity: Optional[str] = "warning"
+    elif not has_run_linked:
+        gap_severity = "info" if has_runs else None
+    else:
+        gap_severity = None
+
     return {
         "has_interactive": has_interactive,
         "has_run_linked": has_run_linked,
+        "has_runs": has_runs,
         "qualifies": has_interactive and has_run_linked,
         "n_figures": n_figures,
         "reason": reason,
+        "gap_severity": gap_severity,
     }

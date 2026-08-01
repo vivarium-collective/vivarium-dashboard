@@ -1451,6 +1451,74 @@ def test_visualization_gap_unreadable_study_no_downgrade_no_500(monkeypatch):
     assert evidence["diverges"] is False
 
 
+def test_visualization_gap_info_nudge_does_not_downgrade_evidence(tmp_path):
+    """Task Vcal: a study that HAS an interactive figure and HAS been run,
+    but nothing's linked to a run yet (`gap_severity == "info"`), must NOT
+    downgrade Evidence -- ONLY the no-interactive `"warning"` case does.
+    Exercised directly against `build_gate_ladder` with a REAL study.yaml
+    (embed_visualizations + runs:) so `study_visualization_status` computes
+    for real rather than being mocked -- proving the wiring actually reads
+    `gap_severity`, not the old flat `qualifies` check."""
+    from vivarium_workbench.lib.study_page import build_gate_ladder
+
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "info-study"
+    sd.mkdir(parents=True)
+    sd_spec = {
+        "name": "info-study",
+        "embed_visualizations": [
+            {"url": "/studies/info-study/viz/plot.html", "run_id": None},
+        ],
+        "runs": [{"name": "r1", "status": "completed"}],
+    }
+    (sd / "study.yaml").write_text(yaml.safe_dump(sd_spec), encoding="utf-8")
+
+    spec = {
+        "evaluation_status": "evaluated",
+        "derived_status": {
+            "evaluation_status": {"value": "evaluated", "source": "derive_status"},
+        },
+    }
+    gates = build_gate_ladder(spec, ws_root=ws, slug="info-study")
+    evidence = next(g for g in gates if g["key"] == "evidence")
+    assert evidence["computed_state"] == "passed"
+    assert evidence["viz_gap_reason"] is None
+    assert evidence["diverges"] is False
+
+
+def test_visualization_gap_unrun_study_does_not_downgrade_evidence(tmp_path):
+    """Task Vcal: a study that HAS an interactive figure but has NEVER been
+    run at all (`gap_severity is None`, the silent unrun case) must NOT
+    downgrade Evidence either -- an unrun study isn't a visualization
+    problem, so it must be treated identically to the fully-qualifying
+    case for gate purposes."""
+    from vivarium_workbench.lib.study_page import build_gate_ladder
+
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "unrun-study"
+    sd.mkdir(parents=True)
+    sd_spec = {
+        "name": "unrun-study",
+        "embed_visualizations": [
+            {"url": "/studies/unrun-study/viz/plot.html", "run_id": None},
+        ],
+        # deliberately no "runs:" -> has_runs is False -> gap_severity None
+    }
+    (sd / "study.yaml").write_text(yaml.safe_dump(sd_spec), encoding="utf-8")
+
+    spec = {
+        "evaluation_status": "evaluated",
+        "derived_status": {
+            "evaluation_status": {"value": "evaluated", "source": "derive_status"},
+        },
+    }
+    gates = build_gate_ladder(spec, ws_root=ws, slug="unrun-study")
+    evidence = next(g for g in gates if g["key"] == "evidence")
+    assert evidence["computed_state"] == "passed"
+    assert evidence["viz_gap_reason"] is None
+    assert evidence["diverges"] is False
+
+
 # ---------------------------------------------------------------------------
 # Fable G4: Tests -> Acceptance criteria band (§10.1 band 1). `spine_acceptance`
 # is already attached to the spec by study_spec.load_study_detail_spec (via
