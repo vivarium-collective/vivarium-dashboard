@@ -306,6 +306,25 @@ def _readout_emit_plan_findings(ws_root: Path) -> list[dict]:
     return out
 
 
+def _question_approach_findings(ws_root: Path) -> list[dict]:
+    """Deterministic 'missing_question' readiness gaps — one per study whose
+    spec has no non-empty question (``purpose.question`` or legacy top-level
+    ``question``). Reuses ``_iter_study_slugs`` (tolerant of unreadable specs).
+    """
+    out: list[dict] = []
+    for slug, spec in _iter_study_slugs(ws_root):
+        q = ((spec.get("purpose") or {}).get("question") or spec.get("question") or "").strip()
+        if not q:
+            out.append({
+                "study": spec.get("name") or slug,
+                "check": "missing_question",
+                "severity": "warning",
+                "message": "Study has no question — add a Question & Approach.",
+                "field_path": "purpose.question",
+            })
+    return out
+
+
 def _linkage_cached_index(ws_root: Path) -> Optional[dict]:
     """Return the cached linkage index for ``ws_root`` (TTL-cached), or build
     and cache it.  Returns ``None`` when the index module is unavailable or
@@ -359,6 +378,7 @@ def build_report_lint(ws_root: Path) -> tuple[dict, int]:
 
     findings.extend(_composite_resolution_findings(ws_root))
     findings.extend(_readout_emit_plan_findings(ws_root))
+    findings.extend(_question_approach_findings(ws_root))
     return {"findings": findings}, 200
 
 
