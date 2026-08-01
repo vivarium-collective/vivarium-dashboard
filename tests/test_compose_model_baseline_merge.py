@@ -71,6 +71,83 @@ def test_v4_baseline_renders_exactly_once(tmp_path):
     assert "Runnable models" in panel
 
 
+_V4_DIVERGENT_SPEC = {
+    "schema_version": 4,
+    "baseline": [
+        {"name": "baseline", "composite": "pbg_demo.composites.demo",
+         "params": {"temperature": 37}},
+    ],
+    "conditions": {
+        "baseline": {
+            "composite": "pbg_demo.composites.demo",
+            # Same key (temperature) as study.baseline[0].params, but a
+            # DIFFERENT value — review fix: this must render visibly, not
+            # be silently dropped just because the key already "exists".
+            "params": {"temperature": 42},
+        },
+        "variants": [],
+        "model_settings": [],
+    },
+}
+
+
+def test_v4_diverging_baseline_param_value_is_visible_not_dropped(tmp_path):
+    html = _render(tmp_path, "v4-divergent-study", _V4_DIVERGENT_SPEC)
+    panel = _panel_compose(html)
+    # Both the study.baseline[] value (37) and the conditions.baseline value
+    # (42) for the same key must be visible in the rendered card — neither
+    # is silently discarded because the key collided.
+    assert "37" in panel
+    assert "42" in panel
+    assert "differs" in panel
+
+
+_V4_SAME_COMPOSITE_TWICE_SPEC = {
+    "schema_version": 4,
+    "baseline": [
+        {"name": "one", "composite": "pbg_demo.composites.demo", "params": {}},
+        {"name": "two", "composite": "pbg_demo.composites.demo", "params": {}},
+    ],
+    "conditions": {
+        "baseline": {
+            "composite": "pbg_demo.composites.demo",
+            "params": {"ph": 7.0},
+        },
+        "variants": [],
+        "model_settings": [],
+    },
+}
+
+
+def test_v4_extra_param_folded_onto_first_matching_entry_only(tmp_path):
+    """Two study.baseline[] entries share conditions.baseline's composite —
+    the extra param must be folded onto exactly one of them, not both."""
+    html = _render(tmp_path, "v4-two-entries-study", _V4_SAME_COMPOSITE_TWICE_SPEC)
+    panel = _panel_compose(html)
+    assert panel.count('data-model-composite="pbg_demo.composites.demo"') == 2
+    assert panel.count("ph") == 1
+
+
+_V4_BOTH_EMPTY_COMPOSITE_SPEC = {
+    "schema_version": 4,
+    "baseline": [{"name": "baseline", "composite": "", "params": {}}],
+    "conditions": {
+        "baseline": {"composite": "", "params": {"temperature": 37}},
+        "variants": [],
+        "model_settings": [],
+    },
+}
+
+
+def test_v4_empty_composites_do_not_false_match(tmp_path):
+    """Two blank/empty composites must NOT be treated as 'the same baseline'
+    — that would silently swallow conditions.baseline's params. The fallback
+    card (or the extra params) must still surface the param somewhere."""
+    html = _render(tmp_path, "v4-empty-composite-study", _V4_BOTH_EMPTY_COMPOSITE_SPEC)
+    panel = _panel_compose(html)
+    assert "temperature" in panel and "37" in panel
+
+
 def test_v4_required_before_run_marker_renders_inline(tmp_path):
     html = _render(tmp_path, "v4-study", _V4_SPEC)
     panel = _panel_compose(html)

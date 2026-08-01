@@ -774,18 +774,34 @@
       </div>
       <div class="baseline-composite-status muted" data-baseline-name="{{ b.name or 'baseline' }}" style="font-size:0.8em;margin-top:2px"></div>
       {# Fold in study.conditions.baseline's params when it names the SAME
-         composite as this entry — only the params not already shown here
-         are surfaced, so nothing renders twice (Fable #14). #}
-      {% if _cond_baseline and _cond_baseline.composite == b.composite %}
+         (non-empty) composite as this entry — only the FIRST matching
+         study.baseline[] entry gets the fold (review fix: two entries
+         sharing a composite must not both re-render the same extras), so
+         nothing renders twice (Fable #14). A param present in both with a
+         DIFFERENT value is never silently dropped — it's rendered as a
+         visible divergence instead (review fix: same-key-different-value
+         was disappearing from the DOM entirely). #}
+      {% if _cond_baseline and _cond_baseline.composite and not _ns.cond_baseline_folded and _cond_baseline.composite == b.composite %}
       {% set _ns.cond_baseline_folded = true %}
       {% set _extra_params = {} %}
+      {% set _diverging_params = {} %}
       {% for k, v in (_cond_baseline.params or {}).items() %}
-        {% if not (b.params and k in b.params) %}{% set _ = _extra_params.update({k: v}) %}{% endif %}
+        {% if not (b.params and k in b.params) %}
+          {% set _ = _extra_params.update({k: v}) %}
+        {% elif b.params[k] != v %}
+          {% set _ = _diverging_params.update({k: v}) %}
+        {% endif %}
       {% endfor %}
-      {% if _extra_params %}
+      {% if _extra_params or _diverging_params %}
       <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
         {% for k, v in _extra_params.items() %}
         <span class="cond-pill"><span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code></span>
+        {% endfor %}
+        {% for k, v in _diverging_params.items() %}
+        <span class="cond-pill cond-pill-diverges" title="study.baseline[].params has a different value for this key">
+          <span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code>
+          <span class="cond-diverges-marker">⚠ differs — baseline: <code>{{ b.params[k] }}</code></span>
+        </span>
         {% endfor %}
       </div>
       {% endif %}
