@@ -356,11 +356,6 @@
         <strong>Mechanism / Model change.</strong> {{ study.purpose.mechanism }}
       </div>
       {% endif %}
-      {% if study.biological_summary %}
-      <div class="purpose-callout" style="background:#f8fafc;border-left:4px solid #94a3b8">
-        <strong>Summary.</strong> {{ study.biological_summary }}
-      </div>
-      {% endif %}
     </div>
     {% else %}
     {# Legacy narrative fields — each id rendered exactly once; empty ones show
@@ -371,6 +366,14 @@
       <div id="hypothesis-text" class="overview-prose" data-editable="true" data-field="hypothesis"
            data-placeholder="(predicted outcome)">{{ study.hypothesis or '' }}</div>
       <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective or '' }}</div>
+    </div>
+    {% endif %}
+
+    {% if study.biological_summary %}
+    <div class="overview-section">
+      <div class="purpose-callout" style="background:#f8fafc;border-left:4px solid #94a3b8">
+        <strong>Summary.</strong> {{ study.biological_summary }}
+      </div>
     </div>
     {% endif %}
 

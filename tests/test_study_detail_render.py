@@ -214,3 +214,36 @@ def test_overview_biological_summary_folds_into_qa_card(tmp_path, dashboard_clie
     # section — not under its own "Biology" heading.
     question_idx = html.index("Question &amp; approach")
     assert question_idx < card_start
+
+
+def test_overview_biological_summary_renders_for_legacy_schema_too(tmp_path, dashboard_client):
+    """Fix round 1: a legacy-schema study (no `purpose` block, so the
+    `{% else %}` branch renders) with an authored `biological_summary` must
+    still get the Summary card — it must not silently drop the text just
+    because the study predates the v4 `purpose.*` schema."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "legacy-summary-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "legacy-summary-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "question": "Legacy-schema research question.",
+        "biological_summary": "Legacy-schema plain-English mechanism narrative.",
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/legacy-summary-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "Biology — what this study is about" not in html
+    assert "Derived from findings" not in html
+    assert "study-counts-strip" not in html
+
+    assert "Legacy-schema plain-English mechanism narrative." in html
+    assert "<strong>Summary.</strong>" in html
