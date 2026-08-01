@@ -974,6 +974,21 @@
   <p class="empty-message">Nothing to compose yet.</p>
   {% endif %}
 
+  {# Analyses — post-run analysis modules this study's dispatch should compute.
+     Task E1: relocated here (near Conditions) from the Exports tab — it is
+     study setup ("what to compute"), not an export artifact. Rendered
+     unconditionally (outside the _has_build guard) so a brand-new blank
+     study can still have its analyses configured. Reuses the existing
+     /api/study-set-analyses endpoint + _saveStudyAnalyses() handler
+     unchanged. #}
+  <div class="overview-section" id="analyses-section" style="margin-top:22px">
+    <h3 class="section-title">Analyses <span class="muted" style="font-size:0.85em;font-weight:normal">— post-run analysis modules to compute on dispatch</span></h3>
+    <textarea id="study-analyses-list" rows="3" style="width:100%;font-family:monospace;font-size:0.88em" placeholder="doubling_time_distribution">{% if study.analyses %}{% for a in study.analyses %}{{ a.name if a is mapping else a }}
+{% endfor %}{% endif %}</textarea>
+    <button type="button" class="action-btn" style="margin-top:6px" onclick="_saveStudyAnalyses()">Save analyses</button>
+    <div id="study-analyses-status" class="muted" style="font-size:0.85em;margin-top:4px"></div>
+  </div>
+
 </section>
 
 
@@ -1114,17 +1129,6 @@
               onclick="_downloadAllRawExports()">⬇ Download all raw data</button>
     </div>
     <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
-
-    {# Analyses — post-run analysis modules this study's dispatch should compute.
-       Relocated here from the Model tab: it is a dispatch/output concern, co-located
-       with the analysis outputs above. Reuses the /api/study-set-analyses endpoint. #}
-    <div class="overview-section" id="analyses-section" style="margin-top:22px">
-      <h3 class="section-title">Analyses <span class="muted" style="font-size:0.85em;font-weight:normal">— post-run analysis modules to compute on dispatch</span></h3>
-      <textarea id="study-analyses-list" rows="3" style="width:100%;font-family:monospace;font-size:0.88em" placeholder="doubling_time_distribution">{% if study.analyses %}{% for a in study.analyses %}{{ a.name if a is mapping else a }}
-{% endfor %}{% endif %}</textarea>
-      <button type="button" class="action-btn" style="margin-top:6px" onclick="_saveStudyAnalyses()">Save analyses</button>
-      <div id="study-analyses-status" class="muted" style="font-size:0.85em;margin-top:4px"></div>
-    </div>
   </div>
 </section>
 

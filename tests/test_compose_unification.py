@@ -79,16 +79,18 @@ def test_analyses_section_present_and_reachable_on_the_study_page():
     # Regression: an earlier "Analyses" authoring control was wired only into
     # the legacy Investigation-detail panel (#investigation-detail inside
     # #page-studies), which no current navigation path opens — dead UI. The
-    # control must stay reachable on the Study page. It was relocated from the
-    # Model (compose) tab to the Exports (data) tab — a dispatch/output concern
-    # co-located with the analysis outputs — so it now lives in #panel-data.
-    p = _panel_data()
+    # control must stay reachable on the Study page. Task E1 relocated it
+    # (back) from the Exports (data) tab to the Model (compose) tab — it is
+    # study setup ("what to compute"), not an export artifact — near
+    # Conditions, so it now lives in #panel-compose and NOT in #panel-data
+    # (Exports keeps only its download-oriented sections).
+    p = _panel_compose()
     assert 'id="study-analyses-list"' in p
     assert 'onclick="_saveStudyAnalyses()"' in p
     assert 'id="study-analyses-status"' in p
-    # Rendered unconditionally within the panel (outside the _has_build guard)
-    # so a brand-new blank study can still have its analyses configured.
-    assert "endif %}\n\n  {# Analyses" in HTML or "{# Analyses" in HTML
+    assert '/api/study-set-analyses' not in _panel_data()
+    assert 'id="study-analyses-list"' not in _panel_data()
+    assert '{# Analyses' in HTML
 
 
 def test_save_study_analyses_posts_to_the_working_endpoint():
