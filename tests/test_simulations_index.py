@@ -43,6 +43,37 @@ def test_list_walks_workspace_and_studies_dbs(tmp_path):
     assert all(s["studies"] == [] for s in sims)
 
 
+def test_db_path_is_workspace_root_relative_under_layout_remap(tmp_path):
+    """A workspace that remaps ``studies`` to a subdir via ``workspace.yaml``
+    ``layout:`` (e.g. ``studies: workspace/studies``) must still yield a
+    db_path relative to the workspace ROOT, so the Data Explorer's
+    ``read_source`` (``Path(workspace) / db_path``) resolves it.
+
+    Regression: the discoverer hardcoded ``studies/<slug>`` and ignored the
+    layout remap, so the Data Explorer looked at ``<ws>/studies/..`` (missing)
+    instead of ``<ws>/workspace/studies/..`` and showed 0 runs.
+    """
+    from vivarium_workbench.lib.explorer_data import _resolve_run_source
+
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "workspace.yaml").write_text(yaml.safe_dump(
+        {"layout": {"studies": "workspace/studies",
+                    "investigations": "workspace/investigations"}}))
+    study = ws / "workspace" / "studies" / "foo"
+    study.mkdir(parents=True)
+    _seed_run(study / "runs.db", spec_id="pkg.y", run_id="r-baseline",
+              started_at=20.0)
+
+    sims = list_simulations(ws)
+    assert sims[0]["db_path"] == "workspace/studies/foo/runs.db"
+
+    # read_source re-joins db_path against the workspace and must find the file.
+    kind, resolved = _resolve_run_source(sims[0]["db_path"], ws)
+    assert kind == "sqlite"
+    assert resolved == ws / "workspace" / "studies" / "foo" / "runs.db"
+
+
 def test_study_yaml_run_timestamp_maps_to_started_completed(tmp_path):
     """`record_runs` records a run's time as `timestamp` (not started_at/
     completed_at). The Simulations DB must surface it so the Time column isn't
