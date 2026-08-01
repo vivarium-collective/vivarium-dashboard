@@ -10,7 +10,14 @@ def test_group_headers_present():
     assert "Question &amp; approach" in TPL or "Question & approach" in TPL
     assert "Findings" in TPL
     assert ">Conclusion</h2>" in TPL
-    assert "Plan &amp; provenance" in TPL or "Plan & provenance" in TPL
+
+
+def test_plan_and_provenance_group_dissolved_from_overview():
+    # C5: the Overview "Plan & provenance" grab-bag was dissolved — its
+    # sub-blocks moved to the acts they belong to (Decide / Tests). The
+    # heading markup no longer exists (a matching comment may still mention
+    # the name, so assert on the exact heading tag, not the phrase).
+    assert '<h2 class="overview-label">Plan &amp; provenance</h2>' not in TPL
 
 
 def test_study_card_cut():

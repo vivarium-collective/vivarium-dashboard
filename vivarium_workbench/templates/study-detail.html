@@ -588,137 +588,12 @@
       </div>
     </div>
 
-    {# ─── Group 4: Plan & provenance (always shown) ─────────────────────── #}
-    <div class="overview-section">
-      <h2 class="overview-label">Plan &amp; provenance</h2>
-
-      {% if study.pipeline_gate %}
-      <div class="overview-section">
-        <h3 class="overview-label">Pipeline gate</h3>
-        <p class="muted" style="margin: 0 0 8px 0;font-size:0.88em">
-          Each study is a model-building gate: it answers <em>"Can we safely build the next layer?"</em>
-        </p>
-        {% if study.pipeline_gate.prerequisites %}
-        <div style="margin-bottom:6px"><strong>Prerequisites:</strong>
-          {% for p in study.pipeline_gate.prerequisites %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-        </div>
-        {% else %}
-        <div style="margin-bottom:6px"><strong>Prerequisites:</strong> <em class="muted">none (root study)</em></div>
-        {% endif %}
-        {% if study.pipeline_gate.enables %}
-        <div style="margin-bottom:6px"><strong>Enables:</strong>
-          {% for p in study.pipeline_gate.enables %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-        </div>
-        {% endif %}
-        {% if study.pipeline_gate.proceed_condition %}
-        <div><strong>Proceed when:</strong> <span class="muted">{{ study.pipeline_gate.proceed_condition }}</span></div>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      {% if study.key_assumptions %}
-      <div class="overview-section">
-        <h3 class="overview-label">Key assumptions</h3>
-        <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
-          {% for a in study.key_assumptions %}<li style="margin:2px 0">{{ a }}</li>{% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-      {% if study.expert_decisions_needed is sequence and study.expert_decisions_needed is not string and study.expert_decisions_needed %}
-      <div class="overview-section pre-run-expert-review">
-        <h3 class="overview-label">Pre-run expert review</h3>
-        <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-          Open biological questions the planning is contingent on. A "wrong" answer here
-          means a primary test threshold needs to change <em>before</em> the simulation
-          is run, not after. Each question lists alternatives + the impact of the wrong
-          choice + what downstream work it blocks.
-        </p>
-        <div class="expert-question-list">
-          {% for q in study.expert_decisions_needed %}
-          <div class="expert-question-card status-{{ q.status or 'open' }}">
-            <div class="expert-question-header">
-              <span class="expert-question-id">{{ q.id }}</span>
-              <span class="expert-question-status">{{ q.status or 'open' }}</span>
-              {# G7: honest attribution — asked_to is the only actor field this
-                 card carries (no timestamp field exists for it). Never blank:
-                 the literal "unattributed" token renders when asked_to is unset,
-                 with the human/agent glyph on whatever actor IS recorded. #}
-              <span class="expert-question-asked-to actor-kind-{{ q.asked_to | actor_kind }}" title="actor kind: {{ q.asked_to | actor_kind }}">asked to: <span class="actor-glyph">{{ q.asked_to | actor_glyph }}</span> {{ q.asked_to if q.asked_to else 'unattributed' }}</span>
-            </div>
-            <div class="expert-question-text"><strong>Q.</strong> {{ q.question }}</div>
-            {% if q.alternatives %}
-            <div class="expert-question-alternatives">
-              <em>Alternatives:</em>
-              <ul>{% for a in q.alternatives %}<li>{{ a }}</li>{% endfor %}</ul>
-            </div>
-            {% endif %}
-            {% if q.impact_if_wrong %}
-            <div class="expert-question-impact">
-              <em>Impact if wrong:</em> {{ q.impact_if_wrong }}
-            </div>
-            {% endif %}
-            {% if q.blocks %}
-            <div class="expert-question-blocks">
-              <strong>What this blocks ({{ q.blocks|length }} items)</strong>
-              <ul>{% for b in q.blocks %}<li>{{ b }}</li>{% endfor %}</ul>
-            </div>
-            {% endif %}
-            {% if q.requested_response %}
-            <div class="expert-question-response">
-              <strong>Requested response format</strong>
-              <p>{{ q.requested_response }}</p>
-            </div>
-            {% endif %}
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-
-      {% if study.limitations %}
-      <div class="overview-section">
-        <h2 class="overview-label">Limitations</h2>
-        <p class="muted" style="margin:0 0 6px 0;font-size:0.85em">What this study explicitly does NOT validate (prevents overclaim).</p>
-        <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
-          {% for l in study.limitations %}<li style="margin:2px 0">{{ l }}</li>{% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-      {# Legacy literature_anchors render — kept read-only here; editing
-         these is /pbg-study add-literature-anchor for now (list-based UI
-         is a follow-up). #}
-      {% if study.literature_anchors %}
-      <div class="overview-section literature-anchors">
-        <h3 class="overview-label">Literature anchors</h3>
-        <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-          The biological expectations this study tests, mapped to the
-          model observable that will measure each one. Full citations
-          live in the Tests tab.
-        </p>
-        <ul class="literature-anchor-list">
-        {% for anchor in study.literature_anchors %}
-          <li class="literature-anchor-card">
-            <div class="anchor-expectation">{{ anchor.expectation }}</div>
-            <div class="anchor-observable">
-              <em>Model observable:</em> <code>{{ anchor.model_observable }}</code>
-            </div>
-            {% if anchor.source %}
-            <div class="anchor-source"><em>Source:</em> {{ anchor.source }}</div>
-            {% endif %}
-            {% if anchor.status_in_v2ecoli %}
-            <div class="anchor-status">
-              <em>Current status:</em> {{ anchor.status_in_v2ecoli }}
-            </div>
-            {% endif %}
-          </li>
-        {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-    </div>
+    {# ─── C5: the old Overview "Plan & provenance" grab-bag was DISSOLVED here.
+       Its five sub-blocks were relocated to the act each belongs to:
+       pipeline_gate / key_assumptions / limitations → Decide (conclusions)
+       panel as supporting context; expert_decisions_needed → Decide under an
+       "Open debts" heading; literature_anchors → Tests panel. Overview now
+       ends at the Conclusion block above + the feedback panel below. #}
 
     {# Stage-3c: feedback panel — populated by JS from window._study.feedback_tracked.
        Rendered nothing when there is no feedback (JS checks items.length). #}
@@ -1192,6 +1067,40 @@
   <h2>Tests</h2>
   <p class="muted" style="margin:0 0 12px 0">Audit — does this study pass its own bar (report cards + behavioral gates).</p>
 
+  {# C5: literature_anchors relocated verbatim from the dissolved Overview
+     "Plan & provenance" group. These are the biological expectations this
+     study tests, mapped to the model observable that measures each — they
+     belong in the Tests act. Raw move; C6 restyles this as "Expectations".
+     Guarded so absent renders nothing. #}
+  {% if study.literature_anchors %}
+  <div class="overview-section literature-anchors">
+    <h3 class="overview-label">Literature anchors</h3>
+    <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
+      The biological expectations this study tests, mapped to the
+      model observable that will measure each one. Full citations
+      live in the Tests tab.
+    </p>
+    <ul class="literature-anchor-list">
+    {% for anchor in study.literature_anchors %}
+      <li class="literature-anchor-card">
+        <div class="anchor-expectation">{{ anchor.expectation }}</div>
+        <div class="anchor-observable">
+          <em>Model observable:</em> <code>{{ anchor.model_observable }}</code>
+        </div>
+        {% if anchor.source %}
+        <div class="anchor-source"><em>Source:</em> {{ anchor.source }}</div>
+        {% endif %}
+        {% if anchor.status_in_v2ecoli %}
+        <div class="anchor-status">
+          <em>Current status:</em> {{ anchor.status_in_v2ecoli }}
+        </div>
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {# Fable G4 (§10.1 band 1 — "Acceptance criteria"): the predefined bar,
      stated BEFORE the outcome. Source is `spine_acceptance` — already
      attached to the spec by study_spec.load_study_detail_spec via
@@ -1525,6 +1434,61 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
 
   </div>
 
+  {# ── Group 1b: Plan & assumptions ─────────────────────────────────────────
+     C5: relocated verbatim from the dissolved Overview "Plan & provenance"
+     group. This is the plan/gate context that supports reading the verdict,
+     so it sits here in the Decision act, right after the verdict. Group
+     wrapper is guarded so absent data renders nothing (no empty box); each
+     sub-block keeps its own {% if %} guard. #}
+  {% if study.pipeline_gate or study.key_assumptions or study.limitations %}
+  <div class="overview-section"><h2 class="overview-label">Plan &amp; assumptions</h2>
+
+    {% if study.pipeline_gate %}
+    <div class="overview-section">
+      <h3 class="overview-label">Pipeline gate</h3>
+      <p class="muted" style="margin: 0 0 8px 0;font-size:0.88em">
+        Each study is a model-building gate: it answers <em>"Can we safely build the next layer?"</em>
+      </p>
+      {% if study.pipeline_gate.prerequisites %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong>
+        {% for p in study.pipeline_gate.prerequisites %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% else %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong> <em class="muted">none (root study)</em></div>
+      {% endif %}
+      {% if study.pipeline_gate.enables %}
+      <div style="margin-bottom:6px"><strong>Enables:</strong>
+        {% for p in study.pipeline_gate.enables %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if study.pipeline_gate.proceed_condition %}
+      <div><strong>Proceed when:</strong> <span class="muted">{{ study.pipeline_gate.proceed_condition }}</span></div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if study.key_assumptions %}
+    <div class="overview-section">
+      <h3 class="overview-label">Key assumptions</h3>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for a in study.key_assumptions %}<li style="margin:2px 0">{{ a }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if study.limitations %}
+    <div class="overview-section">
+      <h3 class="overview-label">Limitations</h3>
+      <p class="muted" style="margin:0 0 6px 0;font-size:0.85em">What this study explicitly does NOT validate (prevents overclaim).</p>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for l in study.limitations %}<li style="margin:2px 0">{{ l }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+  </div>
+  {% endif %}
+
   {# ── Group 2: Evidence ────────────────────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Evidence</h2>
 
@@ -1594,6 +1558,66 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
 
   {# ── Group 3: Follow-ups & decisions ──────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Follow-ups &amp; decisions</h2>
+
+    {# ── Open debts — pre-run expert review ─────────────────────────────────
+       C5: relocated verbatim from the dissolved Overview "Plan & provenance"
+       group. These are open biological questions the planning is contingent
+       on — grouped here under the Decision act's follow-ups/decisions area as
+       "Open debts" (leads the group; they gate the decision). Guarded so
+       absent renders nothing. The G7 attribution line + all {% if %} guards
+       are preserved verbatim from the original card. #}
+    {% if study.expert_decisions_needed is sequence and study.expert_decisions_needed is not string and study.expert_decisions_needed %}
+    <div class="overview-section" id="open-debts-section" style="margin-top:6px">
+      <h3 class="overview-label">Open debts <span class="narrative-card-hint">(pre-run expert review)</span></h3>
+      <div class="overview-section pre-run-expert-review">
+        <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
+          Open biological questions the planning is contingent on. A "wrong" answer here
+          means a primary test threshold needs to change <em>before</em> the simulation
+          is run, not after. Each question lists alternatives + the impact of the wrong
+          choice + what downstream work it blocks.
+        </p>
+        <div class="expert-question-list">
+          {% for q in study.expert_decisions_needed %}
+          <div class="expert-question-card status-{{ q.status or 'open' }}">
+            <div class="expert-question-header">
+              <span class="expert-question-id">{{ q.id }}</span>
+              <span class="expert-question-status">{{ q.status or 'open' }}</span>
+              {# G7: honest attribution — asked_to is the only actor field this
+                 card carries (no timestamp field exists for it). Never blank:
+                 the literal "unattributed" token renders when asked_to is unset,
+                 with the human/agent glyph on whatever actor IS recorded. #}
+              <span class="expert-question-asked-to actor-kind-{{ q.asked_to | actor_kind }}" title="actor kind: {{ q.asked_to | actor_kind }}">asked to: <span class="actor-glyph">{{ q.asked_to | actor_glyph }}</span> {{ q.asked_to if q.asked_to else 'unattributed' }}</span>
+            </div>
+            <div class="expert-question-text"><strong>Q.</strong> {{ q.question }}</div>
+            {% if q.alternatives %}
+            <div class="expert-question-alternatives">
+              <em>Alternatives:</em>
+              <ul>{% for a in q.alternatives %}<li>{{ a }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% if q.impact_if_wrong %}
+            <div class="expert-question-impact">
+              <em>Impact if wrong:</em> {{ q.impact_if_wrong }}
+            </div>
+            {% endif %}
+            {% if q.blocks %}
+            <div class="expert-question-blocks">
+              <strong>What this blocks ({{ q.blocks|length }} items)</strong>
+              <ul>{% for b in q.blocks %}<li>{{ b }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% if q.requested_response %}
+            <div class="expert-question-response">
+              <strong>Requested response format</strong>
+              <p>{{ q.requested_response }}</p>
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     {# ── Discovery implications ─────────────────────────────────────────────
        Where this study's results leave the mechanism model and what to
@@ -1757,23 +1781,17 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
   {% if not _is_v3 %}
   <details class="overview-section"><summary class="overview-label">Limitations &amp; provenance</summary>
 
-    {# ── Read-only synthesis: Limitations + Next steps (C3) ──────────────────
-       The four buckets are DERIVED from the canonical structured fields rather
-       than hand-entered free text (the old textareas saved to study.conclusion,
-       which reached no report). Limitations ← limitations; Next steps ←
-       discovery_implications.followup_study_proposals (or follow_up_studies).
-       Edit those source fields and this synthesis — and the generated report
-       — update together. #}
+    {# ── Read-only synthesis: Next steps (C3) ────────────────────────────────
+       Next steps ← discovery_implications.followup_study_proposals (or
+       follow_up_studies). Edit those source fields and this synthesis — and
+       the generated report — update together.
+       C5: the Limitations column that used to sit here was REMOVED to
+       reconcile a duplicate — limitations now render once, in the richer
+       moved "Plan & assumptions" block above (Group 1b), for v3 and non-v3
+       studies alike. #}
     {% set _di = study.discovery_implications or {} %}
     {% set _nexts = _di.followup_study_proposals or study.follow_up_studies or [] %}
     <div class="conclusions-grid conclusions-synthesis">
-      <div class="conclusion-field">
-        <h3>Limitations <span class="muted small">(from limitations)</span></h3>
-        {% if study.limitations is string %}<p>{{ study.limitations }}</p>
-        {% elif study.limitations %}
-        <ul class="synthesis-list">{% for l in study.limitations %}<li>{{ l }}</li>{% endfor %}</ul>
-        {% else %}<p class="muted">None recorded.</p>{% endif %}
-      </div>
       <div class="conclusion-field">
         <h3>Next steps <span class="muted small">(from discovery implications)</span></h3>
         {% if _nexts %}
