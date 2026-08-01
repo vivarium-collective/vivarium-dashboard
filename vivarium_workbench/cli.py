@@ -268,7 +268,7 @@ def cmd_run_study(args) -> int:
     _emit(resp, args.json)
     if code < 400 and not args.dry_run and resp.get("run_id"):
         print(f"\nFollow:  vdash status {resp['run_id']}")
-        print(f"Rerun:   vdash rerun {resp['run_id']}")
+        print(f"Rerun:   vwb rerun {resp['run_id']}")
     return 0 if code < 400 else 1
 
 
@@ -292,7 +292,7 @@ def cmd_run_composite(args) -> int:
     _emit(resp, args.json)
     if code < 400 and not args.dry_run and resp.get("run_id"):
         print(f"\nFollow:  vdash status {resp['run_id']}")
-        print(f"Rerun:   vdash rerun {resp['run_id']}")
+        print(f"Rerun:   vwb rerun {resp['run_id']}")
     return 0 if code < 400 else 1
 
 

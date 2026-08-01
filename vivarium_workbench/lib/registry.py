@@ -491,6 +491,30 @@ def _apply_registry_include_filter(data: dict, ws_data: dict | None, ws_root: Pa
 # Main builder
 # ---------------------------------------------------------------------------
 
+def _annotate_run_commands(data: dict, ws_data: dict | None) -> None:
+    """Attach a single-line ``run_command`` to each process/step entry.
+
+    There's no first-class ``vwb run process`` (a process runs inside a
+    composite), so the command is a standalone ``python -c`` one-liner built from
+    the entry's ``address`` + the workspace package (``<pkg>.core.build_core``).
+    Canonical builder lives in ``lib.run_commands``. No-op when the workspace
+    package is unknown. Best-effort per entry."""
+    pkg = str((ws_data or {}).get("package_path") or (ws_data or {}).get("name") or "").strip()
+    pkg = pkg.replace("-", "_").split(".")[0]
+    if not pkg:
+        return
+    from vivarium_workbench.lib.run_commands import process_run_command
+    for p in (data.get("processes") or []):
+        if not isinstance(p, dict):
+            continue
+        addr = p.get("address") or ""
+        if not addr:
+            continue
+        cmd = process_run_command(addr, pkg)
+        if cmd:
+            p["run_command"] = cmd
+
+
 def build_registry(ws_root: Path, *, bypass_cache: bool = False) -> dict:
     """Return registry data from build_core() subprocess, with 30s caching.
 
@@ -553,6 +577,8 @@ def build_registry(ws_root: Path, *, bypass_cache: bool = False) -> dict:
         # is in the list (discovery is unchanged). No-op when unset → current
         # behavior (show everything).
         _apply_registry_include_filter(data, ws_data, ws_root)
+        # Per-entry "how to run this in your terminal" one-liner (python -c).
+        _annotate_run_commands(data, ws_data)
         # Imported-repositories metadata (workspace.yaml::imports): name, source
         # URL, ref, description — so the Registry can show each imported repo
         # alongside the processes/steps it contributes (grouped by package).

@@ -2369,6 +2369,7 @@
       '</div>' +
       _successBar(sp) +
       cfgPortsBtn +
+      _runCmdChip(p.run_command) +
     '</div>';
   }
 
@@ -2799,6 +2800,45 @@
     '</div>';
   }
 
+  // Shared "how to run this in your terminal" chip: a copy-pasteable one-line
+  // command + a copy button, rendered on composite/process cards and the
+  // investigation graph. The canonical command strings come from the server
+  // (lib/run_commands.py, mirrored per surface); this only presents + copies
+  // them. Self-contained inline styles (no CSS-file dependency). A long command
+  // (e.g. the process one-liner) truncates with ellipsis; hover/copy give the
+  // full text. onclick stopPropagation so it never triggers the card's select.
+  function _runCmdChip(cmd) {
+    if (!cmd) return '';
+    var full = _esc(cmd);
+    return '<div class="run-cmd-chip" onclick="event.stopPropagation()" ' +
+        'style="display:flex;align-items:center;gap:6px;margin-top:8px;padding:4px 6px;' +
+        'background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;font-size:0.72em;min-width:0">' +
+      '<span aria-hidden="true" style="color:#94a3b8;flex:none;font-family:ui-monospace,monospace">$</span>' +
+      '<code title="' + full + '" style="flex:1 1 auto;min-width:0;overflow:hidden;' +
+        'text-overflow:ellipsis;white-space:nowrap;color:#334155;' +
+        'font-family:ui-monospace,SFMono-Regular,Menlo,monospace">' + full + '</code>' +
+      '<button type="button" class="run-cmd-copy" data-cmd="' + full + '" ' +
+        'onclick="event.stopPropagation();_copyRunCmd(this)" title="Copy command" ' +
+        'style="flex:none;font-size:0.95em;cursor:pointer;border:1px solid #cbd5e1;' +
+        'background:#fff;border-radius:4px;padding:1px 6px;color:#475569">copy</button>' +
+    '</div>';
+  }
+  window._runCmdChip = _runCmdChip;
+
+  function _copyRunCmd(btn) {
+    var cmd = btn && btn.getAttribute('data-cmd');
+    if (!cmd) return;
+    var done = function () {
+      var prev = btn.getAttribute('data-label') || 'copy';
+      btn.textContent = 'copied'; btn.style.color = '#047857';
+      setTimeout(function () { btn.textContent = prev; btn.style.color = '#475569'; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).then(done, done);
+    } else { done(); }
+  }
+  window._copyRunCmd = _copyRunCmd;
+
   // Compact composite card (Cards / medium zoom) — mirrors the process grid
   // card: name · badge · address · short desc · usage stats.
   function _renderCompositeCardGrid(c) {
@@ -2815,6 +2855,7 @@
           '<div class="reg-card-head"><strong class="reg-card-name">' + _esc(c.name) + '</strong>' + _compositeBadge() + wsPill + '</div>' +
           '<code class="reg-card-addr">' + _esc(addr) + '</code>' +
           (short ? '<p class="reg-card-desc">' + _esc(short) + '</p>' : '') +
+          _runCmdChip(c.run_command) +
         '</div>' +
         '<div class="reg-card-stats">' + stats + '</div>' +
       '</div>' +
@@ -10987,6 +11028,14 @@
     var shellEl = document.getElementById('investigation-dag-shell');
     if (shellEl) { shellEl.classList.remove('aig-zoom-far','aig-zoom-mid','aig-zoom-near'); shellEl.classList.add(_opts.cls); }
 
+    // Investigation-level "run in your terminal" command — shown at intermediate
+    // + high zoom (band-gated), hidden at the far/overview band.
+    var _dagRunEl = document.getElementById('investigation-dag-run');
+    if (_dagRunEl) {
+      _dagRunEl.innerHTML = (_opts.run && _dagInvSlug)
+        ? _runCmdChip('vwb run investigation ' + _dagInvSlug) : '';
+    }
+
     var nodesHost = document.getElementById('investigation-dag-nodes');
     var edgesSvg  = document.getElementById('investigation-dag-edges');
     nodesHost.innerHTML = '';
@@ -11199,6 +11248,10 @@
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
           ? window._chainBlockHtml(chainsBySlug[s.name]) : '') +
+        // "Run this study in your terminal" — single-line CLI command, shown at
+        // intermediate + high zoom (mirrors lib/run_commands.study_run_commands
+        // baseline). Gated on _opts.run so the far/overview band stays clean.
+        (_opts.run ? _runCmdChip('vwb run study ' + s.name) : '') +
         // Layer-4: cached/compute badge + run/continue buttons (live only).
         _dagCacheBadgeHtml(s.name) +
         _dagTriggerControlsHtml(s.name);

@@ -1,4 +1,4 @@
-"""Run/inspect seam behind the `vdash run/rerun/runs/status/logs` commands.
+"""Run/inspect seam behind the `vwb run/rerun/runs/status/logs` commands.
 
 Local-first: study/investigation/composite runs reuse the same lib orchestration
 the dashboard server uses. `server=<url>` delegates to the existing HTTP

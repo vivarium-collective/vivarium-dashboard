@@ -14,7 +14,7 @@ def test_report_has_reproduce_block(fixture_study_ws):
     path = render_single_study_report(str(ws), study)
     html = path.read_text(encoding="utf-8")
     assert "reproduce-study" in html
-    assert f"vdash run study {study}" in html
+    assert f"vwb run study {study}" in html
 
 
 def test_report_reproduce_block_has_variant_command(fixture_study_ws):
@@ -22,11 +22,11 @@ def test_report_reproduce_block_has_variant_command(fixture_study_ws):
     path = render_single_study_report(str(ws), study)
     html = path.read_text(encoding="utf-8")
     # fixture has one variant named "var-one"
-    assert f"vdash run study {study} --variant var-one" in html
+    assert f"vwb run study {study} --variant var-one" in html
 
 
 def test_report_reproduce_block_has_rerun_hint(fixture_study_ws):
     ws, study = fixture_study_ws
     path = render_single_study_report(str(ws), study)
     html = path.read_text(encoding="utf-8")
-    assert "vdash rerun" in html
+    assert "vwb rerun" in html
