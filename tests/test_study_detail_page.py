@@ -171,17 +171,14 @@ def test_overview_panel_has_objective_editable(_ws):
     assert 'id="panel-conclusions"' in html
 
 
-def test_overview_panel_has_counts_strip(_ws):
-    """Overview tab shows a counts strip: variants · runs · interventions."""
+def test_overview_panel_has_no_counts_strip(_ws):
+    """The counts strip (variants · runs · interventions) was deleted from the
+    Overview tab as part of the declutter (Task 6); pin its absence."""
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'study-counts-strip' in html or 'class="counts-strip"' in html
-    # Each label appears. ('interventions' dropped — the legacy interventions
-    # CRUD panel was retired in the study-tabs de-slop.)
-    for label in ('variants', 'runs'):
-        assert label in html.lower()
+    assert 'study-counts-strip' not in html and 'class="counts-strip"' not in html
 
 
 def test_legacy_v2_crud_panels_retired(_ws):

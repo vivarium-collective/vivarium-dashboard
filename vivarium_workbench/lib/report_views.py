@@ -313,7 +313,9 @@ def _question_approach_findings(ws_root: Path) -> list[dict]:
     """
     out: list[dict] = []
     for slug, spec in _iter_study_slugs(ws_root):
-        q = ((spec.get("purpose") or {}).get("question") or spec.get("question") or "").strip()
+        _purpose = spec.get("purpose")
+        _purpose = _purpose if isinstance(_purpose, dict) else {}
+        q = (_purpose.get("question") or spec.get("question") or "").strip()
         if not q:
             out.append({
                 "study": spec.get("name") or slug,

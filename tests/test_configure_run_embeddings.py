@@ -9,10 +9,12 @@ def _read(rel):
 
 
 def test_widget_script_loaded_in_study_detail():
-    """configure-run.js is still loaded (and mounted) in study-detail for study runs."""
+    """configure-run.js is still <script>-loaded in study-detail (kept dormant-but-
+    loaded per a deliberate decision), but the ConfigureRun.mount(...) call was
+    removed by design (Task 8; launch moved to the header)."""
     sd = _read("templates/study-detail.html")
-    assert "ConfigureRun.mount" in sd                      # study Runs tab
-    assert 'target: "study"' in sd or "target:'study'" in sd
+    assert "/configure-run.js" in sd                       # still script-loaded
+    assert "ConfigureRun.mount" not in sd                  # no longer mounted
 
 
 def test_widget_script_not_in_composite_explorer():
