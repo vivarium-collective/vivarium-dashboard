@@ -370,7 +370,7 @@
     opts = opts || { scope: "study" };
     if (!mount) return;
     if (!rows || !rows.length) {
-      mount.innerHTML = '<p class="empty-state muted" style="margin:0">No simulations recorded for this study yet. Launch one from Configure &amp; Run below.</p>';
+      mount.innerHTML = '<p class="empty-state muted" style="margin:0">No simulations recorded for this study yet.</p>';
       return;
     }
     mount._simRows = rows;

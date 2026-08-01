@@ -13,15 +13,20 @@ def _template_text():
     return p.read_text(encoding="utf-8")
 
 
-def test_runs_tab_has_remote_run_form():
+def test_runs_tab_has_no_remote_run_form():
+    """Task 8 (Simulations declutter): the remote-run (smsvpctest) form/panel
+    was removed from the Simulate tab by design — launching now lives
+    entirely in the header buttons (#study-reproduce /
+    #study-run-current-spec). Its markup must be fully absent from the
+    template source. (The thin-client JS handlers below stay dormant in
+    study-detail.js — see test_js_has_remote_run_handlers_and_endpoints —
+    pending a decision on whether remote-run gets a header entry point.)"""
     t = _template_text()
-    assert 'id="remote-run-form"' in t
-    assert 'onsubmit="return _submitRemoteRun(event)"' in t
-    assert 'name="num_generations"' in t
-    assert 'name="num_seeds"' in t
-    assert 'name="run_parca"' in t
-    assert 'id="remote-run-progress"' in t
-    assert "Run on remote" in t  # the panel heading/button label
+    assert 'id="remote-run-form"' not in t
+    assert 'id="remote-run-panel"' not in t
+    assert 'id="remote-run-progress"' not in t
+    assert 'onsubmit="return _submitRemoteRun(event)"' not in t
+    assert "Run on remote" not in t  # the old panel heading/button label
 
 
 def _js_text():
@@ -59,13 +64,14 @@ def test_js_has_remote_run_handlers_and_endpoints():
     assert "simulation_id" in js
 
 
-def test_rendered_study_detail_includes_remote_run_panel():
-    # Render the template with a minimal spec; the panel is static markup so any
-    # spec that renders should include it.
+def test_rendered_study_detail_has_no_remote_run_panel():
+    # Same contract as test_runs_tab_has_no_remote_run_form, exercised
+    # through the real render path (render_study_detail_html) rather than
+    # reading the template source directly.
     html = render_study_detail_html(Path("/"), "demo-study", {"name": "demo-study"})
-    assert 'id="remote-run-form"' in html
-    assert "Run on remote" in html
-    assert 'id="remote-run-progress"' in html
+    assert 'id="remote-run-form"' not in html
+    assert "Run on remote" not in html
+    assert 'id="remote-run-progress"' not in html
 
 
 def _walkthrough_js_text():
