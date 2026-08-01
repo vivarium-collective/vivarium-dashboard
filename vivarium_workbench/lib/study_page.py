@@ -544,13 +544,23 @@ def humanize_assertion(a) -> str:
     op = a.get("op")
     op_symbol = _ASSERTION_OP_SYMBOLS.get(str(op).strip(), str(op)) if op is not None else ""
 
+    # Every piece appended to `parts` is built as (or promoted to) a
+    # markupsafe `Markup` — never dropped into a plain f-string. An f-string
+    # coerces a `Markup` argument (e.g. `kv(measure)`'s already-escaped
+    # output) back into a bare `str`, which silently DISCARDS its "safe"
+    # marking; Jinja's autoescape then can't tell it was pre-escaped and
+    # escapes the whole returned string a second time (`&lt;` -> `&amp;lt;`).
+    # `Markup("%s") % value` / `Markup(...) + Markup(...)` both preserve
+    # exactly-once escaping: `%` escapes a raw (non-Markup) substitution,
+    # `+` is a no-op re-escape when both sides are already Markup.
     parts = []
     observed = a.get("observed")
     measure = a.get("measure")
     if observed is not None and not isinstance(observed, dict):
-        parts.append(f"observed {observed}")
+        parts.append(_Markup("observed %s") % (observed,))
     elif measure is not None:
-        parts.append(f"measure {kv(measure) if isinstance(measure, dict) else measure}")
+        measure_s = kv(measure) if isinstance(measure, dict) else _escape(str(measure))
+        parts.append(_Markup("measure ") + measure_s)
 
     target = None
     target_label = None
@@ -561,12 +571,12 @@ def humanize_assertion(a) -> str:
             break
 
     if target is not None and op_symbol:
-        parts.append(f"{op_symbol} {target}")
+        parts.append(_Markup("%s %s") % (op_symbol, target))
     elif target is not None:
-        parts.append(f"{target_label}: {target}")
+        parts.append(_Markup("%s: %s") % (target_label, target))
 
     if parts:
-        return " ".join(parts)
+        return _Markup(" ").join(parts)
     return kv(a)
 
 

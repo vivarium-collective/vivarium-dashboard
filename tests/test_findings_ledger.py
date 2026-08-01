@@ -128,8 +128,10 @@ def test_findings_ledger_preserves_every_existing_detail():
         "do the next thing",           # next_action
     ]:
         assert needle in html, f"dropped: {needle!r}"
-    assert "divergence_factor" not in html.split("<script")[0] or "finding-divergence" in html
+    # divergence_factor is surfaced as a rendered detail, not the literal
+    # field name — assert the actual rendered markup/text, not a tautology.
     assert "finding-divergence" in html
+    assert "vs expected" in html
     assert "finding-expert" in html
 
 
@@ -179,3 +181,33 @@ def test_behavior_test_expect_dict_with_missing_measure_does_not_500():
         {"name": "division-time", "expect": {"op": "at_least", "low": 1}},
     ])
     assert html  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# Fix round 1 (IMPORTANT): humanize_assertion's `measure`-is-a-dict branch
+# used to embed kv(measure) -- a pre-escaped markupsafe Markup -- inside a
+# plain f-string, which coerces it back to a bare str and drops the "safe"
+# marking. Jinja's autoescape then can't tell the text was already escaped
+# and escapes it a SECOND time (`&lt;` -> `&amp;lt;`). This only manifests
+# when the value round-trips through the actual (autoescaped) Jinja
+# template -- calling humanize_assertion() directly in Python already
+# "looks" single-escaped either way, so the regression test must render.
+# ---------------------------------------------------------------------------
+
+def test_humanize_assertion_measure_dict_single_escaped_through_template():
+    finding = dict(_RICH_FINDING)
+    finding["evidence"] = dict(_RICH_FINDING["evidence"])
+    finding["evidence"]["observed"] = {
+        "measure": {"path": "<b>x</b> & y"}, "op": ">=", "threshold": 3,
+    }
+    html = _render([finding])
+    assert "&lt;b&gt;x&lt;/b&gt; &amp; y" in html
+    assert "&amp;lt;" not in html
+    assert "&amp;amp;" not in html
+
+
+def test_humanize_assertion_measure_dict_escapes_metachars_once_directly():
+    out = humanize_assertion({"measure": {"path": "<b>x</b> & y"}, "op": ">=", "threshold": 3})
+    assert "&lt;b&gt;x&lt;/b&gt; &amp; y" in out
+    assert "&amp;lt;" not in out
+    assert "&amp;amp;" not in out
