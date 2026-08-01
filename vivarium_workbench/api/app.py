@@ -163,6 +163,7 @@ from vivarium_workbench.lib.models import (
     InvestigationSummary,
     InvestigationSummariesPayload,
     InvestigationRigor,
+    StudyRigor,
     InvestigationVizHtmlPayload,
     InvestigationsPayload,
     LinkageIndex,
@@ -1556,9 +1557,6 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=exc.status, content=exc.body)
         return InvestigationCompositesPayload.model_validate(body)
 
-    # /api/study-rigor and /api/investigation-rigor are ported below (Batch 3),
-    # on top of the run-merging loader extracted to lib.study_spec.
-
     @app.get(
         "/api/investigation-composite-doc",
         response_model=InvestigationCompositeDocPayload,
@@ -1660,6 +1658,40 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
     # Rigor routes
     # -----------------------------------------------------------------------
+
+    @app.get(
+        "/api/study-rigor",
+        response_model=StudyRigor,
+        tags=["Rigor & jobs"],
+        summary="Per-study evidence & rigor scorecard (Fable G5 Quality check group)",
+    )
+    def study_rigor_route(
+        study: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[StudyRigor, JSONResponse]:
+        """Per-study rigor scorecard, backing the Tests tab's Quality check group.
+
+        Computes the deterministic evidence & rigor scorecard
+        (``viva_superpowers.rigor.study_rigor`` — replication, controls,
+        alternatives, claim discipline, falsifiability, and the rest of the
+        dimension set) over the study's run-merged spec. This scorecard already
+        runs in CI; this route is the thin read-seam that makes it visible on
+        the page (Fable §10.1 Checks band, automated group).
+
+        HTTP 400 when ``?study=`` is missing (``{"error": "missing ?study="}``);
+        HTTP 404 when no study.yaml/spec.yaml exists for the slug
+        (``{"error": "study not found"}``). Never HTTP 500: an unimportable
+        ``viva_superpowers.rigor`` or any scoring failure degrades to a 200
+        body ``{"unavailable": true, "reason": "..."}`` — never a fabricated
+        empty scorecard (spec §2 R2, "absent != empty").
+
+        Library-backed via ``lib.rigor_views.build_study_rigor``.
+        """
+        try:
+            body = _rigor_views.build_study_rigor(ws, study)
+        except _rigor_views.RigorViewError as exc:
+            return JSONResponse(status_code=exc.status, content=exc.body)
+        return StudyRigor.model_validate(body)
 
     @app.get(
         "/api/investigation-rigor",

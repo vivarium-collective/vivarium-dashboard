@@ -1155,8 +1155,127 @@
     _renderTestsGateSummary(spec);
     _fillReportCardsTab(spec);
     loadTestsTab(spec);
+    _loadQualityChecks(spec);
   }
   window._loadTestsPanel = _loadTestsPanel;
+
+  // ── G5: Quality check group (rigor scorecard) ───────────────────────────
+  // GET /api/study-rigor?study=<slug> → viva_superpowers.rigor.study_rigor,
+  // already computed in CI but never rendered on the page until now. Fetched
+  // client-side (same pattern as _loadReadouts / _loadAnalysisOutputs above)
+  // into #check-group-quality, the mount templates/study-detail.html adds to
+  // the Tests panel right after the gate summary.
+  //
+  // Rigor's own severity vocabulary (ok/warn/gap/not_applicable) is NOT the
+  // G3 outcome-token vocabulary — in particular rigor's "gap" means "this
+  // dimension was checked and found deficient" (closest to a FAILING test),
+  // which is a different meaning from the G3 token map's pre-existing 'GAP'
+  // entry (a report-card axis that was never assessed -> "not assessable").
+  // Reusing that spelling would silently relabel a real deficiency as
+  // "nothing to see here". So severities are proxied through the EXISTING
+  // token whose MEANING matches (ok->PASS, warn->PARTIAL, gap->FAIL,
+  // not_applicable->SKIP) rather than fed to outcomeLabel/_class/_glyph
+  // verbatim — same four-value vocabulary + glyphs as the rest of the page,
+  // honestly mapped.
+  var _RIGOR_SEVERITY_PROXY = { ok: 'PASS', warn: 'PARTIAL', gap: 'FAIL', not_applicable: 'SKIP' };
+  var _RIGOR_OUTCOME_COLORS = {
+    'met':            { bg: '#d1fae5', fg: '#065f46' },
+    'conditional':    { bg: '#fef3c7', fg: '#92400e' },
+    'not-met':        { bg: '#fee2e2', fg: '#991b1b' },
+    'not-assessable': { bg: '#f1f5f9', fg: '#475569' }
+  };
+
+  function _renderQualityDimension(d) {
+    var e = escapeHtmlForTests;
+    var sev = String((d && d.severity) || '').toLowerCase();
+    var tok = _RIGOR_SEVERITY_PROXY[sev] || '';
+    var cls = tok ? outcomeClass(tok) : 'not-assessable';
+    var glyph = tok ? outcomeGlyph(tok) : '○';
+    var label = tok ? outcomeLabel(tok) : 'not assessable';
+    var oc = _RIGOR_OUTCOME_COLORS[cls] || _RIGOR_OUTCOME_COLORS['not-assessable'];
+    var comments = ((d && d.comments) || []).join(' ');
+    return '<li class="quality-check-item outcome-' + cls + '" data-severity="' + e(sev) + '" '
+      + 'style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid #f1f5f9">'
+      + '<span class="outcome-chip outcome-' + cls + '" title="rigor severity: ' + e(sev || 'unknown') + '" '
+      + 'style="font-size:0.75em;font-weight:600;padding:2px 9px;border-radius:9999px;flex-shrink:0;'
+      + 'background:' + oc.bg + ';color:' + oc.fg + '">' + glyph + '&nbsp;' + e(label) + '</span>'
+      + '<div><strong>' + e((d && (d.label || d.id)) || '') + '</strong>'
+      + (comments ? ' <span class="muted" style="font-size:0.8em">' + e(comments) + '</span>' : '')
+      + '<div class="muted" style="font-size:0.88em;margin-top:2px">' + e((d && d.detail) || '') + '</div>'
+      + '</div></li>';
+  }
+
+  // Returns {state, html} for the #check-group-quality mount's INNER content
+  // (the mount div itself keeps its id/class; only its contents are replaced).
+  function _qualityCheckGroupHtml(rigor) {
+    var e = escapeHtmlForTests;
+    var header = '<div class="check-group-header" style="display:flex;align-items:center;'
+      + 'gap:8px;flex-wrap:wrap"><strong>Quality</strong> '
+      + '<span class="muted" style="font-size:0.85em">rigor scorecard &mdash; '
+      + '<code>viva_superpowers.rigor</code></span>';
+    if (!rigor || rigor.unavailable) {
+      var reason = (rigor && rigor.reason) || 'could not be computed';
+      return {
+        state: 'unavailable',
+        html: header + '</div><p class="empty-message">unavailable(' + e(reason) + ')</p>'
+      };
+    }
+    var dims = (rigor && rigor.dimensions) || [];
+    var score = (rigor && rigor.score) || {};
+    var bits = [];
+    if (score.gap) bits.push(score.gap + (score.gap === 1 ? ' gap' : ' gaps'));
+    if (score.warn) bits.push(score.warn + ' warn');
+    if (score.ok) bits.push(score.ok + ' ok');
+    if (score.na) bits.push(score.na + ' n/a');
+    var summaryText = bits.length ? bits.join(' · ') : (rigor.summary || '');
+    header += summaryText
+      ? ' <span class="muted" style="margin-left:auto;font-size:0.85em">' + e(summaryText) + '</span></div>'
+      : '</div>';
+    if (!dims.length) {
+      return {
+        state: 'empty',
+        html: header + '<p class="empty-message">No rigor dimensions computed for this study.</p>'
+      };
+    }
+    return {
+      state: 'ready',
+      html: header + '<ul class="quality-check-list" style="list-style:none;padding-left:0;margin:8px 0 0 0">'
+        + dims.map(_renderQualityDimension).join('') + '</ul>'
+    };
+  }
+
+  var _qualityChecksLoaded = false;
+  function _loadQualityChecks(spec) {
+    var host = document.getElementById('check-group-quality');
+    if (!host) return;
+    if (_qualityChecksLoaded) return;
+    _qualityChecksLoaded = true;
+    var slug = (spec && spec.name) || studyName();
+    if (!slug) {
+      host.dataset.state = 'unavailable';
+      host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
+      return;
+    }
+    fetch('/api/study-rigor?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
+          .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
+      })
+      .then(function(res) {
+        var payload = res.json;
+        if (!res.ok) {
+          payload = { unavailable: true, reason: (payload && payload.error) || ('HTTP ' + res.status) };
+        }
+        var built = _qualityCheckGroupHtml(payload);
+        host.dataset.state = built.state;
+        host.innerHTML = built.html;
+      })
+      .catch(function() {
+        host.dataset.state = 'unavailable';
+        host.innerHTML = '<p class="empty-message">unavailable(request failed)</p>';
+      });
+  }
+  window._loadQualityChecks = _loadQualityChecks;
 
   // "N/M gates passed" score line ONLY. Every declared behavior test (kind:
   // behavioral or report_card) is a gate; the aggregate count comes from

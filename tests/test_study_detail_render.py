@@ -1129,3 +1129,44 @@ def test_acceptance_criteria_band_absent_without_spine_acceptance(tmp_path, dash
 
     assert 'id="acceptance-criteria-band"' not in html
     assert 'acceptance-criteria-band' not in html
+
+
+# ---------------------------------------------------------------------------
+# Fable G5: Tests -> Quality check group (rigor scorecard, §10.1 band 2
+# "Checks", automated group). Server-rendered mount only — the scorecard
+# itself is fetched client-side from GET /api/study-rigor?study=<slug>
+# (JS-rendered content is out of scope for a served-HTML assertion; see
+# test_rigor_views_lib.py / test_api_app.py for the route + wrapper behavior).
+# ---------------------------------------------------------------------------
+
+def test_quality_check_group_mount_renders_in_tests_panel(tmp_path, dashboard_client):
+    """The #check-group-quality mount is always present in the Tests panel
+    (below the gate summary) so client-side JS has somewhere to fill in the
+    rigor scorecard -- present regardless of whether rigor can compute."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "g5-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "g5-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/g5-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+    assert 'id="check-group-quality"' in tests_panel
+    assert 'data-check-group="quality"' in tests_panel
+
+    # Mount sits below the gate summary (Checks band follows the score line).
+    quality_i = tests_panel.index('id="check-group-quality"')
+    gate_i = tests_panel.index('id="tests-gate-summary"')
+    assert gate_i < quality_i

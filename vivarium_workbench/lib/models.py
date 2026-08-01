@@ -739,6 +739,21 @@ class InvestigationHypothesesPayload(BaseModel):
     investigation: str = ""
 
 
+class StudyRigor(BaseModel):
+    """``GET /api/study-rigor`` payload (lib.rigor_views.build_study_rigor, Fable G5).
+
+    The per-study evidence & rigor scorecard from
+    ``viva_superpowers.rigor.study_rigor`` (``dimensions`` / ``score`` /
+    ``summary`` / ``study_type`` / ``mode`` / ``descriptive``), or the
+    ``{"unavailable": true, "reason": ...}`` degrade shape when rigor could not
+    be computed (missing dependency, malformed spec, ...) — never a fabricated
+    empty scorecard. Pure pass-through (``extra="allow"``, no declared fields)
+    like :class:`InvestigationRigor` so nothing is stripped or injected.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
 class InvestigationRigor(BaseModel):
     """``GET /api/investigation-rigor`` payload (lib.rigor_views.build_investigation_rigor).
 

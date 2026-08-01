@@ -71,6 +71,51 @@ def _make_workspace(tmp_path: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# build_study_rigor (Fable G5)
+# ---------------------------------------------------------------------------
+
+class TestBuildStudyRigor:
+    def test_happy_path(self, tmp_path: Path) -> None:
+        ws = _make_workspace(tmp_path)
+        out = rigor_views.build_study_rigor(ws, "my-study")
+        assert isinstance(out, dict)
+        assert "unavailable" not in out
+        assert "dimensions" in out
+        assert isinstance(out["dimensions"], list) and out["dimensions"]
+        assert "score" in out and "summary" in out
+
+    def test_missing_raises_400(self, tmp_path: Path) -> None:
+        with pytest.raises(rigor_views.RigorViewError) as exc:
+            rigor_views.build_study_rigor(tmp_path, None)
+        assert exc.value.status == 400
+        assert exc.value.body == {"error": "missing ?study="}
+
+    def test_not_found_raises_404(self, tmp_path: Path) -> None:
+        with pytest.raises(rigor_views.RigorViewError) as exc:
+            rigor_views.build_study_rigor(tmp_path, "nope")
+        assert exc.value.status == 404
+        assert exc.value.body == {"error": "study not found"}
+
+    def test_compute_failure_degrades_to_unavailable(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        """A rigor-computation failure (unimportable dep, bad spec shape, ...)
+        never raises/500s — it degrades to an explicit unavailable(reason)
+        payload (spec R2: absent != empty, never a fabricated empty scorecard)."""
+        ws = _make_workspace(tmp_path)
+
+        import viva_superpowers.rigor as _rigor_mod
+
+        def _boom(spec: dict) -> dict:
+            raise RuntimeError("scorecard exploded")
+
+        monkeypatch.setattr(_rigor_mod, "study_rigor", _boom)
+        out = rigor_views.build_study_rigor(ws, "my-study")
+        assert out["unavailable"] is True
+        assert "scorecard exploded" in out["reason"]
+
+
+# ---------------------------------------------------------------------------
 # build_investigation_rigor
 # ---------------------------------------------------------------------------
 
