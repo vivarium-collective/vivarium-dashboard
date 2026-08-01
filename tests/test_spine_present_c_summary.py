@@ -97,29 +97,32 @@ def test_detail_spec_spine_acceptance_absent_without_owner(tmp_path):
 
 
 # ── Structural tests for the render layer (no JS harness) ──────────────────
+#
+# study-page-declutter Task 4/5 retired the "Spine at a glance" panel by
+# design: Task 4 deleted the #spine-summary template placeholder (replacing
+# it with a promoted question headline above the tab nav), Task 5 deleted its
+# JS populator _renderSpineSummary (replacing it with an inline readiness
+# link). The two tests below now assert the NEW contract instead of the
+# retired one — see docs/superpowers/plans/2026-07-31-study-page-declutter.md.
 
-def test_template_has_spine_summary_panel_above_tabs():
+def test_spine_summary_removed_question_promoted():
     html = (_PKG / "templates" / "study-detail.html").read_text(encoding="utf-8")
-    assert 'id="spine-summary"' in html
-    assert "spine-summary" in html
-    # The panel sits ABOVE the tab nav (re-presents the spine in one glance).
-    assert html.index('id="spine-summary"') < html.index('class="study-tabs"')
+    # The "Spine at a glance" panel is gone — no placeholder, no class.
+    assert 'id="spine-summary"' not in html
+    assert 'class="spine-summary"' not in html
+    # Replaced by the promoted purpose.question headline, which sits ABOVE
+    # the tab nav (same "read it before you dig in" position the spine
+    # panel used to occupy).
+    assert 'id="study-question-headline"' in html
+    assert html.index('id="study-question-headline"') < html.index('class="study-tabs"')
 
 
-def test_study_detail_js_renders_spine_summary():
+def test_readiness_panel_replaces_spine_summary():
     js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
-    assert "_renderSpineSummary" in js
-    # Verdict row reuses the computed gate verdict + the code-vs-authored signal.
-    assert "computed_gate_verdict" in js
-    assert "diverges_from_authored" in js
-    # Why row = the primary finding statement + its divergence_factor.
-    assert "findings" in js
-    assert "divergence_factor" in js
-    # Acceptance row reuses the surfaced spine_acceptance (links to investigation).
-    assert "spine_acceptance" in js
-    # Next row = top next_action / follow-up.
-    assert "next_action" in js
-    # Each row links to its detail tab/section (re-presentation, not a rewrite).
-    assert "_setStudyTab(" in js
-    # The Readiness row scrolls to the readiness panel (referenced by element id).
+    # The spine populator is fully gone (function + its call site).
+    assert "_renderSpineSummary" not in js
+    # Its replacement: an inline readiness link/expander mounted at
+    # #readiness-panel, fed by the same deterministic report-lint fetch.
+    assert "_renderReadinessPanel" in js
     assert "readiness-panel" in js
+    assert "/api/report-lint" in js
