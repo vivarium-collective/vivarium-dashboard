@@ -5,14 +5,18 @@
   // _glyph — SAME token map, so client-rendered outcomes (e.g. verdict pills
   // filled from /api/study-* JSON) read identically to server-rendered ones.
   // Display-only remap; never touches a stored token. Confirmed token
-  // families: test/verdict PASS/FAIL/PARTIAL/SKIP/PENDING/GAP and report-card
-  // within_tol/drift/mismatch/ungraded (case-insensitive). Unknown/missing
-  // tokens degrade to "not assessable" — never blank, never throws.
+  // families: test/verdict PASS/FAIL/PARTIAL/SKIP/PENDING/GAP, report-card
+  // within_tol/drift/mismatch/ungraded, and acceptance-criterion
+  // passing/failing/passing-with-caveats/in-progress (case-insensitive).
+  // Unknown/missing tokens degrade to "not assessable" — never blank, never
+  // throws.
   var _OUTCOME_TOKEN_MAP = {
     PASS: 'met', FAIL: 'not met', PARTIAL: 'conditional-pass',
     SKIP: 'not assessable', PENDING: 'not assessable', GAP: 'not assessable',
     WITHIN_TOL: 'met', DRIFT: 'conditional-pass', MISMATCH: 'not met',
-    UNGRADED: 'not assessable'
+    UNGRADED: 'not assessable',
+    PASSING: 'met', FAILING: 'not met', 'PASSING-WITH-CAVEATS': 'conditional-pass',
+    'IN-PROGRESS': 'not assessable'
   };
   var _OUTCOME_CLASS = {
     'met': 'met', 'conditional-pass': 'conditional',

@@ -187,14 +187,19 @@ def _jinja_markdown(text):
 # every later G task (G4-G8) reuses it so the vocabulary reads identically
 # everywhere on the study page.
 #
-# Two token families feed it (confirmed by grep, not invented):
+# Three token families feed it (confirmed by grep, not invented):
 #   - test/verdict tokens — study.tests[]/runs[].outcomes[].result,
 #     conclusion_card tracks: PASS / FAIL / PARTIAL / SKIP / PENDING / GAP
 #     (study_spec._latest_outcomes, study_derivations.GATE_RESULT_NORM,
 #     conclusion_card._RESULT_TO_CANON).
 #   - report-card verdict tokens — study_spec._REPORT_CARD_VERDICTS:
 #     within_tol / drift / mismatch / ungraded.
-# Matching is case-insensitive. Anything outside these two families — an
+#   - acceptance-criterion result tokens — spine_acceptance's per-criterion
+#     `result` (study_enrichment.study_acceptance_criterion), sourced from
+#     viva_superpowers.investigation_status's _CRIT_PASS/_CRIT_FAIL/
+#     _CRIT_CAVEATS/_CRIT_PROGRESS: passing / failing /
+#     passing-with-caveats / in-progress.
+# Matching is case-insensitive. Anything outside these three families — an
 # unknown token, empty string, or None — degrades to "not assessable" (spec
 # §2 R2: absent != empty; never blank, never a crash).
 _OUTCOME_TOKEN_MAP: dict[str, str] = {
@@ -210,6 +215,11 @@ _OUTCOME_TOKEN_MAP: dict[str, str] = {
     "DRIFT": "conditional-pass",
     "MISMATCH": "not met",
     "UNGRADED": "not assessable",
+    # acceptance-criterion tokens (viva_superpowers.investigation_status)
+    "PASSING": "met",
+    "FAILING": "not met",
+    "PASSING-WITH-CAVEATS": "conditional-pass",
+    "IN-PROGRESS": "not assessable",
 }
 
 # CSS-class-safe slug + single-character glyph per audit outcome, so every

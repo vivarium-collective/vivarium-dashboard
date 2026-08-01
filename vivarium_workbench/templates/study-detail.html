@@ -1080,6 +1080,52 @@
   <h2>Tests</h2>
   <p class="muted" style="margin:0 0 12px 0">Audit — does this study pass its own bar (report cards + behavioral gates).</p>
 
+  {# Fable G4 (§10.1 band 1 — "Acceptance criteria"): the predefined bar,
+     stated BEFORE the outcome. Source is `spine_acceptance` — already
+     attached to the spec by study_spec.load_study_detail_spec via
+     study_enrichment.study_acceptance_criterion (a pure read of the owning
+     investigation's PERSISTED executive.computed_acceptance, filtered to
+     this study's criteria; never recomputed here). Absent/empty means the
+     study has no owning investigation or no persisted acceptance — render
+     NOTHING (§2 R2: absent != empty; no fabricated criteria, no empty box).
+     Each criterion's `result` (viva_superpowers.investigation_status's
+     passing/failing/passing-with-caveats/in-progress vocabulary) is mapped
+     through the SAME shared outcome_label/_class/_glyph filters G3 defined,
+     so this band reads in the identical four-value vocabulary as the rest
+     of the page. `behavior` names the behavior_tests entry the criterion
+     rests on — where it also appears in this study's Behavioral tests list
+     below, link to it (`#bt-<behavior>`) as the evidence the outcome rests
+     on. #}
+  {% set _sa = study.spine_acceptance %}
+  {% if _sa and _sa.criteria %}
+  {% set _outcome_colors = {
+      'met':            {'bg': '#d1fae5', 'fg': '#065f46', 'border': '#10b981'},
+      'conditional':    {'bg': '#fef3c7', 'fg': '#92400e', 'border': '#f59e0b'},
+      'not-met':        {'bg': '#fee2e2', 'fg': '#991b1b', 'border': '#ef4444'},
+      'not-assessable': {'bg': '#f1f5f9', 'fg': '#475569', 'border': '#94a3b8'},
+  } %}
+  <div class="acceptance-criteria-band" id="acceptance-criteria-band" style="margin-bottom:22px">
+    <h3 class="section-title">Acceptance criteria
+      <span class="muted" style="font-size:0.85em;font-weight:normal">— the predefined bar, from <code>{{ _sa.investigation }}</code>'s persisted acceptance roll-up</span>
+    </h3>
+    <ul class="acceptance-criteria-list" style="list-style:none; padding-left:0; margin:8px 0 0 0">
+      {% for c in _sa.criteria %}
+      {% set _ocls = c.result|outcome_class %}
+      {% set _oc = _outcome_colors[_ocls] %}
+      <li class="acceptance-criterion-item outcome-{{ _ocls }}" data-result="{{ c.result }}"
+          style="display:flex; align-items:center; gap:10px; padding:8px 12px; margin:0 0 6px 0; border-left:4px solid {{ _oc.border }}; background:#f8fafc; border-radius:4px">
+        <span class="outcome-chip outcome-{{ _ocls }}" title="raw result: {{ c.result }}"
+              style="font-size:0.78em; font-weight:600; padding:2px 9px; border-radius:9999px; background:{{ _oc.bg }}; color:{{ _oc.fg }}">{{ c.result|outcome_glyph }}&nbsp;{{ c.result|outcome_label }}</span>
+        <span class="acceptance-criterion-behavior"><code>{{ c.behavior }}</code></span>
+        {% if c.behavior %}
+        <a href="#bt-{{ c.behavior }}" class="btn-mini" style="margin-left:auto; font-size:0.78em">View test ↓</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {# Gate/audit score line — "N/M gates passed", filled client-side by
      _renderTestsGateSummary from spec.outcome_rollup so it can't drift from
      the per-gate list below. The per-gate detail is NOT repeated here — it

@@ -1026,3 +1026,106 @@ def test_act_rail_dots_reflect_computed_only_passed_state(tmp_path, dashboard_cl
     # authored design_status either -> correctly stays "not-assessed", the
     # one dot this fixture gives no data for.
     assert states["design"] == "not-assessed", states
+
+
+# ---------------------------------------------------------------------------
+# Fable G4: Tests -> Acceptance criteria band (§10.1 band 1). `spine_acceptance`
+# is already attached to the spec by study_spec.load_study_detail_spec (via
+# study_enrichment.study_acceptance_criterion, a pure read of the owning
+# investigation's PERSISTED executive.computed_acceptance, filtered to this
+# study's criteria) but was never rendered. This band is the first consumer.
+# ---------------------------------------------------------------------------
+
+def _write_g4_investigation_and_study(ws, inv_slug, study_slug, criteria, verdict_status):
+    inv = ws / "investigations" / inv_slug
+    sd = inv / "studies" / study_slug
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (inv / "investigation.yaml").write_text(yaml.safe_dump({
+        "name": inv_slug,
+        "executive": {
+            "verdict_status": "in-progress",
+            "computed_acceptance": {
+                "verdict_status": verdict_status,
+                "diverges_from_authored": False,
+                "criteria": criteria,
+            },
+        },
+    }))
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": study_slug,
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        "behavior_tests": [{"name": "oric_timing", "classification": "primary"}],
+    }))
+
+
+def test_acceptance_criteria_band_renders_with_spine_acceptance(tmp_path, dashboard_client):
+    """A study with spine_acceptance criteria (via its owning investigation's
+    persisted computed_acceptance) renders the Acceptance-criteria band at
+    the top of the Tests tab: criterion behavior, an outcome from the G3
+    four-value vocabulary, and a link to the test it rests on."""
+    ws = tmp_path / "ws"
+    _write_g4_investigation_and_study(
+        ws, "g4-inv", "g4-study",
+        criteria=[{"study": "g4-study", "behavior": "oric_timing", "result": "failing"}],
+        verdict_status="failing",
+    )
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/g4-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+
+    # The band renders, ABOVE the existing gate summary (the bar comes before
+    # the outcome, per §10.1's ordering).
+    assert 'id="acceptance-criteria-band"' in tests_panel
+    band_i = tests_panel.index('id="acceptance-criteria-band"')
+    gate_i = tests_panel.index('id="tests-gate-summary"')
+    assert band_i < gate_i, "acceptance criteria band must render above the gate summary"
+
+    # Criterion behavior name + outcome, mapped through the SAME G3 four-value
+    # vocabulary ("failing" -> "not met", sourced from
+    # viva_superpowers.investigation_status's criterion-result tokens).
+    band = tests_panel[band_i:gate_i]
+    assert "oric_timing" in band
+    assert "not met" in band
+    assert "✗" in band
+    assert 'class="outcome-chip outcome-not-met"' in band
+
+    # Links to the test it rests on, in the behavioral list below.
+    assert 'href="#bt-oric_timing"' in band
+    assert 'id="bt-oric_timing"' in tests_panel
+
+
+def test_acceptance_criteria_band_absent_without_spine_acceptance(tmp_path, dashboard_client):
+    """A study with no owning investigation (so no spine_acceptance) renders
+    NO acceptance-criteria band at all — absent, not an empty box (§2 R2:
+    absent != empty; never fabricate criteria)."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "g4-lonely-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "g4-lonely-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/g4-lonely-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert 'id="acceptance-criteria-band"' not in html
+    assert 'acceptance-criteria-band' not in html
