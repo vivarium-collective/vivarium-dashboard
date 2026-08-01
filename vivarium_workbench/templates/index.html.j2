@@ -1132,40 +1132,47 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         </svg>Audit Report</button>
     </span>
   </div>
-  <!-- Prominent unified search: matches investigations AND their studies (same
-       engine as the side-rail studies search — see _filterInvestigations). -->
-  <div style="margin:0 0 10px">
-    <input id="investigations-filter" type="search" class="viv-search"
-           placeholder="Search…"
-           aria-label="Search investigations and studies" oninput="_filterInvestigations()">
-  </div>
-  <div style="display:flex;align-items:center;gap:8px;margin:0 0 14px;font-size:0.85em;color:#64748b">
-    <label for="iset-sort" style="font-weight:600">Sort</label>
-    <select id="iset-sort" onchange="_setIsetSort(this.value)"
-            style="padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:0.95em">
-      <option value="default">Default (active first)</option>
-      <option value="name">Name (A→Z)</option>
-      <option value="status">Status</option>
-      <option value="studies_desc">Most studies</option>
-      <option value="studies_asc">Fewest studies</option>
-      <option value="recent">Recently updated</option>
-    </select>
-    <span id="iset-zoom-toolbar" style="display:inline-flex;align-items:center">
-      {# Same 3-level semantic zoom as the Registry (Table/Cards/Full) — drives
-         BOTH the Investigations and Studies browse tabs. See _setIsetZoom. #}
-      <div class="registry-zoom" role="group" aria-label="View density" title="View density">
-        <button class="reg-zoom-btn" data-izoom="table" onclick="_setIsetZoom('table')" title="Table — dense &amp; sortable" aria-label="Table view">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
-        </button>
-        <button class="reg-zoom-btn active" data-izoom="cards" onclick="_setIsetZoom('cards')" title="Cards — grid with usage" aria-label="Cards view">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.4"/></svg>
-        </button>
-        <button class="reg-zoom-btn" data-izoom="full" onclick="_setIsetZoom('full')" title="Full — the whole card" aria-label="Full card view">
-          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16.5" x2="13" y2="16.5"/></svg>
-        </button>
-      </div>
-    </span>
-    <span id="iset-list-tip" style="margin-left:auto">Tip: click a card's <strong>studies</strong> count to expand it.</span>
+  <!-- Two-row toolbar (mirrors the Registry/Modules layout): search + column
+       control + semantic-zoom buttons on the TOP row; Sort + tip on row 2.
+       The search matches investigations AND their studies (same engine as the
+       side-rail studies search — see _filterInvestigations). -->
+  <div class="card-browse-toolbar cbt-2row" id="iset-toolbar">
+    <div class="cbt-top">
+      <input id="investigations-filter" type="search" class="viv-search card-browse-search"
+             placeholder="Search…"
+             aria-label="Search investigations and studies" oninput="_filterInvestigations()">
+      {# Column-count control (Auto slider) — only visible in the Cards zoom
+         (populated + shown/hidden by _syncColsControls / _updateColsSlotVisibility). #}
+      <span class="cols-ctl-slot" data-cols-surface="isets" title="Cards columns"></span>
+      <span id="iset-zoom-toolbar" style="display:inline-flex;align-items:center">
+        {# Same 3-level semantic zoom as the Registry (Table/Cards/Full) — drives
+           BOTH the Investigations and Studies browse tabs. See _setIsetZoom. #}
+        <div class="registry-zoom" role="group" aria-label="View density" title="View density">
+          <button class="reg-zoom-btn" data-izoom="table" onclick="_setIsetZoom('table')" title="Table — dense &amp; sortable" aria-label="Table view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+          </button>
+          <button class="reg-zoom-btn active" data-izoom="cards" onclick="_setIsetZoom('cards')" title="Cards — grid; adjust columns at left" aria-label="Cards view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><rect x="3.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.4"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.4"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.4"/></svg>
+          </button>
+          <button class="reg-zoom-btn" data-izoom="full" onclick="_setIsetZoom('full')" title="Full — the whole card" aria-label="Full card view">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16.5" x2="13" y2="16.5"/></svg>
+          </button>
+        </div>
+      </span>
+    </div>
+    <div class="cbt-bottom" style="font-size:0.85em;color:#64748b">
+      <label for="iset-sort" style="font-weight:600">Sort</label>
+      <select id="iset-sort" onchange="_setIsetSort(this.value)"
+              style="padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;background:#fff;font-size:0.95em">
+        <option value="default">Default (active first)</option>
+        <option value="name">Name (A→Z)</option>
+        <option value="status">Status</option>
+        <option value="studies_desc">Most studies</option>
+        <option value="studies_asc">Fewest studies</option>
+        <option value="recent">Recently updated</option>
+      </select>
+      <span id="iset-list-tip" style="margin-left:auto">Tip: click a card's <strong>studies</strong> count to expand it.</span>
+    </div>
   </div>
 
   <!-- List view: grouped investigation cards (Active / Closed). The grid lives on

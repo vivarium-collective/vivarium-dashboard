@@ -2001,7 +2001,7 @@
   // columns to width, auto-fill); a slider overrides with a fixed count.
   window._cardCols = (function () {
     var d = {};
-    ['registry', 'composites', 'modules', 'market'].forEach(function (s) {
+    ['registry', 'composites', 'modules', 'market', 'isets'].forEach(function (s) {
       var v; try { v = localStorage.getItem('viv.cols.' + s); } catch (e) { v = null; }
       d[s] = (v && v !== 'auto' && !isNaN(+v)) ? Math.max(1, Math.min(8, +v)) : 'auto';
     });
@@ -2018,7 +2018,8 @@
   function _cardContainersFor(surface) {
     var sel = surface === 'registry' ? '.reg-cards-grid'
       : (surface === 'composites' ? '.ccard-rows'
-      : (surface === 'market' ? '.market-grid-cards' : '.mrows'));
+      : (surface === 'market' ? '.market-grid-cards'
+      : (surface === 'isets' ? '.investigations-grid' : '.mrows')));
     return Array.prototype.slice.call(document.querySelectorAll(sel));
   }
   function _colsControl(surface) {
@@ -2037,6 +2038,7 @@
       composites: ((window._compositesZoom || 'cards') === 'cards'),
       modules: ((window._catalogZoom || 'cards') === 'cards'),
       market: ((window._marketZoom || 'cards') === 'cards'),
+      isets: ((window._isetZoom || 'cards') === 'cards'),
     };
     Object.keys(show).forEach(function (s) {
       var slot = document.querySelector('.cols-ctl-slot[data-cols-surface="' + s + '"]');
@@ -9165,6 +9167,15 @@
     document.querySelectorAll('.reg-zoom-btn[data-izoom]').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-izoom') === window._isetZoom);
     });
+    // Populate + show/hide the column-count control (Cards zoom only).
+    if (typeof _syncColsControls === 'function') _syncColsControls();
+  }
+
+  // Apply the chosen column count to the visible investigation/study card grids.
+  // Only in the Cards zoom — Table has no grid, and Full is a fixed wide layout.
+  function _applyIsetCols() {
+    if ((window._isetZoom || 'cards') !== 'cards') return;
+    _cardContainersFor('isets').forEach(function (c) { _applyCardCols(c, 'isets'); });
   }
   window._syncIsetToolbar = _syncIsetToolbar;
   function _setIsetZoom(z) {
@@ -9379,6 +9390,7 @@
       _groupHtml('Closed', _sortIsets(closedItems)) +
       '<p id="investigations-empty" class="empty-state" style="display:none">No investigations match the filter.</p>';
 
+    _applyIsetCols();
     _filterInvestigations();
 
     var _ic = document.getElementById('iset-tab-inv-count');
@@ -9834,6 +9846,7 @@
         items.map(function (s) { return _studyBrowseCardHtml(s, full); }).join('') + '</div></div>';
     }).join('') +
       '<p id="investigations-empty" class="empty-state" style="display:none">No studies match the filter.</p>';
+    _applyIsetCols();
     _filterInvestigations();
   }
 
