@@ -1156,6 +1156,7 @@
     _fillReportCardsTab(spec);
     loadTestsTab(spec);
     _loadQualityChecks(spec);
+    _loadReproducibilityChecks(spec);
   }
   window._loadTestsPanel = _loadTestsPanel;
 
@@ -1276,6 +1277,179 @@
       });
   }
   window._loadQualityChecks = _loadQualityChecks;
+
+  // ── G6: Reproducibility check group (L0-L5 study_audit) ─────────────────
+  // GET /api/study-audit?study=<slug> → viva_superpowers.study_audit
+  // (audit_workspace, filtered to this slug) — already computed in CI as the
+  // reproducibility gate, never rendered on the page until now. Same fetch
+  // pattern as _loadQualityChecks, into #check-group-reproducibility.
+  //
+  // Unlike rigor's ok/warn/gap/not_applicable (G5's severity proxy had to
+  // dodge a real name collision with the pre-existing G3 'GAP' token —
+  // see the comment above _RIGOR_SEVERITY_PROXY), study_audit's own
+  // vocabulary is already exactly three-valued: pass/warn/fail, with no
+  // token that collides with or means something different from a G3 token.
+  // So the proxy here is a direct, honest match on MEANING, not a spelling
+  // coincidence: pass (check satisfied) -> PASS, warn (soft/non-blocking
+  // deficiency, tier="soft") -> PARTIAL, fail (check violated; tier may be
+  // "hard" or "soft") -> FAIL. There is no study_audit status that means
+  // "never assessed" (unlike rigor's not_applicable / the G3 SKIP/GAP
+  // family), so that arm of the proxy is intentionally absent — an
+  // individual check or level with no proxy match renders "not assessable"
+  // via the same fallback _renderAuditCheckRow/_renderAuditLevelGroup use
+  // for any unrecognized token, never fabricated as pass.
+  var _AUDIT_STATUS_PROXY = { pass: 'PASS', warn: 'PARTIAL', fail: 'FAIL' };
+
+  function _auditWorstStatus(checks) {
+    var worst = 'pass';
+    for (var i = 0; i < (checks || []).length; i++) {
+      var st = String((checks[i] && checks[i].status) || '').toLowerCase();
+      if (st === 'fail') return 'fail';
+      if (st === 'warn') worst = 'warn';
+    }
+    return worst;
+  }
+
+  // Groups the flat checks[] list by ``level`` ("L0".."L5"), preserving the
+  // order levels first appear in (study_audit already emits them in level
+  // order), so the UI shows one row per level rather than re-listing rigor's
+  // per-dimension style flat list — the mockup (Fable §10.1) shows "L0-L3
+  // pass · L4 warn", a per-LEVEL state, not a per-check one.
+  function _groupAuditChecksByLevel(checks) {
+    var order = [];
+    var byLevel = {};
+    (checks || []).forEach(function(c) {
+      var lvl = (c && c.level) || '?';
+      if (!byLevel[lvl]) { byLevel[lvl] = []; order.push(lvl); }
+      byLevel[lvl].push(c);
+    });
+    return order.map(function(lvl) { return { level: lvl, checks: byLevel[lvl] }; });
+  }
+
+  // "L0-L3 pass · L4 warn" — compress consecutive levels sharing the same
+  // worst status into one range, per the Fable §10.1 mockup line.
+  function _summarizeAuditLevels(groups) {
+    var runs = [];
+    groups.forEach(function(g) {
+      var status = _auditWorstStatus(g.checks);
+      var last = runs[runs.length - 1];
+      if (last && last.status === status) {
+        last.to = g.level;
+      } else {
+        runs.push({ from: g.level, to: g.level, status: status });
+      }
+    });
+    return runs.map(function(r) {
+      return (r.from === r.to ? r.from : (r.from + '-' + r.to)) + ' ' + r.status;
+    }).join(' · ');
+  }
+
+  function _renderAuditCheckRow(c) {
+    var e = escapeHtmlForTests;
+    var status = String((c && c.status) || '').toLowerCase();
+    var tok = _AUDIT_STATUS_PROXY[status] || '';
+    var cls = tok ? outcomeClass(tok) : 'not-assessable';
+    var glyph = tok ? outcomeGlyph(tok) : '○';
+    var label = tok ? outcomeLabel(tok) : 'not assessable';
+    var oc = _RIGOR_OUTCOME_COLORS[cls] || _RIGOR_OUTCOME_COLORS['not-assessable'];
+    return '<li class="audit-check-item outcome-' + cls + '" data-status="' + e(status) + '" '
+      + 'style="display:flex;gap:10px;align-items:flex-start;padding:5px 0 5px 20px;border-top:1px solid #f8fafc">'
+      + '<span class="outcome-chip outcome-' + cls + '" title="audit status: ' + e(status || 'unknown') + '" '
+      + 'style="font-size:0.72em;font-weight:600;padding:1px 8px;border-radius:9999px;flex-shrink:0;'
+      + 'background:' + oc.bg + ';color:' + oc.fg + '">' + glyph + '&nbsp;' + e(label) + '</span>'
+      + '<div><code style="font-size:0.85em">' + e((c && c.name) || '') + '</code>'
+      + ' <span class="muted" style="font-size:0.78em">(' + e((c && c.tier) || '') + ')</span>'
+      + ((c && c.detail) ? '<div class="muted" style="font-size:0.85em;margin-top:2px">' + e(c.detail) + '</div>' : '')
+      + '</div></li>';
+  }
+
+  function _renderAuditLevelGroup(g) {
+    var e = escapeHtmlForTests;
+    var status = _auditWorstStatus(g.checks);
+    var tok = _AUDIT_STATUS_PROXY[status] || '';
+    var cls = tok ? outcomeClass(tok) : 'not-assessable';
+    var glyph = tok ? outcomeGlyph(tok) : '○';
+    var label = tok ? outcomeLabel(tok) : 'not assessable';
+    var oc = _RIGOR_OUTCOME_COLORS[cls] || _RIGOR_OUTCOME_COLORS['not-assessable'];
+    return '<li class="audit-level-item outcome-' + cls + '" data-level="' + e(g.level) + '" '
+      + 'style="padding:7px 0;border-top:1px solid #f1f5f9">'
+      + '<div style="display:flex;gap:10px;align-items:center">'
+      + '<strong style="min-width:26px">' + e(g.level) + '</strong>'
+      + '<span class="outcome-chip outcome-' + cls + '" title="' + e(g.level) + ' status: ' + e(status || 'unknown') + '" '
+      + 'style="font-size:0.75em;font-weight:600;padding:2px 9px;border-radius:9999px;flex-shrink:0;'
+      + 'background:' + oc.bg + ';color:' + oc.fg + '">' + glyph + '&nbsp;' + e(label) + '</span>'
+      + '</div>'
+      + '<ul style="list-style:none;padding-left:0;margin:2px 0 0 0">'
+      + g.checks.map(_renderAuditCheckRow).join('') + '</ul></li>';
+  }
+
+  // Returns {state, html} for the #check-group-reproducibility mount's INNER
+  // content (the mount div itself keeps its id/class; only its contents are
+  // replaced) — same contract as _qualityCheckGroupHtml.
+  function _reproducibilityCheckGroupHtml(audit) {
+    var e = escapeHtmlForTests;
+    var header = '<div class="check-group-header" style="display:flex;align-items:center;'
+      + 'gap:8px;flex-wrap:wrap"><strong>Reproducibility</strong> '
+      + '<span class="muted" style="font-size:0.85em">L0&ndash;L5 audit &mdash; '
+      + '<code>viva_superpowers.study_audit</code></span>';
+    if (!audit || audit.unavailable) {
+      var reason = (audit && audit.reason) || 'could not be computed';
+      return {
+        state: 'unavailable',
+        html: header + '</div><p class="empty-message">unavailable(' + e(reason) + ')</p>'
+      };
+    }
+    var checks = audit.checks || [];
+    if (!checks.length) {
+      return {
+        state: 'empty',
+        html: header + '</div><p class="empty-message">No L0-L5 checks computed for this study.</p>'
+      };
+    }
+    var groups = _groupAuditChecksByLevel(checks);
+    var summaryText = _summarizeAuditLevels(groups);
+    header += summaryText
+      ? ' <span class="muted" style="margin-left:auto;font-size:0.85em">' + e(summaryText) + '</span></div>'
+      : '</div>';
+    return {
+      state: 'ready',
+      html: header + '<ul class="audit-level-list" style="list-style:none;padding-left:0;margin:8px 0 0 0">'
+        + groups.map(_renderAuditLevelGroup).join('') + '</ul>'
+    };
+  }
+
+  var _reproducibilityChecksLoaded = false;
+  function _loadReproducibilityChecks(spec) {
+    var host = document.getElementById('check-group-reproducibility');
+    if (!host) return;
+    if (_reproducibilityChecksLoaded) return;
+    _reproducibilityChecksLoaded = true;
+    var slug = (spec && spec.name) || studyName();
+    if (!slug) {
+      host.dataset.state = 'unavailable';
+      host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
+      return;
+    }
+    fetch('/api/study-audit?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
+          .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
+      })
+      .then(function(res) {
+        var payload = res.json;
+        if (!res.ok) {
+          payload = { unavailable: true, reason: (payload && payload.error) || ('HTTP ' + res.status) };
+        }
+        var built = _reproducibilityCheckGroupHtml(payload);
+        host.dataset.state = built.state;
+        host.innerHTML = built.html;
+      })
+      .catch(function() {
+        host.dataset.state = 'unavailable';
+        host.innerHTML = '<p class="empty-message">unavailable(request failed)</p>';
+      });
+  }
+  window._loadReproducibilityChecks = _loadReproducibilityChecks;
 
   // "N/M gates passed" score line ONLY. Every declared behavior test (kind:
   // behavioral or report_card) is a gate; the aggregate count comes from

@@ -1133,17 +1133,32 @@
      (Fable §4.6: one score line + one list, not the gate set twice). #}
   <div class="tests-gate-summary" id="tests-gate-summary"><p class="empty-message">Loading gate summary…</p></div>
 
-  {# Fable G5 (§10.1 band 2 "Checks", automated group): the deterministic
-     evidence & rigor scorecard (viva_superpowers.rigor.study_rigor) — already
-     computed in CI, never rendered on the page until now. Unlike G4's
-     Acceptance criteria band (a field already sitting on `study`), rigor is a
-     live compute, so this mount is filled client-side by _loadQualityChecks
-     in study-detail.js from GET /api/study-rigor?study=<slug>
-     (lib.rigor_views.build_study_rigor). Degrades to an explicit
-     unavailable(reason) message when rigor can't compute — never an empty
-     box, never a fabricated "0 checks" (§2 R2). #}
-  <div class="check-group check-group-quality" id="check-group-quality" data-check-group="quality" style="margin-top:22px">
-    <p class="empty-message">Loading quality checks…</p>
+  {# Fable §10.1 band 2 "Checks", automated group: the Quality (G5) and
+     Reproducibility (G6) check groups share one "Checks" band heading per the
+     §10.1 mockup ("CHECKS  automated 12 · human 1"). Both mounts are filled
+     client-side (rigor and study_audit are live computes, not fields already
+     sitting on `study` like G4's acceptance criteria), and both degrade to an
+     explicit unavailable(reason) message rather than an empty box (§2 R2). #}
+  <div class="checks-band" style="margin-top:22px">
+    <h3 class="section-title" style="margin-bottom:8px">Checks</h3>
+
+    {# Fable G5: the deterministic evidence & rigor scorecard
+       (viva_superpowers.rigor.study_rigor) — already computed in CI, never
+       rendered on the page until now. Filled client-side by
+       _loadQualityChecks from GET /api/study-rigor?study=<slug>
+       (lib.rigor_views.build_study_rigor). #}
+    <div class="check-group check-group-quality" id="check-group-quality" data-check-group="quality">
+      <p class="empty-message">Loading quality checks…</p>
+    </div>
+
+    {# Fable G6: the L0-L5 reproducibility audit
+       (viva_superpowers.study_audit.audit_workspace) — already run in CI as
+       the reproducibility gate, never rendered on the page until now. Filled
+       client-side by _loadReproducibilityChecks from GET
+       /api/study-audit?study=<slug> (lib.audit_views.build_study_audit). #}
+    <div class="check-group check-group-reproducibility" id="check-group-reproducibility" data-check-group="reproducibility" style="margin-top:16px">
+      <p class="empty-message">Loading reproducibility checks…</p>
+    </div>
   </div>
 
   <div class="report-cards-section" style="margin-top:22px">

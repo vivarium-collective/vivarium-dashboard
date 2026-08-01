@@ -1170,3 +1170,37 @@ def test_quality_check_group_mount_renders_in_tests_panel(tmp_path, dashboard_cl
     quality_i = tests_panel.index('id="check-group-quality"')
     gate_i = tests_panel.index('id="tests-gate-summary"')
     assert gate_i < quality_i
+
+
+def test_reproducibility_check_group_mount_renders_in_tests_panel(tmp_path, dashboard_client):
+    """The #check-group-reproducibility mount (Fable G6) is always present in
+    the Tests panel, alongside #check-group-quality (G5), inside the shared
+    "Checks" band -- present regardless of whether study_audit can compute."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "g6-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "g6-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/g6-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+    assert 'id="check-group-reproducibility"' in tests_panel
+    assert 'data-check-group="reproducibility"' in tests_panel
+
+    # Both check groups sit below the gate summary, in the shared Checks band.
+    quality_i = tests_panel.index('id="check-group-quality"')
+    repro_i = tests_panel.index('id="check-group-reproducibility"')
+    gate_i = tests_panel.index('id="tests-gate-summary"')
+    assert gate_i < quality_i < repro_i

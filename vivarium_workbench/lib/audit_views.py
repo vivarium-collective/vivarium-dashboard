@@ -9,12 +9,35 @@ it is purely informational — it runs no gate and applies no allowlist.
 Tolerant by design: a workspace with no studies, an unimportable audit module,
 or any ``audit_workspace`` error yields ``({"error": ..., "studies": [],
 "investigations": []}, 200)`` — never a 500 — so the UI degrades gracefully.
+
+``build_study_audit`` (Fable G6) is the single-study companion: it backs
+``GET /api/study-audit?study=<slug>``, the Tests-tab "Reproducibility" check
+group, mirroring :func:`vivarium_workbench.lib.rigor_views.build_study_rigor`'s
+400/404/``unavailable`` contract exactly.
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+
+class StudyAuditViewError(Exception):
+    """Raised by :func:`build_study_audit` to signal a non-200 HTTP response.
+
+    Mirrors :class:`vivarium_workbench.lib.rigor_views.RigorViewError` exactly:
+    ``body`` is the complete JSON-serialisable error dict, ``status`` is 400 or
+    404. A failed *computation* (unimportable ``study_audit``, or any exception
+    raised while auditing) is NOT this error — it degrades to a 200
+    ``{"unavailable": True, "reason": ...}`` body instead (spec §2 R2, "absent
+    != empty").
+    """
+
+    def __init__(self, body: dict, status: int) -> None:
+        super().__init__(body.get("error", ""))
+        self.body = body
+        self.status = status
 
 
 def _workspace_packages(ws_root: Path) -> list[str]:
@@ -87,3 +110,51 @@ def build_audit(ws_root) -> tuple[dict, int]:
             blk["grade"] = g
     report.setdefault("summary", {})["grade_distribution"] = grades.get("distribution", {})
     return report, 200
+
+
+def build_study_audit(ws_root: Path, study: Optional[str]) -> dict:
+    """Build the GET /api/study-audit payload for one study (Fable G6).
+
+    Backs the Tests tab's Reproducibility check group. Runs the SAME
+    ``viva_superpowers.study_audit.audit_workspace`` evaluator ``build_audit``
+    uses for the workspace-wide Audit tab -- there is no single-study entry
+    point upstream, so this audits the whole workspace and returns just the
+    block for ``study`` -- then returns that study's block verbatim:
+    ``{"slug": ..., "worst": "pass"|"warn"|"fail", "checks": [{"level": "L0".."L5",
+    "name": ..., "status": "pass"|"warn"|"fail", "tier": "hard"|"soft",
+    "detail": ...}, ...]}``.
+
+    Raises ``StudyAuditViewError``:
+    - 400 when ``study`` is empty/None (``{"error": "missing ?study="}``).
+    - 404 when no ``study.yaml``/``spec.yaml`` exists for the slug
+      (``{"error": "study not found"}``).
+
+    Never a 500: an unimportable ``viva_superpowers.study_audit``, any
+    exception raised while auditing, or the audited workspace simply not
+    reporting a block for this slug (e.g. a nested/invalid study.yaml the
+    evaluator skips) all degrade to a 200-shaped
+    ``{"unavailable": True, "reason": "..."}`` payload -- never a fabricated
+    empty check list (spec §2 R2, "absent != empty").
+    """
+    if not study:
+        raise StudyAuditViewError({"error": "missing ?study="}, 400)
+    ws_root = Path(ws_root)
+    from vivarium_workbench.lib.study_spec import load_study_detail_spec
+
+    spec = load_study_detail_spec(ws_root, study)
+    if spec is None:
+        raise StudyAuditViewError({"error": "study not found"}, 404)
+
+    try:
+        from viva_superpowers import study_audit
+        report = study_audit.audit_workspace(
+            ws_root, extra_packages=_workspace_packages(ws_root) or None
+        )
+    except Exception as e:  # noqa: BLE001 — degrade, never 500
+        return {"unavailable": True, "reason": f"{type(e).__name__}: {e}"}
+
+    for blk in report.studies:
+        if blk.slug == study:
+            return blk.as_dict()
+    return {"unavailable": True,
+            "reason": f"study_audit reported no block for {study!r}"}
