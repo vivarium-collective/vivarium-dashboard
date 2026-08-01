@@ -94,10 +94,24 @@ def _iter_all_study_dirs(workspace: Path):
         if prev is None or score > prev[0]:
             best[sdir.name] = (score, sdir, inv_name, rel)
 
+    # rel_prefix MUST be relative to the workspace ROOT (so read_source's
+    # `Path(workspace) / db_path` resolves) — NOT a hardcoded "studies/..." which
+    # ignores a `layout:` remap (e.g. viva-biofilm's `studies: workspace/studies`
+    # nests studies under workspace/, and the hardcoded prefix pointed the Data
+    # Explorer at the wrong path → 0 runs). Mirrors the parquet-hive db_path,
+    # which already uses `hive_dir.relative_to(workspace)`.
+    ws_abs = Path(workspace).resolve()
+
+    def _rel(sdir: Path) -> str:
+        # Resolve both so a relative `workspace` (".") and an absolute study dir
+        # (WorkspacePaths may resolve to absolute) still yield a workspace-root-
+        # relative path that read_source's `Path(workspace) / db_path` re-joins.
+        return sdir.resolve().relative_to(ws_abs).as_posix()
+
     root = wp.studies
     if root.is_dir():
         for sdir in sorted(root.iterdir()):
-            _consider(sdir, None, f"studies/{sdir.name}", layer_bonus=8)  # root precedence
+            _consider(sdir, None, _rel(sdir), layer_bonus=8)  # root precedence
     invs = wp.investigations
     if invs.is_dir():
         for inv in sorted(invs.iterdir()):
@@ -105,8 +119,7 @@ def _iter_all_study_dirs(workspace: Path):
             if not (inv.is_dir() and nested.is_dir()):
                 continue
             for sdir in sorted(nested.iterdir()):
-                _consider(sdir, inv.name,
-                          f"investigations/{inv.name}/studies/{sdir.name}", layer_bonus=0)
+                _consider(sdir, inv.name, _rel(sdir), layer_bonus=0)
 
     for slug in sorted(best):
         _, sdir, inv_name, rel = best[slug]
