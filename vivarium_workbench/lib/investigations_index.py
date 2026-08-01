@@ -283,6 +283,14 @@ def build_investigations(ws_root: Path) -> dict:
     )
     from vivarium_workbench.lib.spec_norm import normalize_requirements
     from vivarium_workbench.lib.investigation_status import _study_display_status
+    from vivarium_workbench.lib.run_commands import study_run_commands
+    from vivarium_workbench.lib.composite_lookup import (
+        composite_steps_index, baseline_steps_for_study,
+    )
+
+    # Composite default_n_steps map (best-effort) → a `--steps N` hint on each
+    # study card's run command (N = its baseline composite's natural run length).
+    _steps_idx = composite_steps_index(ws_root)
 
     # First pass: load every spec so we can resolve cross-study conditions.
     loaded: list[tuple[Path, dict]] = []
@@ -378,6 +386,13 @@ def build_investigations(ws_root: Path) -> dict:
             "n_comparisons": len(spec.get("comparisons") or []),
             "n_runs": n_runs,
             "baseline_source": _format_baseline_source(spec),
+            # Single-line "run this study in your terminal" command for the study
+            # card (mirrors the composite card's chip). Carries `--steps N` when
+            # its baseline composite declares a default run length.
+            "run_command": study_run_commands(
+                spec, spec["name"],
+                steps=baseline_steps_for_study(spec, _steps_idx),
+            )["baseline"],
             "conclusions_excerpt": _conclusions_excerpt(spec),
             "parent_studies": parents,
             "blocked": len(blocked_by) > 0,

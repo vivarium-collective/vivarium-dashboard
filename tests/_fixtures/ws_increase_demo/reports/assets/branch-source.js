@@ -4,7 +4,7 @@
 (function () {
   "use strict";
 
-  var state = { scope: "local", repo: null, branch: null, entries: [], current: null };
+  var state = { scope: "local", repo: null, branch: null, entries: [], current: null, health: null };
   var pollTimer = null;
 
   // Snapshot (published static bundle): no live backend. The Source panel
@@ -64,27 +64,66 @@
     _afterSwitch(r);
   }
 
+  // Session-per-tab (pinned-for-life): a tab is one source for its life, so a
+  // selection OPENS A NEW TAB bound to it rather than re-pointing this one.
+  //   local workspace → /?workspace=<catalog-name>   (session.js binds by name)
+  //   sms-api build    → /?build=<simulator_id>        (…→ switch-build, materialize)
+  // session.js's bootstrap force-mints a fresh per-tab session in the new tab and
+  // performs the bind; session-status.js shows the ⏳ favicon while a build
+  // materializes. A local entry with no catalog name falls back to the in-place
+  // switch (can't spawn by name).
+  function _openEntry(entry) {
+    if (!entry) return;
+    // Honor the deployment base path (e.g. "/workbench" behind the ALB). The
+    // global fetch/XHR shim prefixes /api/… itself, but does NOT patch
+    // window.open, and "/?workspace=" wouldn't match its prefix list anyway — so
+    // build the spawn URL with __BASE_PATH__ here. Empty in local/root hosting.
+    var BP = window.__BASE_PATH__ || "";
+    if (entry.simulator_id != null) {
+      window.open(BP + "/?build=" + encodeURIComponent(entry.simulator_id), "_blank");
+    } else if (entry.name) {
+      window.open(BP + "/?workspace=" + encodeURIComponent(entry.name), "_blank");
+    } else if (entry.path) {
+      _switchLocal(entry.path);   // name-less catalog entry → in-place fallback
+    }
+  }
+
   async function _switchRemote(simulatorId, btn) {
     if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
-    // First materialization downloads the build's workspace (~hundreds of MB,
-    // up to a few minutes); cached builds switch instantly. Show a note so a
-    // long download doesn't look stuck.
-    _setBusy("Loading build " + simulatorId + " — downloading its workspace on first use (cached builds are instant)…");
+    // First materialization downloads the build's workspace (~hundreds of MB, up
+    // to a few minutes); cached builds switch instantly. A ticking counter + Cancel
+    // + a client-side timeout matching the server's 600s download cap mean a long
+    // download reads as progress, never a dead spinner (hardening for external users).
+    var controller = new AbortController();
+    var t0 = Date.now();
+    function _msg() {
+      var s = Math.round((Date.now() - t0) / 1000);
+      return "Loading build " + simulatorId + " — downloading its workspace (" + s + "s; cached builds are instant)…";
+    }
+    _setBusy(_msg(), function () { controller.abort(); });
+    var ticker = setInterval(function () { _setBusy(_msg(), function () { controller.abort(); }); }, 1000);
+    var deadline = setTimeout(function () { controller.abort(); }, 610000);  // 600s server cap + buffer
+    function _cleanup() { clearInterval(ticker); clearTimeout(deadline); }
     try {
       var r = await fetch("/api/source/switch-build", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ simulator_id: Number(simulatorId) }),
+        signal: controller.signal,
       });
     } catch (e) {
-      _setBusy(""); if (btn) { btn.disabled = false; btn.textContent = "Switch"; }
-      alert("Switch failed: network error"); return;
+      _cleanup(); _setBusy(""); if (btn) { btn.disabled = false; btn.textContent = "Switch"; }
+      alert(e && e.name === "AbortError"
+        ? "Switch cancelled or timed out — the workspace download took too long. The remote endpoint may be slow or unreachable."
+        : "Switch failed: network error");
+      return;
     }
+    _cleanup();
     if (btn) { btn.disabled = false; btn.textContent = "Switch"; }
     if (!r.ok) _setBusy("");
     _afterSwitch(r);
   }
 
-  function _setBusy(msg) {
+  function _setBusy(msg, onCancel) {
     var el = document.getElementById("viv-bs-busy");
     if (!el) {
       var host = document.getElementById("viv-branch-source");
@@ -92,7 +131,16 @@
       el = _el("div", "viv-bs-busy"); el.id = "viv-bs-busy";
       host.appendChild(el);
     }
-    el.textContent = msg || "";
+    el.innerHTML = "";
+    if (msg) {
+      el.appendChild(_el("span", "viv-bs-busy-msg", msg));
+      if (typeof onCancel === "function") {
+        var c = _el("button", "viv-bs-cancel", "Cancel");
+        c.style.cssText = "margin-left:10px";
+        c.addEventListener("click", onCancel);
+        el.appendChild(c);
+      }
+    }
     el.style.display = msg ? "block" : "none";
   }
 
@@ -128,9 +176,14 @@
       state._wsData = null;  // consume it, so an explicit reload refetches
       state.entries = (d.workspaces || []).map(function (w) {
         return { repo: w.repo || w.name, branch: w.branch || "", commit: w.commit || "",
-                 label: w.label || w.name, path: w.path, current: w.status === "current" };
+                 label: w.label || w.name, path: w.path, name: w.name,
+                 current: w.status === "current" };
       });
     } else {
+      // Health probe for the panel indicator — best-effort, independent of the
+      // builds list (so the dot shows red-unreachable even when builds is empty).
+      var rh = await fetch("/api/source/remote-health").catch(function () { return null; });
+      state.health = (rh && rh.ok) ? await rh.json().catch(function () { return null; }) : null;
       var rb = await fetch("/api/source/builds").catch(function () { return null; });
       var db = (rb && rb.ok)
         ? await rb.json().catch(function () { return { error: "bad response" }; })
@@ -157,6 +210,36 @@
     return out.sort();
   }
 
+  // Remote sms-api health indicator row (state.health = {configured, base_url,
+  // reachable, version, error} from /api/source/remote-health).
+  function _healthRow() {
+    var h = state.health;
+    var row = _el("div", "viv-bs-row viv-bs-health");
+    row.style.cssText = "align-items:center; gap:8px; font-size:12px; margin:2px 0 8px";
+    var dot = _el("span", "viv-bs-health-dot");
+    dot.style.cssText = "width:8px; height:8px; border-radius:50%; display:inline-block; flex:0 0 auto";
+    var color, txt;
+    if (!h) {
+      color = "#93a1b5"; txt = "checking remote endpoint…";
+    } else if (!h.configured && !h.reachable) {
+      color = "#5d6b7e"; txt = "SMS_API_BASE not set — remote disabled";
+    } else if (h.reachable) {
+      color = "#41d886";
+      txt = h.base_url + (h.version ? "  ·  sms-api v" + h.version : "") + "  ·  reachable ✓";
+      dot.style.boxShadow = "0 0 6px " + color;
+    } else {
+      color = "#ff5d6c";
+      txt = h.base_url + " — unreachable ✗ (is the tunnel up?)";
+      if (h.error) row.title = h.error;
+    }
+    dot.style.background = color;
+    var label = _el("span", "viv-bs-health-txt", txt);
+    label.style.cssText = "color:#93a1b5; font-family:ui-monospace,SFMono-Regular,Menlo,monospace";
+    row.appendChild(dot);
+    row.appendChild(label);
+    return row;
+  }
+
   function _render() {
     var host = document.getElementById("viv-branch-source");
     if (!host) return;
@@ -172,18 +255,26 @@
     // the button silently did nothing). Labels are clarified for the remote client.
     var RO = !!((window._uiConfig || {}).readonly);
 
-    // Scope toggle
+    // Scope toggle — wrap the buttons in a segmented group so they share one grid
+    // cell (otherwise each button lands in its own cell and "Remote" wraps).
     var scopeRow = _el("div", "viv-bs-row");
     scopeRow.appendChild(_el("label", "viv-bs-key", "Scope"));
+    var scopeGroup = _el("div", "viv-bs-scope-group");
     ["local", "remote"].forEach(function (s) {
       var label = RO
         ? (s === "local" ? "Workspaces" : "sms-api builds")
         : (s === "local" ? "Local" : "Remote");
       var b = _el("button", "viv-bs-toggle" + (state.scope === s ? " active" : ""), label);
       b.addEventListener("click", function () { state.scope = s; state.repo = null; state.branch = null; refresh(); });
-      scopeRow.appendChild(b);
+      scopeGroup.appendChild(b);
     });
+    scopeRow.appendChild(scopeGroup);
     host.appendChild(scopeRow);
+
+    // Remote endpoint health indicator: a 🟢/🔴 dot + the configured SMS_API_BASE,
+    // so a user knows whether the remote deployment is even reachable *before* they
+    // pick a build (no more silent hangs on an unreachable tunnel).
+    if (state.scope === "remote") host.appendChild(_healthRow());
 
     var repos = _distinct(state.entries, "repo");
     if (state.repo == null || repos.indexOf(state.repo) < 0) {
@@ -229,15 +320,15 @@
 
     // Actions
     var actions = _el("div", "viv-bs-actions");
-    var switchBtn = _el("button", "viv-bs-action", "Switch"); switchBtn.id = "viv-bs-switch";
+    var switchBtn = _el("button", "viv-bs-action", "Open"); switchBtn.id = "viv-bs-switch";
+    switchBtn.title = "Open this source in a new tab";
     switchBtn.addEventListener("click", function () {
       var s = state.selected || {};
-      // Prefer an on-disk path (workspace-catalog entry, in-process re-point);
-      // fall back to an sms-api build (simulator_id). Path-first so a misread
-      // scope can never leave the button doing nothing.
-      if (s.path) _switchLocal(s.path);
-      else if (s.simulator_id != null) _switchRemote(s.simulator_id, switchBtn);
-      else alert("Nothing to switch to — pick a repo/branch with a build or workspace.");
+      // Pinned-for-life: open the selection in a new tab (build → /?build=,
+      // workspace → /?workspace=). Path-first fallback so a misread scope can
+      // never leave the button doing nothing.
+      if (s.path || s.name || s.simulator_id != null) _openEntry(s);
+      else alert("Nothing to open — pick a repo/branch with a build or workspace.");
     });
     actions.appendChild(switchBtn);
 
@@ -293,7 +384,7 @@
     syncBtn.addEventListener("click", function () {
       fetch("/api/source/manifest").then(function (r) { return r.json(); }).then(function (m) {
         var base = window.location.origin;
-        var cmd = "vivarium-dashboard sync " + base;
+        var cmd = "vivarium-workbench sync " + base;
         var note = "Reproduce " + (m.repo || "") + " @ " + String(m.commit || "").slice(0, 7) +
                    "\n  " + cmd + "\n(verifies uv.lock " + (m.lockfile || "—") + ")";
         window.prompt("Run this locally to sync + reproduce:", cmd);
@@ -332,12 +423,17 @@
 
     // Search / paste-a-commit filter. While filtering in remote scope, search
     // across ALL builds of the repo (every branch) so you can paste any commit.
-    var search = _el("input", "viv-bs-search");
-    search.type = "search";
-    search.placeholder = state.scope === "remote"
-      ? "search or paste a commit / date / branch…" : "filter workspaces…";
-    search.value = state.filter || "";
-    host.appendChild(search);
+    // Only shown when there's actually more than one source to pick from — a lone
+    // current workspace doesn't need a filter box (it read as idle noise).
+    var search = null;
+    if (matches.length > 1 || (state.filter || "").trim()) {
+      search = _el("input", "viv-bs-search");
+      search.type = "search";
+      search.placeholder = state.scope === "remote"
+        ? "search or paste a commit / date / branch…" : "filter workspaces…";
+      search.value = state.filter || "";
+      host.appendChild(search);
+    }
 
     var list = _el("ul", "viv-bs-list");
     host.appendChild(list);
@@ -357,11 +453,8 @@
         var li = _el("li", "viv-bs-list-row" + (m.current ? " current" : ""));
         var lbl = _el("span", "viv-bs-list-label", _entryText(m));
         lbl.style.cursor = "pointer";
-        lbl.title = "Switch to this source";
-        lbl.addEventListener("click", function () {
-          if (m.simulator_id != null) _switchRemote(m.simulator_id);
-          else if (m.path) _switchLocal(m.path);
-        });
+        lbl.title = "Open this source in a new tab";
+        lbl.addEventListener("click", function () { _openEntry(m); });
         li.appendChild(lbl);
         if (state.scope === "local" && !m.current && m.path) {
           var x = _el("button", "viv-bs-forget", "✕"); x.title = "Forget";
@@ -370,9 +463,11 @@
         }
         list.appendChild(li);
       });
-      if (!rows.length) list.appendChild(_el("li", "viv-bs-list-empty", "no matches"));
+      // "no matches" only while actively filtering — never as idle noise when
+      // there's simply nothing else to switch to.
+      if (!rows.length && f) list.appendChild(_el("li", "viv-bs-list-empty", "no matches"));
     }
-    search.addEventListener("input", function () { state.filter = search.value; _fillList(); });
+    if (search) search.addEventListener("input", function () { state.filter = search.value; _fillList(); });
     _fillList();
   }
 
@@ -394,11 +489,96 @@
   // workspaces. No scope toggle, no push/build/PR, no live in-process switch —
   // "Switch" navigates to the chosen bundle. "Sync to local" is kept (it's the
   // round-trip: clone this exact repo@commit locally via `vivarium-dashboard sync`).
+  // The reproducibility card for THIS published workspace: GitHub repo link,
+  // commit sha (linked to the commit page), branch, pinned environment (uv.lock
+  // hash), build time, and the one-liner to clone + reproduce it locally. Data
+  // comes from __DASH_CONFIG__.provenance, injected by publish.py. No live
+  // backend needed — this is the whole point of surfacing it in read-only mode.
+  function _renderProvenance(host) {
+    var p = (window.__DASH_CONFIG__ || {}).provenance;
+    if (!p || (!p.repo_url && !p.commit)) return;
+    var card = _el("div", "viv-bs-provenance");
+
+    if (p.repo_url) {
+      var repoRow = _el("div", "viv-bs-row");
+      repoRow.appendChild(_el("label", "viv-bs-key", "Repository"));
+      var a = _el("a", "viv-bs-prov-repo");
+      a.href = p.repo_url; a.target = "_blank"; a.rel = "noopener";
+      a.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><use href="#viv-gh-mark"/></svg>';
+      a.appendChild(document.createTextNode(p.repo_slug || p.repo_url));
+      repoRow.appendChild(a);
+      card.appendChild(repoRow);
+    }
+    if (p.branch) {
+      var brRow = _el("div", "viv-bs-row");
+      brRow.appendChild(_el("label", "viv-bs-key", "Branch"));
+      brRow.appendChild(_el("span", "viv-bs-commit", p.branch));
+      card.appendChild(brRow);
+    }
+    if (p.commit) {
+      var cRow = _el("div", "viv-bs-row");
+      cRow.appendChild(_el("label", "viv-bs-key", "Commit"));
+      var cVal;
+      if (p.commit_url) {
+        cVal = _el("a", "viv-bs-commit"); cVal.href = p.commit_url;
+        cVal.target = "_blank"; cVal.rel = "noopener";
+        cVal.title = "View this commit on GitHub";
+      } else {
+        cVal = _el("span", "viv-bs-commit");
+      }
+      cVal.textContent = _short(p.commit);
+      cRow.appendChild(cVal);
+      card.appendChild(cRow);
+    }
+    if (p.lockfile) {
+      var eRow = _el("div", "viv-bs-row");
+      eRow.appendChild(_el("label", "viv-bs-key", "Environment"));
+      var ev = _el("span", "viv-bs-prov-env", p.lockfile);
+      ev.title = "Locked dependency set — reproduce with `uv sync` against this uv.lock";
+      eRow.appendChild(ev);
+      card.appendChild(eRow);
+    }
+    if (p.generated_at) {
+      var gRow = _el("div", "viv-bs-row");
+      gRow.appendChild(_el("label", "viv-bs-key", "Published"));
+      gRow.appendChild(_el("span", "viv-bs-prov-env", p.generated_at));
+      card.appendChild(gRow);
+    }
+
+    // Reproduce-locally one-liner (clone this exact repo@commit + verify lock).
+    var repro = _el("div", "viv-bs-prov-repro");
+    var dir = (window.location.origin + window.location.pathname).replace(/[^/]*$/, "");
+    var cmd = "vivarium-workbench sync " + dir.replace(/\/$/, "");
+    var lead = _el("div", "viv-bs-key");
+    lead.style.width = "auto";
+    lead.textContent = "Reproduce this workspace locally:";
+    repro.appendChild(lead);
+    var code = _el("code", "viv-bs-prov-cmd", cmd);
+    code.title = "Click to select · clones this repo@commit and verifies " + (p.lockfile || "uv.lock");
+    repro.appendChild(code);
+    // Spell out exactly which commit + environment `sync` reproduces, so the
+    // reader knows what they'll land without decoding the manifest behind the URL.
+    if (p.commit || p.lockfile) {
+      var pin = _el("div", "viv-bs-prov-pin");
+      var bits = [];
+      if (p.repo_slug || p.commit) bits.push("→ " + (p.repo_slug || "repo") + "@" + _short(p.commit || ""));
+      if (p.lockfile) bits.push(p.lockfile);
+      pin.textContent = bits.join(" · ");
+      pin.title = "sync resolves the manifest at this URL, which pins this commit + locked environment";
+      repro.appendChild(pin);
+    }
+    card.appendChild(repro);
+
+    host.appendChild(card);
+  }
+
   function _renderSnapshot() {
     var host = document.getElementById("viv-branch-source");
     if (!host) return;
     host.innerHTML = "";
     host.appendChild(_el("h3", "viv-bs-title", "Source"));
+
+    _renderProvenance(host);
 
     var entries = state.entries || [];
     var names = entries.map(function (e) { return e.repo; });
@@ -406,9 +586,13 @@
       state.selected = state.current || entries[0] || null;
     }
     if (!entries.length) {
-      host.appendChild(_el("p", "viv-bs-note", "No other published workspaces found."));
+      // The provenance card above is the primary content; only add the
+      // sibling-workspaces note when there genuinely could have been more.
+      host.appendChild(_el("p", "viv-bs-note viv-bs-note-siblings",
+        "No other published workspaces linked from this one."));
       return;
     }
+    host.appendChild(_el("div", "viv-bs-prov-head", "Other published workspaces"));
     host.appendChild(_selectRow("Repo", "viv-bs-repo", names,
       state.selected ? state.selected.repo : null, function (v) {
         state.selected = entries.filter(function (e) { return e.repo === v; })[0] || null;
@@ -439,7 +623,7 @@
     syncBtn.title = "Reproduce this exact repo@commit on your machine";
     syncBtn.addEventListener("click", function () {
       var dir = (window.location.origin + window.location.pathname).replace(/[^/]*$/, "");
-      var cmd = "vivarium-dashboard sync " + dir.replace(/\/$/, "");
+      var cmd = "vivarium-workbench sync " + dir.replace(/\/$/, "");
       window.prompt("Run this locally to clone + reproduce this workspace:", cmd);
     });
     actions.appendChild(syncBtn);

@@ -604,6 +604,14 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
         normalize_dag_edges,
     )
     from vivarium_workbench.lib.run_commands import study_run_commands  # noqa: PLC0415
+    from vivarium_workbench.lib.composite_lookup import (  # noqa: PLC0415
+        composite_steps_index, baseline_steps_for_study,
+    )
+
+    # Composite default_n_steps map (best-effort) → a `--steps N` hint on each
+    # study's run command, N being its baseline composite's natural run length.
+    _steps_index = composite_steps_index(ws_root)
+    _study_step_values: list[int] = []
 
     def _normalize_parents(study_spec: dict) -> list:  # type: ignore[return]
         return normalize_dag_edges(study_spec)
@@ -738,8 +746,13 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
             # so the investigation-report SPA can render run-command chips off the
             # projection without re-deriving — mirrors Task 6's wiring of
             # load_study_detail_spec for /api/study/<slug>.
-            "run_commands": study_run_commands(study_spec, study_spec.get("name") or ""),
+            "run_commands": study_run_commands(
+                study_spec, study_spec.get("name") or "",
+                steps=(_study_steps := baseline_steps_for_study(study_spec, _steps_index)),
+            ),
         })
+        if _study_steps:
+            _study_step_values.append(_study_steps)
 
     member_statuses = [s.get("status", "planning") for s in studies_out]
     member_has_runs = [(s.get("n_runs") or 0) > 0 for s in studies_out]
@@ -791,6 +804,9 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
         "references":          (spec.get("inputs") or {}).get("references") or [],
         "proposed_inputs":     spec.get("proposed_inputs") or {},
         "studies":             studies_out,
+        # Investigation-level run length hint (the longest member study's baseline
+        # composite run) → the `vwb run investigation <slug> --steps N` chip.
+        "default_n_steps":     (max(_study_step_values) if _study_step_values else None),
     }
 
 

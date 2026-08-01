@@ -2001,7 +2001,7 @@
   // columns to width, auto-fill); a slider overrides with a fixed count.
   window._cardCols = (function () {
     var d = {};
-    ['registry', 'composites', 'modules', 'market'].forEach(function (s) {
+    ['registry', 'composites', 'modules', 'market', 'isets'].forEach(function (s) {
       var v; try { v = localStorage.getItem('viv.cols.' + s); } catch (e) { v = null; }
       d[s] = (v && v !== 'auto' && !isNaN(+v)) ? Math.max(1, Math.min(8, +v)) : 'auto';
     });
@@ -2018,7 +2018,8 @@
   function _cardContainersFor(surface) {
     var sel = surface === 'registry' ? '.reg-cards-grid'
       : (surface === 'composites' ? '.ccard-rows'
-      : (surface === 'market' ? '.market-grid-cards' : '.mrows'));
+      : (surface === 'market' ? '.market-grid-cards'
+      : (surface === 'isets' ? '.investigations-grid' : '.mrows')));
     return Array.prototype.slice.call(document.querySelectorAll(sel));
   }
   function _colsControl(surface) {
@@ -2037,6 +2038,7 @@
       composites: ((window._compositesZoom || 'cards') === 'cards'),
       modules: ((window._catalogZoom || 'cards') === 'cards'),
       market: ((window._marketZoom || 'cards') === 'cards'),
+      isets: ((window._isetZoom || 'cards') === 'cards'),
     };
     Object.keys(show).forEach(function (s) {
       var slot = document.querySelector('.cols-ctl-slot[data-cols-surface="' + s + '"]');
@@ -2369,6 +2371,7 @@
       '</div>' +
       _successBar(sp) +
       cfgPortsBtn +
+      _runCmdChip(p.run_command) +
     '</div>';
   }
 
@@ -2799,6 +2802,45 @@
     '</div>';
   }
 
+  // Shared "how to run this in your terminal" chip: a copy-pasteable one-line
+  // command + a copy button, rendered on composite/process cards and the
+  // investigation graph. The canonical command strings come from the server
+  // (lib/run_commands.py, mirrored per surface); this only presents + copies
+  // them. Self-contained inline styles (no CSS-file dependency). A long command
+  // (e.g. the process one-liner) truncates with ellipsis; hover/copy give the
+  // full text. onclick stopPropagation so it never triggers the card's select.
+  function _runCmdChip(cmd) {
+    if (!cmd) return '';
+    var full = _esc(cmd);
+    return '<div class="run-cmd-chip" onclick="event.stopPropagation()" ' +
+        'style="display:flex;align-items:center;gap:6px;margin-top:8px;padding:4px 6px;' +
+        'background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;font-size:0.72em;min-width:0">' +
+      '<span aria-hidden="true" style="color:#94a3b8;flex:none;font-family:ui-monospace,monospace">$</span>' +
+      '<code title="' + full + '" style="flex:1 1 auto;min-width:0;overflow:hidden;' +
+        'text-overflow:ellipsis;white-space:nowrap;color:#334155;' +
+        'font-family:ui-monospace,SFMono-Regular,Menlo,monospace">' + full + '</code>' +
+      '<button type="button" class="run-cmd-copy" data-cmd="' + full + '" ' +
+        'onclick="event.stopPropagation();_copyRunCmd(this)" title="Copy command" ' +
+        'style="flex:none;font-size:0.95em;cursor:pointer;border:1px solid #cbd5e1;' +
+        'background:#fff;border-radius:4px;padding:1px 6px;color:#475569">copy</button>' +
+    '</div>';
+  }
+  window._runCmdChip = _runCmdChip;
+
+  function _copyRunCmd(btn) {
+    var cmd = btn && btn.getAttribute('data-cmd');
+    if (!cmd) return;
+    var done = function () {
+      var prev = btn.getAttribute('data-label') || 'copy';
+      btn.textContent = 'copied'; btn.style.color = '#047857';
+      setTimeout(function () { btn.textContent = prev; btn.style.color = '#475569'; }, 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cmd).then(done, done);
+    } else { done(); }
+  }
+  window._copyRunCmd = _copyRunCmd;
+
   // Compact composite card (Cards / medium zoom) — mirrors the process grid
   // card: name · badge · address · short desc · usage stats.
   function _renderCompositeCardGrid(c) {
@@ -2815,6 +2857,7 @@
           '<div class="reg-card-head"><strong class="reg-card-name">' + _esc(c.name) + '</strong>' + _compositeBadge() + wsPill + '</div>' +
           '<code class="reg-card-addr">' + _esc(addr) + '</code>' +
           (short ? '<p class="reg-card-desc">' + _esc(short) + '</p>' : '') +
+          _runCmdChip(c.run_command) +
         '</div>' +
         '<div class="reg-card-stats">' + stats + '</div>' +
       '</div>' +
@@ -9124,6 +9167,15 @@
     document.querySelectorAll('.reg-zoom-btn[data-izoom]').forEach(function (b) {
       b.classList.toggle('active', b.getAttribute('data-izoom') === window._isetZoom);
     });
+    // Populate + show/hide the column-count control (Cards zoom only).
+    if (typeof _syncColsControls === 'function') _syncColsControls();
+  }
+
+  // Apply the chosen column count to the visible investigation/study card grids.
+  // Only in the Cards zoom — Table has no grid, and Full is a fixed wide layout.
+  function _applyIsetCols() {
+    if ((window._isetZoom || 'cards') !== 'cards') return;
+    _cardContainersFor('isets').forEach(function (c) { _applyCardCols(c, 'isets'); });
   }
   window._syncIsetToolbar = _syncIsetToolbar;
   function _setIsetZoom(z) {
@@ -9280,6 +9332,8 @@
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ notebook</a>' +
         '</div>' +
         '<div class="iset-studies-detail" style="display:' + (full ? 'block' : 'none') + ';margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">' + (studyRows || '<span class="muted" style="font-size:0.85em">No studies.</span>') + '</div>' +
+        // "Run this investigation in your terminal" chip (like the composite/process card).
+        _runCmdChip(iset.run_command || ('vwb run investigation ' + iset.name)) +
       '</div>';
     }
 
@@ -9336,6 +9390,7 @@
       _groupHtml('Closed', _sortIsets(closedItems)) +
       '<p id="investigations-empty" class="empty-state" style="display:none">No investigations match the filter.</p>';
 
+    _applyIsetCols();
     _filterInvestigations();
 
     var _ic = document.getElementById('iset-tab-inv-count');
@@ -9746,6 +9801,8 @@
         '<span style="flex:1"><strong>' + nRuns + '</strong> run' + (nRuns === 1 ? '' : 's') + '</span>' +
         '<span style="color:#3b82f6">open ↗</span>' +
       '</div>' +
+      // "Run this study in your terminal" chip (like the composite/process card).
+      _runCmdChip(s.run_command || ('vwb run study ' + s.name)) +
     '</div>';
   }
 
@@ -9789,6 +9846,7 @@
         items.map(function (s) { return _studyBrowseCardHtml(s, full); }).join('') + '</div></div>';
     }).join('') +
       '<p id="investigations-empty" class="empty-state" style="display:none">No studies match the filter.</p>';
+    _applyIsetCols();
     _filterInvestigations();
   }
 
@@ -10986,6 +11044,7 @@
     var _opts = window._layoutOptsForBand(aigBand);
     var shellEl = document.getElementById('investigation-dag-shell');
     if (shellEl) { shellEl.classList.remove('aig-zoom-far','aig-zoom-mid','aig-zoom-near'); shellEl.classList.add(_opts.cls); }
+
 
     var nodesHost = document.getElementById('investigation-dag-nodes');
     var edgesSvg  = document.getElementById('investigation-dag-edges');

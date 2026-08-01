@@ -170,11 +170,13 @@ def investigation_run(ws_root: Path, body: dict) -> "tuple[dict, int]":
     # ``_active_branch_action``; here the commit is DEFERRED and we just return
     # the summary).
     try:
+        _steps_override = body.get("steps")
         summary = run_investigation(
             ws_root, name,
             run_one_composite=run_one_composite,
             inputs_by_class=inputs_by_class,
             build_and_run=build_and_run,
+            steps_override=(int(_steps_override) if _steps_override else None),
         )
     except InvestigationSpecError as e:
         summary = {"error": f"spec error: {e}"}

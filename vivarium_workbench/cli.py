@@ -268,7 +268,7 @@ def cmd_run_study(args) -> int:
     _emit(resp, args.json)
     if code < 400 and not args.dry_run and resp.get("run_id"):
         print(f"\nFollow:  vdash status {resp['run_id']}")
-        print(f"Rerun:   vdash rerun {resp['run_id']}")
+        print(f"Rerun:   vwb rerun {resp['run_id']}")
     return 0 if code < 400 else 1
 
 
@@ -277,7 +277,7 @@ def cmd_run_investigation(args) -> int:
     studies = args.studies.split(",") if args.studies else None
     resp, code = cli_runs.run_investigation(
         Path(args.workspace).resolve(), args.slug,
-        studies=studies, server=args.server)
+        studies=studies, steps=args.steps, server=args.server)
     _emit(resp, args.json)
     return 0 if code < 400 else 1
 
@@ -292,7 +292,16 @@ def cmd_run_composite(args) -> int:
     _emit(resp, args.json)
     if code < 400 and not args.dry_run and resp.get("run_id"):
         print(f"\nFollow:  vdash status {resp['run_id']}")
-        print(f"Rerun:   vdash rerun {resp['run_id']}")
+        print(f"Rerun:   vwb rerun {resp['run_id']}")
+    return 0 if code < 400 else 1
+
+
+def cmd_run_process(args) -> int:
+    from vivarium_workbench.lib import cli_runs
+    config = _parse_params(args.config) if args.config else None
+    resp, code = cli_runs.run_process(
+        Path(args.workspace).resolve(), args.address, config=config)
+    _emit(resp, args.json)
     return 0 if code < 400 else 1
 
 
@@ -940,6 +949,8 @@ def main(argv: list[str] | None = None) -> int:
     ri = run_sub.add_parser("investigation", help="Run all studies in an investigation")
     ri.add_argument("slug")
     ri.add_argument("--studies", default=None, help="comma-separated subset")
+    ri.add_argument("--steps", type=int, default=None,
+                    help="force every study to this many ticks (overrides per-study lengths)")
     ri.add_argument("--server", default=None)
     _add_common(ri)
     ri.set_defaults(func=cmd_run_investigation)
@@ -952,6 +963,12 @@ def main(argv: list[str] | None = None) -> int:
     rc.add_argument("--detach", action="store_true")
     _add_common(rc)
     rc.set_defaults(func=cmd_run_composite)
+
+    rp = run_sub.add_parser("process", help="Run one registry process/step once (single update)")
+    rp.add_argument("address", help="registry address, e.g. pkg.processes.Foo or local:Foo")
+    rp.add_argument("--config", action="append", help="config key=value (repeatable)")
+    _add_common(rp)
+    rp.set_defaults(func=cmd_run_process)
 
     pr = sub.add_parser("rerun", help="Re-run a recorded run (replays its composite + recorded params/steps)")
     pr.add_argument("run_id")

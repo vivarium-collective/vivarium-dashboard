@@ -104,6 +104,18 @@
       : "/api/investigation-summaries";
   }
 
+  function _investigationGraphUrl(slug) {
+    return cfg().mode === "snapshot"
+      ? _base() + "/api/investigation-graph/" + encodeURIComponent(slug) + ".json"
+      : "/api/investigation-graph?investigation=" + encodeURIComponent(slug);
+  }
+
+  function _auditUrl() {
+    return cfg().mode === "snapshot"
+      ? _base() + "/api/audit.json"
+      : "/api/audit";
+  }
+
   function _inputsUrl(slug) {
     if (!slug) {
       // No investigation context → global/shared inputs.
@@ -169,6 +181,12 @@
       : "/api/saved-visualizations";
   }
 
+  function _analysisViewersUrl() {
+    return cfg().mode === "snapshot"
+      ? _base() + "/api/analysis-viewers.json"
+      : "/api/analysis-viewers";
+  }
+
   function _referencesBibUrl() {
     return cfg().mode === "snapshot"
       ? _base() + "/api/references-bib.json"
@@ -191,6 +209,13 @@
      * Snapshot mode: <base>/api/saved-visualizations.json from the static bundle
      */
     savedVisualizationsUrl: _savedVisualizationsUrl,
+
+    /**
+     * Return the URL for the analysis-viewers payload (Analyses page tools).
+     * Local mode:    /api/analysis-viewers
+     * Snapshot mode: <base>/api/analysis-viewers.json from the static bundle
+     */
+    analysisViewersUrl: _analysisViewersUrl,
 
     /**
      * Return the URL for the parsed papers.bib payload (References cards).
@@ -246,6 +271,24 @@
      */
     async loadIsetList() {
       return _get(_isetListUrl());
+    },
+
+    /**
+     * Investigation graph (study nodes + typed evidence chains) for one
+     * investigation. Local: GET /api/investigation-graph?investigation=<slug>.
+     * Snapshot: /api/investigation-graph/<slug>.json from the static bundle.
+     */
+    async loadInvestigationGraph(slug) {
+      return _get(_investigationGraphUrl(slug));
+    },
+
+    /**
+     * Read-only L0-L5 study-reproducibility audit report.
+     * Local mode:    fetches GET /api/audit
+     * Snapshot mode: fetches /api/audit.json from the static bundle
+     */
+    async getAudit() {
+      return _get(_auditUrl());
     },
 
     /**

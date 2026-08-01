@@ -491,6 +491,27 @@ def _apply_registry_include_filter(data: dict, ws_data: dict | None, ws_root: Pa
 # Main builder
 # ---------------------------------------------------------------------------
 
+def _annotate_run_commands(data: dict) -> None:
+    """Attach a single-line ``run_command`` (``vwb run process <address>``) to
+    each runnable registry entry.
+
+    Only ``process``/``step`` kinds get one — emitters, visualizations, types,
+    and report cards aren't things you "run" standalone. Canonical builder lives
+    in ``lib.run_commands``. Best-effort per entry."""
+    from vivarium_workbench.lib.run_commands import process_run_command
+    for p in (data.get("processes") or []):
+        if not isinstance(p, dict):
+            continue
+        if (p.get("kind") or "process") not in ("process", "step"):
+            continue
+        addr = p.get("address") or ""
+        if not addr:
+            continue
+        cmd = process_run_command(addr)
+        if cmd:
+            p["run_command"] = cmd
+
+
 def build_registry(ws_root: Path, *, bypass_cache: bool = False) -> dict:
     """Return registry data from build_core() subprocess, with 30s caching.
 
@@ -553,6 +574,8 @@ def build_registry(ws_root: Path, *, bypass_cache: bool = False) -> dict:
         # is in the list (discovery is unchanged). No-op when unset → current
         # behavior (show everything).
         _apply_registry_include_filter(data, ws_data, ws_root)
+        # Per-entry "how to run this in your terminal" command (vwb run process).
+        _annotate_run_commands(data)
         # Imported-repositories metadata (workspace.yaml::imports): name, source
         # URL, ref, description — so the Registry can show each imported repo
         # alongside the processes/steps it contributes (grouped by package).

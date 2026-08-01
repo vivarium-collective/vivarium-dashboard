@@ -64,7 +64,7 @@ def test_iset_detail_per_study_has_run_commands(tmp_path):
     assert slug in by_name
     rc = by_name[slug].get("run_commands")
     assert rc is not None, "per-study projection must carry run_commands"
-    assert rc["baseline"] == f"vdash run study {slug}"
+    assert rc["baseline"] == f"vwb run study {slug}"
 
 
 def test_iset_baseline_matches_single_source(tmp_path):

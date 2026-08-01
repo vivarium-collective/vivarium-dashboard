@@ -9,4 +9,4 @@ from vivarium_workbench.lib import study_spec
 def test_detail_spec_has_run_commands(fixture_study_ws):
     ws, study = fixture_study_ws
     spec = study_spec.load_study_detail_spec(str(ws), study)
-    assert spec["run_commands"]["baseline"] == f"vdash run study {study}"
+    assert spec["run_commands"]["baseline"] == f"vwb run study {study}"

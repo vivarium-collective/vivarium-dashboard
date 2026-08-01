@@ -46,10 +46,15 @@
       p.classList.toggle('active', p.dataset.kind === kind);
     });
     if (kind === 'tests') { loadTestsTab(window._study); }
-    if (kind === 'visualize') { _loadReadouts(); _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
+    if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownload(); }
+    if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
     if (kind === 'report-cards') { _fillReportCardsTab(window._study); }
-    if (kind === 'data') { _loadAnalysisOutputs(); }
-    if (kind === 'simulate') { _renderReproduceCard(); }
+    if (kind === 'data') { _loadAnalysisOutputs(); _loadRawData(); }
+    if (kind === 'compose') { _loadModelConfig(); }
+    if (kind === 'simulate') { _renderReproduceCard(); _loadStudySims(); }
+    // Textareas measured 0 while their tab was hidden; re-fit the now-visible
+    // panel's auto-grow boxes so they show all content without a scrollbar.
+    if (window._autoGrowTextareas) window._autoGrowTextareas();
   }
   window._setStudyTab = _setStudyTab;
 
@@ -111,6 +116,61 @@
         host.innerHTML = '<p class="empty-message">Readouts unavailable.</p>';
       });
   }
+
+  // ── Readouts tab: download the raw simulation data that holds the readouts ──
+  // "Download raw data" = every run's raw emitter store (the readouts live in
+  // these stores). One store per run, so we surface a direct ⬇ per run plus a
+  // one-click "download all" that triggers each run's download in turn.
+  var _readoutsDownloadLoaded = false;
+  function _loadReadoutsDownload(force) {
+    var host = document.getElementById('readouts-download');
+    if (!host) return;
+    if (_readoutsDownloadLoaded && !force) return;
+    _readoutsDownloadLoaded = true;
+    var slug = studyName();
+    if (!slug) { host.innerHTML = ''; return; }
+    var e = window.SimTable ? window.SimTable.esc : function (s) { return s; };
+    fetch('/api/simulations?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var sims = (j && j.simulations) || [];
+        var withData = sims.filter(function (s) { return s.run_id && (s.store_path || s.db_path); });
+        if (!withData.length) {
+          host.innerHTML = '<p class="muted" style="margin:0;font-size:0.9em">No raw simulation data to download yet — launch a run first.</p>';
+          return;
+        }
+        var links = withData.map(function (s) {
+          var url = (window.__BASE_PATH__ || "") + '/api/simulation-run-download?run_id=' + encodeURIComponent(s.run_id);
+          return '<li style="margin:2px 0"><a class="action-btn" download href="' + url + '">⬇ '
+            + e(s.sim_name || s.label || s.run_id) + '</a></li>';
+        }).join('');
+        host.innerHTML =
+          '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;background:#f9fafb">'
+          + '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
+          + '<strong>Download raw data</strong>'
+          + '<button type="button" class="btn-mini" onclick="_downloadAllRawData()">⬇ Download all (' + withData.length + ')</button>'
+          + '<span class="muted" style="font-size:0.85em">the raw emitter store for each run — every readout below is recorded in these files</span>'
+          + '</div><ul style="list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px">' + links + '</ul></div>';
+      })
+      .catch(function () { host.innerHTML = ''; });
+  }
+  window._loadReadoutsDownload = _loadReadoutsDownload;
+
+  // One-click "download all": trigger each run's raw-data download in sequence
+  // (browsers serialise multiple download navigations from one gesture).
+  function _downloadAllRawData() {
+    var host = document.getElementById('readouts-download');
+    if (!host) return;
+    var links = Array.prototype.slice.call(host.querySelectorAll('a[download]'));
+    links.forEach(function (a, i) {
+      setTimeout(function () {
+        var t = document.createElement('a');
+        t.href = a.getAttribute('href'); t.setAttribute('download', '');
+        document.body.appendChild(t); t.click(); document.body.removeChild(t);
+      }, i * 700);
+    });
+  }
+  window._downloadAllRawData = _downloadAllRawData;
 
   // --- Data tab: downloadable Analysis result files (CSV/TSV) ---
   var _analysisOutputsLoaded = false;
@@ -265,6 +325,169 @@
         _nativeGalleryLoaded = false;
       });
   }
+
+  // Exports tab: per-run raw emitter store downloads, folded in from the
+  // Simulations DB so Exports is the single "get the data" tab.
+  var _rawDataLoaded = false;
+  function _loadRawData(force) {
+    var mount = document.getElementById('raw-data-list');
+    if (!mount) return;
+    if (_rawDataLoaded && !force) return;
+    _rawDataLoaded = true;
+    var slug = studyName(), esc = window.SimTable ? window.SimTable.esc : function (x) { return String(x == null ? '' : x); };
+    var path = '/api/simulations?study=' + encodeURIComponent(slug);
+    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+      var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) {}
+      var rows = d.simulations || [];
+      if (!rows.length) { mount.innerHTML = '<p class="empty-message">No runs with persisted data yet.</p>'; return; }
+      mount.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:0.88em">' +
+        rows.map(function (row) {
+          var runId = row.run_id || '', hasData = !!(row.store_path || row.db_path);
+          var label = row.sim_name || row.label || runId;
+          var loc = window.SimTable ? window.SimTable.location(row) : esc(row.store_path || row.db_path || '');
+          var dl = hasData
+            ? '<a class="action-btn" download href="' + (window.__BASE_PATH__ || "") + '/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data</a>'
+            : '<span class="muted" style="font-size:0.82em">no store</span>';
+          return '<tr style="border-bottom:1px solid #f3f4f6"><td style="padding:5px 8px"><code style="font-size:0.85em">' + esc(label) + '</code></td>' +
+            '<td style="padding:5px 8px">' + loc + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + dl + '</td></tr>';
+        }).join('') + '</table>';
+    }).catch(function () { mount.innerHTML = '<p class="empty-message">Could not load runs.</p>'; });
+  }
+  window._loadRawData = _loadRawData;
+
+  // Model tab: for each baseline composite, fetch /api/composite-resolve and
+  // render the RESOLVED config that actually runs (composite defaults overlaid
+  // with this study's authored overrides). Loaded on demand when the tab opens.
+  function _loadModelConfig(force) {
+    var panel = document.getElementById('panel-compose');
+    if (!panel) return;
+    var esc = window.SimTable ? window.SimTable.esc : function (s) { return String(s == null ? '' : s); };
+    panel.querySelectorAll('.cond-block[data-model-composite]').forEach(function (block) {
+      var mount = block.querySelector('.model-config-mount');
+      if (!mount || (mount._loaded && !force)) return;
+      mount._loaded = true;
+      var composite = block.getAttribute('data-model-composite');
+      var overridesJson = block.getAttribute('data-model-overrides') || '{}';
+      if (!composite) { mount.innerHTML = ''; return; }
+      fetch('/api/composite-resolve?id=' + encodeURIComponent(composite) + '&overrides=' + encodeURIComponent(overridesJson))
+        .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+        .then(function (res) {
+          if (res.status !== 200 || !res.body || !res.body.parameters) {
+            mount.innerHTML = '<p class="muted" style="font-size:0.85em;margin:0">No resolvable configuration for this composite.</p>';
+            return;
+          }
+          var overrides = {}; try { overrides = JSON.parse(overridesJson); } catch (e) {}
+          _renderModelConfig(mount, res.body.parameters, overrides, esc);
+        }).catch(function () { mount.innerHTML = ''; });
+    });
+  }
+  window._loadModelConfig = _loadModelConfig;
+
+  function _renderModelConfig(mount, params, overrides, esc) {
+    var keys = Object.keys(params);
+    if (!keys.length) {
+      mount.innerHTML = '<p class="muted" style="font-size:0.85em;margin:0">This composite takes no configurable parameters.</p>';
+      return;
+    }
+    var effective = {};
+    var rows = keys.map(function (k) {
+      var def = params[k] || {};
+      var overridden = overrides && (k in overrides);
+      var val = overridden ? overrides[k] : def.default;
+      effective[k] = val;
+      var shown = (val === undefined || val === null) ? '—' : val;
+      return '<tr' + (overridden ? ' style="background:#eff6ff"' : '') + '>' +
+        '<td style="padding:3px 8px"><code>' + esc(k) + '</code></td>' +
+        '<td style="padding:3px 8px;color:#6b7280">' + esc(def.type || '') + '</td>' +
+        '<td style="padding:3px 8px"><code>' + esc(shown) + '</code>' +
+        (overridden ? ' <span style="color:#2563eb;font-size:0.72em;font-weight:600">override</span>' : '') + '</td>' +
+        '<td style="padding:3px 8px;color:#6b7280">' + esc(def.description || '') + '</td></tr>';
+    }).join('');
+    mount.innerHTML =
+      '<div style="font-size:0.85em;color:#374151;margin-bottom:4px"><strong>Config that runs</strong> ' +
+      '<span class="muted">— resolved parameters (composite defaults ⊕ this study\'s overrides)</span></div>' +
+      '<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:0.85em">' +
+      '<thead><tr>' + ['Parameter', 'Type', 'Value', 'Description'].map(function (h) {
+        return '<th style="text-align:left;padding:3px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280;">' + h + '</th>';
+      }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      '<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:0.82em">Full resolved config (JSON)</summary>' +
+      '<pre style="font-size:0.78em;background:#f8fafc;padding:8px;border-radius:4px;overflow-x:auto;margin:4px 0 0">' +
+      esc(JSON.stringify(effective, null, 2)) + '</pre></details>';
+  }
+
+  // Simulations tab: the study's runs rendered with the SHARED Simulations-DB
+  // table component (sim-table.js), filtered to this study via
+  // /api/simulations?study=<slug>. One clean table (Run · Location · Origin ·
+  // Emitter · Time · Status · ⬇Data/⬇Analysis) replacing the old bespoke
+  // runs-table + baseline + simulation_set representations.
+  var _studySimsLoaded = false;
+  function _loadStudySims(force) {
+    var mount = document.getElementById('study-sim-table');
+    if (!mount || !window.SimTable) return;
+    if (_studySimsLoaded && !force) return;
+    _studySimsLoaded = true;
+    var slug = studyName();
+    mount.innerHTML = '<p class="muted" style="margin:0">Loading simulations…</p>';
+    var path = '/api/simulations?study=' + encodeURIComponent(slug);
+    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+      var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) { d = {}; }
+      window.SimTable.renderTable(mount, d.simulations || [], { scope: 'study', onRowClick: _showRunDetail });
+    }).catch(function () {
+      window.SimTable.renderTable(mount, [], { scope: 'study' });
+    });
+  }
+  window._loadStudySims = _loadStudySims;
+
+  // Per-run detail panel (opened by clicking a row in the study Simulations
+  // table): metadata + robust downloads + open-in-Composite-Explorer, which
+  // renders that run's results/state. No new backend — reuses the run's
+  // store_path/db_path/spec_id already on the row and existing endpoints.
+  function _showRunDetail(row) {
+    var host = document.getElementById('study-run-detail');
+    if (!host || !row) return;
+    var S = window.SimTable, e = S.esc;
+    var runId = row.run_id || '';
+    var hasData = !!(row.store_path || row.db_path);
+    var slug = studyName();
+    var BP = window.__BASE_PATH__ || "";
+    var dl = hasData
+      ? '<a class="action-btn" download href="' + BP + '/api/simulation-run-download?run_id=' + encodeURIComponent(runId) + '">⬇ Data (raw emitter)</a>'
+      : '<span class="muted" style="font-size:0.85em">no persisted store</span>';
+    var an = slug
+      ? '<a class="action-btn" download href="' + BP + '/api/study-analysis-zip?study=' + encodeURIComponent(slug) + '">⬇ Analysis (figures / cards)</a>'
+      : '';
+    // Enforcement: the run opens in the Composite Explorer only when its
+    // composite is a registered composite; otherwise we surface the gap.
+    var explore = (runId && row.spec_id && row.composite_registered)
+      ? '<a class="action-btn" href="/?focus=composite-explore&id=' + encodeURIComponent(row.spec_id) + '&run_id=' + encodeURIComponent(runId) + '#composite-explore">↗ Open run in Composite Explorer</a>'
+      : '<span style="color:#b91c1c;font-size:0.85em">⚠ ' + (row.spec_id
+          ? 'composite <code>' + e(row.spec_id) + '</code> is not registered — cannot open in the Explorer'
+          : 'no composite associated with this run') + '</span>';
+    var kv = function (k, v) {
+      return '<div style="display:flex;gap:8px"><span class="muted" style="min-width:90px">' + e(k) + '</span><span>' + v + '</span></div>';
+    };
+    host.innerHTML =
+      '<div class="panel" style="padding:12px 14px">' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
+          '<strong>' + e(row.sim_name || row.label || runId) + '</strong>' +
+          S.statusChip(row.status) + S.emitterPill(row.emitter_type) + S.originPill(row) +
+          '<button type="button" class="btn-mini" style="margin-left:auto" onclick="document.getElementById(\'study-run-detail\').innerHTML=\'\'">✕</button>' +
+        '</div>' +
+        '<div style="display:grid;gap:4px;font-size:0.88em;margin-bottom:10px">' +
+          kv('Run ID', '<code>' + e(runId) + '</code>') +
+          kv('Composite', S.composite(row)) +
+          kv('Location', S.location(row)) +
+          kv('Time', e(S.fmtTime(row.completed_at || row.started_at))) +
+          (row.n_steps != null ? kv('Steps', e(row.n_steps)) : '') +
+        '</div>' +
+        '<div style="display:flex;flex-wrap:wrap;gap:8px">' + dl + ' ' + an + ' ' + explore + '</div>' +
+      '</div>';
+    host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+  window._showRunDetail = _showRunDetail;
 
   function _loadCharts(panelId) {
     if (_chartsLoadedFor[panelId]) return;
@@ -498,6 +721,19 @@
       el.title = 'Network error: ' + (e && e.message || e);
     });
   }
+  // Grow a textarea to fit its content so the caveat/conclusion/biology boxes
+  // show all their text at once instead of a fixed 2–3 rows with an inner
+  // scrollbar. Runs on init and on every keystroke.
+  function _autoGrow(el) {
+    if (!el || (el.tagName || '').toLowerCase() !== 'textarea') return;
+    el.style.height = 'auto';
+    el.style.height = Math.max(el.scrollHeight, 38) + 'px';
+  }
+  // Re-fit every auto-grow box (used after a tab becomes visible: hidden
+  // textareas measure scrollHeight 0 and would otherwise stay at min height).
+  window._autoGrowTextareas = function () {
+    document.querySelectorAll('.narrative-textarea').forEach(_autoGrow);
+  };
   document.querySelectorAll('[data-narrative-path]').forEach(function(el) {
     var tag = (el.tagName || '').toLowerCase();
     // Selects save on change (immediate, no need to wait for blur). Text
@@ -505,6 +741,35 @@
     // tripping per keystroke.
     var evt = (tag === 'select') ? 'change' : 'blur';
     el.addEventListener(evt, function() { _saveNarrative(el); });
+    if (tag === 'textarea') {
+      _autoGrow(el);                                            // size to initial content
+      el.addEventListener('input', function() { _autoGrow(el); });
+    }
+  });
+  // Re-fit on window resize: line-wrapping changes with width, so a full-width
+  // box needs fewer rows than the same text at 90ch and vice-versa.
+  window.addEventListener('resize', function() {
+    document.querySelectorAll('.narrative-textarea').forEach(_autoGrow);
+  });
+
+  // Progressive disclosure: an empty optional narrative field renders a quiet
+  // "+ Add …" button plus its editor pre-hidden (and already save-bound via the
+  // [data-narrative-path] pass above). Clicking the button reveals the editor,
+  // focuses it, and hides itself. No re-binding needed — the editor was always
+  // in the DOM.
+  document.querySelectorAll('.add-field-btn[data-reveal-field]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var path = btn.dataset.revealField;
+      var ed = document.querySelector('[data-field-editor="' + path + '"]');
+      if (!ed) return;
+      ed.classList.remove('is-hidden');
+      btn.classList.add('is-hidden');
+      var field = ed.matches('textarea,input,select') ? ed : ed.querySelector('textarea,input,select');
+      if (field) {
+        field.focus();
+        if ((field.tagName || '').toLowerCase() === 'textarea') _autoGrow(field);
+      }
+    });
   });
 
   var statusSel = document.getElementById('status-select');
@@ -523,6 +788,29 @@
   }
 
   function studyName() { return window._studyName; }
+
+  // --- Analyses (Model tab) ---
+  // Reuses /api/study-set-analyses (lib.metadata_mutations.set_investigation_analyses,
+  // which despite its name resolves any study by name via study_dir() — flat
+  // studies/<name>/ preferred over legacy investigations/<name>/, so this works
+  // for an ungrouped study exactly like a grouped one).
+  function _saveStudyAnalyses() {
+    var el = document.getElementById('study-analyses-list');
+    var status = document.getElementById('study-analyses-status');
+    if (!el) return;
+    var names = el.value.split('\n').map(function (s) { return s.trim(); }).filter(Boolean);
+    var analyses = names.map(function (n) { return {name: n, params: {}}; });
+    if (status) status.textContent = 'Saving…';
+    api('POST', '/api/study-set-analyses', {investigation: studyName(), analyses: analyses})
+      .then(function (r) {
+        if (status) {
+          status.textContent = (r.status === 200)
+            ? 'Saved.'
+            : 'Error: ' + (r.body && r.body.error || r.status);
+        }
+      });
+  }
+  window._saveStudyAnalyses = _saveStudyAnalyses;
 
   // Fetch the param schema for a composite and render an input form.
   // currentOverrides: {} or existing overrides (for edit flow).
@@ -615,7 +903,81 @@
   });
 
   bindAll('.btn-export', function() {
-    window.location = '/api/study-export?study=' + encodeURIComponent(studyName());
+    // A location assignment bypasses the fetch/XHR/EventSource base-path shim.
+    window.location = (window.__BASE_PATH__ || "") + '/api/study-export?study=' + encodeURIComponent(studyName());
+  });
+
+  // "Run current spec" — force-relaunch this study's baseline as a brand-new
+  // run, RE-DERIVING spec_id/params/n_steps/emitter/etc. from the study's
+  // CURRENT study.yaml (POST /api/study-run-baseline, same endpoint the
+  // Baseline tab's Run button uses). This is one of TWO deliberately distinct
+  // header actions (reproducible-rerun-spine Task 4 / G2) — the other,
+  // "Reproduce" (below), replays a run's RECORDED manifest verbatim instead;
+  // never conflate the two under one ambiguous "Rerun" button. Live-only: a
+  // published read-only snapshot has no backend to launch against, so both
+  // buttons are hidden there (see the snapshot-mode block near the end of
+  // this file, mirroring the remote-run-panel hide).
+  bindAll('#study-run-current-spec', function(btn) {
+    if (!confirm("Run this study's CURRENT baseline spec as a new run?")) return;
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '… running';
+    api('POST', '/api/study-run-baseline', { study: studyName() })
+      .then(function(res) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (res.status === 200) {
+          var msg = 'Run launched' + (res.body && res.body.run_id ? ' — new run ' + res.body.run_id : '');
+          if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+          if (typeof _loadStudySims === 'function') _loadStudySims(true);
+        } else {
+          alert('Run failed: ' + (res.body && res.body.error || res.status));
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        alert('Run failed: network error — ' + err);
+      });
+  });
+
+  // "Reproduce" — replay this study's MOST RECENT run's recorded manifest
+  // verbatim (POST /api/study-reproduce) rather than re-deriving from the
+  // current study.yaml: a spec edit made after that run never changes what
+  // this launches (reproducible-rerun-spine Task 4 / G2). Resolves the
+  // latest run_id from /api/simulations?study=<slug> (already the source the
+  // Simulations tab's table reads, newest-first) rather than requiring the
+  // user to pick one — the per-row ↻ Rerun button (Simulations tab) already
+  // covers reproducing an ARBITRARY older run.
+  bindAll('#study-reproduce', function(btn) {
+    var slug = studyName();
+    var orig = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '… reproducing';
+    fetch('/api/simulations?study=' + encodeURIComponent(slug))
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var sims = (d && d.simulations) || [];
+        var latest = sims.length ? (sims[0].run_id || '') : '';
+        if (!latest) throw new Error('no runs recorded yet for this study');
+        return api('POST', '/api/study-reproduce', { study: slug, run_id: latest });
+      })
+      .then(function(res) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        if (res.status === 200) {
+          var msg = 'Reproduce launched' + (res.body && res.body.run_id ? ' — new run ' + res.body.run_id : '');
+          if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+          if (typeof _loadStudySims === 'function') _loadStudySims(true);
+        } else {
+          alert('Reproduce failed: ' + (res.body && res.body.error || res.status));
+        }
+      })
+      .catch(function(err) {
+        btn.disabled = false;
+        btn.textContent = orig;
+        alert('Reproduce failed: ' + (err && err.message ? err.message : err));
+      });
   });
 
   // btn-delete has class "btn-delete danger" — selector ".btn-delete" still matches.
@@ -638,6 +1000,39 @@
       if (r.status === 200) location.reload();
       else alert('Run failed: ' + (r.body && r.body.error || r.status));
     });
+  });
+
+  // Replace a baseline entry's composite ref: add-then-remove against the
+  // existing (previously orphaned) endpoints, since there's no single
+  // "replace" route. Order matters — study_baseline_remove refuses to leave
+  // baseline[] empty (400), which a single-entry study (e.g. a fresh "+
+  // Study" blank scaffold) always is; adding the replacement under a new
+  // name FIRST means baseline[] never goes empty, then the old entry is
+  // removed. The replacement keeps the original name only when it wasn't
+  // already used (i.e. removal isn't blocked); otherwise it's suffixed to
+  // avoid the add's own "already exists" 409. Params are dropped on
+  // replace — a fresh composite ref starts from its own defaults, matching
+  // what "+ Study" itself does.
+  bindAll('.baseline-composite-set', function(btn) {
+    var name = btn.dataset.baselineName;
+    var input = document.querySelector('.baseline-composite-input[data-baseline-name="' + name + '"]');
+    var status = document.querySelector('.baseline-composite-status[data-baseline-name="' + name + '"]');
+    var composite = input ? input.value.trim() : '';
+    if (!composite) { if (status) status.textContent = 'Enter a composite ref first.'; return; }
+    if (status) status.textContent = 'Setting…';
+    var newName = name + '-' + Date.now().toString(36);
+    api('POST', '/api/study-baseline-add', {study: studyName(), name: newName, composite: composite, params: {}})
+      .then(function (addResult) {
+        if (addResult.status !== 200) throw addResult;
+        return api('POST', '/api/study-baseline-remove', {study: studyName(), name: name});
+      })
+      .then(function (r) {
+        if (r.status === 200) location.reload();
+        else if (status) status.textContent = 'Error: ' + (r.body && r.body.error || r.status);
+      })
+      .catch(function (addResult) {
+        if (status) status.textContent = 'Error: ' + (addResult.body && addResult.body.error || addResult.status);
+      });
   });
 
   bindAll('.btn-baseline-remove', function(btn) {
@@ -867,29 +1262,26 @@
   };
 
   // Fill each `kind: report_card` test's mount with the embedded card + verdict.
+  // Tests tab: report_card-kind rows no longer re-mount the full card (that lives
+  // on the Report Cards tab). We only recolour each row's verdict pill from the
+  // card's verdict, so the Tests row shows PASS/FAIL at a glance + links across.
   function _fillReportCardModules(spec) {
     var urls = (spec && spec.report_card_urls) || {};
-    var mounts = document.querySelectorAll('.report-card-mount');
-    Array.prototype.forEach.call(mounts, function(mount) {
-      if (mount.dataset.filled) return;          // idempotent
-      var card = mount.getAttribute('data-card');
+    var pills = document.querySelectorAll('.report-card-verdict[data-card]');
+    Array.prototype.forEach.call(pills, function(pill) {
+      if (pill.dataset.filled) return;           // idempotent
+      var card = pill.getAttribute('data-card');
       var rc = urls[card];
       if (!rc || !rc.url) {
-        mount.innerHTML = '<div class="muted" style="padding:8px">report card '
-          + escapeHtmlForTests(String(card)) + ' not generated yet — run the comparison.</div>';
-        mount.dataset.filled = '1';
+        pill.title = 'report card ' + String(card) + ' not generated yet — run the comparison';
+        pill.dataset.filled = '1';
         return;
       }
-      mount.innerHTML =
-        '<iframe class="viz-embed" src="' + escapeHtmlForTests(rc.url) + '" loading="lazy" '
-        + 'style="width:100%;height:520px;border:1px solid #2a313c;border-radius:8px"></iframe>';
-      // recolour this test's verdict pill
-      var li = mount.closest('.expected-behavior-item');
-      var pill = li && li.querySelector('.report-card-verdict');
       var v = (rc.verdict || 'ungraded');
       var p = _RC_PILL[v] || _RC_PILL.ungraded;
-      if (pill) { pill.style.background = p[0]; pill.style.color = p[1]; pill.textContent = p[2]; }
-      mount.dataset.filled = '1';
+      pill.style.background = p[0]; pill.style.color = p[1]; pill.textContent = p[2];
+      pill.title = 'report card verdict: ' + p[2] + ' — view the full card on the Report Cards tab';
+      pill.dataset.filled = '1';
     });
   }
 
@@ -1014,15 +1406,14 @@
         + '</section>';
     }).join('');
 
-    // Comparison trajectories drill-down: the rendered trace-overlay card.
+    // The actual comparison TRAJECTORIES are the study-level interactive plotly
+    // (v2ecoli vs vEcoli time-series overlays) rendered once at the top of the
+    // Report Cards tab — NOT rc.url. rc.url is the rendered report-card HTML,
+    // i.e. the same scorecard already shown above as native tables; embedding it
+    // under a "Comparison trajectories" label showed a second report card, which
+    // is exactly the confusion we're removing. So no per-card iframe here.
     var viz = '';
-    if (rc.url && !rc.html_stub) {
-      viz += '<details style="margin-top:10px">'
-        + '<summary style="cursor:pointer;font-weight:600;color:#334155">Comparison trajectories (rendered)</summary>'
-        + '<iframe class="viz-embed" src="' + e(rc.url) + '" loading="lazy" '
-        + 'style="width:100%;height:720px;border:1px solid #e2e8f0;border-radius:8px;background:#fff;margin-top:8px"></iframe>'
-        + '</details>';
-    } else if (!Object.keys(groups).length) {
+    if (!Object.keys(groups).length) {
       viz = '<div class="muted" style="padding:8px">Verdict recorded, but the card body '
         + 'has not been rendered yet — run the comparison to generate it.</div>';
     }
@@ -1040,19 +1431,26 @@
     var summary = document.getElementById('tests-summary');
     if (!summary) return;
 
-    // Prefer aggregated outcomes from runs[].outcomes (the v3-shape result
-    // recording), falling back to legacy tests.last_results.
+    // Single-sourced rollup from study_spec._latest_outcomes (spec.outcome_rollup)
+    // so this header can't drift from the row pills / Conclusions rollup. Older
+    // specs without it fall back to re-deriving from runs[].outcomes here.
+    var roll = spec && spec.outcome_rollup;
     var passed = 0, failed = 0, skipped = 0, runRefs = 0;
-    (spec && spec.runs || []).forEach(function(r) {
-      if (!r.outcomes) return;
-      runRefs++;
-      Object.keys(r.outcomes).forEach(function(tname) {
-        var res = (r.outcomes[tname] || {}).result;
-        if (res === 'PASS') passed++;
-        else if (res === 'FAIL') failed++;
-        else if (res === 'SKIP') skipped++;
+    if (roll && typeof roll === 'object') {
+      passed = roll.PASS || 0; failed = roll.FAIL || 0; skipped = roll.SKIP || 0;
+      runRefs = roll.runs || 0;
+    } else {
+      (spec && spec.runs || []).forEach(function(r) {
+        if (!r.outcomes) return;
+        runRefs++;
+        Object.keys(r.outcomes).forEach(function(tname) {
+          var res = (r.outcomes[tname] || {}).result;
+          if (res === 'PASS') passed++;
+          else if (res === 'FAIL') failed++;
+          else if (res === 'SKIP') skipped++;
+        });
       });
-    });
+    }
 
     if (passed + failed + skipped > 0) {
       var lastRun = (spec.runs || [])[spec.runs.length - 1] || {};
@@ -1534,8 +1932,16 @@
     _renderReadinessPanel();
     _renderSpineSummary();
     _populateConclusionVerdictBadges();
-    // Open Understand/Overview and show only Understand's sub-nav on load.
-    _setStudyTab('overview');
+    // Open Understand/Overview and show only Understand's sub-nav on load —
+    // unless a ?tab=<kind> deep-link asks for a specific tab. Needs-attention
+    // items link here with ?tab=conclusions so a click lands on the verdict
+    // that triggered the alert.
+    var _tab = 'overview';
+    try {
+      var _q = new URLSearchParams(window.location.search).get('tab');
+      if (_q && document.querySelector('.study-tab[data-kind="' + _q + '"]')) _tab = _q;
+    } catch (_e) { /* no URLSearchParams — keep overview */ }
+    _setStudyTab(_tab);
   }
 
   // ── C2 — conclusion verdicts: read precomputed block from window._study.derived ─
