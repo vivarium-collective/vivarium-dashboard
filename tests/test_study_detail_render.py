@@ -302,3 +302,48 @@ def test_decide_empirical_rename_and_no_prose(tmp_path, dashboard_client):
     # unchanged — only the human-readable label text was renamed.
     assert 'data-verdict-track="biological_validation"' in html
     assert 'data-narrative-path="conclusion_verdicts.biological_validation.basis"' in html
+
+
+# ---------------------------------------------------------------------------
+# Task 8: Simulations tab -> read-only runs table. Remove the Reproduce/CLI
+# card, both explanatory paragraphs, the simulation_set / "Simulation set (N
+# runs planned)" cards block, the Configure & Run mount, and the remote-run
+# (smsvpctest) form. Keep only the #study-sim-table mount (populated
+# client-side from /api/simulations, so row data itself isn't in served
+# HTML — assert only the mount + absence of the removed controls).
+# ---------------------------------------------------------------------------
+
+def test_simulations_is_readonly_table(tmp_path, dashboard_client):
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "sims-readonly-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "sims-readonly-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        # Legacy simulation_set entry — must NOT render as cards anymore.
+        "simulation_set": [{
+            "name": "core-sim",
+            "kind": "single",
+            "base_model": "pkg.composites.core",
+            "status": "ready",
+            "seeds": [0],
+            "duration_min": 5,
+        }],
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/sims-readonly-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert 'id="reproduce-card"' not in html
+    assert 'Run on remote' not in html
+    assert 'Simulation set' not in html
+    assert 'study-configure-run' not in html
+    assert 'id="study-sim-table"' in html

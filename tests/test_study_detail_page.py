@@ -122,9 +122,13 @@ def test_study_page_is_a_fetch_shell_not_an_embed(_ws):
 def test_study_detail_page_includes_progress_track_assets(_ws):
     """Plan 7 (WS-2): the study-detail page wires the reusable ProgressTrack
     component that drives the pinned-build run card's progress bar — the
-    stylesheet and script must both be referenced, the script must load BEFORE
-    study-detail.js (the adapter depends on window.ProgressTrack), and the
-    remote-run progress mount point must still exist."""
+    stylesheet and script must both be referenced, and the script must load
+    BEFORE study-detail.js (the adapter depends on window.ProgressTrack).
+
+    Task 8 (Simulations declutter) removed the remote-run form/panel — and
+    with it the `#remote-run-progress` mount point — from the Simulate tab
+    (launching now lives in the header buttons), so that assertion is gone;
+    the ProgressTrack asset-wiring assertions stand on their own."""
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
@@ -134,7 +138,6 @@ def test_study_detail_page_includes_progress_track_assets(_ws):
     # name, not a fixed prefix.
     assert 'progress-track.css' in html
     assert 'progress-track.js' in html
-    assert 'id="remote-run-progress"' in html
     # load order: the progress-track.js <script> must precede the study-detail.js
     # <script>. Anchor on the closing tag, which only the real <script> tags have
     # (the file names are also mentioned in prose/comments).
