@@ -536,6 +536,68 @@ def test_visualizations_embed_with_run_id_renders_run_link(tmp_path, dashboard_c
     assert "from run run-embed-1" in html
 
 
+def test_visualizations_stale_embed_omits_run_link(tmp_path, dashboard_client):
+    """V3 review fix (round 1): a STALE studies/<name>/viz/*.html — one that
+    predates the latest of two recorded runs — must NOT be attributed to
+    that latest run. The card renders (with its "may predate" warning) but
+    carries no run_id, so the caption omits the run-link entirely rather
+    than fabricate a link to a run the file never derived from."""
+    import sqlite3
+
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "viz-gallery-study-stale-embed"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "viz-gallery-study-stale-embed",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    # TWO recorded runs — an older one and a newer "latest" one — so the
+    # viz file can genuinely predate the latest without predating every run.
+    db = sd / "runs.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE runs_meta (run_id TEXT, spec_id TEXT, started_at REAL, "
+        "completed_at REAL, status TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO runs_meta VALUES (?, ?, ?, ?, ?)",
+        ("run-old", "viz-gallery-study-stale-embed", 0.0, 10.0, "completed"),
+    )
+    conn.execute(
+        "INSERT INTO runs_meta VALUES (?, ?, ?, ?, ?)",
+        ("run-new", "viz-gallery-study-stale-embed", 1_800_000_000.0,
+         1_800_000_100.0, "completed"),
+    )
+    conn.commit()
+    conn.close()
+
+    # Rendered right after run-old, long before run-new even started → stale
+    # relative to run-new (the latest).
+    import os
+    viz_dir = sd / "viz"
+    viz_dir.mkdir()
+    leftover = viz_dir / "leftover.html"
+    leftover.write_text("<html>hi</html>")
+    os.utime(leftover, (20.0, 20.0))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/viz-gallery-study-stale-embed")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert "leftover" in html  # the card itself still renders
+    assert 'class="figure-run-link"' not in html
+    assert "from run run-new" not in html
+    assert "from run run-old" not in html
+
+
 def test_visualizations_empty_study_shows_empty_state_element(tmp_path, dashboard_client):
     """Regression guard (Fable A #3 union logic, unaffected by Task V2): a
     study with no embed_visualizations still server-renders the shared,

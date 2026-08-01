@@ -528,12 +528,14 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
         # Freshness reference: the latest recorded run time (WAL-immune), not the
         # db file mtime. A small grace absorbs sub-second render/commit ordering.
         fresh_ref = _latest_run_timestamp(runs_db)
-        # Provenance (Fable §4.5, Task V3): these HTML files are auto-rendered
-        # by render_visualizations FROM this study's runs.db, so they
-        # genuinely represent the same latest-run reference the staleness
-        # check above compares against. Reuse study_charts' existing
-        # run-lookup helper (also used by the native gallery) rather than add
-        # a new run-scanning path.
+        # Provenance (Fable §4.5, Task V3): a NON-STALE viz HTML file was
+        # rendered from this study's runs.db AFTER the latest run completed,
+        # so it genuinely represents that run — attach latest_run_id (below,
+        # gated on `not stale`). A STALE file predates the latest run — it
+        # did NOT derive from it, so it gets run_id=None rather than a
+        # fabricated link to a run it never came from. Reuse study_charts'
+        # existing run-lookup helper (also used by the native gallery)
+        # rather than add a new run-scanning path.
         from vivarium_workbench.lib.study_charts import latest_run_row  # noqa: PLC0415
         _latest = latest_run_row(runs_db)
         latest_run_id = _latest.get("run_id") if _latest else None
@@ -558,7 +560,11 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
                 "url": f"/{rel}",
                 "description": desc,
                 "stale": stale,
-                "run_id": latest_run_id,
+                # A stale file predates the latest run — it did NOT derive
+                # from it, so attributing latest_run_id here would be
+                # fabricated provenance (V3 review, fix round 1). Only a
+                # non-stale file genuinely represents the latest run.
+                "run_id": None if stale else latest_run_id,
             })
 
     # Source 2: reports/figures/<name>/*.html (hand-authored cross-skill output).

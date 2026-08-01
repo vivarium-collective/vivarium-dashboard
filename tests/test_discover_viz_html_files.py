@@ -47,6 +47,29 @@ def _runs_db(path, *, latest_completed_at: float | None):
     conn.close()
 
 
+def _runs_db_two_runs(path, *, older_run_id, older_completed_at,
+                       latest_run_id, latest_completed_at):
+    """Create a runs_meta table with TWO rows (older + latest) — lets a test
+    express a viz file that predates the *latest* run while a strictly-older
+    run still exists, which a single-row fixture can't express."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE runs_meta (run_id TEXT PRIMARY KEY, spec_id TEXT, "
+        "started_at REAL, completed_at REAL, status TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO runs_meta VALUES (?, ?, ?, ?, ?)",
+        (older_run_id, "spec", older_completed_at - 1, older_completed_at, "completed"),
+    )
+    conn.execute(
+        "INSERT INTO runs_meta VALUES (?, ?, ?, ?, ?)",
+        (latest_run_id, "spec", latest_completed_at - 1, latest_completed_at, "completed"),
+    )
+    conn.commit()
+    conn.close()
+
+
 def test_no_viz_dir_returns_empty(_ws):
     from vivarium_workbench.lib.study_spec import discover_viz_html_files
     assert discover_viz_html_files(_ws, "foo") == []
@@ -156,23 +179,66 @@ def test_both_sources_concat(_ws):
 
 # ---------------------------------------------------------------------------
 # run_id provenance (Fable §4.5, Task V3): studies/<name>/viz/*.html is
-# auto-rendered by render_visualizations FROM the study's runs.db, so it
-# genuinely represents the latest recorded run's data — attach that run_id.
+# auto-rendered by render_visualizations FROM the study's runs.db — but only a
+# NON-STALE file was actually rendered after the latest run completed, so
+# only THAT file genuinely represents the latest run's data and gets its
+# run_id. A STALE file predates the latest run (it was rendered from an
+# older run, or before any run) — it did NOT derive from the latest run, so
+# attributing latest_run_id to it would be fabricated provenance; it gets
+# run_id=None instead (V3 review, fix round 1).
 # reports/figures/<name>/*.html is hand-authored cross-skill output with no
 # run association — run_id must stay null, never fabricated.
 # ---------------------------------------------------------------------------
 
 
 def test_auto_viz_gets_run_id_of_latest_run(_ws):
-    """studies/<name>/viz/*.html carries the run_id of the run whose data it
-    represents — the same latest-run reference the staleness check compares
-    against (r1 from the _runs_db fixture)."""
+    """A NON-STALE studies/<name>/viz/*.html carries the run_id of the run
+    whose data it represents — the same latest-run reference the staleness
+    check compares against (r1 from the _runs_db fixture)."""
     from vivarium_workbench.lib.study_spec import discover_viz_html_files
     now = time.time()
     _runs_db(_ws / "studies" / "s1" / "runs.db", latest_completed_at=now - 10)
     _touch(_ws / "studies" / "s1" / "viz" / "coupling-trace.html", mtime=now)
     [rec] = discover_viz_html_files(_ws, "s1")
+    assert rec["stale"] is False
     assert rec["run_id"] == "r1"
+
+
+def test_stale_auto_viz_run_id_is_null_not_fabricated(_ws):
+    """A STALE viz file predates the latest of TWO recorded runs — it was
+    rendered from the OLDER run (or before either), not the latest one. It
+    must NOT be attributed to the latest run just because that's the most
+    recent run on record: that would be exactly the fabricated-provenance
+    bug (V3 review, fix round 1). run_id stays null; the caption then omits
+    the link rather than point at a run the file never derived from."""
+    from vivarium_workbench.lib.study_spec import discover_viz_html_files
+    now = time.time()
+    _runs_db_two_runs(
+        _ws / "studies" / "s1" / "runs.db",
+        older_run_id="r-old", older_completed_at=now - 200,
+        latest_run_id="r-new", latest_completed_at=now,
+    )
+    # Rendered well before the latest run (r-new) completed → stale.
+    _touch(_ws / "studies" / "s1" / "viz" / "leftover.html", mtime=now - 120)
+    [rec] = discover_viz_html_files(_ws, "s1")
+    assert rec["stale"] is True
+    assert rec["run_id"] is None
+
+
+def test_fresh_auto_viz_with_multiple_runs_gets_latest_not_older_run_id(_ws):
+    """Sanity check alongside the stale case: with two runs on record, a
+    genuinely fresh viz file gets the LATEST run's id, not the older one's."""
+    from vivarium_workbench.lib.study_spec import discover_viz_html_files
+    now = time.time()
+    _runs_db_two_runs(
+        _ws / "studies" / "s1" / "runs.db",
+        older_run_id="r-old", older_completed_at=now - 200,
+        latest_run_id="r-new", latest_completed_at=now - 10,
+    )
+    _touch(_ws / "studies" / "s1" / "viz" / "coupling-trace.html", mtime=now)
+    [rec] = discover_viz_html_files(_ws, "s1")
+    assert rec["stale"] is False
+    assert rec["run_id"] == "r-new"
 
 
 def test_hand_authored_figures_have_null_run_id(_ws):
