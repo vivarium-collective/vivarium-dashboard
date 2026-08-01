@@ -3,11 +3,12 @@ any `analyses:` the investigation.yaml declares (e.g. a cross-config matrix that
 aggregates each member study's verdict). Additive — a no-op when unset.
 
 ``_dispatch_analysis`` is deliberately NOT wired to the ``run_study_analyses``
-env-worker capability yet — see its docstring and
-``.superpowers/sdd/2026-08-01-investigation-execution-hook-phase-a/task-3-report.md``
-for why: that capability structurally requires a real parquet sweep directory
-to produce anything, which an investigation-level analysis (aggregating
-already-computed per-study verdicts, not raw sim history) does not have.
+env-worker capability yet — see its docstring for why: that capability
+structurally requires a real parquet sweep directory to produce anything, which
+an investigation-level analysis (aggregating already-computed per-study
+verdicts, not raw sim history) does not have. The investigation-scoped runner
+lands with its first consumer (v2ecoli's ``comparison_matrix``); until then a
+declared analysis is recorded as a soft ``deferred`` note, never run.
 """
 from __future__ import annotations
 
@@ -50,18 +51,23 @@ def _dispatch_analysis(ws_root, inv_slug, entry, study_results) -> list[str]:
     BLOCKED report for the follow-up.
     """
     raise NotImplementedError(
-        "investigation-scoped worker dispatch — see BLOCKED report at "
-        ".superpowers/sdd/2026-08-01-investigation-execution-hook-phase-a/"
-        "task-3-report.md"
+        "investigation-level analyses are declared but not yet executed by "
+        "this build (the investigation-scoped analysis runner lands with its "
+        "first consumer). Declared analyses are recorded as deferred, not run."
     )
 
 
 def run_investigation_analyses(ws_root, inv_slug, spec, study_results):
     """Run every ``spec.analyses[]`` entry declared on an investigation.yaml.
 
-    Never raises — collects per-entry errors like
+    Never raises — collects per-entry outcomes like
     ``study_run_post.run_study_analyses``. Returns ``([], [])`` when there is
     no ``analyses:`` key (the no-op case existing investigations hit today).
+
+    A ``NotImplementedError`` from ``_dispatch_analysis`` is recorded as a soft
+    ``status: "deferred"`` note rather than a hard error, so a declared-but-not-
+    yet-executable analysis reads as "not yet supported" wherever this list is
+    later surfaced — distinct from a genuine analysis failure.
     """
     entries = spec.get("analyses") or []
     written: list[str] = []
@@ -69,7 +75,11 @@ def run_investigation_analyses(ws_root, inv_slug, spec, study_results):
     for entry in entries:
         try:
             written.extend(_dispatch_analysis(ws_root, inv_slug, entry, study_results))
+        except NotImplementedError as exc:
+            errors.append({"analysis": entry.get("name"),
+                           "status": "deferred", "detail": str(exc)})
         except Exception as exc:  # noqa: BLE001 — never crash prepare_investigation
             errors.append({"analysis": entry.get("name"),
+                           "status": "error",
                            "error": f"{type(exc).__name__}: {exc}"})
     return written, errors
