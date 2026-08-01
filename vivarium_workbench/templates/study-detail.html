@@ -1079,8 +1079,10 @@
     </div>
     <p class="muted">Quantities collected from each simulation run. Each row is an emitter <code>store_path</code> the composite will save; authored entries in <code>study.yaml</code> add names, descriptions, and units on top.</p>
 
-    {# Download the raw simulation data that holds these readouts (one store per
-       run). Populated by _loadReadoutsDownload from /api/simulations. #}
+    {# Points at Exports' raw-data downloads rather than duplicating them
+       (Task C4 — Exports is the single "get the data" tab). Populated by
+       _loadReadoutsDownloadPointer, which only shows the pointer when
+       there's actually data to download (never links to an empty tab). #}
     <div id="readouts-download" style="margin:0 0 16px 0"></div>
 
     <div id="readouts-table" data-study="{{ name }}">
@@ -1158,8 +1160,10 @@
 
     {# Raw simulation data — the per-run emitter stores (zarr/parquet/runs.db),
        folded in here so Exports is the single "get the data" tab. Same ⬇ Data
-       links as the Simulations tab, resolved server-side from run_id. #}
-    <h3 class="section-title" style="margin-top:22px">Raw simulation data</h3>
+       links as the Simulations tab, resolved server-side from run_id.
+       `id="exports-downloads"` is the jump target for the Readouts tab's
+       pointer link (Task C4). #}
+    <h3 class="section-title" id="exports-downloads" style="margin-top:22px">Raw simulation data</h3>
     <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
 
     {# Analyses — post-run analysis modules this study's dispatch should compute.

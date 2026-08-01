@@ -94,7 +94,7 @@
       p.classList.toggle('active', p.dataset.kind === kind);
     });
     if (kind === 'tests') { _loadTestsPanel(window._study); }
-    if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownload(); }
+    if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownloadPointer(); }
     if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
     if (kind === 'data') { _loadAnalysisOutputs(); _loadRawData(); }
     if (kind === 'compose') { _loadModelConfig(); }
@@ -147,60 +147,37 @@
       });
   }
 
-  // ── Readouts tab: download the raw simulation data that holds the readouts ──
-  // "Download raw data" = every run's raw emitter store (the readouts live in
-  // these stores). One store per run, so we surface a direct ⬇ per run plus a
-  // one-click "download all" that triggers each run's download in turn.
-  var _readoutsDownloadLoaded = false;
-  function _loadReadoutsDownload(force) {
+  // ── Readouts tab: pointer to the raw-data downloads that live under Exports ──
+  // Exports (data-kind="data") is the single "get the data" tab — it already
+  // folds in every run's raw emitter store (see _loadRawData below) plus the
+  // analysis result files. Readouts used to render its OWN full download
+  // widget here (every run's raw store, one ⬇ each), duplicating those same
+  // links. Task C4 replaces that widget with one pointer that jumps to
+  // Exports via C1's _gotoStudyTab. Uses the SAME /api/simulations fetch +
+  // (store_path || db_path) filter _loadRawData uses, so the pointer only
+  // shows up when Exports actually has something to show — never pointing
+  // at an empty tab.
+  var _readoutsDownloadPointerLoaded = false;
+  function _loadReadoutsDownloadPointer(force) {
     var host = document.getElementById('readouts-download');
     if (!host) return;
-    if (_readoutsDownloadLoaded && !force) return;
-    _readoutsDownloadLoaded = true;
+    if (_readoutsDownloadPointerLoaded && !force) return;
+    _readoutsDownloadPointerLoaded = true;
     var slug = studyName();
     if (!slug) { host.innerHTML = ''; return; }
-    var e = window.SimTable ? window.SimTable.esc : function (s) { return s; };
     fetch('/api/simulations?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
         var sims = (j && j.simulations) || [];
         var withData = sims.filter(function (s) { return s.run_id && (s.store_path || s.db_path); });
-        if (!withData.length) {
-          host.innerHTML = '<p class="muted" style="margin:0;font-size:0.9em">No raw simulation data to download yet — launch a run first.</p>';
-          return;
-        }
-        var links = withData.map(function (s) {
-          var url = (window.__BASE_PATH__ || "") + '/api/simulation-run-download?run_id=' + encodeURIComponent(s.run_id);
-          return '<li style="margin:2px 0"><a class="action-btn" download href="' + url + '">⬇ '
-            + e(s.sim_name || s.label || s.run_id) + '</a></li>';
-        }).join('');
-        host.innerHTML =
-          '<div style="border:1px solid #e2e8f0;border-radius:6px;padding:10px 12px;background:#f9fafb">'
-          + '<div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">'
-          + '<strong>Download raw data</strong>'
-          + '<button type="button" class="btn-mini" onclick="_downloadAllRawData()">⬇ Download all (' + withData.length + ')</button>'
-          + '<span class="muted" style="font-size:0.85em">the raw emitter store for each run — every readout below is recorded in these files</span>'
-          + '</div><ul style="list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px">' + links + '</ul></div>';
+        host.innerHTML = withData.length
+          ? '<p class="muted">⬇ Download this study\'s raw run data → '
+            + '<a href="#" onclick="_gotoStudyTab(\'data\',\'exports-downloads\');return false;">Exports</a></p>'
+          : '';
       })
       .catch(function () { host.innerHTML = ''; });
   }
-  window._loadReadoutsDownload = _loadReadoutsDownload;
-
-  // One-click "download all": trigger each run's raw-data download in sequence
-  // (browsers serialise multiple download navigations from one gesture).
-  function _downloadAllRawData() {
-    var host = document.getElementById('readouts-download');
-    if (!host) return;
-    var links = Array.prototype.slice.call(host.querySelectorAll('a[download]'));
-    links.forEach(function (a, i) {
-      setTimeout(function () {
-        var t = document.createElement('a');
-        t.href = a.getAttribute('href'); t.setAttribute('download', '');
-        document.body.appendChild(t); t.click(); document.body.removeChild(t);
-      }, i * 700);
-    });
-  }
-  window._downloadAllRawData = _downloadAllRawData;
+  window._loadReadoutsDownloadPointer = _loadReadoutsDownloadPointer;
 
   // --- Data tab: downloadable Analysis result files (CSV/TSV) ---
   var _analysisOutputsLoaded = false;
