@@ -97,3 +97,39 @@ def test_header_has_kind_tag_and_question_and_no_spine(tmp_path, dashboard_clien
     assert 'id="study-question-headline"' in html
     assert "Does the demo composite run correctly?" in html
     assert 'id="spine-summary"' not in html
+
+
+# ---------------------------------------------------------------------------
+# Task 5: readiness -> inline link; #spine-summary populator removed.
+# ---------------------------------------------------------------------------
+
+def test_readiness_is_inline_not_banner(tmp_path, dashboard_client):
+    """The readiness mount is still server-rendered as an empty container
+    (its content is filled client-side by _renderReadinessPanel after
+    GET /api/report-lint, so the "⚠ N gaps" / "✓ ready" text itself is NOT
+    visible in served HTML and must not be asserted here). Only assert the
+    server-side facts: the `#readiness-panel` mount exists and no trace of
+    the retired `#spine-summary` banner/table remains.
+    """
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "readiness-inline-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "readiness-inline-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/readiness-inline-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    assert 'id="readiness-panel"' in html
+    assert 'id="spine-summary"' not in html
+    assert 'spine-summary' not in html
+    assert 'spine-row' not in html

@@ -1930,7 +1930,6 @@
     // All renderers that need window._study to be populated.
     _renderFeedbackTrackedPanel();
     _renderReadinessPanel();
-    _renderSpineSummary();
     _populateConclusionVerdictBadges();
     // Open Understand/Overview and show only Understand's sub-nav on load —
     // unless a ?tab=<kind> deep-link asks for a specific tab. Needs-attention
@@ -1969,8 +1968,8 @@
   }
 
 
-  // Memoized GET /api/report-lint — shared by the readiness panel AND the
-  // spine-summary panel so the deterministic linter is fetched once.
+  // Memoized GET /api/report-lint — sole consumer is the readiness panel
+  // below (fetched once, cached for the page's lifetime).
   var _reportLintPromise = null;
   function _reportLint() {
     if (!_reportLintPromise) {
@@ -1981,240 +1980,11 @@
     return _reportLintPromise;
   }
 
-  // Spine C1a: "Spine at a glance" — a compact RE-PRESENTATION of the spine's
-  // already-computed A+B content (verdict / why / acceptance / readiness /
-  // next), each row linking to its detail tab/section. Reuses window._study
-  // (computed_gate_verdict, findings, spine_acceptance, follow-ups) + the
-  // /api/report-lint fetch — NO recompute, AI-free. Each row tolerates absence.
-  function _renderSpineSummary() {
-    var container = document.getElementById('spine-summary');
-    if (!container || container.dataset.rendered) return;
-    container.dataset.rendered = '1';
-    var s = window._study || {};
-    var e = _spineEsc;
-    // Fixed display order: verdict → why → acceptance → readiness → next.
-    var ORDER = ['Verdict', 'Why', 'Acceptance', 'Readiness', 'Next'];
-    var slots = {};
-
-    function _row(key, body, jump) {
-      slots[key] = '<div class="spine-row spine-row-' + key.toLowerCase() + '">'
-        + '<span class="spine-key">' + key + '</span>'
-        + '<span class="spine-val">' + body + '</span>'
-        + (jump ? '<span class="spine-jump">' + jump + '</span>' : '')
-        + '</div>';
-    }
-    function _flush() { _flushSpineSummary(container, ORDER, slots); }
-
-    // ── Verdict — the code-computed gate verdict + the A2 divergence chip ──
-    var cgv = s.computed_gate_verdict || {};
-    if (cgv.result) {
-      var chip = cgv.diverges_from_authored
-        ? '<span class="spine-chip-warn" title="code-computed verdict disagrees with the authored gate_status">'
-          + '⚠ code: ' + e(cgv.result) + ' · authored: ' + e(s.gate_status || '—') + '</span>'
-        : '';
-      // critique #18 — pre-registered ✓ / post-hoc ⚠ chip in the Verdict row.
-      var preregChip = _preregChipHtml(s);
-      _row('Verdict',
-        '<strong>' + e(cgv.result) + '</strong> '
-        + '<span class="spine-label">code-computed</span> ' + chip + preregChip,
-        '<a href="#" onclick="_setStudyTab(\'conclusions\');return false">details →</a>');
-    }
-
-    // ── Why — the primary finding statement + its divergence_factor ────────
-    var findings = s.findings || [];
-    var fwhy = findings.filter(function (f) {
-      return f && (f.classification || '') === 'primary';
-    })[0] || findings[0];
-    if (fwhy && fwhy.statement) {
-      var ev = fwhy.evidence || {};
-      var dv = (ev.divergence_factor != null)
-        ? ' <span class="spine-div">×' + e(ev.divergence_factor) + ' vs expected</span>' : '';
-      _row('Why', e(fwhy.statement) + dv,
-        '<a href="#" onclick="_setStudyTab(\'overview\');'
-        + 'var el=document.querySelector(\'.findings-section\');'
-        + 'if(el)el.scrollIntoView({behavior:\'smooth\',block:\'start\'});return false">finding →</a>');
-    }
-
-    // ── Acceptance — the investigation criterion this study covers (A1) ────
-    var sa = s.spine_acceptance || {};
-    var crit = (sa.criteria || [])[0];
-    if (crit) {
-      var inv = sa.investigation || '';
-      // Deep-link to the investigation detail (SPA reads ?investigation=<name>)
-      // + the acceptance roll-up anchor the report renders (<inv>-acceptance-rollup).
-      var aLink = inv
-        ? '<a href="/?investigation=' + encodeURIComponent(inv) + '#'
-          + e(inv) + '-acceptance-rollup">' + e(inv) + ' →</a>'
-        : '';
-      _row('Acceptance',
-        e(crit.behavior || crit.study || '') + ': <strong>' + e(crit.result || '—') + '</strong> '
-        + '<span class="spine-label">code-computed</span>',
-        aLink);
-    }
-
-    // ── Readiness — the A3 ✓/⚠ summary (from the report linter) ────────────
-    var slug = container.getAttribute('data-slug') || studyName() || '';
-    _reportLint().then(function (j) {
-      var fs = (j.findings || []).filter(function (f) { return (f.study || '') === slug; });
-      var gaps = fs.filter(function (f) {
-        var sv = f.severity || 'info'; return sv === 'error' || sv === 'warning';
-      }).length;
-      var head = !fs.length ? '✓ Ready'
-        : (gaps ? '⚠ ' + gaps + ' gap' + (gaps === 1 ? '' : 's')
-                : 'ℹ ' + fs.length + ' note' + (fs.length === 1 ? '' : 's'));
-      _row('Readiness',
-        e(head) + ' <span class="spine-label">code-computed by the report linter</span>',
-        '<a href="#" onclick="var el=document.getElementById(\'readiness-panel\');'
-        + 'if(el)el.scrollIntoView({behavior:\'smooth\',block:\'start\'});return false">readiness →</a>');
-      _flush();
-    });
-
-    // ── Next — the top next_action / follow-up ─────────────────────────────
-    var next = null;
-    var nextFindingId = null;
-    var nextActionType = null;
-    for (var i = 0; i < findings.length; i++) {
-      if (findings[i] && findings[i].next_action) {
-        next = findings[i].next_action;
-        nextFindingId = findings[i].id || null;
-        nextActionType = findings[i].next_action_type || null;   // critique #7
-        break;
-      }
-    }
-    if (!next) {
-      var fu = (s.follow_up_studies || [])[0];
-      if (fu && fu.title) next = fu.title;
-    }
-    if (!next) {
-      var di = (s.discovery_implications || {}).followup_study_proposals || [];
-      if (di[0] && di[0].title) next = di[0].title;
-    }
-    if (next) {
-      // critique #19 — when this study FAILED (or needs calibration), the
-      // seeded child should be a diagnostic study. Pass study_type=diagnostic
-      // through the existing seed button (the pbg writer stamps the child).
-      var failing = _isFailingVerdict(s);
-      // When the "Next" is a finding's next_action, offer to seed a child
-      // study from it directly (delegates to the shared pbg seed mechanism).
-      var nextAction;
-      if (nextFindingId) {
-        var seedType = failing ? 'diagnostic' : '';
-        var label = failing ? 'seed diagnostic study →' : 'seed study from this finding →';
-        nextAction = '<a href="#" onclick="_seedFromFinding(' +
-          JSON.stringify(studyName()) + ',' + JSON.stringify(nextFindingId) +
-          ',' + JSON.stringify(seedType) +
-          ');return false">' + label + '</a>';
-      } else {
-        nextAction = '<a href="#" onclick="_setStudyTab(\'conclusions\');return false">decide →</a>';
-      }
-      _row('Next', e(next) + _nextActionTypeChipHtml(nextActionType), nextAction);
-    }
-
-    // First synchronous flush (readiness fills its slot async above).
-    _flush();
-  }
-
-  function _flushSpineSummary(container, order, slots) {
-    var html = order.map(function (k) { return slots[k] || ''; }).join('');
-    if (!html) { container.innerHTML = ''; return; }
-    // critique #10 — surface the study_type badge in the panel head.
-    var typeBadge = _studyTypeBadgeHtml(window._study || {});
-    container.innerHTML = '<div class="spine-summary-head">Spine at a glance'
-      + typeBadge + '</div>' + html;
-  }
-
-  function _spineEsc(v) {
-    return String(v == null ? '' : v)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  // ── Wave 3a workflow-typing chips (critiques #10 / #7 / #18) ──────────────
-  // study_type (#10): study_type → kind → study_kind alias → 'standard' default.
-  // Kept in sync with single_study_report._study_type + rigor._study_type.
-  var _STUDY_TYPES = {exploratory: 1, confirmatory: 1, diagnostic: 1,
-                      adversarial: 1, standard: 1};
-  var _STUDY_TYPE_COLORS = {
-    exploratory:  ['#e0e7ff', '#3730a3'], confirmatory: ['#dcfce7', '#166534'],
-    diagnostic:   ['#fef3c7', '#92400e'], adversarial:  ['#fee2e2', '#991b1b'],
-    standard:     ['#f1f5f9', '#475569']
-  };
-  function _studyType(s) {
-    s = s || {};
-    var keys = ['study_type', 'kind', 'study_kind'];
-    for (var i = 0; i < keys.length; i++) {
-      var v = s[keys[i]];
-      if (typeof v === 'string' && v.trim()) {
-        var t = v.trim().toLowerCase();
-        if (_STUDY_TYPES[t]) return t;
-      }
-    }
-    return 'standard';
-  }
-  function _studyTypeBadgeHtml(s) {
-    s = s || {};
-    var explicit = ['study_type', 'kind', 'study_kind'].some(function (k) {
-      return typeof s[k] === 'string' && s[k].trim();
-    });
-    var t = _studyType(s);
-    if (!explicit || t === 'standard') return '';
-    var c = _STUDY_TYPE_COLORS[t] || ['#f1f5f9', '#475569'];
-    return '<span class="study-type-badge" title="study type (critique #10)" '
-      + 'style="display:inline-block;padding:1px 9px;border-radius:9999px;'
-      + 'font-weight:600;font-size:0.75em;background:' + c[0] + ';color:' + c[1]
-      + ';margin-left:8px;vertical-align:middle">' + _spineEsc(t) + '</span>';
-  }
-
-  // next_action_type (#7) — known values get a blue chip, unknowns amber.
-  var _NEXT_ACTION_TYPES = {
-    replicate: 1, calibrate: 1, ablate: 1, adversarially_probe: 1,
-    refine_representation: 1, split_hypothesis: 1, retire_hypothesis: 1,
-    escalate_model: 1
-  };
-  function _nextActionTypeChipHtml(nat) {
-    if (typeof nat !== 'string' || !nat.trim()) return '';
-    var v = nat.trim();
-    var known = !!_NEXT_ACTION_TYPES[v];
-    var bg = known ? '#dbeafe' : '#fef9c3';
-    var fg = known ? '#1e40af' : '#854d0e';
-    return '<span class="next-action-type" title="next action type (critique #7)" '
-      + 'style="display:inline-block;padding:1px 8px;border-radius:9999px;background:'
-      + bg + ';color:' + fg + ';font-weight:600;font-size:0.72em;margin-left:6px;'
-      + 'vertical-align:middle">' + _spineEsc(v) + '</span>';
-  }
-
-  // preregistration (#18) — chip from window._study.preregistration_status,
-  // which the server (study_verdict.preregistration_status) attaches on the
-  // report-data path. Omitted when no preregistered block was declared.
-  function _preregChipHtml(s) {
-    var ps = (s || {}).preregistration_status;
-    if (!ps || !ps.preregistered) return '';
-    var bg, fg, label, title, before = ps.registered_before_run;
-    if (before === true) {
-      bg = '#dcfce7'; fg = '#166534'; label = 'pre-registered ✓';
-      title = 'criteria registered before the canonical run';
-    } else if (before === false) {
-      bg = '#fef3c7'; fg = '#92400e'; label = 'post-hoc ⚠';
-      title = 'criteria registered AFTER the run started';
-    } else {
-      bg = '#e2e8f0'; fg = '#475569'; label = 'pre-registered (timing unknown)';
-      title = 'registered_at or run start time missing';
-    }
-    if (ps.criteria_match === false) {
-      label += ' · thresholds drifted';
-      title += '; pre-registered thresholds differ from the current behavior tests';
-    }
-    return '<span class="prereg-chip" title="' + _spineEsc(title) + '" '
-      + 'style="display:inline-block;padding:1px 9px;border-radius:9999px;'
-      + 'font-weight:600;font-size:0.75em;background:' + bg + ';color:' + fg
-      + ';margin-left:8px;vertical-align:middle">' + _spineEsc(label) + '</span>';
-  }
-
-  // Spine A3: per-study readiness panel. Fetches the deterministic report
-  // linter (GET /api/report-lint), filters to THIS study, and renders a
-  // ✓ ready / ⚠ N gaps badge with the lint findings (severity-coloured).
-  // Mirrors the param-enforcement banner: surfaced, connected to its source
-  // (the linter), labeled code-computed. AI-free — pure deterministic output.
+  // Readiness panel: inline "⚠ N readiness gaps" / "✓ ready" link in the
+  // header status row, click-to-expand. Fetches the deterministic report
+  // linter (GET /api/report-lint), filters to THIS study, and buckets by
+  // severity. AI-free — pure deterministic output, connected to its source
+  // (the linter) and labeled as such. Sole consumer of _reportLint.
   function _renderReadinessPanel() {
     var container = document.getElementById('readiness-panel');
     if (!container || container.dataset.rendered) return;
@@ -2231,19 +2001,17 @@
           if (sev[s] != null) sev[s]++; else sev.info++;
         });
         var gaps = sev.error + sev.warning;
-        var head, bg, bd, col;
-        if (!findings.length) { head = '✓ Ready'; bg = '#f0fdf4'; bd = '#16a34a'; col = '#166534'; }
-        else if (gaps) { head = '⚠ ' + gaps + ' gap' + (gaps === 1 ? '' : 's'); bg = '#fffbeb'; bd = '#f59e0b'; col = '#92400e'; }
-        else { head = 'ℹ ' + sev.info + ' note' + (sev.info === 1 ? '' : 's'); bg = '#eff6ff'; bd = '#3b82f6'; col = '#1e40af'; }
-        var lbl = '<span class="muted" style="font-size:0.85em">code-computed by the report linter (deterministic)</span>';
+        var head, col;
+        if (!findings.length) { head = '✓ ready'; col = '#166534'; }
+        else if (gaps) { head = '⚠ ' + gaps + ' readiness gap' + (gaps === 1 ? '' : 's'); col = '#92400e'; }
+        else { head = 'ℹ ' + sev.info + ' note' + (sev.info === 1 ? '' : 's'); col = '#1e40af'; }
+
         if (!findings.length) {
-          container.innerHTML =
-            '<div class="readiness-banner" style="margin:8px 0 14px 0;padding:10px 14px;background:' + bg
-            + ';border:1px solid ' + bd + ';border-left-width:5px;border-radius:6px;color:' + col + '">'
-            + '<strong>Readiness: ' + head + '</strong> ' + lbl + '</div>';
+          container.innerHTML = '<span class="readiness-inline" style="font-size:0.85em;color:' + col + '" '
+            + 'title="code-computed by the report linter (deterministic)">' + head + '</span>';
           return;
         }
-        // Key info on top: per-check breakdown (most frequent first), full list behind a dropdown.
+        // Compact link; click toggles the gap breakdown below the status row.
         var byCheck = {};
         findings.forEach(function (f) { var c = f.check || 'other'; (byCheck[c] = byCheck[c] || []).push(f); });
         var checks = Object.keys(byCheck).sort(function (a, b) { return byCheck[b].length - byCheck[a].length; });
@@ -2259,14 +2027,13 @@
             + '<ul style="margin:3px 0 0 18px;font-size:0.9em;padding:0">' + items + '</ul></div>';
         }).join('');
         container.innerHTML =
-          '<details class="readiness-banner" style="margin:8px 0 14px 0;background:' + bg
-          + ';border:1px solid ' + bd + ';border-left-width:5px;border-radius:6px;color:' + col + '">'
-          + '<summary style="padding:10px 14px;cursor:pointer;list-style:none;outline:none">'
-          + '<strong>Readiness: ' + head + '</strong> ' + lbl
-          + '<div class="muted" style="font-size:0.82em;margin-top:5px">' + breakdown
-          + ' &nbsp;·&nbsp; <span style="opacity:.7;font-style:italic">click to expand</span></div>'
-          + '</summary>'
-          + '<div style="padding:2px 14px 12px 14px">' + groups + '</div>'
+          '<details class="readiness-inline">'
+          + '<summary style="font-size:0.85em;color:' + col + ';cursor:pointer;list-style:none;outline:none" '
+          + 'title="code-computed by the report linter (deterministic) — click to expand">' + head + '</summary>'
+          + '<div style="margin-top:6px;padding:8px 12px;border:1px solid #e2e8f0;border-radius:6px;font-size:0.85em" class="readiness-inline-body">'
+          + '<div class="muted" style="font-size:0.9em">' + breakdown + '</div>'
+          + groups
+          + '</div>'
           + '</details>';
       })
       .catch(function () { container.dataset.rendered = ''; });

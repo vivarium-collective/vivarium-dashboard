@@ -4644,7 +4644,6 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
    pills, finding-id, status chips) are left as readable badges. */
 :root[data-theme="dark"] .study-tabs,
 :root[data-theme="dark"] .finding-card{ background:var(--surface) !important; border-color:var(--border) !important; }
-:root[data-theme="dark"] .spine-summary,
 :root[data-theme="dark"] .status-detail,
 :root[data-theme="dark"] .status-detail-panel,
 :root[data-theme="dark"] .overview-section,
@@ -4656,17 +4655,13 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .finding-next{ background:#0f2417 !important; border-color:#1c3a28 !important; }
 /* Container text → tokens (small pills keep their own colors). */
 :root[data-theme="dark"] .study-name,
-:root[data-theme="dark"] .spine-val,
 :root[data-theme="dark"] .study-pillar,
 :root[data-theme="dark"] .finding-statement,
 :root[data-theme="dark"] .finding-explanation,
 :root[data-theme="dark"] .finding-title,
 :root[data-theme="dark"] .overview-section h2,
-:root[data-theme="dark"] .overview-section h3,
-:root[data-theme="dark"] .spine-at-glance-head{ color:var(--heading) !important; }
+:root[data-theme="dark"] .overview-section h3{ color:var(--heading) !important; }
 :root[data-theme="dark"] .status-detail-axis,
-:root[data-theme="dark"] .spine-summary-head,
-:root[data-theme="dark"] .spine-key,
 :root[data-theme="dark"] .narrative-label,
 :root[data-theme="dark"] .finding-evidence,
 :root[data-theme="dark"] .finding-expected,
@@ -4683,7 +4678,13 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .finding-kind{ background:#1e2547 !important; color:#a5b4fc !important; border-color:#2c3566 !important; }
 :root[data-theme="dark"] .classification-pill.classification-primary{ background:#3a1518 !important; color:#fca5a5 !important; border-color:#5a2226 !important; }
 :root[data-theme="dark"] .classification-pill.classification-supporting{ background:#14243f !important; color:#93c5fd !important; border-color:#22375c !important; }
-:root[data-theme="dark"] .readiness-banner{ background:#2a2113 !important; color:#fcd34d !important; border-color:#3d3418 !important; }
+/* Task 5: readiness moved from a banner to a quiet inline link (span when
+   ready, <details><summary> when there are gaps to expand). Override its
+   JS-computed inline color for legibility on a dark surface, and the
+   expanded body's light-mode border/background. */
+:root[data-theme="dark"] .readiness-inline,
+:root[data-theme="dark"] .readiness-inline summary{ color:#fcd34d !important; }
+:root[data-theme="dark"] .readiness-inline-body{ background:var(--surface-2) !important; border-color:var(--border) !important; }
 :root[data-theme="dark"] .finding-next,
 :root[data-theme="dark"] .finding-next strong,
 :root[data-theme="dark"] .finding-next *{ color:#86efac !important; }
