@@ -168,7 +168,9 @@ def _jinja_markdown(text):
         return Markup("")
     try:
         from markdown_it import MarkdownIt
-        return Markup(MarkdownIt("commonmark").render(s))
+        # html=False: the CommonMark preset otherwise passes raw HTML through;
+        # disable it so study-authored content can't inject markup (XSS-safe).
+        return Markup(MarkdownIt("commonmark", {"html": False}).render(s))
     except Exception:  # noqa: BLE001 — degrade to the old pre-wrap behavior
         return Markup(
             '<pre style="white-space:pre-wrap;font-family:inherit;margin:0">'
