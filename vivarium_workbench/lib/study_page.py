@@ -183,6 +183,11 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
         spec["gaps"] = _normalize_requirements(spec.get("gaps"))
     # F1: compute a single headline status from the multi-axis fields.
     spec["_effective_status"] = effective_status(spec)
+    # Deterministic study kind (biological/computational/theoretical), used by
+    # the template to de-bias page chrome (Task 4). Never overwrites an
+    # author's explicit `kind` — infer_study_kind() preserves it.
+    from vivarium_workbench.lib.study_kind import infer_study_kind
+    spec["kind"] = infer_study_kind(spec)
     env = jinja2.Environment(
         loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
         autoescape=True,
