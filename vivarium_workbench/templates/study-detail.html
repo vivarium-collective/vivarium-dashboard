@@ -1284,16 +1284,33 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
 
   {# ── Group 1: Verdict & conclusion ───────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Verdict &amp; conclusion</h2>
-    {# G7: honest attribution for the frozen verdict. No actor/timestamp field
-       is currently persisted with the conclusion card
+    {# G7: honest attribution for the frozen verdict. No actor field is
+       persisted with the conclusion card
        (viz/report_card/conclusion.verdict.json is {schema, overall, tracks,
        insight} — checked, not guessed) so this always renders the literal
-       "unattributed" token today; G8 adds the freeze-time surface this will
-       then pick up. `none` is passed explicitly — no field is read here yet,
-       per the "no new schema fields" constraint. #}
+       "unattributed" token today. `none` is passed explicitly — no actor
+       field is read here, per the "no new schema fields" constraint. #}
     <p class="muted small verdict-attribution" style="margin:0 0 8px 0" title="actor kind: {{ none | actor_kind }}">
       <span class="actor-glyph">{{ none | actor_glyph }}</span> {{ none | attribution_text }}
     </p>
+
+    {# G8: frozen-record indicator (Fable §11.4). conclusion_card_frozen is
+       ONLY set (study_spec.load_study_detail_spec) when
+       viz/report_card/conclusion.verdict.json actually exists and parses —
+       the file's presence IS the freeze signal, so this block is absent
+       (never an empty placeholder) for a study whose verdict has never been
+       persisted. `when` is the file's own mtime (fmt_ts, same convention as
+       every run timestamp elsewhere on this page); `digest` is computed on
+       the fly over the exact frozen payload via conclusion_digest — never
+       stored, never fabricated, changes iff the payload changes. #}
+    {% set _frozen = study.conclusion_card_frozen %}
+    {% if _frozen %}
+    <p class="muted small verdict-frozen-indicator" style="margin:0 0 8px 0"
+       title="Content digest (sha256, sorted-key canonical JSON) of the frozen verdict payload — a locked record, not a live recompute.">
+      <span class="frozen-glyph">🔒</span> frozen {{ _frozen.when | fmt_ts }} UTC ·
+      <code style="font-family:ui-monospace,monospace">{{ _frozen.payload | conclusion_digest }}</code>
+    </p>
+    {% endif %}
 
     <div class="overview-section narrative-card" data-narrative-card="conclusion_verdicts" style="margin-bottom:18px">
       <h3 class="overview-label">⚖️ Verdicts — three-track outcome

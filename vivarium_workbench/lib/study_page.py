@@ -17,6 +17,8 @@ build_study_detail_page(ws_root, slug)  → (html, status_code)
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from pathlib import Path
 from typing import Optional
@@ -362,6 +364,43 @@ def attribution_text(actor, when=None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# G8 — frozen-record indicator for the conclusion card (Fable §11.4).
+#
+# The conclusion card (vivarium_workbench.lib.conclusion_card
+# .write_conclusion_card) is the ONLY writer of
+# viz/report_card/conclusion.verdict.json, and it's called once per post-run
+# flush — so the file's mere existence (parsed as a dict) already IS the
+# freeze signal; there is no separate "frozen: true" field anywhere to read,
+# and this task does not add one. No timestamp is stored INSIDE the payload
+# either ({schema, overall, tracks, insight} — checked in conclusion_card.py,
+# not guessed), so "when" comes from the file's own mtime.
+# study_spec.load_study_detail_spec attaches both under
+# spec["conclusion_card_frozen"] = {"when": <unix ts>, "payload": <dict>}
+# (absent entirely when no card has been persisted — never a fabricated
+# freeze). This module only owns the pure digest computation (no I/O) so it
+# can be unit-tested directly, mirroring outcome_label/actor_kind's style.
+# ---------------------------------------------------------------------------
+
+def conclusion_digest(payload, length: int = 10) -> str:
+    """Short deterministic content digest of a frozen verdict payload.
+
+    Canonical serialization (``json.dumps(payload, sort_keys=True,
+    separators=(",", ":"))``) sorts keys at every nesting level, so the
+    digest is order-independent: the same payload with keys reordered at any
+    level yields the same digest. First ``length`` hex chars of a
+    ``hashlib.sha256`` over that serialization — deterministic (same payload
+    -> same digest), and never fabricated (always computed fresh from
+    whatever ``payload`` is passed in, never a stored/cached value). A
+    non-dict ``payload`` degrades to hashing ``{}`` rather than raising.
+    Registered as the Jinja filter ``conclusion_digest``."""
+    canon = json.dumps(
+        payload if isinstance(payload, dict) else {},
+        sort_keys=True, separators=(",", ":"),
+    )
+    return hashlib.sha256(canon.encode("utf-8")).hexdigest()[:length]
+
+
+# ---------------------------------------------------------------------------
 # G2 — the gating model (Fable §13, docs/superpowers/specs/
 # 2026-08-01-study-design-fable-pass.md). The six status axes ARE the six
 # gates already (design/implementation/simulation/evaluation/gate/
@@ -603,6 +642,7 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     env.filters["actor_kind"] = actor_kind
     env.filters["actor_glyph"] = actor_glyph
     env.filters["attribution_text"] = attribution_text
+    env.filters["conclusion_digest"] = conclusion_digest
     tpl = env.get_template("study-detail.html")
     _hn = _humanize_study_name(name)
     # W15 — open epistemic debts, computed server-side via the deterministic

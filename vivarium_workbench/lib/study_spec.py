@@ -917,6 +917,23 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         _cv_path = study_dir(ws_root, name) / "viz" / "report_card" / "conclusion.verdict.json"
         if _cv_path.is_file():
             _persisted = _json.loads(_cv_path.read_text(encoding="utf-8"))
+            # G8: the file's mere existence as a parsed dict IS the freeze
+            # signal — write_conclusion_card is the ONLY writer, called once
+            # per post-run flush, and there is no separate "frozen: true"
+            # field anywhere to read. No timestamp is stored INSIDE the
+            # payload either, so "when" is the file's own mtime. Surfaced as
+            # spec["conclusion_card_frozen"] = {"when", "payload"} for the
+            # Decide-tab frozen-record indicator (study_page.conclusion_digest
+            # computes the digest from `payload` at render time); left absent
+            # entirely when unparseable so no indicator is fabricated.
+            if isinstance(_persisted, dict):
+                try:
+                    spec["conclusion_card_frozen"] = {
+                        "when": _cv_path.stat().st_mtime,
+                        "payload": _persisted,
+                    }
+                except OSError:
+                    pass
             _ptracks = _persisted.get("tracks") if isinstance(_persisted, dict) else None
             if isinstance(_ptracks, dict):
                 _live = spec["derived"].get("conclusion_verdicts")
