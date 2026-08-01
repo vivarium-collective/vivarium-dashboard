@@ -1228,6 +1228,68 @@ def create_app() -> FastAPI:
         return _composite_state_response(ref, fresh, ws)
 
     @app.get(
+        "/api/study-composite-state",
+        response_model=CompositeState,
+        tags=["Studies"],
+        summary="A study lowered to its composite-state document (for the loom)",
+    )
+    def study_composite_state(
+        study: Optional[str] = None,
+        fresh: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[CompositeState, JSONResponse]:
+        """Lower a single study to the composite bigraph state its loom renders.
+
+        A study's ``study.yaml`` declares an execution interface — a composite
+        generator id + config (``study_spec.study_interface``). This resolves the
+        study slug to ``{composite, config}`` and reuses
+        ``composite_state_views.build_composite_state`` (warm-worker
+        ``build_generator``), so the ``{state, kind, ...}`` envelope is identical
+        to ``/api/composite-state``. The embedded loom then shows the study's
+        subcomposites, emitter, visualizations, and report-card steps unchanged.
+
+        Library-backed via ``lib.study_composite_state.build_study_composite_state``.
+        """
+        from vivarium_workbench.lib import study_composite_state as _study_state
+
+        body, status = _study_state.build_study_composite_state(
+            ws, (study or "").strip(), fresh=fresh in ("1", "true", "yes")
+        )
+        if status == 200:
+            return CompositeState.model_validate(body)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
+        "/api/investigation-composite-state",
+        response_model=CompositeState,
+        tags=["Studies"],
+        summary="An investigation lowered to a composite graph of its studies (loom)",
+    )
+    def investigation_composite_state(
+        investigation: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[CompositeState, JSONResponse]:
+        """Lower an investigation to the composite bigraph its loom renders.
+
+        An investigation is a composite of its member studies: each study is one
+        node (marked ``is_composite_process`` so it's drillable) wired to the
+        studies it depends on. The loom renders this as a graph of studies;
+        drilling a study node resolves that study to its own composite (its
+        subcomposites) via ``/api/composite-inner-state?ref=investigation:<slug>``.
+
+        Library-backed via
+        ``lib.investigation_composite_state.build_investigation_composite_state``.
+        """
+        from vivarium_workbench.lib import investigation_composite_state as _inv_state
+
+        body, status = _inv_state.build_investigation_composite_state(
+            ws, (investigation or "").strip()
+        )
+        if status == 200:
+            return CompositeState.model_validate(body)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
         "/api/composite-inner-state",
         response_model=CompositeState,
         tags=["Composites"],

@@ -106,10 +106,23 @@ export default function App() {
   // Which layout mode arranges the graph, and the dispatcher that runs it.
   // Adding a mode to layouts/registry makes it selectable from the toolbar
   // with no change here.
-  const layoutMode = useLayoutMode();
+  // ?dir=LR|TB seeds the initial layout orientation (left-to-right / top-down);
+  // used by the workbench to embed an investigation graph as a clear L→R workflow.
+  const _dirParam = (() => {
+    try { return new URLSearchParams(window.location.search).get('dir'); } catch { return null; }
+  })();
+  const layoutMode = useLayoutMode(
+    _dirParam === 'LR' ? 'flow-right' : _dirParam === 'TB' ? 'flow-down' : undefined,
+  );
   // Collapse view: 'none' (both), 'stores' (process-only graph), 'processes'
-  // (stores + processes shrunk to hyperedge junctions).
-  const [collapseMode, setCollapseMode] = useState<'none' | 'stores' | 'processes'>('none');
+  // (stores + processes shrunk to hyperedge junctions). ?nodes=proc|store seeds
+  // it (proc → collapse stores → process-only graph, the investigation default).
+  const [collapseMode, setCollapseMode] = useState<'none' | 'stores' | 'processes'>(() => {
+    try {
+      const n = new URLSearchParams(window.location.search).get('nodes');
+      return n === 'proc' ? 'stores' : n === 'store' ? 'processes' : 'none';
+    } catch { return 'none'; }
+  });
   // Which processes are "active" (hovered / selected / pinned). Modes that
   // implement `edgeVisibility` use this to cull wires; modes that don't
   // (hierarchy) ignore it entirely and keep drawing every edge.
@@ -1290,7 +1303,7 @@ export default function App() {
                 {/* Top-right toolbar: Re-layout + Download (current layout, white bg). */}
                 <div style={{
                   position: 'absolute', top: 8, right: 8, zIndex: 10,
-                  display: 'flex', gap: 6,
+                  display: 'flex', gap: 6, alignItems: 'center',
                   // Stay WITHIN the canvas and wrap when narrow, rather than
                   // overflowing left onto the docked side panels (which would
                   // cover their collapse/dock buttons).
@@ -1305,8 +1318,8 @@ export default function App() {
                   >
                     {([
                       { id: 'hierarchy', label: '○', t: 'Packing — relationship layout, no enforced direction' },
-                      { id: 'flow-down', label: 'hierarchy', t: 'Hierarchy — store dependency, top to bottom (flow-network DAG)' },
-                      { id: 'flow-right', label: 'flow', t: 'Flow — workflow DAG: stores → processes → stores lined up, left to right' },
+                      { id: 'flow-down', label: '↓', t: 'Hierarchy — store dependency, top → bottom (flow-network DAG)' },
+                      { id: 'flow-right', label: '→', t: 'Flow — workflow DAG: stores → processes → stores lined up, left → right' },
                     ] as const).map((opt) => {
                       const active = layoutMode.modeId === opt.id;
                       return (
@@ -1315,10 +1328,12 @@ export default function App() {
                           onClick={() => layoutMode.setModeId(opt.id)}
                           title={opt.t}
                           style={{
-                            padding: '4px 9px', fontSize: 13, border: 'none', cursor: 'pointer',
+                            width: 30, height: 28, fontSize: 15, lineHeight: 1,
+                            border: 'none', cursor: 'pointer',
+                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
                             background: active ? '#eff6ff' : '#fff',
                             color: active ? '#2563eb' : '#6b7280',
-                            fontWeight: active ? 700 : 400,
+                            fontWeight: active ? 700 : 500,
                           }}
                         >
                           {opt.label}
@@ -1344,7 +1359,8 @@ export default function App() {
                           onClick={() => setCollapseMode(opt.mode)}
                           title={opt.t}
                           style={{
-                            padding: '4px 9px', fontSize: 12, border: 'none', cursor: 'pointer',
+                            height: 28, padding: '0 10px', fontSize: 12, border: 'none', cursor: 'pointer',
+                            display: 'inline-flex', alignItems: 'center',
                             background: active ? '#eff6ff' : '#fff',
                             color: active ? '#2563eb' : '#6b7280',
                             fontWeight: active ? 700 : 400,
@@ -1355,6 +1371,8 @@ export default function App() {
                       );
                     })}
                   </div>
+                  {/* Divider: view-mode controls (left) vs. actions (right). */}
+                  <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />
                   {/* Center on the locked process (inputs left, outputs right,
                       shared stores below). Disabled until a process is locked. */}
                   <button
@@ -1364,7 +1382,8 @@ export default function App() {
                       ? 'Center the layout on the locked process (inputs left, outputs right, shared stores below)'
                       : 'Lock a process first (click it, then the lock), then center the layout on it'}
                     style={{
-                      padding: '4px 10px', fontSize: 12,
+                      height: 28, padding: '0 10px', fontSize: 12,
+                      display: 'inline-flex', alignItems: 'center',
                       background: '#fff', border: '1px solid #d1d5db',
                       borderRadius: 4, cursor: focus.locked ? 'pointer' : 'default',
                       color: focus.locked ? '#374151' : '#b8bec9',
@@ -1376,12 +1395,13 @@ export default function App() {
                     onClick={handleResetLayout}
                     title="Re-run auto-layout on the currently visible nodes and fit the view"
                     style={{
-                      padding: '4px 10px', fontSize: 12,
+                      height: 28, padding: '0 10px', fontSize: 12,
+                      display: 'inline-flex', alignItems: 'center',
                       background: '#fff', border: '1px solid #d1d5db',
                       borderRadius: 4, cursor: 'pointer', color: '#374151',
                     }}
                   >
-                    Re-layout
+                    ⟳ Re-layout
                   </button>
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
@@ -1394,7 +1414,8 @@ export default function App() {
                       onClick={() => setShowExport((v) => !v)}
                       title="Download the current layout as an image (white background)"
                       style={{
-                        padding: '4px 10px', fontSize: 12,
+                        height: 28, padding: '0 10px', fontSize: 12,
+                        display: 'inline-flex', alignItems: 'center',
                         background: '#fff', border: '1px solid #d1d5db',
                         borderRadius: 4, cursor: 'pointer', color: '#374151',
                       }}

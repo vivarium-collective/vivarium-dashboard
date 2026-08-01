@@ -62,8 +62,11 @@
     var norm = String(loc).replace(/\\/g, "/");
     var parts = norm.split("/");
     var tail = parts.length > 2 ? "…/" + parts.slice(-2).join("/") : norm;
-    return '<code style="font-size:11px;color:#6b7280;display:block;overflow:hidden;' +
-      'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(loc) + '">' + esc(tail) + "</code>";
+    // Clickable: reveals the full path (wraps) and copies it to the clipboard —
+    // wired in renderTable(). Truncated by default to keep the row compact.
+    return '<code class="sim-loc" data-loc="' + esc(loc) + '" role="button" tabindex="0" ' +
+      'style="font-size:11px;color:#6b7280;display:block;overflow:hidden;text-overflow:ellipsis;' +
+      'white-space:nowrap;cursor:pointer;" title="Click to show the full path &amp; copy">' + esc(tail) + "</code>";
   }
 
   // Composite cell — enforcement: every simulation must map to exactly one
@@ -108,11 +111,14 @@
       }
       return esc(k) + "=" + esc(String(v));
     });
-    var shown = parts.slice(0, 3).join(" · ");
-    var more = parts.length > 3 ? " +" + (parts.length - 3) : "";
+    var shown = parts.slice(0, 4).join(" · ");
+    var more = parts.length > 4 ? " +" + (parts.length - 4) : "";
     var full = JSON.stringify(c, null, 2);
-    return '<code style="font-size:11px;color:#6b7280;display:block;overflow:hidden;' +
-      'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(full) + '">' +
+    // Clickable: opens a popover with the full config + "Copy JSON" — wired in
+    // renderTable() and the #simulations delegated handler.
+    return '<code class="sim-config" data-config="' + esc(full) + '" role="button" tabindex="0" ' +
+      'style="font-size:11px;color:#6b7280;display:block;overflow:hidden;text-overflow:ellipsis;' +
+      'white-space:nowrap;cursor:pointer;" title="Click to show the full config &amp; copy JSON">' +
       shown + esc(more) + "</code>";
   }
 
@@ -324,7 +330,7 @@
       'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(runId + (row.db_path ? "\n" + row.db_path : "")) +
       '">' + esc(runLabel) + "</code>", "overflow:hidden;");
     cells += td(composite(row), "overflow:hidden;");
-    cells += td(config(row), "overflow:hidden;max-width:220px;");
+    cells += td(config(row), "overflow:hidden;max-width:320px;");
     cells += td(location(row), "overflow:hidden;");
     cells += td(originPill(row));
     cells += td(emitterPill(row.emitter_type));
@@ -412,6 +418,44 @@
         var rid = link.getAttribute("data-run-id");
         var row = rows.find(function (r) { return (r.run_id || "") === rid; });
         if (row && window._openCompositeFromRun) window._openCompositeFromRun(row);
+      });
+    });
+    // Config cell: click to open a popover with the full config + Copy JSON.
+    mount.querySelectorAll(".sim-config").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (window._showConfigPopover) window._showConfigPopover(el);
+      });
+    });
+    // Location cell: click to reveal the full path (wrap) and copy it.
+    mount.querySelectorAll(".sim-loc").forEach(function (el) {
+      el.addEventListener("click", function (e) {
+        e.stopPropagation();  // don't trigger the row's open handler
+        var full = el.getAttribute("data-loc") || "";
+        if (!full) return;
+        el.textContent = full;               // reveal the full path in place
+        el.style.whiteSpace = "normal";
+        el.style.wordBreak = "break-all";
+        el.style.overflow = "visible";
+        el.style.textOverflow = "clip";
+        el.title = full;
+        var done = function (ok) {
+          var badge = document.createElement("span");
+          badge.textContent = ok ? "  ✓ copied" : "  (copy failed)";
+          badge.style.cssText = "color:" + (ok ? "#16a34a" : "#b91c1c") + ";font-size:10px;white-space:nowrap";
+          el.appendChild(badge);
+          setTimeout(function () { if (badge.parentNode) badge.parentNode.removeChild(badge); }, 1800);
+        };
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(full).then(function () { done(true); }, function () { done(false); });
+          } else {
+            var ta = document.createElement("textarea");
+            ta.value = full; document.body.appendChild(ta); ta.select();
+            var ok = false; try { ok = document.execCommand("copy"); } catch (e2) { ok = false; }
+            document.body.removeChild(ta); done(ok);
+          }
+        } catch (e3) { done(false); }
       });
     });
   }
