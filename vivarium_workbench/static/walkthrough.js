@@ -2429,7 +2429,8 @@
     var open = !!opts.open;
     var caret = open ? '▾' : '▸';
     var cls = 'pcard-sec pcard-sec-' + key + (open ? ' pcard-sec-open' : '') +
-      (opts.wide ? ' pcard-sec-wide' : '') + (opts.resizable ? ' pcard-sec-resizable' : '');
+      (opts.wide ? ' pcard-sec-wide' : '') + (opts.resizable ? ' pcard-sec-resizable' : '') +
+      (opts.feature ? ' pcard-sec-feature' : '');
     // Resizable sections get a drag grip: drag to set height, double-click to fit.
     var grip = opts.resizable
       ? '<div class="pcard-sec-grip" title="Drag to resize · double-click to fit contents" ' +
@@ -3088,9 +3089,9 @@
           '</div>' +
         '</div>' +
         '<div class="pcard-acc">' +
+          _pcardSection('explore', 'Explore', '<span class="pcard-sec-hint">◆ Interactive bigraph — click to open</span>', _compositeLoomExplore(c), { wide: true, feature: true }) +
           _pcardSection('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { resizable: true }) +
           _pcardSection('inputs', 'Inputs', '<span class="pcard-sec-count">0</span>', topNote) +
-          _pcardSection('explore', 'Explore', '', _compositeLoomExplore(c), { wide: true }) +
           runBar +
           _pcardSection('outputs', 'Outputs', '', outputsBody) +
         '</div>' +
