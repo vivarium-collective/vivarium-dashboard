@@ -536,26 +536,6 @@
       </div>
       {% endif %}
 
-      {% if study.behavior_tests or study.expected_behavior %}
-      {# Spine C1c: the behavioral-tests summary is spine-critical — visible block. #}
-      <div class="overview-section">
-        <h2 class="overview-label">Behavioral tests</h2>
-        {% set _eb = study.behavior_tests or study.expected_behavior %}
-        {% set _primary = _eb | selectattr('classification', 'equalto', 'primary') | list | length %}
-        {% set _supporting = _eb | selectattr('classification', 'equalto', 'supporting') | list | length %}
-        {% set _diagnostic = _eb | selectattr('classification', 'equalto', 'diagnostic') | list | length %}
-        {% set _regression = _eb | selectattr('classification', 'equalto', 'regression') | list | length %}
-        <p style="margin:0">
-          <strong>{{ _eb|length }}</strong> tests defined{% if _primary %} —
-            <span class="classification-pill classification-primary">{{ _primary }} primary</span>{% endif %}{% if _supporting %}
-            <span class="classification-pill classification-supporting">{{ _supporting }} supporting</span>{% endif %}{% if _diagnostic %}
-            <span class="classification-pill classification-diagnostic">{{ _diagnostic }} diagnostic</span>{% endif %}{% if _regression %}
-            <span class="classification-pill classification-regression">{{ _regression }} regression</span>{% endif %}
-          <a onclick="_setStudyTab('tests')" style="cursor:pointer;color:#3b82f6;text-decoration:underline;margin-left:6px">View on Tests tab →</a>
-        </p>
-      </div>
-      {% endif %}
-
       {% if study.expert_decisions_needed is sequence and study.expert_decisions_needed is not string and study.expert_decisions_needed %}
       <div class="overview-section pre-run-expert-review">
         <h3 class="overview-label">Pre-run expert review</h3>
@@ -613,21 +593,6 @@
       </div>
       {% endif %}
 
-      {# Spine C1b: de-dup — follow-ups appeared in 3 places. The canonical
-         surface is the Decide/Conclusions tab (a Decide-phase output); the
-         Overview occurrence is a short link to it, not a triplicated card list. #}
-      {% if study.follow_up_studies %}
-      <div class="overview-section">
-        <h2 class="overview-label">Follow-up studies</h2>
-        <p class="muted" style="margin:0;font-size:0.9em">
-          <strong>{{ study.follow_up_studies | length }}</strong>
-          follow-up{{ '' if study.follow_up_studies|length == 1 else 's' }} derived from this study's runs —
-          the canonical surface is the {{ "Decide" if _is_v3 else "Conclusions" }} tab.
-          <a onclick="_setStudyTab('conclusions')" style="cursor:pointer;color:#3b82f6;text-decoration:underline;margin-left:4px">View follow-ups on the {{ "Decide" if _is_v3 else "Conclusions" }} tab →</a>
-        </p>
-      </div>
-      {% endif %}
-
       {# Legacy literature_anchors render — kept read-only here; editing
          these is /pbg-study add-literature-anchor for now (list-based UI
          is a follow-up). #}
@@ -659,16 +624,6 @@
         </ul>
       </div>
       {% endif %}
-
-      <div class="overview-section">
-        <h3 class="overview-label">Status</h3>
-        
-        {# legacy single-axis status select retired — the header status pill (derived from the multi-axis fields) is canonical. #}
-
-        {% if study.phase %}
-        <p class="muted" style="margin:6px 0 0 0;font-size:0.85em">Lifecycle phase: <strong>{{ study.phase }}</strong> (Design → Build → Simulate → Evaluate → Decide).</p>
-        {% endif %}
-      </div>
 
     </div>
 

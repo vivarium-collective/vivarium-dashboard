@@ -522,3 +522,65 @@ def test_modified_processes_renders_fields_not_dict_repr(tmp_path, dashboard_cli
 
     # Plain-string entries (the `is mapping` guard's else branch) still render.
     assert "a legacy plain-string entry" in html
+
+
+# ---------------------------------------------------------------------------
+# Fable Increment A, Task 8: delete three redundant/vestigial Overview blocks
+# (§4.1 "Cut" — pure deletions only; the Relocate items — pipeline_gate /
+# assumptions / limitations moving to Decide — are a later increment and are
+# untouched here):
+#   1. the Status subsection (verbatim duplicate of the header status pill)
+#   2. the behavioral-tests count strip + "View on Tests tab ->"
+#   3. the follow-up studies pointer block ("canonical surface is Decide")
+# Findings / Question&approach / Conclusion must keep rendering.
+# ---------------------------------------------------------------------------
+
+def test_overview_deleted_blocks_absent_core_content_kept(tmp_path, dashboard_client):
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "overview-declutter-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "overview-declutter-study",
+        "kind": "biological",
+        "phase": "simulate",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        # Would render the tests-count strip + "View on Tests tab" if the
+        # block still existed.
+        "behavior_tests": [{"name": "beh-a", "classification": "primary"}],
+        # Would render the follow-ups pointer block if it still existed.
+        "follow_up_studies": [{"id": "study-2", "question": "Next question?"}],
+        "findings": [{"statement": "Daughter cells hydrate within one tick."}],
+        "report": {"conclusion": "The model reproduces the expected behavior."},
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/overview-declutter-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    overview = html[html.index('id="panel-overview"'):html.index('id="panel-compose"')]
+
+    # 1. Status subsection (verbatim header-pill duplicate) is gone.
+    assert '<h3 class="overview-label">Status</h3>' not in overview
+    assert 'Lifecycle phase:' not in overview
+
+    # 2. Behavioral-tests count strip + its Tests-tab link is gone.
+    assert '<h2 class="overview-label">Behavioral tests</h2>' not in overview
+    assert 'View on Tests tab' not in overview
+
+    # 3. Follow-up studies pointer block is gone.
+    assert '<h2 class="overview-label">Follow-up studies</h2>' not in overview
+    assert 'View follow-ups on the' not in overview
+    assert 'canonical surface is the' not in overview
+
+    # Findings / Question & approach / Conclusion still render on Overview.
+    assert 'Question &amp; approach' in overview
+    assert 'Findings' in overview
+    assert 'Daughter cells hydrate within one tick.' in overview
+    assert '<h2 class="overview-label">Conclusion</h2>' in overview
+    assert 'The model reproduces the expected behavior.' in overview

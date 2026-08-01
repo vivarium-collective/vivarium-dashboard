@@ -23,8 +23,12 @@ def test_purpose_is_not_collapsed_by_default():
     assert '<summary class="overview-label">Purpose</summary>' not in _HTML
 
 
-def test_behavioral_tests_summary_is_not_collapsed_by_default():
-    assert '<h2 class="overview-label">Behavioral tests</h2>' in _HTML
+def test_behavioral_tests_summary_removed_from_overview():
+    # Fable A #8: the "un-bury" premise (visible-not-collapsed) is moot — the
+    # Overview tests-count strip was deleted outright, not un-buried; Tests
+    # owns the count. See test_study_detail_render.py for the render-level
+    # absence assertion.
+    assert '<h2 class="overview-label">Behavioral tests</h2>' not in _HTML
     assert '<summary class="overview-label">Behavioral tests</summary>' not in _HTML
 
 
