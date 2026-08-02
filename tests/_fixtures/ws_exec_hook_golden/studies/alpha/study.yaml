@@ -1,0 +1,5 @@
+name: alpha
+description: Golden fixture study alpha (first declared member, no prerequisites).
+composite: golden.composites.alpha
+conditions:
+  - name: baseline

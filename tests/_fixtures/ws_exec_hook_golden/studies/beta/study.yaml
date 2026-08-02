@@ -1,0 +1,5 @@
+name: beta
+description: Golden fixture study beta (second declared member, no prerequisites).
+composite: golden.composites.beta
+conditions:
+  - name: baseline

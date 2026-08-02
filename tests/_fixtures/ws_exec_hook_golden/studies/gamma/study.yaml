@@ -1,0 +1,5 @@
+name: gamma
+description: Golden fixture study gamma (third declared member, no prerequisites).
+composite: golden.composites.gamma
+conditions:
+  - name: baseline

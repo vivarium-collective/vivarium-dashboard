@@ -1,0 +1,3 @@
+name: golden_inv
+description: Purpose-built golden fixture for the backward-compat exec-hook test — three studies, no prerequisites, no investigation-level analyses.
+studies: [alpha, beta, gamma]
