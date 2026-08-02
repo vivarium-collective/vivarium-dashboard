@@ -71,7 +71,11 @@ def test_run_study_baseline_only_returns_run_refs_and_no_errors(tmp_path, monkey
     db_file = sd / "runs.db"
 
     def fake_run_study_baseline(ws_root, body):
-        assert body == {"study": "demo"}
+        # skip_analyses=True is additively threaded in by _run_study (store
+        # data-flow refactor, Task 1) — check the meaningful key rather than
+        # exact dict equality, so this test doesn't couple to that unrelated
+        # addition.
+        assert body["study"] == "demo"
         run_id = "run-baseline-1"
         _write_runs_meta_row(db_file, run_id=run_id)
         return {"simulation_id": run_id, "results": {}}, 200

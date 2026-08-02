@@ -81,7 +81,7 @@ def _load_study_spec_for_flush(study_dir):
 
 
 def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
-                        generator_overrides, response):
+                        generator_overrides, response, skip_analyses=False):
     """The full post-run flush, shared by the study-baseline launch
     (via ``launch_into_study``/``_launch_run_and_flush``) and the study-variant
     launch paths (both single-run and delegated-ensemble). Extracted VERBATIM
@@ -94,6 +94,14 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
       4. study_outcomes.sync           8. _sync_parent_investigation
     Stage 5 (the Decide tab's default "conclusion" report card) runs right
     after stage 4 so outcomes/gate/findings are fresh when it's computed.
+
+    ``skip_analyses`` (store data-flow refactor, Task 1): when True, stage 3
+    (``run_study_analyses``) is skipped entirely. Set by ``env_worker._run_study``,
+    which invokes the study's ``analyses:`` directly (with real ``study_dir``/
+    ``runs_db`` context) and folds their verdicts into its own reply — running
+    them again here would double-run them (and, for scale=single analyses like
+    ``comparison_cards``, fail — no parquet/run-store context in this path).
+    Every other caller leaves this False (unchanged behavior).
     """
     # Render canonical viz: composite defaults from
     # @composite_generator(visualizations=...) merged with Study-declared
@@ -123,12 +131,15 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
     # Post-run analysis hook: run spec.analyses[] steps over the parquet emitter
     # output.  Synchronous (runs before this HTTP response returns) so the
     # analysis outputs are on disk by the time the client refreshes.
-    analysis_files, analysis_errors = study_run_post.run_study_analyses(
-        study_dir, spec, run_id, ws_root)
-    if analysis_files:
-        response.setdefault("analysis_files", []).extend(analysis_files)
-    if analysis_errors:
-        response.setdefault("analysis_errors", []).extend(analysis_errors)
+    # Skipped when the caller (env_worker._run_study) is handling analyses
+    # itself, directly — see the ``skip_analyses`` docstring above.
+    if not skip_analyses:
+        analysis_files, analysis_errors = study_run_post.run_study_analyses(
+            study_dir, spec, run_id, ws_root)
+        if analysis_files:
+            response.setdefault("analysis_files", []).extend(analysis_files)
+        if analysis_errors:
+            response.setdefault("analysis_errors", []).extend(analysis_errors)
     try:
         from viva_superpowers import study_outcomes
         study_outcomes.sync(study_dir)  # record runs + compute outcomes
@@ -167,7 +178,8 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
 
 def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
                           plan, pkg, ws_data, manifest, emitter, emit_paths,
-                          runtime, label, db_file, dry_run=False, reran_from=None):
+                          runtime, label, db_file, dry_run=False, reran_from=None,
+                          skip_analyses=False):
     """Run-launch + full 7-stage flush tail of ``launch_into_study``, split
     out so manifest-building (which must happen even when this seam is
     stubbed in tests) stays outside it. ``plan`` is the already-resolved
@@ -180,6 +192,9 @@ def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
     completion tail can call ``rerun.verify_reproduction`` once this run's
     own ``result_fingerprint`` is stored — mirroring ``run_runner.execute``'s
     own ``reran_from`` handling (Task 3) for the composite-origin path.
+
+    ``skip_analyses`` (store data-flow refactor, Task 1) is forwarded verbatim
+    to ``_run_post_run_flush`` — see its docstring.
     """
     run_id = plan.run_id
     runtime = runtime or {}
@@ -234,13 +249,14 @@ def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
         if n_steps is not None:
             full_params["n_steps"] = n_steps
         response = _run_post_run_flush(
-            ws_root, study_dir, spec, spec_id, run_id, full_params, params, response)
+            ws_root, study_dir, spec, spec_id, run_id, full_params, params, response,
+            skip_analyses=skip_analyses)
     return response, code
 
 
 def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
                       emitter=None, emit_paths=None, runtime=None, label=None,
-                      dry_run=False, reran_from=None):
+                      dry_run=False, reran_from=None, skip_analyses=False):
     """Launch a run into a Study's ``runs.db`` from EXPLICIT replay inputs.
 
     Factored out of ``run_study_baseline`` (spec Part C) so a rerun can
@@ -266,6 +282,12 @@ def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
     ``reran_from`` (Task 4) is the original run_id this launch reproduces,
     when set by ``rerun.run_rerun`` — threaded to ``_launch_run_and_flush``
     so the completion tail can call ``rerun.verify_reproduction``.
+
+    ``skip_analyses`` (store data-flow refactor, Task 1) is threaded to
+    ``_launch_run_and_flush`` → ``_run_post_run_flush``; ``run_study_baseline``
+    passes it through from the request body (``env_worker._run_study`` sets it
+    True so the parquet post-flush doesn't double-run the analyses it already
+    invoked directly). Default False — every other caller unaffected.
 
     ``run_study_baseline`` resolves ``spec_id``/``params``/``n_steps``/
     ``emitter``/``emit_paths``/``runtime`` from ``study.yaml`` then delegates
@@ -321,7 +343,7 @@ def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
         plan=plan, pkg=pkg, ws_data=ws_data, manifest=manifest,
         emitter=emitter, emit_paths=emit_paths, runtime=runtime,
         label=label, db_file=db_file, dry_run=dry_run,
-        reran_from=reran_from,
+        reran_from=reran_from, skip_analyses=skip_analyses,
     )
 
 
@@ -332,6 +354,15 @@ def run_study_baseline(ws_root, body):
       study:     <name>  (or `name`/`investigation`)
       composite: <baseline-entry name>  (optional; default = baseline[0].name)
       steps:     <int>   (optional; overrides params.n_steps; default 5)
+      skip_analyses: <bool>  (optional, default False; store data-flow
+                 refactor Task 1) — popped off ``body`` before the launch
+                 params are built (so it never leaks into ``generator_overrides``
+                 or the run manifest). Set True by ``env_worker._run_study``,
+                 which invokes the study's ``analyses:`` directly with real
+                 run context and folds their output into its own reply — so
+                 the post-run parquet flush must not double-run them.
+                 Forwarded to ``launch_into_study``. Every other caller (HTTP
+                 routes, CLI, rerun) omits it and gets the unchanged behavior.
 
     Resolves the baseline entry's spec_id/params/emitter/emit_paths/runtime
     from ``study.yaml`` (+ request-body overrides), then delegates the actual
@@ -341,6 +372,7 @@ def run_study_baseline(ws_root, body):
     """
     from vivarium_workbench.lib import composite_runs as cr
 
+    skip_analyses = bool(body.get("skip_analyses"))
     name = _study_name_from_body(body)
     if not name:
         return {"error": "missing study"}, 400
@@ -412,6 +444,7 @@ def run_study_baseline(ws_root, body):
         emitter=study_emitter, emit_paths=emit_paths, runtime=runtime_block,
         label=entry.get("name") or "baseline",
         dry_run=bool(body.get("dry_run")),
+        skip_analyses=skip_analyses,
     )
 
 
@@ -421,6 +454,7 @@ def run_study_variant(ws_root, body):
     Body:
       study:   <name>
       variant: <variant name>
+      skip_analyses: <bool>  (optional, default False; see run_study_baseline)
     Resolves the variant's `base_composite` against the study's `baseline[]`,
     layers `parameter_overrides` on top of that entry's `params`, and runs.
 
@@ -435,6 +469,7 @@ def run_study_variant(ws_root, body):
 
     name = _study_name_from_body(body)
     variant_name = (body.get("variant") or "").strip()
+    skip_analyses = bool(body.get("skip_analyses"))
     if not name or not variant_name:
         return {"error": "missing study or variant"}, 400
     # Resolve study dir from ws_root (honors layout:; supports standalone tests
@@ -635,12 +670,15 @@ def run_study_variant(ws_root, body):
         if script_errors:
             response.setdefault("post_run_script_errors", []).extend(script_errors)
         # Post-run analysis hook: mirrors baseline path — run spec.analyses[] steps.
-        analysis_files, analysis_errors = study_run_post.run_study_analyses(
-            study_dir, spec, run_id, ws_root)
-        if analysis_files:
-            response.setdefault("analysis_files", []).extend(analysis_files)
-        if analysis_errors:
-            response.setdefault("analysis_errors", []).extend(analysis_errors)
+        # Skipped when the caller (env_worker._run_study) is handling analyses
+        # itself, directly — see _run_post_run_flush's skip_analyses docstring.
+        if not skip_analyses:
+            analysis_files, analysis_errors = study_run_post.run_study_analyses(
+                study_dir, spec, run_id, ws_root)
+            if analysis_files:
+                response.setdefault("analysis_files", []).extend(analysis_files)
+            if analysis_errors:
+                response.setdefault("analysis_errors", []).extend(analysis_errors)
         try:
             from viva_superpowers import study_outcomes
             study_outcomes.sync(study_dir)  # record runs + compute outcomes
