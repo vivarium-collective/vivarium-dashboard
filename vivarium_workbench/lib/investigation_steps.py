@@ -83,7 +83,8 @@ def _extract_study_verdict(res, verdict_analysis: str):
     fall back to the raw result unchanged (older/non-analysis studies)."""
     if isinstance(res, dict):
         analyses = res.get("analyses") or {}
-        verdict = analyses.get(verdict_analysis, {}).get("verdict") if isinstance(analyses, dict) else None
+        entry = analyses.get(verdict_analysis) if isinstance(analyses, dict) else None
+        verdict = entry.get("verdict") if isinstance(entry, dict) else None
         if verdict is not None:
             return verdict
         if res.get("verdict") is not None:
