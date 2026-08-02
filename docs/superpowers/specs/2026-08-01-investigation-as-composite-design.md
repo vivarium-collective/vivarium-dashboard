@@ -98,11 +98,24 @@ composite **state dict**:
   after its studies) **and** the cross-study data-flow (`config_verdicts` flows
   in from each study's verdict) both come from the wiring. **This eliminates the
   `<run>::comparison_cards` token entirely.**
-- **Declared-order preservation for no-prereq investigations**: set each
-  StudyStep's `priority` by declared member index and keep intra-layer
-  parallelism off by default (the engine default is serial). With no edges all
-  studies are one layer, priority-ordered → declared order preserved (the #712
-  backward-compat guarantee, now a property of the graph).
+- **Declared-order preservation for no-prereq investigations**: **empirically
+  confirmed against the real engine** — independent steps (no wiring between
+  them) run in the engine's hash/set order, NOT declared order, and `priority`
+  is only a *cycle* tiebreak (`scheduling.py:504`), so it does NOT order a ready
+  layer. Therefore v1 imposes **synthetic serial edges**: the generator wires
+  study[i]'s prereq input to study[i-1]'s result store when no real prerequisite
+  already constrains it, turning independent studies into a deterministic
+  declared-order chain (verified stable across trials). Intra-layer parallelism
+  stays off (v1 serial). Enabling parallelism later = dropping the synthetic
+  edges for genuinely-independent studies.
+- **Confirmed engine mechanics** (walking skeleton, Task 1): register step
+  classes via `allocate_core(top={"StudyStep": StudyStep})`; store nodes are
+  empty dicts `{}` (ParCa pattern), not typed nodes; port types are `"node"`
+  (there is no `"any"` type in this `bigraph_schema` 1.7.0); step-doc shape is
+  `{_type: step, address: local:<Class>, config, inputs: {port:[store]},
+  outputs: {port:[store]}}`; `run_steps_on_init: True` fires ready steps at
+  construction. Prerequisite wiring orders steps (incl. transitive chains) —
+  confirmed.
 
 Returns `{state, run_steps_on_init: True}` (the ParCa pattern), or the runner
 constructs `Composite({state}, core)` and calls `.run()`.
