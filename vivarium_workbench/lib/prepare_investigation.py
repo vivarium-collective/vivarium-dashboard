@@ -31,8 +31,7 @@ import yaml
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.investigation_analyses import run_investigation_analyses
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
-from vivarium_workbench.lib.investigation_order import prerequisite_order, CycleError
-from vivarium_workbench.lib.investigations import normalize_dag_edges
+from vivarium_workbench.lib.investigation_order import prerequisite_order
 
 
 def _dashboard_url(ws: Path, override: str | None = None) -> str:
@@ -86,11 +85,29 @@ def _study_slugs(ws: Path, inv_slug: str) -> list[str]:
 
 
 def _study_prereqs(ws: Path, slug: str) -> list[str]:
+    """Member-study slugs this study must run after.
+
+    Reads ONLY the canonical ``pipeline_gate.prerequisites`` edges (shape
+    ``{study, relation}``) — deliberately NOT the broader ``normalize_dag_edges``
+    read, which also honors the legacy ``parent_studies`` fallback. Keying
+    strictly on ``pipeline_gate.prerequisites`` makes the ordering a literal
+    no-op for any investigation without those edges (the spec's backward-compat
+    guarantee): a study still carrying only legacy ``parent_studies`` keeps its
+    historical flat declared order here rather than being silently reordered.
+    """
     p = WorkspacePaths.load(ws).studies / slug / "study.yaml"
     if not p.exists():
         return []
     spec = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    return [e["study"] for e in normalize_dag_edges(spec) if e.get("study")]
+    gate = spec.get("pipeline_gate") or {}
+    prereqs = gate.get("prerequisites") or []
+    out: list[str] = []
+    for e in prereqs:
+        if isinstance(e, dict) and e.get("study"):
+            out.append(e["study"])
+        elif isinstance(e, str) and e:
+            out.append(e)
+    return out
 
 
 def prepare_study(ws: Path, slug: str, dash: str, steps: int | None,

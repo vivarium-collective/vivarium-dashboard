@@ -37,3 +37,27 @@ def test_prereq_runs_before_dependent(tmp_path, monkeypatch):
     seq = _record(monkeypatch)
     pi.prepare_investigation(tmp_path, investigation="inv", render_only=True)
     assert seq.index("parca") < seq.index("cfg")
+
+
+def test_legacy_parent_studies_does_NOT_reorder(tmp_path, monkeypatch):
+    # Ordering keys STRICTLY on pipeline_gate.prerequisites. A study carrying
+    # only the legacy `parent_studies` edge must keep its historical flat
+    # declared order — NOT be silently reordered (backward-compat guarantee).
+    _mk(tmp_path, "inv", ["cfg", "parca"], {
+        "cfg": {"parent_studies": ["parca"]},   # legacy edge only, no pipeline_gate
+        "parca": {},
+    })
+    seq = _record(monkeypatch)
+    pi.prepare_investigation(tmp_path, investigation="inv", render_only=True)
+    assert seq == ["cfg", "parca"]  # declared order preserved, unchanged
+
+
+def test_string_prerequisite_entry_is_honored(tmp_path, monkeypatch):
+    # pipeline_gate.prerequisites may carry bare-string entries, not only dicts.
+    _mk(tmp_path, "inv", ["cfg", "parca"], {
+        "cfg": {"pipeline_gate": {"prerequisites": ["parca"]}},
+        "parca": {},
+    })
+    seq = _record(monkeypatch)
+    pi.prepare_investigation(tmp_path, investigation="inv", render_only=True)
+    assert seq.index("parca") < seq.index("cfg")
