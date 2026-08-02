@@ -77,6 +77,7 @@ export interface ChartPayload {
   simulations: string | null;
   interpretation: string | null;
   data_source: string | null;
+  run_id: string | null;
 }
 
 export interface StudyChartsPayload {
