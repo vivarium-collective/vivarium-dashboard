@@ -1563,6 +1563,45 @@ def _run_investigation_analysis(params: dict) -> dict:
     return {"written": written, "errors": errors}
 
 
+def _declared_variant_names(ws_root, study_slug: str) -> list:
+    """Best-effort: the variant names declared in a study's ``study.yaml``
+    (v3 top-level ``variants:`` list, or v4 ``conditions.variants:`` projected
+    onto that legacy shape) — mirrors exactly how
+    ``vivarium_workbench.lib.study_runs.run_study_variant`` loads + projects
+    the spec, so a variant name returned here is guaranteed resolvable by it.
+
+    Used by ``_run_study`` to default ``run_spec["variants"]`` to "every
+    declared variant" when the caller doesn't name any explicitly (the
+    ``StudyStep`` composite-dispatch shape never does — see module docstring
+    below). Never raises: any missing/unreadable study.yaml, or an import/
+    projection failure, yields an empty list (baseline-only), same as if the
+    study genuinely declares no variants.
+    """
+    try:
+        from vivarium_workbench.lib import study_runs as _study_runs
+        from vivarium_workbench.lib import study_spec as _study_spec
+        from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
+        import yaml as _yaml
+
+        study_dir = _study_runs._resolve_study_dir(ws_root, study_slug)
+        sf = _study_spec.study_spec_file(study_dir)
+        if not sf.is_file():
+            return []
+        spec = _yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+        spec = migrate_v2_to_v3(spec)
+        if spec.get("schema_version") == 4 and isinstance(spec.get("conditions"), dict):
+            from vivarium_workbench.lib.investigations import (
+                _project_v4_redesign_to_legacy_view,
+            )
+            spec = _project_v4_redesign_to_legacy_view(spec)
+        return [
+            v.get("name") for v in (spec.get("variants") or [])
+            if isinstance(v, dict) and v.get("name")
+        ]
+    except Exception:  # noqa: BLE001 — best-effort; never blocks the run
+        return []
+
+
 def _run_study(params: dict) -> dict:
     """Run a Study's baseline (plus any ``run_spec``-named variants) TO
     COMPLETION, synchronously, in this worker process.
@@ -1600,7 +1639,15 @@ def _run_study(params: dict) -> dict:
           - ``steps`` — overrides ``params.n_steps`` for every launch.
           - ``overrides`` — param overrides layered onto the baseline entry.
           - ``variants`` — list of variant names (``spec.yaml`` ``variants[].name``)
-            to also run, each via ``run_study_variant``.
+            to also run, each via ``run_study_variant``. When the key is
+            ABSENT entirely (e.g. the ``StudyStep`` composite dispatch, which
+            only sends ``{workspace, study_slug}``), this DEFAULTS to every
+            variant the study's ``study.yaml`` declares — matching the old
+            ``prepare_investigation`` full-run behavior (baseline + every
+            comparison variant), so composite-driven runs don't silently
+            drop variants a ``comparative_visualizations`` overlay
+            references. Pass an explicit empty list (``[]``) to run
+            baseline-only.
 
     Returns ``{"run_refs": [...], "verdict": {...} | None, "errors": [...]}``.
     NEVER raises — a missing workspace/study, an unavailable
@@ -1668,8 +1715,15 @@ def _run_study(params: dict) -> dict:
         baseline_body["overrides"] = run_spec["overrides"]
     _launch("baseline", _study_runs.run_study_baseline, baseline_body)
 
-    # 2. run_spec-named variants.
-    for variant_name in (run_spec.get("variants") or []):
+    # 2. run_spec-named variants — default to EVERY study-declared variant
+    #    when the caller didn't name any explicitly (the StudyStep composite
+    #    dispatch never does; see the run_spec.variants docstring above).
+    #    An explicit "variants" key (including []) is honored as-is.
+    if "variants" in run_spec:
+        variant_names = run_spec.get("variants") or []
+    else:
+        variant_names = _declared_variant_names(ws_root, study_slug)
+    for variant_name in variant_names:
         variant_body: dict = {"study": study_slug, "variant": variant_name}
         if run_spec.get("steps") is not None:
             variant_body["steps"] = run_spec["steps"]

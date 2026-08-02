@@ -2,10 +2,12 @@
 
 For each study in an investigation that declares ``comparative_visualizations``,
 this runs the baseline + every comparison variant those overlays reference (via
-the dashboard run API), records every run into the workspace's *current*
-coordinated generation (``viva_superpowers.generation`` — the same core the run
-path stamps and the report's banner reads), then renders the comparative
-figures.
+the dashboard run API for the ``render_only``/single-``study`` paths, or via
+the investigation-as-composite run for a full run — which runs baseline +
+every variant the study's ``study.yaml`` declares), records every run into
+the workspace's *current* coordinated generation (``viva_superpowers.generation``
+— the same core the run path stamps and the report's banner reads), then
+renders the comparative figures.
 
 A coordinated *generation* is opened BEFORE the run loop so the dashboard
 stamps each run with it as it executes — provenance must be current at run
@@ -264,9 +266,11 @@ def prepare_investigation(workspace: Path | str, *,
             spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
             cvs = spec.get("comparative_visualizations") or []
 
-            # The composite already ran this study's native baseline (every
-            # member runs, regardless of comparative_visualizations — see
-            # the docstring note below); reflect what it harvested.
+            # The composite already ran this study's native baseline plus
+            # every variant its study.yaml declares (every member runs,
+            # regardless of comparative_visualizations — see
+            # ``env_worker._run_study``'s ``run_spec.variants`` default);
+            # reflect what it harvested.
             reply = comp_summary["study_results"].get(slug) or {}
             run_results = [
                 {"run": rr.get("sim_name"),

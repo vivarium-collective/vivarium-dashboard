@@ -41,6 +41,26 @@ def _study_dir(workspace, slug="demo"):
     return d
 
 
+def _study_dir_with_variants(workspace, slug="demo"):
+    """A study.yaml (v3 shape) declaring two variants — refA, refB — so
+    ``_run_study``'s no-``run_spec`` default (every declared variant) has
+    something concrete to enumerate."""
+    d = workspace / "studies" / slug
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "study.yaml").write_text(
+        f"name: {slug}\n"
+        "baseline: [{name: core, composite: pkg.x}]\n"
+        "variants:\n"
+        "  - name: refA\n"
+        "    base_composite: core\n"
+        "    parameter_overrides: {knob: 1}\n"
+        "  - name: refB\n"
+        "    base_composite: core\n"
+        "    parameter_overrides: {knob: 2}\n"
+    )
+    return d
+
+
 # ---------------------------------------------------------------------------
 # Contract shape + happy path
 # ---------------------------------------------------------------------------
@@ -121,6 +141,107 @@ def test_run_study_baseline_plus_named_variants(tmp_path, monkeypatch):
     assert result["errors"] == []
     run_ids = [r["run_id"] for r in result["run_refs"]]
     assert run_ids == ["run-baseline", "run-fast", "run-slow"]
+
+
+# ---------------------------------------------------------------------------
+# Default-to-declared-variants (no explicit run_spec["variants"])
+# ---------------------------------------------------------------------------
+
+def test_run_study_no_run_spec_defaults_to_all_declared_variants(tmp_path, monkeypatch):
+    # Regression: the StudyStep composite dispatch never sends a
+    # ``run_spec`` (locked shape — tests/test_study_step_dispatch.py), so
+    # _run_study must default to running every variant the study.yaml
+    # declares, not baseline-only.
+    workspace = tmp_path / "ws"
+    sd = _study_dir_with_variants(workspace)
+    db_file = sd / "runs.db"
+
+    def fake_run_study_baseline(ws_root, body):
+        _write_runs_meta_row(db_file, run_id="run-baseline", sim_name="baseline")
+        return {"simulation_id": "run-baseline"}, 200
+
+    seen_variants = []
+
+    def fake_run_study_variant(ws_root, body):
+        assert body["study"] == "demo"
+        variant = body["variant"]
+        seen_variants.append(variant)
+        run_id = f"run-{variant}"
+        _write_runs_meta_row(db_file, run_id=run_id, sim_name=variant)
+        return {"simulation_id": run_id}, 200
+
+    monkeypatch.setattr(study_runs, "run_study_baseline", fake_run_study_baseline)
+    monkeypatch.setattr(study_runs, "run_study_variant", fake_run_study_variant)
+
+    result = env_worker._run_study({"workspace": str(workspace), "study_slug": "demo"})
+
+    assert result["errors"] == []
+    assert seen_variants == ["refA", "refB"]
+    run_ids = [r["run_id"] for r in result["run_refs"]]
+    assert run_ids == ["run-baseline", "run-refA", "run-refB"]
+
+
+def test_run_study_explicit_variants_overrides_declared_default(tmp_path, monkeypatch):
+    # An explicit run_spec["variants"] list is honored as-is — only refA
+    # runs, even though the study also declares refB.
+    workspace = tmp_path / "ws"
+    sd = _study_dir_with_variants(workspace)
+    db_file = sd / "runs.db"
+
+    def fake_run_study_baseline(ws_root, body):
+        _write_runs_meta_row(db_file, run_id="run-baseline", sim_name="baseline")
+        return {"simulation_id": "run-baseline"}, 200
+
+    seen_variants = []
+
+    def fake_run_study_variant(ws_root, body):
+        variant = body["variant"]
+        seen_variants.append(variant)
+        run_id = f"run-{variant}"
+        _write_runs_meta_row(db_file, run_id=run_id, sim_name=variant)
+        return {"simulation_id": run_id}, 200
+
+    monkeypatch.setattr(study_runs, "run_study_baseline", fake_run_study_baseline)
+    monkeypatch.setattr(study_runs, "run_study_variant", fake_run_study_variant)
+
+    result = env_worker._run_study({
+        "workspace": str(workspace),
+        "study_slug": "demo",
+        "run_spec": {"variants": ["refA"]},
+    })
+
+    assert result["errors"] == []
+    assert seen_variants == ["refA"]
+    run_ids = [r["run_id"] for r in result["run_refs"]]
+    assert run_ids == ["run-baseline", "run-refA"]
+
+
+def test_run_study_explicit_empty_variants_runs_baseline_only(tmp_path, monkeypatch):
+    # An explicit empty list means "no variants" — distinct from omitting
+    # run_spec entirely (which defaults to every declared variant).
+    workspace = tmp_path / "ws"
+    sd = _study_dir_with_variants(workspace)
+    db_file = sd / "runs.db"
+
+    def fake_run_study_baseline(ws_root, body):
+        _write_runs_meta_row(db_file, run_id="run-baseline", sim_name="baseline")
+        return {"simulation_id": "run-baseline"}, 200
+
+    def fake_run_study_variant(ws_root, body):  # pragma: no cover — must not be called
+        raise AssertionError("run_study_variant should not be called")
+
+    monkeypatch.setattr(study_runs, "run_study_baseline", fake_run_study_baseline)
+    monkeypatch.setattr(study_runs, "run_study_variant", fake_run_study_variant)
+
+    result = env_worker._run_study({
+        "workspace": str(workspace),
+        "study_slug": "demo",
+        "run_spec": {"variants": []},
+    })
+
+    assert result["errors"] == []
+    run_ids = [r["run_id"] for r in result["run_refs"]]
+    assert run_ids == ["run-baseline"]
 
 
 def test_run_study_reads_conclusion_verdict_when_present(tmp_path, monkeypatch):
