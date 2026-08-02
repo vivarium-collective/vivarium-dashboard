@@ -270,6 +270,9 @@ def test_analysis_step_runs_after_studies_and_receives_verdicts(monkeypatch):
     }
     assert analysis_call[2]["name"] == "comparison_matrix"
     assert analysis_call[2]["report_dir"] == "/ws/reports"
+    # workspace is threaded into the analysis config so an investigation-level
+    # analysis can locate per-study verdict files on disk.
+    assert dispatched_config["workspace"] == "/ws"
 
 
 def test_analysis_step_result_store_holds_written_reply(monkeypatch):

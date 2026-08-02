@@ -117,7 +117,11 @@ class InvestigationAnalysisStep(process_bigraph.Step):
             for slug in self.config.get("study_slugs", [])
         }
         params = dict(self.config.get("params") or {})
-        analysis_config = {**params, "config_verdicts": config_verdicts}
+        # Thread the workspace into the analysis config: an investigation-level
+        # analysis (e.g. comparison_matrix) needs it to locate per-study outputs
+        # (verdict files) on disk. config-provided workspace wins over any params.
+        analysis_config = {**params, "config_verdicts": config_verdicts,
+                           "workspace": self.config["workspace"]}
         reply = _run_analysis_hook(
             self.config["workspace"], self.config["name"], analysis_config,
             self.config["report_dir"])
