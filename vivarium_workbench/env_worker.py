@@ -88,7 +88,7 @@ _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
                  "run_process", "process_template",
                  "viz_classes", "resolve_composite_state", "observables",
                  "study_readout_check", "attach_process_docs", "discover_composites", "composites_full",
-                 "validate_generated_visualization", "run_study_analyses", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
+                 "validate_generated_visualization", "run_study_analyses", "run_study", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
 
 _FRAMEWORK_PKGS = {
     "process_bigraph", "bigraph_schema", "bigraph_viz",
@@ -1480,6 +1480,167 @@ def _run_study_analyses(params: dict) -> dict:
              "traceback": traceback.format_exc()}]}
 
 
+def _run_study(params: dict) -> dict:
+    """Run a Study's baseline (plus any ``run_spec``-named variants) TO
+    COMPLETION, synchronously, in this worker process.
+
+    This is the ``run_study`` worker capability from the investigation-as-
+    composite design (§Architecture 2): the ``StudyStep`` blocks on this call
+    as *its* async boundary, so — unlike the HTTP routes — there is nothing
+    left to detach here.
+
+    Reuses ``vivarium_workbench.lib.study_runs.run_study_baseline`` /
+    ``run_study_variant`` verbatim for the composite/params/sim_name
+    resolution + launch (both already resolve to a synchronous, BLOCKING
+    ``subprocess.run(...)`` inside ``composite_subprocess.run_composite_subprocess``
+    — there is no detach to undo; the HTTP routes that call them are plain
+    (sync) FastAPI handlers that already block the calling thread until the
+    subprocess exits and the full post-run flush — viz/analyses/outcomes/
+    conclusion-card — has run). This function just calls them directly with
+    ``ws_root`` from ``params``, then harvests the durable artifacts they
+    wrote rather than trusting their transient response dicts:
+      - run refs: rows from ``studies/<slug>/runs.db``'s ``runs_meta`` table
+        for each ``simulation_id`` returned by a launch call;
+      - verdict: the conclusion-card JSON
+        (``<study_dir>/viz/report_card/conclusion.verdict.json``) the
+        baseline/variant post-run flush writes via
+        ``conclusion_card.write_conclusion_card``.
+
+    ``params``:
+      - ``workspace`` (str, required) — the workspace root. Falls back to
+        this worker's own ``--workspace`` if omitted (they're normally the
+        same environment; explicit in ``params`` for parity with the
+        capability's documented contract).
+      - ``study_slug`` (str, required) — the study to run.
+      - ``run_spec`` (dict, optional):
+          - ``composite`` — baseline entry name (default: baseline[0]).
+          - ``steps`` — overrides ``params.n_steps`` for every launch.
+          - ``overrides`` — param overrides layered onto the baseline entry.
+          - ``variants`` — list of variant names (``spec.yaml`` ``variants[].name``)
+            to also run, each via ``run_study_variant``.
+
+    Returns ``{"run_refs": [...], "verdict": {...} | None, "errors": [...]}``.
+    NEVER raises — a missing workspace/study, an unavailable
+    ``vivarium_workbench.lib`` (this worker runs on the WORKSPACE's own
+    interpreter, which may not have it installed), a failed baseline/variant
+    launch, or a harvest failure all land in ``errors`` instead.
+    """
+    import sqlite3
+    import traceback
+    from pathlib import Path as _Path
+
+    p = params or {}
+    workspace = p.get("workspace") or _workspace
+    study_slug = p.get("study_slug")
+    run_spec = p.get("run_spec") or {}
+
+    result: dict = {"run_refs": [], "verdict": None, "errors": []}
+    if not workspace:
+        result["errors"].append({"stage": "params", "error": "missing workspace"})
+        return result
+    if not study_slug:
+        result["errors"].append({"stage": "params", "error": "missing study_slug"})
+        return result
+
+    try:
+        from vivarium_workbench.lib import study_runs as _study_runs
+    except Exception as exc:  # noqa: BLE001 — not installed on this interpreter
+        result["errors"].append({
+            "stage": "import",
+            "error": f"vivarium_workbench.lib.study_runs unavailable: "
+                     f"{type(exc).__name__}: {exc}",
+        })
+        return result
+
+    ws_root = _Path(workspace)
+    run_ids: list = []
+
+    def _launch(stage: str, fn, body: dict) -> None:
+        try:
+            resp, code = fn(ws_root, body)
+        except Exception as exc:  # noqa: BLE001 — a launch must never raise out
+            result["errors"].append({
+                "stage": stage, "error": f"{type(exc).__name__}: {exc}",
+                "traceback": traceback.format_exc(),
+            })
+            return
+        run_id = resp.get("simulation_id") if isinstance(resp, dict) else None
+        if code != 200:
+            entry = {"stage": stage, "status": code}
+            if isinstance(resp, dict):
+                entry["error"] = resp.get("error") or resp
+            result["errors"].append(entry)
+        if run_id:
+            run_ids.append(run_id)
+
+    # 1. Baseline — always.
+    baseline_body: dict = {"study": study_slug}
+    if run_spec.get("composite"):
+        baseline_body["composite"] = run_spec["composite"]
+    if run_spec.get("steps") is not None:
+        baseline_body["steps"] = run_spec["steps"]
+    if run_spec.get("overrides"):
+        baseline_body["overrides"] = run_spec["overrides"]
+    _launch("baseline", _study_runs.run_study_baseline, baseline_body)
+
+    # 2. run_spec-named variants.
+    for variant_name in (run_spec.get("variants") or []):
+        variant_body: dict = {"study": study_slug, "variant": variant_name}
+        if run_spec.get("steps") is not None:
+            variant_body["steps"] = run_spec["steps"]
+        _launch(f"variant:{variant_name}", _study_runs.run_study_variant, variant_body)
+
+    # 3. Harvest run refs from runs.db — the canonical record, not the
+    #    transient response dicts above (F2 convention: runs_meta IS the
+    #    source of truth for a completed run).
+    try:
+        study_dir = _study_runs._resolve_study_dir(ws_root, study_slug)
+    except Exception as exc:  # noqa: BLE001
+        result["errors"].append({
+            "stage": "resolve_study_dir", "error": f"{type(exc).__name__}: {exc}",
+        })
+        study_dir = None
+
+    if study_dir is not None and run_ids:
+        db_file = study_dir / "runs.db"
+        if db_file.is_file():
+            try:
+                conn = sqlite3.connect(str(db_file))
+                conn.row_factory = sqlite3.Row
+                placeholders = ",".join("?" for _ in run_ids)
+                rows = conn.execute(
+                    "SELECT run_id, spec_id, label, sim_name, status, "
+                    "started_at, completed_at, n_steps FROM runs_meta "
+                    f"WHERE run_id IN ({placeholders})",
+                    run_ids,
+                ).fetchall()
+                conn.close()
+                by_id = {r["run_id"]: dict(r) for r in rows}
+                # Preserve launch order; a run_id present in run_ids but
+                # missing from runs_meta (e.g. a delegated-ensemble variant
+                # whose row didn't land under this run_id) is skipped rather
+                # than fabricated.
+                result["run_refs"] = [by_id[rid] for rid in run_ids if rid in by_id]
+            except Exception as exc:  # noqa: BLE001
+                result["errors"].append({
+                    "stage": "harvest_run_refs", "error": f"{type(exc).__name__}: {exc}",
+                })
+
+    # 4. Verdict — the conclusion-card the post-run flush already wrote.
+    if study_dir is not None:
+        verdict_file = study_dir / "viz" / "report_card" / "conclusion.verdict.json"
+        if verdict_file.is_file():
+            try:
+                import json as _json
+                result["verdict"] = _json.loads(verdict_file.read_text(encoding="utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                result["errors"].append({
+                    "stage": "read_verdict", "error": f"{type(exc).__name__}: {exc}",
+                })
+
+    return result
+
+
 # --- viz rendering (spec §11): build_core + viz-class registration + Composite.run
 #     all in-worker (live viz classes + core can't cross the socket). Cached per
 #     worker — build_core is ~15s and every viz render reuses it. --------------
@@ -2359,6 +2520,8 @@ def _handle(method: str, params: dict) -> dict:
         return _validate_generated_visualization(params)
     if method == "run_study_analyses":
         return _run_study_analyses(params)
+    if method == "run_study":
+        return _run_study(params)
     if method == "viz_class_inputs":
         return _viz_class_inputs()
     if method == "render_viz_doc":
