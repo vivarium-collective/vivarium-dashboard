@@ -15,7 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from vivarium_workbench.lib.investigation_composite import build_investigation_composite
+from vivarium_workbench.lib.investigation_execution import build_investigation_composite
 
 
 def _write_yaml(path: Path, data: dict) -> None:
