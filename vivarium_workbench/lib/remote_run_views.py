@@ -76,7 +76,9 @@ def _run_auth_ok() -> bool:
     flow). Pinned mode ALSO satisfies it: those calls push nothing to GitHub, so
     requiring a human token would be neither production-grade nor reproducible —
     the operator authorizes remote runs declaratively by enabling pinned mode."""
-    return github_auth.current_session() is not None or remote_pinned.is_pinned_enabled()
+    return (
+        github_auth.current_session() is not None or remote_pinned.is_pinned_enabled()
+    )
 
 
 def remote_run_start(ws_root: Path, body: dict) -> tuple[dict, int]:
@@ -115,8 +117,11 @@ def remote_run_start(ws_root: Path, body: dict) -> tuple[dict, int]:
     observables = study_spec.collect_study_observables(spec)
 
     branch = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=ws_root,
-        capture_output=True, text=True, timeout=5,
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=ws_root,
+        capture_output=True,
+        text=True,
+        timeout=5,
     ).stdout.strip()
 
     client = SmsApiClient(_sms_api_base())
@@ -152,7 +157,10 @@ def remote_run_start(ws_root: Path, body: dict) -> tuple[dict, int]:
 # durability lives in sms-api's Postgres, not an in-process manager.
 # ---------------------------------------------------------------------------
 
-def _resolve_repo_branch(ws_root: Path, body: dict) -> tuple[dict, int] | tuple[str, str]:
+
+def _resolve_repo_branch(
+    ws_root: Path, body: dict
+) -> tuple[dict, int] | tuple[str, str]:
     """Shared guard ladder: auth/study/remote. Returns (error_body, status) on
     failure, or (repo_url, branch) on success."""
     if github_auth.current_session() is None:
@@ -169,8 +177,11 @@ def _resolve_repo_branch(ws_root: Path, body: dict) -> tuple[dict, int] | tuple[
     if spec_path is None or not spec_path.is_file():
         return {"error": f"study {study!r} not found"}, 404
     branch = subprocess.run(
-        ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=ws_root,
-        capture_output=True, text=True, timeout=5,
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=ws_root,
+        capture_output=True,
+        text=True,
+        timeout=5,
     ).stdout.strip()
     return repo_url, branch
 
@@ -189,8 +200,12 @@ def remote_run_build_start(ws_root: Path, body: dict) -> tuple[dict, int]:
     uploaded = client.upload_simulator(
         {"git_commit_hash": commit, "git_repo_url": repo_url, "git_branch": branch}
     )
-    return {"simulator_id": uploaded["database_id"], "phase": "building",
-            "branch": branch, "commit": commit}, 202
+    return {
+        "simulator_id": uploaded["database_id"],
+        "phase": "building",
+        "branch": branch,
+        "commit": commit,
+    }, 202
 
 
 def remote_run_pinned_build_start(ws_root: Path, body: dict) -> tuple[dict, int]:
@@ -201,7 +216,21 @@ def remote_run_pinned_build_start(ws_root: Path, body: dict) -> tuple[dict, int]
     Returns ``({simulator_id, phase:"built", commit, branch, pinned:true}, 202)``
     so the JS panel skips build-polling and goes straight to submit. Returns
     ``409`` when pinned mode is off, ``502`` when sms-api is unreachable, ``404``
-    when no build exists for the configured repo@branch."""
+    when no build exists for the configured repo@branch.
+
+    A session that has switched to a specific repo@commit via the workspace
+    picker (``ws_root`` carries a ``.viv-build.json`` stamp) dispatches against
+    THAT build — the deployment's static repo@branch pin is only the fallback
+    for a session that never switched."""
+    session_build = remote_pinned.resolved_from_session_build(ws_root)
+    if session_build is not None:
+        return {
+            "simulator_id": session_build["simulator_id"],
+            "phase": "built",
+            "commit": session_build["commit"],
+            "branch": session_build["branch"],
+            "pinned": True,
+        }, 202
     cfg = remote_pinned.pinned_config()
     if cfg is None:
         return {"error": "pinned remote runs are not enabled"}, 409
@@ -212,12 +241,16 @@ def remote_run_pinned_build_start(ws_root: Path, body: dict) -> tuple[dict, int]
         return {"error": str(e)}, 404
     except SmsApiError as e:
         return {"error": f"sms-api unreachable: {e}", "reachable": False}, 502
-    return {"simulator_id": resolved["simulator_id"], "phase": "built",
-            "commit": resolved["commit"], "branch": resolved["branch"],
-            "pinned": True}, 202
+    return {
+        "simulator_id": resolved["simulator_id"],
+        "phase": "built",
+        "commit": resolved["commit"],
+        "branch": resolved["branch"],
+        "pinned": True,
+    }, 202
 
 
-def remote_run_config() -> tuple[dict, int]:
+def remote_run_config(ws_root: Path) -> tuple[dict, int]:
     """Report pinned-run config for the client to relabel the run card.
 
     ``{"pinned": false}`` when off; ``{"pinned": true, "repo_url", "branch",
@@ -225,15 +258,35 @@ def remote_run_config() -> tuple[dict, int]:
     config-derived Origin name (``VIVARIUM_WORKBENCH_REMOTE_DEPLOYMENT``) so the
     run form's origin selector labels "Remote:<deployment>" truthfully instead of
     a hardcoded "smsvpctest". Resolving the build is best-effort — a missing build
-    or unreachable sms-api degrades to ``build_error`` rather than failing the card."""
+    or unreachable sms-api degrades to ``build_error`` rather than failing the card.
+
+    Mirrors :func:`remote_run_pinned_build_start`'s priority: this session's own
+    switched build (``ws_root``'s ``.viv-build.json``) wins over the deployment's
+    static repo@branch pin, so the label always matches what will actually run."""
     deployment = remote_pinned.remote_deployment_name()
+    session_build = remote_pinned.resolved_from_session_build(ws_root)
+    if session_build is not None:
+        return {
+            "pinned": True,
+            "repo_url": session_build["repo_url"],
+            "branch": session_build["branch"],
+            "deployment": deployment,
+            "commit": session_build["commit"],
+            "simulator_id": session_build["simulator_id"],
+        }, 200
     cfg = remote_pinned.pinned_config()
     if cfg is None:
         return {"pinned": False, "deployment": deployment}, 200
-    out: dict = {"pinned": True, "repo_url": cfg.repo_url, "branch": cfg.branch, "deployment": deployment}
+    out: dict = {
+        "pinned": True,
+        "repo_url": cfg.repo_url,
+        "branch": cfg.branch,
+        "deployment": deployment,
+    }
     try:
         resolved = remote_pinned.resolve_pinned_build(
-            SmsApiClient(_sms_api_base()), cfg.repo_url, cfg.branch)
+            SmsApiClient(_sms_api_base()), cfg.repo_url, cfg.branch
+        )
         out["commit"] = resolved["commit"]
         out["simulator_id"] = resolved["simulator_id"]
     except (remote_pinned.NoPinnedBuildError, SmsApiError) as e:
@@ -264,9 +317,14 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
     # out empty regardless of what a study configured. build_analysis_options
     # translates it into v2ecoli's {scale: {name: params}} shape.
     from vivarium_workbench.lib.study_run_post import build_analysis_options
-    analysis_options, analysis_errors = build_analysis_options(spec.get("analyses") or [])
+
+    analysis_options, analysis_errors = build_analysis_options(
+        spec.get("analyses") or []
+    )
     for err in analysis_errors:
-        warnings.warn(f"remote_run_submit: {study!r} analysis config: {err.get('error')}")
+        warnings.warn(
+            f"remote_run_submit: {study!r} analysis config: {err.get('error')}"
+        )
     client = SmsApiClient(_sms_api_base())
     sim = client.run_simulation(
         simulator_id=int(sim_id),
@@ -309,6 +367,7 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     analyses = spec.get("analyses") or []
     if analyses:
         from vivarium_workbench.lib.study_run_post import build_analysis_options
+
         # errors (unresolvable analysis names) are intentionally not surfaced here:
         # this trigger is best-effort and must never block landing the simulation
         # itself, which is the primary, always-must-succeed action of this route.
@@ -357,23 +416,52 @@ def remote_run_status(params: dict) -> tuple[dict, int]:
         if sim_id:
             st = client.simulation_status(int(sim_id))
             raw = str(st.get("status", "")).lower()
-            phase = ("done" if raw in _TERMINAL_OK
-                     else "failed" if raw in _TERMINAL_BAD
-                     else "queued" if raw == "queued" else "running")
-            return {"kind": "run", "phase": phase, "raw_status": raw,
-                    "error": st.get("error_message"), "simulation_id": int(sim_id)}, 200
+            phase = (
+                "done"
+                if raw in _TERMINAL_OK
+                else "failed"
+                if raw in _TERMINAL_BAD
+                else "queued"
+                if raw == "queued"
+                else "running"
+            )
+            return {
+                "kind": "run",
+                "phase": phase,
+                "raw_status": raw,
+                "error": st.get("error_message"),
+                "simulation_id": int(sim_id),
+            }, 200
         if sm_id:
             st = client.simulator_status(int(sm_id))
             raw = str(st.get("status", "")).lower()
-            phase = ("built" if raw in _TERMINAL_OK
-                     else "failed" if raw in _TERMINAL_BAD else "building")
-            return {"kind": "build", "phase": phase, "raw_status": raw,
-                    "error": st.get("error_message"), "simulator_id": int(sm_id)}, 200
+            phase = (
+                "built"
+                if raw in _TERMINAL_OK
+                else "failed"
+                if raw in _TERMINAL_BAD
+                else "building"
+            )
+            return {
+                "kind": "build",
+                "phase": phase,
+                "raw_status": raw,
+                "error": st.get("error_message"),
+                "simulator_id": int(sm_id),
+            }, 200
         return {"error": "simulator_id or simulation_id required"}, 400
     except SmsApiError as e:
         # Tunnel down / SSO expired / sms-api error — surface a reachable=false
         # status so the panel shows it without the whole poll crashing.
-        reason = "auth expired (re-run aws sso login)" if getattr(e, "status", None) == 401 \
+        reason = (
+            "auth expired (re-run aws sso login)"
+            if getattr(e, "status", None) == 401
             else "sms-api unreachable (is the tunnel up?)"
-        return {"phase": "unreachable", "reachable": False, "reason": reason,
-                "status": getattr(e, "status", None), "error": str(e)}, 502
+        )
+        return {
+            "phase": "unreachable",
+            "reachable": False,
+            "reason": reason,
+            "status": getattr(e, "status", None),
+            "error": str(e),
+        }, 502

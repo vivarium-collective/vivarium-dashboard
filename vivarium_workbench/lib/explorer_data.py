@@ -1066,11 +1066,24 @@ def list_runs(workspace: Path) -> list[dict]:
     out = []
     existing_resolved: set[str] = set()
 
+    from vivarium_workbench.lib import run_store
     for r in simulations_index.list_simulations(ws):
         db = r.get("db_path")
         if not db:
             continue
-        kind, resolved = emitters.read_source(db, ws)
+        # A study run's metadata lives in <study>/runs.db, but its DATA may live
+        # in a sibling XArray store <study>/runs.<run_id>.zarr (the primary
+        # study-scoped emitter convention). Resolve the run's SOURCE from that
+        # native store when it exists, so study-grouped zarr runs are explorable
+        # too — not only .pbg/runs/<id>/store.zarr. db_path (the runs.db) is still
+        # kept below for study grouping.
+        src = db
+        rid = r.get("run_id")
+        if rid and str(db).endswith(".db"):
+            z = run_store.zarr_store_path_for_db(db, rid)
+            if (ws / z).exists():
+                src = str(z)
+        kind, resolved = emitters.read_source(src, ws)
         if kind not in ("sqlite", "zarr") or not _run_has_data(kind, resolved):
             continue
         existing_resolved.add(str(resolved))

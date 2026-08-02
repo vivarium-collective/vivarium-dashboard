@@ -267,6 +267,44 @@ def make_fake_zarr(store_path, n_steps=4, n_rxn=3):
     dt.to_zarr(str(store_path), mode="w")
 
 
+def _write_runs_meta_only(db_path: Path, run_id: str, n_steps: int = 4):
+    """A study runs.db with a runs_meta row but NO history table — its data lives
+    in a sibling XArray store (the <study>/runs.<run_id>.zarr convention)."""
+    conn = sqlite3.connect(str(db_path))
+    conn.executescript(
+        "CREATE TABLE runs_meta(run_id TEXT PRIMARY KEY, spec_id TEXT NOT NULL, "
+        "label TEXT, params_json TEXT, started_at REAL NOT NULL, completed_at REAL, "
+        "n_steps INTEGER, status TEXT NOT NULL, sim_name TEXT, generation_id TEXT, "
+        "emitter_path TEXT);")
+    conn.execute(
+        "INSERT INTO runs_meta(run_id,spec_id,label,started_at,completed_at,"
+        "n_steps,status,sim_name) VALUES(?,?,?,?,?,?,?,?)",
+        (run_id, "demo", run_id, 1.0, 1.0, n_steps, "completed", run_id))
+    conn.commit()
+    conn.close()
+
+
+def test_list_runs_resolves_study_scoped_zarr(tmp_path):
+    """A study run whose DATA lives in a sibling ``<study>/runs.<run_id>.zarr``
+    (the XArray store convention) must be listed as an explorable zarr run,
+    study-grouped — not skipped because its runs.db has no history table.
+
+    Regression: list_runs only resolved db_path (the runs.db SQLite), so
+    study-scoped zarr runs were invisible in the Data Explorer.
+    """
+    studies = tmp_path / "studies" / "demo"
+    studies.mkdir(parents=True)
+    run_id = "demo-baseline"
+    _write_runs_meta_only(studies / "runs.db", run_id)
+    make_fake_zarr(studies / f"runs.{run_id}.zarr")  # sibling XArray store
+
+    runs = explorer_data.list_runs(tmp_path)
+    r = next((x for x in runs if x["run_id"] == run_id), None)
+    assert r is not None, "study-scoped zarr run should be listed in the explorer"
+    assert r["study"] == "demo"      # study-grouped via the runs.db path
+    assert r["n_steps"] == 4
+
+
 def test_zarr_resolver_and_observables(tmp_path):
     run = tmp_path / ".pbg" / "runs" / "r1"
     run.mkdir(parents=True)

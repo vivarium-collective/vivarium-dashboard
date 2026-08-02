@@ -25,7 +25,9 @@ real ``database_id``), never trusting ``latest_simulator``.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
+from pathlib import Path
 
 from vivarium_workbench.lib.env_compat import get_env
 from vivarium_workbench.lib.sms_api_client import SmsApiClient
@@ -58,6 +60,38 @@ def is_pinned_enabled() -> bool:
     return pinned_config() is not None
 
 
+def resolved_from_session_build(ws_root: Path) -> dict | None:
+    """This session's own switched build (WS3's ``.viv-build.json`` stamp,
+    written by ``switch_build`` at ``lib/source_build_views.py``), shaped
+    identically to :func:`resolve_pinned_build`'s return value.
+
+    A session that has switched to a specific repo@commit via the workspace
+    picker should dispatch against THAT build, not the deployment's static
+    ``VIVARIUM_WORKBENCH_REMOTE_REPO_URL`` pin — the two are unrelated, and
+    without this check pinned-mode dispatch silently ignores which workspace
+    the user actually selected. Returns ``None`` when ``ws_root`` isn't a
+    materialized remote build (a local git checkout has no ``.viv-build.json``),
+    so callers fall back to the deployment-wide pin unchanged.
+    """
+    meta_path = Path(ws_root) / ".viv-build.json"
+    if not meta_path.is_file():
+        return None
+    try:
+        data = json.loads(meta_path.read_text())
+    except (OSError, ValueError):
+        return None
+    repo_url = str(data.get("repo_url") or "")
+    simulator_id = data.get("simulator_id")
+    if not repo_url or simulator_id is None:
+        return None
+    return {
+        "simulator_id": int(simulator_id),
+        "commit": str(data.get("commit") or ""),
+        "branch": str(data.get("branch") or "main"),
+        "repo_url": repo_url,
+    }
+
+
 # Default when VIVARIUM_WORKBENCH_REMOTE_DEPLOYMENT is unset — the historical
 # hardcoded value, kept only as the fallback so existing deployments don't change
 # behavior on upgrade. New deployments set the env explicitly (e.g. "smscdk").
@@ -71,8 +105,10 @@ def remote_deployment_name() -> str:
     pattern as :func:`pinned_config`), replacing the hardcoded ``"smsvpctest"`` so
     a run's recorded Origin reflects the deployment it actually ran on.
     """
-    return (get_env("REMOTE_DEPLOYMENT", _DEFAULT_REMOTE_DEPLOYMENT) or _DEFAULT_REMOTE_DEPLOYMENT).strip() \
+    return (
+        get_env("REMOTE_DEPLOYMENT", _DEFAULT_REMOTE_DEPLOYMENT)
         or _DEFAULT_REMOTE_DEPLOYMENT
+    ).strip() or _DEFAULT_REMOTE_DEPLOYMENT
 
 
 def _normalize_repo(url: str) -> str:
@@ -103,7 +139,8 @@ def resolve_pinned_build(client: SmsApiClient, repo_url: str, branch: str) -> di
     want_repo = _normalize_repo(repo_url)
     versions = (client.list_simulators() or {}).get("versions") or []
     matches = [
-        v for v in versions
+        v
+        for v in versions
         if _normalize_repo(v.get("git_repo_url", "")) == want_repo
         and (v.get("git_branch") or "") == branch
         and v.get("database_id") is not None
@@ -113,7 +150,10 @@ def resolve_pinned_build(client: SmsApiClient, repo_url: str, branch: str) -> di
             f"no built simulator for {repo_url}@{branch} — register/build one first"
         )
     # Newest by created_at (ISO-8601 strings sort lexically); fall back to id.
-    latest = max(matches, key=lambda v: (str(v.get("created_at") or ""), int(v.get("database_id", 0))))
+    latest = max(
+        matches,
+        key=lambda v: (str(v.get("created_at") or ""), int(v.get("database_id", 0))),
+    )
     return {
         "simulator_id": int(latest["database_id"]),
         "commit": str(latest.get("git_commit_hash") or ""),
