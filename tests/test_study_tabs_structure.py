@@ -10,15 +10,16 @@ def test_pillar_buttons_present():
     # button now carries the panel `data-kind` directly and calls
     # _setStudyTab(kind) on click (no more separate #study-subnav member row).
     # Pillar name != panel kind for "decide" -> "conclusions"; every other
-    # pillar name equals its kind.
+    # pillar name equals its kind. Task E4 deleted the Exports/data pillar.
     pillar_to_kind = {
         "understand": "overview", "compose": "compose", "simulate": "simulate",
         "readouts": "readouts", "visualize": "visualize", "tests": "tests",
-        "decide": "conclusions", "data": "data",
+        "decide": "conclusions",
     }
     for pillar, kind in pillar_to_kind.items():
         assert f'data-kind="{kind}"' in HTML and f"_setStudyTab('{kind}')" in HTML, \
             f"pillar {pillar!r} -> kind {kind!r} not wired"
+    assert 'data-kind="data"' not in HTML
 
 
 def test_subnav_container_removed():
@@ -26,9 +27,10 @@ def test_subnav_container_removed():
 
 
 def test_every_pillar_button_has_a_kind_and_calls_set_study_tab():
+    # Task E4 dropped the Exports/data pillar: 8 -> 7 buttons.
     import re
     btns = re.findall(r'<button class="study-pillar[^"]*"[^>]*>', HTML)
-    assert len(btns) == 8, f"expected 8 pillar buttons, got {len(btns)}"
+    assert len(btns) == 7, f"expected 7 pillar buttons, got {len(btns)}"
     for b in btns:
         assert "data-kind=" in b, f"pillar button missing data-kind: {b[:80]}"
     assert re.search(r'onclick="_setStudyTab\(', HTML), "pillar buttons must call _setStudyTab directly"

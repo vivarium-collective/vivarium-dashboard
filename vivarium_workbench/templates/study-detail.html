@@ -163,8 +163,9 @@
      carries a gate dot. Fable G2: the dot state is wired from `gate_states`
      (built server-side by lib.study_page.act_gate_states from the six-gate
      ladder below — see §13.1 "act rail dots show each act's gate state at a
-     glance"). Exports sits apart in its own cluster: it's the Record
-     drawer, not a narrative act, so it gets no dot. #}
+     glance"). Task E4 removed the Exports/Record cluster (its panel was an
+     empty shell after E1–E3 relocated everything it held) — the rail is now
+     five acts, all with gate dots. #}
   <div class="act-cluster" data-act="study">
     <div class="act-header">
       <span class="act-gate-dot" data-gate="study" data-gate-state="{{ gate_states.study }}"></span>
@@ -211,14 +212,6 @@
     <div class="act-tabs">
       {# "Decide" pillar's panel kind is "conclusions" (was a sub-tab under Hypotheses). #}
       <button class="study-pillar" data-kind="conclusions" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
-    </div>
-  </div>
-  <div class="act-cluster act-cluster-record" data-act="record">
-    <div class="act-header">
-      <span class="act-label">Exports</span>
-    </div>
-    <div class="act-tabs">
-      <button class="study-pillar" data-kind="data" onclick="_setStudyTab('data')">Exports</button>
     </div>
   </div>
 </nav>
@@ -1052,10 +1045,12 @@
     </div>
     <p class="muted">Quantities collected from each simulation run. Each row is an emitter <code>store_path</code> the composite will save; authored entries in <code>study.yaml</code> add names, descriptions, and units on top.</p>
 
-    {# Points at Exports' raw-data downloads rather than duplicating them
-       (Task C4 — Exports is the single "get the data" tab). Populated by
-       _loadReadoutsDownloadPointer, which only shows the pointer when
-       there's actually data to download (never links to an empty tab). #}
+    {# Points at Simulations' raw-data downloads (Study artifacts strip)
+       rather than duplicating them (Task C4, repointed by Task E2 when
+       Exports was folded into Simulations — Simulations is now the single
+       "get the data" tab). Populated by _loadReadoutsDownloadPointer, which
+       only shows the pointer when there's actually data to download (never
+       links to an empty tab). #}
     <div id="readouts-download" style="margin:0 0 16px 0"></div>
 
     <div id="readouts-table" data-study="{{ name }}">
@@ -1136,17 +1131,6 @@
        still holds actual figures. #}
     <p id="figures-empty-message" class="empty-message" style="display:none">No figures yet.</p>
   </div>
-</section>
-
-<section class="study-tab-panel" data-kind="data" id="panel-data" hidden>
-  <h2>Exports</h2>
-  {# Task E2: both study-level bulk-download groups this tab used to hold
-     (analysis result files `#data-files`, raw simulation data
-     `#raw-data-list`/`#exports-downloads`) moved to the Simulations tab's
-     new "Study artifacts" strip (`#study-artifacts-section`) — Simulations
-     is becoming the runs + study-wide-artifacts hub, and this tab is being
-     retired (Task E4). #}
-  <div class="data-section"></div>
 </section>
 
 <section class="study-tab-panel" data-kind="tests" id="panel-tests" hidden>

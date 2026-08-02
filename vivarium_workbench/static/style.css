@@ -4045,11 +4045,11 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
  * small `.act-tabs` gap, so the five acts still read as distinct groups.
  * Each act label carries a `.act-gate-dot`: a 6px dot that renders
  * neutral/grey here (`data-gate-state="not-assessed"`) — Fable G2 recolors
- * it per the six-gate state without touching this markup. Exports is set
- * apart in `.act-cluster-record` (extra left margin/divider): it's the
- * Record drawer, not a narrative act, so it gets no gate dot. */
+ * it per the six-gate state without touching this markup. Task E4 removed
+ * the Exports/Record cluster (and its `.act-cluster-record` divider style)
+ * once its panel had nothing left in it — all remaining clusters are
+ * narrative acts with a gate dot. */
 .act-cluster { display: flex; flex-direction: column; }
-.act-cluster-record { margin-left: 16px; padding-left: 16px; border-left: 1px solid var(--border); }
 .act-header {
   display: flex; align-items: center; gap: 5px;
   padding: 0 2px 5px; border-bottom: 1px solid var(--border);
@@ -4686,7 +4686,6 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 /* Act rail (Fable G1; ACTRAIL fix regrouped `.act-group` into `.act-header`
    inside each `.act-cluster`) */
 :root[data-theme="dark"] .act-header{ border-bottom-color:var(--border) !important; }
-:root[data-theme="dark"] .act-cluster-record{ border-left-color:var(--border) !important; }
 :root[data-theme="dark"] .act-label{ color:var(--text-muted) !important; }
 :root[data-theme="dark"] .act-gate-dot{ background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--border-2); }
 /* Fable G2: per-gate-state dot colors (§9.3 palette) win over the neutral

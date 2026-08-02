@@ -755,12 +755,14 @@ def test_tests_gate_summary_not_duplicated_by_behavioral_list(tmp_path, dashboar
 
 
 # ---------------------------------------------------------------------------
-# Task 11: Exports — strip explanatory prose. Keeps its function (result-files
-# list, "Download all (.zip)" link, raw simulation-data list) but loses the
-# tutorial-style paragraphs; gets a plain `<h2>Exports</h2>` heading.
+# Task 11 / E2: Exports functional bits (result-files list, "Download all
+# (.zip)" link, raw simulation-data list) now live on Simulations — the
+# Exports tab itself was deleted (Task E4, its panel was an empty shell
+# after E1-E3 relocated everything it held). See test_study_artifacts_on_
+# simulate.py for the current home of these assertions.
 # ---------------------------------------------------------------------------
 
-def test_exports_functional_no_prose(tmp_path, dashboard_client):
+def test_exports_tab_and_panel_removed(tmp_path, dashboard_client):
     ws = tmp_path / "ws"
     sd = ws / "studies" / "exports-study"
     sd.mkdir(parents=True)
@@ -780,21 +782,15 @@ def test_exports_functional_no_prose(tmp_path, dashboard_client):
     assert resp.status_code == 200
     html = resp.text
 
-    # Functional bits kept.
+    # Functional bits still present — now under Simulations (Task E2).
     assert 'id="data-files"' in html
     assert 'id="raw-data-list"' in html
     assert 'id="data-download-all"' in html
     assert '/api/study-analysis-zip?study=exports-study' in html
 
-    # Plain heading kept, in the right panel.
-    data_panel = html[html.index('id="panel-data"'):html.index('id="panel-tests"')]
-    assert '<h2>Exports</h2>' in data_panel
-
-    # Explanatory/tutorial prose is gone.
-    assert 'Tabular outputs' not in html
-    assert 'Click a file to' not in html
-    assert "Each run's raw emitter store" not in html
-    assert 'Analysis outputs above are derived' not in html
+    # The Exports tab + panel are gone (Task E4).
+    assert 'data-kind="data"' not in html
+    assert 'id="panel-data"' not in html
 
 
 # ---------------------------------------------------------------------------
@@ -919,10 +915,11 @@ def test_overview_deleted_blocks_absent_core_content_kept(tmp_path, dashboard_cl
 
 def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
     """Real served-HTML assertion (not just static grep): the second tab
-    row (#study-subnav) must be entirely absent, all 8 `.study-pillar`
+    row (#study-subnav) must be entirely absent, all 7 `.study-pillar`
     buttons must be present and wired to call `_setStudyTab(<kind>)`
     directly, and the deleted pillar/member-indirection JS functions must
-    not appear anywhere in the served page or its JS asset.
+    not appear anywhere in the served page or its JS asset. (Task E4 later
+    dropped the Exports/data pillar, so the count is 7, not 8.)
     """
     ws = tmp_path / "ws"
     sd = ws / "studies" / "pillars-direct-study"
@@ -947,19 +944,20 @@ def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
     assert 'id="study-subnav"' not in html
     assert 'study-subnav' not in html
 
-    # All 8 pillar buttons present, each carrying data-kind and calling
+    # All 7 pillar buttons present, each carrying data-kind and calling
     # _setStudyTab(kind) directly (pillar name == kind, except
-    # "decide" -> "conclusions").
+    # "decide" -> "conclusions"). Exports/data pillar was deleted (Task E4).
     pillar_to_kind = {
         "understand": "overview", "compose": "compose", "simulate": "simulate",
         "readouts": "readouts", "visualize": "visualize", "tests": "tests",
-        "decide": "conclusions", "data": "data",
+        "decide": "conclusions",
     }
     for pillar, kind in pillar_to_kind.items():
         assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html, \
             f"pillar {pillar!r} not wired to _setStudyTab('{kind}')"
     import re
-    assert len(re.findall(r'<button class="study-pillar[^"]*"', html)) == 8
+    assert len(re.findall(r'<button class="study-pillar[^"]*"', html)) == 7
+    assert 'data-kind="data"' not in html
 
     # No pillar/member indirection left anywhere (grep-proven, both served
     # HTML and the JS asset it references).
@@ -1018,16 +1016,18 @@ def test_act_rail_renders_above_tab_nav(tmp_path, dashboard_client):
     assert 'class="act-rail"' not in nav
     assert 'class="study-pillars"' not in nav
 
-    # Five act labels, in order, plus the Record-drawer label set apart.
-    for label in ("The Study", "Design", "Evidence", "Assurance", "Decision", "Exports"):
+    # Five act labels, in order. Task E4 removed the sixth (Record-drawer
+    # "Exports") cluster — the rail is now exactly these five.
+    for label in ("The Study", "Design", "Evidence", "Assurance", "Decision"):
         assert label in nav, f"act label {label!r} missing from act rail"
     order = [nav.index(label) for label in
-             ("The Study", "Design", "Evidence", "Assurance", "Decision", "Exports")]
+             ("The Study", "Design", "Evidence", "Assurance", "Decision")]
     assert order == sorted(order), "act labels out of order"
+    assert "Exports" not in nav
 
-    # Each of the five acts (not Exports) carries a gate-dot hook: a stable
-    # class + data-gate attribute, neutral state — G2 recolors it, doesn't
-    # need to touch this markup.
+    # Each of the five acts carries a gate-dot hook: a stable class +
+    # data-gate attribute, neutral state — G2 recolors it, doesn't need to
+    # touch this markup.
     import re
     dots = re.findall(r'<span class="act-gate-dot" data-gate="([a-z]+)"[^>]*>', nav)
     assert dots == ["study", "design", "evidence", "assurance", "decision"], dots
@@ -1075,15 +1075,17 @@ def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
         assert m, f"act-cluster segment missing data-act: {seg[:80]!r}"
         clusters[m.group(1)] = seg
 
+    # Task E4 deleted the sixth "record" cluster (Exports) — five narrative
+    # acts remain, each with a gate dot.
     expected = {
         "study": {"label": "The Study", "kinds": ["overview"]},
         "design": {"label": "Design", "kinds": ["compose", "readouts"]},
         "evidence": {"label": "Evidence", "kinds": ["simulate", "visualize"]},
         "assurance": {"label": "Assurance", "kinds": ["tests"]},
         "decision": {"label": "Decision", "kinds": ["conclusions"]},
-        "record": {"label": "Exports", "kinds": ["data"]},
     }
     assert set(clusters) == set(expected), clusters.keys()
+    assert "record" not in clusters
 
     for act, spec in expected.items():
         seg = clusters[act]
@@ -1092,28 +1094,27 @@ def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
             assert f'data-kind="{kind}"' in seg, f"{act} cluster missing data-kind={kind!r}"
             assert f"_setStudyTab('{kind}')" in seg, f"{act} cluster's {kind!r} button missing onclick"
 
-        if act == "record":
-            # Exports is the Record drawer, not a narrative act — no gate dot.
-            assert "act-gate-dot" not in seg, "record cluster must not carry a gate dot"
-        else:
-            assert re.search(r'<span class="act-gate-dot" data-gate="%s" data-gate-state="[a-z-]+">' % act, seg), \
-                f"{act} cluster missing its act-gate-dot with data-gate-state"
+        assert re.search(r'<span class="act-gate-dot" data-gate="%s" data-gate-state="[a-z-]+">' % act, seg), \
+            f"{act} cluster missing its act-gate-dot with data-gate-state"
 
-    # All 8 `.study-pillar` buttons are present in the nav, unchanged.
+    # All 7 `.study-pillar` buttons are present in the nav (Exports/data
+    # pillar was deleted — Task E4).
     all_kinds = ["overview", "compose", "readouts", "simulate", "visualize",
-                 "tests", "conclusions", "data"]
+                 "tests", "conclusions"]
     btns = re.findall(r'<button class="study-pillar[^"]*"[^>]*>', nav)
-    assert len(btns) == 8, f"expected 8 pillar buttons, got {len(btns)}"
+    assert len(btns) == 7, f"expected 7 pillar buttons, got {len(btns)}"
     for kind in all_kinds:
         assert f'data-kind="{kind}"' in nav and f"_setStudyTab('{kind}')" in nav
+    assert 'data-kind="data"' not in nav
 
 
 def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     """Tab order is now Overview, Model, Readouts, Simulations,
-    Visualizations, Tests, Decide, Exports — Readouts moves so Design
-    (Model+Readouts) and Evidence (Simulations+Visualizations) each group
-    contiguously per act. Panel switching is unaffected (`_setStudyTab`
-    selects by `data-kind`, not position)."""
+    Visualizations, Tests, Decide — Readouts moves so Design (Model+Readouts)
+    and Evidence (Simulations+Visualizations) each group contiguously per
+    act. Panel switching is unaffected (`_setStudyTab` selects by
+    `data-kind`, not position). Task E4 later dropped the trailing Exports
+    tab."""
     ws = tmp_path / "ws"
     sd = ws / "studies" / "readouts-order-study"
     sd.mkdir(parents=True)
@@ -1135,7 +1136,7 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
 
     kinds_in_order = [
         "overview", "compose", "readouts", "simulate", "visualize",
-        "tests", "conclusions", "data",
+        "tests", "conclusions",
     ]
     positions = [html.index(f'data-kind="{k}"') for k in kinds_in_order]
     assert positions == sorted(positions), (
@@ -1144,9 +1145,11 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     # Readouts now precedes Simulations in the pillar row.
     assert html.index('data-kind="readouts"') < html.index('data-kind="simulate"')
 
-    # All 8 pillars still present and wired to _setStudyTab.
+    # All 7 pillars still present and wired to _setStudyTab (Exports/data
+    # pillar was deleted — Task E4).
     for kind in kinds_in_order:
         assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html
+    assert 'data-kind="data"' not in html
 
 
 # ---------------------------------------------------------------------------

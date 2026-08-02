@@ -73,15 +73,16 @@ def test_study_detail_spec_returns_none_for_missing(_ws):
     assert _study_detail_spec(_ws, "does-not-exist") is None
 
 
-def test_study_detail_page_has_eight_tabs(_ws):
+def test_study_detail_page_has_seven_tabs(_ws):
     """The pillar tabs are present: Overview · Tests · Model (compose) ·
     Simulations (simulate) · Readouts · Results (visualize) · Decide
-    (conclusions) · Exports (data).
+    (conclusions).
 
     (The contract this test guards is "the required pillar tabs are all
     present", not "exactly N" — the count check was brittle as tabs accreted.
     Task 10 merged Report Cards into Tests as one concept, so it is no longer
-    a separate tab/kind.)
+    a separate tab/kind. Task E4 removed the Exports (data) tab — it was an
+    empty shell after E1–E3 relocated everything it held.)
     """
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
@@ -89,18 +90,24 @@ def test_study_detail_page_has_eight_tabs(_ws):
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
     # Required pillar buttons
     for kind in ("overview", "tests", "compose", "simulate", "readouts",
-                 "visualize", "conclusions", "data"):
+                 "visualize", "conclusions"):
         assert f'class="study-tab' in html
         assert f'data-kind="{kind}"' in html
     # Report Cards is no longer its own tab — it's a subsection of Tests.
     assert 'data-kind="report-cards"' not in html
+    # Exports/data tab was deleted (Task E4).
+    assert 'data-kind="data"' not in html
+    assert 'id="panel-data"' not in html
     # At least seven panels
     panels = html.count('class="study-tab-panel')
     assert panels >= 7, f"expected at least 7 panel elements, got {panels}"
-    # The Overview tab is active by default — must have both active class and overview kind on a button
-    assert 'class="study-tab active" data-kind="overview"' in html or \
-           'data-kind="overview" class="study-tab active"' in html or \
-           ('"study-tab active"' in html and 'data-kind="overview"' in html)
+    # The Overview tab is active by default — must have both active class and overview kind on a button.
+    # (Pre-existing bug fix, unrelated to E4: this checked the pre-Fable-A-#6
+    # "study-tab" class name, which the pillar buttons never carried — they're
+    # "study-pillar". Corrected to match the actual markup.)
+    assert 'class="study-pillar active" data-kind="overview"' in html or \
+           'data-kind="overview" class="study-pillar active"' in html or \
+           ('"study-pillar active"' in html and 'data-kind="overview"' in html)
 
 
 def test_study_page_is_a_fetch_shell_not_an_embed(_ws):
@@ -262,11 +269,12 @@ def test_full_study_renders_all_tabs(_rich_ws):
     html = _render_study_detail_html(_rich_ws, "rich", spec)
 
     # Pillar tabs scaffolded (Report Cards merged into Tests — Task 10 — so it
-    # is no longer a separate data-kind).
+    # is no longer a separate data-kind; Exports/data was deleted — Task E4).
     for kind in ("overview", "tests", "compose", "simulate", "readouts",
-                 "visualize", "conclusions", "data"):
+                 "visualize", "conclusions"):
         assert f'data-kind="{kind}"' in html
     assert 'data-kind="report-cards"' not in html
+    assert 'data-kind="data"' not in html
 
     # Overview: objective text renders.
     assert "Compare growth kinetics" in html
@@ -314,9 +322,10 @@ def test_simulate_tab_does_not_render_charts_panel(_rich_ws):
     )
     # Sanity: the Results tab still has its chart panel. (Task 10 removed the
     # standalone Report Cards panel that used to follow Visualizations in
-    # document order — Report Cards is now a subsection of Tests — so the
-    # next panel marker is Exports/data.)
-    viz_panel = _section(html, 'id="panel-visualize"', 'id="panel-data"')
+    # document order — Report Cards is now a subsection of Tests. Task E4
+    # then deleted the Exports/data panel that used to follow Visualizations,
+    # so the next panel marker is Tests.)
+    viz_panel = _section(html, 'id="panel-visualize"', 'id="panel-tests"')
     assert 'id="viz-charts-panel"' in viz_panel
 
 

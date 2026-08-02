@@ -28,12 +28,6 @@ def _panel_compose():
     return HTML[i: nxt if nxt != -1 else len(HTML)]
 
 
-def _panel_data():
-    i = HTML.index('id="panel-data"')
-    nxt = HTML.find('class="study-tab-panel"', i + 10)
-    return HTML[i: nxt if nxt != -1 else len(HTML)]
-
-
 def test_inner_hooks_preserved_in_compose():
     p = _panel_compose()
     # The legacy v2 baseline/variants/interventions CRUD was retired; the Model
@@ -82,14 +76,12 @@ def test_analyses_section_present_and_reachable_on_the_study_page():
     # control must stay reachable on the Study page. Task E1 relocated it
     # (back) from the Exports (data) tab to the Model (compose) tab — it is
     # study setup ("what to compute"), not an export artifact — near
-    # Conditions, so it now lives in #panel-compose and NOT in #panel-data
-    # (Exports keeps only its download-oriented sections).
+    # Conditions, so it now lives in #panel-compose. Task E4 later deleted
+    # the Exports/data tab entirely (#panel-data no longer exists).
     p = _panel_compose()
     assert 'id="study-analyses-list"' in p
     assert 'onclick="_saveStudyAnalyses()"' in p
     assert 'id="study-analyses-status"' in p
-    assert '/api/study-set-analyses' not in _panel_data()
-    assert 'id="study-analyses-list"' not in _panel_data()
     assert '{# Analyses' in HTML
 
 

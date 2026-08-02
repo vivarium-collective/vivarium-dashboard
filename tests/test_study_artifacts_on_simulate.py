@@ -45,25 +45,24 @@ def _panel(html: str, kind: str) -> str:
 def test_analysis_files_group_moved_to_simulate_panel():
     html = _render()
     sim_panel = _panel(html, "simulate")
-    data_panel = _panel(html, "data")
     assert 'id="data-files"' in sim_panel
     assert 'id="data-download-all"' in sim_panel
     assert '/api/study-analysis-zip?study=s1' in sim_panel
-    assert 'id="data-files"' not in data_panel
-    assert 'id="data-download-all"' not in data_panel
+    # Task E4 deleted the Exports/data tab entirely — nothing to check it
+    # against anymore; the group now has exactly one home (Simulations).
+    assert 'id="panel-data"' not in html
 
 
 def test_raw_data_bulk_group_moved_to_simulate_panel():
     html = _render()
     sim_panel = _panel(html, "simulate")
-    data_panel = _panel(html, "data")
     assert 'id="raw-data-list"' in sim_panel
     assert 'id="exports-downloads"' in sim_panel
     assert 'id="raw-data-download-all"' in sim_panel
     assert 'onclick="_downloadAllRawExports()"' in sim_panel
-    assert 'id="raw-data-list"' not in data_panel
-    assert 'id="exports-downloads"' not in data_panel
-    assert 'id="raw-data-download-all"' not in data_panel
+    # Task E4 deleted the Exports/data tab entirely — nothing to check it
+    # against anymore; the group now has exactly one home (Simulations).
+    assert 'id="panel-data"' not in html
 
 
 def test_simulate_panel_still_has_runs_table_and_run_detail():
