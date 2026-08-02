@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from vivarium_workbench.lib.audit_views import build_audit
+from vivarium_workbench.lib.audit_views import build_audit, build_study_audit, StudyAuditViewError
 
 
 def _has_study_audit() -> bool:
@@ -100,6 +100,107 @@ def test_build_audit_is_tolerant_of_a_bad_path(tmp_path):
     assert body.get("studies") == []
 
 
+def _audit_study_workspace(root: Path) -> Path:
+    """A workspace whose study.yaml is readable by BOTH ``load_study_detail_spec``
+    (which build_study_audit uses for the 404 existence check -- it parses via
+    ``lib.investigations.load_spec``, which requires either a top-level
+    ``composite:`` or ``variants:``) AND ``viva_superpowers.study_audit`` (which
+    reads the file directly via ``study_io.load_yaml``, no such requirement).
+    Deliberately NOT ``_make_workspace``'s ``conditions.baseline`` shape above --
+    that shape has no top-level ``composite``/``variants`` and no
+    ``schema_version: 4``, so ``load_spec`` raises ``InvestigationSpecError``
+    before ``build_study_audit`` ever reaches the audit call. This is the same
+    legacy single-composite shape ``tests/test_rigor_views_lib.py`` uses for its
+    build_study_rigor fixture."""
+    _write(root / "workspace.yaml", "name: probe-ws\n")
+    _write(
+        root / "studies" / "s1" / "study.yaml",
+        "name: s1\ncomposite: some.composite\n",
+    )
+    return root
+
+
+class TestBuildStudyAudit:
+    """Unit tests for build_study_audit (Fable G6 Reproducibility check group)."""
+
+    def test_missing_study_raises_400(self, tmp_path):
+        with pytest.raises(StudyAuditViewError) as exc:
+            build_study_audit(tmp_path, None)
+        assert exc.value.status == 400
+        assert exc.value.body == {"error": "missing ?study="}
+
+    def test_not_found_raises_404(self, tmp_path):
+        ws = _make_workspace(tmp_path / "ws")
+        with pytest.raises(StudyAuditViewError) as exc:
+            build_study_audit(ws, "nope")
+        assert exc.value.status == 404
+        assert exc.value.body == {"error": "study not found"}
+
+    def test_happy_path_computes_for_fixture_study(self, tmp_path):
+        """The study exists, so this MUST get either a real per-study audit
+        block (when viva_superpowers.study_audit is installed, which it is in
+        this env) or an honest unavailable() -- never a raise, never a
+        fabricated empty block."""
+        ws = _audit_study_workspace(tmp_path / "ws")
+        out = build_study_audit(ws, "s1")
+        assert isinstance(out, dict)
+        assert json.loads(json.dumps(out)) == out  # JSON-serializable
+
+        if _HAS_STUDY_AUDIT:
+            assert out.get("unavailable") is not True
+            assert out["slug"] == "s1"
+            assert out["worst"] in ("pass", "warn", "fail")
+            assert isinstance(out["checks"], list) and out["checks"]
+            for c in out["checks"]:
+                assert c["level"] in ("L0", "L1", "L2", "L3", "L4", "L5")
+                assert c["status"] in ("pass", "warn", "fail")
+                assert c["tier"] in ("hard", "soft")
+        else:
+            assert out.get("unavailable") is True
+            assert out.get("reason")
+
+    def test_compute_failure_degrades_to_unavailable(self, tmp_path, monkeypatch):
+        """An audit_workspace exception (unimportable dep, evaluator crash, …)
+        never raises/500s -- it degrades to unavailable(reason), same contract
+        as rigor_views.build_study_rigor (spec §2 R2)."""
+        ws = _audit_study_workspace(tmp_path / "ws")
+
+        import viva_superpowers.study_audit as _sa_mod
+
+        def _boom(*args, **kwargs):
+            raise RuntimeError("audit exploded")
+
+        monkeypatch.setattr(_sa_mod, "audit_workspace", _boom)
+        out = build_study_audit(ws, "s1")
+        assert out["unavailable"] is True
+        assert "audit exploded" in out["reason"]
+
+    def test_no_block_for_slug_degrades_to_unavailable(self, tmp_path, monkeypatch):
+        """When audit_workspace succeeds but reports no block for this slug
+        (an edge case, not expected in practice since the study exists), the
+        wrapper degrades to unavailable rather than raising an IndexError-ish
+        KeyError or fabricating an empty checks list."""
+        ws = _audit_study_workspace(tmp_path / "ws")
+
+        import viva_superpowers.study_audit as _sa_mod
+
+        class _EmptyReport:
+            studies = []
+
+        monkeypatch.setattr(_sa_mod, "audit_workspace", lambda *a, **k: _EmptyReport())
+        out = build_study_audit(ws, "s1")
+        assert out["unavailable"] is True
+        assert "s1" in out["reason"]
+
+
+class TestStudyAuditViewError:
+    def test_body_and_status(self):
+        err = StudyAuditViewError({"error": "oops"}, 404)
+        assert err.status == 404
+        assert err.body == {"error": "oops"}
+        assert str(err) == "oops"
+
+
 def _app_imports() -> bool:
     try:
         from vivarium_workbench.api.app import create_app  # noqa: F401
@@ -120,6 +221,42 @@ def test_api_audit_route(dashboard_client, tmp_path):
     assert r.status_code == 200
     body = r.json()
     assert isinstance(body.get("studies"), list)
+
+
+@pytest.mark.skipif(
+    not _app_imports(),
+    reason="FastAPI app import hits the pre-existing process_bigraph.composite_spec "
+    "ModuleNotFoundError (unrelated to this view); route covered by the lib test.",
+)
+class TestStudyAuditRoute:
+    """GET /api/study-audit -- Fable G6 (mirrors /api/study-rigor)."""
+
+    def test_returns_payload_never_500(self, dashboard_client, tmp_path):
+        ws = _audit_study_workspace(tmp_path / "ws")
+        client = dashboard_client(ws)
+        r = client.get("/api/study-audit?study=s1")
+        assert r.status_code == 200
+        body = r.json()
+        assert isinstance(body, dict)
+        if _HAS_STUDY_AUDIT:
+            assert body.get("unavailable") is not True
+            assert body["slug"] == "s1"
+        else:
+            assert body.get("unavailable") is True
+
+    def test_missing_study_param_is_400(self, dashboard_client, tmp_path):
+        ws = _make_workspace(tmp_path / "ws")
+        client = dashboard_client(ws)
+        r = client.get("/api/study-audit")
+        assert r.status_code == 400
+        assert r.json() == {"error": "missing ?study="}
+
+    def test_unknown_study_is_404(self, dashboard_client, tmp_path):
+        ws = _make_workspace(tmp_path / "ws")
+        client = dashboard_client(ws)
+        r = client.get("/api/study-audit?study=nope")
+        assert r.status_code == 404
+        assert r.json() == {"error": "study not found"}
 
 
 def test_publish_writes_parseable_audit_json(tmp_path):

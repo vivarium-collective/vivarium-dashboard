@@ -77,6 +77,7 @@ export interface ChartPayload {
   simulations: string | null;
   interpretation: string | null;
   data_source: string | null;
+  run_id: string | null;
 }
 
 export interface StudyChartsPayload {
@@ -84,6 +85,7 @@ export interface StudyChartsPayload {
   schema_version: any | null;
   charts: ChartPayload[];
   db_exists: boolean;
+  data_store: string | null;
   static_count: number;
   live_count: number;
 }

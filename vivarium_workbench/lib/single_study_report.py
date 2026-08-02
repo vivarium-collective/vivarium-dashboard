@@ -466,7 +466,7 @@ def _render_conclusion_verdicts(spec: dict) -> str:
     """Render the derived 3-track verdict block (read-only computed badges)."""
     cv = _D.conclusion_verdicts(spec)
     tracks = [
-        ("biological_validation", "Biological validation", "from gate evaluator"),
+        ("biological_validation", "Empirical validation", "from gate evaluator"),
         ("regression_compatibility", "Regression compatibility", "from run status"),
         ("explanatory_gain", "Explanatory gain", "from interpretation-tier findings"),
     ]

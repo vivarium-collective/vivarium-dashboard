@@ -314,9 +314,15 @@
   document.addEventListener("click", _onRerunButtonClick, true);
 
   // Render one <tr>. opts.scope === 'study' drops Investigation + Study columns.
+  // opts.dropIds (set by renderTable() after dropEmptyColumns()) skips the
+  // STUDY_COLS cells that were determined dead across the whole table; global
+  // Sim-DB callers that build rows via renderRow() directly (not renderTable())
+  // never pass it, so their columns are unaffected.
   function renderRow(row, opts) {
     opts = opts || {};
     var studyScope = opts.scope === "study";
+    var dropIds = opts.dropIds || null;
+    var keep = function (id) { return !dropIds || dropIds.indexOf(id) === -1; };
     var runId = row.run_id || "";
     var runLabel = row.sim_name || row.label || runId;
     var td = function (h, extra) { return '<td style="padding:6px 8px;' + (extra || "") + '">' + h + "</td>"; };
@@ -326,31 +332,58 @@
       cells += td(inv ? '<code style="font-size:12px;color:#374151;">' + esc(inv) + "</code>" : '<span style="color:#9ca3af;">—</span>', "overflow-wrap:anywhere;");
       cells += td(st ? '<code style="font-size:12px;color:#374151;">' + esc(st) + "</code>" : '<span style="color:#9ca3af;">—</span>', "overflow-wrap:anywhere;");
     }
-    cells += td('<code style="font-size:11px;color:#6b7280;display:block;overflow:hidden;' +
+    if (keep("run")) cells += td('<code style="font-size:11px;color:#6b7280;display:block;overflow:hidden;' +
       'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(runId + (row.db_path ? "\n" + row.db_path : "")) +
       '">' + esc(runLabel) + "</code>", "overflow:hidden;");
-    cells += td(composite(row), "overflow:hidden;");
-    cells += td(config(row), "overflow:hidden;max-width:320px;");
-    cells += td(location(row), "overflow:hidden;");
-    cells += td(originPill(row));
-    cells += td(emitterPill(row.emitter_type));
-    cells += td(esc(fmtTime(row.completed_at || row.started_at)), "color:#6b7280;");
-    cells += td(statusChip(row.status));
-    cells += td(toolsCell(row), "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;");
-    cells += td('<div class="run-actions">' + _actions(row) + '</div>', "vertical-align:middle;");
+    if (keep("composite")) cells += td(composite(row), "overflow:hidden;");
+    if (keep("config")) cells += td(config(row), "overflow:hidden;max-width:320px;");
+    if (keep("location")) cells += td(location(row), "overflow:hidden;");
+    if (keep("origin")) cells += td(originPill(row));
+    if (keep("emitter")) cells += td(emitterPill(row.emitter_type));
+    if (keep("time")) cells += td(esc(fmtTime(row.completed_at || row.started_at)), "color:#6b7280;");
+    if (keep("status")) cells += td(statusChip(row.status));
+    if (keep("tools")) cells += td(toolsCell(row), "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;");
+    if (keep("actions")) cells += td('<div class="run-actions">' + _actions(row) + '</div>', "vertical-align:middle;");
     return '<tr data-run-id="' + esc(runId) + '" data-study="' + esc(study(row)) + '" ' +
       'style="border-bottom:1px solid #f3f4f6;cursor:pointer;" ' +
       'title="Click to open this run — its study, or the Composite Explorer">' + cells + "</tr>";
   }
 
   var STUDY_COLS = [
-    { label: "Run", key: "run" }, { label: "Composite", key: "composite" },
-    { label: "Config", key: "config" },
-    { label: "Location", key: "location" },
-    { label: "Origin", key: "origin" }, { label: "Emitter", key: "emitter" },
-    { label: "Time", key: "time" }, { label: "Status", key: "status" },
-    { label: "Tools", key: null }, { label: "", key: null },
+    { label: "Run", key: "run", id: "run" }, { label: "Composite", key: "composite", id: "composite" },
+    { label: "Config", key: "config", id: "config" },
+    // `html` = the same render fn used for the cell. dropEmptyColumns() only
+    // considers columns that carry one (see below) — Location/Emitter render
+    // a plain "—" when unset, so an all-"—" column is genuinely dead; other
+    // columns (e.g. Composite's "⚠ none") render meaningful content even
+    // when the underlying value is missing, so they're left unmarked and
+    // always kept.
+    { label: "Location", key: "location", id: "location", html: function (row) { return location(row); } },
+    { label: "Origin", key: "origin", id: "origin" },
+    { label: "Emitter", key: "emitter", id: "emitter", html: function (row) { return emitterPill(row.emitter_type); } },
+    { label: "Time", key: "time", id: "time" }, { label: "Status", key: "status", id: "status" },
+    { label: "Tools", key: null, id: "tools" }, { label: "", key: null, id: "actions" },
   ];
+
+  // Generic pre-render pass (Fable A #2 / study-design-fable-pass spec R3):
+  // a table column whose rendered content is empty/"—" for EVERY row is
+  // dropped rather than shown as a column of dashes. Only columns that carry
+  // an `html(row)` accessor participate — columns without one (blank header,
+  // interactive controls, or a warning-style empty state) always stay.
+  // Shared by this module's Simulations runs table and study-detail.js's
+  // Readouts table (window.SimTable.dropEmptyColumns).
+  function _cellTextEmpty(html) {
+    var text = String(html == null ? "" : html).replace(/<[^>]*>/g, "").trim();
+    return text === "" || text === "—" || text === "-";
+  }
+  function dropEmptyColumns(rows, cols) {
+    rows = rows || [];
+    if (!rows.length) return cols;
+    return cols.filter(function (c) {
+      if (typeof c.html !== "function") return true;
+      return rows.some(function (r) { return !_cellTextEmpty(c.html(r)); });
+    });
+  }
 
   function sortValue(row, key) {
     if (key === "time") return row.completed_at || row.started_at || 0;
@@ -370,7 +403,7 @@
     opts = opts || { scope: "study" };
     if (!mount) return;
     if (!rows || !rows.length) {
-      mount.innerHTML = '<p class="empty-state muted" style="margin:0">No simulations recorded for this study yet. Launch one from Configure &amp; Run below.</p>';
+      mount.innerHTML = '<p class="empty-state muted" style="margin:0">No simulations recorded for this study yet.</p>';
       return;
     }
     mount._simRows = rows;
@@ -381,7 +414,14 @@
       var c = av < bv ? -1 : av > bv ? 1 : 0;
       return sort.dir === "asc" ? c : -c;
     });
-    var head = "<thead><tr>" + STUDY_COLS.map(function (c) {
+    // R3 — no dead columns: drop any STUDY_COLS entry whose cell is empty
+    // across every row in this table (see dropEmptyColumns above).
+    var cols = dropEmptyColumns(rows, STUDY_COLS);
+    var dropIds = cols.length === STUDY_COLS.length ? null : STUDY_COLS
+      .filter(function (c) { return cols.indexOf(c) === -1; })
+      .map(function (c) { return c.id; });
+    var rowOpts = dropIds ? { scope: opts.scope, onRowClick: opts.onRowClick, dropIds: dropIds } : opts;
+    var head = "<thead><tr>" + cols.map(function (c) {
       var arrow = (c.key && c.key === sort.key) ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
       var cursor = c.key ? "cursor:pointer;" : "";
       return '<th data-sort-key="' + (c.key || "") + '" style="text-align:left;padding:6px 8px;' +
@@ -389,7 +429,7 @@
         '">' + esc(c.label) + arrow + "</th>";
     }).join("") + "</tr></thead>";
     mount.innerHTML = '<table style="width:100%;border-collapse:collapse;">' + head +
-      "<tbody>" + sorted.map(function (r) { return renderRow(r, opts); }).join("") + "</tbody></table>";
+      "<tbody>" + sorted.map(function (r) { return renderRow(r, rowOpts); }).join("") + "</tbody></table>";
     mount.querySelectorAll("th[data-sort-key]").forEach(function (th) {
       var key = th.getAttribute("data-sort-key");
       if (!key) return;
@@ -464,6 +504,6 @@
     esc: esc, statusChip: statusChip, emitterPill: emitterPill, originPill: originPill,
     originLabel: originLabel, fmtTime: fmtTime, location: location, study: study,
     investigation: investigation, composite: composite, toolsCell: toolsCell,
-    renderRow: renderRow, renderTable: renderTable,
+    renderRow: renderRow, renderTable: renderTable, dropEmptyColumns: dropEmptyColumns,
   };
 })();

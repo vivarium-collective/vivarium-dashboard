@@ -15,9 +15,20 @@
   <div style="display:flex; align-items:baseline; gap:12px; justify-content:space-between;">
   <h1 class="study-title">
     {% if name_chip %}<span class="study-num-chip" style="font-size:0.5em; font-weight:700; color:#64748b; background:#f1f5f9; padding:3px 9px; border-radius:9999px; vertical-align:middle; margin-right:8px">{{ name_chip }}</span>{% endif %}<span class="study-name" id="study-name" data-slug="{{ name }}" title="{{ name }}">{{ display_name }}</span>
+    {# Task 4: deterministic study kind (biological/computational/theoretical),
+       inferred by lib/study_kind.py and wired into the template context by
+       Task 1. Small pill beside the title, before the phase pill. #}
+    <span class="study-kind-tag study-kind-{{ study.kind }}" data-study-kind="{{ study.kind }}" title="Study kind">{{ study.kind }}</span>
     {% if study.phase %}
     <span class="phase-pill phase-{{ study.phase|lower }}" title="Lifecycle: Design → Build → Simulate → Evaluate → Decide">{{ study.phase }}</span>
     {% endif %}
+  </h1>
+  <span class="study-header-actions" style="display:inline-flex; gap:6px; flex-shrink:0;">
+    <button type="button" id="study-reproduce" class="btn-mini" title="Replay this study's most recent run's RECORDED manifest verbatim (POST /api/study-reproduce) — ignores any study.yaml edits made since">↻ Reproduce</button>
+    <button type="button" id="study-run-current-spec" class="btn-mini" title="Run this study's CURRENT baseline spec (POST /api/study-run-baseline) as a brand-new run">▶ Run current spec</button>
+  </span>
+  </div>
+  <div class="study-status-row" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:6px;">
     {# F1: headline pill driven by effective_status() — picks the most-downstream
        multi-axis field set (gate > evaluation > simulation > implementation > design
        > expert_review), with legacy `status` as fallback. gate_status keeps its
@@ -30,21 +41,77 @@
     {% else %}
     <span class="status-pill status-planned">planned</span>
     {% endif %}
-    {# Spine A2: code-vs-authored gate divergence chip. The spine's
-       study_verdict.write_gate_evaluator persists pipeline_gate.gate_evaluator
-       (result + diverges_from_authored); _study_detail_spec surfaces it as
-       computed_gate_verdict. Mirrors the param-enforcement banner: prominent,
-       connected to its source (the coded evaluator), and labeled
-       code-computed-vs-authored. Only shown when the two disagree. #}
+
+    {# Spine A3: readiness panel. Populated by study-detail.js from GET
+       /api/report-lint (the deterministic report linter), filtered to this
+       study. Mirrors the param-enforcement banner: surfaced, connected to its
+       source (the linter), labeled code-computed. Empty until populated
+       (AI-free). Repositioned into the status row (Task 4); still just a
+       mount point — Task 5 rewires its populator. #}
+    <div id="readiness-panel" data-slug="{{ name }}"></div>
+
+    {# Fable G2 (§13): "status ▾" is now the six-GATE ladder — Plan / Execution
+       / Evidence / Quality / Decision / Release — relabeling the six status
+       axes per §13's table (`gate_ladder`, built server-side by
+       lib.study_page.build_gate_ladder). Each gate shows its authored state
+       and, where a machine evaluator's value is already attached to the spec
+       (derived_status / computed_gate_verdict — see build_gate_ladder's
+       docstring for exactly which gates have one today), a `◆ computed:`
+       chip + a divergence marker when authored and computed disagree.
+       `implementation_status` maps to no gate in §13's table, so it still
+       renders as a plain (un-gated) axis chip, same as before this task, so
+       no authored data silently disappears from the panel.
+       Hidden entirely when nothing is set anywhere, so legacy v3 studies
+       stay unchanged. #}
+    {% set _ns = namespace(any_set=false) %}
+    {% for _g in gate_ladder %}{% if _g.authored_value or _g.computed_value or _g.viz_gap_reason %}{% set _ns.any_set = true %}{% endif %}{% endfor %}
+    {% if study.implementation_status %}{% set _ns.any_set = true %}{% endif %}
     {% set _cgv = study.computed_gate_verdict %}
-    {% if _cgv and _cgv.diverges_from_authored %}
-    <span class="gate-divergence-chip" title="Code-computed verdict (spine study_verdict, not human-authored) disagrees with the authored gate_status." style="display:inline-block;font-size:0.5em;font-weight:700;padding:3px 9px;border-radius:9999px;vertical-align:middle;margin-left:8px;background:#fffbeb;border:1px solid #f59e0b;color:#92400e">⚠ code: {{ _cgv.result }} · authored: {{ study.gate_status }}</span>
+    {% if _ns.any_set or (_cgv and _cgv.diverges_from_authored) %}
+    <details class="status-detail-panel" aria-label="Six-gate lifecycle status">
+      <summary>
+        <span class="status-stepper-more">status</span>
+        {% if _cgv and _cgv.diverges_from_authored %}
+        <span class="gate-divergence-chip" title="Code-computed verdict (spine study_verdict, not human-authored) disagrees with the authored gate_status." style="display:inline-block;font-size:0.78em;font-weight:700;padding:3px 9px;border-radius:9999px;vertical-align:middle;background:#fffbeb;border:1px solid #f59e0b;color:#92400e">⚠ code: {{ _cgv.result }} · authored: {{ study.gate_status }}</span>
+        {% endif %}
+        <span class="status-stepper">
+          {% for _g in gate_ladder %}
+          <span class="status-step gate-step axis-{{ _g.axis }} gate-state-{{ _g.state }}{% if _g.authored_value or _g.computed_value %} set{% endif %}" title="Gate {{ _g.number }} · {{ _g.name }}">
+            <span class="dot"></span>{{ _g.number }}&nbsp;·&nbsp;{{ _g.name }}{% if _g.authored_value %}<span class="step-val">{{ _g.authored_value }}</span>{% endif %}
+          </span>
+          {% endfor %}
+          {% if study.implementation_status %}
+          <span class="status-step axis-implementation_status set">
+            <span class="dot"></span>Implementation<span class="step-val">{{ study.implementation_status }}</span>
+          </span>
+          {% endif %}
+        </span>
+      </summary>
+      <div class="status-stepper-body">
+        {% for _g in gate_ladder %}
+        <div class="status-detail-row gate-row gate-state-{{ _g.state }}">
+          <span class="status-detail-axis">{{ _g.number }} · {{ _g.name }}</span>
+          <span class="status-chip gate-state-{{ _g.authored_state }}">{{ _g.authored_value or 'not set' }}</span>
+          {% if _g.computed_value %}
+          <span class="gate-computed-chip gate-state-{{ _g.computed_state }}" title="{{ _g.computed_source }}">◆ computed: {{ _g.computed_value }}</span>
+          {% if _g.diverges %}
+          <span class="gate-divergence-chip gate-divergence-chip-inline" title="Code-computed state disagrees with the authored axis.">⚠ diverges from authored</span>
+          {% endif %}
+          {% endif %}
+          {% if _g.viz_gap_reason %}
+          <span class="gate-viz-gap-note" style="font-size:0.86em;color:#92400e">visualization gap: {{ _g.viz_gap_reason }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+        {% if study.implementation_status %}
+        <div class="status-detail-row">
+          <span class="status-detail-axis">Implementation</span>
+          <span class="status-chip">{{ study.implementation_status }}</span>
+        </div>
+        {% endif %}
+      </div>
+    </details>
     {% endif %}
-  </h1>
-  <span class="study-header-actions" style="display:inline-flex; gap:6px; flex-shrink:0;">
-    <button type="button" id="study-reproduce" class="btn-mini" title="Replay this study's most recent run's RECORDED manifest verbatim (POST /api/study-reproduce) — ignores any study.yaml edits made since">↻ Reproduce</button>
-    <button type="button" id="study-run-current-spec" class="btn-mini" title="Run this study's CURRENT baseline spec (POST /api/study-run-baseline) as a brand-new run">▶ Run current spec</button>
-  </span>
   </div>
 </header>
 
@@ -67,27 +134,100 @@
 </div>
 {% endif %}
 
-{# Spine A3: readiness panel. Populated by study-detail.js from GET
-   /api/report-lint (the deterministic report linter), filtered to this study.
-   Mirrors the param-enforcement banner: surfaced, connected to its source (the
-   linter), labeled code-computed. Empty until populated (AI-free). #}
-<div id="readiness-panel" data-slug="{{ name }}"></div>
+{# v3 detection: any of these fields being present (even as an empty list/dict)
+   means the study was authored against the 8-section / 5-phase schema, and
+   should get the v3 tab set even when the lists haven't been populated yet
+   (e.g. immediately after seeding from a follow-up). #}
+{% set _is_v3 = study.purpose is defined
+                or study.pipeline_gate is defined
+                or (study.simulation_set is defined and study.simulation_set is not none)
+                or study.behavior_tests is defined
+                or study.follow_up_studies is defined
+                or study.conclusion_logic is defined %}
 
-{# Pass A: multi-axis Status Detail panel — one chip per axis that is set on the study spec.
-   Hidden entirely when none of the six axes are set, so legacy v3 studies stay unchanged. #}
-{% set _axes = [
-  ('design_status',         'Design'),
-  ('implementation_status', 'Implementation'),
-  ('simulation_status',     'Simulation'),
-  ('evaluation_status',     'Evaluation'),
-  ('gate_status',           'Gate'),
-  ('expert_review_status',  'Expert review'),
-] %}
-{% set _ns = namespace(any_set=false) %}
-{% for _k, _ in _axes %}{% if study[_k] %}{% set _ns.any_set = true %}{% endif %}{% endfor %}
-{% if _ns.any_set %}
+{# Task 4: promoted question headline — the study's purpose.question (v3) or
+   legacy top-level question, surfaced directly above the tab nav so it reads
+   as the study's second line, not buried in an Overview panel. Replaces the
+   removed "Spine at a glance" (#spine-summary) table below. #}
+{% set _q = (study.purpose.question if study.purpose else none) or study.question %}
+{% if _q %}<p id="study-question-headline" class="study-question-headline"><span class="q-glyph">Q</span> {{ _q }}</p>{% endif %}
+
+<nav class="study-tabs" aria-label="Study sections">
+  {# Fable G1 shipped the act rail as two independent sibling rows
+     (`.act-rail` group labels above an unrelated `.study-pillars` tab row)
+     — with no shared columns the labels never lined up over the tabs they
+     group. ACTRAIL fix (user-selected: "grouped clusters, aligned"): each
+     act's label and its own tabs now live together in ONE `.act-cluster`
+     column (label row on top, tabs row below, same flex column), so
+     alignment is structural instead of hand-tuned spacing. Each act still
+     carries a gate dot. Fable G2: the dot state is wired from `gate_states`
+     (built server-side by lib.study_page.act_gate_states from the six-gate
+     ladder below — see §13.1 "act rail dots show each act's gate state at a
+     glance"). Task E4 removed the Exports/Record cluster (its panel was an
+     empty shell after E1–E3 relocated everything it held) — the rail is now
+     five acts, all with gate dots. #}
+  <div class="act-cluster" data-act="study">
+    <div class="act-header">
+      <span class="act-gate-dot" data-gate="study" data-gate-state="{{ gate_states.study }}"></span>
+      <span class="act-label">The Study</span>
+    </div>
+    <div class="act-tabs">
+      <button class="study-pillar active" data-kind="overview" onclick="_setStudyTab('overview')">Overview</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="design">
+    <div class="act-header">
+      <span class="act-gate-dot" data-gate="design" data-gate-state="{{ gate_states.design }}"></span>
+      <span class="act-label">Design</span>
+    </div>
+    <div class="act-tabs">
+      <button class="study-pillar" data-kind="compose"  onclick="_setStudyTab('compose')">Model</button>
+      <button class="study-pillar" data-kind="readouts" onclick="_setStudyTab('readouts')">Readouts</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="evidence">
+    <div class="act-header">
+      <span class="act-gate-dot" data-gate="evidence" data-gate-state="{{ gate_states.evidence }}"></span>
+      <span class="act-label">Evidence</span>
+    </div>
+    <div class="act-tabs">
+      <button class="study-pillar" data-kind="simulate"  onclick="_setStudyTab('simulate')">Simulations</button>
+      <button class="study-pillar" data-kind="visualize" onclick="_setStudyTab('visualize')">Visualizations</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="assurance">
+    <div class="act-header">
+      <span class="act-gate-dot" data-gate="assurance" data-gate-state="{{ gate_states.assurance }}"></span>
+      <span class="act-label">Assurance</span>
+    </div>
+    <div class="act-tabs">
+      <button class="study-pillar" data-kind="tests" onclick="_setStudyTab('tests')">Tests</button>
+    </div>
+  </div>
+  <div class="act-cluster" data-act="decision">
+    <div class="act-header">
+      <span class="act-gate-dot" data-gate="decision" data-gate-state="{{ gate_states.decision }}"></span>
+      <span class="act-label">Decision</span>
+    </div>
+    <div class="act-tabs">
+      {# "Decide" pillar's panel kind is "conclusions" (was a sub-tab under Hypotheses). #}
+      <button class="study-pillar" data-kind="conclusions" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
+    </div>
+  </div>
+</nav>
 <style>
-.status-detail-panel{margin:8px 0 12px 0;padding:6px 12px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;font-size:0.88em}
+/* Task 4: header restructure — kind tag, promoted question, tightened status row.
+   The 6-axis stepper + gate-status colors below are carried over verbatim from
+   the pre-restructure Pass A styling (the <details> markup was repositioned,
+   not rebuilt). */
+.study-kind-tag{display:inline-block;font-size:0.5em;font-weight:600;padding:3px 9px;border-radius:9999px;vertical-align:middle;margin-left:8px;background:#f1f5f9;color:#475569;text-transform:capitalize}
+.study-kind-tag.study-kind-biological{background:#ecfdf5;color:#065f46}
+.study-kind-tag.study-kind-computational{background:#eff6ff;color:#1e40af}
+.study-kind-tag.study-kind-theoretical{background:#faf5ff;color:#6b21a8}
+.study-question-headline{margin:6px 0 0 0;font-size:1.05em;line-height:1.5;color:#1e293b;font-family:Georgia,"Times New Roman",serif}
+.study-question-headline .q-glyph{display:inline-block;font-size:0.78em;font-weight:700;font-family:ui-monospace,monospace;color:#64748b;background:#f1f5f9;padding:1px 7px;border-radius:4px;margin-right:6px;vertical-align:middle}
+.study-status-row{font-size:0.95em}
+.status-detail-panel{margin:0;padding:2px 0;background:transparent;border:none;border-radius:0;font-size:0.92em}
 .status-detail-row{display:flex;align-items:center;gap:8px;padding:3px 0}
 .status-detail-axis{min-width:140px;color:#475569;font-size:0.9em}
 .status-chip{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;background:#e2e8f0;color:#334155;font-family:ui-monospace,monospace}
@@ -98,7 +238,7 @@
 .gate-status-failed           { background:#fee2e2; color:#991b1b }
 .gate-status-stale            { background:#ede9fe; color:#5b21b6 }
 .status-pill.gate-status{font-weight:500}
-/* Redesign: compact one-line lifecycle stepper; full per-axis rows behind the expander. */
+/* Compact one-line lifecycle stepper; full per-axis rows behind the "status ▾" expander. */
 .status-detail-panel > summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .status-detail-panel > summary::-webkit-details-marker{display:none}
 .status-stepper{display:flex;gap:13px;flex-wrap:wrap;align-items:center;flex:1}
@@ -112,93 +252,31 @@
 .status-step.gate-status-passed .dot{background:#10b981;box-shadow:none}
 .status-step.gate-status-failed .dot{background:#ef4444;box-shadow:none}
 .status-step.gate-status-stale .dot{background:#8b5cf6;box-shadow:none}
-.status-stepper-more{font-size:0.76em;color:#64748b;white-space:nowrap}
+/* Fable G2 (§13.2 gate-state vocab; §9.3 palette: grey/green/amber/red/violet).
+   One palette for the gate-ladder stepper dots + detail rows AND (via the
+   [data-gate-state] selectors below) the act-rail dots, so "how urgent is
+   this gate" reads identically in both places. Rules below `.status-step.set
+   .dot` on purpose so a "set" gate's real state wins over the generic green. */
+.status-step.gate-state-not-assessed .dot{background:#cbd5e1;box-shadow:inset 0 0 0 1px #b6c2cf}
+.status-step.gate-state-passed .dot{background:#10b981;box-shadow:none}
+.status-step.gate-state-passed-with-conditions .dot{background:#f59e0b;box-shadow:none}
+.status-step.gate-state-blocked .dot{background:#ef4444;box-shadow:none}
+.status-step.gate-state-waived .dot{background:#8b5cf6;box-shadow:none}
+.status-chip.gate-state-not-assessed{background:#e2e8f0;color:#334155}
+.status-chip.gate-state-passed{background:#d1fae5;color:#065f46}
+.status-chip.gate-state-passed-with-conditions{background:#fef3c7;color:#92400e}
+.status-chip.gate-state-blocked{background:#fee2e2;color:#991b1b}
+.status-chip.gate-state-waived{background:#ede9fe;color:#5b21b6}
+.gate-computed-chip{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;margin-left:6px;font-family:ui-monospace,monospace;background:#eff6ff;color:#1e40af;border:1px solid #bfdbfe}
+.gate-divergence-chip-inline{display:inline-block;font-size:0.78em;font-weight:700;padding:2px 9px;border-radius:9999px;margin-left:6px;background:#fffbeb;border:1px solid #f59e0b;color:#92400e}
+.act-gate-dot[data-gate-state="passed"]{background:#10b981;box-shadow:none}
+.act-gate-dot[data-gate-state="passed-with-conditions"]{background:#f59e0b;box-shadow:none}
+.act-gate-dot[data-gate-state="blocked"]{background:#ef4444;box-shadow:none}
+.act-gate-dot[data-gate-state="waived"]{background:#8b5cf6;box-shadow:none}
+.status-stepper-more{font-size:0.82em;font-weight:600;color:#475569;white-space:nowrap}
 .status-detail-panel[open] .status-stepper-more::after{content:" \25be"}
 .status-detail-panel:not([open]) .status-stepper-more::after{content:" \25b8"}
 .status-stepper-body{margin-top:6px;padding-top:6px;border-top:1px solid #eef2f6}
-</style>
-<details class="status-detail-panel" aria-label="Multi-axis lifecycle status">
-  <summary>
-    <span class="status-stepper">
-      {% for _key, _label in _axes %}
-      <span class="status-step axis-{{ _key }}{% if study[_key] %} set{% endif %}{% if _key == 'gate_status' and study[_key] %} gate-status-{{ study[_key] }}{% endif %}">
-        <span class="dot"></span>{{ _label }}{% if study[_key] %}<span class="step-val">{{ study[_key] }}</span>{% endif %}
-      </span>
-      {% endfor %}
-    </span>
-    <span class="status-stepper-more">details</span>
-  </summary>
-  <div class="status-stepper-body">
-    {% for _key, _label in _axes %}
-    {% if study[_key] %}
-    <div class="status-detail-row">
-      <span class="status-detail-axis">{{ _label }}</span>
-      <span class="status-chip {% if _key == 'gate_status' %}gate-status-{{ study[_key] }}{% endif %}">{{ study[_key] }}</span>
-    </div>
-    {% endif %}
-    {% endfor %}
-  </div>
-</details>
-{% endif %}
-
-{# v3 detection: any of these fields being present (even as an empty list/dict)
-   means the study was authored against the 8-section / 5-phase schema, and
-   should get the v3 tab set even when the lists haven't been populated yet
-   (e.g. immediately after seeding from a follow-up). #}
-{% set _is_v3 = study.purpose is defined
-                or study.pipeline_gate is defined
-                or (study.simulation_set is defined and study.simulation_set is not none)
-                or study.behavior_tests is defined
-                or study.follow_up_studies is defined
-                or study.conclusion_logic is defined %}
-
-{# Spine C1a: "Spine at a glance" — a compact re-presentation of the spine's
-   already-computed A+B content (verdict / why / acceptance / readiness / next),
-   each row linking to its detail tab/section. Populated by study-detail.js from
-   window._study + the /api/report-lint fetch — NO recompute, AI-free. Empty
-   until populated; rows that lack data are omitted. #}
-<style>
-.spine-summary{margin:8px 0 0 0;border:1px solid #cbd5e1;border-left-width:5px;border-bottom:none;border-radius:6px 6px 0 0;background:#f8fafc;font-size:0.9em}
-.spine-summary:empty{display:none}
-.spine-summary-head{padding:7px 14px 4px 14px;font-size:0.78em;text-transform:uppercase;letter-spacing:0.05em;color:#475569;font-weight:700}
-.spine-row{display:flex;align-items:baseline;gap:10px;padding:4px 14px;border-top:1px solid #eef2f6}
-.spine-key{min-width:92px;color:#475569;font-weight:600;font-size:0.85em;text-transform:uppercase;letter-spacing:0.03em}
-.spine-val{flex:1;color:#1e293b}
-.spine-jump{white-space:nowrap}
-.spine-jump a,.spine-val a{color:#3b82f6;text-decoration:none}
-.spine-jump a:hover,.spine-val a:hover{text-decoration:underline}
-.spine-label{font-size:0.8em;color:#64748b;font-weight:500}
-.spine-chip-warn{display:inline-block;font-size:0.82em;font-weight:600;padding:1px 8px;border-radius:9999px;background:#fffbeb;border:1px solid #f59e0b;color:#92400e;margin-left:6px}
-.spine-div{font-weight:600;color:#92400e}
-</style>
-<div id="spine-summary" class="spine-summary" data-slug="{{ name }}"></div>
-
-<nav class="study-tabs" aria-label="Study sections">
-  <div class="study-pillars">
-    <button class="study-pillar active" data-pillar="understand" onclick="_setStudyPillar('understand')">Overview</button>
-    <button class="study-pillar"        data-pillar="compose"    onclick="_setStudyPillar('compose')">Model</button>
-    <button class="study-pillar"        data-pillar="simulate"   onclick="_setStudyPillar('simulate')">Simulations</button>
-    <button class="study-pillar"        data-pillar="readouts"   onclick="_setStudyPillar('readouts')">Readouts</button>
-    <button class="study-pillar"        data-pillar="visualize"  onclick="_setStudyPillar('visualize')">Visualizations</button>
-    <button class="study-pillar"        data-pillar="tests"      onclick="_setStudyPillar('tests')">Tests</button>
-    <button class="study-pillar"        data-pillar="decide"     onclick="_setStudyPillar('decide')">Decide</button>
-    <button class="study-pillar"        data-pillar="data"       onclick="_setStudyPillar('data')">Exports</button>
-  </div>
-  <div class="study-subnav" id="study-subnav">
-    <button class="study-tab active" data-kind="overview" data-pillar="understand" onclick="_setStudyTab('overview')">Overview</button>
-    <button class="study-tab" data-kind="compose" data-pillar="compose" onclick="_setStudyTab('compose')">Model</button>
-    <button class="study-tab" data-kind="simulate" data-pillar="simulate" onclick="_setStudyTab('simulate')">Simulations</button>
-    <button class="study-tab" data-kind="readouts" data-pillar="readouts" onclick="_setStudyTab('readouts')">Readouts</button>
-    <button class="study-tab" data-kind="visualize" data-pillar="visualize" onclick="_setStudyTab('visualize')">Visualizations</button>
-    {# Tests pillar: the report cards + the behavioral tests (each a test/report-card) live together. #}
-    <button class="study-tab" data-kind="report-cards" data-pillar="tests" onclick="_setStudyTab('report-cards')">Report Cards</button>
-    <button class="study-tab" data-kind="tests" data-pillar="tests" onclick="_setStudyTab('tests')">Behavioral Tests</button>
-    {# Decide pillar: the decide / conclusions materials (was a sub-tab under Hypotheses). #}
-    <button class="study-tab" data-kind="conclusions" data-pillar="decide" onclick="_setStudyTab('conclusions')">{{ "Decide" if _is_v3 else "Conclusions" }}</button>
-    <button class="study-tab" data-kind="data" data-pillar="data" onclick="_setStudyTab('data')">Exports</button>
-  </div>
-</nav>
-<style>
 .phase-pill{display:inline-block;font-size:0.78em;padding:2px 10px;border-radius:9999px;margin-right:6px;font-weight:500;background:#e0e7ff;color:#3730a3}
 .phase-design   { background:#e0e7ff; color:#3730a3 }
 .phase-build    { background:#fef3c7; color:#92400e }
@@ -235,12 +313,31 @@
 .followup-hypothesis{padding:6px 10px;background:#fff;border-radius:3px;border:1px dashed #cbd5e1}
 .btn-seed-followup{font-size:0.85em;padding:4px 12px;border:1px solid #3b82f6;background:#fff;color:#3b82f6;border-radius:4px;cursor:pointer}
 .btn-seed-followup:hover{background:#3b82f6;color:#fff}
-.charts-panel{margin-top:18px;display:flex;flex-direction:column;gap:18px}
-.chart-card{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:8px 12px 12px 12px}
-/* SVGs scale to fit their card; preserves aspect ratio so a 1400×484
+/* ── One flowing figure gallery (Fable §4.5, Task V2) ──────────────────
+   The native gallery, embedded-HTML previews, and latest-run charts all
+   render as the same `.figure-card`: a bordered figure container + a muted
+   caption-row footer (source chip + title + optional run link), instead of
+   three differently-chrome'd sections under their own headings. The three
+   async mounts stay separate (`#native-gallery-panel`, the embed cards,
+   `#viz-charts-panel`) but each is a flex column with the same gap, so they
+   read as one continuous gallery. */
+.figure-gallery{display:flex;flex-direction:column;gap:16px}
+.figure-mount{display:flex;flex-direction:column;gap:16px}
+.charts-panel{display:flex;flex-direction:column;gap:16px}
+.figure-card{border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff}
+.figure-media-frame{display:block;width:100%;border:0;background:#fff}
+.figure-media-frame--native{height:480px}
+.figure-media-frame--embed{min-height:200px}
+/* SVGs/PNGs scale to fit their card; preserves aspect ratio so a 1400×484
    chart shrinks instead of overflowing horizontally + clipping. */
-.chart-card svg,.chart-card img.chart-img{display:block;width:100%;max-width:100%;height:auto}
-.chart-caption{font-size:0.83em;color:#475569;margin-top:4px;line-height:1.4}
+.figure-card svg,.figure-card img.chart-img{display:block;width:100%;max-width:100%;height:auto}
+.figure-desc{margin:8px 12px 0;font-size:0.85em;color:#475569}
+.figure-caption-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 12px;font-size:0.85em;color:#475569;border-top:1px solid #f1f5f9;background:#f8fafc}
+.figure-source-chip{font-size:0.68em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#64748b;flex-shrink:0}
+.figure-title{font-weight:600;color:#334155;flex:1;min-width:100px}
+.figure-run-link,.figure-open-link{font-size:0.85em;color:#2563eb;text-decoration:none;white-space:nowrap;cursor:pointer}
+.figure-run-link:hover,.figure-open-link:hover{text-decoration:underline}
+.chart-caption{font-size:0.83em;color:#475569;margin:8px 12px 0;line-height:1.4}
 /* findings */
 .findings-section{padding:14px 16px;background:#fafbff;border:1px solid #c7d2fe;border-radius:8px}
 .finding-card{padding:12px 14px;margin:10px 0;border:1px solid #e2e8f0;border-left:5px solid #6366f1;border-radius:6px;background:#fff}
@@ -248,6 +345,13 @@
 .finding-card.finding-status-partial{border-left-color:#f59e0b}
 .finding-card.finding-status-contradicts{border-left-color:#dc2626}
 .finding-card.finding-status-novel{border-left-color:#8b5cf6}
+/* C2: compact ledger row (<summary>) + native <details> evidence drawer */
+.finding-details{border:none}
+.finding-details>summary{list-style:none;cursor:pointer}
+.finding-details>summary::-webkit-details-marker{display:none}
+.finding-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.finding-chip{font-size:0.78em;color:#475569;background:#f1f5f9;padding:2px 8px;border-radius:9999px;white-space:nowrap}
+.finding-drawer{margin-top:8px;padding-top:8px;border-top:1px dashed #e2e8f0}
 .finding-header{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
 .finding-status-glyph{font-size:1.2em;width:24px;text-align:center}
 .finding-status-confirms .finding-status-glyph{color:#10b981}
@@ -258,6 +362,7 @@
 .finding-kind{font-size:0.7em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e0e7ff;color:#3730a3;font-weight:500}
 .finding-status-text{font-size:0.78em;color:#64748b;margin-left:auto;font-style:italic}
 .finding-statement{font-size:1em;line-height:1.5;font-weight:500;color:#0f172a;margin:4px 0 8px 0}
+.finding-claim{flex:1;min-width:200px;margin:0}
 .finding-evidence,.finding-expected{font-size:0.86em;color:#475569;padding:6px 10px;background:#f8fafc;border-left:3px solid #94a3b8;border-radius:3px;margin:6px 0;line-height:1.5}
 .finding-exp-summary{font-size:0.9em;color:#475569;padding:6px 10px;background:#fafbff;border-left:3px solid #6366f1;border-radius:3px;margin:6px 0;line-height:1.5}
 .finding-explanation{font-size:0.92em;color:#1e293b;margin:6px 0;line-height:1.5}
@@ -302,6 +407,15 @@
   padding:4px 12px;border-radius:6px;cursor:pointer;transition:border-color .12s,color .12s,background .12s}
 .add-field-btn:hover{border-color:#3b82f6;color:#3b82f6;background:#eff6ff}
 .conclusion-block{border-top:2px solid #e2e8f0;padding-top:14px;margin-top:22px}
+/* Markdown-rendered conclusion blob: flows full-width (reflows authored hard-wraps), keeps paragraphs + ordered list. */
+.conclusion-md{color:#1e293b}
+.conclusion-md > :first-child{margin-top:0}
+.conclusion-md > :last-child{margin-bottom:0}
+.conclusion-md p{margin:0 0 10px}
+.conclusion-md ol,.conclusion-md ul{margin:0 0 10px;padding-left:22px}
+.conclusion-md li{margin:2px 0}
+.conclusion-md code{background:#eef2f7;padding:1px 4px;border-radius:3px;font-size:0.92em}
+.conclusion-md pre{background:#eef2f7;padding:8px 10px;border-radius:4px;overflow-x:auto;white-space:pre-wrap}
 .conclusion-insight{font-size:1.02em;line-height:1.55;color:#1e293b;margin:2px 0 12px;font-weight:500}
 .computed-tag{display:inline-block;font-size:0.68em;font-weight:600;text-transform:uppercase;
   letter-spacing:0.04em;color:#64748b;background:#f1f5f9;border:1px solid #e2e8f0;
@@ -315,12 +429,11 @@
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
   <div class="study-overview">
 
-    {# ─── v4 narrative spine. Reading order: Question → Biology → Findings
+    {# ─── v4 narrative spine. Reading order: Question & approach → Findings
        → Debts → Conclusion. Every field edits in place and saves via
        /api/study-narrative-set; empty optional fields collapse to a quiet
        "+ Add …" affordance (progressive disclosure). Verdict + readiness are
-       shown once, in the header pill + spine-at-a-glance strip above — not
-       repeated here. #}
+       shown once, in the header pill above — not repeated here. #}
     {% set _report = study.report or {} %}
     {% set _f0 = (study.findings or [])[0] if study.findings else None %}
 
@@ -370,86 +483,95 @@
     </div>
     {% endif %}
 
-    {# ─── Biology — what this study is about ──────────────────────────── #}
-    <div class="overview-section biology-summary-callout">
-      <h2 class="biology-glance-label">Biology — what this study is about</h2>
-      {% if study.biological_summary %}
-      <textarea class="biology-prose narrative-input narrative-textarea" rows="4"
-                data-narrative-path="biological_summary"
-                placeholder="Plain-English mechanism narrative.">{{ study.biological_summary }}</textarea>
-      {% else %}
-      {% if study.findings %}
-      <div class="biology-derived-preview muted small" style="margin-top:2px;padding:8px 12px;background:#f8fafc;border-left:3px solid #cbd5e1;border-radius:4px">
-        <em>Derived from findings (shown until you write an override):</em>
-        {% for _bf in study.findings %}{% if _bf.statement or _bf.summary %}<p style="margin:4px 0 0">{{ _bf.statement or _bf.summary }}</p>{% endif %}{% endfor %}
+    {% if study.biological_summary %}
+    <div class="overview-section">
+      <div class="purpose-callout" style="background:#f8fafc;border-left:4px solid #94a3b8">
+        <strong>Summary.</strong> {{ study.biological_summary }}
       </div>
-      {% endif %}
-      <button type="button" class="add-field-btn" data-reveal-field="biological_summary" style="margin-top:8px">+ Add biology narrative</button>
-      <textarea class="biology-prose narrative-input narrative-textarea is-hidden" rows="4"
-                data-narrative-path="biological_summary" data-field-editor="biological_summary"
-                placeholder="Plain-English mechanism narrative — the 'textbook write-up' a non-modeler would read."></textarea>
-      {% endif %}
     </div>
+    {% endif %}
 
     {# ─── Group 3: Findings & open debts ─────────────────────────────── #}
+    {# C2: a compact LEDGER — one row per finding (glyph · claim · evidence
+       chip), each opening a native <details> drawer for the fuller detail.
+       Nothing from the old always-expanded card was dropped, only
+       relocated into the drawer — see task-C2-brief.md's "preserve every
+       existing detail" list. Dict-shaped assertion values (evidence.observed,
+       the cited test's pass_if/expect band) are routed through
+       humanize_assertion so a dict never renders as a Python repr. #}
     {% if study.findings %}
     <div class="overview-section findings-section">
       <h2 class="overview-label">🔬 Findings — what this study taught us</h2>
       {% for f in study.findings %}
       {% set _status = f.status or 'novel' %}
       {% set _glyph = {'confirms': '✓', 'partial': '◐', 'contradicts': '✗', 'novel': '◆'}.get(_status, '◆') %}
+      {% set _ftok = (f.evidence.from_test or '').split(' ')[0] if f.evidence else '' %}
+      {% set _rtok = (f.evidence.from_run or '').split(' ')[0] if f.evidence else '' %}
       <div class="finding-card finding-kind-{{ f.kind or 'other' }} finding-status-{{ _status }}">
-        <div class="finding-header">
-          <span class="finding-status-glyph">{{ _glyph }}</span>
-          <span class="finding-id">{{ f.id or '' }}</span>
-          <span class="finding-kind">{{ f.kind or 'other' }}</span>
-          <span class="finding-status-text">{{ _status }} literature</span>
-        </div>
-        <div class="finding-statement">{{ f.statement }}</div>
-        {% if f.evidence %}
-        {# Spine B1: the cited test/run are CLICKABLE (anchor to its #test-/#run-
-           card), the headline computed number divergence_factor is surfaced,
-           provenance.run_ids are linked, and the cited test's pass_if band is
-           inlined so "passing" is legible without hunting. #}
-        {% set _ftok = (f.evidence.from_test or '').split(' ')[0] %}
-        {% set _rtok = (f.evidence.from_run or '').split(' ')[0] %}
-        <div class="finding-evidence">
-          {% if f.evidence.observed is defined %}<strong>observed:</strong> {{ f.evidence.observed }}{% if f.evidence.units %} {{ f.evidence.units }}{% endif %} · {% endif %}
-          {% if f.evidence.from_test %}via test <a href="#bt-{{ _ftok }}"><code>{{ f.evidence.from_test }}</code></a> · {% endif %}
-          {% if f.evidence.from_run %}in run <a href="#run-{{ _rtok }}"><code>{{ f.evidence.from_run }}</code></a>{% endif %}
-          {% if f.evidence.window %} ({{ f.evidence.window }}){% endif %}
-          {% if f.evidence.smoking_gun %}<details style="display:inline-block;margin-left:4px"><summary>smoking gun</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;padding:6px 8px;background:#fff;border-radius:3px;font-size:0.85em;font-family:inherit">{{ f.evidence.smoking_gun }}</pre></details>{% endif %}
-        </div>
-        {% set _runids = (f.provenance or {}).run_ids %}
-        {% if f.evidence.divergence_factor is defined or _runids %}
-        <div class="finding-traceability" style="font-size:0.84em;color:#475569;padding:4px 10px;margin:4px 0">
-          {% if f.evidence.divergence_factor is defined %}<span class="finding-divergence" style="font-weight:600">×{{ f.evidence.divergence_factor }} vs expected</span>{% endif %}
-          {% if f.evidence.divergence_factor is defined and _runids %} · {% endif %}
-          {% if _runids %}runs: {% for rid in _runids %}<a href="#run-{{ rid }}"><code>{{ rid }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-        </div>
-        {% endif %}
-        {% set _citedtest = (study.behavior_tests or study.expected_behavior or [])|selectattr('name','equalto', _ftok)|first %}
-        {% if _citedtest and (_citedtest.pass_if or _citedtest.expect) %}
-        <div class="pass_if-band muted small" style="font-size:0.82em;padding:2px 10px">judged against <code>pass_if: {{ (_citedtest.pass_if or _citedtest.expect) | tojson }}</code></div>
-        {% endif %}
-        {% endif %}
-        {% if f.expected %}
-        <div class="finding-expected">
-          {% if f.expected.range %}<strong>expected:</strong> {{ f.expected.range }} · {% endif %}
-          {% if f.expected.threshold is defined %}<strong>threshold:</strong> {{ f.expected.threshold }} · {% endif %}
-          {% if f.expected.cites %}cites: {% for c in f.expected.cites %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-        </div>
-        {% if f.expected.summary %}<div class="finding-exp-summary"><em>Reference says:</em> {{ f.expected.summary }}</div>{% endif %}
-        {% endif %}
-        {% if f.explanation %}<div class="finding-explanation"><em>Why:</em> {{ f.explanation }}</div>{% endif %}
-        {% if f.expert_reference %}
-        <details class="finding-expert">
-          <summary>Expert ref: <code>{{ f.expert_reference.doc }}</code>{% if f.expert_reference.section %} ({{ f.expert_reference.section }}){% endif %}</summary>
-          {% if f.expert_reference.quote %}<blockquote class="finding-expert-quote">{{ f.expert_reference.quote }}</blockquote>{% endif %}
-          {% if f.expert_reference.note %}<div class="finding-expert-note">{{ f.expert_reference.note }}</div>{% endif %}
+        <details class="finding-details">
+          <summary class="finding-row">
+            <span class="finding-status-glyph">{{ _glyph }}</span>
+            <span class="finding-claim finding-statement">{{ f.statement }}</span>
+            {% if f.evidence and f.evidence.from_test %}
+            <span class="finding-chip">via <code>{{ f.evidence.from_test }}</code></span>
+            {% elif f.evidence and f.evidence.from_run %}
+            <span class="finding-chip">in run <code>{{ f.evidence.from_run }}</code></span>
+            {% endif %}
+          </summary>
+          <div class="finding-drawer">
+            <div class="finding-header">
+              <span class="finding-id">{{ f.id or '' }}</span>
+              <span class="finding-kind">{{ f.kind or 'other' }}</span>
+              <span class="finding-status-text">{{ _status }} literature</span>
+            </div>
+            {% if f.evidence %}
+            {# Spine B1: the cited test/run are CLICKABLE (anchor to its #test-/#run-
+               card), the headline computed number divergence_factor is surfaced,
+               provenance.run_ids are linked, and the cited test's pass_if band is
+               inlined so "passing" is legible without hunting. #}
+            <div class="finding-evidence">
+              {% if f.evidence.observed is defined %}<strong>observed:</strong> {{ f.evidence.observed | humanize_assertion }}{% if f.evidence.units %} {{ f.evidence.units }}{% endif %} · {% endif %}
+              {# C1: from_test cites a #bt-<id> row that lives in the (currently
+                 hidden) Tests panel — _gotoStudyTab switches to it via the
+                 existing _setStudyTab path, then scrolls, instead of a plain
+                 href="#anchor" that silently fails on a display:none panel. #}
+              {% if f.evidence.from_test %}via test <a href="#bt-{{ _ftok }}" onclick="_gotoStudyTab('tests','bt-{{ _ftok }}');return false;"><code>{{ f.evidence.from_test }}</code></a> · {% endif %}
+              {% if f.evidence.from_run %}in run <a href="#run-{{ _rtok }}"><code>{{ f.evidence.from_run }}</code></a>{% endif %}
+              {% if f.evidence.window %} ({{ f.evidence.window }}){% endif %}
+              {% if f.evidence.smoking_gun %}<details style="display:inline-block;margin-left:4px"><summary>smoking gun</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;padding:6px 8px;background:#fff;border-radius:3px;font-size:0.85em;font-family:inherit">{{ f.evidence.smoking_gun }}</pre></details>{% endif %}
+            </div>
+            {% set _runids = (f.provenance or {}).run_ids %}
+            {% if f.evidence.divergence_factor is defined or _runids %}
+            <div class="finding-traceability" style="font-size:0.84em;color:#475569;padding:4px 10px;margin:4px 0">
+              {% if f.evidence.divergence_factor is defined %}<span class="finding-divergence" style="font-weight:600">×{{ f.evidence.divergence_factor }} vs expected</span>{% endif %}
+              {% if f.evidence.divergence_factor is defined and _runids %} · {% endif %}
+              {% if _runids %}runs: {% for rid in _runids %}<a href="#run-{{ rid }}"><code>{{ rid }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+            </div>
+            {% endif %}
+            {% set _citedtest = (study.behavior_tests or study.expected_behavior or [])|selectattr('name','equalto', _ftok)|first %}
+            {% if _citedtest and (_citedtest.pass_if or _citedtest.expect) %}
+            <div class="pass_if-band muted small" style="font-size:0.82em;padding:2px 10px">judged against <code>pass_if: {{ (_citedtest.pass_if or _citedtest.expect) | humanize_assertion }}</code></div>
+            {% endif %}
+            {% endif %}
+            {% if f.expected %}
+            <div class="finding-expected">
+              {% if f.expected.range %}<strong>expected:</strong> {{ f.expected.range }} · {% endif %}
+              {% if f.expected.threshold is defined %}<strong>threshold:</strong> {{ f.expected.threshold | humanize_assertion }} · {% endif %}
+              {% if f.expected.cites %}cites: {% for c in f.expected.cites %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
+            </div>
+            {% if f.expected.summary %}<div class="finding-exp-summary"><em>Reference says:</em> {{ f.expected.summary }}</div>{% endif %}
+            {% endif %}
+            {% if f.explanation %}<div class="finding-explanation"><em>Why:</em> {{ f.explanation }}</div>{% endif %}
+            {% if f.expert_reference %}
+            <details class="finding-expert">
+              <summary>Expert ref: <code>{{ f.expert_reference.doc }}</code>{% if f.expert_reference.section %} ({{ f.expert_reference.section }}){% endif %}</summary>
+              {% if f.expert_reference.quote %}<blockquote class="finding-expert-quote">{{ f.expert_reference.quote }}</blockquote>{% endif %}
+              {% if f.expert_reference.note %}<div class="finding-expert-note">{{ f.expert_reference.note }}</div>{% endif %}
+            </details>
+            {% endif %}
+            {% if f.next_action %}<div class="finding-next"><strong>→ Next:</strong> {{ f.next_action }}</div>{% endif %}
+          </div>
         </details>
-        {% endif %}
-        {% if f.next_action %}<div class="finding-next"><strong>→ Next:</strong> {{ f.next_action }}</div>{% endif %}
       </div>
       {% endfor %}
     </div>
@@ -505,197 +627,12 @@
       </div>
     </div>
 
-    {# ─── Group 4: Plan & provenance (collapsed) ─────────────────────── #}
-    <details class="overview-section">
-      <summary class="overview-label">Plan &amp; provenance</summary>
-
-      {% if study.pipeline_gate %}
-      <div class="overview-section">
-        <h3 class="overview-label">Pipeline gate</h3>
-        <p class="muted" style="margin: 0 0 8px 0;font-size:0.88em">
-          Each study is a model-building gate: it answers <em>"Can we safely build the next layer?"</em>
-        </p>
-        {% if study.pipeline_gate.prerequisites %}
-        <div style="margin-bottom:6px"><strong>Prerequisites:</strong>
-          {% for p in study.pipeline_gate.prerequisites %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-        </div>
-        {% else %}
-        <div style="margin-bottom:6px"><strong>Prerequisites:</strong> <em class="muted">none (root study)</em></div>
-        {% endif %}
-        {% if study.pipeline_gate.enables %}
-        <div style="margin-bottom:6px"><strong>Enables:</strong>
-          {% for p in study.pipeline_gate.enables %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-        </div>
-        {% endif %}
-        {% if study.pipeline_gate.proceed_condition %}
-        <div><strong>Proceed when:</strong> <span class="muted">{{ study.pipeline_gate.proceed_condition }}</span></div>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      {% if study.key_assumptions %}
-      <div class="overview-section">
-        <h3 class="overview-label">Key assumptions</h3>
-        <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
-          {% for a in study.key_assumptions %}<li style="margin:2px 0">{{ a }}</li>{% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-      {% if study.behavior_tests or study.expected_behavior %}
-      {# Spine C1c: the behavioral-tests summary is spine-critical — visible block. #}
-      <div class="overview-section">
-        <h2 class="overview-label">Behavioral tests</h2>
-        {% set _eb = study.behavior_tests or study.expected_behavior %}
-        {% set _primary = _eb | selectattr('classification', 'equalto', 'primary') | list | length %}
-        {% set _supporting = _eb | selectattr('classification', 'equalto', 'supporting') | list | length %}
-        {% set _diagnostic = _eb | selectattr('classification', 'equalto', 'diagnostic') | list | length %}
-        {% set _regression = _eb | selectattr('classification', 'equalto', 'regression') | list | length %}
-        <p style="margin:0">
-          <strong>{{ _eb|length }}</strong> tests defined{% if _primary %} —
-            <span class="classification-pill classification-primary">{{ _primary }} primary</span>{% endif %}{% if _supporting %}
-            <span class="classification-pill classification-supporting">{{ _supporting }} supporting</span>{% endif %}{% if _diagnostic %}
-            <span class="classification-pill classification-diagnostic">{{ _diagnostic }} diagnostic</span>{% endif %}{% if _regression %}
-            <span class="classification-pill classification-regression">{{ _regression }} regression</span>{% endif %}
-          <a onclick="_setStudyTab('tests')" style="cursor:pointer;color:#3b82f6;text-decoration:underline;margin-left:6px">View on Tests tab →</a>
-        </p>
-      </div>
-      {% endif %}
-
-      {% if study.expert_decisions_needed is sequence and study.expert_decisions_needed is not string and study.expert_decisions_needed %}
-      <div class="overview-section pre-run-expert-review">
-        <h3 class="overview-label">Pre-run expert review</h3>
-        <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-          Open biological questions the planning is contingent on. A "wrong" answer here
-          means a primary test threshold needs to change <em>before</em> the simulation
-          is run, not after. Each question lists alternatives + the impact of the wrong
-          choice + what downstream work it blocks.
-        </p>
-        <div class="expert-question-list">
-          {% for q in study.expert_decisions_needed %}
-          <div class="expert-question-card status-{{ q.status or 'open' }}">
-            <div class="expert-question-header">
-              <span class="expert-question-id">{{ q.id }}</span>
-              <span class="expert-question-status">{{ q.status or 'open' }}</span>
-              {% if q.asked_to %}<span class="expert-question-asked-to">asked to: {{ q.asked_to }}</span>{% endif %}
-            </div>
-            <div class="expert-question-text"><strong>Q.</strong> {{ q.question }}</div>
-            {% if q.alternatives %}
-            <div class="expert-question-alternatives">
-              <em>Alternatives:</em>
-              <ul>{% for a in q.alternatives %}<li>{{ a }}</li>{% endfor %}</ul>
-            </div>
-            {% endif %}
-            {% if q.impact_if_wrong %}
-            <div class="expert-question-impact">
-              <em>Impact if wrong:</em> {{ q.impact_if_wrong }}
-            </div>
-            {% endif %}
-            {% if q.blocks %}
-            <div class="expert-question-blocks">
-              <strong>What this blocks ({{ q.blocks|length }} items)</strong>
-              <ul>{% for b in q.blocks %}<li>{{ b }}</li>{% endfor %}</ul>
-            </div>
-            {% endif %}
-            {% if q.requested_response %}
-            <div class="expert-question-response">
-              <strong>Requested response format</strong>
-              <p>{{ q.requested_response }}</p>
-            </div>
-            {% endif %}
-          </div>
-          {% endfor %}
-        </div>
-      </div>
-      {% endif %}
-
-      {% if study.limitations %}
-      <div class="overview-section">
-        <h2 class="overview-label">Limitations</h2>
-        <p class="muted" style="margin:0 0 6px 0;font-size:0.85em">What this study explicitly does NOT validate (prevents overclaim).</p>
-        <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
-          {% for l in study.limitations %}<li style="margin:2px 0">{{ l }}</li>{% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-      {# Spine C1b: de-dup — follow-ups appeared in 3 places. The canonical
-         surface is the Decide/Conclusions tab (a Decide-phase output); the
-         Overview occurrence is a short link to it, not a triplicated card list. #}
-      {% if study.follow_up_studies %}
-      <div class="overview-section">
-        <h2 class="overview-label">Follow-up studies</h2>
-        <p class="muted" style="margin:0;font-size:0.9em">
-          <strong>{{ study.follow_up_studies | length }}</strong>
-          follow-up{{ '' if study.follow_up_studies|length == 1 else 's' }} derived from this study's runs —
-          the canonical surface is the {{ "Decide" if _is_v3 else "Conclusions" }} tab.
-          <a onclick="_setStudyTab('conclusions')" style="cursor:pointer;color:#3b82f6;text-decoration:underline;margin-left:4px">View follow-ups on the {{ "Decide" if _is_v3 else "Conclusions" }} tab →</a>
-        </p>
-      </div>
-      {% endif %}
-
-      {# Legacy literature_anchors render — kept read-only here; editing
-         these is /pbg-study add-literature-anchor for now (list-based UI
-         is a follow-up). #}
-      {% if study.literature_anchors %}
-      <div class="overview-section literature-anchors">
-        <h3 class="overview-label">Literature anchors</h3>
-        <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
-          The biological expectations this study tests, mapped to the
-          model observable that will measure each one. Full citations
-          live in the Tests tab.
-        </p>
-        <ul class="literature-anchor-list">
-        {% for anchor in study.literature_anchors %}
-          <li class="literature-anchor-card">
-            <div class="anchor-expectation">{{ anchor.expectation }}</div>
-            <div class="anchor-observable">
-              <em>Model observable:</em> <code>{{ anchor.model_observable }}</code>
-            </div>
-            {% if anchor.source %}
-            <div class="anchor-source"><em>Source:</em> {{ anchor.source }}</div>
-            {% endif %}
-            {% if anchor.status_in_v2ecoli %}
-            <div class="anchor-status">
-              <em>Current status:</em> {{ anchor.status_in_v2ecoli }}
-            </div>
-            {% endif %}
-          </li>
-        {% endfor %}
-        </ul>
-      </div>
-      {% endif %}
-
-      <div class="overview-section">
-        <h3 class="overview-label">Status</h3>
-        
-        {# legacy single-axis status select retired — the header status pill (derived from the multi-axis fields) is canonical. #}
-
-        {% if study.phase %}
-        <p class="muted" style="margin:6px 0 0 0;font-size:0.85em">Lifecycle phase: <strong>{{ study.phase }}</strong> (Design → Build → Simulate → Evaluate → Decide).</p>
-        {% endif %}
-      </div>
-
-      <div class="study-counts-strip">
-        <div class="count-cell">
-          <strong>{{ (study.simulation_set or study.variants or [])|length }}</strong>
-          <span class="count-label">{{ "simulations" if study.simulation_set else "variants" }}</span>
-        </div>
-        <div class="count-cell">
-          <strong>{{ (study.readouts or study.observables or [])|length }}</strong>
-          <span class="count-label">readouts</span>
-        </div>
-        <div class="count-cell">
-          <strong>{{ (study.implementation_requirements or study.gaps or [])|length }}</strong>
-          <span class="count-label">requirements</span>
-        </div>
-        <div class="count-cell">
-          <strong>{{ (study.runs or [])|length }}</strong>
-          <span class="count-label">runs</span>
-        </div>
-      </div>
-
-    </details>
+    {# ─── C5: the old Overview "Plan & provenance" grab-bag was DISSOLVED here.
+       Its five sub-blocks were relocated to the act each belongs to:
+       pipeline_gate / key_assumptions / limitations → Decide (conclusions)
+       panel as supporting context; expert_decisions_needed → Decide under an
+       "Open debts" heading; literature_anchors → Tests panel. Overview now
+       ends at the Conclusion block above + the feedback panel below. #}
 
     {# Stage-3c: feedback panel — populated by JS from window._study.feedback_tracked.
        Rendered nothing when there is no feedback (JS checks items.length). #}
@@ -712,13 +649,22 @@
   {% set _has_build = study.model_change or study.implementation_requirements or study.conditions or study.baseline %}
   {% if _has_build %}
 
-  {# Model — every study runs at least one composite. Auto-shown from the
-     study's baseline (composite + parameters) so the Build tab is never empty,
-     with a one-click pop-out to the bigraph-loom STATIC (read-only) view. #}
-  {% if study.baseline %}
+  {# Runnable models (Fable §4.2, §6 #14) — every study runs at least one
+     composite. This is the SINGLE render of the baseline model(s): it used
+     to appear a second time (thinner) under Conditions -> Baseline; that
+     block is folded in here so a reader sees the composite/params once.
+     Sourced from study.baseline[] (rich, per-entry) when present, falling
+     back to study.conditions.baseline (v4-redesign studies with no
+     top-level baseline[] list) so every shape still shows its model. #}
+  {% set _cond = study.conditions %}
+  {# Backward-compat: the new field is ``model_settings``; older yamls may
+     still carry the legacy ``expert_inputs`` alias. #}
+  {% set _model_settings = (_cond.model_settings if _cond and _cond.model_settings is defined else (_cond.expert_inputs if _cond else None)) %}
+  {% set _cond_baseline = (_cond.baseline if _cond and _cond.baseline else None) %}
+  {% set _ns = namespace(cond_baseline_folded=false) %}
+  {% if study.baseline or _cond_baseline %}
   <div class="overview-section" id="model-section">
-    <h3>Model <span class="muted" style="font-size:0.85em;font-weight:normal">— the composite(s) this study simulates</span></h3>
-    <p class="muted" style="font-size:0.88em">Each row runs one composite. Below it: the composite address (open it in the bigraph-loom explorer), the resolved configuration that actually executes, and the run settings.</p>
+    <h3>Runnable models <span class="muted" style="font-size:0.85em;font-weight:normal">— the composite(s) this study simulates</span></h3>
     {% for b in study.baseline %}
     <div class="cond-block" data-model-composite="{{ b.composite or '' }}" data-model-overrides='{{ (b.params or {}) | tojson }}'>
       <div class="cond-block-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
@@ -741,6 +687,39 @@
                 data-baseline-name="{{ b.name or 'baseline' }}">Set composite</button>
       </div>
       <div class="baseline-composite-status muted" data-baseline-name="{{ b.name or 'baseline' }}" style="font-size:0.8em;margin-top:2px"></div>
+      {# Fold in study.conditions.baseline's params when it names the SAME
+         (non-empty) composite as this entry — only the FIRST matching
+         study.baseline[] entry gets the fold (review fix: two entries
+         sharing a composite must not both re-render the same extras), so
+         nothing renders twice (Fable #14). A param present in both with a
+         DIFFERENT value is never silently dropped — it's rendered as a
+         visible divergence instead (review fix: same-key-different-value
+         was disappearing from the DOM entirely). #}
+      {% if _cond_baseline and _cond_baseline.composite and not _ns.cond_baseline_folded and _cond_baseline.composite == b.composite %}
+      {% set _ns.cond_baseline_folded = true %}
+      {% set _extra_params = {} %}
+      {% set _diverging_params = {} %}
+      {% for k, v in (_cond_baseline.params or {}).items() %}
+        {% if not (b.params and k in b.params) %}
+          {% set _ = _extra_params.update({k: v}) %}
+        {% elif b.params[k] != v %}
+          {% set _ = _diverging_params.update({k: v}) %}
+        {% endif %}
+      {% endfor %}
+      {% if _extra_params or _diverging_params %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        {% for k, v in _extra_params.items() %}
+        <span class="cond-pill"><span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code></span>
+        {% endfor %}
+        {% for k, v in _diverging_params.items() %}
+        <span class="cond-pill cond-pill-diverges" title="study.baseline[].params has a different value for this key">
+          <span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code>
+          <span class="cond-diverges-marker">⚠ differs — baseline: <code>{{ b.params[k] }}</code></span>
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% endif %}
       {# Config that runs — resolved params (composite defaults ⊕ this study's
          overrides), fetched on demand from /api/composite-resolve. #}
       <div class="model-config-mount" style="margin-top:8px">
@@ -757,33 +736,50 @@
       {% endif %}
     </div>
     {% endfor %}
-  </div>
-  {% endif %}
-
-  {# Conditions (v4): baseline + variants + model_settings. Edit a value in
-     the Current column and the next pbg_runner invocation picks it up. #}
-  {% if study.conditions %}
-  {# Backward-compat: the new field is ``model_settings``; older yamls may
-     still carry the legacy ``expert_inputs`` alias. #}
-  {% set _model_settings = study.conditions.model_settings if study.conditions.model_settings is defined else study.conditions.expert_inputs %}
-  <div class="overview-section" id="conditions-section">
-    <h3>Conditions <span class="muted" style="font-size:0.85em;font-weight:normal">— what we set up to test it</span></h3>
-    <p class="muted" style="font-size:0.88em">The experimental knobs: which composite forms the baseline, how variants perturb it, and which model settings still need a human-set value.</p>
-
-    {% set _cond = study.conditions %}
-    {% if _cond.baseline %}
-    <div class="cond-block">
-      <div class="cond-block-title">Baseline</div>
-      <div style="font-size:0.92em;margin-bottom:4px">Composite: <code>{{ _cond.baseline.composite or '?' }}</code></div>
-      {% if _cond.baseline.params %}
-      <div style="display:flex;flex-wrap:wrap;gap:6px">
-        {% for k, v in _cond.baseline.params.items() %}
+    {% if _cond_baseline and not _ns.cond_baseline_folded %}
+    {# study.conditions.baseline names a composite not covered by any
+       study.baseline[] entry (or there IS no study.baseline[] at all, e.g.
+       a v4-redesign study) — still show it, once, as its own model card. #}
+    <div class="cond-block" data-model-composite="{{ _cond_baseline.composite or '' }}" data-model-overrides='{{ (_cond_baseline.params or {}) | tojson }}'>
+      <div class="cond-block-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <strong>baseline</strong>
+        {% if _cond_baseline.composite %}
+        <code style="font-size:0.82em;color:#374151;background:#f1f5f9;padding:1px 6px;border-radius:3px">{{ _cond_baseline.composite }}</code>
+        <button type="button" class="action-btn" style="font-size:0.8em"
+                onclick="_openCompositeLoom('{{ _cond_baseline.composite }}')">🧬 explore &amp; run ↗</button>
+        {% else %}<span class="muted">no composite declared</span>{% endif %}
+      </div>
+      {% if _cond_baseline.params %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px">
+        {% for k, v in _cond_baseline.params.items() %}
         <span class="cond-pill"><span class="cond-pill-k">{{ k }}</span>=<code>{{ v }}</code></span>
         {% endfor %}
       </div>
       {% endif %}
+      <div class="model-config-mount" style="margin-top:8px">
+        <p class="muted" style="font-size:0.85em;margin:0">Loading configuration…</p></div>
+      {% set _r = (study.runs[0] if study.runs else None) %}
+      {% if study.robustness or _r %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font-size:0.8em">
+        {% if study.robustness %}<span class="cond-pill"><span class="cond-pill-k">seeds</span>={{ study.robustness.seeds|length if study.robustness.seeds else (study.robustness.n_replicates or 1) }}{{ ' (sweep)' if study.robustness.parameter_sweep else '' }}</span>{% endif %}
+        {% if _r and _r.n_steps %}<span class="cond-pill"><span class="cond-pill-k">steps</span>={{ _r.n_steps }}</span>{% endif %}
+        {% if _r and _r.emitter %}<span class="cond-pill"><span class="cond-pill-k">emitter</span>={{ _r.emitter }}</span>{% endif %}
+        {% if _r and _r.status %}<span class="cond-pill"><span class="cond-pill-k">status</span>={{ _r.status }}</span>{% endif %}
+      </div>
+      {% endif %}
     </div>
     {% endif %}
+  </div>
+  {% endif %}
+
+  {# Conditions (v4): variants + model_settings. (baseline is now folded into
+     Runnable models above, so this section is skipped when it would
+     otherwise render empty — Absent ≠ empty.) Edit a value in the Current
+     column and the next pbg_runner invocation picks it up. #}
+  {% if _cond and (_cond.variants or _model_settings) %}
+  <div class="overview-section" id="conditions-section">
+    <h3>Conditions <span class="muted" style="font-size:0.85em;font-weight:normal">— what we set up to test it</span></h3>
+    <p class="muted" style="font-size:0.88em">The experimental knobs: how variants perturb the baseline, and which model settings still need a human-set value.</p>
 
     {% if _cond.variants %}
     <div class="cond-block">
@@ -851,6 +847,11 @@
                      {% if e.range and e.range[0] is defined %}min="{{ e.range[0] }}" max="{{ e.range[1] }}"{% endif %}
                      step="{{ _step }}"
                      style="width:100%;padding:3px 6px;border:1px solid #cbd5e1;border-radius:3px;font:inherit">
+              {# Fable #14 — reuse the SAME required-before-run gate signal
+                 the header badge above is computed from, inline per-row. #}
+              {% if e.gate == 'required-before-run' and (e.current is none or e.current == '') %}
+              <span class="cond-ei-needs-value" style="display:inline-block;margin-top:3px;font-size:0.8em;color:#92400e">⚠ needs a value</span>
+              {% endif %}
             </td>
             <td>
               {% if e.range %}<code>[{{ e.range[0] }}, {{ e.range[1] }}]</code>
@@ -878,7 +879,6 @@
   {% if study.model_change %}
   <div class="overview-section">
     <h3>Model change</h3>
-    <p class="muted" style="font-size:0.88em">What code lands in this study. Separated from biology (which lives in Key assumptions on Overview).</p>
     {% if study.model_change.base_model %}<p><strong>Base model:</strong> <code>{{ study.model_change.base_model }}</code></p>{% endif %}
     {% if study.model_change.new_processes %}
     <p><strong>New processes:</strong></p>
@@ -906,8 +906,21 @@
     {% endif %}
     {% if study.model_change.modified_processes %}
     <p><strong>Modified processes:</strong></p>
-    <ul style="margin:0 0 8px 18px">
-      {% for m in study.model_change.modified_processes %}<li>{{ m }}</li>{% endfor %}
+    <ul style="margin:0 0 8px 18px;list-style:none;padding-left:0">
+      {% for m in study.model_change.modified_processes %}
+      <li style="margin:0 0 8px 0;padding:8px 10px;background:#fff;border:1px solid #e5e7eb;border-radius:6px">
+        {% if m is mapping %}
+        <div>
+          <code>{{ m.name }}</code>
+          {% if m.status %}<span class="status-chip" style="margin-left:6px">{{ m.status }}</span>{% endif %}
+          {% if m.requirement_id %}<code class="muted" style="margin-left:6px;font-size:0.85em">req: {{ m.requirement_id }}</code>{% endif %}
+        </div>
+        {% if m.why %}<div class="muted" style="margin-top:4px;font-size:0.88em;white-space:pre-wrap;line-height:1.5">{{ m.why }}</div>{% endif %}
+        {% else %}
+        {{ m }}
+        {% endif %}
+      </li>
+      {% endfor %}
     </ul>
     {% endif %}
     {% if study.model_change.notes %}<p class="muted" style="font-size:0.88em">{{ study.model_change.notes }}</p>{% endif %}
@@ -954,256 +967,74 @@
   <p class="empty-message">Nothing to compose yet.</p>
   {% endif %}
 
-  {# Analyses — which post-run analysis modules this study's dispatch should
-     compute. Shown regardless of build state: a study can have its analyses
-     configured before its composite is finalized. Reuses the existing
-     /api/study-set-analyses endpoint (already resolves the flat studies/
-     layout correctly) — this panel replaces the earlier one wired into the
-     legacy, no-longer-navigable Investigation-detail page. #}
-  <div class="overview-section" id="analyses-section">
-    <h3>Analyses <span class="muted" style="font-size:0.85em;font-weight:normal">— post-run analysis modules to compute on dispatch</span></h3>
-    <p class="muted" style="font-size:0.88em">One analysis name per line (e.g. <code>doubling_time_distribution</code>). Threaded into <code>analysis_options</code> on both local and remote dispatch.</p>
+  {# Analyses — post-run analysis modules this study's dispatch should compute.
+     Task E1: relocated here (near Conditions) from the Exports tab — it is
+     study setup ("what to compute"), not an export artifact. Rendered
+     unconditionally (outside the _has_build guard) so a brand-new blank
+     study can still have its analyses configured. Reuses the existing
+     /api/study-set-analyses endpoint + _saveStudyAnalyses() handler
+     unchanged. #}
+  <div class="overview-section" id="analyses-section" style="margin-top:22px">
+    <h3 class="section-title">Analyses <span class="muted" style="font-size:0.85em;font-weight:normal">— post-run analysis modules to compute on dispatch</span></h3>
     <textarea id="study-analyses-list" rows="3" style="width:100%;font-family:monospace;font-size:0.88em" placeholder="doubling_time_distribution">{% if study.analyses %}{% for a in study.analyses %}{{ a.name if a is mapping else a }}
 {% endfor %}{% endif %}</textarea>
     <button type="button" class="action-btn" style="margin-top:6px" onclick="_saveStudyAnalyses()">Save analyses</button>
     <div id="study-analyses-status" class="muted" style="font-size:0.85em;margin-top:4px"></div>
   </div>
+
 </section>
 
 
-{# ─── Simulate tab: Simulations + Runs ─────────────────────────────── #}
+{# ─── Simulate tab: read-only runs record ───────────────────────────
+   Launching lives entirely in the header buttons (Reproduce / Run current
+   spec) now — this panel is ONLY the Simulations-DB table (sim-table.js),
+   filtered to this study via /api/simulations?study=<slug>, populated by
+   _loadStudySims(). No reproduce-card, no simulation_set cards, no
+   Configure & Run mount, no remote-run form. #}
 <section class="study-tab-panel" data-kind="simulate" id="panel-simulate" hidden>
 
-  <div id="reproduce-card" class="reproduce-card"
-       style="margin:0 0 14px 0;padding:10px 12px;background:#f8fafc;
-              border:1px solid #e2e8f0;border-radius:6px;font-size:0.9em"></div>
-
-{# Simulations — the study's runs, rendered with the SHARED Simulations-DB table
-   (sim-table.js) filtered to this study via /api/simulations?study=<slug>.
-   Populated by _loadStudySims(); replaces the old What-we-ran + simulation_set +
-   bespoke runs-table representations. #}
 <div class="overview-section" id="simulations-section">
-  <h3 style="display:flex;align-items:center;gap:8px">Simulations
-    <span class="muted" style="font-size:0.85em;font-weight:normal">— this study's runs</span>
-    <button type="button" class="btn-mini" title="Reload this study's runs"
-            onclick="_loadStudySims(true)" style="margin-left:auto;font-size:0.8em">↻ Refresh</button>
-  </h3>
-  <p class="muted" style="font-size:0.88em">Every run recorded for this study (the same view as the Simulations DB, scoped here) — data location, origin, emitter, time, status, and downloads. Click a run to open its results; launch new runs below.</p>
+  <h2>Simulations</h2>
   <div id="study-sim-table" style="overflow-x:auto"><p class="muted" style="margin:0">Loading simulations…</p></div>
   <div id="study-run-detail" style="margin-top:14px"></div>
 </div>
 
-  {# Simulation set / Pass-B sweep summary (axes · candidates · rejection
-     reasons) — restored alongside the Sim-DB runs table above. #}
-  {% if study.simulation_set %}
-  <h3 style="margin-top:16px">Simulation set <span class="muted" style="font-size:0.85em;font-weight:normal">({{ study.simulation_set | length }} runs planned)</span></h3>
-  <p class="muted" style="font-size:0.88em">Each entry is a concrete run plan: baseline or perturbation, condition, duration, seeds, readouts collected, and tests applied. Sweep entries (Pass B) render their axes, per-run results, candidates, and rejection reasons.</p>
-  {% for sim in study.simulation_set %}
-  {% if sim.kind == 'sweep' %}
-  {# ─── Pass B sweep entry ─────────────────────────────────────────── #}
-  <div class="panel sweep-entry" style="padding:14px 18px;margin-bottom:12px;border-left:3px solid #6366f1">
-    <header style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-      <strong style="font-size:1.05em">{{ sim.name }}</strong>
-      <span class="sim-status-pill sim-status-{{ sim.status or 'ready' }}">{{ sim.status or 'ready' }}</span>
-      <span class="muted" style="font-size:0.8em;padding:2px 6px;background:#eef2ff;border-radius:3px;color:#4338ca">SWEEP</span>
-    </header>
-    {% if sim.base_model %}
-    <div style="font-size:0.9em;margin-bottom:6px"><strong>Base model:</strong> <code>{{ sim.base_model }}</code></div>
-    {% endif %}
-    {# Axes table — use ['values'] indexing because .values is a dict method #}
-    <div style="margin:6px 0">
-      <strong style="font-size:0.9em">Axes ({{ sim.axes | length }})</strong>
-      <table class="sweep-axes-table" style="width:100%;border-collapse:collapse;margin-top:4px;font-size:0.85em">
-        <thead>
-          <tr style="background:#f8fafc">
-            <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #cbd5e1">Parameter</th>
-            <th style="text-align:left;padding:5px 8px;border-bottom:1px solid #cbd5e1">Values</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for ax in sim.axes %}
-          <tr style="border-bottom:1px solid #f1f5f9">
-            <td style="padding:5px 8px;vertical-align:top"><code>{{ ax.parameter }}</code></td>
-            <td style="padding:5px 8px;vertical-align:top">
-              {% for v in ax['values'] %}<code style="margin-right:6px">{{ v }}</code>{% endfor %}
-              <span class="muted" style="font-size:0.78em;margin-left:8px">({{ ax['values'] | length }} values)</span>
-            </td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {# Top-level sweep metadata #}
-    <p style="margin:6px 0;font-size:0.88em">
-      {% if sim.seeds %}<strong>Seeds:</strong> <code>{{ sim.seeds | join(', ') if (sim.seeds is iterable and sim.seeds is not string) else sim.seeds }}</code>{% else %}<span class="muted">No seeds set</span>{% endif %}
-      {% if sim.duration %} · <strong>Duration:</strong> {{ sim.duration }}s{% elif sim.duration_min %} · <strong>Duration:</strong> {{ sim.duration_min }} min{% endif %}
-    </p>
-    {% if sim.metrics %}
-    <p style="margin:4px 0;font-size:0.88em"><strong>Metrics captured:</strong>
-      {% for m in sim.metrics %}<code>{{ m }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-    </p>
-    {% endif %}
-    {% if sim.pass_fail_tests %}
-    <p style="margin:4px 0;font-size:0.88em"><strong>Pass/fail tests:</strong>
-      {% for t in sim.pass_fail_tests %}<code>{{ t }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-    </p>
-    {% endif %}
-    {% if sim.candidate_selection %}
-    <p style="margin:4px 0;font-size:0.88em"><strong>Candidate selection:</strong> <span class="muted">{{ sim.candidate_selection }}</span></p>
-    {% endif %}
-    {# Per-run results table — populated after execution #}
-    {% if sim.runs %}
-    <div style="margin:10px 0 6px 0">
-      <strong style="font-size:0.9em">Runs ({{ sim.runs | length }})</strong>
-      <div style="overflow-x:auto;margin-top:4px">
-        <table class="sweep-runs-table" style="width:100%;border-collapse:collapse;font-size:0.82em">
-          <thead>
-            <tr style="background:#f8fafc">
-              <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #cbd5e1">Axis values</th>
-              <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #cbd5e1">Seed</th>
-              <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #cbd5e1">Run ID</th>
-              <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #cbd5e1">Metrics</th>
-              <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #cbd5e1">Tests</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for run in sim.runs %}
-            {% set is_candidate = sim.candidates_selected and run.run_id in sim.candidates_selected %}
-            <tr style="border-bottom:1px solid #f1f5f9{% if is_candidate %};background:#ecfdf5{% endif %}">
-              <td style="padding:4px 6px;vertical-align:top">
-                {% if run.axis_values %}
-                  {% for k, v in run.axis_values.items() %}<code style="margin-right:4px">{{ k }}={{ v }}</code>{% endfor %}
-                {% else %}<span class="muted">—</span>{% endif %}
-              </td>
-              <td style="padding:4px 6px;vertical-align:top"><code>{{ run.seed if run.seed is defined else '—' }}</code></td>
-              <td style="padding:4px 6px;vertical-align:top">
-                <code>{{ run.run_id or '—' }}</code>
-                {% if is_candidate %}<span style="font-size:0.75em;color:#047857;margin-left:4px">★ candidate</span>{% endif %}
-              </td>
-              <td style="padding:4px 6px;vertical-align:top;font-size:0.95em">
-                {% if run.metrics %}
-                  {% for k, v in run.metrics.items() %}<div><code>{{ k }}</code>: {{ v }}</div>{% endfor %}
-                {% else %}<span class="muted">—</span>{% endif %}
-              </td>
-              <td style="padding:4px 6px;vertical-align:top">
-                {% if run.test_results %}
-                  {% for tname, tresult in run.test_results.items() %}
-                  <span class="sweep-test-badge sweep-test-{{ tresult }}" style="display:inline-block;padding:1px 6px;margin:1px;border-radius:3px;font-size:0.75em;{% if tresult == 'pass' %}background:#d1fae5;color:#065f46{% elif tresult == 'fail' %}background:#fee2e2;color:#991b1b{% elif tresult == 'error' %}background:#fef3c7;color:#92400e{% else %}background:#e5e7eb;color:#4b5563{% endif %}">{{ tname }}: {{ tresult }}</span>
-                  {% endfor %}
-                {% else %}<span class="muted">—</span>{% endif %}
-              </td>
-            </tr>
-            {% endfor %}
-          </tbody>
-          {% if sim.aggregate_metrics %}
-          <tfoot>
-            <tr style="background:#f1f5f9;font-weight:600">
-              <td colspan="3" style="padding:6px 8px;text-align:right">Aggregate:</td>
-              <td colspan="2" style="padding:6px 8px">
-                {% for k, v in sim.aggregate_metrics.items() %}<code style="margin-right:8px">{{ k }}={{ v }}</code>{% endfor %}
-              </td>
-            </tr>
-          </tfoot>
-          {% endif %}
-        </table>
-      </div>
-    </div>
-    {% else %}
-    <p style="margin:8px 0;font-size:0.85em" class="muted"><em>No runs executed yet.</em></p>
-    {% endif %}
-    {# Candidates selected — highlighted #}
-    {% if sim.candidates_selected %}
-    <p style="margin:6px 0;font-size:0.88em;background:#ecfdf5;padding:6px 10px;border-radius:4px;color:#065f46">
-      ★ <strong>Candidates selected:</strong>
-      {% for cid in sim.candidates_selected %}<code style="background:#d1fae5;padding:1px 5px;margin:0 3px;border-radius:3px">{{ cid }}</code>{% endfor %}
-    </p>
-    {% endif %}
-    {# Rejection reasons — collapsible #}
-    {% if sim.rejection_reasons %}
-    <details style="margin:6px 0">
-      <summary style="cursor:pointer;font-size:0.88em;color:#991b1b"><strong>Rejection reasons ({{ sim.rejection_reasons | length }})</strong></summary>
-      <table style="width:100%;border-collapse:collapse;margin-top:4px;font-size:0.85em">
-        <thead>
-          <tr style="background:#fef2f2"><th style="text-align:left;padding:4px 8px">Run ID</th><th style="text-align:left;padding:4px 8px">Reason</th></tr>
-        </thead>
-        <tbody>
-          {% for rid, reason in sim.rejection_reasons.items() %}
-          <tr style="border-bottom:1px solid #fee2e2">
-            <td style="padding:4px 8px;vertical-align:top"><code>{{ rid }}</code></td>
-            <td style="padding:4px 8px;vertical-align:top">{{ reason }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </details>
-    {% endif %}
-    {% if sim.artifact_path %}
-    <p style="margin:6px 0;font-size:0.82em" class="muted">Stored at: <code>{{ sim.artifact_path }}</code></p>
-    {% endif %}
+{# Study artifacts strip (Task E2): the two study-LEVEL bulk-download groups
+   that used to live on the Exports tab, folded in here so Simulations is the
+   runs + study-wide-artifacts hub (Exports tab is being retired — Task E4).
+   Same element ids as before so the existing loaders (_loadAnalysisOutputs /
+   _loadRawData / _downloadAllRawExports) bind unchanged; only the markup
+   moved, and the loaders now trigger on the `simulate` tab activation
+   instead of `data`. Per-row run "⬇ Data" links (sim-table.js) and
+   _showRunDetail are untouched — this strip only carries the two
+   STUDY-level bulk groups. #}
+<div class="overview-section" id="study-artifacts-section" style="margin-top:18px">
+  <h3 class="section-title" style="margin:0 0 10px 0">Study artifacts</h3>
+
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <span class="muted" style="margin-right:auto;font-weight:600">Analysis result files</span>
+    <a id="data-download-all" class="btn-mini" style="display:none"
+       href="{{ base_path }}/api/study-analysis-zip?study={{ name }}">Download all (.zip)</a>
   </div>
-  {% else %}
-  {# ─── Existing single-entry rendering (back-compat) ──────────────── #}
-  <div class="panel" style="padding:14px 18px;margin-bottom:12px">
-    <header style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
-      <strong style="font-size:1.05em">{{ sim.name }}</strong>
-      <span class="sim-status-pill sim-status-{{ sim.status or 'ready' }}">{{ sim.status or 'ready' }}</span>
-      {% if sim.condition %}<span class="muted" style="font-size:0.85em">condition: {{ sim.condition }}</span>{% endif %}
-    </header>
-    <div style="font-size:0.9em;margin-bottom:6px">
-      <strong>Base model:</strong> <code>{{ sim.base_model }}</code>
-    </div>
-    {% if sim.perturbation %}
-    <details style="margin:4px 0">
-      <summary style="cursor:pointer;font-size:0.9em"><strong>Perturbation</strong></summary>
-      <pre style="background:#f1f5f9;padding:8px 10px;border-radius:4px;font-size:0.85em;overflow-x:auto;margin:6px 0">{{ sim.perturbation | tojson(indent=2) }}</pre>
-    </details>
-    {% else %}
-    <p style="margin:4px 0;font-size:0.9em" class="muted">No perturbation (baseline run)</p>
-    {% endif %}
-    <p style="margin:6px 0;font-size:0.9em">
-      <strong>Simulation time:</strong> {% if sim.duration_min %}{{ sim.duration_min }} min{% else %}?{% endif %}{% if sim.generations %} · <strong>{{ sim.generations }} generations</strong>{% endif %}
-      · <strong>Seeds:</strong> {% if sim.seeds %}<code>{{ sim.seeds | join(', ') if (sim.seeds is iterable and sim.seeds is not string) else sim.seeds }}</code>{% else %}<em>not set</em>{% endif %}
-    </p>
-    <p style="margin:4px 0;font-size:0.86em" class="muted">
-      {% if sim.n_readouts_collected %}<strong>Readouts collected:</strong> {{ sim.n_readouts_collected }} · {% endif %}
-      {% if sim.n_tests_applied %}<strong>Tests applied:</strong> {{ sim.n_tests_applied }} · {% endif %}
-      {% if sim.n_runs_recorded %}<strong>Runs recorded:</strong> {{ sim.n_runs_recorded }}{% if sim.run_names %} (<code>{{ sim.run_names | join('</code>, <code>') if (sim.run_names is iterable and sim.run_names is not string) else sim.run_names }}</code>){% endif %}{% endif %}
-    </p>
-    {% if sim.readouts %}
-    <p style="margin:4px 0;font-size:0.88em"><strong>Readouts:</strong>
-      {% for r in sim.readouts %}<code>{{ r }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-    </p>
-    {% endif %}
-    {% if sim.applies_tests %}
-    <p style="margin:4px 0;font-size:0.88em"><strong>Applies tests:</strong>
-      {% for t in sim.applies_tests %}<code>{{ t }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-    </p>
-    {% endif %}
-    {% if sim.blocked_by_requirements %}
-    <p style="margin:4px 0;font-size:0.85em;color:#92400e">🔒 <strong>Blocked by:</strong>
-      {% for r in sim.blocked_by_requirements %}<code>{{ r }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
-    </p>
-    {% endif %}
+  <div id="data-files" data-study="{{ name }}">
+    <p class="empty-message">Loading result files…</p>
   </div>
-  {% endif %}
-  {% endfor %}
-  {% endif %}
-  <!-- Configure & Run widget (SP-C) — native run launcher for this study -->
-  <div id="study-configure-run" style="margin-bottom:18px"></div>
-  <div class="panel" id="remote-run-panel" style="margin-bottom:18px">
-    <h3 style="margin-top:0">Run on remote (smsvpctest)</h3>
-    <p class="muted" style="font-size:0.9em">
-      Pushes the workspace's current branch, builds a simulator from that commit, and runs
-      it on the Ray backend. Results land as a run on this study. Requires GitHub login.
-    </p>
-    <form id="remote-run-form" onsubmit="return _submitRemoteRun(event)">
-      <label>Generations: <input name="num_generations" type="number" min="1" value="1" required></label>
-      <label>Seeds: <input name="num_seeds" type="number" min="1" value="1" required></label>
-      <label><input type="checkbox" name="run_parca" checked> Run ParCa</label>
-      <button type="submit" class="btn-mini" id="remote-run-btn">▶ Run on remote</button>
-    </form>
-    <div id="remote-run-progress" hidden></div>
+
+  {# Raw simulation data — the per-run emitter stores (zarr/parquet/runs.db).
+     `id="exports-downloads"` stays the jump target for the Readouts tab's
+     pointer link (Task C4/E2, now `_gotoStudyTab('simulate', 'exports-
+     downloads')`). `#raw-data-download-all` is the bulk "download all raw
+     runs" convenience — no backend zip endpoint for raw stores exists, so
+     it's a client-side sequential-download button (populated/shown by
+     _loadRawData, triggered by _downloadAllRawExports) scoped to THIS
+     group; the analysis-file zip button above is untouched. #}
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:18px">
+    <span class="muted" id="exports-downloads" style="margin-right:auto;font-weight:600">Raw simulation data</span>
+    <button type="button" id="raw-data-download-all" class="btn-mini" style="display:none"
+            onclick="_downloadAllRawExports()">⬇ Download all raw data</button>
   </div>
+  <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
+</div>
 
 </section>
 
@@ -1214,8 +1045,12 @@
     </div>
     <p class="muted">Quantities collected from each simulation run. Each row is an emitter <code>store_path</code> the composite will save; authored entries in <code>study.yaml</code> add names, descriptions, and units on top.</p>
 
-    {# Download the raw simulation data that holds these readouts (one store per
-       run). Populated by _loadReadoutsDownload from /api/simulations. #}
+    {# Points at Simulations' raw-data downloads (Study artifacts strip)
+       rather than duplicating them (Task C4, repointed by Task E2 when
+       Exports was folded into Simulations — Simulations is now the single
+       "get the data" tab). Populated by _loadReadoutsDownloadPointer, which
+       only shows the pointer when there's actually data to download (never
+       links to an empty tab). #}
     <div id="readouts-download" style="margin:0 0 16px 0"></div>
 
     <div id="readouts-table" data-study="{{ name }}">
@@ -1237,108 +1072,227 @@
 
 <section class="study-tab-panel" data-kind="visualize" id="panel-visualize" hidden>
 
-  <div class="viz-section">
+  <div class="overview-section study-figures figure-gallery" id="visualize-section">
 
-    <h3 class="section-title">Visualizations</h3>
-    <p class="muted" style="margin:0 0 12px 0;font-size:0.88em">Figures for this study: the native analysis gallery from its latest run, any embedded HTML artefacts, and charts auto-rendered from <code>runs.db</code>.</p>
-    <div class="native-gallery-section" style="margin-bottom:22px">
-      <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Baseline analysis gallery <span style="font-weight:normal">— latest completed run</span></h4>
-      <div id="native-gallery-panel"><p class="empty-message">Loading baseline figures…</p></div>
-    </div>
+    <div id="native-gallery-panel" class="figure-mount"><p class="empty-message">Loading figures…</p></div>
 
     {# ─── Embedded HTML visualizations (e.g. pre-execution preview pages
          produced by a runner script). study.embed_visualizations is a list of
-         {name, url, description} entries; each renders as an inline iframe at
-         the top of the Visualizations tab so a biologist gets immediate
-         payoff without waiting for runs.db / Visualization-class plumbing.
+         {name, url, description} entries; each renders as an inline iframe
+         alongside the native gallery / auto-rendered charts, so a biologist
+         gets immediate payoff without waiting for runs.db / Visualization-
+         class plumbing.
+
+         Fable §4.5 (Task V2): same `.figure-card` shell as the other two
+         figure sources — no bordered/backgrounded header bar. The name +
+         "Open in new tab" affordance move into the caption row footer,
+         alongside a muted `embed` source chip. `embed-viz-card` stays as a
+         second class for `_figuresHasEmbeds()` / existing hooks to key on.
+
+         Task V3: `v.run_id` is populated only for the auto-rendered
+         studies/<name>/viz/*.html source (discover_viz_html_files attaches
+         the run whose data the file represents); hand-authored
+         reports/figures/ entries and study.yaml-declared embeds have no
+         run_id key, so `{% if v.run_id %}` omits the link rather than
+         fabricate one. The anchor is server-rendered here (unlike the
+         async native/chart sources) and wired via the SAME delegated
+         `_wireFigureRunLinks` listener, called once at load in
+         study-detail.js since these cards exist in the DOM from page load.
     #}
     {% if study.embed_visualizations %}
-    <div class="embed-viz-section" style="margin-bottom:22px">
-      <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Embedded visualizations <span style="font-weight:normal">— self-contained HTML</span></h4>
-      {% for v in study.embed_visualizations %}
-      <div class="embed-viz-card" style="border:1px solid #e2e8f0;border-radius:6px;margin-bottom:14px;background:#fff">
-        <div style="display:flex;align-items:center;gap:12px;padding:8px 12px;border-bottom:1px solid #e5e7eb;background:#f9fafb">
-          <strong style="flex:1">{{ v.name }}</strong>
-          <a href="{{ v.url }}" target="_blank" class="btn-mini">Open in new tab ↗</a>
-        </div>
-        {% if v.description %}
-        <p class="muted" style="margin:6px 12px;font-size:0.88em">{{ v.description }}</p>
+    {% for v in study.embed_visualizations %}
+    <div class="figure-card embed-viz-card">
+      <iframe src="{{ v.url }}"
+              class="figure-media-frame figure-media-frame--embed"
+              loading="lazy" title="{{ v.name }}"
+              onload="(function(f){try{var d=f.contentDocument;if(!d)return;var b=d.body,e=d.documentElement;var bStyle=b&&d.defaultView&&d.defaultView.getComputedStyle?d.defaultView.getComputedStyle(b):null;var pinnedH=0;if(bStyle&&(bStyle.overflow||'').indexOf('hidden')>=0){var hm=(bStyle.height||'').match(/^(\d+(?:\.\d+)?)px$/);if(hm)pinnedH=Math.round(parseFloat(hm[1]));}var h=pinnedH>0?pinnedH:Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0);if(h>0)f.style.height=(h+24)+'px';}catch(e){}})(this)"
+              ></iframe>
+      {% if v.description %}
+      <p class="figure-desc muted">{{ v.description }}</p>
+      {% endif %}
+      <div class="figure-caption-row">
+        <span class="figure-source-chip">embed</span>
+        <span class="figure-title">{{ v.name }}</span>
+        {% if v.run_id %}
+        <a href="#" class="figure-run-link" data-run-id="{{ v.run_id }}">from run {{ v.run_id }} ↗</a>
         {% endif %}
-        <iframe src="{{ v.url }}"
-                style="width:100%;min-height:200px;border:0;display:block"
-                loading="lazy" title="{{ v.name }}"
-                onload="(function(f){try{var d=f.contentDocument;if(!d)return;var b=d.body,e=d.documentElement;var bStyle=b&&d.defaultView&&d.defaultView.getComputedStyle?d.defaultView.getComputedStyle(b):null;var pinnedH=0;if(bStyle&&(bStyle.overflow||'').indexOf('hidden')>=0){var hm=(bStyle.height||'').match(/^(\d+(?:\.\d+)?)px$/);if(hm)pinnedH=Math.round(parseFloat(hm[1]));}var h=pinnedH>0?pinnedH:Math.max(e?e.scrollHeight:0,b?b.scrollHeight:0);if(h>0)f.style.height=(h+24)+'px';}catch(e){}})(this)"
-                ></iframe>
+        <a href="{{ v.url }}" target="_blank" class="figure-open-link">Open in new tab ↗</a>
       </div>
-      {% endfor %}
     </div>
+    {% endfor %}
     {% endif %}
 
-    <h4 class="muted" style="margin:0 0 6px;font-size:0.9em;font-weight:600">Latest-run charts <span style="font-weight:normal">— re-rendered from <code>runs.db</code></span></h4>
-    <div id="viz-charts-panel" class="charts-panel"></div>
-  </div>
-</section>
+    <div id="viz-charts-panel" class="charts-panel figure-mount"></div>
 
-<section class="study-tab-panel" data-kind="report-cards" id="panel-report-cards" hidden>
-  <div class="report-cards-section">
-    <h3 class="section-title">Report cards</h3>
-    <p class="muted" style="margin:0 0 10px 0;font-size:0.9em">
-      Graded comparison scorecards for this study (v2ecoli vs vEcoli / literature).
-      Each card's verdict summarises whether the compared observables fall within
-      tolerance. Cards are produced during the post-sim flush from the study's
-      <code>report_cards:</code> declaration into <code>viz/report_card/</code>.
-    </p>
-    <div id="report-cards-panel"><p class="empty-message">Loading report cards…</p></div>
-  </div>
-</section>
-
-<section class="study-tab-panel" data-kind="data" id="panel-data" hidden>
-  <div class="data-section">
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-      <h3 class="section-title" style="margin-right:auto">Analysis result files</h3>
-      <a id="data-download-all" class="btn-mini" style="display:none"
-         href="{{ base_path }}/api/study-analysis-zip?study={{ name }}">Download all (.zip)</a>
-    </div>
-    <p class="muted" style="margin:0 0 10px 0;font-size:0.88em">
-      Tabular outputs (<code>.csv</code> / <code>.tsv</code>) written by this study's
-      Analysis steps — e.g. per-run analysis tables and exports. Click a file to
-      download it.
-    </p>
-    <div id="data-files" data-study="{{ name }}">
-      <p class="empty-message">Loading result files…</p>
-    </div>
-
-    {# Raw simulation data — the per-run emitter stores (zarr/parquet/runs.db),
-       folded in here so Exports is the single "get the data" tab. Same ⬇ Data
-       links as the Simulations tab, resolved server-side from run_id. #}
-    <h3 class="section-title" style="margin-top:22px">Raw simulation data</h3>
-    <p class="muted" style="margin:0 0 10px 0;font-size:0.88em">
-      Each run's raw emitter store (zarr / parquet / <code>runs.db</code>) — the full
-      per-step trajectory. Analysis outputs above are derived from these.
-    </p>
-    <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
+    {# Shared empty state for the Figures section (Fable A #3). The native
+       gallery and latest-run charts each resolve async and embeds render
+       synchronously above; JS shows this line only once all three have
+       reported and none produced content — never while any one of them
+       still holds actual figures. #}
+    <p id="figures-empty-message" class="empty-message" style="display:none">No figures yet.</p>
   </div>
 </section>
 
 <section class="study-tab-panel" data-kind="tests" id="panel-tests" hidden>
-  <div class="tests-header">
-    <h3>Behavioral Tests</h3>
-    <p class="muted" style="margin: 0 0 8px 0;">
-      Each prediction below is paired with a precise <code>given / measure / expect</code>
-      rule so one English sentence auto-generates one pytest assertion. The
-      generic evaluator in <code>tests/_behaviors.py</code> dispatches on
-      <code>measure.kind</code> + <code>expect.op</code> to compute pass/fail
-      against the latest simulation run.
-    </p>
-    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-      <button id="run-tests-btn" class="btn-primary">Run tests</button>
-      <div class="tests-summary muted" id="tests-summary">— no test results yet —</div>
+  <h2>Tests</h2>
+  <p class="muted" style="margin:0 0 12px 0">Audit — does this study pass its own bar (report cards + behavioral gates).</p>
+
+  {# C5 moved literature_anchors here verbatim from the dissolved Overview
+     "Plan & provenance" group. C6 restyles it as an "Expectations" band: each
+     anchor is a stated expectation this study is measured against, and where
+     it carries a status (`status_in_v2ecoli`) that status is routed through
+     the SAME G3 outcome_label/_class/_glyph filters the acceptance-criteria
+     band below uses — met / conditional-pass / not met / not assessable —
+     instead of a raw free-text string, so it reads in the page's one shared
+     vocabulary. Read-only (editing anchors is out of scope, §7). Placed
+     immediately before the acceptance-criteria band: a coherent "what we
+     expected, then what the predefined bar is" grouping. Guarded so absent
+     renders nothing (§2 R2). #}
+  {% if study.literature_anchors %}
+  {% set _exp_outcome_colors = {
+      'met':            {'bg': '#d1fae5', 'fg': '#065f46'},
+      'conditional':    {'bg': '#fef3c7', 'fg': '#92400e'},
+      'not-met':        {'bg': '#fee2e2', 'fg': '#991b1b'},
+      'not-assessable': {'bg': '#f1f5f9', 'fg': '#475569'},
+  } %}
+  <div class="overview-section expectations-band" id="expectations-band">
+    <h3 class="section-title">Expectations
+      <span class="muted" style="font-size:0.85em;font-weight:normal">— from literature, mapped to the model observable that measures each</span>
+    </h3>
+    <ul class="literature-anchor-list" style="list-style:none;padding-left:0">
+    {% for anchor in study.literature_anchors %}
+      {% set _ocls = anchor.status_in_v2ecoli|outcome_class if anchor.status_in_v2ecoli else None %}
+      <li class="literature-anchor-card expectation-item">
+        <div class="anchor-expectation" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <span>{{ anchor.expectation }}</span>
+          {% if anchor.status_in_v2ecoli %}
+          {% set _oc = _exp_outcome_colors[_ocls] %}
+          <span class="outcome-chip outcome-{{ _ocls }}"
+                title="raw status: {{ anchor.status_in_v2ecoli }}"
+                style="font-size:0.78em;font-weight:600;padding:2px 9px;border-radius:9999px;background:{{ _oc.bg }};color:{{ _oc.fg }}">{{ anchor.status_in_v2ecoli|outcome_glyph }}&nbsp;{{ anchor.status_in_v2ecoli|outcome_label }}</span>
+          {% endif %}
+        </div>
+        <div class="anchor-observable">
+          <em>Model observable:</em> <code>{{ anchor.model_observable }}</code>
+        </div>
+        {% if anchor.source %}
+        <div class="anchor-source"><em>Source:</em> {{ anchor.source }}</div>
+        {% endif %}
+      </li>
+    {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# Fable G4 (§10.1 band 1 — "Acceptance criteria"): the predefined bar,
+     stated BEFORE the outcome. Source is `spine_acceptance` — already
+     attached to the spec by study_spec.load_study_detail_spec via
+     study_enrichment.study_acceptance_criterion (a pure read of the owning
+     investigation's PERSISTED executive.computed_acceptance, filtered to
+     this study's criteria; never recomputed here). Absent/empty means the
+     study has no owning investigation or no persisted acceptance — render
+     NOTHING (§2 R2: absent != empty; no fabricated criteria, no empty box).
+     Each criterion's `result` (viva_superpowers.investigation_status's
+     passing/failing/passing-with-caveats/in-progress vocabulary) is mapped
+     through the SAME shared outcome_label/_class/_glyph filters G3 defined,
+     so this band reads in the identical four-value vocabulary as the rest
+     of the page. `behavior` names the behavior_tests entry the criterion
+     rests on — where it also appears in this study's Behavioral tests list
+     below, link to it (`#bt-<behavior>`) as the evidence the outcome rests
+     on. #}
+  {% set _sa = study.spine_acceptance %}
+  {% if _sa and _sa.criteria %}
+  {% set _outcome_colors = {
+      'met':            {'bg': '#d1fae5', 'fg': '#065f46', 'border': '#10b981'},
+      'conditional':    {'bg': '#fef3c7', 'fg': '#92400e', 'border': '#f59e0b'},
+      'not-met':        {'bg': '#fee2e2', 'fg': '#991b1b', 'border': '#ef4444'},
+      'not-assessable': {'bg': '#f1f5f9', 'fg': '#475569', 'border': '#94a3b8'},
+  } %}
+  <div class="acceptance-criteria-band" id="acceptance-criteria-band" style="margin-bottom:22px">
+    <h3 class="section-title">Acceptance criteria
+      <span class="muted" style="font-size:0.85em;font-weight:normal">— the predefined bar, from <code>{{ _sa.investigation }}</code>'s persisted acceptance roll-up</span>
+    </h3>
+    <ul class="acceptance-criteria-list" style="list-style:none; padding-left:0; margin:8px 0 0 0">
+      {% for c in _sa.criteria %}
+      {% set _ocls = c.result|outcome_class %}
+      {% set _oc = _outcome_colors[_ocls] %}
+      <li class="acceptance-criterion-item outcome-{{ _ocls }}" data-result="{{ c.result }}"
+          style="display:flex; align-items:center; gap:10px; padding:8px 12px; margin:0 0 6px 0; border-left:4px solid {{ _oc.border }}; background:#f8fafc; border-radius:4px">
+        <span class="outcome-chip outcome-{{ _ocls }}" title="raw result: {{ c.result }}"
+              style="font-size:0.78em; font-weight:600; padding:2px 9px; border-radius:9999px; background:{{ _oc.bg }}; color:{{ _oc.fg }}">{{ c.result|outcome_glyph }}&nbsp;{{ c.result|outcome_label }}</span>
+        <span class="acceptance-criterion-behavior"><code>{{ c.behavior }}</code></span>
+        {% if c.behavior %}
+        <a href="#bt-{{ c.behavior }}" class="btn-mini" style="margin-left:auto; font-size:0.78em">View test ↓</a>
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
+  {# Gate/audit score line — "N/M gates passed", filled client-side by
+     _renderTestsGateSummary from spec.outcome_rollup so it can't drift from
+     the per-gate list below. The per-gate detail is NOT repeated here — it
+     renders once, in the "Behavioral tests" list (#tests-list) below
+     (Fable §4.6: one score line + one list, not the gate set twice). #}
+  <div class="tests-gate-summary" id="tests-gate-summary"><p class="empty-message">Loading gate summary…</p></div>
+
+  {# Fable §10.1 band 2 "Checks", automated group: the Quality (G5) and
+     Reproducibility (G6) check groups share one "Checks" band heading per the
+     §10.1 mockup ("CHECKS  automated 12 · human 1"). Both mounts are filled
+     client-side (rigor and study_audit are live computes, not fields already
+     sitting on `study` like G4's acceptance criteria), and both degrade to an
+     explicit unavailable(reason) message rather than an empty box (§2 R2). #}
+  <div class="checks-band" style="margin-top:22px">
+    <h3 class="section-title" style="margin-bottom:8px">Checks</h3>
+
+    {# Fable G5: the deterministic evidence & rigor scorecard
+       (viva_superpowers.rigor.study_rigor) — already computed in CI, never
+       rendered on the page until now. Filled client-side by
+       _loadQualityChecks from GET /api/study-rigor?study=<slug>
+       (lib.rigor_views.build_study_rigor). #}
+    <div class="check-group check-group-quality" id="check-group-quality" data-check-group="quality">
+      <p class="empty-message">Loading quality checks…</p>
     </div>
-    <div class="tests-config" style="margin-top: 6px;">
-      <span class="badge">auto_discover: <code id="tests-auto-discover">true</code></span>
-      <span class="badge">data_source: <code id="tests-data-source">latest_run</code></span>
+
+    {# Fable G6: the L0-L5 reproducibility audit
+       (viva_superpowers.study_audit.audit_workspace) — already run in CI as
+       the reproducibility gate, never rendered on the page until now. Filled
+       client-side by _loadReproducibilityChecks from GET
+       /api/study-audit?study=<slug> (lib.audit_views.build_study_audit). #}
+    <div class="check-group check-group-reproducibility" id="check-group-reproducibility" data-check-group="reproducibility" style="margin-top:16px">
+      <p class="empty-message">Loading reproducibility checks…</p>
     </div>
   </div>
+
+  {# C6: each report_card-kind row (below, in Behavioral tests) now carries
+     its own inline expander rendering the FULL card in place — so this top
+     panel would double-render every card if it also emitted the per-card
+     stack. It is narrowed to ONLY the cross-card plotly comparison overview
+     (no per-row equivalent exists for that), and — per absent != empty
+     (§2 R2) — the whole section is server-gated on comparison_plotly_url so
+     a study with no comparison plot renders no empty box here at all. #}
+  {% if study.comparison_plotly_url %}
+  <div class="report-cards-section" id="report-cards-section" style="margin-top:22px">
+    <h3 class="section-title">Report cards
+      <span class="muted" style="font-size:0.85em;font-weight:normal">— cross-card comparison; each card's full scorecard is inline at its row in Behavioral tests below</span>
+    </h3>
+    <div id="report-cards-panel"><p class="empty-message">Loading comparison…</p></div>
+  </div>
+  {% endif %}
+
+  <div class="behavioral-tests-section" style="margin-top:22px">
+    <h3 class="section-title">Behavioral tests</h3>
+    <div class="tests-header">
+      <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <button id="run-tests-btn" class="btn-primary">Run tests</button>
+        <div class="tests-summary muted" id="tests-summary">— no test results yet —</div>
+      </div>
+      <div class="tests-config" style="margin-top: 6px;">
+        <span class="badge">auto_discover: <code id="tests-auto-discover">true</code></span>
+        <span class="badge">data_source: <code id="tests-data-source">latest_run</code></span>
+      </div>
+    </div>
 
   {% set _bt = study.behavior_tests or study.expected_behavior or study.tests %}
   {# Latest test outcomes per test — single-sourced from study_spec._latest_outcomes
@@ -1363,13 +1317,23 @@
         data-result="{{ _res or 'pending' }}"
         style="margin: 0 0 10px 0; padding: 10px 12px; border-left: 4px solid {{ _border }}; background: #f8fafc; border-radius: 4px;">
       {% if (b.kind or 'behavioral') == 'report_card' %}
-        {# De-duplicated: the full card lives on the Report Cards tab; here we show
-           the name + its verdict pill (set by _fillReportCardModules) + a link. #}
-        <div class="bt-head" style="display:flex;align-items:center;gap:8px">
-          <code>{{ b.name }}</code>
-          <span class="report-card-verdict" data-card="{{ b.card }}" style="font-size:0.75em;font-family:monospace;padding:2px 8px;border-radius:9999px;background:#e2e8f0;color:#334155">report card</span>
-          <a href="#" onclick="_setStudyPillar('report-cards');return false" class="btn-mini" style="margin-left:auto;font-size:0.78em">View on Report Cards ↗</a>
-        </div>
+        {# C6: the card expands INLINE at this row via a native <details> —
+           reveals the same rich content _renderRichReportCard(card) renders
+           on the Report Cards tab, mounted lazily on first expand (JS binds
+           a `toggle` listener; avoids paying for hidden Plotly/markup for
+           cards nobody opens). The verdict pill stays on the summary
+           (recoloured by the existing _fillReportCardModules); there is no
+           more "View report card ↑" scroll-away link — the top panel is now
+           plotly-comparison-only, so there is nothing up there to jump to
+           for this card any more. #}
+        <details class="report-card-row-expander" data-card="{{ b.card }}">
+          <summary class="bt-head" style="display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none">
+            <code>{{ b.name }}</code>
+            <span class="report-card-verdict" data-card="{{ b.card }}" style="font-size:0.75em;font-family:monospace;padding:2px 8px;border-radius:9999px;background:#e2e8f0;color:#334155">report card</span>
+            <span class="muted report-card-row-toggle-hint" style="margin-left:auto;font-size:0.78em">expand ▾</span>
+          </summary>
+          <div class="report-card-row-mount" data-card="{{ b.card }}" style="margin-top:10px"></div>
+        </details>
       {% else %}
         {# --- existing behavioral rendering, UNCHANGED, kept verbatim below --- #}
       <div style="display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;">
@@ -1392,9 +1356,18 @@
       {% if b.measure or b.pass_if or b.given or b.expect %}
       <details style="margin-top: 6px; font-size: 0.82em;">
         <summary class="muted" style="cursor: pointer;">Assertion</summary>
+        {# `measure` and (in the else branch) `expect` are rendered
+           unconditionally here — only `given`/`pass_if`/`requires`/`cites`
+           are behind their own `{% if %}`. When one of those two is simply
+           absent, Jinja's Undefined sentinel isn't JSON-serializable and a
+           bare `| tojson` raised `TypeError: Object of type Undefined is
+           not JSON serializable` (a real, reproducible 500 for any behavior
+           test that declares `pass_if` but no `measure`). `default(none)`
+           converts the sentinel to a real `None` -> `null` first, matching
+           the JSON-dump style of the rest of this block. #}
         <pre style="background:#fff; padding:8px; margin:4px 0 0 0; border:1px solid #e2e8f0; border-radius:3px; overflow-x:auto;">{% if b.given %}given:   {{ b.given|tojson }}
-{% endif %}measure: {{ b.measure|tojson }}
-{% if b.pass_if %}pass_if: {{ b.pass_if|tojson }}{% else %}expect:  {{ b.expect|tojson }}{% endif %}{% if b.requires %}
+{% endif %}measure: {{ b.measure|default(none)|tojson }}
+{% if b.pass_if %}pass_if: {{ b.pass_if|tojson }}{% else %}expect:  {{ b.expect|default(none)|tojson }}{% endif %}{% if b.requires %}
 requires: {{ b.requires|tojson }}{% endif %}{% if b.cites %}
 cites:   {{ b.cites|tojson }}{% endif %}</pre>
       </details>
@@ -1420,6 +1393,7 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
       the auto-generated assertions.</li>
   </ul>
   {% endif %}
+  </div>
 </section>
 
 <section class="study-tab-panel" data-kind="conclusions" id="panel-conclusions" hidden>
@@ -1439,27 +1413,38 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
 
   {# ── Group 1: Verdict & conclusion ───────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Verdict &amp; conclusion</h2>
+    {# G7: honest attribution for the frozen verdict. No actor field is
+       persisted with the conclusion card
+       (viz/report_card/conclusion.verdict.json is {schema, overall, tracks,
+       insight} — checked, not guessed) so this always renders the literal
+       "unattributed" token today. `none` is passed explicitly — no actor
+       field is read here, per the "no new schema fields" constraint. #}
+    <p class="muted small verdict-attribution" style="margin:0 0 8px 0" title="actor kind: {{ none | actor_kind }}">
+      <span class="actor-glyph">{{ none | actor_glyph }}</span> {{ none | attribution_text }}
+    </p>
 
-    {% if _is_v3 %}
-    <p class="muted" style="margin:0 0 16px 0;font-size:0.9em">
-      Synthesises the latest run's outcomes against the pre-stated
-      <code>conclusion_logic</code>, then surfaces concrete follow-up actions
-      you can either review (existing studies) or seed (new ones).
+    {# G8: frozen-record indicator (Fable §11.4). conclusion_card_frozen is
+       ONLY set (study_spec.load_study_detail_spec) when
+       viz/report_card/conclusion.verdict.json actually exists and parses —
+       the file's presence IS the freeze signal, so this block is absent
+       (never an empty placeholder) for a study whose verdict has never been
+       persisted. `when` is the file's own mtime (fmt_ts, same convention as
+       every run timestamp elsewhere on this page); `digest` is computed on
+       the fly over the exact frozen payload via conclusion_digest — never
+       stored, never fabricated, changes iff the payload changes. #}
+    {% set _frozen = study.conclusion_card_frozen %}
+    {% if _frozen %}
+    <p class="muted small verdict-frozen-indicator" style="margin:0 0 8px 0"
+       title="Content digest (sha256, sorted-key canonical JSON) of the frozen verdict payload — a locked record, not a live recompute.">
+      <span class="frozen-glyph">🔒</span> frozen {{ _frozen.when | fmt_ts }} UTC ·
+      <code style="font-family:ui-monospace,monospace">{{ _frozen.payload | conclusion_digest }}</code>
     </p>
     {% endif %}
 
     <div class="overview-section narrative-card" data-narrative-card="conclusion_verdicts" style="margin-bottom:18px">
       <h3 class="overview-label">⚖️ Verdicts — three-track outcome
-        <span class="narrative-card-hint">(regression / biological / explanatory)</span>
+        <span class="narrative-card-hint">(regression / empirical / explanatory)</span>
       </h3>
-      <p class="muted" style="margin:0 0 10px 0;font-size:0.88em">
-        Each track is independent. <em>Regression</em> answers "does the code
-        still build and run cleanly?", <em>biological</em> answers "does the
-        model match the literature?", <em>explanatory</em> answers "did we
-        learn something new?". Each <strong>result is computed</strong> from
-        canonical fields (gate evaluator, run status, finding tiers) — author
-        only the <em>basis</em> (the rationale) for each track.
-      </p>
       <div class="narrative-grid">
         <label class="narrative-row">
           <span class="narrative-label">Regression compatibility</span>
@@ -1475,14 +1460,14 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
                     placeholder="e.g. Builds cleanly; tests pass; pyproject deps unchanged.">{{ _reg.basis or '' }}</textarea>
         </label>
         <label class="narrative-row">
-          <span class="narrative-label">Biological validation</span>
+          <span class="narrative-label">Empirical validation</span>
           <span class="narrative-input verdict-badge-computed" data-verdict-track="biological_validation"
                 title="Computed from the gate evaluator (read-only)"
                 style="display:inline-block;padding:2px 12px;border-radius:9999px;font-weight:700;font-size:0.85em;background:#f1f5f9;color:#475569">{{ _bio.result or 'PENDING' }}</span>
           <span class="muted small" style="margin-left:6px">computed from gate evaluator</span>
         </label>
         <label class="narrative-row narrative-row-wide">
-          <span class="narrative-label">Biological basis</span>
+          <span class="narrative-label">Empirical basis</span>
           <textarea class="narrative-input narrative-textarea" rows="2"
                     data-narrative-path="conclusion_verdicts.biological_validation.basis"
                     placeholder="e.g. atp_fraction = 0.997, outside Boesen 2024 band [0.2, 0.5].">{{ _bio.basis or '' }}</textarea>
@@ -1516,7 +1501,7 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
         <div style="margin-top:4px"><em>Implementation:</em> {{ _cl.if_primary_tests_pass.implementation_status }}</div>
         {% endif %}
         {% if _cl.if_primary_tests_pass.biological_validation %}
-        <div style="margin-top:4px"><em>Biological validation:</em> {{ _cl.if_primary_tests_pass.biological_validation }}</div>
+        <div style="margin-top:4px"><em>Empirical validation:</em> {{ _cl.if_primary_tests_pass.biological_validation }}</div>
         {% endif %}
         {% if _cl.if_primary_tests_pass.pipeline_unblocks %}
         <div style="margin-top:4px"><em>Pipeline unblocks:</em>
@@ -1545,12 +1530,67 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
     {% if study.conclusion %}
     <div class="decide-section" style="margin-top:18px">
       <h3 class="overview-label">Conclusion</h3>
-      <pre style="background:#f8fafc;padding:12px;border-left:3px solid #94a3b8;border-radius:3px;white-space:pre-wrap;font-family:inherit;font-size:0.9em;line-height:1.5;margin:0">{{ study.conclusion }}</pre>
+      <div class="conclusion-md" style="background:#f8fafc;padding:12px;border-left:3px solid #94a3b8;border-radius:3px;font-size:0.9em;line-height:1.5">{{ study.conclusion | markdown }}</div>
     </div>
     {% endif %}
     {% endif %}
 
   </div>
+
+  {# ── Group 1b: Plan & assumptions ─────────────────────────────────────────
+     C5: relocated verbatim from the dissolved Overview "Plan & provenance"
+     group. This is the plan/gate context that supports reading the verdict,
+     so it sits here in the Decision act, right after the verdict. Group
+     wrapper is guarded so absent data renders nothing (no empty box); each
+     sub-block keeps its own {% if %} guard. #}
+  {% if study.pipeline_gate or study.key_assumptions or study.limitations %}
+  <div class="overview-section"><h2 class="overview-label">Plan &amp; assumptions</h2>
+
+    {% if study.pipeline_gate %}
+    <div class="overview-section">
+      <h3 class="overview-label">Pipeline gate</h3>
+      <p class="muted" style="margin: 0 0 8px 0;font-size:0.88em">
+        Each study is a model-building gate: it answers <em>"Can we safely build the next layer?"</em>
+      </p>
+      {% if study.pipeline_gate.prerequisites %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong>
+        {% for p in study.pipeline_gate.prerequisites %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% else %}
+      <div style="margin-bottom:6px"><strong>Prerequisites:</strong> <em class="muted">none (root study)</em></div>
+      {% endif %}
+      {% if study.pipeline_gate.enables %}
+      <div style="margin-bottom:6px"><strong>Enables:</strong>
+        {% for p in study.pipeline_gate.enables %}<code>{{ p }}</code>{% if not loop.last %} · {% endif %}{% endfor %}
+      </div>
+      {% endif %}
+      {% if study.pipeline_gate.proceed_condition %}
+      <div><strong>Proceed when:</strong> <span class="muted">{{ study.pipeline_gate.proceed_condition }}</span></div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if study.key_assumptions %}
+    <div class="overview-section">
+      <h3 class="overview-label">Key assumptions</h3>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for a in study.key_assumptions %}<li style="margin:2px 0">{{ a }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if study.limitations %}
+    <div class="overview-section">
+      <h3 class="overview-label">Limitations</h3>
+      <p class="muted" style="margin:0 0 6px 0;font-size:0.85em">What this study explicitly does NOT validate (prevents overclaim).</p>
+      <ul style="margin:0 0 0 18px;padding:0;font-size:0.93em">
+        {% for l in study.limitations %}<li style="margin:2px 0">{{ l }}</li>{% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+  </div>
+  {% endif %}
 
   {# ── Group 2: Evidence ────────────────────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Evidence</h2>
@@ -1621,6 +1661,66 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
 
   {# ── Group 3: Follow-ups & decisions ──────────────────────────────────────── #}
   <div class="overview-section"><h2 class="overview-label">Follow-ups &amp; decisions</h2>
+
+    {# ── Open debts — pre-run expert review ─────────────────────────────────
+       C5: relocated verbatim from the dissolved Overview "Plan & provenance"
+       group. These are open biological questions the planning is contingent
+       on — grouped here under the Decision act's follow-ups/decisions area as
+       "Open debts" (leads the group; they gate the decision). Guarded so
+       absent renders nothing. The G7 attribution line + all {% if %} guards
+       are preserved verbatim from the original card. #}
+    {% if study.expert_decisions_needed is sequence and study.expert_decisions_needed is not string and study.expert_decisions_needed %}
+    <div class="overview-section" id="open-debts-section" style="margin-top:6px">
+      <h3 class="overview-label">Open debts <span class="narrative-card-hint">(pre-run expert review)</span></h3>
+      <div class="overview-section pre-run-expert-review">
+        <p class="muted" style="margin:0 0 8px 0;font-size:0.88em">
+          Open biological questions the planning is contingent on. A "wrong" answer here
+          means a primary test threshold needs to change <em>before</em> the simulation
+          is run, not after. Each question lists alternatives + the impact of the wrong
+          choice + what downstream work it blocks.
+        </p>
+        <div class="expert-question-list">
+          {% for q in study.expert_decisions_needed %}
+          <div class="expert-question-card status-{{ q.status or 'open' }}">
+            <div class="expert-question-header">
+              <span class="expert-question-id">{{ q.id }}</span>
+              <span class="expert-question-status">{{ q.status or 'open' }}</span>
+              {# G7: honest attribution — asked_to is the only actor field this
+                 card carries (no timestamp field exists for it). Never blank:
+                 the literal "unattributed" token renders when asked_to is unset,
+                 with the human/agent glyph on whatever actor IS recorded. #}
+              <span class="expert-question-asked-to actor-kind-{{ q.asked_to | actor_kind }}" title="actor kind: {{ q.asked_to | actor_kind }}">asked to: <span class="actor-glyph">{{ q.asked_to | actor_glyph }}</span> {{ q.asked_to if q.asked_to else 'unattributed' }}</span>
+            </div>
+            <div class="expert-question-text"><strong>Q.</strong> {{ q.question }}</div>
+            {% if q.alternatives %}
+            <div class="expert-question-alternatives">
+              <em>Alternatives:</em>
+              <ul>{% for a in q.alternatives %}<li>{{ a }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% if q.impact_if_wrong %}
+            <div class="expert-question-impact">
+              <em>Impact if wrong:</em> {{ q.impact_if_wrong }}
+            </div>
+            {% endif %}
+            {% if q.blocks %}
+            <div class="expert-question-blocks">
+              <strong>What this blocks ({{ q.blocks|length }} items)</strong>
+              <ul>{% for b in q.blocks %}<li>{{ b }}</li>{% endfor %}</ul>
+            </div>
+            {% endif %}
+            {% if q.requested_response %}
+            <div class="expert-question-response">
+              <strong>Requested response format</strong>
+              <p>{{ q.requested_response }}</p>
+            </div>
+            {% endif %}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
     {# ── Discovery implications ─────────────────────────────────────────────
        Where this study's results leave the mechanism model and what to
@@ -1784,23 +1884,17 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
   {% if not _is_v3 %}
   <details class="overview-section"><summary class="overview-label">Limitations &amp; provenance</summary>
 
-    {# ── Read-only synthesis: Limitations + Next steps (C3) ──────────────────
-       The four buckets are DERIVED from the canonical structured fields rather
-       than hand-entered free text (the old textareas saved to study.conclusion,
-       which reached no report). Limitations ← limitations; Next steps ←
-       discovery_implications.followup_study_proposals (or follow_up_studies).
-       Edit those source fields and this synthesis — and the generated report
-       — update together. #}
+    {# ── Read-only synthesis: Next steps (C3) ────────────────────────────────
+       Next steps ← discovery_implications.followup_study_proposals (or
+       follow_up_studies). Edit those source fields and this synthesis — and
+       the generated report — update together.
+       C5: the Limitations column that used to sit here was REMOVED to
+       reconcile a duplicate — limitations now render once, in the richer
+       moved "Plan & assumptions" block above (Group 1b), for v3 and non-v3
+       studies alike. #}
     {% set _di = study.discovery_implications or {} %}
     {% set _nexts = _di.followup_study_proposals or study.follow_up_studies or [] %}
     <div class="conclusions-grid conclusions-synthesis">
-      <div class="conclusion-field">
-        <h3>Limitations <span class="muted small">(from limitations)</span></h3>
-        {% if study.limitations is string %}<p>{{ study.limitations }}</p>
-        {% elif study.limitations %}
-        <ul class="synthesis-list">{% for l in study.limitations %}<li>{{ l }}</li>{% endfor %}</ul>
-        {% else %}<p class="muted">None recorded.</p>{% endif %}
-      </div>
       <div class="conclusion-field">
         <h3>Next steps <span class="muted small">(from discovery implications)</span></h3>
         {% if _nexts %}
@@ -1935,9 +2029,6 @@ window._seedFollowupStudy = _seedFollowupStudy;
 window._seedFollowupProposal = _seedFollowupProposal;
 </script>
 <script src="/configure-run.js"></script>
-<!-- ProgressTrack must load BEFORE study-detail.js: _renderRemoteRunProgress
-     (the pinned-build run card's progress adapter) depends on window.ProgressTrack. -->
-<script src="/progress-track.js"></script>
 <script src="/sim-table.js"></script>
 <script src="/study-detail.js"></script>
 <script>
@@ -1949,37 +2040,26 @@ window._seedFollowupProposal = _seedFollowupProposal;
 </script>
 <script>
 (function () {
-  var el = document.getElementById("study-configure-run");
-  if (!el || !window.ConfigureRun) return;
-  {% if study and study.baseline and study.baseline[0].composite %}
-  var compositeRef = {{ study.baseline[0].composite | tojson }};
-  {% elif study and study.conditions and study.conditions.baseline and study.conditions.baseline.composite %}
-  var compositeRef = {{ study.conditions.baseline.composite | tojson }};
-  {% else %}
-  var compositeRef = null;
-  {% endif %}
-  var slug = window._studyName || "{{ name }}";
-  ConfigureRun.mount(el, { composite: compositeRef, target: "study", study: slug });
-  // Read-only bundle: there's no live backend to run on — hide the remote-run
-  // launcher (the Configure & Run widget already renders a disabled preview).
-  // The ProgressTrack progress bar (progress-track.js) is inert here by
-  // construction: it makes ZERO network calls and only ever renders via
-  // _renderRemoteRunProgress, which is reachable only from the run button
-  // inside this now-hidden panel — so snapshots never invoke it.
+  // Task 8: the Configure & Run mount and the remote-run (smsvpctest) panel
+  // were both removed from the Simulate tab — launching now lives entirely
+  // in the header buttons (Reproduce / Run current spec). This block used
+  // to also mount ConfigureRun into the (now-deleted) mount div and, in an
+  // else-if, relabel the remote-run card via window._initRemoteRunPinned()
+  // if pinned mode was enabled; Fable A #7 deleted that now-fully-dormant
+  // remote-run subsystem from study-detail.js (its DOM anchors — the
+  // #remote-run-panel/-btn/-progress mounts — never existed in this
+  // template to begin with), so the else-if branch is gone too. Only the
+  // still-relevant header-button snapshot handling remains below, now
+  // unconditional (it used to be gated behind a lookup of that deleted div).
+  //
+  // Read-only bundle: there's no live backend to run on — hide the header
+  // run buttons in a published read-only snapshot (reproducible-rerun-spine
+  // Task 4 / G2: both equally inert with no live backend to launch against).
   if (window.__DASH_CONFIG__ && window.__DASH_CONFIG__.mode === "snapshot") {
-    var rp = document.getElementById("remote-run-panel");
-    if (rp) rp.style.display = "none";
-    // "Reproduce" / "Run current spec" both POST to live-only endpoints —
-    // hide them alongside the remote-run launcher in a published read-only
-    // snapshot (reproducible-rerun-spine Task 4 / G2: two distinct buttons,
-    // both equally inert with no live backend to launch against).
     var reproduceBtn = document.getElementById("study-reproduce");
     if (reproduceBtn) reproduceBtn.style.display = "none";
     var runCurrentBtn = document.getElementById("study-run-current-spec");
     if (runCurrentBtn) runCurrentBtn.style.display = "none";
-  } else if (window._initRemoteRunPinned) {
-    // Live backend: relabel the remote-run card if pinned mode is enabled.
-    window._initRemoteRunPinned();
   }
 })();
 </script>

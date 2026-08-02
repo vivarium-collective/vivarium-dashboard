@@ -140,3 +140,104 @@ def test_declared_figure_found_in_charts_subdir(tmp_path):
     (tmp_path / "charts" / "a.png").write_bytes(b"\x89PNG")
     [rec] = discover_declared_figure_charts(tmp_path, [{"address": "png:a.png"}])
     assert rec["img"].startswith("data:image/png;base64,")
+
+
+# ── Task V6: threejs:/html: self-contained-HTML declared figures ──────────
+#
+# A `visualizations:` entry whose address is `threejs:<file>.html` or
+# `html:<file>.html` resolves to a chart record that renders as an IFRAME
+# (not an <img>/inline <svg>) and carries the interactive marker viz_gate's
+# `_INTERACTIVE_KINDS` already recognises for `threejs`/`html`.
+
+def test_declared_threejs_address_resolves_to_iframe_record(tmp_path):
+    (tmp_path / "scene.html").write_text("<html><body>3D</body></html>")
+    viz = [{"name": "colony-3d", "address": "threejs:scene.html",
+            "description": "Interactive colony render"}]
+    [rec] = discover_declared_figure_charts(tmp_path, viz)
+    assert rec["media"] == "threejs"
+    assert rec["iframe_url"] == "/scene.html"
+    assert rec["title"] == "colony-3d"
+    assert rec["caption"] == "Interactive colony render"
+    assert rec["source"] == "declared"
+    assert rec["run_id"] is None
+    # Not a static-image record — no img/svg payload.
+    assert "img" not in rec
+    assert "svg" not in rec
+
+
+def test_declared_html_address_resolves_to_iframe_record(tmp_path):
+    (tmp_path / "page.html").write_text("<html><body>self-contained</body></html>")
+    [rec] = discover_declared_figure_charts(tmp_path, [{"address": "html:page.html"}])
+    assert rec["media"] == "html"
+    assert rec["iframe_url"] == "/page.html"
+    assert "img" not in rec
+    assert "svg" not in rec
+
+
+def test_declared_iframe_missing_file_skipped(tmp_path):
+    assert discover_declared_figure_charts(tmp_path, [{"address": "threejs:gone.html"}]) == []
+
+
+def test_declared_iframe_found_in_viz_subdir(tmp_path):
+    (tmp_path / "viz").mkdir()
+    (tmp_path / "viz" / "b.html").write_text("<html></html>")
+    [rec] = discover_declared_figure_charts(tmp_path, [{"address": "html:b.html"}])
+    assert rec["iframe_url"] == "/viz/b.html"
+
+
+def test_declared_iframe_url_relative_to_ws_root_when_study_nested(tmp_path):
+    """When the study lives under investigations/<inv>/studies/<slug> (nested
+    layout), the iframe URL must be relative to the workspace root — the
+    catch-all static route (`lib.static_serving.resolve_asset`) resolves
+    every URL against `ws_root`, not the study dir."""
+    ws_root = tmp_path / "ws"
+    study_dir = ws_root / "investigations" / "inv1" / "studies" / "demo"
+    study_dir.mkdir(parents=True)
+    (study_dir / "scene.html").write_text("<html></html>")
+    [rec] = discover_declared_figure_charts(
+        study_dir, [{"address": "threejs:scene.html"}], ws_root=ws_root)
+    assert rec["iframe_url"] == "/investigations/inv1/studies/demo/scene.html"
+
+
+# ---------------------------------------------------------------------------
+# run_id provenance (Fable §4.5, Task V3): a static chart's <name>.meta.json
+# sidecar (viz_freshness.stamp_meta) is the genuine, already-recorded link to
+# the run that produced it — reuse it rather than guess. A chart with no
+# stamped source_run_id, or one resolved via a hand-authored `visualizations:`
+# declaration, carries no run association and must stay null.
+# ---------------------------------------------------------------------------
+
+
+def test_static_chart_with_stamped_meta_carries_run_id(tmp_path):
+    d = _charts_dir(tmp_path)
+    (d / "01_photo.png").write_bytes(b"\x89PNG")
+    (d / "01_photo.meta.json").write_text('{"source_run_id":"run-42"}')
+    [rec] = discover_static_study_charts(d)
+    assert rec["run_id"] == "run-42"
+
+
+def test_static_chart_without_meta_run_id_is_null(tmp_path):
+    d = _charts_dir(tmp_path)
+    (d / "00_a.svg").write_text("<svg/>")
+    [rec] = discover_static_study_charts(d)
+    assert rec["run_id"] is None
+
+
+def test_static_chart_with_meta_but_no_source_run_id_is_null(tmp_path):
+    d = _charts_dir(tmp_path)
+    (d / "01_photo.png").write_bytes(b"\x89PNG")
+    (d / "01_photo.meta.json").write_text('{"title":"Photo T"}')
+    [rec] = discover_static_study_charts(d)
+    assert rec["run_id"] is None
+
+
+def test_declared_figure_chart_run_id_always_null(tmp_path):
+    """Declared/hand-authored visualizations[] figures never carry a run_id,
+    even when the resolved file happens to have a stamped meta sidecar — the
+    author declared it, so no run derivation is claimed."""
+    (tmp_path / "charts").mkdir()
+    fig = tmp_path / "charts" / "a.png"
+    fig.write_bytes(b"\x89PNG")
+    (tmp_path / "charts" / "a.meta.json").write_text('{"source_run_id":"run-1"}')
+    [rec] = discover_declared_figure_charts(tmp_path, [{"address": "png:a.png"}])
+    assert rec["run_id"] is None

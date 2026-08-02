@@ -306,6 +306,83 @@ def _readout_emit_plan_findings(ws_root: Path) -> list[dict]:
     return out
 
 
+def _question_approach_findings(ws_root: Path) -> list[dict]:
+    """Deterministic 'missing_question' readiness gaps — one per study whose
+    spec has no non-empty question (``purpose.question`` or legacy top-level
+    ``question``). Reuses ``_iter_study_slugs`` (tolerant of unreadable specs).
+    """
+    out: list[dict] = []
+    for slug, spec in _iter_study_slugs(ws_root):
+        _purpose = spec.get("purpose")
+        _purpose = _purpose if isinstance(_purpose, dict) else {}
+        q = (_purpose.get("question") or spec.get("question") or "").strip()
+        if not q:
+            out.append({
+                "study": spec.get("name") or slug,
+                "check": "missing_question",
+                "severity": "warning",
+                "message": "Study has no question — add a Question & Approach.",
+                "field_path": "purpose.question",
+            })
+    return out
+
+
+def _visualization_gap_findings(ws_root: Path) -> list[dict]:
+    """Deterministic 'visualization_gap' readiness gaps (Fable §5(A)/§6(c)
+    Task V4, recalibrated by Task Vcal) — one per study whose visualizations
+    don't clear the quality bar (``lib.viz_gate.study_visualization_status``).
+
+    Task Vcal recalibrated this from a flat "always warning when not fully
+    qualifying" into three outcomes, driven by ``gap_severity``:
+      * ``"warning"`` — no interactive figure at all (the genuine
+        empty/boring case).
+      * ``"info"``    — has an interactive figure and has been run, but
+        nothing's run-linked yet (a soft provenance nudge).
+      * ``None``      — either fully qualifying OR the study simply hasn't
+        been run yet — emits NOTHING (an unrun study isn't a viz problem).
+
+    Mirrors ``_question_approach_findings``: reuses ``_iter_study_slugs``
+    (tolerant of unreadable specs) and is itself best-effort per study — a
+    study whose composite/runs can't be read never raises, it just reads as
+    "no figures" (-> ``warning``, same as V4's tolerant fallback). Always
+    soft (``warning``/``info``, never ``error``) — this is a nudge, not a
+    block.
+    """
+    from vivarium_workbench.lib.viz_gate import study_visualization_status
+
+    out: list[dict] = []
+    for slug, spec in _iter_study_slugs(ws_root):
+        try:
+            status = study_visualization_status(ws_root, slug)
+        except Exception:  # noqa: BLE001 — never let one study 500 the lint
+            status = {"qualifies": False, "reason": "no figures", "gap_severity": "warning"}
+        severity = status.get("gap_severity")
+        if not severity:
+            continue
+        reason = status.get("reason") or "no qualifying figure"
+        if reason == "no figures":
+            message = ("Study has no visualizations — add a chart, embed, or "
+                       "run to produce a figure.")
+        elif reason == "no interactive figure (only static images)":
+            message = ("Study's figures are all static images — add an "
+                       "interactive figure (embedded Plotly/HTML, a native "
+                       "gallery panel, or a .gif) so it qualifies.")
+        elif reason == "no figure linked to a run":
+            message = ("Study has an interactive figure but none is linked "
+                       "to a run — link a figure to a real run for genuine "
+                       "provenance.")
+        else:
+            message = f"Study's visualizations don't qualify ({reason})."
+        out.append({
+            "study": spec.get("name") or slug,
+            "check": "visualization_gap",
+            "severity": severity,
+            "message": message,
+            "field_path": "visualizations",
+        })
+    return out
+
+
 def _linkage_cached_index(ws_root: Path) -> Optional[dict]:
     """Return the cached linkage index for ``ws_root`` (TTL-cached), or build
     and cache it.  Returns ``None`` when the index module is unavailable or
@@ -359,6 +436,8 @@ def build_report_lint(ws_root: Path) -> tuple[dict, int]:
 
     findings.extend(_composite_resolution_findings(ws_root))
     findings.extend(_readout_emit_plan_findings(ws_root))
+    findings.extend(_question_approach_findings(ws_root))
+    findings.extend(_visualization_gap_findings(ws_root))
     return {"findings": findings}, 200
 
 

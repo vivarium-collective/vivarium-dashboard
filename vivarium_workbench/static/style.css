@@ -2363,10 +2363,16 @@ body.pcard-splitting iframe{ pointer-events:none; }
  * readable over content underneath. The -webkit-sticky prefix is
  * still needed for older Safari versions. */
 .study-tabs {
+  /* ACTRAIL fix: rows of `.act-cluster` columns (each cluster carries its
+   * own label + tabs — see the act-rail block below), not a single stacked
+   * column of two independent sibling rows. `overflow-x: auto` lets the
+   * clusters scroll sideways on narrow viewports instead of overflowing the
+   * page; `align-items: flex-end` keeps every cluster's tab row baseline-
+   * aligned even though act labels vary in height. */
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  align-items: flex-end;
+  gap: 20px;
+  overflow-x: auto;
   border-bottom: 1px solid #e5e7eb;
   margin: 0 0 20px;
   position: -webkit-sticky;
@@ -4027,11 +4033,44 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .al-bc { cursor:pointer; color:#9db4d6; }
 .al-bc:hover { color:#fff; text-decoration:underline; }
 
-/* Two-level study nav: 5 pillars over a per-pillar sub-nav (tab consolidation). */
-.study-pillars { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 2px; }
+/* ACTRAIL fix (Fable G1 originally shipped `.act-rail` labels and
+ * `.study-pillars` tabs as two independent sibling rows with no shared
+ * columns, so the labels never lined up over the tabs they group — user
+ * feedback picked "grouped clusters, aligned"). Each act is now one
+ * `.act-cluster` flex column: its `.act-header` (label + gate dot) sits
+ * directly above its own `.act-tabs`, in the SAME column, so the label
+ * always sits over its own tabs — alignment is structural, not hand-tuned
+ * spacing. The gap between `.act-cluster`s (on `.study-tabs`) is the
+ * inter-act separation; tabs within one cluster sit tight together via the
+ * small `.act-tabs` gap, so the five acts still read as distinct groups.
+ * Each act label carries a `.act-gate-dot`: a 6px dot that renders
+ * neutral/grey here (`data-gate-state="not-assessed"`) — Fable G2 recolors
+ * it per the six-gate state without touching this markup. Task E4 removed
+ * the Exports/Record cluster (and its `.act-cluster-record` divider style)
+ * once its panel had nothing left in it — all remaining clusters are
+ * narrative acts with a gate dot. */
+.act-cluster { display: flex; flex-direction: column; }
+.act-header {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 2px 5px; border-bottom: 1px solid var(--border);
+  margin-bottom: 1px;
+}
+.act-label {
+  font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #94a3b8; white-space: nowrap;
+}
+.act-gate-dot {
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: #cbd5e1; box-shadow: inset 0 0 0 1px #b6c2cf;
+}
+
+/* Tabs within one act cluster (tab consolidation: the pillar row used to be
+ * its own top-level nav — `.act-tabs` is now the per-cluster tab row). */
+.act-tabs { display: flex; gap: 2px; flex-wrap: nowrap; }
 .study-pillar {
   border: 0; background: none; cursor: pointer; padding: 8px 14px;
   font-weight: 700; font-size: 0.95rem; color: #64748b; border-bottom: 3px solid transparent;
+  white-space: nowrap;
 }
 .study-pillar:hover { color: #334155; }
 .study-pillar.active { color: #1e293b; border-bottom-color: #2563eb; }
@@ -4644,7 +4683,17 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
    pills, finding-id, status chips) are left as readable badges. */
 :root[data-theme="dark"] .study-tabs,
 :root[data-theme="dark"] .finding-card{ background:var(--surface) !important; border-color:var(--border) !important; }
-:root[data-theme="dark"] .spine-summary,
+/* Act rail (Fable G1; ACTRAIL fix regrouped `.act-group` into `.act-header`
+   inside each `.act-cluster`) */
+:root[data-theme="dark"] .act-header{ border-bottom-color:var(--border) !important; }
+:root[data-theme="dark"] .act-label{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] .act-gate-dot{ background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--border-2); }
+/* Fable G2: per-gate-state dot colors (§9.3 palette) win over the neutral
+   dark default above — same selector specificity, later in the cascade. */
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="passed"]{ background:#10b981; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="passed-with-conditions"]{ background:#f59e0b; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="blocked"]{ background:#ef4444; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="waived"]{ background:#8b5cf6; box-shadow:none; }
 :root[data-theme="dark"] .status-detail,
 :root[data-theme="dark"] .status-detail-panel,
 :root[data-theme="dark"] .overview-section,
@@ -4656,17 +4705,13 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .finding-next{ background:#0f2417 !important; border-color:#1c3a28 !important; }
 /* Container text → tokens (small pills keep their own colors). */
 :root[data-theme="dark"] .study-name,
-:root[data-theme="dark"] .spine-val,
 :root[data-theme="dark"] .study-pillar,
 :root[data-theme="dark"] .finding-statement,
 :root[data-theme="dark"] .finding-explanation,
 :root[data-theme="dark"] .finding-title,
 :root[data-theme="dark"] .overview-section h2,
-:root[data-theme="dark"] .overview-section h3,
-:root[data-theme="dark"] .spine-at-glance-head{ color:var(--heading) !important; }
+:root[data-theme="dark"] .overview-section h3{ color:var(--heading) !important; }
 :root[data-theme="dark"] .status-detail-axis,
-:root[data-theme="dark"] .spine-summary-head,
-:root[data-theme="dark"] .spine-key,
 :root[data-theme="dark"] .narrative-label,
 :root[data-theme="dark"] .finding-evidence,
 :root[data-theme="dark"] .finding-expected,
@@ -4683,7 +4728,23 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .finding-kind{ background:#1e2547 !important; color:#a5b4fc !important; border-color:#2c3566 !important; }
 :root[data-theme="dark"] .classification-pill.classification-primary{ background:#3a1518 !important; color:#fca5a5 !important; border-color:#5a2226 !important; }
 :root[data-theme="dark"] .classification-pill.classification-supporting{ background:#14243f !important; color:#93c5fd !important; border-color:#22375c !important; }
-:root[data-theme="dark"] .readiness-banner{ background:#2a2113 !important; color:#fcd34d !important; border-color:#3d3418 !important; }
+/* Fable G4: Tests → Acceptance criteria band (§10.1 band 1). Outcome chips
+   reuse the shared four-value vocabulary (outcome_label/_class/_glyph); dark
+   overrides mirror the gate-status/classification-pill tinted-badge idiom
+   above (dark bg + light coloured text). */
+:root[data-theme="dark"] .acceptance-criteria-band{ background:transparent !important; }
+:root[data-theme="dark"] .acceptance-criterion-item{ background:var(--surface-2) !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-met{ background:#12351f !important; color:#86efac !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-conditional{ background:#3a2a0d !important; color:#fcd34d !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-not-met{ background:#3a1518 !important; color:#fca5a5 !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-not-assessable{ background:var(--surface-3) !important; color:var(--text-muted) !important; }
+/* Task 5: readiness moved from a banner to a quiet inline link (span when
+   ready, <details><summary> when there are gaps to expand). Override its
+   JS-computed inline color for legibility on a dark surface, and the
+   expanded body's light-mode border/background. */
+:root[data-theme="dark"] .readiness-inline,
+:root[data-theme="dark"] .readiness-inline summary{ color:#fcd34d !important; }
+:root[data-theme="dark"] .readiness-inline-body{ background:var(--surface-2) !important; border-color:var(--border) !important; }
 :root[data-theme="dark"] .finding-next,
 :root[data-theme="dark"] .finding-next strong,
 :root[data-theme="dark"] .finding-next *{ color:#86efac !important; }

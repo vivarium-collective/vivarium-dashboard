@@ -158,6 +158,7 @@ class ChartPayload(BaseModel):
     simulations: Optional[str] = None
     interpretation: Optional[str] = None
     data_source: Optional[str] = None
+    run_id: Optional[str] = None
 
 
 class StudyChartsPayload(BaseModel):
@@ -172,6 +173,7 @@ class StudyChartsPayload(BaseModel):
     schema_version: Optional[Any] = None
     charts: list[ChartPayload]
     db_exists: bool
+    data_store: Optional[str] = None
     static_count: int
     live_count: int
 
@@ -739,6 +741,21 @@ class InvestigationHypothesesPayload(BaseModel):
     investigation: str = ""
 
 
+class StudyRigor(BaseModel):
+    """``GET /api/study-rigor`` payload (lib.rigor_views.build_study_rigor, Fable G5).
+
+    The per-study evidence & rigor scorecard from
+    ``viva_superpowers.rigor.study_rigor`` (``dimensions`` / ``score`` /
+    ``summary`` / ``study_type`` / ``mode`` / ``descriptive``), or the
+    ``{"unavailable": true, "reason": ...}`` degrade shape when rigor could not
+    be computed (missing dependency, malformed spec, ...) — never a fabricated
+    empty scorecard. Pure pass-through (``extra="allow"``, no declared fields)
+    like :class:`InvestigationRigor` so nothing is stripped or injected.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
 class InvestigationRigor(BaseModel):
     """``GET /api/investigation-rigor`` payload (lib.rigor_views.build_investigation_rigor).
 
@@ -1046,6 +1063,17 @@ class StudyReadouts(BaseModel):
     # local ParCa cache) so the UI can show a soft notice instead of a hard error.
     degraded: bool = False
     remote_build: bool = False
+    # Fable Increment A #5 (docs/superpowers/specs/2026-08-01-study-design-fable-pass.md
+    # §5.2): the real saved/excluded split — ``excluded`` = the full observable
+    # surface minus ``composite_runs.collect_emit_paths_from_spec(spec)`` — plus
+    # the R2 three-state marker so the UI can say "unknown" rather than "empty"
+    # when the split could not be computed.
+    excluded: list[dict] = []
+    excluded_state: Optional[Literal["computed", "empty", "unavailable"]] = None
+    emit_selection: Optional[Literal["total", "subset"]] = None
+    reason: str = ""
+    # Deprecated alias for ``emit_selection == "total"``; keep for one release.
+    emit_is_total: bool = False
 
 
 class LinkageIndex(BaseModel):

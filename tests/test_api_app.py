@@ -324,7 +324,7 @@ def test_study_charts_empty_workspace(client):
     body = r.json()
     assert body == {
         "study": "dnaa-1", "schema_version": None, "charts": [],
-        "db_exists": False, "static_count": 0, "live_count": 0,
+        "db_exists": False, "data_store": None, "static_count": 0, "live_count": 0,
     }
 
 
@@ -1302,6 +1302,59 @@ def test_investigation_hypotheses_in_openapi(client):
     spec = client.get("/openapi.json").json()
     assert "/api/investigation-hypotheses" in spec["paths"]
     assert "InvestigationHypothesesPayload" in spec["components"]["schemas"]
+
+
+# ---------------------------------------------------------------------------
+# /api/study-rigor (Fable G5 — Tests tab Quality check group)
+# ---------------------------------------------------------------------------
+
+def test_study_rigor_200(client, monkeypatch):
+    """Happy path: the scorecard passes through untouched (extra='allow')."""
+    import vivarium_workbench.api.app as _app
+    payload = {
+        "study_type": "standard",
+        "mode": "hypothesis",
+        "descriptive": False,
+        "dimensions": [{"id": "replication", "label": "Replication", "severity": "gap",
+                        "detail": "single run", "comments": ["C4"]}],
+        "score": {"gap": 1, "warn": 0, "ok": 0, "na": 0, "total": 1},
+        "summary": "0/1 rigor dimensions addressed · 1 gap(s)",
+    }
+    monkeypatch.setattr(
+        _app._rigor_views, "build_study_rigor", lambda ws, slug: payload)
+    r = client.get("/api/study-rigor?study=my-study")
+    assert r.status_code == 200
+    assert r.json() == payload
+
+
+def test_study_rigor_400_missing(client):
+    r = client.get("/api/study-rigor")
+    assert r.status_code == 400
+    assert r.json() == {"error": "missing ?study="}
+
+
+def test_study_rigor_404_not_found(client):
+    r = client.get("/api/study-rigor?study=nope")
+    assert r.status_code == 404
+    assert r.json() == {"error": "study not found"}
+
+
+def test_study_rigor_200_unavailable(client, monkeypatch):
+    """A compute failure degrades to a 200 body carrying unavailable/reason —
+    never a 500, never a fabricated empty scorecard (spec R2)."""
+    import vivarium_workbench.api.app as _app
+    monkeypatch.setattr(
+        _app._rigor_views, "build_study_rigor",
+        lambda ws, slug: {"unavailable": True, "reason": "RuntimeError: boom"})
+    r = client.get("/api/study-rigor?study=my-study")
+    assert r.status_code == 200
+    assert r.json() == {"unavailable": True, "reason": "RuntimeError: boom"}
+
+
+def test_study_rigor_in_openapi(client):
+    spec = client.get("/openapi.json").json()
+    assert "/api/study-rigor" in spec["paths"]
+    assert "StudyRigor" in spec["components"]["schemas"]
 
 
 # ---------------------------------------------------------------------------

@@ -17,14 +17,12 @@ _PKG = Path(__file__).parent.parent / "vivarium_workbench"
 _HTML = (_PKG / "templates" / "study-detail.html").read_text(encoding="utf-8")
 
 
-def test_overview_follow_ups_defer_to_conclusions():
-    """The Overview follow-up occurrence is a short link to the canonical
-    Decide/Conclusions surface — NOT a triplicated card list with seed buttons.
-    The overview-specific seed button (data-followup-idx) is gone."""
-    # The overview block links to the canonical surface.
-    head = _HTML.index("Follow-up studies")
-    overview_region = _HTML[head:head + 700]
-    assert "_setStudyTab('conclusions')" in overview_region
+def test_overview_follow_ups_pointer_removed():
+    """Fable A #8: the Overview follow-up occurrence — a block whose entire
+    content was a link to the canonical Decide/Conclusions surface — was
+    deleted outright (the pointer, not just the triplicated card list). See
+    test_study_detail_render.py for the render-level absence assertion."""
+    assert '<h2 class="overview-label">Follow-up studies</h2>' not in _HTML
     # The overview-specific seed button is removed (it lived only in Overview).
     assert "data-followup-idx" not in _HTML
 

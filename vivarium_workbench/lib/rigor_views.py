@@ -9,6 +9,7 @@ merge must already be applied or the scores drift from the legacy handler.
 
 Builders
 --------
+build_study_rigor          → GET /api/study-rigor?study= (Fable G5)
 build_investigation_rigor  → GET /api/investigation-rigor?investigation=
 
 Returns a JSON-serialisable dict on every 200 path (including the
@@ -55,6 +56,40 @@ class RigorViewError(Exception):
 # ---------------------------------------------------------------------------
 # Public builders
 # ---------------------------------------------------------------------------
+
+def build_study_rigor(ws_root: Path, study: Optional[str]) -> dict:
+    """Build the GET /api/study-rigor payload for *ws_root* (Fable G5).
+
+    Returns the per-study evidence & rigor scorecard (``dimensions`` / ``score``
+    / ``summary``, plus ``study_type`` / ``mode`` / ``descriptive``) from
+    ``viva_superpowers.rigor.study_rigor``, computed over the study's
+    run-merged spec loaded via :func:`vivarium_workbench.lib.study_spec.
+    load_study_detail_spec` — the same loader :func:`build_investigation_rigor`
+    uses for its member studies, so replication (dim 1) and run-persistence
+    (dim 13) reflect actual ``runs.db`` rows, not just what's authored in
+    ``study.yaml``.
+
+    Raises ``RigorViewError``:
+    - 400 when ``study`` is empty/None (``{"error": "missing ?study="}``).
+    - 404 when no ``study.yaml`` / ``spec.yaml`` exists for the slug
+      (``{"error": "study not found"}``).
+
+    Never a 500: an unimportable ``viva_superpowers.rigor`` or any exception
+    raised while scoring degrades to a 200-shaped payload
+    ``{"unavailable": True, "reason": "<ExceptionType>: <message>"}`` — no
+    fabricated empty scorecard (spec §2 R2, "absent != empty").
+    """
+    if not study:
+        raise RigorViewError({"error": "missing ?study="}, 400)
+    spec = load_study_detail_spec(ws_root, study)
+    if spec is None:
+        raise RigorViewError({"error": "study not found"}, 404)
+    try:
+        from viva_superpowers.rigor import study_rigor
+        return study_rigor(spec)
+    except Exception as e:  # noqa: BLE001 — degrade, never 500
+        return {"unavailable": True, "reason": f"{type(e).__name__}: {e}"}
+
 
 def build_investigation_rigor(ws_root: Path, investigation: Optional[str]) -> dict:
     """Build the GET /api/investigation-rigor payload for *ws_root*.

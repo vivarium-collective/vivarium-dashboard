@@ -528,6 +528,17 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
         # Freshness reference: the latest recorded run time (WAL-immune), not the
         # db file mtime. A small grace absorbs sub-second render/commit ordering.
         fresh_ref = _latest_run_timestamp(runs_db)
+        # Provenance (Fable §4.5, Task V3): a NON-STALE viz HTML file was
+        # rendered from this study's runs.db AFTER the latest run completed,
+        # so it genuinely represents that run — attach latest_run_id (below,
+        # gated on `not stale`). A STALE file predates the latest run — it
+        # did NOT derive from it, so it gets run_id=None rather than a
+        # fabricated link to a run it never came from. Reuse study_charts'
+        # existing run-lookup helper (also used by the native gallery)
+        # rather than add a new run-scanning path.
+        from vivarium_workbench.lib.study_charts import latest_run_row  # noqa: PLC0415
+        _latest = latest_run_row(runs_db)
+        latest_run_id = _latest.get("run_id") if _latest else None
         grace_s = 5.0
         for html_file in sorted(viz_dir.glob("*.html")):
             mtime = html_file.stat().st_mtime
@@ -549,10 +560,17 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
                 "url": f"/{rel}",
                 "description": desc,
                 "stale": stale,
+                # A stale file predates the latest run — it did NOT derive
+                # from it, so attributing latest_run_id here would be
+                # fabricated provenance (V3 review, fix round 1). Only a
+                # non-stale file genuinely represents the latest run.
+                "run_id": None if stale else latest_run_id,
             })
 
     # Source 2: reports/figures/<name>/*.html (hand-authored cross-skill output).
-    # No runs.db gate — these aren't auto-rendered.
+    # No runs.db gate — these aren't auto-rendered. No genuine run association
+    # either (Task V3): a hand-authored file isn't tied to a specific run, so
+    # run_id stays null rather than fabricate one.
     figures_dir = wp.reports / "figures" / name
     if figures_dir.is_dir():
         for html_file in sorted(figures_dir.glob("*.html")):
@@ -565,6 +583,7 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
                     f"Hand-authored figure ({size_kb} KB) from reports/figures/{name}/."
                 ),
                 "stale": False,
+                "run_id": None,
             })
 
     return out
@@ -917,6 +936,23 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         _cv_path = study_dir(ws_root, name) / "viz" / "report_card" / "conclusion.verdict.json"
         if _cv_path.is_file():
             _persisted = _json.loads(_cv_path.read_text(encoding="utf-8"))
+            # G8: the file's mere existence as a parsed dict IS the freeze
+            # signal — write_conclusion_card is the ONLY writer, called once
+            # per post-run flush, and there is no separate "frozen: true"
+            # field anywhere to read. No timestamp is stored INSIDE the
+            # payload either, so "when" is the file's own mtime. Surfaced as
+            # spec["conclusion_card_frozen"] = {"when", "payload"} for the
+            # Decide-tab frozen-record indicator (study_page.conclusion_digest
+            # computes the digest from `payload` at render time); left absent
+            # entirely when unparseable so no indicator is fabricated.
+            if isinstance(_persisted, dict):
+                try:
+                    spec["conclusion_card_frozen"] = {
+                        "when": _cv_path.stat().st_mtime,
+                        "payload": _persisted,
+                    }
+                except OSError:
+                    pass
             _ptracks = _persisted.get("tracks") if isinstance(_persisted, dict) else None
             if isinstance(_ptracks, dict):
                 _live = spec["derived"].get("conclusion_verdicts")

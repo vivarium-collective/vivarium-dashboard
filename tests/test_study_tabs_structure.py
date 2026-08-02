@@ -6,25 +6,35 @@ HTML = (ROOT / "vivarium_workbench/templates/study-detail.html").read_text()
 
 def test_pillar_buttons_present():
     # Top-level study pillars — the `.study-pillars` nav in study-detail.html.
-    # Kept in sync with that markup (restructured in #586: Tests + Decide,
-    # dropped Hypotheses/"inquire").
-    for p in ["understand", "compose", "simulate", "readouts",
-              "visualize", "tests", "decide", "data"]:
-        assert f'data-pillar="{p}"' in HTML and f"_setStudyPillar('{p}')" in HTML
+    # Fable A #6 deleted the pillar/member indirection: each `.study-pillar`
+    # button now carries the panel `data-kind` directly and calls
+    # _setStudyTab(kind) on click (no more separate #study-subnav member row).
+    # Pillar name != panel kind for "decide" -> "conclusions"; every other
+    # pillar name equals its kind. Task E4 deleted the Exports/data pillar.
+    pillar_to_kind = {
+        "understand": "overview", "compose": "compose", "simulate": "simulate",
+        "readouts": "readouts", "visualize": "visualize", "tests": "tests",
+        "decide": "conclusions",
+    }
+    for pillar, kind in pillar_to_kind.items():
+        assert f'data-kind="{kind}"' in HTML and f"_setStudyTab('{kind}')" in HTML, \
+            f"pillar {pillar!r} -> kind {kind!r} not wired"
+    assert 'data-kind="data"' not in HTML
 
 
-def test_subnav_container_present():
-    assert 'id="study-subnav"' in HTML
+def test_subnav_container_removed():
+    assert 'id="study-subnav"' not in HTML
 
 
-def test_every_study_tab_button_has_a_pillar():
-    # no member button left without data-pillar (rough check: count study-tab buttons
-    # with onclick=_setStudyTab vs those carrying data-pillar)
+def test_every_pillar_button_has_a_kind_and_calls_set_study_tab():
+    # Task E4 dropped the Exports/data pillar: 8 -> 7 buttons.
     import re
-    btns = re.findall(r'<button class="study-tab"[^>]*onclick="_setStudyTab\([^<]*</button>', HTML)
-    assert btns, "expected member buttons"
+    btns = re.findall(r'<button class="study-pillar[^"]*"[^>]*>', HTML)
+    assert len(btns) == 7, f"expected 7 pillar buttons, got {len(btns)}"
     for b in btns:
-        assert "data-pillar=" in b, f"member button missing data-pillar: {b[:80]}"
+        assert "data-kind=" in b, f"pillar button missing data-kind: {b[:80]}"
+    assert re.search(r'onclick="_setStudyTab\(', HTML), "pillar buttons must call _setStudyTab directly"
+    assert "_setStudyPillar(" not in HTML
 
 
 def test_panels_unchanged_all_eleven_present():
@@ -38,14 +48,20 @@ def test_deep_link_onclicks_preserved():
     assert "_setStudyTab('conclusions')" in HTML or "_setStudyTab(\\'conclusions\\'" in HTML
 
 
-def test_js_has_pillar_switcher():
+def test_js_pillar_indirection_removed():
+    # Fable A #6: _setStudyPillar / _showPillarSubnav / _pillarForKind deleted;
+    # _setStudyTab is the single tab switcher and toggles `.study-pillar`
+    # buttons directly (there's no separate subnav row to toggle anymore).
     js = (ROOT / "vivarium_workbench/static/study-detail.js").read_text()
-    assert "function _setStudyPillar" in js
-    assert "window._setStudyPillar" in js
-    assert "dataset.pillar" in js or "data-pillar" in js
-    assert "study-pillar" in js          # toggles the pillar buttons
+    for fn in ("_setStudyPillar", "_showPillarSubnav", "_pillarForKind"):
+        assert fn not in js, f"{fn} should have been deleted from study-detail.js"
+    assert "function _setStudyTab" in js
+    assert "window._setStudyTab" in js
+    i = js.index("function _setStudyTab")
+    block = js[i:i + 600]
+    assert "querySelectorAll('.study-pillar')" in block
 
 
 def test_css_styles_pillars():
     css = (ROOT / "vivarium_workbench/static/style.css").read_text()
-    assert ".study-pillar" in css and ".study-subnav" in css
+    assert ".study-pillar" in css

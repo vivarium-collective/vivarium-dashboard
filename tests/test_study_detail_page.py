@@ -73,30 +73,41 @@ def test_study_detail_spec_returns_none_for_missing(_ws):
     assert _study_detail_spec(_ws, "does-not-exist") is None
 
 
-def test_study_detail_page_has_eight_tabs(_ws):
-    """The 8 pillar tabs are present: Overview · Tests · Model (compose) ·
-    Simulations (simulate) · Results (visualize) · Report Cards · Decide
-    (conclusions) · Exports (data).
+def test_study_detail_page_has_seven_tabs(_ws):
+    """The pillar tabs are present: Overview · Tests · Model (compose) ·
+    Simulations (simulate) · Readouts · Results (visualize) · Decide
+    (conclusions).
 
-    (The contract this test guards is "the eight pillar tabs are all present",
-    not "exactly eight" — the count check was brittle as tabs accreted.)
+    (The contract this test guards is "the required pillar tabs are all
+    present", not "exactly N" — the count check was brittle as tabs accreted.
+    Task 10 merged Report Cards into Tests as one concept, so it is no longer
+    a separate tab/kind. Task E4 removed the Exports (data) tab — it was an
+    empty shell after E1–E3 relocated everything it held.)
     """
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    # Eight required pillar buttons
+    # Required pillar buttons
     for kind in ("overview", "tests", "compose", "simulate", "readouts",
-                 "visualize", "report-cards", "conclusions", "data"):
+                 "visualize", "conclusions"):
         assert f'class="study-tab' in html
         assert f'data-kind="{kind}"' in html
-    # At least eight panels
+    # Report Cards is no longer its own tab — it's a subsection of Tests.
+    assert 'data-kind="report-cards"' not in html
+    # Exports/data tab was deleted (Task E4).
+    assert 'data-kind="data"' not in html
+    assert 'id="panel-data"' not in html
+    # At least seven panels
     panels = html.count('class="study-tab-panel')
-    assert panels >= 8, f"expected at least 8 panel elements, got {panels}"
-    # The Overview tab is active by default — must have both active class and overview kind on a button
-    assert 'class="study-tab active" data-kind="overview"' in html or \
-           'data-kind="overview" class="study-tab active"' in html or \
-           ('"study-tab active"' in html and 'data-kind="overview"' in html)
+    assert panels >= 7, f"expected at least 7 panel elements, got {panels}"
+    # The Overview tab is active by default — must have both active class and overview kind on a button.
+    # (Pre-existing bug fix, unrelated to E4: this checked the pre-Fable-A-#6
+    # "study-tab" class name, which the pillar buttons never carried — they're
+    # "study-pillar". Corrected to match the actual markup.)
+    assert 'class="study-pillar active" data-kind="overview"' in html or \
+           'data-kind="overview" class="study-pillar active"' in html or \
+           ('"study-pillar active"' in html and 'data-kind="overview"' in html)
 
 
 def test_study_page_is_a_fetch_shell_not_an_embed(_ws):
@@ -119,26 +130,24 @@ def test_study_page_is_a_fetch_shell_not_an_embed(_ws):
     assert "window._study = {" not in html and "window._study={" not in html
 
 
-def test_study_detail_page_includes_progress_track_assets(_ws):
-    """Plan 7 (WS-2): the study-detail page wires the reusable ProgressTrack
-    component that drives the pinned-build run card's progress bar — the
-    stylesheet and script must both be referenced, the script must load BEFORE
-    study-detail.js (the adapter depends on window.ProgressTrack), and the
-    remote-run progress mount point must still exist."""
+def test_study_detail_page_drops_progress_track_script(_ws):
+    """Fable A #7: the ProgressTrack component (Plan 7 / WS-2) drove the
+    pinned-build remote-run card's progress bar via `_renderRemoteRunProgress`
+    in study-detail.js. That whole remote-run thin-client subsystem was
+    already-dead JS — Task 8 (Simulations declutter) had removed its DOM
+    anchors (`#remote-run-panel`/`-btn`/`-progress`) from this template,
+    leaving `_renderRemoteRunProgress`/`_initRemoteRunPinned`/etc. permanently
+    unreachable — so Fable A #7 deleted that subsystem from study-detail.js
+    and, with its only caller gone, the `<script src="/progress-track.js">`
+    include on this page too (see test_remote_run_panel.py for the JS-side
+    assertion). The stylesheet link stays (harmless, shared asset; not
+    reintroduced by any of this page's code)."""
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    # The render rewrites bare "/foo.js" asset refs to "/assets/foo.js" (which
-    # resolve_asset strips back to the bundled STATIC_DIR), so match the file
-    # name, not a fixed prefix.
-    assert 'progress-track.css' in html
-    assert 'progress-track.js' in html
-    assert 'id="remote-run-progress"' in html
-    # load order: the progress-track.js <script> must precede the study-detail.js
-    # <script>. Anchor on the closing tag, which only the real <script> tags have
-    # (the file names are also mentioned in prose/comments).
-    assert html.index('progress-track.js"></script>') < html.index('study-detail.js"></script>')
+    assert 'progress-track.js' not in html
+    assert 'ProgressTrack' not in html
 
 
 def test_study_detail_page_loads_set_tab_helper(_ws):
@@ -164,17 +173,14 @@ def test_overview_panel_has_objective_editable(_ws):
     assert 'id="panel-conclusions"' in html
 
 
-def test_overview_panel_has_counts_strip(_ws):
-    """Overview tab shows a counts strip: variants · runs · interventions."""
+def test_overview_panel_has_no_counts_strip(_ws):
+    """The counts strip (variants · runs · interventions) was deleted from the
+    Overview tab as part of the declutter (Task 6); pin its absence."""
     from vivarium_workbench.lib.study_page import render_study_detail_html as _render_study_detail_html
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'study-counts-strip' in html or 'class="counts-strip"' in html
-    # Each label appears. ('interventions' dropped — the legacy interventions
-    # CRUD panel was retired in the study-tabs de-slop.)
-    for label in ('variants', 'runs'):
-        assert label in html.lower()
+    assert 'study-counts-strip' not in html and 'class="counts-strip"' not in html
 
 
 def test_legacy_v2_crud_panels_retired(_ws):
@@ -262,10 +268,13 @@ def test_full_study_renders_all_tabs(_rich_ws):
     spec = _study_detail_spec(_rich_ws, "rich")
     html = _render_study_detail_html(_rich_ws, "rich", spec)
 
-    # 8 pillar tabs scaffolded
+    # Pillar tabs scaffolded (Report Cards merged into Tests — Task 10 — so it
+    # is no longer a separate data-kind; Exports/data was deleted — Task E4).
     for kind in ("overview", "tests", "compose", "simulate", "readouts",
-                 "visualize", "report-cards", "conclusions", "data"):
+                 "visualize", "conclusions"):
         assert f'data-kind="{kind}"' in html
+    assert 'data-kind="report-cards"' not in html
+    assert 'data-kind="data"' not in html
 
     # Overview: objective text renders.
     assert "Compare growth kinetics" in html
@@ -311,8 +320,12 @@ def test_simulate_tab_does_not_render_charts_panel(_rich_ws):
         "Simulations tab should not contain the inline charts panel — charts "
         "belong to the Results (visualize) tab."
     )
-    # Sanity: the Results tab still has its chart panel.
-    viz_panel = _section(html, 'id="panel-visualize"', 'id="panel-report-cards"')
+    # Sanity: the Results tab still has its chart panel. (Task 10 removed the
+    # standalone Report Cards panel that used to follow Visualizations in
+    # document order — Report Cards is now a subsection of Tests. Task E4
+    # then deleted the Exports/data panel that used to follow Visualizations,
+    # so the next panel marker is Tests.)
+    viz_panel = _section(html, 'id="panel-visualize"', 'id="panel-tests"')
     assert 'id="viz-charts-panel"' in viz_panel
 
 

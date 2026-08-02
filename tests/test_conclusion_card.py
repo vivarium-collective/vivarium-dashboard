@@ -71,7 +71,7 @@ def test_write_conclusion_card_writes_both_files_with_expected_schema(study_dir)
 
     html = html_path.read_text(encoding="utf-8")
     assert '<meta name="viv-artifact" content="report-card">' in html
-    assert "Biological validation" in html
+    assert "Empirical validation" in html
     assert "PASS" in html
 
 

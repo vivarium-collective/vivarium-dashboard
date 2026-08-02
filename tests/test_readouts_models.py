@@ -28,3 +28,22 @@ def test_study_readouts_wraps_rows():
     assert payload["composite"] == "ecoli"
     assert payload["note"] == ""
     assert payload["rows"][0]["name"] == "b"
+
+
+def test_study_readouts_carries_excluded_three_state(monkeypatch):
+    """Fable Increment A #5: the excluded/excluded_state/emit_selection fields
+    must survive StudyReadouts.model_validate — without them on the model, the
+    FastAPI response_model silently drops build_study_readouts' new payload
+    keys (pydantic's default extra='ignore') and the fix never reaches the API."""
+    body = {
+        "composite": "ecoli",
+        "rows": [],
+        "excluded": [{"store_path": "a.c", "name": "c"}],
+        "excluded_state": "computed",
+        "emit_selection": "subset",
+    }
+    sr = StudyReadouts.model_validate(body)
+    payload = sr.model_dump()
+    assert payload["excluded"] == [{"store_path": "a.c", "name": "c"}]
+    assert payload["excluded_state"] == "computed"
+    assert payload["emit_selection"] == "subset"

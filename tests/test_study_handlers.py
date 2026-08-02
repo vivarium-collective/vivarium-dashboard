@@ -87,7 +87,11 @@ def test_study_detail_page_renders(_study_workspace):
     # the fixture has objective="" so it's gated out. Check for the overview tab instead.
     assert 'data-kind="overview"' in html
     assert "Conclusion" in html or "conclusion" in html.lower()
-    assert "Variants" in html or "variants" in html.lower()
+    # The Model/Compose tab always renders. The old always-on header "N variants"
+    # count-label was removed in the declutter, and the "Variants" heading now only
+    # renders when the study has conditions.variants (this fixture has none), so assert
+    # the Model tab is present instead of the (now-conditional) "Variants" text.
+    assert 'data-kind="compose"' in html
 
 
 def test_variant_add_writes_flat_v3_shape(_study_workspace):

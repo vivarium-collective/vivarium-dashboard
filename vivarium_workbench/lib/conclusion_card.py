@@ -31,7 +31,7 @@ SCHEMA = "conclusion_card/v1"
 # (track key, display label, "from <basis_hint>" caption) — order matches the
 # Decide tab's own render (static/walkthrough.js `_conclusionVerdictsHtml`).
 _TRACKS = (
-    ("biological_validation", "Biological validation", "gate evaluator"),
+    ("biological_validation", "Empirical validation", "gate evaluator"),
     ("regression_compatibility", "Regression compatibility", "run status"),
     ("explanatory_gain", "Explanatory gain", "interpretation-tier findings"),
 )

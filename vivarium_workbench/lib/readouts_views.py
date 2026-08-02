@@ -76,6 +76,75 @@ def _short_name(leaf: str) -> str:
     return last
 
 
+def _split_saved_excluded(emitted_leaves, available_leaves):
+    """Partition the observable surface into saved (emitted) and excluded rows.
+
+    Both args are lists of dotted store paths. Comparison is on lineage-stripped
+    keys so `_strip_lineage`-equivalent paths match. Returns (saved, excluded)
+    where each is a list of {store_path, name} dicts.
+
+    Correction (Fable Increment A #5, see
+    ``docs/superpowers/specs/2026-08-01-study-design-fable-pass.md`` §5.1):
+    an earlier take assumed ``readouts_views._available_observables_for_ref``
+    and the per-run emit plan were the SAME leaf set (both route to the
+    ``observables{ref}`` env-worker RPC → ``collect_input_ports(state)``, a
+    structural walk of the entire built state tree) — so "available" and
+    "emitted" always compared equal and ``excluded`` was structurally always
+    ``[]``. That is wrong: ``composite_runs.collect_emit_paths_from_spec(spec)``
+    already selects a strict SUBSET of that surface on every study launch
+    (unions ``readouts[]``/``tests[]``/``visualizations[]`` paths), and is now
+    the ``emitted_leaves`` this helper is called with (see
+    ``_compute_excluded``) — so ``excluded`` is a real, usually non-empty set
+    for any study that declares readouts/tests/figures.
+    """
+    emitted_keys = {_strip_lineage(l) for l in emitted_leaves}
+    saved = [{"store_path": l, "name": _short_name(l)} for l in sorted(emitted_leaves)]
+    excluded = [
+        {"store_path": l, "name": _short_name(l)}
+        for l in sorted(available_leaves)
+        if _strip_lineage(l) not in emitted_keys
+    ]
+    return saved, excluded
+
+
+def _compute_excluded(spec: dict, available: dict) -> dict:
+    """Real saved/excluded split (Fable Increment A #5) + the R2 three-state
+    marker, given an already-resolved ``available`` (``{leaves, catalogs}``).
+
+    ``saved`` is the spec-selected emit set — ``composite_runs
+    .collect_emit_paths_from_spec(spec)``, the same function ``study_runs
+    .run_study_baseline`` calls before every launch (``composite_runs.py:888``).
+    That function returns slash-form paths, each also expanded into its
+    ``agents/0/…`` form; normalise to the dotted, lineage-stripped key
+    ``_split_saved_excluded`` already compares on (spec §5.2's "Normalisation"
+    note).
+
+    Three states, never conflated (R2 "absent ≠ empty"):
+      - the spec declares nothing → ``run_runner._emit_paths_for`` falls back
+        to saving *everything* (`req.emit_paths or cr.all_store_paths(state)`,
+        ``lib/run_runner.py:210-217``) — a real, total selection, not an
+        unset one. ``excluded_state="empty"``, ``emit_selection="total"``.
+      - the spec declares a subset → ``excluded`` is available − saved (may
+        legitimately be ``[]`` if the subset happens to cover the whole
+        surface; the state stays ``"computed"`` because it WAS computed).
+        ``excluded_state="computed"``, ``emit_selection="subset"``.
+    Callers must wrap this in try/except: a computation failure (e.g. an
+    incompatible ``composite_runs`` import) must degrade to
+    ``excluded_state="unavailable"`` + ``reason``, never fabricate ``[]``.
+    """
+    from . import composite_runs as cr
+
+    declared = cr.collect_emit_paths_from_spec(spec)
+    available_leaves = list(available.get("leaves") or [])
+    if not declared:
+        return {"excluded": [], "excluded_state": "empty", "emit_selection": "total",
+                "emit_is_total": True}
+    dotted_declared = sorted({_strip_lineage(p.replace("/", ".")) for p in declared if p})
+    _saved_ignored, excluded = _split_saved_excluded(dotted_declared, available_leaves)
+    return {"excluded": excluded, "excluded_state": "computed", "emit_selection": "subset",
+            "emit_is_total": False}
+
+
 def _merge_readouts(spec: dict, available: dict, *, plan_available: bool = True) -> list[dict]:
     """Pure merge of emit-plan leaves + authored readouts → ordered row dicts.
 
@@ -208,18 +277,29 @@ def build_study_readouts(ws_root: Path, slug: str) -> tuple[dict, int]:
         return {"error": f"readout_validation unavailable: {e}"}, 501
     except Exception as e:  # noqa: BLE001
         rows = _merge_readouts(spec, {"leaves": []}, plan_available=False)
+        reason = f"composite {ref!r} could not be built: {e}"
         # On a remote build (a materialized repo@commit, marked by .viv-build.json)
         # the composite CANNOT build — the workspace has no local ParCa cache, by
         # design. That's expected, not an error: degrade softly (200) with a clear
         # note instead of a 422 + a raw filesystem traceback.
         if (ws_root / ".viv-build.json").is_file():
-            return {"composite": ref, "rows": rows, "degraded": True, "remote_build": True,
+            return {"composite": ref, "rows": rows, "excluded": [], "excluded_state": "unavailable",
+                    "reason": "Emit-plan verification is unavailable on a remote build "
+                              "(no local ParCa cache); showing authored readouts.",
+                    "degraded": True, "remote_build": True,
                     "note": "Emit-plan verification is unavailable on a remote build "
                             "(no local ParCa cache); showing authored readouts."}, 200
-        return {"composite": ref, "rows": rows, "degraded": True,
+        return {"composite": ref, "rows": rows, "excluded": [], "excluded_state": "unavailable",
+                "reason": reason, "degraded": True,
                 "note": f"composite {ref!r} could not be built — rows unverified: {e}"}, 422
 
-    payload = {"composite": ref, "rows": _merge_readouts(spec, available), "note": ""}
+    payload = {"composite": ref, "rows": _merge_readouts(spec, available), "excluded": [], "note": ""}
+    try:
+        payload.update(_compute_excluded(spec, available))
+    except Exception as e:  # noqa: BLE001 — degrade, never 500
+        payload["excluded"] = []
+        payload["excluded_state"] = "unavailable"
+        payload["reason"] = f"could not compute the excluded set: {e}"
     _READOUTS_CACHE[ckey] = (_time.time(), payload)
     if len(_READOUTS_CACHE) > 32:
         _READOUTS_CACHE.pop(next(iter(_READOUTS_CACHE)))

@@ -41,6 +41,23 @@ from vivarium_workbench.lib import study_spec
 from vivarium_workbench.lib.study_crud_mutations import _study_name_from_body
 
 
+def _study_runtime_emitter(runtime_cfg):
+    """Resolve a study's own emitter override from its ``runtime:`` block.
+
+    Fable A #1b: the study scaffold documents ``runtime.default_emitter``
+    (``lib/scaffold_yaml.py:112-115,443-447`` — matching the workspace-level
+    key read by ``emitters.default_emitter``), but this reader historically
+    only checked ``runtime.emitter``, so a scaffolded study's setting was
+    silently ignored and the run fell through to the workspace default.
+    Accept both; the more specific/explicit ``emitter`` wins when both are
+    set, else fall back to ``default_emitter``. Returns ``None`` (unchanged
+    behavior) when neither key is set, letting the caller continue to the
+    investigation/workspace-default fallback.
+    """
+    runtime_cfg = runtime_cfg or {}
+    return runtime_cfg.get("emitter") or runtime_cfg.get("default_emitter")
+
+
 def _resolve_study_dir(ws_root, name):
     """Resolve a study's directory honoring the workspace ``layout:`` map.
 
@@ -397,8 +414,8 @@ def run_study_baseline(ws_root, body):
     # injected SQLiteEmitter captures real biology, not just ticks.
     emit_paths = cr.collect_emit_paths_from_spec(spec)
     # Per-study overrides — all win over workspace defaults. Emitter precedence:
-    # study runtime.emitter > investigation runtime.default_emitter > workspace.
-    study_emitter = runtime_cfg.get("emitter") or study_run_state.investigation_emitter_for_study(ws_root, spec.get("name"))
+    # study runtime.emitter/default_emitter > investigation runtime.default_emitter > workspace.
+    study_emitter = _study_runtime_emitter(runtime_cfg) or study_run_state.investigation_emitter_for_study(ws_root, spec.get("name"))
     study_max_generations = runtime_cfg.get("max_generations")
     study_single_daughters = runtime_cfg.get("single_daughters")
     runtime_block = {
@@ -598,8 +615,8 @@ def run_study_variant(ws_root, body):
         # baseline path) so variant runs also capture biology in history.state.
         emit_paths = cr.collect_emit_paths_from_spec(spec)
         # Per-study overrides — see baseline path for rationale. Emitter precedence:
-        # study runtime.emitter > investigation runtime.default_emitter > workspace.
-        study_emitter = runtime_cfg.get("emitter") or study_run_state.investigation_emitter_for_study(ws_root, spec.get("name"))
+        # study runtime.emitter/default_emitter > investigation runtime.default_emitter > workspace.
+        study_emitter = _study_runtime_emitter(runtime_cfg) or study_run_state.investigation_emitter_for_study(ws_root, spec.get("name"))
         study_max_generations = runtime_cfg.get("max_generations")
         study_single_daughters = runtime_cfg.get("single_daughters")
         response, code = composite_subprocess.run_composite_subprocess(
