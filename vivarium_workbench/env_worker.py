@@ -88,7 +88,7 @@ _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
                  "run_process", "process_template",
                  "viz_classes", "resolve_composite_state", "observables",
                  "study_readout_check", "attach_process_docs", "discover_composites", "composites_full",
-                 "validate_generated_visualization", "run_study_analyses", "run_study", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
+                 "validate_generated_visualization", "run_study_analyses", "run_study", "run_investigation_analysis", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
 
 _FRAMEWORK_PKGS = {
     "process_bigraph", "bigraph_schema", "bigraph_viz",
@@ -1480,6 +1480,89 @@ def _run_study_analyses(params: dict) -> dict:
              "traceback": traceback.format_exc()}]}
 
 
+def _run_investigation_analysis(params: dict) -> dict:
+    """Run ONE investigation-level Analysis directly (investigation-as-composite
+    design, §Architecture 2-3): the ``AnalysisStep`` dispatches here rather than
+    through ``run_study_analyses``, which is structurally unusable for this case
+    — its ``build_cell_records`` globs a study's ``history/**/*.pq`` sweep output
+    and returns ``{}`` for an investigation dir, so the Analysis would silently
+    never run (the #712 blocker). Here the Analysis is invoked directly:
+    ``ANALYSIS_REGISTRY[name](config, core=allocate_core()).update()`` — no
+    parquet, no scale lookup, no ``run_analyses`` sweep machinery.
+
+    ``params``:
+      - ``workspace`` (str) — the workspace root (used only to import the
+        workspace's own package, matching ``_run_study_analyses``).
+      - ``name`` (str, required) — the ``ANALYSIS_REGISTRY`` key.
+      - ``config`` (dict) — the Analysis's ``config_schema`` payload (e.g. for a
+        config-only Analysis like ``comparison_matrix``, ``config_verdicts`` +
+        whatever else it declares).
+      - ``report_dir`` (str, required) — directory each string-valued output is
+        written into, as ``<report_dir>/<name>_<key>.html`` (created if absent).
+
+    Returns ``{"written": [paths], "errors": [dicts]}``. NEVER raises — an
+    unknown ``name``, a missing/failed ``ANALYSIS_REGISTRY`` import, a bad
+    ``config``, or a raising ``update()`` all land in ``errors`` instead.
+    """
+    import traceback
+    from pathlib import Path
+
+    p = params or {}
+    workspace = p.get("workspace") or _workspace
+    name = p.get("name")
+    config = p.get("config") if isinstance(p.get("config"), dict) else {}
+    report_dir = p.get("report_dir")
+
+    if not name:
+        return {"written": [], "errors": [{"error": "missing name"}]}
+    if not report_dir:
+        return {"written": [], "errors": [{"error": "missing report_dir"}]}
+
+    if workspace and workspace not in sys.path:
+        sys.path.insert(0, workspace)
+    _import_workspace_package(workspace)
+
+    try:
+        from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
+    except ImportError as exc:
+        return {"written": [], "errors": [
+            {"error": f"v2ecoli not installed; cannot resolve analysis {name!r}: "
+                      f"{type(exc).__name__}: {exc}"}]}
+
+    step_cls = ANALYSIS_REGISTRY.get(name)
+    if step_cls is None:
+        return {"written": [], "errors": [
+            {"error": f"unknown analysis {name!r} (not in ANALYSIS_REGISTRY)"}]}
+
+    try:
+        from bigraph_schema import allocate_core
+        step = step_cls(config, core=allocate_core())
+        outputs = step.update() or {}
+    except Exception as exc:  # noqa: BLE001 — never crash the run
+        return {"written": [], "errors": [
+            {"analysis": name,
+             "error": f"{type(exc).__name__}: {exc}",
+             "traceback": traceback.format_exc()}]}
+
+    written: list = []
+    errors: list = []
+    try:
+        out_dir = Path(report_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for key, value in outputs.items():
+            if not isinstance(value, str):
+                continue
+            out_file = out_dir / f"{name}_{key}.html"
+            out_file.write_text(value, encoding="utf-8")
+            written.append(str(out_file))
+    except Exception as exc:  # noqa: BLE001 — never crash the run
+        errors.append({"analysis": name,
+                       "error": f"write failed: {type(exc).__name__}: {exc}",
+                       "traceback": traceback.format_exc()})
+
+    return {"written": written, "errors": errors}
+
+
 def _run_study(params: dict) -> dict:
     """Run a Study's baseline (plus any ``run_spec``-named variants) TO
     COMPLETION, synchronously, in this worker process.
@@ -2524,6 +2607,8 @@ def _handle(method: str, params: dict) -> dict:
         return _run_study_analyses(params)
     if method == "run_study":
         return _run_study(params)
+    if method == "run_investigation_analysis":
+        return _run_investigation_analysis(params)
     if method == "viz_class_inputs":
         return _viz_class_inputs()
     if method == "render_viz_doc":

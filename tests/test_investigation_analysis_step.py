@@ -1,0 +1,267 @@
+"""Investigation-level analysis mechanism (investigation-as-composite design,
+docs/superpowers/specs/2026-08-01-investigation-as-composite-design.md,
+§Architecture 2-3):
+
+  (a) ``env_worker._run_investigation_analysis`` — the worker capability that
+      invokes an ``ANALYSIS_REGISTRY`` Analysis DIRECTLY
+      (``cls(config, core=allocate_core()).update()``), bypassing the
+      parquet-coupled ``run_study_analyses``/``build_cell_records`` path (the
+      #712 blocker: that path globs a study's ``history/**/*.pq`` sweep output
+      and returns ``{}`` for an investigation dir, so the Analysis is never
+      invoked). Hermetic: injects a fake ``v2ecoli.workflow.analysis`` module
+      via ``sys.modules`` (same technique as ``test_post_run_analyses.py``) so
+      no real v2ecoli Analysis stack is needed.
+
+  (b) ``AnalysisStep`` — a process-bigraph ``Step`` wired to study result
+      stores (one ``"node"`` port per ``study_slugs`` entry), on the REAL
+      engine (mirrors ``test_study_step_dispatch.py``): runs after its wired
+      ``StudyStep``s and assembles their results into ``config_verdicts``.
+
+Both need ``bigraph_schema``/``process_bigraph`` (the v2ecoli venv; see the
+plan's Global Constraints) — (a) additionally needs it for
+``bigraph_schema.allocate_core`` inside ``_run_investigation_analysis``, so
+unlike ``env_worker._run_study``'s hermetic test this one is not runnable on a
+bare dev venv without process-bigraph installed.
+"""
+from __future__ import annotations
+
+import sys
+import types
+
+from bigraph_schema import allocate_core
+from process_bigraph import Composite
+
+from vivarium_workbench import env_worker
+import vivarium_workbench.lib.investigation_steps as m
+from vivarium_workbench.lib.investigation_steps import AnalysisStep, StudyStep
+
+
+# ---------------------------------------------------------------------------
+# (a) env_worker._run_investigation_analysis — hermetic
+# ---------------------------------------------------------------------------
+
+def _install_fake_registry(registry: dict) -> None:
+    """Inject a fake ``v2ecoli.workflow.analysis`` module so
+    ``from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY`` resolves to
+    ``registry`` without needing the real v2ecoli Analysis stack (mirrors
+    ``tests/test_post_run_analyses.py``)."""
+    fake_mod = types.ModuleType("v2ecoli.workflow.analysis")
+    fake_mod.ANALYSIS_REGISTRY = registry  # type: ignore[attr-defined]
+    sys.modules["v2ecoli.workflow.analysis"] = fake_mod
+
+
+class _FakeMatrixAnalysis:
+    """Mimics a config-only Analysis: ``cls(config, core=...).update()``."""
+
+    def __init__(self, config, core=None):
+        self.config = config
+        self.core = core
+
+    def update(self):
+        return {"matrix_html": "<div/>"}
+
+
+class _RaisingAnalysis:
+    def __init__(self, config, core=None):
+        pass
+
+    def update(self):
+        raise RuntimeError("analyze() blew up")
+
+
+def test_writes_string_output_to_report_dir(tmp_path):
+    _install_fake_registry({"comparison_matrix": _FakeMatrixAnalysis})
+    report_dir = tmp_path / "reports"
+
+    result = env_worker._run_investigation_analysis({
+        "workspace": str(tmp_path),
+        "name": "comparison_matrix",
+        "config": {"config_verdicts": {"A": {"overall": "pass"}}},
+        "report_dir": str(report_dir),
+    })
+
+    assert result["errors"] == []
+    expected = report_dir / "comparison_matrix_matrix_html.html"
+    assert result["written"] == [str(expected)]
+    assert expected.read_text(encoding="utf-8") == "<div/>"
+
+
+def test_non_string_outputs_are_skipped(tmp_path):
+    class _MixedAnalysis:
+        def __init__(self, config, core=None):
+            pass
+
+        def update(self):
+            return {"matrix_html": "<div/>", "raw_scores": {"a": 1}, "count": 3}
+
+    _install_fake_registry({"mixed": _MixedAnalysis})
+    report_dir = tmp_path / "reports"
+
+    result = env_worker._run_investigation_analysis({
+        "workspace": str(tmp_path), "name": "mixed", "config": {},
+        "report_dir": str(report_dir),
+    })
+
+    assert result["errors"] == []
+    assert result["written"] == [str(report_dir / "mixed_matrix_html.html")]
+
+
+def test_unknown_analysis_name_records_error_not_raise(tmp_path):
+    _install_fake_registry({"comparison_matrix": _FakeMatrixAnalysis})
+
+    result = env_worker._run_investigation_analysis({
+        "workspace": str(tmp_path),
+        "name": "does_not_exist",
+        "config": {},
+        "report_dir": str(tmp_path / "reports"),
+    })
+
+    assert result["written"] == []
+    assert len(result["errors"]) == 1
+    assert "does_not_exist" in result["errors"][0]["error"]
+    assert "unknown analysis" in result["errors"][0]["error"]
+
+
+def test_raising_analysis_records_error_not_raise(tmp_path):
+    _install_fake_registry({"boom": _RaisingAnalysis})
+
+    result = env_worker._run_investigation_analysis({
+        "workspace": str(tmp_path),
+        "name": "boom",
+        "config": {},
+        "report_dir": str(tmp_path / "reports"),
+    })
+
+    assert result["written"] == []
+    assert len(result["errors"]) == 1
+    assert result["errors"][0]["analysis"] == "boom"
+    assert "blew up" in result["errors"][0]["error"]
+
+
+def test_missing_name_records_error_not_raise(tmp_path):
+    result = env_worker._run_investigation_analysis({
+        "workspace": str(tmp_path), "report_dir": str(tmp_path / "reports")})
+    assert result["written"] == []
+    assert "name" in result["errors"][0]["error"]
+
+
+def test_missing_report_dir_records_error_not_raise(tmp_path):
+    _install_fake_registry({"comparison_matrix": _FakeMatrixAnalysis})
+    result = env_worker._run_investigation_analysis({
+        "workspace": str(tmp_path), "name": "comparison_matrix"})
+    assert result["written"] == []
+    assert "report_dir" in result["errors"][0]["error"]
+
+
+# ---------------------------------------------------------------------------
+# (b) AnalysisStep — real engine, stubbed pool
+# ---------------------------------------------------------------------------
+
+# ``AnalysisStep`` collides by class-name-only ("AnalysisStep") with
+# v2ecoli.workflow.analysis.AnalysisStep, the base class every real v2ecoli
+# Analysis subclasses — the v2ecoli venv's package discovery walk claims the
+# short-name link-registry alias for v2ecoli's class first (first-wins
+# short-alias rule in bigraph_schema.package.discover._eager_register), so
+# ``address: "local:AnalysisStep"`` resolves to the WRONG class. The
+# fully-qualified name is always registered regardless of the short-alias
+# collision, so step docs must address this class as
+# ``local:vivarium_workbench.lib.investigation_steps.AnalysisStep``. Verified
+# against the real v2ecoli venv; noted here since it's a deviation from the
+# plain ``"local:StudyStep"`` address ``StudyStep`` uses (no such collision).
+_ANALYSIS_ADDRESS = f"local:{AnalysisStep.__module__}.{AnalysisStep.__name__}"
+
+
+def _core():
+    return allocate_core(top={"StudyStep": StudyStep, "AnalysisStep": AnalysisStep})
+
+
+def _study_doc(slug, result_store):
+    return {
+        "_type": "step",
+        "address": "local:StudyStep",
+        "config": {"workspace": "/ws", "study_slug": slug, "prereqs": []},
+        "inputs": {},
+        "outputs": {"result": [result_store]},
+    }
+
+
+def _analysis_doc(name, study_slugs, study_ports, report_dir="/ws/reports", params=None):
+    return {
+        "_type": "step",
+        "address": _ANALYSIS_ADDRESS,
+        "config": {
+            "workspace": "/ws", "name": name, "params": params or {},
+            "study_slugs": study_slugs, "report_dir": report_dir,
+        },
+        "inputs": study_ports,
+        "outputs": {"written": ["written"]},
+    }
+
+
+class _FakePool:
+    def __init__(self):
+        self.calls = []
+
+    def call(self, workspace, method, params):
+        self.calls.append((workspace, method, params))
+        if method == "run_study":
+            return {"run_refs": ["r1"],
+                    "verdict": {"study": params["study_slug"], "overall": "pass"}}
+        return {"written": [f"/ws/reports/{params['name']}_matrix_html.html"],
+                "errors": []}
+
+
+def test_analysis_step_runs_after_studies_and_receives_verdicts(monkeypatch):
+    fake_pool = _FakePool()
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.env_worker_pool.get_pool", lambda: fake_pool)
+
+    assert m._RUN_ORDER is None
+    assert m._ANALYSIS_RUN_ORDER is None
+
+    state = {
+        "A_result": {}, "B_result": {}, "written": {},
+        "A": _study_doc("A", "A_result"),
+        "B": _study_doc("B", "B_result"),
+        "analysis": _analysis_doc(
+            "comparison_matrix", ["A", "B"],
+            {"study_A": ["A_result"], "study_B": ["B_result"]},
+            params={"static_opt": True}),
+    }
+    Composite({"state": state, "run_steps_on_init": True}, core=_core())
+
+    methods = [c[1] for c in fake_pool.calls]
+    # Both studies ran (order between independent A/B is not asserted here —
+    # test_investigation_steps_skeleton.py covers that non-determinism), and
+    # the analysis dispatch is the LAST call: the engine only makes it
+    # eligible once both wired study results are available.
+    assert methods.count("run_study") == 2
+    assert methods[-1] == "run_investigation_analysis"
+
+    analysis_call = fake_pool.calls[-1]
+    assert analysis_call[0] == "/ws"
+    dispatched_config = analysis_call[2]["config"]
+    assert dispatched_config["static_opt"] is True
+    assert dispatched_config["config_verdicts"] == {
+        "A": {"run_refs": ["r1"], "verdict": {"study": "A", "overall": "pass"}},
+        "B": {"run_refs": ["r1"], "verdict": {"study": "B", "overall": "pass"}},
+    }
+    assert analysis_call[2]["name"] == "comparison_matrix"
+    assert analysis_call[2]["report_dir"] == "/ws/reports"
+
+
+def test_analysis_step_result_store_holds_written_reply(monkeypatch):
+    fake_pool = _FakePool()
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.env_worker_pool.get_pool", lambda: fake_pool)
+
+    state = {
+        "A_result": {}, "written": {},
+        "A": _study_doc("A", "A_result"),
+        "analysis": _analysis_doc(
+            "comparison_matrix", ["A"], {"study_A": ["A_result"]}),
+    }
+    composite = Composite({"state": state, "run_steps_on_init": True}, core=_core())
+
+    assert composite.state["written"] == [
+        "/ws/reports/comparison_matrix_matrix_html.html"]
