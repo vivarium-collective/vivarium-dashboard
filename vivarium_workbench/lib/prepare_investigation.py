@@ -15,11 +15,13 @@ time, not written after.
 
 Moved out of the v2ecoli workspace ``scripts/`` (it has no biology/workspace
 coupling) so it's maintained against the run API + ``comparative_viz`` it
-depends on. Exposed as ``vivarium-dashboard prepare-investigation`` and, for
+depends on. Exposed as ``vivarium-workbench prepare-investigation`` and, for
 the framework, ``viva_superpowers`` is aware of it.
 
-Requires a running dashboard for the workspace (the run engine); the URL is
-auto-detected from ``<workspace>/.pbg/dashboard/dashboard-info``.
+The ``render_only``/single-``study`` paths require a running dashboard for the
+workspace (the run engine), auto-detected from
+``<workspace>/.pbg/dashboard/dashboard-info``; the full-run path executes
+in-process via the investigation composite + env-worker pool.
 """
 from __future__ import annotations
 
@@ -31,7 +33,8 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
-from vivarium_workbench.lib.investigation_members import investigation_member_slugs
+from vivarium_workbench.lib.investigation_members import (
+    investigation_member_slugs, member_slug)
 
 
 def _dashboard_url(ws: Path, override: str | None = None) -> str:
@@ -78,10 +81,11 @@ def _investigations(ws: Path) -> list[str]:
 def _study_slugs(ws: Path, inv_slug: str) -> list[str]:
     spec = yaml.safe_load((WorkspacePaths.load(ws).investigations / inv_slug
                            / "investigation.yaml").read_text(encoding="utf-8")) or {}
-    out = []
-    for s in investigation_member_slugs(spec):
-        out.append(s if isinstance(s, str) else (s.get("study") or s.get("name")))
-    return [s for s in out if s]
+    # Normalize via the shared helper so single-study/render paths resolve
+    # member slugs identically to the composite generator (handles the
+    # {slug: X} entry shape too, not just {study|name: X}).
+    return [slug for s in investigation_member_slugs(spec)
+            if (slug := member_slug(s))]
 
 
 def _sim_names_for(cvs: list[dict]) -> list[str]:

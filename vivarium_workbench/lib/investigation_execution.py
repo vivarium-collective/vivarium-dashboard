@@ -14,10 +14,15 @@ classes are referenced only by ``local:<Class>`` string address), so this module
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+# Guards the module-level StudyStep/InvestigationAnalysisStep hook swap in
+# ``run_investigation_composite`` (see there).
+_HOOK_SWAP_LOCK = threading.Lock()
 
 from vivarium_workbench.lib.investigation_members import (
     investigation_member_slugs,
@@ -224,13 +229,18 @@ def run_investigation_composite(ws_root: Path | str, inv_slug: str, *,
             errors.append({"analysis": name, "error": err})
         return reply
 
-    _steps._run_study_hook = _study_hook
-    _steps._run_analysis_hook = _analysis_hook
-    try:
-        Composite({"state": state, "run_steps_on_init": True}, core=core)
-    finally:
-        _steps._run_study_hook = _orig_study_hook
-        _steps._run_analysis_hook = _orig_analysis_hook
+    # Serialize the module-level hook swap: two concurrent in-process runs would
+    # otherwise clobber each other's hooks mid-flight. v1 is serial so this only
+    # enforces mutual exclusion (no behavior change for the single-caller path),
+    # closing the re-entrancy window if an in-process concurrent caller is added.
+    with _HOOK_SWAP_LOCK:
+        _steps._run_study_hook = _study_hook
+        _steps._run_analysis_hook = _analysis_hook
+        try:
+            Composite({"state": state, "run_steps_on_init": True}, core=core)
+        finally:
+            _steps._run_study_hook = _orig_study_hook
+            _steps._run_analysis_hook = _orig_analysis_hook
 
     return {
         "investigation": inv_slug,
