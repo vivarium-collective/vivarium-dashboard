@@ -53,7 +53,7 @@ class StudyStep(process_bigraph.Step):
 
 
 # Skeleton test hook (mirrors ``_RUN_ORDER``): when a list is assigned here,
-# each AnalysisStep.update() appends its ``name`` (proves it runs after its
+# each InvestigationAnalysisStep.update() appends its ``name`` (proves it runs after its
 # wired studies) instead of dispatching to a live env worker. None in
 # production.
 _ANALYSIS_RUN_ORDER: list | None = None
@@ -73,7 +73,7 @@ def _run_analysis_hook(workspace: str, name: str, config: dict, report_dir: str)
         "report_dir": report_dir})
 
 
-class AnalysisStep(process_bigraph.Step):
+class InvestigationAnalysisStep(process_bigraph.Step):
     """One investigation-level Analysis (e.g. ``comparison_matrix``), wired to
     every study whose verdict it needs. ``inputs()`` — one ``"node"`` port per
     ``study_slugs`` entry, wired by the generator to that study's
@@ -88,6 +88,12 @@ class AnalysisStep(process_bigraph.Step):
     docs/superpowers/specs/2026-08-01-investigation-as-composite-design.md,
     §Architecture 2-3). Bypasses the parquet-coupled ``run_study_analyses``
     path entirely — the #712 blocker this exists to route around.
+
+    NAME: keep this ``InvestigationAnalysisStep``, NOT ``AnalysisStep`` — the
+    latter collides with ``v2ecoli.workflow.analysis.AnalysisStep`` for the
+    short link-registry alias in a v2ecoli venv, so ``local:AnalysisStep`` would
+    silently resolve to the wrong class. The unique name lets the generator use
+    the plain ``local:InvestigationAnalysisStep`` address safely.
     """
 
     config_schema = {

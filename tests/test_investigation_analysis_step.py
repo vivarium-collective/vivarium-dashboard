@@ -12,7 +12,7 @@ docs/superpowers/specs/2026-08-01-investigation-as-composite-design.md,
       via ``sys.modules`` (same technique as ``test_post_run_analyses.py``) so
       no real v2ecoli Analysis stack is needed.
 
-  (b) ``AnalysisStep`` — a process-bigraph ``Step`` wired to study result
+  (b) ``InvestigationAnalysisStep`` — a process-bigraph ``Step`` wired to study result
       stores (one ``"node"`` port per ``study_slugs`` entry), on the REAL
       engine (mirrors ``test_study_step_dispatch.py``): runs after its wired
       ``StudyStep``s and assembles their results into ``config_verdicts``.
@@ -33,7 +33,7 @@ from process_bigraph import Composite
 
 from vivarium_workbench import env_worker
 import vivarium_workbench.lib.investigation_steps as m
-from vivarium_workbench.lib.investigation_steps import AnalysisStep, StudyStep
+from vivarium_workbench.lib.investigation_steps import InvestigationAnalysisStep, StudyStep
 
 
 # ---------------------------------------------------------------------------
@@ -138,6 +138,33 @@ def test_raising_analysis_records_error_not_raise(tmp_path):
     assert "blew up" in result["errors"][0]["error"]
 
 
+def test_write_failure_records_error_not_raise(tmp_path, monkeypatch):
+    # A report_dir that cannot be written (mkdir raises) must be recorded as an
+    # error, never propagated — the third exception path in the capability.
+    _install_fake_registry({"comparison_matrix": _FakeMatrixAnalysis})
+
+    import pathlib
+
+    orig_mkdir = pathlib.Path.mkdir
+
+    def boom_mkdir(self, *a, **k):
+        raise PermissionError("read-only filesystem")
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", boom_mkdir)
+
+    result = env_worker._run_investigation_analysis({
+        "workspace": str(tmp_path),
+        "name": "comparison_matrix",
+        "config": {"config_verdicts": {}},
+        "report_dir": str(tmp_path / "reports"),
+    })
+
+    monkeypatch.setattr(pathlib.Path, "mkdir", orig_mkdir)
+    assert result["written"] == []
+    assert len(result["errors"]) == 1
+    assert "read-only filesystem" in result["errors"][0]["error"]
+
+
 def test_missing_name_records_error_not_raise(tmp_path):
     result = env_worker._run_investigation_analysis({
         "workspace": str(tmp_path), "report_dir": str(tmp_path / "reports")})
@@ -154,25 +181,20 @@ def test_missing_report_dir_records_error_not_raise(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# (b) AnalysisStep — real engine, stubbed pool
+# (b) InvestigationAnalysisStep — real engine, stubbed pool
 # ---------------------------------------------------------------------------
 
-# ``AnalysisStep`` collides by class-name-only ("AnalysisStep") with
-# v2ecoli.workflow.analysis.AnalysisStep, the base class every real v2ecoli
-# Analysis subclasses — the v2ecoli venv's package discovery walk claims the
-# short-name link-registry alias for v2ecoli's class first (first-wins
-# short-alias rule in bigraph_schema.package.discover._eager_register), so
-# ``address: "local:AnalysisStep"`` resolves to the WRONG class. The
-# fully-qualified name is always registered regardless of the short-alias
-# collision, so step docs must address this class as
-# ``local:vivarium_workbench.lib.investigation_steps.AnalysisStep``. Verified
-# against the real v2ecoli venv; noted here since it's a deviation from the
-# plain ``"local:StudyStep"`` address ``StudyStep`` uses (no such collision).
-_ANALYSIS_ADDRESS = f"local:{AnalysisStep.__module__}.{AnalysisStep.__name__}"
+# The class is named ``InvestigationAnalysisStep`` (NOT ``AnalysisStep``)
+# specifically to avoid a short-name link-registry collision with
+# v2ecoli.workflow.analysis.AnalysisStep — the base class every real v2ecoli
+# Analysis subclasses, which claims the ``"AnalysisStep"`` short alias first in
+# a v2ecoli venv. With the unique name, the plain short address resolves to our
+# class; no fully-qualified address is needed.
+_ANALYSIS_ADDRESS = "local:InvestigationAnalysisStep"
 
 
 def _core():
-    return allocate_core(top={"StudyStep": StudyStep, "AnalysisStep": AnalysisStep})
+    return allocate_core(top={"StudyStep": StudyStep, "InvestigationAnalysisStep": InvestigationAnalysisStep})
 
 
 def _study_doc(slug, result_store):
