@@ -94,7 +94,11 @@ def test_chart_card_uses_figure_card_not_chart_card_box():
 
 def test_loadcharts_wires_figure_run_links():
     i = JS.index("function _loadCharts")
-    block = JS[i:i + 2600]
+    # Bound to the _loadCharts function body (up to the next top-level function)
+    # rather than a fixed char window — the body grew when the per-run hub landed,
+    # pushing the wire call past the old 2600-char window though it's still inside.
+    end = JS.index("\n  function ", i + 1)
+    block = JS[i:end]
     assert '_wireFigureRunLinks(panel)' in block
 
 
