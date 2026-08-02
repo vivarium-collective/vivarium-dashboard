@@ -1532,7 +1532,9 @@ def _run_study(params: dict) -> dict:
     p = params or {}
     workspace = p.get("workspace") or _workspace
     study_slug = p.get("study_slug")
-    run_spec = p.get("run_spec") or {}
+    run_spec = p.get("run_spec")
+    if not isinstance(run_spec, dict):  # tolerate malformed caller input
+        run_spec = {}
 
     result: dict = {"run_refs": [], "verdict": None, "errors": []}
     if not workspace:

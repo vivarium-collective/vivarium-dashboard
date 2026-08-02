@@ -68,6 +68,31 @@ def test_run_study_baseline_only_returns_run_refs_and_no_errors(tmp_path, monkey
     assert result["run_refs"][0]["status"] == "completed"
 
 
+def test_run_study_tolerates_non_dict_run_spec(tmp_path, monkeypatch):
+    # A malformed run_spec (not a dict) must NOT raise — the never-raises
+    # contract holds; it degrades to the baseline-only run.
+    workspace = tmp_path / "ws"
+    sd = _study_dir(workspace)
+    db_file = sd / "runs.db"
+
+    counter = {"n": 0}
+
+    def fake_run_study_baseline(ws_root, body):
+        counter["n"] += 1
+        rid = f"run-baseline-{counter['n']}"
+        _write_runs_meta_row(db_file, run_id=rid)
+        return {"simulation_id": rid, "results": {}}, 200
+
+    monkeypatch.setattr(study_runs, "run_study_baseline", fake_run_study_baseline)
+
+    for bad in (["not", "a", "dict"], "string", 5):
+        result = env_worker._run_study({
+            "workspace": str(workspace), "study_slug": "demo", "run_spec": bad})
+        assert set(result.keys()) == {"run_refs", "verdict", "errors"}
+        assert result["errors"] == [], (bad, result["errors"])
+        assert len(result["run_refs"]) >= 1
+
+
 def test_run_study_baseline_plus_named_variants(tmp_path, monkeypatch):
     workspace = tmp_path / "ws"
     sd = _study_dir(workspace)
