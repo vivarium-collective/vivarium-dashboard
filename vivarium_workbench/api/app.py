@@ -926,7 +926,7 @@ def create_app() -> FastAPI:
     )
     def analysis_tools(ws: Path = Depends(get_workspace)) -> JSONResponse:
         """Tools-first Analysis Tools tab: external viewers + built-in tools
-        (data-explorer, parsimony-viewer), each matched to the runs/studies
+        (parsimony-viewer), each matched to the runs/studies
         whose capabilities satisfy the tool's ``requires``.
 
         Library-backed via ``lib.analysis_tools.build_analysis_tools``.

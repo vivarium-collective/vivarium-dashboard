@@ -293,7 +293,7 @@ class AnalysisToolsPayload(BaseModel):
     """``GET /api/analysis-tools`` payload — the tools-first Analysis Tools tab.
 
     Composed by ``lib.analysis_tools.build_analysis_tools``: external
-    contributed viewers + built-in tools (data-explorer, parsimony-viewer),
+    contributed viewers + built-in tools (parsimony-viewer),
     each capability-matched to candidate runs/studies. Tool shapes vary
     (external viewers carry extra fields), so unknown keys are preserved.
     """
