@@ -137,3 +137,105 @@ def build_investigation_composite(ws_root: Path | str, inv_slug: str) -> dict:
         state[f"analysis_{name}_written"] = {}
 
     return state
+
+
+def run_investigation_composite(ws_root: Path | str, inv_slug: str, *,
+                                 run_study_fn=None) -> dict:
+    """Build ``inv_slug``'s ``InvestigationComposite`` and RUN it: one
+    ``process_bigraph.Composite`` whose ``StudyStep``s/``InvestigationAnalysisStep``s
+    execute in the order the scheduler derives from
+    ``build_investigation_composite``'s wiring (real
+    ``pipeline_gate.prerequisites`` edges, else the synthetic-serial chain that
+    preserves declared order — see that function's docstring). This is the
+    single execution entry point ``prepare_investigation`` delegates to for a
+    full run (design: docs/superpowers/specs/2026-08-01-investigation-as-composite-design.md,
+    §Architecture 4).
+
+    ``run_study_fn`` (optional, **tests only**): ``(workspace, study_slug) ->
+    reply dict`` — when given, temporarily substitutes for the live
+    ``env_worker_pool`` dispatch so a run can be exercised hermetically with no
+    process-bigraph worker/pool. Implementation note: rather than monkeypatching
+    ``env_worker_pool.get_pool`` (what the existing skeleton/dispatch tests do)
+    or requiring callers to juggle ``investigation_steps._RUN_ORDER`` directly,
+    this function temporarily swaps ``investigation_steps._run_study_hook`` /
+    ``_run_analysis_hook`` for wrappers that (a) delegate to ``run_study_fn``
+    when given, else the original hook (so production dispatch — including the
+    ``_RUN_ORDER`` skeleton path other tests use — is unchanged), and (b)
+    record execution order + the full reply for this function's summary. This
+    is necessary regardless of ``run_study_fn``: the ``InvestigationAnalysisStep``
+    output store only ever holds ``reply["written"]`` (see
+    ``investigation_steps.InvestigationAnalysisStep.update``), never
+    ``reply["errors"]`` — capturing at the hook is the only way to surface
+    analysis errors here. The swap is restored in a ``finally`` before this
+    function returns, including on a raised exception (fail-loud policy below).
+
+    **Failure policy (v1):** fail-loud. If a ``StudyStep``'s worker call raises
+    (rather than returning an error in its reply — the ``run_study``/
+    ``run_investigation_analysis`` capabilities themselves never raise, but the
+    engine or a stubbed ``run_study_fn`` might), it propagates out of
+    ``Composite(...)`` uncaught and this function does not catch it — the
+    scheduler aborts mid-graph and the caller (a detached run) is responsible
+    for recording the failure. Errors reported *within* a reply (the
+    ``errors`` list ``run_study``/``run_investigation_analysis`` return) are
+    captured into this summary's ``errors`` without aborting — that distinction
+    (in-reply error vs raised exception) is the only partial-failure handling
+    v1 does. Continuing independent branches after a raised failure is a
+    follow-up (not implemented).
+
+    Returns ``{"investigation": inv_slug, "studies_ran": [...],
+    "analyses": [...], "errors": [...], "study_results": {slug: reply}}`` —
+    ``studies_ran``/``analyses`` are slugs/names in the order the scheduler ran
+    them; ``study_results`` (additive, not in the design's minimal shape) maps
+    each study slug to its full ``run_study`` reply, for callers (like
+    ``prepare_investigation``) that need the run refs, not just the order.
+    """
+    from bigraph_schema import allocate_core
+    from process_bigraph import Composite
+
+    from vivarium_workbench.lib import investigation_steps as _steps
+    from vivarium_workbench.lib.investigation_steps import (
+        InvestigationAnalysisStep, StudyStep)
+
+    state = build_investigation_composite(ws_root, inv_slug)
+    core = allocate_core(top={
+        "StudyStep": StudyStep, "InvestigationAnalysisStep": InvestigationAnalysisStep})
+
+    studies_ran: list[str] = []
+    analyses_ran: list[str] = []
+    study_results: dict[str, dict] = {}
+    errors: list[dict] = []
+
+    _orig_study_hook = _steps._run_study_hook
+    _orig_analysis_hook = _steps._run_analysis_hook
+
+    def _study_hook(workspace, study_slug):
+        studies_ran.append(study_slug)
+        reply = (run_study_fn(workspace, study_slug) if run_study_fn is not None
+                  else _orig_study_hook(workspace, study_slug))
+        study_results[study_slug] = reply
+        for err in (reply.get("errors") or []) if isinstance(reply, dict) else []:
+            errors.append({"study": study_slug, "error": err})
+        return reply
+
+    def _analysis_hook(workspace, name, config, report_dir):
+        analyses_ran.append(name)
+        reply = _orig_analysis_hook(workspace, name, config, report_dir)
+        for err in (reply.get("errors") or []) if isinstance(reply, dict) else []:
+            errors.append({"analysis": name, "error": err})
+        return reply
+
+    _steps._run_study_hook = _study_hook
+    _steps._run_analysis_hook = _analysis_hook
+    try:
+        Composite({"state": state, "run_steps_on_init": True}, core=core)
+    finally:
+        _steps._run_study_hook = _orig_study_hook
+        _steps._run_analysis_hook = _orig_analysis_hook
+
+    return {
+        "investigation": inv_slug,
+        "studies_ran": studies_ran,
+        "analyses": analyses_ran,
+        "errors": errors,
+        "study_results": study_results,
+    }

@@ -82,49 +82,60 @@ def _study_slugs(ws: Path, inv_slug: str) -> list[str]:
     return [s for s in out if s]
 
 
-def prepare_study(ws: Path, slug: str, dash: str, steps: int | None,
-                  render_only: bool) -> dict:
-    """Run baseline + comparison variants for one study, render comparatives."""
-    studies_dir = WorkspacePaths.load(ws).studies
-    sf = studies_dir / slug / "study.yaml"
-    if not sf.is_file():
-        return {"study": slug, "skipped": "no study.yaml"}
-    spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
-    cvs = spec.get("comparative_visualizations") or []
-    if not cvs:
-        return {"study": slug, "skipped": "no comparative_visualizations"}
-
-    # Distinct sim_names the comparatives overlay. The one whose name equals
-    # the study slug is the baseline; the rest are declared variants.
+def _sim_names_for(cvs: list[dict]) -> list[str]:
+    """Distinct sim_names the comparatives overlay, declaration order. The one
+    whose name equals the study slug is the baseline; the rest are declared
+    variants."""
     sim_names: list[str] = []
     for cv in cvs:
         for r in (cv.get("runs") or []):
             sn = r.get("sim_name")
             if sn and sn not in sim_names:
                 sim_names.append(sn)
+    return sim_names
 
+
+def _run_study_via_posts(ws: Path, slug: str, dash: str, steps: int | None,
+                         cvs: list[dict]) -> list[dict]:
+    """The POST-driven run half of the original ``prepare_study``: baseline +
+    every comparison variant the study's ``comparative_visualizations`` refer
+    to, via the dashboard run API (``/api/study-run-baseline`` /
+    ``/api/study-run-variant``).
+
+    Still used by the ``render_only`` and single-``study`` prep paths — those
+    must NOT route through the investigation composite (backward-compat; see
+    ``prepare_investigation``). The full-run path instead dispatches ALL member
+    studies through ``run_investigation_composite`` (dependency-ordered) and
+    never calls this."""
+    sim_names = _sim_names_for(cvs)
     run_results = []
-    if not render_only:
-        for sn in sim_names:
-            if sn == slug:
-                payload = {"study": slug}
-                if steps is not None:
-                    payload["steps"] = steps
-                code, body = _post(f"{dash}/api/study-run-baseline", payload)
-                kind = "baseline"
-            else:
-                payload = {"study": slug, "variant": sn}
-                if steps is not None:
-                    payload["steps"] = steps
-                code, body = _post(f"{dash}/api/study-run-variant", payload)
-                kind = "variant"
-            run_id = (body.get("simulation_id") or body.get("run_id")
-                      if isinstance(body, dict) else None)
-            run_results.append({"run": sn, "kind": kind, "http": code,
-                                "run_id": run_id})
-            print(f"  ran {sn} ({kind}): HTTP {code} run_id={run_id}", flush=True)
+    for sn in sim_names:
+        if sn == slug:
+            payload = {"study": slug}
+            if steps is not None:
+                payload["steps"] = steps
+            code, body = _post(f"{dash}/api/study-run-baseline", payload)
+            kind = "baseline"
+        else:
+            payload = {"study": slug, "variant": sn}
+            if steps is not None:
+                payload["steps"] = steps
+            code, body = _post(f"{dash}/api/study-run-variant", payload)
+            kind = "variant"
+        run_id = (body.get("simulation_id") or body.get("run_id")
+                  if isinstance(body, dict) else None)
+        run_results.append({"run": sn, "kind": kind, "http": code,
+                            "run_id": run_id})
+        print(f"  ran {sn} ({kind}): HTTP {code} run_id={run_id}", flush=True)
+    return run_results
 
+
+def _render_study_comparatives(ws: Path, slug: str, cvs: list[dict]) -> list[dict]:
+    """The rendering half of the original ``prepare_study``: render each
+    declared comparative overlay from the study's ``runs.db``. Unchanged
+    behavior — used by every prep path (POST-driven or composite-driven)."""
     from vivarium_workbench.lib.comparative_viz import render_comparative_time_series
+    studies_dir = WorkspacePaths.load(ws).studies
     study_db = studies_dir / slug / "runs.db"
     viz_dir = studies_dir / slug / "viz"
     viz_dir.mkdir(parents=True, exist_ok=True)
@@ -152,7 +163,29 @@ def prepare_study(ws: Path, slug: str, dash: str, steps: int | None,
             rendered.append({"viz": cv["name"], "error": str(e)})
         print(f"  rendered {cv['name']}: "
               f"{rendered[-1].get('bytes', rendered[-1].get('error'))}", flush=True)
+    return rendered
 
+
+def prepare_study(ws: Path, slug: str, dash: str, steps: int | None,
+                  render_only: bool) -> dict:
+    """Run baseline + comparison variants for one study, render comparatives.
+
+    Used by the ``render_only`` and single-``study`` prep paths (unchanged,
+    POST-driven behavior — see ``_run_study_via_posts``/
+    ``_render_study_comparatives``, which this composes). The full-run path in
+    ``prepare_investigation`` does NOT call this — it uses
+    ``run_investigation_composite`` for the run half instead."""
+    studies_dir = WorkspacePaths.load(ws).studies
+    sf = studies_dir / slug / "study.yaml"
+    if not sf.is_file():
+        return {"study": slug, "skipped": "no study.yaml"}
+    spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+    cvs = spec.get("comparative_visualizations") or []
+    if not cvs:
+        return {"study": slug, "skipped": "no comparative_visualizations"}
+
+    run_results = [] if render_only else _run_study_via_posts(ws, slug, dash, steps, cvs)
+    rendered = _render_study_comparatives(ws, slug, cvs)
     return {"study": slug, "runs": run_results, "rendered": rendered}
 
 
@@ -203,7 +236,52 @@ def prepare_investigation(workspace: Path | str, *,
         print("  (running baseline + comparison variants — this may take "
               "several minutes per study)")
 
-    results = [prepare_study(ws, slug, dash, steps, render_only) for slug in studies]
+    # A FULL run (not render-only, not a single --study) is dependency-ordered
+    # via the investigation-as-composite substrate instead of the flat
+    # per-study POST loop (design:
+    # docs/superpowers/specs/2026-08-01-investigation-as-composite-design.md,
+    # §Architecture 4). ``render_only``/single-``study`` keep the original
+    # POST-driven ``prepare_study`` path unchanged (backward-compat).
+    if not render_only and not study:
+        from vivarium_workbench.lib.investigation_execution import (
+            run_investigation_composite)
+        if steps is not None:
+            print("  NOTE: --steps is not honored by the composite run path yet "
+                  "(v1 limitation) — each study runs with its own default step count.")
+        comp_summary = run_investigation_composite(ws, inv)
+        print(f"  composite: ran {len(comp_summary['studies_ran'])} "
+              f"stud(y/ies) in dependency order: {comp_summary['studies_ran']}")
+        if comp_summary["errors"]:
+            print(f"  composite errors: {comp_summary['errors']}")
+
+        studies_dir = WorkspacePaths.load(ws).studies
+        results = []
+        for slug in studies:
+            sf = studies_dir / slug / "study.yaml"
+            if not sf.is_file():
+                results.append({"study": slug, "skipped": "no study.yaml"})
+                continue
+            spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+            cvs = spec.get("comparative_visualizations") or []
+
+            # The composite already ran this study's native baseline (every
+            # member runs, regardless of comparative_visualizations — see
+            # the docstring note below); reflect what it harvested.
+            reply = comp_summary["study_results"].get(slug) or {}
+            run_results = [
+                {"run": rr.get("sim_name"),
+                 "kind": "baseline" if rr.get("sim_name") == slug else "variant",
+                 "run_id": rr.get("run_id")}
+                for rr in (reply.get("run_refs") or [])]
+
+            if not cvs:
+                results.append({"study": slug, "runs": run_results,
+                                "skipped": "no comparative_visualizations"})
+                continue
+            rendered = _render_study_comparatives(ws, slug, cvs)
+            results.append({"study": slug, "runs": run_results, "rendered": rendered})
+    else:
+        results = [prepare_study(ws, slug, dash, steps, render_only) for slug in studies]
 
     full_run = not study
     print("\n=== SUMMARY ===")
