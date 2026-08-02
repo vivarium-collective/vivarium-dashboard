@@ -21,7 +21,7 @@ import hashlib
 import json
 import re
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import vivarium_workbench as _vd_pkg
 
@@ -713,7 +713,7 @@ def build_gate_ladder(spec: dict, ws_root=None, slug: Optional[str] = None) -> l
     gates: list[dict] = []
     for key, number, name, axis in _GATES:
         authored_value = spec.get(axis)
-        entry = {
+        entry: dict[str, Any] = {
             "key": key, "number": number, "name": name, "axis": axis,
             "authored_value": authored_value,
             "authored_state": gate_state(authored_value),
