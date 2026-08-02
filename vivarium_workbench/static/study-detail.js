@@ -96,9 +96,11 @@
     if (kind === 'tests') { _loadTestsPanel(window._study); }
     if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownloadPointer(); }
     if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
-    if (kind === 'data') { _loadAnalysisOutputs(); _loadRawData(); }
     if (kind === 'compose') { _loadModelConfig(); }
-    if (kind === 'simulate') { _loadStudySims(); }
+    // Task E2: the study-artifacts strip (analysis-files zip + raw-data
+    // bulk) moved from the Exports (data) tab onto Simulations, so its
+    // loaders now trigger here instead.
+    if (kind === 'simulate') { _loadStudySims(); _loadAnalysisOutputs(); _loadRawData(); }
     // Textareas measured 0 while their tab was hidden; re-fit the now-visible
     // panel's auto-grow boxes so they show all content without a scrollbar.
     if (window._autoGrowTextareas) window._autoGrowTextareas();
@@ -147,16 +149,17 @@
       });
   }
 
-  // ── Readouts tab: pointer to the raw-data downloads that live under Exports ──
-  // Exports (data-kind="data") is the single "get the data" tab — it already
+  // ── Readouts tab: pointer to the raw-data downloads that live under Simulations ──
+  // Simulations (data-kind="simulate") is the single "get the data" tab — it
   // folds in every run's raw emitter store (see _loadRawData below) plus the
-  // analysis result files. Readouts used to render its OWN full download
-  // widget here (every run's raw store, one ⬇ each), duplicating those same
-  // links. Task C4 replaces that widget with one pointer that jumps to
-  // Exports via C1's _gotoStudyTab. Uses the SAME /api/simulations fetch +
-  // (store_path || db_path) filter _loadRawData uses, so the pointer only
-  // shows up when Exports actually has something to show — never pointing
-  // at an empty tab.
+  // analysis result files (Task E2 moved both off the old Exports tab).
+  // Readouts used to render its OWN full download widget here (every run's
+  // raw store, one ⬇ each), duplicating those same links. Task C4 replaced
+  // that widget with one pointer that jumps to the raw-data group via C1's
+  // _gotoStudyTab (E2 repointed it from the 'data' tab to 'simulate'). Uses
+  // the SAME /api/simulations fetch + (store_path || db_path) filter
+  // _loadRawData uses, so the pointer only shows up when there's actually
+  // something to show — never pointing at an empty tab.
   var _readoutsDownloadPointerLoaded = false;
   function _loadReadoutsDownloadPointer(force) {
     var host = document.getElementById('readouts-download');
@@ -172,7 +175,7 @@
         var withData = sims.filter(function (s) { return s.run_id && (s.store_path || s.db_path); });
         host.innerHTML = withData.length
           ? '<p class="muted">⬇ Download this study\'s raw run data → '
-            + '<a href="#" onclick="_gotoStudyTab(\'data\',\'exports-downloads\');return false;">Exports</a></p>'
+            + '<a href="#" onclick="_gotoStudyTab(\'simulate\',\'exports-downloads\');return false;">Simulations</a></p>'
           : '';
       })
       .catch(function () { host.innerHTML = ''; });

@@ -112,10 +112,12 @@ def test_pointer_function_jumps_to_exports_via_gotostudytab():
     body = js[i:j]
     # Reuses C1's cross-tab helper — no bespoke tab-switch logic. (The call
     # is embedded in an onclick="..." HTML-attribute string, so its quotes
-    # are backslash-escaped in the JS source: _gotoStudyTab(\'data\',...).)
+    # are backslash-escaped in the JS source: _gotoStudyTab(\'simulate\',...).)
+    # Task E2 moved the raw-data-downloads group off Exports ('data') onto
+    # Simulations ('simulate'), and repointed this pointer to match.
     assert "_gotoStudyTab(" in body
-    assert "gotoStudyTab(\\'data\\'" in body
-    # Lands on the anchor the Exports template now carries.
+    assert "gotoStudyTab(\\'simulate\\'" in body
+    # Lands on the anchor the Simulations template now carries.
     assert "exports-downloads" in body
     # Same data source + filter predicate _loadRawData (Exports) uses, so the
     # pointer only appears when Exports actually has something to show —

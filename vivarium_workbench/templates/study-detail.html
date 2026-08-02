@@ -1006,6 +1006,43 @@
   <div id="study-run-detail" style="margin-top:14px"></div>
 </div>
 
+{# Study artifacts strip (Task E2): the two study-LEVEL bulk-download groups
+   that used to live on the Exports tab, folded in here so Simulations is the
+   runs + study-wide-artifacts hub (Exports tab is being retired — Task E4).
+   Same element ids as before so the existing loaders (_loadAnalysisOutputs /
+   _loadRawData / _downloadAllRawExports) bind unchanged; only the markup
+   moved, and the loaders now trigger on the `simulate` tab activation
+   instead of `data`. Per-row run "⬇ Data" links (sim-table.js) and
+   _showRunDetail are untouched — this strip only carries the two
+   STUDY-level bulk groups. #}
+<div class="overview-section" id="study-artifacts-section" style="margin-top:18px">
+  <h3 class="section-title" style="margin:0 0 10px 0">Study artifacts</h3>
+
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <span class="muted" style="margin-right:auto;font-weight:600">Analysis result files</span>
+    <a id="data-download-all" class="btn-mini" style="display:none"
+       href="{{ base_path }}/api/study-analysis-zip?study={{ name }}">Download all (.zip)</a>
+  </div>
+  <div id="data-files" data-study="{{ name }}">
+    <p class="empty-message">Loading result files…</p>
+  </div>
+
+  {# Raw simulation data — the per-run emitter stores (zarr/parquet/runs.db).
+     `id="exports-downloads"` stays the jump target for the Readouts tab's
+     pointer link (Task C4/E2, now `_gotoStudyTab('simulate', 'exports-
+     downloads')`). `#raw-data-download-all` is the bulk "download all raw
+     runs" convenience — no backend zip endpoint for raw stores exists, so
+     it's a client-side sequential-download button (populated/shown by
+     _loadRawData, triggered by _downloadAllRawExports) scoped to THIS
+     group; the analysis-file zip button above is untouched. #}
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:18px">
+    <span class="muted" id="exports-downloads" style="margin-right:auto;font-weight:600">Raw simulation data</span>
+    <button type="button" id="raw-data-download-all" class="btn-mini" style="display:none"
+            onclick="_downloadAllRawExports()">⬇ Download all raw data</button>
+  </div>
+  <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
+</div>
+
 </section>
 
 <section class="study-tab-panel" data-kind="readouts" id="panel-readouts" hidden>
@@ -1103,33 +1140,13 @@
 
 <section class="study-tab-panel" data-kind="data" id="panel-data" hidden>
   <h2>Exports</h2>
-  <div class="data-section">
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-      <h3 class="section-title" style="margin-right:auto">Analysis result files</h3>
-      <a id="data-download-all" class="btn-mini" style="display:none"
-         href="{{ base_path }}/api/study-analysis-zip?study={{ name }}">Download all (.zip)</a>
-    </div>
-    <div id="data-files" data-study="{{ name }}">
-      <p class="empty-message">Loading result files…</p>
-    </div>
-
-    {# Raw simulation data — the per-run emitter stores (zarr/parquet/runs.db),
-       folded in here so Exports is the single "get the data" tab. Same ⬇ Data
-       links as the Simulations tab, resolved server-side from run_id.
-       `id="exports-downloads"` is the jump target for the Readouts tab's
-       pointer link (Task C4). `#raw-data-download-all` restores the old
-       Readouts widget's bulk "download all raw runs" convenience — no
-       backend zip endpoint for raw stores exists, so it's a client-side
-       sequential-download button (populated/shown by _loadRawData,
-       triggered by _downloadAllRawExports) scoped to THIS group; the
-       analysis-file zip button above is untouched. #}
-    <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:22px">
-      <h3 class="section-title" id="exports-downloads" style="margin-right:auto">Raw simulation data</h3>
-      <button type="button" id="raw-data-download-all" class="btn-mini" style="display:none"
-              onclick="_downloadAllRawExports()">⬇ Download all raw data</button>
-    </div>
-    <div id="raw-data-list"><p class="empty-message">Loading runs…</p></div>
-  </div>
+  {# Task E2: both study-level bulk-download groups this tab used to hold
+     (analysis result files `#data-files`, raw simulation data
+     `#raw-data-list`/`#exports-downloads`) moved to the Simulations tab's
+     new "Study artifacts" strip (`#study-artifacts-section`) — Simulations
+     is becoming the runs + study-wide-artifacts hub, and this tab is being
+     retired (Task E4). #}
+  <div class="data-section"></div>
 </section>
 
 <section class="study-tab-panel" data-kind="tests" id="panel-tests" hidden>
