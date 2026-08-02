@@ -14,8 +14,11 @@ def test_match_requires_subset():
 
 def test_builtin_tools_declare_requires():
     ids = {t["id"]: t for t in at.builtin_tools()}
-    assert ids["data-explorer"]["requires"] == ["observables"]
+    # Data Explorer was removed from the core built-ins; every remaining
+    # built-in still declares its capability requirement.
+    assert "data-explorer" not in ids
     assert ids["parsimony-viewer"]["requires"] == ["3d_pack"]
+    assert all(t.get("requires") for t in at.builtin_tools())
 
 def test_build_composes_external_and_builtin(monkeypatch):
     monkeypatch.setattr(at, "viewers_public",
@@ -28,8 +31,6 @@ def test_build_composes_external_and_builtin(monkeypatch):
     tools = {t["id"]: t for t in at.build_analysis_tools("/ws")}
     # external tool with no requires keeps its targets verbatim
     assert tools["omics"]["matched"] == [] and tools["omics"]["targets"]
-    # data explorer matched the observables run
-    assert {m["ref"] for m in tools["data-explorer"]["matched"]} == {"run1"}
     # parsimony matched the 3d_pack study
     assert {m["ref"] for m in tools["parsimony-viewer"]["matched"]} == {"ecoli-3d"}
 
@@ -47,15 +48,19 @@ def test_run_candidates_reads_simulations_key(monkeypatch):
     assert {c["ref"] for c in cands} == {"r1", "r2"}
     assert {c["ref"] for c in cands if "observables" in c["capabilities"]} == {"r1"}
 
-def test_data_explorer_matches_observables_run_end_to_end(monkeypatch):
+def test_builtin_skipped_when_capability_absent(monkeypatch):
+    # A built-in whose required capability isn't present in the workspace (here:
+    # no 3d_pack for the Parsimony Viewer) is skipped entirely, not shown as a
+    # dead "No compatible runs" card — so domain-specific tools don't clutter
+    # unrelated workspaces.
     monkeypatch.setattr(at, "viewers_public", lambda ws: [])
     monkeypatch.setattr(at, "build_simulations_data", lambda ws: {
         "simulations": [{"run_id": "r1", "label": "run one",
                          "emitter_type": "XArray", "capabilities": ["observables"]}],
         "current": None})
-    monkeypatch.setattr(at, "_pack_candidates", lambda ws: [])
+    monkeypatch.setattr(at, "_pack_candidates", lambda ws: [])  # no 3d pack
     tools = {t["id"]: t for t in at.build_analysis_tools("/ws")}
-    assert {m["ref"] for m in tools["data-explorer"]["matched"]} == {"r1"}
+    assert "parsimony-viewer" not in tools  # skipped: no 3d_pack in this workspace
 
 
 def test_contributed_3d_duplicate_dropped_in_favor_of_native(monkeypatch):

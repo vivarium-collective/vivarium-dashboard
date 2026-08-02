@@ -28,6 +28,11 @@ def test_analysis_tools_endpoint(dashboard_client, ws_copy):
     body = r.json()
     assert "tools" in body
     ids = {t["id"] for t in body["tools"]}
-    assert {"data-explorer", "parsimony-viewer"} <= ids
+    # Data Explorer was removed from the core built-ins entirely.
+    assert "data-explorer" not in ids
+    # Built-ins are only surfaced where their capability is present, so every
+    # built-in tool that DOES appear must carry a non-empty match.
     for t in body["tools"]:
         assert "requires" in t and "matched" in t
+        if t["id"] == "parsimony-viewer":
+            assert t["matched"]  # only shown when a 3d_pack exists

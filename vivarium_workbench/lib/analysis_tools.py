@@ -18,11 +18,11 @@ def match(requires, candidates: list[dict]) -> list[dict]:
 
 
 def builtin_tools() -> list[dict]:
+    # Domain-specific built-in tools. They are only surfaced in a workspace
+    # that can actually use them (see build_analysis_tools: a built-in with no
+    # matched candidate is skipped), so e.g. the Parsimony Viewer appears in a
+    # v2ecoli workspace with a 3D pack but not in an HRA/atlas workspace.
     return [
-        {"id": "data-explorer", "title": "Data Explorer",
-         "description": "Interactively explore a run: timeseries, scatter, "
-                        "allocation, and flux maps.",
-         "kind": "embed-explorer", "requires": ["observables"]},
         {"id": "parsimony-viewer", "title": "Parsimony Viewer",
          "description": "3D molecular packing of a cell — saved views at "
                         "declared times.",
@@ -89,13 +89,16 @@ def build_analysis_tools(ws_root) -> list[dict]:
         v["matched"] = match(v["requires"], runs) if v["requires"] else []
         tools.append(v)
 
-    # built-in tools
+    # built-in tools — only surfaced where the workspace can actually use them:
+    # a built-in whose required capability is absent (no matched run/pack) is
+    # a domain-specific tool irrelevant to this workspace, so skip it rather
+    # than showing a dead "No compatible runs" card.
     for t in builtin_tools():
         t = dict(t)
         cands = packs if "3d_pack" in t["requires"] else runs
         t["matched"] = match(t["requires"], cands)
-        t["unmatched_reason"] = (
-            f"No compatible runs — needs {', '.join(t['requires'])}."
-            if not t["matched"] else "")
+        if not t["matched"]:
+            continue
+        t["unmatched_reason"] = ""
         tools.append(t)
     return tools

@@ -1997,6 +1997,12 @@ def _av_public_spec(viewer: dict, ws_root) -> dict:
         "title": viewer.get("title") or viewer.get("id"),
         "description": viewer.get("description", ""),
         "kind": viewer.get("kind", "launcher"),
+        # Forward the contract's `requires` capability tags so the analysis-
+        # tools matcher can pair a contributed viewer with compatible runs
+        # (per-run links), not just its study-level targets. Without this the
+        # documented `requires` field is silently dropped for contributed
+        # viewers and they can never match a run.
+        "requires": list(viewer.get("requires") or []),
         "targets": _av_resolve_targets(viewer, ws_root),
         "assets": {
             "js": list(assets.get("js") or []),

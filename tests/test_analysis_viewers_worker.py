@@ -25,6 +25,7 @@ def _fake_viewers_module():
     def get_viewers(ws_root):
         return [
             {"id": "demo", "title": "Demo", "kind": "launcher",
+             "requires": ["observables"],
              "launch": lambda ws, study, run, ctx: {"url": f"/x/{study}"},
              "targets": lambda ws: [{"study": "s1", "label": "S1"}]},
             {"id": "embedonly", "kind": "embed",
@@ -68,8 +69,12 @@ def test_list_action_returns_public_specs(monkeypatch):
     assert demo["kind"] == "launcher"
     assert demo["targets"] == [{"study": "s1", "label": "S1", "detail": ""}]
     assert demo["assets"] is None  # launcher, no assets → None
+    # `requires` capability tags are forwarded so the analysis-tools matcher can
+    # pair a contributed viewer with compatible runs (per-run links).
+    assert demo["requires"] == ["observables"]
     embed = specs["fakeviz_pkg::embedonly"]
     assert embed["assets"] == {"js": ["/a.js"], "mount_id": "m", "api_prefix": "/p"}
+    assert embed["requires"] == []  # absent → empty (not run-matched)
     # public spec is JSON-safe: no callables leak.
     assert "launch" not in demo and "applies" not in demo
 
