@@ -33,7 +33,8 @@ from process_bigraph import Composite
 
 from vivarium_workbench import env_worker
 import vivarium_workbench.lib.investigation_steps as m
-from vivarium_workbench.lib.investigation_steps import InvestigationAnalysisStep, StudyStep
+from vivarium_workbench.lib.investigation_steps import (
+    InvestigationAnalysisStep, StudyStep, _extract_study_verdict)
 
 
 # ---------------------------------------------------------------------------
@@ -264,15 +265,98 @@ def test_analysis_step_runs_after_studies_and_receives_verdicts(monkeypatch):
     assert analysis_call[0] == "/ws"
     dispatched_config = analysis_call[2]["config"]
     assert dispatched_config["static_opt"] is True
+    # config_verdicts now holds the EXTRACTED verdict, not the raw run_study
+    # reply — the _FakePool reply here has no ``analyses`` key, so extraction
+    # falls back to the reply's top-level ``verdict`` (store data-flow
+    # refactor, design §2; behavior intentionally changed from the raw-reply
+    # shape this test previously asserted).
     assert dispatched_config["config_verdicts"] == {
-        "A": {"run_refs": ["r1"], "verdict": {"study": "A", "overall": "pass"}},
-        "B": {"run_refs": ["r1"], "verdict": {"study": "B", "overall": "pass"}},
+        "A": {"study": "A", "overall": "pass"},
+        "B": {"study": "B", "overall": "pass"},
     }
     assert analysis_call[2]["name"] == "comparison_matrix"
     assert analysis_call[2]["report_dir"] == "/ws/reports"
     # workspace is threaded into the analysis config so an investigation-level
     # analysis can locate per-study verdict files on disk.
     assert dispatched_config["workspace"] == "/ws"
+
+
+class _FakePoolWithAnalyses:
+    """``run_study`` replies carry the store data-flow refactor's ``analyses``
+    key (design §2) — the per-study ``comparison_cards`` verdict lives at
+    ``analyses.comparison_cards.verdict``, alongside an unrelated top-level
+    ``verdict`` (the conclusion card) that must NOT be picked up instead."""
+
+    def __init__(self):
+        self.calls = []
+
+    def call(self, workspace, method, params):
+        self.calls.append((workspace, method, params))
+        if method == "run_study":
+            slug = params["study_slug"]
+            return {
+                "run_refs": ["r"],
+                "verdict": {"overall": "cnc"},
+                "analyses": {
+                    "comparison_cards": {
+                        "verdict": {"overall": "within_tol", "cfg": slug},
+                    },
+                },
+                "errors": [],
+            }
+        return {"written": [f"/ws/reports/{params['name']}_matrix_html.html"],
+                "errors": []}
+
+
+def test_analysis_step_extracts_verdict_from_analyses_store(monkeypatch):
+    """config_verdicts is assembled from state[f"study_{slug}"]["analyses"]
+    ["comparison_cards"]["verdict"] — the store data-flow refactor's
+    canonical source — NOT the raw run_study reply and NOT the reply's
+    unrelated top-level ``verdict`` (the conclusion card)."""
+    fake_pool = _FakePoolWithAnalyses()
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.env_worker_pool.get_pool", lambda: fake_pool)
+
+    state = {
+        "A_result": {}, "B_result": {}, "written": {},
+        "A": _study_doc("A", "A_result"),
+        "B": _study_doc("B", "B_result"),
+        "analysis": _analysis_doc(
+            "comparison_matrix", ["A", "B"],
+            {"study_A": ["A_result"], "study_B": ["B_result"]},
+        ),
+    }
+    Composite({"state": state, "run_steps_on_init": True}, core=_core())
+
+    analysis_call = fake_pool.calls[-1]
+    assert analysis_call[1] == "run_investigation_analysis"
+    dispatched_config = analysis_call[2]["config"]
+    assert dispatched_config["config_verdicts"] == {
+        "A": {"overall": "within_tol", "cfg": "A"},
+        "B": {"overall": "within_tol", "cfg": "B"},
+    }
+
+
+# ---------------------------------------------------------------------------
+# _extract_study_verdict — unit-level precedence
+# ---------------------------------------------------------------------------
+
+def test_extract_study_verdict_prefers_named_analysis_verdict():
+    res = {
+        "verdict": {"overall": "cnc"},
+        "analyses": {"comparison_cards": {"verdict": {"overall": "within_tol"}}},
+    }
+    assert _extract_study_verdict(res, "comparison_cards") == {"overall": "within_tol"}
+
+
+def test_extract_study_verdict_falls_back_to_top_level_verdict():
+    res = {"run_refs": ["r"], "verdict": {"overall": "cnc"}, "analyses": {}}
+    assert _extract_study_verdict(res, "comparison_cards") == {"overall": "cnc"}
+
+
+def test_extract_study_verdict_falls_back_to_raw_result_unchanged():
+    res = {"run_refs": ["r"]}
+    assert _extract_study_verdict(res, "comparison_cards") == {"run_refs": ["r"]}
 
 
 def test_analysis_step_result_store_holds_written_reply(monkeypatch):

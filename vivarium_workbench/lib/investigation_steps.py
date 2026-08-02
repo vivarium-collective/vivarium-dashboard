@@ -73,6 +73,24 @@ def _run_analysis_hook(workspace: str, name: str, config: dict, report_dir: str)
         "report_dir": report_dir})
 
 
+def _extract_study_verdict(res, verdict_analysis: str):
+    """Pull the config verdict out of a wired ``StudyStep`` result (the
+    ``run_study`` reply): prefer the named per-study analysis's verdict
+    (``res["analyses"][verdict_analysis]["verdict"]``, the store data-flow
+    refactor's canonical source — design:
+    docs/superpowers/specs/2026-08-02-store-dataflow-refactor-design.md §2),
+    fall back to the reply's top-level conclusion ``verdict``, and finally
+    fall back to the raw result unchanged (older/non-analysis studies)."""
+    if isinstance(res, dict):
+        analyses = res.get("analyses") or {}
+        verdict = analyses.get(verdict_analysis, {}).get("verdict") if isinstance(analyses, dict) else None
+        if verdict is not None:
+            return verdict
+        if res.get("verdict") is not None:
+            return res.get("verdict")
+    return res
+
+
 class InvestigationAnalysisStep(process_bigraph.Step):
     """One investigation-level Analysis (e.g. ``comparison_matrix``), wired to
     every study whose verdict it needs. ``inputs()`` — one ``"node"`` port per
@@ -82,12 +100,17 @@ class InvestigationAnalysisStep(process_bigraph.Step):
     mechanism as ``StudyStep``'s ``prereq_*`` ports) AND delivers each study's
     result dict (which carries its ``verdict``) as this step's wired state.
 
-    ``update()`` assembles ``config_verdicts = {slug: state[f"study_{slug}"]}``
-    from the wired study results, merges it into the static ``params``, and
+    ``update()`` assembles ``config_verdicts = {slug: verdict}`` from the wired
+    study results via ``_extract_study_verdict`` — each ``config_verdicts[slug]``
+    is the actual verdict dict (``res["analyses"][verdict_analysis]["verdict"]``,
+    falling back to ``res["verdict"]``, falling back to the raw result), not the
+    raw ``run_study`` reply. Merges the result into the static ``params``, and
     dispatches to the ``run_investigation_analysis`` worker capability (design:
     docs/superpowers/specs/2026-08-01-investigation-as-composite-design.md,
-    §Architecture 2-3). Bypasses the parquet-coupled ``run_study_analyses``
-    path entirely — the #712 blocker this exists to route around.
+    §Architecture 2-3; refined by
+    docs/superpowers/specs/2026-08-02-store-dataflow-refactor-design.md §2).
+    Bypasses the parquet-coupled ``run_study_analyses`` path entirely — the
+    #712 blocker this exists to route around.
 
     NAME: keep this ``InvestigationAnalysisStep``, NOT ``AnalysisStep`` — the
     latter collides with ``v2ecoli.workflow.analysis.AnalysisStep`` for the
@@ -102,6 +125,7 @@ class InvestigationAnalysisStep(process_bigraph.Step):
         "params": {"_type": "map", "_default": {}},
         "study_slugs": {"_type": "list[string]", "_default": []},
         "report_dir": "string",
+        "verdict_analysis": {"_type": "string", "_default": "comparison_cards"},
     }
 
     def inputs(self):
@@ -112,8 +136,9 @@ class InvestigationAnalysisStep(process_bigraph.Step):
 
     def update(self, state=None):
         state = state or {}
+        verdict_analysis = self.config.get("verdict_analysis", "comparison_cards")
         config_verdicts = {
-            slug: state.get(f"study_{slug}")
+            slug: _extract_study_verdict(state.get(f"study_{slug}"), verdict_analysis)
             for slug in self.config.get("study_slugs", [])
         }
         params = dict(self.config.get("params") or {})
