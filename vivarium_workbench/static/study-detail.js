@@ -306,6 +306,19 @@
   //   live   — generated from runs.db at request time
   //   static — pre-rendered SVGs under studies/<name>/charts/
   var _chartsLoadedFor = {};
+  // Task E3 (per-run hub): small caches so _showRunDetail can FILTER the
+  // study's already-fetched figure sources to one run, instead of firing a
+  // new per-row request. Populated by _loadNativeGallery/_loadCharts once
+  // their (memoized) fetches settle; `undefined` means "not fetched yet".
+  //   _nativeGalleryRunId — build_study_native_gallery attaches ONE run_id to
+  //     the whole gallery (the study's latest completed run); null when none.
+  //   _chartsCache — the study-charts payload's `charts` array, each item's
+  //     `run_id` populated only when genuinely derivable (V3).
+  var _nativeGalleryRunId;
+  var _chartsCache;
+  // The run row currently shown in #study-run-detail, or null when closed —
+  // lets a late-arriving async figure fetch refresh an already-open panel.
+  var _currentRunDetailRow = null;
   // Fable §4.5 (Task V2/V3): one `.figure-card` shell shared with the native
   // gallery / embed sources — a bordered figure container + a muted
   // caption-row footer (source chip + title + optional run link), not the
@@ -398,6 +411,110 @@
     });
   }
 
+  // Task E3: figures for ONE run, reusing the three existing figure sources
+  // (never forking a new card renderer) filtered to `run_id`:
+  //   - embeds (study.embed_visualizations) — server-rendered synchronously
+  //     into #visualize-section at page load, so no "not loaded yet" state;
+  //     filtered by the run-link each card already carries (V3).
+  //   - native gallery — async, ONE run_id shared by every panel, so a match
+  //     means the WHOLE rendered gallery panel belongs to this run; reuses
+  //     the already-rendered #native-gallery-panel markup verbatim.
+  //   - charts — async, per-item run_id (V3); reuses _renderChartCard(c).
+  function _figureCardsForRun(runId) {
+    var cards = [];
+    if (!runId) return cards;
+    document.querySelectorAll('#visualize-section .embed-viz-card').forEach(function (card) {
+      var link = card.querySelector('.figure-run-link[data-run-id]');
+      if (link && link.getAttribute('data-run-id') === String(runId)) cards.push(card.outerHTML);
+    });
+    if (_nativeGalleryRunId !== undefined && _nativeGalleryRunId !== null
+        && String(_nativeGalleryRunId) === String(runId)) {
+      var ngPanel = document.getElementById('native-gallery-panel');
+      if (ngPanel && ngPanel.innerHTML) cards.push(ngPanel.innerHTML);
+    }
+    if (_chartsCache) {
+      _chartsCache.forEach(function (c) {
+        if (c && c.run_id != null && String(c.run_id) === String(runId)) cards.push(_renderChartCard(c));
+      });
+    }
+    return cards;
+  }
+
+  // Renders the Figures sub-section for _showRunDetail. Cheap + lazy: the
+  // native-gallery/charts sources are only fetched once (memoized), reused
+  // across every row-open; if neither has settled yet, this kicks off the
+  // SAME loaders the Visualizations tab uses (a redundant call is a no-op)
+  // and shows a quiet pointer instead of blocking. Absent (not-yet-loaded)
+  // is distinguished from empty (loaded, genuinely no match) so "no figures
+  // for this run" is only shown once we actually know that.
+  function _runDetailFiguresHtml(row) {
+    var runId = row.run_id || '';
+    var cards = _figureCardsForRun(runId);
+    if (cards.length) {
+      return {
+        count: cards.length,
+        html: '<div style="display:flex;flex-wrap:wrap;gap:10px">' + cards.join('') + '</div>',
+      };
+    }
+    var settled = (_nativeGalleryRunId !== undefined) && (_chartsCache !== undefined);
+    if (!settled) {
+      _loadNativeGallery();
+      _loadCharts('viz-charts-panel');
+      return {
+        count: 0,
+        html: '<p class="muted" style="margin:0;font-size:0.85em">figures load on the Visualizations tab</p>',
+      };
+    }
+    return {
+      count: 0,
+      html: '<p class="muted" style="margin:0;font-size:0.85em">no figures for this run</p>',
+    };
+  }
+
+  // Once a late (async) native-gallery/charts fetch settles, refresh an
+  // already-open run-detail panel in place — guarded on the mount still
+  // being in the DOM (closing the panel clears #run-detail-figures, so a
+  // stale notification after close is a harmless no-op, never a throw).
+  function _notifyFigureDataAvailable() {
+    if (!_currentRunDetailRow) return;
+    var mount = document.getElementById('run-detail-figures');
+    if (!mount) return;
+    var r = _runDetailFiguresHtml(_currentRunDetailRow);
+    mount.innerHTML = r.html;
+    _wireFigureRunLinks(mount);
+  }
+
+  // Task E3: report cards are STUDY-level — report_card_urls is keyed by
+  // card name (see _renderRichReportCard below), with no run_id anywhere in
+  // its shape. So this never fabricates a per-run association; it's a
+  // compact pointer to the Tests tab, where every card already renders
+  // inline (C6, _bindReportCardRowExpanders).
+  function _runDetailReportCardsHtml() {
+    var urls = (window._study && window._study.report_card_urls) || {};
+    var n = Object.keys(urls).length;
+    if (!n) {
+      return '<p class="muted" style="margin:0;font-size:0.85em">no report cards for this study</p>';
+    }
+    return '<p class="muted" style="margin:0;font-size:0.85em">' + n + ' report card'
+      + (n === 1 ? '' : 's') + ' for this study — '
+      + '<a href="#" onclick="_gotoStudyTab(\'tests\');return false;">Report cards → Tests</a></p>';
+  }
+
+  // Task E3: compact results/analysis line — surfaces values already known
+  // (figure count just rendered above, whether a raw store exists, step
+  // count already shown in the metadata block) rather than computing
+  // anything new.
+  function _runDetailResultsSummaryHtml(row, figureCount, hasData) {
+    var e = window.SimTable.esc;
+    var bits = [
+      figureCount ? (figureCount + ' figure' + (figureCount === 1 ? '' : 's') + ' above') : 'no figures for this run',
+      hasData ? 'raw store available (⬇ Data)' : 'no persisted store',
+    ];
+    if (row.n_steps != null) bits.push(row.n_steps + ' steps');
+    return '<p class="muted" style="margin:0;font-size:0.85em">'
+      + bits.map(function (b) { return e(String(b)); }).join(' · ') + '</p>';
+  }
+
   // Baseline native-analysis gallery — the study's latest completed run's
   // viz.json panels (mass fractions, cell mass, replication, …). Each panel is
   // a self-contained Altair/Plotly doc, so it renders in its own srcdoc iframe
@@ -420,6 +537,8 @@
           _figuresSourceState.native = false;
           _updateFiguresEmptyState();
           _nativeGalleryLoaded = false;  // allow a retry after a run completes
+          _nativeGalleryRunId = null;    // Task E3: settled — no run to match
+          _notifyFigureDataAvailable();
           return;
         }
         function attr(s) { return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
@@ -447,6 +566,8 @@
         _wireFigureRunLinks(host);
         _figuresSourceState.native = true;
         _updateFiguresEmptyState();
+        _nativeGalleryRunId = runId || null;  // Task E3: settled
+        _notifyFigureDataAvailable();
       })
       .catch(function () {
         host.innerHTML = '<p class="muted" style="padding:8px">Failed to load baseline figures.</p>';
@@ -606,9 +727,10 @@
   window._loadStudySims = _loadStudySims;
 
   // Per-run detail panel (opened by clicking a row in the study Simulations
-  // table): metadata + robust downloads + open-in-Composite-Explorer, which
-  // renders that run's results/state. No new backend — reuses the run's
-  // store_path/db_path/spec_id already on the row and existing endpoints.
+  // table): metadata + robust downloads + open-in-Composite-Explorer, PLUS
+  // (Task E3) that run's figures/report-cards/results inline, so Simulations
+  // is a real per-run hub — no new backend, reuses the run's store_path/
+  // db_path/spec_id already on the row and existing endpoints/renderers.
   function _showRunDetail(row) {
     var host = document.getElementById('study-run-detail');
     if (!host || !row) return;
@@ -633,6 +755,13 @@
     var kv = function (k, v) {
       return '<div style="display:flex;gap:8px"><span class="muted" style="min-width:90px">' + e(k) + '</span><span>' + v + '</span></div>';
     };
+    _currentRunDetailRow = row;
+    var figs = _runDetailFiguresHtml(row);
+    var rcHtml = _runDetailReportCardsHtml();
+    var resultsHtml = _runDetailResultsSummaryHtml(row, figs.count, hasData);
+    var sectionLabel = function (label) {
+      return '<div class="muted" style="font-size:0.78em;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px">' + e(label) + '</div>';
+    };
     host.innerHTML =
       '<div class="panel" style="padding:12px 14px">' +
         '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">' +
@@ -648,7 +777,13 @@
           (row.n_steps != null ? kv('Steps', e(row.n_steps)) : '') +
         '</div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:8px">' + dl + ' ' + an + ' ' + explore + '</div>' +
+        '<div style="margin-top:12px">' + sectionLabel('Figures') +
+          '<div id="run-detail-figures">' + figs.html + '</div>' +
+        '</div>' +
+        '<div style="margin-top:10px">' + sectionLabel('Report cards') + rcHtml + '</div>' +
+        '<div style="margin-top:10px">' + sectionLabel('Results') + resultsHtml + '</div>' +
       '</div>';
+    _wireFigureRunLinks(host);
     host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   window._showRunDetail = _showRunDetail;
@@ -679,6 +814,8 @@
           if (panelId === 'viz-charts-panel') {
             _figuresSourceState.charts = false;
             _updateFiguresEmptyState();
+            _chartsCache = [];  // Task E3: settled — no charts to match a run
+            _notifyFigureDataAvailable();
           }
           return;
         }
@@ -704,6 +841,8 @@
         if (panelId === 'viz-charts-panel') {
           _figuresSourceState.charts = true;
           _updateFiguresEmptyState();
+          _chartsCache = d.charts;  // Task E3: settled — per-item run_id (V3)
+          _notifyFigureDataAvailable();
         }
       })
       .catch(function(e) {
