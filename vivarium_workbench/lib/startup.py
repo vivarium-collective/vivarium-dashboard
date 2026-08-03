@@ -68,11 +68,12 @@ def serve_fastapi(workspace: Path, port: int, host: str = "127.0.0.1", base_path
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
-    # Surface the remote sms-api config at startup so a fresh operator (or Chris
+    # Surface the remote viva-api config at startup so a fresh operator (or Chris
     # trying "switch to remote") sees immediately whether the endpoint is reachable.
-    # Only probe when SMS_API_BASE is explicitly set — a local-only user hasn't opted
-    # into remote and shouldn't pay a probe delay. Best-effort: never blocks/raises.
-    if os.environ.get("SMS_API_BASE"):
+    # Only probe when VIVA_API_BASE/SMS_API_BASE is explicitly set — a local-only
+    # user hasn't opted into remote and shouldn't pay a probe delay. Best-effort:
+    # never blocks/raises.
+    if os.environ.get("VIVA_API_BASE") or os.environ.get("SMS_API_BASE"):
         try:
             from vivarium_workbench.lib.workspace_deps_views import remote_health
             _h = remote_health()

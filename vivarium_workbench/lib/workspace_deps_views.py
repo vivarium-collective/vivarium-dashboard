@@ -22,8 +22,12 @@ from typing import Optional
 # ---------------------------------------------------------------------------
 
 def _sms_api_base() -> str:
-    """Base URL of the sms-api (the SSM tunnel by default)."""
-    return os.environ.get("SMS_API_BASE", "http://localhost:8080")
+    """Base URL of the viva-api (nee sms-api; the SSM tunnel by default).
+
+    ``VIVA_API_BASE`` is the canonical name; ``SMS_API_BASE`` is kept as a
+    fallback alias since the backend repo was renamed sms-api -> viva-api.
+    """
+    return os.environ.get("VIVA_API_BASE") or os.environ.get("SMS_API_BASE", "http://localhost:8080")
 
 
 def build_source_builds() -> dict:
@@ -50,7 +54,7 @@ def remote_health() -> dict:
     from vivarium_workbench.lib.sms_api_client import SmsApiClient
 
     base = _sms_api_base()
-    configured = bool(os.environ.get("SMS_API_BASE"))
+    configured = bool(os.environ.get("VIVA_API_BASE") or os.environ.get("SMS_API_BASE"))
     try:
         version = SmsApiClient(base).ping()
         return {"configured": configured, "base_url": base, "reachable": True,
