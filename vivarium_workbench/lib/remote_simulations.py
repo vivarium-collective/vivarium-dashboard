@@ -32,7 +32,9 @@ _EMITTER_LABEL = {"sqlite": "SQLite", "parquet": "Parquet", "xarray": "XArray", 
 
 
 def _sms_api_base() -> str:
-    return os.environ.get("SMS_API_BASE", "http://localhost:8080")
+    # VIVA_API_BASE is canonical; SMS_API_BASE is a fallback alias (backend
+    # repo was renamed sms-api -> viva-api).
+    return os.environ.get("VIVA_API_BASE") or os.environ.get("SMS_API_BASE", "http://localhost:8080")
 
 
 def _builds_list(versions_resp) -> list:

@@ -1,10 +1,11 @@
 # vivarium-workbench — container image
 
 **This repo owns the workbench container image.** The Kubernetes **deployment
-lives in [`sms-api/kustomize`](https://github.com/vivarium-collective/sms-api)**,
-where the workbench is deployed as a peer service of sms-api — one deploy of
-sms-api brings the workbench up too. Keeping a single authoritative home for the
-manifests (in sms-api) avoids "which kustomize is real?" confusion.
+lives in [`viva-api/kustomize`](https://github.com/vivarium-collective/viva-api)**
+(the renamed `sms-api` repo), where the workbench is deployed as a peer service
+of viva-api — one deploy of viva-api brings the workbench up too. Keeping a
+single authoritative home for the manifests (in viva-api) avoids "which
+kustomize is real?" confusion.
 
 See [`docs/REFACTOR-PLAN.md`](../docs/REFACTOR-PLAN.md) §2B (deployment & storage)
 and §5C (demo track & rollout) for the decisions behind this.
