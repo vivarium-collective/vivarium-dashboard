@@ -79,3 +79,34 @@ def test_discard_evicts(pool, tmp_path):
     assert pool.size() == 1
     pool.discard(tmp_path)
     assert pool.size() == 0
+
+
+def test_call_timeout_default_config_and_override(monkeypatch):
+    # Default 60s (backward-compatible); constructor + env var override.
+    assert WorkerPool().call_timeout == 60
+    assert WorkerPool(call_timeout=1800).call_timeout == 1800
+    # get_env reads the VIVARIUM_WORKBENCH_-prefixed name (as the other knobs do).
+    monkeypatch.setenv("VIVARIUM_WORKBENCH_ENV_WORKER_CALL_TIMEOUT", "900")
+    assert WorkerPool().call_timeout == 900
+
+
+def test_pool_passes_call_timeout_to_envworker(monkeypatch, tmp_path):
+    # The pool must thread its call_timeout into each spawned EnvWorker so long
+    # baselines don't trip the default 60s socket timeout.
+    captured = {}
+
+    class _FakeWorker:
+        def __init__(self, ws, *, interpreter=None, timeout=None):
+            captured["timeout"] = timeout
+        def alive(self):
+            return True
+        def call(self, method, params=None):
+            return {"ok": True}
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.env_worker_pool.EnvWorker", _FakeWorker)
+    p = WorkerPool(call_timeout=1234)
+    p.call(tmp_path, "ping", interpreter="/usr/bin/python3")
+    assert captured["timeout"] == 1234
