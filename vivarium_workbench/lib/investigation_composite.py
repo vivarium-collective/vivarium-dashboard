@@ -36,10 +36,9 @@ process-bigraph's ``artifacts`` module carries).
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
-
-from process_bigraph.artifacts import TRAJECTORY
 
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib.study_spec import study_interface, study_dir
@@ -155,6 +154,10 @@ def build_investigation_document(ws_root: Path | str, inv_slug: str) -> dict:
     Raises :class:`InvestigationCompositeError` if the investigation itself is
     missing/unreadable or declares no resolvable members.
     """
+    from process_bigraph.artifacts import TRAJECTORY  # local: keep this module
+    # importable without requiring process_bigraph, matching
+    # workspace_commit/node_cache_status's local-import pattern in this file.
+
     ws_root = Path(ws_root)
     inv_spec = _load_investigation_spec(ws_root, inv_slug)
 

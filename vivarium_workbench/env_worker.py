@@ -88,7 +88,7 @@ _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
                  "run_process", "process_template",
                  "viz_classes", "resolve_composite_state", "observables",
                  "study_readout_check", "attach_process_docs", "discover_composites", "composites_full",
-                 "validate_generated_visualization", "run_study_analyses", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
+                 "validate_generated_visualization", "run_study_analyses", "run_study", "run_investigation_analysis", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
 
 _FRAMEWORK_PKGS = {
     "process_bigraph", "bigraph_schema", "bigraph_viz",
@@ -1480,6 +1480,394 @@ def _run_study_analyses(params: dict) -> dict:
              "traceback": traceback.format_exc()}]}
 
 
+def _run_investigation_analysis(params: dict) -> dict:
+    """Run ONE investigation-level Analysis directly (investigation-as-composite
+    design, §Architecture 2-3): the ``AnalysisStep`` dispatches here rather than
+    through ``run_study_analyses``, which is structurally unusable for this case
+    — its ``build_cell_records`` globs a study's ``history/**/*.pq`` sweep output
+    and returns ``{}`` for an investigation dir, so the Analysis would silently
+    never run (the #712 blocker). Here the Analysis is invoked directly:
+    ``ANALYSIS_REGISTRY[name](config, core=allocate_core()).update()`` — no
+    parquet, no scale lookup, no ``run_analyses`` sweep machinery.
+
+    ``params``:
+      - ``workspace`` (str) — the workspace root (used only to import the
+        workspace's own package, matching ``_run_study_analyses``).
+      - ``name`` (str, required) — the ``ANALYSIS_REGISTRY`` key.
+      - ``config`` (dict) — the Analysis's ``config_schema`` payload (e.g. for a
+        config-only Analysis like ``comparison_matrix``, ``config_verdicts`` +
+        whatever else it declares).
+      - ``report_dir`` (str, required) — directory each string-valued output is
+        written into, as ``<report_dir>/<name>_<key>.html`` (created if absent).
+
+    Returns ``{"written": [paths], "errors": [dicts]}``. NEVER raises — an
+    unknown ``name``, a missing/failed ``ANALYSIS_REGISTRY`` import, a bad
+    ``config``, or a raising ``update()`` all land in ``errors`` instead.
+    """
+    import traceback
+    from pathlib import Path
+
+    p = params or {}
+    workspace = p.get("workspace") or _workspace
+    name = p.get("name")
+    config = p.get("config") if isinstance(p.get("config"), dict) else {}
+    report_dir = p.get("report_dir")
+
+    if not name:
+        return {"written": [], "errors": [{"error": "missing name"}]}
+    if not report_dir:
+        return {"written": [], "errors": [{"error": "missing report_dir"}]}
+
+    if workspace and workspace not in sys.path:
+        sys.path.insert(0, workspace)
+    _import_workspace_package(workspace)
+
+    try:
+        from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
+    except ImportError as exc:
+        return {"written": [], "errors": [
+            {"error": f"v2ecoli not installed; cannot resolve analysis {name!r}: "
+                      f"{type(exc).__name__}: {exc}"}]}
+
+    step_cls = ANALYSIS_REGISTRY.get(name)
+    if step_cls is None:
+        return {"written": [], "errors": [
+            {"error": f"unknown analysis {name!r} (not in ANALYSIS_REGISTRY)"}]}
+
+    try:
+        from bigraph_schema import allocate_core
+        step = step_cls(config, core=allocate_core())
+        outputs = step.update() or {}
+    except Exception as exc:  # noqa: BLE001 — never crash the run
+        return {"written": [], "errors": [
+            {"analysis": name,
+             "error": f"{type(exc).__name__}: {exc}",
+             "traceback": traceback.format_exc()}]}
+
+    written: list = []
+    errors: list = []
+    try:
+        out_dir = Path(report_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        for key, value in outputs.items():
+            if not isinstance(value, str):
+                continue
+            out_file = out_dir / f"{name}_{key}.html"
+            out_file.write_text(value, encoding="utf-8")
+            written.append(str(out_file))
+    except Exception as exc:  # noqa: BLE001 — never crash the run
+        errors.append({"analysis": name,
+                       "error": f"write failed: {type(exc).__name__}: {exc}",
+                       "traceback": traceback.format_exc()})
+
+    return {"written": written, "errors": errors}
+
+
+def _declared_variant_names(ws_root, study_slug: str) -> list:
+    """Best-effort: the variant names declared in a study's ``study.yaml``
+    (v3 top-level ``variants:`` list, or v4 ``conditions.variants:`` projected
+    onto that legacy shape) — mirrors exactly how
+    ``vivarium_workbench.lib.study_runs.run_study_variant`` loads + projects
+    the spec, so a variant name returned here is guaranteed resolvable by it.
+
+    Used by ``_run_study`` to default ``run_spec["variants"]`` to "every
+    declared variant" when the caller doesn't name any explicitly (the
+    ``StudyStep`` composite-dispatch shape never does — see module docstring
+    below). Never raises: any missing/unreadable study.yaml, or an import/
+    projection failure, yields an empty list (baseline-only), same as if the
+    study genuinely declares no variants.
+    """
+    try:
+        from vivarium_workbench.lib import study_runs as _study_runs
+        from vivarium_workbench.lib import study_spec as _study_spec
+        from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
+        import yaml as _yaml
+
+        study_dir = _study_runs._resolve_study_dir(ws_root, study_slug)
+        sf = _study_spec.study_spec_file(study_dir)
+        if not sf.is_file():
+            return []
+        spec = _yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+        spec = migrate_v2_to_v3(spec)
+        if spec.get("schema_version") == 4 and isinstance(spec.get("conditions"), dict):
+            from vivarium_workbench.lib.investigations import (
+                _project_v4_redesign_to_legacy_view,
+            )
+            spec = _project_v4_redesign_to_legacy_view(spec)
+        return [
+            v.get("name") for v in (spec.get("variants") or [])
+            if isinstance(v, dict) and v.get("name")
+        ]
+    except Exception:  # noqa: BLE001 — best-effort; never blocks the run
+        return []
+
+
+def _run_study(params: dict) -> dict:
+    """Run a Study's baseline (plus any ``run_spec``-named variants) TO
+    COMPLETION, synchronously, in this worker process.
+
+    This is the ``run_study`` worker capability from the investigation-as-
+    composite design (§Architecture 2): the ``StudyStep`` blocks on this call
+    as *its* async boundary, so — unlike the HTTP routes — there is nothing
+    left to detach here.
+
+    Reuses ``vivarium_workbench.lib.study_runs.run_study_baseline`` /
+    ``run_study_variant`` verbatim for the composite/params/sim_name
+    resolution + launch (both already resolve to a synchronous, BLOCKING
+    ``subprocess.run(...)`` inside ``composite_subprocess.run_composite_subprocess``
+    — there is no detach to undo; the HTTP routes that call them are plain
+    (sync) FastAPI handlers that already block the calling thread until the
+    subprocess exits and the full post-run flush — viz/analyses/outcomes/
+    conclusion-card — has run). This function just calls them directly with
+    ``ws_root`` from ``params``, then harvests the durable artifacts they
+    wrote rather than trusting their transient response dicts:
+      - run refs: rows from ``studies/<slug>/runs.db``'s ``runs_meta`` table
+        for each ``simulation_id`` returned by a launch call;
+      - verdict: the conclusion-card JSON
+        (``<study_dir>/viz/report_card/conclusion.verdict.json``) the
+        baseline/variant post-run flush writes via
+        ``conclusion_card.write_conclusion_card``.
+
+    ``params``:
+      - ``workspace`` (str, required) — the workspace root. Falls back to
+        this worker's own ``--workspace`` if omitted (they're normally the
+        same environment; explicit in ``params`` for parity with the
+        capability's documented contract).
+      - ``study_slug`` (str, required) — the study to run.
+      - ``run_spec`` (dict, optional):
+          - ``composite`` — baseline entry name (default: baseline[0]).
+          - ``steps`` — overrides ``params.n_steps`` for every launch.
+          - ``overrides`` — param overrides layered onto the baseline entry.
+          - ``variants`` — list of variant names (``spec.yaml`` ``variants[].name``)
+            to also run, each via ``run_study_variant``. When the key is
+            ABSENT entirely (e.g. the ``StudyStep`` composite dispatch, which
+            only sends ``{workspace, study_slug}``), this DEFAULTS to every
+            variant the study's ``study.yaml`` declares — matching the old
+            ``prepare_investigation`` full-run behavior (baseline + every
+            comparison variant), so composite-driven runs don't silently
+            drop variants a ``comparative_visualizations`` overlay
+            references. Pass an explicit empty list (``[]``) to run
+            baseline-only.
+
+    Returns ``{"run_refs": [...], "verdict": {...} | None, "errors": [...],
+    "analyses": {name: <output dict incl. "verdict">, ...}}`` — the
+    ``"analyses"`` key (store data-flow refactor, Task 1) is present only
+    when the study's ``study.yaml`` declares an ``analyses:`` list; each
+    entry is invoked directly (``ANALYSIS_REGISTRY[name]({**params,
+    study_dir, runs_db}, core=allocate_core()).update()``), mirroring
+    ``_run_investigation_analysis``, so a config study's comparison verdict
+    (e.g. ``comparison_cards``) flows back in this reply instead of via
+    disk. NEVER raises — a missing workspace/study, an unavailable
+    ``vivarium_workbench.lib`` (this worker runs on the WORKSPACE's own
+    interpreter, which may not have it installed), a failed baseline/variant
+    launch, a harvest failure, or an analysis failure all land in ``errors``
+    instead.
+    """
+    import sqlite3
+    import traceback
+    from pathlib import Path as _Path
+
+    p = params or {}
+    workspace = p.get("workspace") or _workspace
+    study_slug = p.get("study_slug")
+    run_spec = p.get("run_spec")
+    if not isinstance(run_spec, dict):  # tolerate malformed caller input
+        run_spec = {}
+
+    result: dict = {"run_refs": [], "verdict": None, "errors": []}
+    if not workspace:
+        result["errors"].append({"stage": "params", "error": "missing workspace"})
+        return result
+    if not study_slug:
+        result["errors"].append({"stage": "params", "error": "missing study_slug"})
+        return result
+
+    try:
+        from vivarium_workbench.lib import study_runs as _study_runs
+    except Exception as exc:  # noqa: BLE001 — not installed on this interpreter
+        result["errors"].append({
+            "stage": "import",
+            "error": f"vivarium_workbench.lib.study_runs unavailable: "
+                     f"{type(exc).__name__}: {exc}",
+        })
+        return result
+
+    ws_root = _Path(workspace)
+    run_ids: list = []
+
+    def _launch(stage: str, fn, body: dict) -> None:
+        try:
+            resp, code = fn(ws_root, body)
+        except Exception as exc:  # noqa: BLE001 — a launch must never raise out
+            result["errors"].append({
+                "stage": stage, "error": f"{type(exc).__name__}: {exc}",
+                "traceback": traceback.format_exc(),
+            })
+            return
+        run_id = resp.get("simulation_id") if isinstance(resp, dict) else None
+        if code != 200:
+            entry = {"stage": stage, "status": code}
+            if isinstance(resp, dict):
+                entry["error"] = resp.get("error") or resp
+            result["errors"].append(entry)
+        if run_id:
+            run_ids.append(run_id)
+
+    # 1. Baseline — always. skip_analyses=True: this function invokes the
+    #    study's declared analyses: itself (step 5, below), with real
+    #    study_dir/runs_db context — the parquet post-run flush must not
+    #    double-run them (store data-flow refactor, Task 1). Threaded via
+    #    the body dict (not a call kwarg) — run_study_baseline/
+    #    run_study_variant pop it off before building launch params, so it
+    #    layers onto the body shape every caller already sends.
+    baseline_body: dict = {"study": study_slug, "skip_analyses": True}
+    if run_spec.get("composite"):
+        baseline_body["composite"] = run_spec["composite"]
+    if run_spec.get("steps") is not None:
+        baseline_body["steps"] = run_spec["steps"]
+    if run_spec.get("overrides"):
+        baseline_body["overrides"] = run_spec["overrides"]
+    _launch("baseline", _study_runs.run_study_baseline, baseline_body)
+
+    # 2. run_spec-named variants — default to EVERY study-declared variant
+    #    when the caller didn't name any explicitly (the StudyStep composite
+    #    dispatch never does; see the run_spec.variants docstring above).
+    #    An explicit "variants" key (including []) is honored as-is.
+    if "variants" in run_spec:
+        variant_names = run_spec.get("variants") or []
+    else:
+        variant_names = _declared_variant_names(ws_root, study_slug)
+    for variant_name in variant_names:
+        variant_body: dict = {
+            "study": study_slug, "variant": variant_name, "skip_analyses": True,
+        }
+        if run_spec.get("steps") is not None:
+            variant_body["steps"] = run_spec["steps"]
+        _launch(f"variant:{variant_name}", _study_runs.run_study_variant, variant_body)
+
+    # 3. Harvest run refs from runs.db — the canonical record, not the
+    #    transient response dicts above (F2 convention: runs_meta IS the
+    #    source of truth for a completed run).
+    try:
+        study_dir = _study_runs._resolve_study_dir(ws_root, study_slug)
+    except Exception as exc:  # noqa: BLE001
+        result["errors"].append({
+            "stage": "resolve_study_dir", "error": f"{type(exc).__name__}: {exc}",
+        })
+        study_dir = None
+
+    if study_dir is not None and run_ids:
+        db_file = study_dir / "runs.db"
+        if db_file.is_file():
+            try:
+                conn = sqlite3.connect(str(db_file))
+                conn.row_factory = sqlite3.Row
+                placeholders = ",".join("?" for _ in run_ids)
+                rows = conn.execute(
+                    "SELECT run_id, spec_id, label, sim_name, status, "
+                    "started_at, completed_at, n_steps FROM runs_meta "
+                    f"WHERE run_id IN ({placeholders})",
+                    run_ids,
+                ).fetchall()
+                conn.close()
+                by_id = {r["run_id"]: dict(r) for r in rows}
+                # Preserve launch order; a run_id present in run_ids but
+                # missing from runs_meta (e.g. a delegated-ensemble variant
+                # whose row didn't land under this run_id) is skipped rather
+                # than fabricated.
+                result["run_refs"] = [by_id[rid] for rid in run_ids if rid in by_id]
+            except Exception as exc:  # noqa: BLE001
+                result["errors"].append({
+                    "stage": "harvest_run_refs", "error": f"{type(exc).__name__}: {exc}",
+                })
+
+    # 4. Verdict — the conclusion-card the post-run flush already wrote.
+    if study_dir is not None:
+        verdict_file = study_dir / "viz" / "report_card" / "conclusion.verdict.json"
+        if verdict_file.is_file():
+            try:
+                import json as _json
+                result["verdict"] = _json.loads(verdict_file.read_text(encoding="utf-8"))
+            except Exception as exc:  # noqa: BLE001
+                result["errors"].append({
+                    "stage": "read_verdict", "error": f"{type(exc).__name__}: {exc}",
+                })
+
+    # 5. Per-study analyses — invoked DIRECTLY (store data-flow refactor,
+    #    Task 1; design §1), the same way _run_investigation_analysis
+    #    invokes an investigation-level Analysis: ANALYSIS_REGISTRY[name]
+    #    (config, core=allocate_core()).update(). Unlike the parquet
+    #    post-flush's run_study_analyses (skipped above via skip_analyses),
+    #    each Analysis is handed study_dir/runs_db directly — so e.g.
+    #    comparison_cards, which resolves its candidate_run/reference_run
+    #    from the study's runs.db, gets the context it needs by
+    #    construction, not by discovering it. Only added to the reply when
+    #    the study declares at least one analysis (additive, no key when
+    #    empty — a study with no analyses: behaves exactly as before).
+    analyses_entries: list = []
+    if study_dir is not None:
+        try:
+            from vivarium_workbench.lib import study_spec as _study_spec
+            from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
+            import yaml as _yaml
+
+            sf = _study_spec.study_spec_file(study_dir)
+            if sf.is_file():
+                a_spec = _yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+                a_spec = migrate_v2_to_v3(a_spec)
+                if a_spec.get("schema_version") == 4 and isinstance(a_spec.get("conditions"), dict):
+                    from vivarium_workbench.lib.investigations import (
+                        _project_v4_redesign_to_legacy_view,
+                    )
+                    a_spec = _project_v4_redesign_to_legacy_view(a_spec)
+                analyses_entries = [
+                    e for e in (a_spec.get("analyses") or []) if isinstance(e, dict) and e.get("name")
+                ]
+        except Exception as exc:  # noqa: BLE001 — best-effort; never blocks the run
+            result["errors"].append({
+                "stage": "load_analyses_spec", "error": f"{type(exc).__name__}: {exc}",
+            })
+
+    if analyses_entries:
+        result["analyses"] = {}
+        try:
+            from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
+        except Exception as exc:  # noqa: BLE001
+            result["errors"].append({
+                "stage": "analyses",
+                "error": f"v2ecoli not installed; cannot resolve analyses: "
+                         f"{type(exc).__name__}: {exc}",
+            })
+            ANALYSIS_REGISTRY = {}
+        for entry in analyses_entries:
+            a_name = entry.get("name")
+            a_params = entry.get("params") if isinstance(entry.get("params"), dict) else {}
+            step_cls = ANALYSIS_REGISTRY.get(a_name)
+            if step_cls is None:
+                result["errors"].append({
+                    "stage": f"analysis:{a_name}", "analysis": a_name,
+                    "error": f"unknown analysis {a_name!r} (not in ANALYSIS_REGISTRY)",
+                })
+                continue
+            config = {
+                **a_params,
+                "study_dir": str(study_dir),
+                "runs_db": str(study_dir / "runs.db"),
+            }
+            try:
+                from bigraph_schema import allocate_core
+                step = step_cls(config, core=allocate_core())
+                result["analyses"][a_name] = step.update() or {}
+            except Exception as exc:  # noqa: BLE001 — never crash the run
+                result["errors"].append({
+                    "stage": f"analysis:{a_name}", "analysis": a_name,
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "traceback": traceback.format_exc(),
+                })
+
+    return result
+
+
 # --- viz rendering (spec §11): build_core + viz-class registration + Composite.run
 #     all in-worker (live viz classes + core can't cross the socket). Cached per
 #     worker — build_core is ~15s and every viz render reuses it. --------------
@@ -2365,6 +2753,10 @@ def _handle(method: str, params: dict) -> dict:
         return _validate_generated_visualization(params)
     if method == "run_study_analyses":
         return _run_study_analyses(params)
+    if method == "run_study":
+        return _run_study(params)
+    if method == "run_investigation_analysis":
+        return _run_investigation_analysis(params)
     if method == "viz_class_inputs":
         return _viz_class_inputs()
     if method == "render_viz_doc":

@@ -29,3 +29,14 @@ def investigation_member_slugs(spec: dict[str, Any]) -> list:
     if not isinstance(spec, dict):
         return []
     return list(spec.get("studies") or spec.get("members") or [])
+
+
+def member_slug(entry: Any) -> str | None:
+    """Normalize one member-list entry (a bare slug string or a
+    ``{study|slug|name: ...}`` dict, per ``investigation_member_slugs``) to its
+    slug string, or ``None`` if unresolvable."""
+    if isinstance(entry, str):
+        return entry or None
+    if isinstance(entry, dict):
+        return entry.get("study") or entry.get("slug") or entry.get("name")
+    return None
