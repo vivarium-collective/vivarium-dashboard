@@ -55,10 +55,17 @@ class _Entry:
 class WorkerPool:
     """A bounded pool of warm env workers keyed by ``(workspace, interpreter)``."""
 
-    def __init__(self, *, max_workers: int | None = None, idle_ttl: float | None = None):
+    def __init__(self, *, max_workers: int | None = None, idle_ttl: float | None = None,
+                 call_timeout: float | None = None):
         # K and T_idle (seconds), config-overridable (plan §G).
         self.max_workers = max_workers if max_workers is not None else _int_env("ENV_WORKER_POOL_MAX", 8)
         self.idle_ttl = idle_ttl if idle_ttl is not None else _int_env("ENV_WORKER_IDLE_TTL", 900)
+        # Per-call socket timeout (seconds). 60s suits interactive calls, but a
+        # long baseline (e.g. a multi-generation ecoli_baseline, default 2700
+        # steps, ~minutes) dispatched through the pool would exceed it and trip
+        # EnvWorkerUnavailable → one respawn → fail. Config-overridable so such
+        # workloads can raise it; default unchanged (backward-compatible).
+        self.call_timeout = call_timeout if call_timeout is not None else _int_env("ENV_WORKER_CALL_TIMEOUT", 60)
         self._entries: dict[tuple[str, str], _Entry] = {}
         self._lock = threading.Lock()
 
@@ -111,7 +118,7 @@ class WorkerPool:
                     to_close.append(self._entries.pop(key).worker)
                 while len(self._entries) >= self.max_workers and self._entries:
                     to_close.append(self._pop_lru_locked())  # LRU cap (protocol §17)
-                worker = EnvWorker(ws, interpreter=interp)   # lazy spawn (Popen is ~ms; build_core is on first call)
+                worker = EnvWorker(ws, interpreter=interp, timeout=self.call_timeout)  # lazy spawn (Popen is ~ms; build_core is on first call)
                 self._entries[key] = _Entry(worker)
         for w in to_close:
             _safe_close(w)
