@@ -226,7 +226,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     use_generator_path = False
     try:
         from viva_superpowers.composite_generator import _REGISTRY, discover_generators
-        if not _REGISTRY:
+        if spec_id not in _REGISTRY:
             discover_generators()
         use_generator_path = spec_id in _REGISTRY
     except ImportError:
@@ -314,7 +314,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                 from vivarium_workbench.lib import composite_runs as cr
                 from bigraph_schema.json_codec import BigraphJSONEncoder as _BJE
                 _payload = {payload!r}
-                if not _REGISTRY: discover_generators()
+                if _payload['spec_id'] not in _REGISTRY: discover_generators()
                 entry = _REGISTRY[_payload['spec_id']]
                 core = build_core()
                 core.register_link('SQLiteEmitter', SQLiteEmitter)
