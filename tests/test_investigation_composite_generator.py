@@ -220,7 +220,10 @@ def test_engine_runs_studies_in_prereq_order_then_analysis_last(tmp_path, monkey
     ], methods_and_slugs
 
     analysis_call = fake_pool.calls[-1]
+    # config_verdicts carries the EXTRACTED verdict per study (store data-flow
+    # refactor): each reply here has only a top-level `verdict` (no `analyses`),
+    # so _extract_study_verdict returns that verdict, not the raw reply.
     assert analysis_call[2]["config"]["config_verdicts"] == {
-        "A": {"run_refs": ["r1"], "verdict": {"study": "A", "overall": "pass"}},
-        "B": {"run_refs": ["r1"], "verdict": {"study": "B", "overall": "pass"}},
+        "A": {"study": "A", "overall": "pass"},
+        "B": {"study": "B", "overall": "pass"},
     }
