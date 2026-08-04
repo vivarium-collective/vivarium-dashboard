@@ -303,6 +303,7 @@ from vivarium_workbench.lib.models import (
     WorkspacesOkResponse,
     WorkspaceEntry,
     # C-state-3h2: misc FS/render routes
+    RenderRequest,
     RenderResponse,
     # C-state-3i: visualization-accept finalize route
     VisualizationAcceptBody,
@@ -6744,13 +6745,24 @@ def create_app() -> FastAPI:
         summary="Re-render the workspace dashboard in-process",
     )
     def render(
-        body: dict = Body(default={}),
+        req: Optional[RenderRequest] = None,
         ws: Path = Depends(get_workspace),
     ) -> JSONResponse:
         """Re-render the workspace dashboard report in-process.
 
-        Mirrors the stdlib ``POST /api/render``.  Calls
-        ``render_workspace_report(ws)``; the request body is accepted and ignored.
+        Mirrors the stdlib ``POST /api/render`` plus two Phase 2.1d additions
+        ported from the old ``/viva-report`` skill's CLI render usage (so the
+        skill can call this endpoint as a thin client instead of reimplementing
+        the render):
+
+          - ``today`` — forwarded into the render for a byte-stable CI render
+            (the old ``--today`` option).
+          - ``force`` — before rendering, logs every currently-blocking
+            (error-level, not-yet-overridden) report-lint finding to
+            ``.pbg/report-lint-overrides.json`` (the old forced-render path).
+
+        Both fields are optional and an absent/empty body preserves the
+        previous unconditional-render behavior.
 
         Status codes (byte-identical to the legacy handler):
           - 200  ``{"ok": True}``
@@ -6760,7 +6772,8 @@ def create_app() -> FastAPI:
         pure ``lib.misc_mutations.render_dashboard``; every path is wrapped in
         ``JSONResponse`` so the lib-returned status code is preserved verbatim.
         """
-        resp, status = _misc_mut.render_dashboard(ws)
+        body = req.model_dump(exclude_none=True) if req is not None else {}
+        resp, status = _misc_mut.render_dashboard(ws, body)
         return JSONResponse(status_code=status, content=resp)
 
     # -----------------------------------------------------------------------

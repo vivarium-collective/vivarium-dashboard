@@ -412,16 +412,39 @@ def build_report_lint(ws_root: Path) -> tuple[dict, int]:
     Runs the deterministic linter (``viva_superpowers.report_linter``) over
     the workspace and returns ``(payload_dict, status_code)``.  Always 200 —
     tolerant on linter absence or workspace scan failure.
+
+    Phase 2.1d: also applies ``<ws>/.pbg/report-lint-overrides.json`` the same
+    way the old ``/viva-report`` skill/CLI did (``report_linter``-backed
+    ``viva_superpowers.report.render_workspace_report``'s lint step) — an
+    error-level finding whose ``override_key`` is logged in the override file
+    is downgraded to a warning (message prefixed ``[overridden]``) via
+    ``report_linter.apply_overrides``. This reuses each finding's own
+    ``override_key`` (derived by ``report_linter._override_key`` at lint
+    time) rather than re-deriving the formula here. Only applies to the
+    findings produced by ``lint_workspace_report`` itself — the dashboard's
+    own supplemental findings below (composite resolution, readout emit-plan,
+    question/approach, visualization gap) were never part of the plugin's
+    override system.
     """
     ws_root = Path(ws_root)
     try:
-        from viva_superpowers.report_linter import lint_workspace_report
+        from viva_superpowers.report_linter import (
+            apply_overrides,
+            lint_workspace_report,
+            load_overrides,
+        )
     except Exception:  # noqa: BLE001 — older viva_superpowers lacks the linter
         return {"findings": []}, 200
     try:
         raw = lint_workspace_report(ws_root)
     except Exception as e:  # noqa: BLE001
         return {"findings": [], "error": str(e)}, 200
+
+    try:
+        overrides = load_overrides(ws_root)
+        raw = apply_overrides(raw, overrides)
+    except Exception:  # noqa: BLE001 — override application must never break the endpoint
+        pass
 
     findings = []
     for f in raw:

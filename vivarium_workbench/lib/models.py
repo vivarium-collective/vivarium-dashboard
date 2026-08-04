@@ -2578,6 +2578,30 @@ class WorkspaceEntry(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class RenderRequest(BaseModel):
+    """POST /api/render request body — ``{"today"?, "force"?}``. Both optional;
+    an absent/empty body preserves the previous unconditional-render behavior.
+
+    Phase 2.1d — makes ``/api/render`` a thin server-side equivalent of the old
+    ``/viva-report`` skill's CLI render usage
+    (``viva_superpowers.report.render_workspace_report``):
+
+      * ``today`` — forwarded into the render as the generation date, for a
+        byte-stable CI render (the old ``--today`` option).
+      * ``force`` — mirrors the old skill's forced-render path
+        (``render_workspace_report(force=True)``): before rendering, every
+        currently-blocking report-lint finding is logged to
+        ``.pbg/report-lint-overrides.json``.
+
+    Source: ``lib.misc_mutations.render_dashboard``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    today: Optional[str] = None
+    force: bool = False
+
+
 class RenderResponse(BaseModel):
     """200-path payload for ``POST /api/render`` — ``{"ok": True}``.
 
