@@ -1594,6 +1594,21 @@ class StudySyncRunsBody(BaseModel):
     study: Optional[str] = None
 
 
+class StudyReadoutMigrateBody(BaseModel):
+    """POST /api/study-readout-migrate {study, write?, apply?}
+
+    ``write`` (or its alias ``apply``) defaults to ``False`` (dry-run),
+    mirroring ``viva_superpowers.readout_migration.migrate_study_file``'s own
+    ``write`` keyword.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    write: Optional[bool] = None
+    apply: Optional[bool] = None
+
+
 class ProposedInputDecisionBody(BaseModel):
     """POST /api/proposed-input-decision {investigation, item_id, decision}"""
 
