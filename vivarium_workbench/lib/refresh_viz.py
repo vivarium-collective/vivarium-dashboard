@@ -1,8 +1,14 @@
-# VENDORED COPY — canonical source is viva_superpowers/refresh_viz.py.
-# Keep identical to the canonical; drift is caught by tests/test_refresh_viz_mirror.py.
 """Re-run the render: command of each visualizations[] entry against the
 study's latest run, stamping provenance. Error-tolerant: a failed render leaves
-the old chart + meta in place (still flagged stale) and never raises."""
+the old chart + meta in place (still flagged stale) and never raises.
+
+De-vendored in Phase 2.1a (this module is now workbench-canonical; the
+plugin's copy is deleted in PR-2). Ported forward two fixes that had drifted
+into the plugin's copy ahead of this one (§0.3 of the 2.1 decomposition
+plan): the VIVA_RUN_DIR/VIVA_RUN_ID env vars alongside the deprecated
+PBG_RUN_* names, and tagging each rendered chart with its producing run via
+chart_store.tag_chart.
+"""
 from __future__ import annotations
 
 import os
@@ -10,7 +16,16 @@ import subprocess
 import time
 from pathlib import Path
 
-from .viz_freshness import stamp_meta
+from viva_superpowers.viz_freshness import stamp_meta          # A.3: plugin-canonical
+
+# TEMPORARY (Phase 2.1a → retired in 2.1c when chart_store moves into lib/).
+# chart_store is still plugin-owned; guarded so a plugin without tag_chart
+# degrades to "chart rendered but not run-tagged" rather than failing the
+# refresh.
+try:
+    from viva_superpowers import chart_store
+except Exception:  # noqa: BLE001
+    chart_store = None
 
 
 def refresh_study_viz(study_dir, spec: dict, latest: dict | None) -> list[dict]:
@@ -30,10 +45,15 @@ def refresh_study_viz(study_dir, spec: dict, latest: dict | None) -> list[dict]:
         # we stamp THAT run id (not the study's latest). Falls back to latest.
         run_id = entry.get("source_run") or (latest or {}).get("run_id")
         env = dict(os.environ)
+        # Set BOTH env names (pbg→viva): new VIVA_* + deprecated PBG_* so any
+        # reader (viz runner, workbench, scaffolded scripts) works either way.
         if latest and latest.get("emitter_path"):
             ep = latest["emitter_path"]
-            env["PBG_RUN_DIR"] = ep if os.path.isabs(ep) else str(study_dir / ep)
+            run_dir = ep if os.path.isabs(ep) else str(study_dir / ep)
+            env["VIVA_RUN_DIR"] = run_dir
+            env["PBG_RUN_DIR"] = run_dir
         if run_id:
+            env["VIVA_RUN_ID"] = run_id
             env["PBG_RUN_ID"] = run_id
         try:
             proc = subprocess.run(filled, shell=True, cwd=study_dir, env=env,
@@ -50,5 +70,12 @@ def refresh_study_viz(study_dir, spec: dict, latest: dict | None) -> list[dict]:
                    source_run_id=run_id,
                    generation_id=(latest or {}).get("generation_id"),
                    rendered_at=time.time(), command=filled)
+        if run_id and chart_store is not None:
+            # Record which run produced this chart so a later canonical run can
+            # prune it as superseded (chart_store; best-effort, never blocks).
+            try:
+                chart_store.tag_chart(chart, run_id)
+            except Exception:
+                pass
         results.append({"name": name, "chart": chart_rel, "status": "rendered"})
     return results
