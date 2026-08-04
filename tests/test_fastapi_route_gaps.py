@@ -175,6 +175,27 @@ def test_study_sync_runs_reaches_lib(tmp_path):
     assert r.status_code == 200
 
 
+def test_study_readout_migrate_reaches_lib(tmp_path):
+    # Phase 2.1d — /api/study-readout-migrate wraps viva_superpowers'
+    # readout_migration.migrate_study_file (dry-run by default). Behavioral +
+    # equivalence coverage lives in test_study_readout_migrate_endpoint.py;
+    # here we assert the route is wired and dry-run never mutates.
+    ws, slug = _study_ws(tmp_path)
+    sy = ws / "studies" / slug / "study.yaml"
+    before = sy.read_text()
+    r = _client(ws).post("/api/study-readout-migrate", json={"study": slug})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["written"] is False
+    assert sy.read_text() == before
+
+
+def test_study_readout_migrate_unknown_study_404(tmp_path):
+    ws, _ = _study_ws(tmp_path)
+    r = _client(ws).post("/api/study-readout-migrate", json={"study": "ghost"})
+    assert r.status_code == 404
+
+
 # ---------------------------------------------------------------------------
 # GROUP B — study-* GET routes
 # ---------------------------------------------------------------------------

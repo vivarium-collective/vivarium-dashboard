@@ -72,6 +72,7 @@ from vivarium_workbench.lib import reference_mutations as _reference_mut
 from vivarium_workbench.lib import composite_mutations as _composite_mut
 from vivarium_workbench.lib import investigation_viz_mutations as _inv_viz_mut
 from vivarium_workbench.lib import lifecycle_mutations as _lifecycle_mut
+from vivarium_workbench.lib import readout_migrate_views as _readout_migrate_views
 from vivarium_workbench.lib import scaffold_mutations as _scaffold_mut
 from vivarium_workbench.lib import composite_state_views as _composite_state_views
 from vivarium_workbench.lib import analysis_viewers as _analysis_viewers
@@ -232,6 +233,7 @@ from vivarium_workbench.lib.models import (
     # study-* comparison/sync request-body models (v3-native)
     StudyComparisonAddBody,
     StudySyncRunsBody,
+    StudyReadoutMigrateBody,
     # DELETE-route request-body models
     SimulationDeleteBody,
     SimulationRunDeleteBody,
@@ -4854,6 +4856,40 @@ def create_app() -> FastAPI:
         server's ``_post_study_sync_runs`` called.
         """
         body, status = _lifecycle_mut.study_sync_runs(ws, req.model_dump(exclude_unset=True))
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return body
+
+    @app.post(
+        "/api/study-readout-migrate",
+        tags=["Studies"],
+        summary="Migrate a study's legacy readouts to canonical form (dry-run by default)",
+    )
+    def study_readout_migrate(
+        req: StudyReadoutMigrateBody,
+        ws: Path = Depends(get_workspace),
+    ) -> dict:
+        """Wraps ``viva_superpowers.readout_migration.migrate_study_file``.
+
+        Body: ``{study, write?: bool, apply?: bool}`` — ``write``/``apply``
+        default to ``False`` (dry-run: compute the migration report without
+        touching ``study.yaml``); ``write: true`` rewrites only the
+        ``readouts:`` block (comment-preserving) and is a true no-op when
+        nothing actually changes.
+
+        Returns the plugin's migration report verbatim (``entries``,
+        ``migrated``, ``needs_human``, ``study_yaml``, ``written``,
+        ``changed``, ``canonicalized``) plus ``study``. 400 missing study,
+        404 study not found, 500 when ``viva_superpowers`` (or its
+        ``readout_migration`` module) is unavailable or migration fails.
+
+        Library-backed via ``lib.readout_migrate_views.study_readout_migrate``
+        — Phase 2.1d rewire-first (the plugin still computes; only the caller
+        moves).
+        """
+        body, status = _readout_migrate_views.study_readout_migrate(
+            ws, req.model_dump(exclude_unset=True)
+        )
         if status != 200:
             return JSONResponse(status_code=status, content=body)
         return body
