@@ -1673,6 +1673,37 @@ class StudyReadoutMigrateBody(BaseModel):
     apply: Optional[bool] = None
 
 
+class StudyFindingsPopulateBody(BaseModel):
+    """POST /api/study-findings-populate-observations {study}
+
+    Fills only ABSENT code-owned finding slots from ``computed_outcomes`` +
+    band + readouts (inherently fill-absent-only + idempotent — no dry-run
+    flag; mirrors
+    ``viva_superpowers.finding_observations.populate_finding_observations``).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+
+
+class StudyFindingsPopulateResult(BaseModel):
+    """``POST /api/study-findings-populate-observations`` response.
+
+    Shape is exactly
+    ``viva_superpowers.finding_observations.populate_finding_observations``'s
+    ``{filled, skipped}`` plus the resolved ``study`` slug.
+
+    Source: ``lib.finding_observations_views.study_findings_populate_observations``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    filled: int = 0
+    skipped: int = 0
+
+
 class BandProvenanceSetBody(BaseModel):
     """POST /api/band-provenance {study, test_name, cites, calibration_anchor?}
 

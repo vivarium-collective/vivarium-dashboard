@@ -94,6 +94,8 @@ _MODELS: list[type[BaseModel]] = [
     _models.BandProvenanceResult,
     _models.CitationGaps,
     _models.ExpertSearchResult,
+    # Findings-populate model (Phase 2.1f)
+    _models.StudyFindingsPopulateResult,
     # Observables + linkage-index models
     _models.ObservablesPayload,
     _models.StudyObservableCheck,
