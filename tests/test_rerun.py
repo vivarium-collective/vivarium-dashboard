@@ -165,7 +165,7 @@ def test_reproduce_replays_manifest_not_current_yaml(tmp_path, monkeypatch):
     import types
     from fastapi.testclient import TestClient
     from conftest import register_generator
-    import viva_superpowers.composite_generator as cg
+    import process_bigraph.composite_generator as cg
     from vivarium_workbench.api.app import create_app, get_workspace
     from vivarium_workbench.lib import composite_subprocess as cs
     from vivarium_workbench.lib import cli_runs
@@ -243,7 +243,7 @@ def _reproduce_under_drifting_env(tmp_path, monkeypatch, *, pinned_env=None):
     import types
     from fastapi.testclient import TestClient
     from conftest import register_generator
-    import viva_superpowers.composite_generator as cg
+    import process_bigraph.composite_generator as cg
     from vivarium_workbench.api.app import create_app, get_workspace
     from vivarium_workbench.lib import composite_subprocess as cs
     from vivarium_workbench.lib import cli_runs, env_fingerprint
@@ -354,7 +354,7 @@ def test_reproduce_retrieves_saved_run_without_launching(tmp_path, monkeypatch):
     import types
     from fastapi.testclient import TestClient
     from conftest import register_generator
-    import viva_superpowers.composite_generator as cg
+    import process_bigraph.composite_generator as cg
     from vivarium_workbench.api.app import create_app, get_workspace
     from vivarium_workbench.lib import composite_subprocess as cs
     from vivarium_workbench.lib import env_fingerprint
@@ -440,7 +440,7 @@ def test_run_rerun_retrieve_before_recompute_composite_origin(tmp_path, monkeypa
     exercises ``rerun.run_rerun`` directly (seeded runs_meta row, no FastAPI
     TestClient / composite-generator registry / subprocess dance) — the
     same style ``test_verify_reproduction_match`` etc. already use above,
-    so it runs independent of whether ``viva_superpowers.composite_generator``
+    so it runs independent of whether ``process_bigraph.composite_generator``
     happens to import cleanly against the environment's pinned
     process-bigraph version.
 

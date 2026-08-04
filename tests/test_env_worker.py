@@ -102,7 +102,7 @@ def _make_ws(root, pkg, gen_name):
     comp.mkdir(parents=True)
     (root / pkg / "__init__.py").write_text("from . import composites\n")
     (comp / "__init__.py").write_text(
-        "from viva_superpowers.composite_generator import composite_generator\n"
+        "from process_bigraph.composite_generator import composite_generator\n"
         f"@composite_generator(name='{gen_name}', description='')\n"
         "def g(core=None):\n    return {}\n"
     )
@@ -473,7 +473,7 @@ def test_validate_generated_visualization_ok_and_failures():
     (vdir / "__init__.py").write_text("")
     probe = vdir / "wvprobe.py"
     probe.write_text(
-        "from viva_superpowers.visualization import as_visualization\n"
+        "from process_bigraph.visualization import as_visualization\n"
         '@as_visualization(inputs={"x": "list[float]"}, name="CacheProbe", demo={"x": [1.0]})\n'
         'def update_cache_probe(state):\n    return {"html": ""}\n')
     try:
