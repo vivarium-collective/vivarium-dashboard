@@ -3,11 +3,11 @@
 Behaviour-preserving ports of the stdlib handlers
 ``server.Handler._post_source_build_remote`` and ``_post_source_switch_build``.
 Both talk to the sms-api over the network via the existing testable lib clients
-(:class:`lib.sms_api_client.SmsApiClient`, :mod:`lib.remote_build_source`), so
+(:class:`lib.viva_api_client.VivaApiClient`, :mod:`lib.remote_build_source`), so
 they are pure builders returning ``(body, status)`` — the FastAPI route wraps a
 non-200 in ``JSONResponse``.  No ``import server`` here.
 
-The network names — :class:`SmsApiClient`, :class:`SmsApiError`,
+The network names — :class:`VivaApiClient`, :class:`VivaApiError`,
 :func:`list_build_sources`, :func:`materialize_build` — are bound at module
 level so tests monkeypatch them with fakes and never touch a real network.
 
@@ -29,7 +29,7 @@ from pathlib import Path
 
 from vivarium_workbench.lib import active_workspace
 from vivarium_workbench.lib.remote_build_source import ensure_git_workspace, list_build_sources, materialize_build
-from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+from vivarium_workbench.lib.viva_api_client import VivaApiClient, VivaApiError
 from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
 
@@ -56,7 +56,7 @@ def build_remote(body: dict) -> tuple[dict, int]:
 
       * missing repo/branch  → ``({"error": "repo and branch are required"}, 400)``
       * unresolved HEAD      → ``({"error": "could not resolve branch HEAD via sms-api"}, 502)``
-      * ``SmsApiError``      → ``({"error": f"sms-api: {e}"}, 502)``
+      * ``VivaApiError``      → ``({"error": f"sms-api: {e}"}, 502)``
       * happy path           → ``({"ok": True, "simulator_id", "repo", "branch", "commit"}, 200)``
     """
     repo = (body or {}).get("repo") or ""
@@ -64,14 +64,14 @@ def build_remote(body: dict) -> tuple[dict, int]:
     if not repo or not branch:
         return {"error": "repo and branch are required"}, 400
     repo = _normalize_repo_url(repo)
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
     try:
         latest = client.latest_simulator(repo, branch)
         commit = latest.get("git_commit_hash") or ""
         if not commit:
             return {"error": "could not resolve branch HEAD via sms-api"}, 502
         reg = client.register_simulator(repo, branch, commit)
-    except SmsApiError as e:
+    except VivaApiError as e:
         return {"error": f"sms-api: {e}"}, 502
     return (
         {"ok": True, "simulator_id": reg.get("database_id"),
@@ -94,13 +94,13 @@ def switch_build(body: dict, *, switch_active: bool = True) -> tuple[dict, int]:
       * missing ``simulator_id`` → ``({"error": "missing 'simulator_id'"}, 400)``
       * sms-api unreachable      → ``({"error": f"sms-api unavailable: {err}"}, 502)``
       * build not found          → ``({"error": f"build {sim_id} not found"}, 404)``
-      * materialize ``SmsApiError`` → ``({"error": f"materialize failed: {e}"}, 502)``
+      * materialize ``VivaApiError`` → ``({"error": f"materialize failed: {e}"}, 502)``
       * happy path               → ``({"ok": True, "source": {"path", "name"}}, 200)``
     """
     sim_id = (body or {}).get("simulator_id")
     if sim_id is None:
         return {"error": "missing 'simulator_id'"}, 400
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
     listing = list_build_sources(client)
     entry = next((b for b in listing["builds"] if b["simulator_id"] == sim_id), None)
     if entry is None:
@@ -109,7 +109,7 @@ def switch_build(body: dict, *, switch_active: bool = True) -> tuple[dict, int]:
         return {"error": f"build {sim_id} not found"}, 404
     try:
         cache_dir = materialize_build(client, sim_id, entry["commit"])
-    except SmsApiError as e:
+    except VivaApiError as e:
         return {"error": f"materialize failed: {e}"}, 502
     # Idempotent/self-healing: a bare tarball extraction has no `.git`, so a
     # session bound to it can never dispatch (remote_run_views's push-based

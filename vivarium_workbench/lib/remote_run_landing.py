@@ -34,7 +34,7 @@ def _fold_analyses(extract_root: Path, ws_root: Path, run_id: str) -> None:
     produces, so the existing Analyses button needs no changes to render it.
 
     There is no status/poll endpoint for the K8s analysis job (see
-    SmsApiClient.run_analysis), so completion is detected the same way the rest
+    VivaApiClient.run_analysis), so completion is detected the same way the rest
     of this pipeline detects it: by finding the output already landed, here,
     rather than by polling sms-api. If the job hasn't finished by the time this
     run is landed, this is a no-op -- landing again later (once the analysis

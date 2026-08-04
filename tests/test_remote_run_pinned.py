@@ -147,7 +147,7 @@ def test_pinned_build_start_returns_built_phase(monkeypatch, tmp_path):
             repo_url="https://github.com/vivarium-collective/v2ecoli", branch="main"
         ),
     )
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: _FakeClient())
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: _FakeClient())
     monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
     body, status = rrv.remote_run_pinned_build_start(tmp_path, {"study": "s"})
     assert status == 202
@@ -199,7 +199,7 @@ def test_remote_run_config_on_resolves_commit(monkeypatch, tmp_path):
             repo_url="https://github.com/vivarium-collective/v2ecoli", branch="main"
         ),
     )
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: _FakeClient())
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: _FakeClient())
     monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
     body, status = rrv.remote_run_config(tmp_path)
     assert status == 200
@@ -216,7 +216,7 @@ def test_remote_run_config_on_degrades_on_missing_build(monkeypatch, tmp_path):
             repo_url="https://github.com/nobody/nothing", branch="main"
         ),
     )
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: _FakeClient())
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: _FakeClient())
     monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
     body, status = rrv.remote_run_config(tmp_path)
     assert status == 200
@@ -304,7 +304,7 @@ def test_pinned_build_start_falls_back_to_static_pin_when_unswitched(
             repo_url="https://github.com/vivarium-collective/v2ecoli", branch="main"
         ),
     )
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: _FakeClient())
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: _FakeClient())
     monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
     body, status = rrv.remote_run_pinned_build_start(tmp_path, {"study": "s"})
     assert status == 202

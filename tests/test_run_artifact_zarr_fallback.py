@@ -115,7 +115,7 @@ def test_falls_back_through_sms_api_for_s3_only_run(tmp_path, monkeypatch):
         return out
 
     monkeypatch.setattr(
-        "vivarium_workbench.lib.sms_api_client.SmsApiClient.download_data",
+        "vivarium_workbench.lib.viva_api_client.VivaApiClient.download_data",
         _fake_download_data,
     )
 

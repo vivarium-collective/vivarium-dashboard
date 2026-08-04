@@ -20,12 +20,12 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-from vivarium_workbench.lib.sms_api_client import SmsApiError
+from vivarium_workbench.lib.viva_api_client import VivaApiError
 
 # A git commit ref (the only non-server-controlled value that flows into a
 # filesystem path) must be plain hex. This closes the one allow-list gap in the
 # build-switch path: a malicious/compromised sms-api can't smuggle `../` (path
-# traversal) or an empty ref into cache_dir_for. Raising SmsApiError routes
+# traversal) or an empty ref into cache_dir_for. Raising VivaApiError routes
 # through the handler's existing 502 path (active workspace left unchanged).
 _COMMIT_RE = re.compile(r"\A[0-9a-fA-F]{4,40}\Z")
 
@@ -60,7 +60,7 @@ def cache_dir_for(simulator_id: int, commit: str) -> Path:
 
 def _safe_commit(commit: str) -> str:
     if not commit or not _COMMIT_RE.match(commit):
-        raise SmsApiError(f"refusing unsafe/empty commit ref from sms-api: {commit!r}")
+        raise VivaApiError(f"refusing unsafe/empty commit ref from sms-api: {commit!r}")
     return commit
 
 
@@ -155,7 +155,7 @@ def list_build_sources(client: Any) -> dict:
     """
     try:
         data = client.list_simulators()
-    except SmsApiError as e:
+    except VivaApiError as e:
         return {"builds": [], "error": str(e)}
     builds = []
     for v in data.get("versions", []) or []:

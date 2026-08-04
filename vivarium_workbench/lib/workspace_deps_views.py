@@ -38,9 +38,9 @@ def build_source_builds() -> dict:
     error reason when sms-api is down).
     """
     from vivarium_workbench.lib import remote_build_source
-    from vivarium_workbench.lib.sms_api_client import SmsApiClient
+    from vivarium_workbench.lib.viva_api_client import VivaApiClient
 
-    return remote_build_source.list_build_sources(SmsApiClient(_sms_api_base()))
+    return remote_build_source.list_build_sources(VivaApiClient(_sms_api_base()))
 
 
 def remote_health() -> dict:
@@ -51,12 +51,12 @@ def remote_health() -> dict:
     it answers. Best-effort — never raises; returns
     ``{configured, base_url, reachable, version, error}``.
     """
-    from vivarium_workbench.lib.sms_api_client import SmsApiClient
+    from vivarium_workbench.lib.viva_api_client import VivaApiClient
 
     base = _sms_api_base()
     configured = bool(os.environ.get("VIVA_API_BASE") or os.environ.get("SMS_API_BASE"))
     try:
-        version = SmsApiClient(base).ping()
+        version = VivaApiClient(base).ping()
         return {"configured": configured, "base_url": base, "reachable": True,
                 "version": version, "error": None}
     except Exception as exc:  # noqa: BLE001 — a health probe must never raise

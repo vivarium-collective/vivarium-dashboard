@@ -9,11 +9,11 @@ import pytest
 
 from vivarium_workbench.lib import remote_run
 from vivarium_workbench.lib.remote_run import _MAX_CONSECUTIVE_POLL_ERRORS, _poll_until_terminal
-from vivarium_workbench.lib.sms_api_client import SmsApiError
+from vivarium_workbench.lib.viva_api_client import VivaApiError
 
 
 class _ScriptedClient:
-    """A fake SmsApiClient whose ``compose_status`` replays a scripted sequence.
+    """A fake VivaApiClient whose ``compose_status`` replays a scripted sequence.
 
     Each item is either a status dict (returned) or an Exception (raised).
     """
@@ -55,8 +55,8 @@ def fake_time(monkeypatch):
 def test_poll_survives_transient_blips(fake_time):
     # two transient errors (< the tolerated max), then completed — must NOT fail.
     client = _ScriptedClient([
-        SmsApiError("blip 1"),
-        SmsApiError("blip 2"),
+        VivaApiError("blip 1"),
+        VivaApiError("blip 2"),
         {"status": "running"},
         {"status": "completed", "sim_id": 7},
     ])
@@ -67,14 +67,14 @@ def test_poll_survives_transient_blips(fake_time):
 
 def test_poll_raises_on_persistent_polling_failure(fake_time):
     # more than the tolerated consecutive errors -> RuntimeError naming the endpoint.
-    client = _ScriptedClient([SmsApiError("down")] * (_MAX_CONSECUTIVE_POLL_ERRORS + 2))
+    client = _ScriptedClient([VivaApiError("down")] * (_MAX_CONSECUTIVE_POLL_ERRORS + 2))
     with pytest.raises(RuntimeError, match="reachable"):
         _poll_until_terminal(client, 7, poll_interval=1.0, poll_timeout=0)
 
 
 def test_poll_recovers_error_streak_before_the_cap(fake_time):
     # exactly the max consecutive errors, then success -> survives (boundary).
-    script = [SmsApiError("blip")] * _MAX_CONSECUTIVE_POLL_ERRORS + [{"status": "completed"}]
+    script = [VivaApiError("blip")] * _MAX_CONSECUTIVE_POLL_ERRORS + [{"status": "completed"}]
     client = _ScriptedClient(script)
     status, _ = _poll_until_terminal(client, 7, poll_interval=1.0, poll_timeout=0)
     assert status == "completed"

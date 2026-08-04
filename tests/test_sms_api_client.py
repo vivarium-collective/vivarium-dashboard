@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+from vivarium_workbench.lib.viva_api_client import VivaApiClient, VivaApiError
 
 
 class _Resp(io.BytesIO):
@@ -35,14 +35,14 @@ def _patch_urlopen(monkeypatch, capture, payload, status=200):
             raise HTTPError(req.full_url, status, "err", {}, io.BytesIO(b"boom"))
         return _Resp(payload, status)
 
-    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("vivarium_workbench.lib.viva_api_client.urlopen", fake_urlopen)
     yield
 
 
 def test_latest_simulator_builds_query(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"git_commit_hash": "abc123"}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         out = c.latest_simulator("https://github.com/x/v2ecoli", "master")
     assert out["git_commit_hash"] == "abc123"
     assert cap["url"].startswith("http://h:8080/core/v1/simulator/latest?")
@@ -53,7 +53,7 @@ def test_latest_simulator_builds_query(monkeypatch):
 def test_observables_repeats_names_param(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"time": [0.0], "series": {"mass": [1.0]}}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         out = c.observables(49, ["mass", "volume"], seed=0)
     assert out["series"]["mass"] == [1.0]
     assert "/api/v1/simulations/49/observables?" in cap["url"]
@@ -64,15 +64,15 @@ def test_observables_repeats_names_param(monkeypatch):
 def test_non_200_raises(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {}, status=404):
-        c = SmsApiClient("http://h:8080")
-        with pytest.raises(SmsApiError):
+        c = VivaApiClient("http://h:8080")
+        with pytest.raises(VivaApiError):
             c.simulation_status(999)
 
 
 def test_run_simulation_query_and_repeated_observables(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"database_id": 50}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         out = c.run_simulation(
             simulator_id=15, num_generations=1, num_seeds=1, run_parca=True,
             observables=["mass", "volume"], experiment_id="exp1",
@@ -94,7 +94,7 @@ def test_run_simulation_sends_analysis_options_as_json_body(monkeypatch):
     param above)."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"database_id": 51}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         out = c.run_simulation(
             simulator_id=15, num_generations=1, num_seeds=1, run_parca=True,
             observables=["mass"], analysis_options={"multiseed": {"ecocyc_table": {}}},
@@ -110,7 +110,7 @@ def test_run_simulation_sends_analysis_options_as_json_body(monkeypatch):
 def test_run_simulation_omits_json_body_when_no_analysis_options(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"database_id": 52}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         c.run_simulation(
             simulator_id=15, num_generations=1, num_seeds=1, run_parca=True,
             observables=["mass"],
@@ -121,7 +121,7 @@ def test_run_simulation_omits_json_body_when_no_analysis_options(monkeypatch):
 def test_upload_simulator_sends_json_body(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"database_id": 16, "status": "running"}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         out = c.upload_simulator({"git_commit_hash": "abc", "git_repo_url": "u", "git_branch": "b"}, force=True)
     assert out["database_id"] == 16
     assert cap["method"] == "POST"
@@ -134,7 +134,7 @@ def test_run_analysis_sends_modules_as_query_json(monkeypatch):
     not a request body -- unlike run_simulation's analysis_options."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"job_id": "ana-exp1", "analysis_name": "analysis-exp1-ab12"}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         out = c.run_analysis(115, {"multiseed": {"doubling_time_distribution": {}}})
     assert out["job_id"] == "ana-exp1"
     assert cap["method"] == "POST"
@@ -147,7 +147,7 @@ def test_run_analysis_sends_modules_as_query_json(monkeypatch):
 def test_composite_resolve_posts_to_simulator_route(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"name": "c", "parameters": {}, "state": {}}):
-        c = SmsApiClient("http://x")
+        c = VivaApiClient("http://x")
         out = c.composite_resolve(66, "pkg.composites.cell", {"k": 5})
     assert cap["url"] == "http://x/core/v1/simulator/66/composite-resolve"
     assert cap["method"] == "POST"
@@ -179,8 +179,8 @@ def test_download_data_streams_to_file(monkeypatch, tmp_path):
         cap["method"] = req.get_method()
         return _RawResp()
 
-    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
-    c = SmsApiClient("http://h:8080")
+    monkeypatch.setattr("vivarium_workbench.lib.viva_api_client.urlopen", fake_urlopen)
+    c = VivaApiClient("http://h:8080")
     out = c.download_data(49, tmp_path)
     assert out == tmp_path / "sim_49.tar.gz"
     assert out.read_bytes() == payload
@@ -191,7 +191,7 @@ def test_download_data_streams_to_file(monkeypatch, tmp_path):
 def test_analysis_status_gets_by_database_id(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"id": 7, "status": "completed", "error_log": None}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         out = c.analysis_status(7)
     assert out["status"] == "completed"
     assert cap["method"] == "GET"

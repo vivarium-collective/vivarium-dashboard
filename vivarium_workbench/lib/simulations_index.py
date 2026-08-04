@@ -1661,12 +1661,12 @@ def resolve_or_fetch_store(workspace: Path, row: dict) -> "tuple[Path | None, te
     if sim_id is None:
         return None, None
 
-    from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+    from vivarium_workbench.lib.viva_api_client import VivaApiClient, VivaApiError
     from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
     tmp = tempfile.TemporaryDirectory()
     try:
-        tar_path = SmsApiClient(_sms_api_base()).download_data(int(sim_id), Path(tmp.name))
-    except SmsApiError:
+        tar_path = VivaApiClient(_sms_api_base()).download_data(int(sim_id), Path(tmp.name))
+    except VivaApiError:
         tmp.cleanup()
         return None, None
     extract_dir = Path(tmp.name) / "extracted"

@@ -981,7 +981,7 @@ def test_build_zip_falls_back_to_sms_api_for_s3_only_store(tmp_path, monkeypatch
         return out
 
     monkeypatch.setattr(
-        "vivarium_workbench.lib.sms_api_client.SmsApiClient.download_data",
+        "vivarium_workbench.lib.viva_api_client.VivaApiClient.download_data",
         _fake_download_data,
     )
 
@@ -1015,7 +1015,7 @@ def test_build_zip_s3_only_store_with_no_remote_origin_404s(tmp_path, monkeypatc
 
 def test_build_zip_sms_api_failure_404s_not_crashes(tmp_path, monkeypatch):
     """sms-api unreachable/erroring during the fallback fetch must fail closed
-    (404), not raise SmsApiError up through the route handler."""
+    (404), not raise VivaApiError up through the route handler."""
     from vivarium_workbench.lib import simulations_index as _si
 
     ws = tmp_path / "ws"
@@ -1024,11 +1024,11 @@ def test_build_zip_sms_api_failure_404s_not_crashes(tmp_path, monkeypatch):
     monkeypatch.setattr(_si, "list_simulations", lambda workspace: [row])
 
     def _raise(self, simulation_id, dest_dir, timeout=None):
-        from vivarium_workbench.lib.sms_api_client import SmsApiError
-        raise SmsApiError("sms-api unreachable")
+        from vivarium_workbench.lib.viva_api_client import VivaApiError
+        raise VivaApiError("sms-api unreachable")
 
     monkeypatch.setattr(
-        "vivarium_workbench.lib.sms_api_client.SmsApiClient.download_data", _raise
+        "vivarium_workbench.lib.viva_api_client.VivaApiClient.download_data", _raise
     )
 
     data, filename, status = build_simulation_run_zip(ws, "r-s3-down")

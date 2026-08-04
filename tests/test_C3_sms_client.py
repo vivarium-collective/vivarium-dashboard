@@ -1,4 +1,4 @@
-"""C3: Tests for SmsApiClient compose methods.
+"""C3: Tests for VivaApiClient compose methods.
 
 Tests:
 - compose_check(pbg_bytes) - validate server connectivity
@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+from vivarium_workbench.lib.viva_api_client import VivaApiClient, VivaApiError
 
 
 class _JsonResp(io.BytesIO):
@@ -71,7 +71,7 @@ def _patch_urlopen(monkeypatch, capture: dict, payload, status: int = 200):
             return _BinaryResp(payload, status)
         return _JsonResp(payload, status)
 
-    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("vivarium_workbench.lib.viva_api_client.urlopen", fake_urlopen)
     yield
 
 
@@ -83,18 +83,18 @@ def test_compose_check_sends_get_to_health_or_check_endpoint(monkeypatch):
     """compose_check makes a GET request to verify server reachability."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"status": "ok"}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         result = c.compose_check(b"fake-pbg-bytes")
     assert cap["method"] in ("GET", "POST")
     assert "/compose/" in cap["url"]
 
 
 def test_compose_check_raises_sms_api_error_on_failure(monkeypatch):
-    """compose_check raises SmsApiError on non-200."""
+    """compose_check raises VivaApiError on non-200."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {}, status=503):
-        c = SmsApiClient("http://h:8080")
-        with pytest.raises(SmsApiError):
+        c = VivaApiClient("http://h:8080")
+        with pytest.raises(VivaApiError):
             c.compose_check(b"fake-pbg-bytes")
 
 
@@ -106,7 +106,7 @@ def test_compose_submit_posts_to_correct_endpoint(monkeypatch):
     """compose_submit POSTs to /compose/v1/simulation/run."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 42}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         result = c.compose_submit(b"fake-pbg-bytes")
     assert cap["method"] == "POST"
     assert "/compose/v1/simulation/run" in cap["url"]
@@ -116,7 +116,7 @@ def test_compose_submit_returns_simulation_id(monkeypatch):
     """compose_submit returns the simulation_database_id from the response."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 99}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         result = c.compose_submit(b"some-pbg-content")
     assert result == 99
 
@@ -125,7 +125,7 @@ def test_compose_submit_uses_multipart_uploaded_file_field(monkeypatch):
     """compose_submit encodes the file as multipart with field name 'uploaded_file'."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 7}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         c.compose_submit(b"pbg-content-here")
     # Content-Type header must declare multipart/form-data
     ct = cap["headers"].get("Content-type", "")
@@ -142,7 +142,7 @@ def test_compose_submit_sends_file_content_in_body(monkeypatch):
     pbg_content = b"BINARY-PBG-CONTENT-XYZ"
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 3}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         c.compose_submit(pbg_content)
     assert pbg_content in cap["body"], "PBG content must be in the request body"
 
@@ -151,7 +151,7 @@ def test_compose_submit_no_extra_deps_no_query_params(monkeypatch):
     """compose_submit with no extra_pip_deps sends no extra_pip_deps params."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 1}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         c.compose_submit(b"pbg", extra_pip_deps=None)
     qs = parse_qs(urlsplit(cap["url"]).query)
     assert "extra_pip_deps" not in qs
@@ -162,7 +162,7 @@ def test_compose_submit_extra_pip_deps_as_repeated_query_params(monkeypatch):
     cap = {}
     deps = ["git+https://github.com/x/y.git@abc", "some-package>=1.0"]
     with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 5}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         c.compose_submit(b"pbg-bytes", extra_pip_deps=deps)
     qs = parse_qs(urlsplit(cap["url"]).query)
     assert "extra_pip_deps" in qs, f"URL query: {urlsplit(cap['url']).query!r}"
@@ -172,11 +172,11 @@ def test_compose_submit_extra_pip_deps_as_repeated_query_params(monkeypatch):
 
 
 def test_compose_submit_raises_on_server_error(monkeypatch):
-    """compose_submit raises SmsApiError on non-200 response."""
+    """compose_submit raises VivaApiError on non-200 response."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {}, status=500):
-        c = SmsApiClient("http://h:8080")
-        with pytest.raises(SmsApiError):
+        c = VivaApiClient("http://h:8080")
+        with pytest.raises(VivaApiError):
             c.compose_submit(b"pbg")
 
 
@@ -188,7 +188,7 @@ def test_compose_status_gets_correct_url(monkeypatch):
     """compose_status GETs /compose/v1/simulation/{id}/status."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"status": "running", "simulation_database_id": 42}):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         result = c.compose_status(42)
     assert cap["method"] == "GET"
     assert "/compose/v1/simulation/42/status" in cap["url"]
@@ -199,18 +199,18 @@ def test_compose_status_returns_dict(monkeypatch):
     cap = {}
     payload = {"status": "completed", "simulation_database_id": 17}
     with _patch_urlopen(monkeypatch, cap, payload):
-        c = SmsApiClient("http://h:8080")
+        c = VivaApiClient("http://h:8080")
         result = c.compose_status(17)
     assert result["status"] == "completed"
     assert result["simulation_database_id"] == 17
 
 
 def test_compose_status_raises_on_not_found(monkeypatch):
-    """compose_status raises SmsApiError on 404."""
+    """compose_status raises VivaApiError on 404."""
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {}, status=404):
-        c = SmsApiClient("http://h:8080")
-        with pytest.raises(SmsApiError):
+        c = VivaApiClient("http://h:8080")
+        with pytest.raises(VivaApiError):
             c.compose_status(9999)
 
 
@@ -228,8 +228,8 @@ def test_download_compose_results_streams_to_file(monkeypatch, tmp_path):
         cap["method"] = req.get_method()
         return _BinaryResp(fake_zip)
 
-    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
-    c = SmsApiClient("http://h:8080")
+    monkeypatch.setattr("vivarium_workbench.lib.viva_api_client.urlopen", fake_urlopen)
+    c = VivaApiClient("http://h:8080")
     out = c.download_compose_results(42, tmp_path)
     assert out == tmp_path / "results.zip"
     assert out.read_bytes() == fake_zip

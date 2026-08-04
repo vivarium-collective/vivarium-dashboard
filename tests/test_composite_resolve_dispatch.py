@@ -17,7 +17,7 @@ def test_dispatch_deployment_when_viv_build(tmp_path, monkeypatch):
         def __init__(self, base=None): pass
         def composite_resolve(self, sid, ref, ov=None):
             captured.update(sid=sid, ref=ref, ov=ov); return {"name": "remote"}
-    monkeypatch.setattr(cr, "SmsApiClient", _FakeClient)
+    monkeypatch.setattr(cr, "VivaApiClient", _FakeClient)
     monkeypatch.setattr(cr, "_sms_api_base", lambda: "http://sms")
     out = cr.resolve_composite_for_request(tmp_path, "pkg.x", {"k": 2})
     assert out == {"name": "remote"}
@@ -26,7 +26,7 @@ def test_dispatch_deployment_when_viv_build(tmp_path, monkeypatch):
 
 def test_dispatch_deployment_degrades_when_sms_api_route_missing(tmp_path, monkeypatch):
     """sms-api has no POST /core/v1/simulator/{id}/composite-resolve route --
-    SmsApiClient.composite_resolve was added speculatively and the server side
+    VivaApiClient.composite_resolve was added speculatively and the server side
     was never built, so every call 404s. This is a non-blocking preview
     convenience (dispatch itself never calls it), so a missing/unreachable
     remote route must degrade to the same honest-unavailable 200 shape every
@@ -36,9 +36,9 @@ def test_dispatch_deployment_degrades_when_sms_api_route_missing(tmp_path, monke
     class _FailingClient:
         def __init__(self, base=None): pass
         def composite_resolve(self, sid, ref, ov=None):
-            raise cr.SmsApiError("POST http://sms/core/v1/simulator/66/composite-resolve -> 404")
+            raise cr.VivaApiError("POST http://sms/core/v1/simulator/66/composite-resolve -> 404")
 
-    monkeypatch.setattr(cr, "SmsApiClient", _FailingClient)
+    monkeypatch.setattr(cr, "VivaApiClient", _FailingClient)
     monkeypatch.setattr(cr, "_sms_api_base", lambda: "http://sms")
 
     out = cr.resolve_composite_for_request(tmp_path, "pkg.x")
