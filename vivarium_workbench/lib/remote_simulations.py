@@ -141,13 +141,13 @@ def list_remote_simulations(ws_root: Path, base_url: str | None = None) -> list[
     if active_id is None:
         return []
     try:
-        from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+        from vivarium_workbench.lib.viva_api_client import VivaApiClient, VivaApiError
     except ImportError:
         return []
-    client = SmsApiClient(base_url or _sms_api_base())
+    client = VivaApiClient(base_url or _sms_api_base())
     try:
         builds = _builds_list(client.list_simulators())
-    except SmsApiError:
+    except VivaApiError:
         return []
     except Exception:
         return []
@@ -170,7 +170,7 @@ def list_remote_simulations(ws_root: Path, base_url: str | None = None) -> list[
 
     try:
         sims = client.list_build_simulations(active_id)
-    except SmsApiError:
+    except VivaApiError:
         return []
     except Exception:
         return []

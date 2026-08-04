@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from vivarium_workbench.lib.env_compat import get_env
-from vivarium_workbench.lib.sms_api_client import SmsApiClient
+from vivarium_workbench.lib.viva_api_client import VivaApiClient
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
@@ -123,7 +123,7 @@ class NoPinnedBuildError(RuntimeError):
     """No completed build exists for the configured repo@branch."""
 
 
-def resolve_pinned_build(client: SmsApiClient, repo_url: str, branch: str) -> dict:
+def resolve_pinned_build(client: VivaApiClient, repo_url: str, branch: str) -> dict:
     """Resolve the newest registered build for ``repo_url``@``branch``.
 
     Reads ``/core/v1/simulator/versions`` (each entry carries ``database_id``),

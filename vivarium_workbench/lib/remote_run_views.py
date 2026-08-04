@@ -10,7 +10,7 @@ submit is visible to the status GET.  No ``import server`` here.
 route wraps every path (incl. the 202 success) in ``JSONResponse``.
 
 The externals — ``manager``, ``PipelineCtx``, ``run_remote_pipeline``,
-``land_remote_run``, ``SmsApiClient``, ``load_spec``, ``github_auth`` — are
+``land_remote_run``, ``VivaApiClient``, ``load_spec``, ``github_auth`` — are
 bound at MODULE level so tests monkeypatch them with fakes and never touch a
 real network / git / auth service.  ``_sms_api_base`` is REUSED from
 :mod:`lib.workspace_deps_views` (no new copy); the git/study helpers come from
@@ -36,7 +36,7 @@ from vivarium_workbench.lib.remote_run_jobs import (
     run_remote_pipeline,
 )
 from vivarium_workbench.lib.remote_run_landing import land_remote_run
-from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+from vivarium_workbench.lib.viva_api_client import VivaApiClient, VivaApiError
 from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
 # sms-api JobStatus terminal sets (relocated here from remote_run_jobs, which R5
@@ -57,14 +57,14 @@ _ANALYSIS_LAND_WAIT_SECONDS = 90
 _ANALYSIS_TERMINAL_STATUSES = {"completed", "failed"}
 
 
-def _poll_analysis_until_terminal(client: SmsApiClient, database_id: int) -> None:
+def _poll_analysis_until_terminal(client: VivaApiClient, database_id: int) -> None:
     """Poll GET /analyses/{id}/status until COMPLETED/FAILED or the attempt
     ceiling is reached. A miss just means the analysis isn't folded into THIS
     landing -- landing again later picks it up (see land_remote_run)."""
     for _ in range(_ANALYSIS_POLL_MAX_ATTEMPTS):
         try:
             status = client.analysis_status(database_id)
-        except SmsApiError:
+        except VivaApiError:
             return  # best-effort: a transient poll failure must not block landing
         if status.get("status") in _ANALYSIS_TERMINAL_STATUSES:
             return
@@ -124,7 +124,7 @@ def remote_run_start(ws_root: Path, body: dict) -> tuple[dict, int]:
         timeout=5,
     ).stdout.strip()
 
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
     # spec_id = the study's baseline COMPOSITE ref (what local runs use:
     # _post_study_run_baseline_for_test -> entry.get("composite")), NOT the
     # baseline entry's `name` (which is the study slug). Falls back to the
@@ -196,7 +196,7 @@ def remote_run_build_start(ws_root: Path, body: dict) -> tuple[dict, int]:
         return resolved  # type: ignore[return-value]
     repo_url, branch = resolved  # type: ignore[misc]
     commit = git_status.remote_push_and_sha(ws_root)
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
     uploaded = client.upload_simulator(
         {"git_commit_hash": commit, "git_repo_url": repo_url, "git_branch": branch}
     )
@@ -234,12 +234,12 @@ def remote_run_pinned_build_start(ws_root: Path, body: dict) -> tuple[dict, int]
     cfg = remote_pinned.pinned_config()
     if cfg is None:
         return {"error": "pinned remote runs are not enabled"}, 409
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
     try:
         resolved = remote_pinned.resolve_pinned_build(client, cfg.repo_url, cfg.branch)
     except remote_pinned.NoPinnedBuildError as e:
         return {"error": str(e)}, 404
-    except SmsApiError as e:
+    except VivaApiError as e:
         return {"error": f"sms-api unreachable: {e}", "reachable": False}, 502
     return {
         "simulator_id": resolved["simulator_id"],
@@ -285,11 +285,11 @@ def remote_run_config(ws_root: Path) -> tuple[dict, int]:
     }
     try:
         resolved = remote_pinned.resolve_pinned_build(
-            SmsApiClient(_sms_api_base()), cfg.repo_url, cfg.branch
+            VivaApiClient(_sms_api_base()), cfg.repo_url, cfg.branch
         )
         out["commit"] = resolved["commit"]
         out["simulator_id"] = resolved["simulator_id"]
-    except (remote_pinned.NoPinnedBuildError, SmsApiError) as e:
+    except (remote_pinned.NoPinnedBuildError, VivaApiError) as e:
         out["build_error"] = str(e)
     return out, 200
 
@@ -325,7 +325,7 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
         warnings.warn(
             f"remote_run_submit: {study!r} analysis config: {err.get('error')}"
         )
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
     sim = client.run_simulation(
         simulator_id=int(sim_id),
         num_generations=int(body.get("num_generations") or 1),
@@ -362,7 +362,7 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     spec = load_spec(spec_path)
     _baseline = spec.get("baseline") or []
     spec_id = (_baseline[0].get("composite") if _baseline else None) or study
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
 
     analyses = spec.get("analyses") or []
     if analyses:
@@ -375,7 +375,7 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
         if analysis_options:
             try:
                 triggered = client.run_analysis(int(sim_id), analysis_options)
-            except SmsApiError:
+            except VivaApiError:
                 pass
             else:
                 database_id = triggered.get("database_id")
@@ -411,7 +411,7 @@ def remote_run_status(params: dict) -> tuple[dict, int]:
     sm_id = params.get("simulator_id")
     if not sim_id and not sm_id:
         return {"error": "simulator_id or simulation_id required"}, 400
-    client = SmsApiClient(_sms_api_base())
+    client = VivaApiClient(_sms_api_base())
     try:
         if sim_id:
             st = client.simulation_status(int(sim_id))
@@ -450,7 +450,7 @@ def remote_run_status(params: dict) -> tuple[dict, int]:
                 "simulator_id": int(sm_id),
             }, 200
         return {"error": "simulator_id or simulation_id required"}, 400
-    except SmsApiError as e:
+    except VivaApiError as e:
         # Tunnel down / SSO expired / sms-api error — surface a reachable=false
         # status so the panel shows it without the whole poll crashing.
         reason = (

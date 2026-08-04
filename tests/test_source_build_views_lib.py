@@ -1,7 +1,7 @@
 """Tests for the pure sms-api source-build builders (``lib.source_build_views``).
 
 These are NETWORK routes: every test monkeypatches the module-level sms-api
-names (``SmsApiClient`` / ``list_build_sources`` / ``materialize_build``) with
+names (``VivaApiClient`` / ``list_build_sources`` / ``materialize_build``) with
 fakes so nothing ever touches a real network.  The builders reproduce the
 stdlib handlers' messages/status/field shapes byte-identically.
 """
@@ -14,7 +14,7 @@ import pytest
 from vivarium_workbench.lib import _root
 from vivarium_workbench.lib import active_workspace
 from vivarium_workbench.lib import source_build_views
-from vivarium_workbench.lib.sms_api_client import SmsApiError
+from vivarium_workbench.lib.viva_api_client import VivaApiError
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def _reset_root():
 # build_remote
 # ---------------------------------------------------------------------------
 class _FakeClient:
-    """Fake SmsApiClient capturing the constructor base + canned responses."""
+    """Fake VivaApiClient capturing the constructor base + canned responses."""
 
     last_base = None
 
@@ -67,7 +67,7 @@ def test_build_remote_no_commit_502(monkeypatch):
             super().__init__(base)
             self._latest = {"git_commit_hash": ""}
 
-    monkeypatch.setattr(source_build_views, "SmsApiClient", _NoCommit)
+    monkeypatch.setattr(source_build_views, "VivaApiClient", _NoCommit)
     body, status = source_build_views.build_remote({"repo": "r", "branch": "b"})
     assert status == 502
     assert body == {"error": "could not resolve branch HEAD via sms-api"}
@@ -76,16 +76,16 @@ def test_build_remote_no_commit_502(monkeypatch):
 def test_build_remote_sms_api_error_502(monkeypatch):
     class _Boom(_FakeClient):
         def latest_simulator(self, repo, branch):
-            raise SmsApiError("kaboom")
+            raise VivaApiError("kaboom")
 
-    monkeypatch.setattr(source_build_views, "SmsApiClient", _Boom)
+    monkeypatch.setattr(source_build_views, "VivaApiClient", _Boom)
     body, status = source_build_views.build_remote({"repo": "r", "branch": "b"})
     assert status == 502
     assert body == {"error": "sms-api: kaboom"}
 
 
 def test_build_remote_happy_normalizes_repo(monkeypatch):
-    monkeypatch.setattr(source_build_views, "SmsApiClient", _FakeClient)
+    monkeypatch.setattr(source_build_views, "VivaApiClient", _FakeClient)
     body, status = source_build_views.build_remote(
         {"repo": "  https://github.com/x/y.git  ", "branch": "main"}
     )
@@ -120,7 +120,7 @@ def test_switch_build_missing_sim_id_400():
 
 
 def test_switch_build_listing_error_502(monkeypatch):
-    monkeypatch.setattr(source_build_views, "SmsApiClient", lambda base=None: object())
+    monkeypatch.setattr(source_build_views, "VivaApiClient", lambda base=None: object())
     monkeypatch.setattr(
         source_build_views, "list_build_sources",
         lambda client: {"builds": [], "error": "tunnel down"},
@@ -131,7 +131,7 @@ def test_switch_build_listing_error_502(monkeypatch):
 
 
 def test_switch_build_not_found_404(monkeypatch):
-    monkeypatch.setattr(source_build_views, "SmsApiClient", lambda base=None: object())
+    monkeypatch.setattr(source_build_views, "VivaApiClient", lambda base=None: object())
     monkeypatch.setattr(
         source_build_views, "list_build_sources",
         lambda client: {"builds": [_build_entry(99)]},
@@ -142,14 +142,14 @@ def test_switch_build_not_found_404(monkeypatch):
 
 
 def test_switch_build_materialize_error_502(monkeypatch):
-    monkeypatch.setattr(source_build_views, "SmsApiClient", lambda base=None: object())
+    monkeypatch.setattr(source_build_views, "VivaApiClient", lambda base=None: object())
     monkeypatch.setattr(
         source_build_views, "list_build_sources",
         lambda client: {"builds": [_build_entry(5)]},
     )
 
     def _boom(client, sim_id, commit):
-        raise SmsApiError("no tarball")
+        raise VivaApiError("no tarball")
 
     monkeypatch.setattr(source_build_views, "materialize_build", _boom)
     body, status = source_build_views.switch_build({"simulator_id": 5})
@@ -160,7 +160,7 @@ def test_switch_build_materialize_error_502(monkeypatch):
 def test_switch_build_happy_stamps_and_repoints(tmp_path, monkeypatch):
     cache = tmp_path / "cache"
     cache.mkdir()
-    monkeypatch.setattr(source_build_views, "SmsApiClient", lambda base=None: object())
+    monkeypatch.setattr(source_build_views, "VivaApiClient", lambda base=None: object())
     monkeypatch.setattr(
         source_build_views, "list_build_sources",
         lambda client: {"builds": [_build_entry(5)]},
@@ -196,7 +196,7 @@ def test_switch_build_happy_stamps_and_repoints(tmp_path, monkeypatch):
 def test_switch_build_stamp_failure_is_swallowed(tmp_path, monkeypatch):
     cache = tmp_path / "cache"
     cache.mkdir()
-    monkeypatch.setattr(source_build_views, "SmsApiClient", lambda base=None: object())
+    monkeypatch.setattr(source_build_views, "VivaApiClient", lambda base=None: object())
     monkeypatch.setattr(
         source_build_views, "list_build_sources",
         lambda client: {"builds": [_build_entry(5)]},

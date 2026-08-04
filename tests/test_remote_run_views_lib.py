@@ -54,7 +54,7 @@ def _wire_happy(monkeypatch, tmp_path: Path, spec: dict):
         rrv.subprocess, "run",
         lambda *a, **k: subprocess.CompletedProcess(args=[], returncode=0, stdout="feature/x\n"),
     )
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeClient)
     monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
 
     def _fake_submit(study, worker_fn):
@@ -243,7 +243,7 @@ def _wire_thin(monkeypatch, tmp_path, *, authed=True, study_exists=True):
 
 def test_build_start_returns_simulator_id_and_building_phase(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     body, status = rrv.remote_run_build_start(tmp_path, {"study": "s"})
     assert status == 202
     assert body["simulator_id"] == 66
@@ -253,19 +253,19 @@ def test_build_start_returns_simulator_id_and_building_phase(monkeypatch, tmp_pa
 
 def test_build_start_unauthenticated_401(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path, authed=False)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     assert rrv.remote_run_build_start(tmp_path, {"study": "s"})[1] == 401
 
 
 def test_build_start_missing_study_400(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     assert rrv.remote_run_build_start(tmp_path, {})[1] == 400
 
 
 def test_submit_issues_run_and_returns_simulation_id(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
     assert status == 202
     assert body["simulation_id"] == 199
@@ -274,7 +274,7 @@ def test_submit_issues_run_and_returns_simulation_id(monkeypatch, tmp_path):
 
 def test_submit_missing_simulator_id_400(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     assert rrv.remote_run_submit(tmp_path, {"study": "s"})[1] == 400
 
 
@@ -283,7 +283,7 @@ def test_submit_threads_analysis_options_from_spec(monkeypatch, tmp_path):
     this was silently dropped for every remote dispatch (the "Analyses 404"
     root cause: sms-api never received a real analysis config to run)."""
     _wire_thin(monkeypatch, tmp_path)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     monkeypatch.setattr(
         rrv, "load_spec",
         lambda p: {"baseline": [{"composite": "my-comp"}],
@@ -294,7 +294,7 @@ def test_submit_threads_analysis_options_from_spec(monkeypatch, tmp_path):
         lambda entries: ({"multiseed": {"ecocyc_table": {}}}, []),
     )
     client = _FakeThinClient()
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: client)
     body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
     assert status == 202
     assert client.ran["analysis_options"] == {"multiseed": {"ecocyc_table": {}}}
@@ -305,7 +305,7 @@ def test_submit_analysis_options_none_when_spec_has_no_analyses(monkeypatch, tmp
     — matching run_simulation()'s default and sms-api's contract."""
     _wire_thin(monkeypatch, tmp_path)
     client = _FakeThinClient()
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: client)
     body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
     assert status == 202
     assert client.ran["analysis_options"] is None
@@ -313,7 +313,7 @@ def test_submit_analysis_options_none_when_spec_has_no_analyses(monkeypatch, tmp
 
 def test_land_downloads_and_lands(monkeypatch, tmp_path):
     captured = _wire_thin(monkeypatch, tmp_path)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
     assert status == 200
     assert body["run_id"] == "run-xyz"
@@ -340,7 +340,7 @@ def test_land_triggers_analysis_and_polls_real_status_when_spec_has_analyses(mon
         lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
     )
     client = _FakeThinClient()
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: client)
     slept = []
     monkeypatch.setattr(rrv.time, "sleep", slept.append)
 
@@ -382,7 +382,7 @@ def test_land_polls_until_terminal_then_stops(monkeypatch, tmp_path):
             return {"id": analysis_id, "status": "running" if self._polls < 3 else "completed"}
 
     client = _SlowAnalysisClient()
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: client)
     slept = []
     monkeypatch.setattr(rrv.time, "sleep", slept.append)
 
@@ -413,7 +413,7 @@ def test_land_gives_up_after_poll_ceiling(monkeypatch, tmp_path):
             return {"id": analysis_id, "status": "running"}
 
     client = _StuckAnalysisClient()
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: client)
     monkeypatch.setattr(rrv.time, "sleep", lambda s: None)
 
     body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
@@ -425,7 +425,7 @@ def test_land_gives_up_after_poll_ceiling(monkeypatch, tmp_path):
 def test_land_skips_analysis_trigger_when_spec_has_no_analyses(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
     client = _FakeThinClient()
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: client)
     slept = []
     monkeypatch.setattr(rrv.time, "sleep", slept.append)
 
@@ -452,10 +452,10 @@ def test_land_analysis_trigger_failure_does_not_block_landing(monkeypatch, tmp_p
 
     class _FailingAnalysisClient(_FakeThinClient):
         def run_analysis(self, simulation_id, modules):
-            raise rrv.SmsApiError("sms-api unreachable")
+            raise rrv.VivaApiError("sms-api unreachable")
 
     client = _FailingAnalysisClient()
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: client)
     slept = []
     monkeypatch.setattr(rrv.time, "sleep", slept.append)
 
@@ -468,7 +468,7 @@ def test_land_analysis_trigger_failure_does_not_block_landing(monkeypatch, tmp_p
 
 def test_land_missing_simulation_id_400(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
-    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv, "VivaApiClient", _FakeThinClient)
     assert rrv.remote_run_land(tmp_path, {"study": "s"})[1] == 400
 
 
@@ -492,7 +492,7 @@ class _StatusClient:
 
 def _bind_status_client(monkeypatch, **kw):
     monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
-    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: _StatusClient(base, **kw))
+    monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: _StatusClient(base, **kw))
 
 
 def test_status_run_completed_maps_to_done(monkeypatch):
@@ -523,6 +523,6 @@ def test_status_requires_an_id(monkeypatch):
 
 
 def test_status_sms_api_unreachable_is_502_not_crash(monkeypatch):
-    _bind_status_client(monkeypatch, raise_err=rrv.SmsApiError("tunnel down"))
+    _bind_status_client(monkeypatch, raise_err=rrv.VivaApiError("tunnel down"))
     body, status = rrv.remote_run_status({"simulation_id": 199})
     assert status == 502 and body["reachable"] is False and "unreachable" in body["reason"]

@@ -1,15 +1,20 @@
-"""Back-compat guarantees for the ``vivarium_dashboard`` -> ``vivarium_workbench`` rename.
+"""Back-compat guarantees for the ``vivarium_dashboard`` -> ``vivarium_workbench``
+and ``sms_api_client`` -> ``viva_api_client`` renames.
 
 Phase 1 keeps every existing external consumer working through deprecated
-aliases. These tests lock the three back-compat surfaces so a later refactor
-can't silently break them before Phase 3 (when the aliases are removed):
+aliases. These tests lock the back-compat surfaces so a later refactor
+can't silently break them before removal:
 
   * the new ``vivarium_workbench`` package imports;
   * the ``vivarium_dashboard`` shim package forwards submodule imports (by
     object identity) to ``vivarium_workbench`` and emits a DeprecationWarning;
   * the six ``vivarium_dashboard.server`` symbols still consumed by external
-    repos (v2ecoli / sms-ecoli / pbg-superpowers) resolve; and
-  * the dual-read env helper prefers the new prefix but falls back to the old.
+    repos (v2ecoli / sms-ecoli / pbg-superpowers) resolve;
+  * the dual-read env helper prefers the new prefix but falls back to the old; and
+  * the ``vivarium_workbench.lib.sms_api_client`` module forwards
+    ``SmsApiClient``/``SmsApiError`` (by object identity) to
+    ``vivarium_workbench.lib.viva_api_client``'s ``VivaApiClient``/``VivaApiError``
+    and emits a DeprecationWarning.
 """
 from __future__ import annotations
 
@@ -86,3 +91,20 @@ def test_env_dual_read_old_prefix_warns():
     assert val == "1"
     assert any(issubclass(w.category, DeprecationWarning) for w in caught), \
         "reading the old-prefix env var should emit a DeprecationWarning"
+
+
+def test_sms_api_client_shim_import_emits_deprecation_warning():
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        import vivarium_workbench.lib.sms_api_client as shim
+        importlib.reload(shim)
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught), \
+        "importing vivarium_workbench.lib.sms_api_client should emit a DeprecationWarning"
+
+
+def test_sms_api_client_shim_forwards_by_identity():
+    from vivarium_workbench.lib import sms_api_client as shim
+    from vivarium_workbench.lib import viva_api_client
+
+    assert shim.SmsApiClient is viva_api_client.VivaApiClient
+    assert shim.SmsApiError is viva_api_client.VivaApiError

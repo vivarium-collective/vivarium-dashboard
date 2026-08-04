@@ -58,7 +58,7 @@ class TestBuildSourceBuilds:
         assert result["error"] == "connection refused"
 
     def test_uses_sms_api_base_env(self, monkeypatch):
-        """The SMS_API_BASE env var is forwarded to the SmsApiClient."""
+        """The SMS_API_BASE env var is forwarded to the VivaApiClient."""
         from vivarium_workbench.lib import workspace_deps_views as wdv
 
         seen_base: list[str] = []
@@ -69,7 +69,7 @@ class TestBuildSourceBuilds:
 
         monkeypatch.setenv("SMS_API_BASE", "http://myproxy:9090")
         monkeypatch.setattr(
-            "vivarium_workbench.lib.sms_api_client.SmsApiClient",
+            "vivarium_workbench.lib.viva_api_client.VivaApiClient",
             _FakeClient,
         )
         monkeypatch.setattr(

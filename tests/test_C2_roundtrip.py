@@ -145,7 +145,7 @@ def _scan_all(node: object, found: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 class _CaptureClient:
-    """Fake SmsApiClient capturing the interval_time (== step count) and the
+    """Fake VivaApiClient capturing the interval_time (== step count) and the
     extra_pip_deps it's given."""
 
     def __init__(self):

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from vivarium_workbench.lib import sms_api_client as sac
+from vivarium_workbench.lib import viva_api_client as sac
 from vivarium_workbench.lib import remote_build_source as rbs
 
 
@@ -38,7 +38,7 @@ def test_list_simulators_hits_versions_endpoint(monkeypatch):
         return _Resp(json.dumps({"versions": [{"database_id": 1}]}).encode())
 
     monkeypatch.setattr(sac, "urlopen", fake_urlopen)
-    out = sac.SmsApiClient("http://x").list_simulators()
+    out = sac.VivaApiClient("http://x").list_simulators()
     assert out == {"versions": [{"database_id": 1}]}
     assert seen["url"] == "http://x/core/v1/simulator/versions"
 
@@ -51,7 +51,7 @@ def test_download_workspace_streams_to_file(monkeypatch, tmp_path):
         return _Resp(b"TARBALLBYTES")
 
     monkeypatch.setattr(sac, "urlopen", fake_urlopen)
-    out = sac.SmsApiClient("http://x").download_workspace(45, tmp_path)
+    out = sac.VivaApiClient("http://x").download_workspace(45, tmp_path)
     assert out == tmp_path / "workspace.tar.gz"
     assert out.read_bytes() == b"TARBALLBYTES"
     assert seen["url"] == "http://x/api/v1/simulations/workspace?simulator_id=45"
@@ -63,7 +63,7 @@ def test_download_workspace_honors_per_call_timeout(monkeypatch, tmp_path):
         seen["timeout"] = timeout
         return _Resp(b"X")
     monkeypatch.setattr(sac, "urlopen", fake_urlopen)
-    sac.SmsApiClient("http://x", timeout=30).download_workspace(45, tmp_path, timeout=600)
+    sac.VivaApiClient("http://x", timeout=30).download_workspace(45, tmp_path, timeout=600)
     assert seen["timeout"] == 600
 
 
@@ -73,7 +73,7 @@ def test_download_workspace_defaults_to_client_timeout(monkeypatch, tmp_path):
         seen["timeout"] = timeout
         return _Resp(b"X")
     monkeypatch.setattr(sac, "urlopen", fake_urlopen)
-    sac.SmsApiClient("http://x", timeout=30).download_workspace(45, tmp_path)
+    sac.VivaApiClient("http://x", timeout=30).download_workspace(45, tmp_path)
     assert seen["timeout"] == 30
 
 
@@ -159,7 +159,7 @@ def test_materialize_rejects_unsafe_commit(_cache, tmp_path):
     tb = tmp_path / "src.tar.gz"; _make_tarball(tb)
     client = _FakeClient(tb)
     for bad in ["../escape", "", "abc/../../etc", "deadbeef; rm -rf"]:
-        with pytest.raises(sac.SmsApiError):
+        with pytest.raises(sac.VivaApiError):
             rbs.materialize_build(client, 45, bad)
     assert client.downloads == 0  # never even reached the download
 
@@ -179,8 +179,8 @@ def test_list_build_sources_maps_and_labels():
 def test_list_build_sources_degrades_on_error():
     class _Boom:
         def list_simulators(self):
-            from vivarium_workbench.lib.sms_api_client import SmsApiError
-            raise SmsApiError("tunnel down")
+            from vivarium_workbench.lib.viva_api_client import VivaApiError
+            raise VivaApiError("tunnel down")
     out = rbs.list_build_sources(_Boom())
     assert out["builds"] == [] and "tunnel down" in out["error"]
 
@@ -242,13 +242,13 @@ def test_switch_build_missing_id_400():
 
 def test_switch_build_materialize_failure_502_leaves_state_unchanged(monkeypatch):
     from vivarium_workbench.lib import source_build_views as sbv
-    from vivarium_workbench.lib.sms_api_client import SmsApiError
+    from vivarium_workbench.lib.viva_api_client import VivaApiError
     monkeypatch.setattr(sbv, "list_build_sources",
                         lambda client: {"builds": [{"simulator_id": 45, "commit": "32b901",
                                                     "label": "v2ecoli @ 32b901 (build #45)"}], "error": None})
 
     def _boom(client, sim_id, commit, **k):
-        raise SmsApiError("tunnel down")
+        raise VivaApiError("tunnel down")
 
     monkeypatch.setattr(sbv, "materialize_build", _boom)
     switched = {}

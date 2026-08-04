@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 from vivarium_workbench.lib.pbg_export import export_composite_pbg  # noqa: E402 (module-level for patch)
 
 if TYPE_CHECKING:
-    from vivarium_workbench.lib.sms_api_client import SmsApiClient
+    from vivarium_workbench.lib.viva_api_client import VivaApiClient
 
 # Default poll interval in seconds
 _DEFAULT_POLL_INTERVAL = 10.0
@@ -89,7 +89,7 @@ def git_pip_url(ws_root: "Path | str") -> str:
 def run_remote(
     ws_root: "Path | str",
     composite_id: str,
-    client: "SmsApiClient | None" = None,
+    client: "VivaApiClient | None" = None,
     poll_interval: float = _DEFAULT_POLL_INTERVAL,
     dest: "Path | None" = None,
     n_steps: int = 1,
@@ -105,7 +105,7 @@ def run_remote(
     composite_id:
         Composite spec id (e.g. ``"pbg_my_ws.composites.my_composite"``).
     client:
-        ``SmsApiClient`` pointed at the sms-api tunnel.  If *None*, a default
+        ``VivaApiClient`` pointed at the sms-api tunnel.  If *None*, a default
         client is constructed (``http://localhost:8080``).
     poll_interval:
         Seconds between status polls.
@@ -122,13 +122,13 @@ def run_remote(
     Path
         Path to the downloaded ``results.zip``.
     """
-    from vivarium_workbench.lib.sms_api_client import SmsApiClient as _SmsApiClient
+    from vivarium_workbench.lib.viva_api_client import VivaApiClient as _VivaApiClient
     from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
     ws_root = Path(ws_root).resolve()
 
     if client is None:
-        client = _SmsApiClient(_sms_api_base())
+        client = _VivaApiClient(_sms_api_base())
 
     if dest is None:
         dest = ws_root / ".pbg" / "remote-results"
@@ -248,7 +248,7 @@ _TERMINAL_STATUSES = ("completed", "failed", "error", "cancelled")
 
 
 def _poll_until_terminal(
-    client: "SmsApiClient",
+    client: "VivaApiClient",
     sim_id: int,
     poll_interval: float,
     poll_timeout: float,
@@ -257,14 +257,14 @@ def _poll_until_terminal(
 
     Hardened for external users: bounded by ``poll_timeout`` (wall-clock ceiling;
     ``<= 0`` disables) and tolerant of up to ``_MAX_CONSECUTIVE_POLL_ERRORS``
-    *consecutive* transient :class:`SmsApiError`s, so one network blip doesn't fail
+    *consecutive* transient :class:`VivaApiError`s, so one network blip doesn't fail
     an otherwise-healthy multi-hour run and a stuck run can't hang the poller forever.
 
     Returns ``(status, status_data)`` for a terminal status. Raises
     :exc:`TimeoutError` on deadline and :exc:`RuntimeError` on persistent polling
     failure.
     """
-    from vivarium_workbench.lib.sms_api_client import SmsApiError
+    from vivarium_workbench.lib.viva_api_client import VivaApiError
 
     deadline = time.monotonic() + poll_timeout if poll_timeout and poll_timeout > 0 else None
     consecutive_errors = 0
@@ -272,7 +272,7 @@ def _poll_until_terminal(
         try:
             status_data = client.compose_status(sim_id)
             consecutive_errors = 0
-        except SmsApiError as exc:
+        except VivaApiError as exc:
             consecutive_errors += 1
             if consecutive_errors > _MAX_CONSECUTIVE_POLL_ERRORS:
                 raise RuntimeError(

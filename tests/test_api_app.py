@@ -4606,23 +4606,23 @@ class TestSourceBuildRemoteRoute:
             def latest_simulator(self, repo, branch):
                 return {"git_commit_hash": ""}
 
-        monkeypatch.setattr(sbv, "SmsApiClient", _Client)
+        monkeypatch.setattr(sbv, "VivaApiClient", _Client)
         r = client.post("/api/source/build-remote", json={"repo": "r", "branch": "b"})
         assert r.status_code == 502
         assert r.json() == {"error": "could not resolve branch HEAD via sms-api"}
 
     def test_sms_api_error_502(self, client, monkeypatch):
         from vivarium_workbench.lib import source_build_views as sbv
-        from vivarium_workbench.lib.sms_api_client import SmsApiError
+        from vivarium_workbench.lib.viva_api_client import VivaApiError
 
         class _Client:
             def __init__(self, base=None):
                 pass
 
             def latest_simulator(self, repo, branch):
-                raise SmsApiError("boom")
+                raise VivaApiError("boom")
 
-        monkeypatch.setattr(sbv, "SmsApiClient", _Client)
+        monkeypatch.setattr(sbv, "VivaApiClient", _Client)
         r = client.post("/api/source/build-remote", json={"repo": "r", "branch": "b"})
         assert r.status_code == 502
         assert r.json() == {"error": "sms-api: boom"}
@@ -4640,7 +4640,7 @@ class TestSourceBuildRemoteRoute:
             def register_simulator(self, repo, branch, commit):
                 return {"database_id": 42}
 
-        monkeypatch.setattr(sbv, "SmsApiClient", _Client)
+        monkeypatch.setattr(sbv, "VivaApiClient", _Client)
         r = client.post(
             "/api/source/build-remote",
             json={"repo": "https://github.com/x/y.git", "branch": "main"},
@@ -4675,7 +4675,7 @@ class TestSourceSwitchBuildRoute:
 
     def test_listing_error_502(self, client, monkeypatch):
         from vivarium_workbench.lib import source_build_views as sbv
-        monkeypatch.setattr(sbv, "SmsApiClient", lambda base=None: object())
+        monkeypatch.setattr(sbv, "VivaApiClient", lambda base=None: object())
         monkeypatch.setattr(
             sbv, "list_build_sources",
             lambda c: {"builds": [], "error": "tunnel down"},
@@ -4686,7 +4686,7 @@ class TestSourceSwitchBuildRoute:
 
     def test_not_found_404(self, client, monkeypatch):
         from vivarium_workbench.lib import source_build_views as sbv
-        monkeypatch.setattr(sbv, "SmsApiClient", lambda base=None: object())
+        monkeypatch.setattr(sbv, "VivaApiClient", lambda base=None: object())
         monkeypatch.setattr(
             sbv, "list_build_sources", lambda c: {"builds": [self._entry(99)]},
         )
@@ -4696,14 +4696,14 @@ class TestSourceSwitchBuildRoute:
 
     def test_materialize_error_502(self, client, monkeypatch):
         from vivarium_workbench.lib import source_build_views as sbv
-        from vivarium_workbench.lib.sms_api_client import SmsApiError
-        monkeypatch.setattr(sbv, "SmsApiClient", lambda base=None: object())
+        from vivarium_workbench.lib.viva_api_client import VivaApiError
+        monkeypatch.setattr(sbv, "VivaApiClient", lambda base=None: object())
         monkeypatch.setattr(
             sbv, "list_build_sources", lambda c: {"builds": [self._entry(5)]},
         )
 
         def _boom(c, sim_id, commit):
-            raise SmsApiError("no tarball")
+            raise VivaApiError("no tarball")
 
         monkeypatch.setattr(sbv, "materialize_build", _boom)
         r = client.post("/api/source/switch-build", json={"simulator_id": 5})
@@ -4715,7 +4715,7 @@ class TestSourceSwitchBuildRoute:
         from vivarium_workbench.lib import _root
         cache = tmp_path / "cache"
         cache.mkdir()
-        monkeypatch.setattr(sbv, "SmsApiClient", lambda base=None: object())
+        monkeypatch.setattr(sbv, "VivaApiClient", lambda base=None: object())
         monkeypatch.setattr(
             sbv, "list_build_sources", lambda c: {"builds": [self._entry(5)]},
         )
@@ -4785,7 +4785,7 @@ class TestRemoteRunStartRoute:
             rrv.subprocess, "run",
             lambda *a, **k: _sp.CompletedProcess(args=[], returncode=0, stdout="feature/x\n"),
         )
-        monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: object())
+        monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: object())
         monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
 
         def _submit(study, worker_fn):
@@ -4818,7 +4818,7 @@ class TestRemoteRunStartRoute:
             rrv.subprocess, "run",
             lambda *a, **k: _sp.CompletedProcess(args=[], returncode=0, stdout="feature/x\n"),
         )
-        monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: object())
+        monkeypatch.setattr(rrv, "VivaApiClient", lambda base=None: object())
         monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
 
         def _ctx(**kwargs):

@@ -462,7 +462,7 @@ def cmd_run_remote(args: argparse.Namespace) -> int:
     completion, and lands results.zip in the workspace.
     """
     from vivarium_workbench.lib.remote_run import run_remote
-    from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+    from vivarium_workbench.lib.viva_api_client import VivaApiClient, VivaApiError
     from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
     workspace = Path(args.workspace).resolve()
@@ -471,7 +471,7 @@ def cmd_run_remote(args: argparse.Namespace) -> int:
         return 2
 
     base_url = getattr(args, "sms_api_url", None) or _sms_api_base()
-    client = SmsApiClient(base_url)
+    client = VivaApiClient(base_url)
 
     dest = Path(args.dest) if getattr(args, "dest", None) else None
 
@@ -488,7 +488,7 @@ def cmd_run_remote(args: argparse.Namespace) -> int:
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         return 1
-    except SmsApiError as e:
+    except VivaApiError as e:
         print(f"ERROR (sms-api): {e}", file=sys.stderr)
         return 1
 
