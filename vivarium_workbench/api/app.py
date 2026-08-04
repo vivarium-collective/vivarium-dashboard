@@ -73,6 +73,7 @@ from vivarium_workbench.lib import composite_mutations as _composite_mut
 from vivarium_workbench.lib import investigation_viz_mutations as _inv_viz_mut
 from vivarium_workbench.lib import lifecycle_mutations as _lifecycle_mut
 from vivarium_workbench.lib import readout_migrate_views as _readout_migrate_views
+from vivarium_workbench.lib import finding_observations_views as _finding_observations_views
 from vivarium_workbench.lib import scaffold_mutations as _scaffold_mut
 from vivarium_workbench.lib import composite_state_views as _composite_state_views
 from vivarium_workbench.lib import analysis_viewers as _analysis_viewers
@@ -156,6 +157,7 @@ from vivarium_workbench.lib.models import (
     BandProvenanceResult,
     CitationGaps,
     ExpertSearchResult,
+    StudyFindingsPopulateResult,
     ExplorerSeries,
     ExplorerVector,
     FrameworkMetrics,
@@ -239,6 +241,7 @@ from vivarium_workbench.lib.models import (
     StudyComparisonAddBody,
     StudySyncRunsBody,
     StudyReadoutMigrateBody,
+    StudyFindingsPopulateBody,
     BandProvenanceSetBody,
     # DELETE-route request-body models
     SimulationDeleteBody,
@@ -5027,6 +5030,42 @@ def create_app() -> FastAPI:
         if status != 200:
             return JSONResponse(status_code=status, content=body)
         return body
+
+    @app.post(
+        "/api/study-findings-populate-observations",
+        response_model=StudyFindingsPopulateResult,
+        tags=["Studies"],
+        summary="Fill code-owned finding slots from computed_outcomes (idempotent)",
+    )
+    def study_findings_populate_observations(
+        req: StudyFindingsPopulateBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[StudyFindingsPopulateResult, JSONResponse]:
+        """Wraps ``viva_superpowers.finding_observations.populate_finding_observations``.
+
+        Body: ``{study}``. Fills only ABSENT code-owned finding slots
+        (``evidence.observed``/``units``/``divergence_factor``,
+        ``expected.range``/``threshold``/``cites``, ``provenance.run_ids``, and
+        the measured side of ``calibration_anchor``) from ``computed_outcomes``
+        + band + readouts. Inherently fill-absent-only + idempotent (no dry-run
+        flag): a second call on already-filled data returns ``filled=0`` and
+        does not rewrite ``study.yaml``.
+
+        Returns ``{study, filled, skipped}``. 400 missing study, 404 study not
+        found, 500 when ``viva_superpowers`` (or its ``finding_observations``
+        module) is unavailable or population fails.
+
+        Library-backed via
+        ``lib.finding_observations_views.study_findings_populate_observations``
+        — Phase 2.1f rewire-first (the plugin still computes; only the caller
+        moves).
+        """
+        body, status = _finding_observations_views.study_findings_populate_observations(
+            ws, req.model_dump(exclude_unset=True)
+        )
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return StudyFindingsPopulateResult.model_validate(body)
 
     # -----------------------------------------------------------------------
     # study-* GET routes re-exposed over FastAPI (aliases + v3-native).

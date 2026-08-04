@@ -329,6 +329,12 @@ export interface CitationGaps {
 export interface ExpertSearchResult {
 }
 
+export interface StudyFindingsPopulateResult {
+  study: string | null;
+  filled: number;
+  skipped: number;
+}
+
 export interface ObservablesPayload {
 }
 
