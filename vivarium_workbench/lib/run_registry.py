@@ -4,13 +4,18 @@ The dashboard server spawns runs via ``spawn_detached`` and reconciles
 crash-orphaned rows via ``reconcile_stale_runs`` on startup. All read/write
 goes through ``composite_runs`` — this module only deals with OS processes.
 
-This module ALSO hosts the vendored ``runs_meta`` read accessor
-(``RUNS_META_DDL`` + ``latest_run``), a byte-faithful copy of the canonical
-``viva_superpowers/run_registry.py`` (which carries the same name). The
-dashboard venv has no ``viva_superpowers``; the vendored ``lib/backfill_runs``
-imports ``RUNS_META_DDL`` from here. These additions are kept identical to
-canonical (see tests/test_backfill_runs_mirror.py for the backfill drift
-guard).
+This module ALSO hosts a vendored ``runs_meta`` read accessor
+(``RUNS_META_DDL`` + ``latest_run``), originally a byte-faithful copy of the
+canonical ``viva_superpowers/run_registry.py`` (which carries the same name).
+
+Phase 2.1a (de-vendoring) intended to delete this vendored block and repoint
+callers at ``viva_superpowers.run_registry`` directly, but the HARD GATE in
+that plan step (byte-diff the two ``RUNS_META_DDL`` strings before swapping)
+failed: the plugin's DDL has grown a ``manifest_json TEXT`` column that this
+copy lacks. Swapping would risk `runs.db` schema-creation drift, so A.4 was
+skipped — this block is left in place, unswapped, pending its own DDL-drift
+fix. It currently has no importer in this repo (its one caller,
+``lib/backfill_runs.py``, was deleted as dead code in the same phase).
 """
 from __future__ import annotations
 
