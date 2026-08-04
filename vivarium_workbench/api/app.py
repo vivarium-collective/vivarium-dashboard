@@ -98,6 +98,7 @@ from vivarium_workbench.lib import investigation_views as _inv_views
 from vivarium_workbench.lib import observables_views as _obs_views
 from vivarium_workbench.lib import readouts_views as _readouts_views
 from vivarium_workbench.lib import report_views as _report_views
+from vivarium_workbench.lib import cite_bands_views as _cite_bands_views
 from vivarium_workbench.lib import rigor_views as _rigor_views
 from vivarium_workbench.lib import saved_visualizations as _saved_viz
 from vivarium_workbench.lib import static_serving as _static_serving
@@ -151,6 +152,10 @@ from vivarium_workbench.lib.models import (
     InputsPayload,
     NeedsAttention,
     ReportLint,
+    BandProvenanceMissing,
+    BandProvenanceResult,
+    CitationGaps,
+    ExpertSearchResult,
     ExplorerSeries,
     ExplorerVector,
     FrameworkMetrics,
@@ -234,6 +239,7 @@ from vivarium_workbench.lib.models import (
     StudyComparisonAddBody,
     StudySyncRunsBody,
     StudyReadoutMigrateBody,
+    BandProvenanceSetBody,
     # DELETE-route request-body models
     SimulationDeleteBody,
     SimulationRunDeleteBody,
@@ -2118,6 +2124,133 @@ def create_app() -> FastAPI:
         """
         body, _ = _report_views.build_needs_attention(ws, investigation=investigation)
         return NeedsAttention.model_validate(body)
+
+    # -----------------------------------------------------------------------
+    # Cite-bands routes (Phase 2.1e — backs the /viva-cite-bands skill).
+    # -----------------------------------------------------------------------
+
+    @app.get(
+        "/api/band-provenance",
+        response_model=BandProvenanceMissing,
+        tags=["Data, inputs & references"],
+        summary="Bands (behavior_tests/tests/readouts) missing citation provenance",
+    )
+    def band_provenance_missing(
+        study: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[BandProvenanceMissing, JSONResponse]:
+        """Uncited acceptance bands for a study — the ``/viva-cite-bands``
+        skill's Step 1 read.
+
+        Wraps ``viva_superpowers.band_provenance.bands_missing_provenance``.
+        Returns ``{study, missing: [{name, kind, band, field_path}]}``;
+        ``missing`` is ``[]`` when every band already carries a ``cites``.
+
+        400 missing ``?study=``, 404 study not found, 500 when
+        ``viva_superpowers`` (or its ``band_provenance`` module) is
+        unavailable.
+
+        Library-backed via
+        ``lib.cite_bands_views.build_band_provenance_missing``.
+        """
+        body, status = _cite_bands_views.build_band_provenance_missing(ws, study)
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return BandProvenanceMissing.model_validate(body)
+
+    @app.post(
+        "/api/band-provenance",
+        response_model=BandProvenanceResult,
+        tags=["Data, inputs & references"],
+        summary="Write citation provenance onto a band-bearing test entry",
+    )
+    def band_provenance_set(
+        req: BandProvenanceSetBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[BandProvenanceResult, JSONResponse]:
+        """Write a band's ``cites`` (and optional ``calibration_anchor``) —
+        the ``/viva-cite-bands`` skill's ONLY sanctioned write path.
+
+        Wraps ``viva_superpowers.band_provenance.set_band_provenance`` (a
+        ruamel comment-preserving round-trip onto ``study.yaml``; never
+        fabricates an entry).
+
+        Body: ``{study, test_name, cites: [bib_key, ...], calibration_anchor?}``.
+        Returns ``{study, test_name, written: bool}`` — ``written`` is
+        ``False`` when the named entry doesn't exist, or the write was a
+        no-op (already identical — idempotent).
+
+        400 missing/invalid ``study``/``test_name``/``cites``, 404 study not
+        found, 500 when ``viva_superpowers`` is unavailable or the write
+        raises.
+
+        Library-backed via ``lib.cite_bands_views.write_band_provenance``.
+        """
+        body, status = _cite_bands_views.write_band_provenance(
+            ws, req.model_dump(exclude_unset=True)
+        )
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return BandProvenanceResult.model_validate(body)
+
+    @app.get(
+        "/api/citation-gaps",
+        response_model=CitationGaps,
+        tags=["Data, inputs & references"],
+        summary="Investigation references vs. member-study uncited bands",
+    )
+    def citation_gaps(
+        investigation: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[CitationGaps, JSONResponse]:
+        """Surface each member study's uncited bands against the
+        investigation's declared reference pool — the ``/viva-cite-bands``
+        skill's Step 1b read.
+
+        Wraps ``viva_superpowers.citation_gaps.investigation_citation_gaps``.
+        Returns ``{investigation, gaps: {study_slug: {uncited_bands:
+        [{test, observable?}], available_references: [bib_key]}}}``.
+
+        400 missing ``?investigation=``, 404 investigation not found, 500
+        when ``viva_superpowers`` is unavailable.
+
+        Library-backed via ``lib.cite_bands_views.build_citation_gaps``.
+        """
+        body, status = _cite_bands_views.build_citation_gaps(ws, investigation)
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return CitationGaps.model_validate(body)
+
+    @app.get(
+        "/api/expert-search",
+        response_model=ExpertSearchResult,
+        tags=["Data, inputs & references"],
+        summary="Search workspace expert PDFs for candidate citation evidence",
+    )
+    def expert_search(
+        q: Optional[str] = None,
+        max_hits: int = 5,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[ExpertSearchResult, JSONResponse]:
+        """Search every ``workspace.yaml``-declared expert PDF for candidate
+        quotes — the ``/viva-cite-bands`` skill's Step 2 read.
+
+        Wraps ``viva_superpowers.expert_search.search_expert_docs``. ``q`` is
+        a comma-separated list of search terms (test name, numeric bounds,
+        domain keywords); ``max_hits`` caps hits returned per term (default 5).
+
+        Returns ``{terms: [...], hits: [{doc, page, snippet, term}]}``, hits
+        ranked per-term by page hit-count then doc/page for determinism.
+
+        400 missing/empty ``?q=``, 500 when ``viva_superpowers`` is
+        unavailable.
+
+        Library-backed via ``lib.cite_bands_views.build_expert_search``.
+        """
+        body, status = _cite_bands_views.build_expert_search(ws, q, max_hits)
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return ExpertSearchResult.model_validate(body)
 
     @app.get(
         "/api/inputs",

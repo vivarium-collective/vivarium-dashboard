@@ -89,6 +89,11 @@ _MODELS: list[type[BaseModel]] = [
     _models.NeedsAttention,
     _models.InputsPayload,
     _models.IsetDetail,
+    # Cite-bands models (Phase 2.1e)
+    _models.BandProvenanceMissing,
+    _models.BandProvenanceResult,
+    _models.CitationGaps,
+    _models.ExpertSearchResult,
     # Observables + linkage-index models
     _models.ObservablesPayload,
     _models.StudyObservableCheck,

@@ -939,6 +939,70 @@ class NeedsAttention(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class BandProvenanceMissing(BaseModel):
+    """``GET /api/band-provenance`` payload
+    (lib.cite_bands_views.build_band_provenance_missing).
+
+    Shape: ``{study, missing: [{name, kind, band, field_path}]}`` — exactly
+    ``viva_superpowers.band_provenance.bands_missing_provenance``'s output,
+    wrapped with the resolved study slug. Empty ``missing`` means every band
+    is already cited.
+
+    Pure pass-through (``extra="allow"``, no declared fields).
+
+    Source: ``lib.cite_bands_views.build_band_provenance_missing``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
+class BandProvenanceResult(BaseModel):
+    """``POST /api/band-provenance`` payload
+    (lib.cite_bands_views.write_band_provenance).
+
+    Shape: ``{study, test_name, written: bool}``. ``written`` is ``False``
+    when the named entry was not found (never fabricates) or the write was a
+    no-op (already identical — idempotent).
+
+    Pure pass-through (``extra="allow"``, no declared fields).
+
+    Source: ``lib.cite_bands_views.write_band_provenance``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
+class CitationGaps(BaseModel):
+    """``GET /api/citation-gaps`` payload (lib.cite_bands_views.build_citation_gaps).
+
+    Shape: ``{investigation, gaps: {study_slug: {uncited_bands:
+    [{test, observable?}], available_references: [bib_key]}}}`` — ``gaps`` is
+    exactly ``viva_superpowers.citation_gaps.investigation_citation_gaps``'s
+    return value.
+
+    Pure pass-through (``extra="allow"``, no declared fields).
+
+    Source: ``lib.cite_bands_views.build_citation_gaps``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ExpertSearchResult(BaseModel):
+    """``GET /api/expert-search`` payload (lib.cite_bands_views.build_expert_search).
+
+    Shape: ``{terms: [str], hits: [{doc, page, snippet, term}]}`` — ``hits``
+    is exactly ``viva_superpowers.expert_search.search_expert_docs``'s return
+    value for the parsed ``q`` terms.
+
+    Pure pass-through (``extra="allow"``, no declared fields).
+
+    Source: ``lib.cite_bands_views.build_expert_search``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+
 class InputsPayload(BaseModel):
     """``GET /api/inputs`` payload (lib.report_views.build_inputs).
 
@@ -1607,6 +1671,23 @@ class StudyReadoutMigrateBody(BaseModel):
     study: Optional[str] = None
     write: Optional[bool] = None
     apply: Optional[bool] = None
+
+
+class BandProvenanceSetBody(BaseModel):
+    """POST /api/band-provenance {study, test_name, cites, calibration_anchor?}
+
+    ``cites`` is a non-empty list of bib_keys (required — this is the
+    ``/viva-cite-bands`` skill's write op). ``calibration_anchor`` is an
+    optional object, written verbatim when provided (mirrors
+    ``viva_superpowers.band_provenance.set_band_provenance``'s keyword).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    test_name: Optional[str] = None
+    cites: Optional[list[str]] = None
+    calibration_anchor: Optional[dict] = None
 
 
 class ProposedInputDecisionBody(BaseModel):
