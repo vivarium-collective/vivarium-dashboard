@@ -1572,7 +1572,7 @@ def build_study_charts_payload(ws_root, name: str, *, hide_superseded: bool = Fa
     import yaml as _yaml
 
     from vivarium_workbench.lib.simulations_index import discover_default_baseline_db
-    from vivarium_workbench.lib.viz_freshness import chart_freshness, manifest_diff
+    from viva_superpowers.viz_freshness import chart_freshness, manifest_diff
     from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
     # Layout-aware: a study may live nested under
