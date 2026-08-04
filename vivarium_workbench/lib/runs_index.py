@@ -1,10 +1,7 @@
 """Emitter-type classification helpers used by the dashboard's Simulations DB.
 
-VENDORED COPY. Canonical source: viva_superpowers/runs_index.py in the
-pbg-superpowers repo. The dashboard venv has no viva_superpowers, so this is
-a byte-faithful copy. ``emitter_type_of`` + ``_store_emitter_type`` are kept
-byte-identical to canonical (the drift guard in
-tests/test_runs_index_mirror.py compares both).
+De-vendored in Phase 2.1a: the plugin's canonical copy of this module was
+deleted in Phase 2.0, so this is now the only copy.
 
 The workspace-wide run listing itself is owned by
 ``vivarium_workbench.lib.simulations_index.list_simulations``; these helpers
