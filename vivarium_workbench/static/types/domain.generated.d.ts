@@ -317,6 +317,18 @@ export interface InputsPayload {
 export interface IsetDetail {
 }
 
+export interface BandProvenanceMissing {
+}
+
+export interface BandProvenanceResult {
+}
+
+export interface CitationGaps {
+}
+
+export interface ExpertSearchResult {
+}
+
 export interface ObservablesPayload {
 }
 
