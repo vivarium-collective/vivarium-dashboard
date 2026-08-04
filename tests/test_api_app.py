@@ -5617,17 +5617,47 @@ class TestMiscFsRoutes:
 
     def test_render_happy_200(self, client, monkeypatch):
         monkeypatch.setattr(api_app._misc_mut, "render_dashboard",
-                            lambda ws: ({"ok": True}, 200))
+                            lambda ws, body: ({"ok": True}, 200))
         r = client.post("/api/render", json={})
         assert r.status_code == 200
         assert r.json() == {"ok": True}
 
     def test_render_failure_500(self, client, monkeypatch):
         monkeypatch.setattr(api_app._misc_mut, "render_dashboard",
-                            lambda ws: ({"error": "boom"}, 500))
+                            lambda ws, body: ({"error": "boom"}, 500))
         r = client.post("/api/render", json={})
         assert r.status_code == 500
         assert r.json() == {"error": "boom"}
+
+    def test_render_no_body_forwards_empty_dict(self, client, monkeypatch):
+        # Phase 2.1d: `req: Optional[RenderRequest] = None` — a truly bodyless
+        # POST must still reach the lib builder with an empty dict, preserving
+        # the pre-2.1d unconditional-render behavior.
+        seen = {}
+
+        def _fake(ws, body):
+            seen["body"] = body
+            return {"ok": True}, 200
+
+        monkeypatch.setattr(api_app._misc_mut, "render_dashboard", _fake)
+        r = client.post("/api/render")
+        assert r.status_code == 200
+        assert seen["body"] == {}
+
+    def test_render_forwards_today_and_force_body(self, client, monkeypatch):
+        # Phase 2.1d: `today` (byte-stable CI render) + `force` (forced-render
+        # override-log write) are read from the request body and threaded to
+        # `lib.misc_mutations.render_dashboard` verbatim.
+        seen = {}
+
+        def _fake(ws, body):
+            seen["body"] = body
+            return {"ok": True}, 200
+
+        monkeypatch.setattr(api_app._misc_mut, "render_dashboard", _fake)
+        r = client.post("/api/render", json={"today": "2026-01-01", "force": True})
+        assert r.status_code == 200
+        assert seen["body"] == {"today": "2026-01-01", "force": True}
 
     # -- OpenAPI registration ------------------------------------------------
 

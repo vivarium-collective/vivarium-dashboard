@@ -52,8 +52,25 @@ def record_click(ws_root: Path, body: Any) -> None:
             f.write(json.dumps(body) + "\n")
 
 
-def render_dashboard(ws_root: Path) -> tuple[dict, int]:
+def render_dashboard(ws_root: Path, body: Any = None) -> tuple[dict, int]:
     """POST /api/render — re-render the workspace dashboard in-process.
+
+    Phase 2.1d — ``body`` (all fields optional; ``None``/``{}`` preserves the
+    previous unconditional-render behavior) mirrors the old ``/viva-report``
+    skill's CLI render usage (``viva_superpowers.report.render_workspace_report``)
+    so the skill can call this endpoint as a thin client instead of
+    reimplementing the render:
+
+      * ``today`` — forwarded to ``render_workspace_report`` as the render
+        date, for a byte-stable CI render (the old ``--today`` option). Only
+        passed through when truthy, so a monkeypatched/legacy
+        ``render_workspace_report(ws_root)`` (no ``today`` kwarg) still works
+        for the no-body call.
+      * ``force`` — mirrors the old skill's forced-render path
+        (``render_workspace_report(force=True, on_force_log_overrides=True)``):
+        BEFORE rendering, every currently-blocking (error-level,
+        not-yet-overridden) ``report_linter`` finding is logged to
+        ``.pbg/report-lint-overrides.json`` — see :func:`_log_force_overrides`.
 
     Port of ``_post_render``:
 
@@ -63,8 +80,54 @@ def render_dashboard(ws_root: Path) -> tuple[dict, int]:
     ``render_workspace_report`` is reached via this module's namespace so tests
     can monkeypatch it.
     """
+    body = body if isinstance(body, dict) else {}
     try:
-        render_workspace_report(ws_root)
+        if body.get("force"):
+            _log_force_overrides(ws_root)
+        kwargs: dict = {}
+        today = body.get("today")
+        if today:
+            kwargs["today"] = today
+        render_workspace_report(ws_root, **kwargs)
         return {"ok": True}, 200
     except Exception as e:  # noqa: BLE001
         return {"error": str(e)}, 500
+
+
+def _log_force_overrides(ws_root: Path) -> None:
+    """Best-effort port of the plugin's forced-render override logging.
+
+    Mirrors ``viva_superpowers.report.render_workspace_report(force=True,
+    on_force_log_overrides=True)``: run the structural linter and, for every
+    currently error-level finding not already logged in
+    ``.pbg/report-lint-overrides.json``, append it via
+    ``report_linter.write_override``. Reuses each finding's own
+    ``override_key`` (itself derived by ``report_linter._override_key`` at
+    lint time) — the formula is never re-derived here.
+
+    Tolerant of an absent/older ``viva_superpowers`` or a workspace-scan
+    failure: this is a logging side-effect and must never be the reason a
+    render request fails.
+    """
+    try:
+        from viva_superpowers.report_linter import (
+            lint_workspace_report,
+            load_overrides,
+            write_override,
+        )
+    except Exception:  # noqa: BLE001
+        return
+    try:
+        findings = lint_workspace_report(ws_root)
+        overrides = load_overrides(ws_root)
+    except Exception:  # noqa: BLE001
+        return
+    for f in findings:
+        if f.level == "error" and f.override_key not in overrides:
+            try:
+                write_override(
+                    ws_root, f,
+                    reason="force-published via POST /api/render (force=true)",
+                )
+            except Exception:  # noqa: BLE001
+                pass
