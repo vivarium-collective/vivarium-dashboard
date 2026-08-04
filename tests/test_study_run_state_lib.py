@@ -15,8 +15,8 @@ from pathlib import Path
 
 import yaml
 
-import process_bigraph.composite_generator as cg
-import process_bigraph.composite_discovery as cd
+import viva_superpowers.composite_generator as cg
+import viva_superpowers.composite_discovery as cd
 from vivarium_workbench.lib import study_run_state as srs
 
 from conftest import register_generator

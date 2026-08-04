@@ -227,7 +227,7 @@ _OBS_REF = "pbg_ws_increase_demo.composites.increase-demo"
 
 
 def test_real_generator_build(tmp_path):
-    pytest.importorskip("process_bigraph.composite_generator")
+    pytest.importorskip("viva_superpowers.composite_generator")
     import shutil
     csv.clear_cache()
     ws = tmp_path / "ws"

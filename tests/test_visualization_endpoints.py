@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 try:
-    from process_bigraph.visualization import as_visualization  # noqa: F401
+    from viva_superpowers.visualization import as_visualization  # noqa: F401
     _HAS_AS_VIZ = True
 except ImportError:
     _HAS_AS_VIZ = False
@@ -214,7 +214,7 @@ def test_post_visualization_accept_invalidates_core_cache(workspace_server):
     pkg_viz.mkdir(parents=True, exist_ok=True)
     (pkg_viz / "__init__.py").write_text("")
     (pkg_viz / "cache_probe.py").write_text(
-        'from process_bigraph.visualization import as_visualization\n'
+        'from viva_superpowers.visualization import as_visualization\n'
         '@as_visualization(\n'
         '    inputs={"x": "list[float]"},\n'
         '    name="CacheProbe",\n'
@@ -1529,7 +1529,7 @@ def test_post_composite_test_run_accepts_generator_id(workspace_server):
     run, or any non-404-spec-lookup error.
     """
     try:
-        from process_bigraph.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, composite_generator,
         )
     except ImportError:
@@ -1604,7 +1604,7 @@ def test_investigation_run_one_returns_viz_html_for_inlined_viz(workspace_server
     viz_pkg.mkdir(parents=True, exist_ok=True)
     (viz_pkg / "__init__.py").write_text("from . import tiny_viz  # noqa: F401\n")
     (viz_pkg / "tiny_viz.py").write_text(
-        'from process_bigraph.visualization import as_visualization\n'
+        'from viva_superpowers.visualization import as_visualization\n'
         '@as_visualization(\n'
         '    inputs={"x": "float"},\n'
         '    name="TinyViz",\n'

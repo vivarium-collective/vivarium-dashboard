@@ -34,7 +34,7 @@ def test_empty_registry_triggers_discover_generators(monkeypatch, tmp_path):
     must call ``discover_generators()`` when ``_REGISTRY`` starts out empty,
     mirroring every other ``_REGISTRY.get(spec_id)`` call site in this
     codebase (see run_runner.py, composite_flush.py, study_run_state.py).
-    Fakes the whole ``process_bigraph.composite_generator`` module (same
+    Fakes the whole ``viva_superpowers.composite_generator`` module (same
     technique as test_resolve_composite_source_or_generate.py) so this stays
     independent of v2ecoli's real registry state / import side effects.
     """
@@ -70,7 +70,7 @@ def test_empty_registry_triggers_discover_generators(monkeypatch, tmp_path):
         install_default_emitters=fake_install_default_emitters,
     )
     monkeypatch.setitem(sys.modules, "viva_superpowers", types.SimpleNamespace())
-    monkeypatch.setitem(sys.modules, "process_bigraph.composite_generator", fake_mod)
+    monkeypatch.setitem(sys.modules, "viva_superpowers.composite_generator", fake_mod)
 
     state, kind = composite_runs.inject_declared_emitter(
         {}, spec_id="v2ecoli.composites.baseline", run_id="r",

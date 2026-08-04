@@ -92,7 +92,7 @@ def declared_parquet_generator():
     backing registry and restore it afterwards rather than deleting the key —
     otherwise this fixture leaks a fake generator into every later test.
     """
-    cg = pytest.importorskip("process_bigraph.composite_generator")
+    cg = pytest.importorskip("viva_superpowers.composite_generator")
     from process_bigraph import composite_spec as cs
 
     before = dict(cs.all_specs())

@@ -75,7 +75,7 @@ def _resolve_state(req: RunRequest) -> tuple[dict, dict | None]:
     """
     # Generator-kind branch.
     try:
-        from process_bigraph.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, build_generator, discover_generators,
         )
         if not _REGISTRY:
@@ -117,7 +117,7 @@ def _generator_entry(spec_id: str):
     generator.
     """
     try:
-        from process_bigraph.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, discover_generators,
         )
     except ImportError:
@@ -138,7 +138,7 @@ def _generator_emitter_defaults(spec_id: str) -> list:
     entry = _generator_entry(spec_id)
     if entry is None:
         return []
-    from process_bigraph.composite_generator import emitter_defaults
+    from viva_superpowers.composite_generator import emitter_defaults
     return emitter_defaults(entry)
 
 
@@ -175,7 +175,7 @@ def _select_emitter_name(*, spec: dict | None, spec_id: str, db_file: str) -> st
     Pure and side-effect-free so R1 is unit-testable without a full ``execute``.
     """
     from vivarium_workbench.lib import emitters
-    from process_bigraph.composite_generator import emitter_defaults
+    from viva_superpowers.composite_generator import emitter_defaults
     declared = (emitter_defaults(spec) if spec is not None
                 else _generator_emitter_defaults(spec_id))
     if declared:
@@ -245,7 +245,7 @@ def _render_viz(composite, run_dir: Path, *,
 
     # 1. Inline viz steps.
     try:
-        from process_bigraph.visualization import render_results
+        from viva_superpowers.visualization import render_results
         rendered = render_results(composite)
         for path_tuple, payload in rendered.items():
             key = ".".join(str(p) for p in path_tuple)
@@ -309,7 +309,7 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
     function itself never raises.
     """
     try:
-        from process_bigraph.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
         from vivarium_workbench.lib.investigations import (
             build_viz_composite, gather_emitter_outputs,
         )
@@ -330,7 +330,7 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
     # addresses resolve through core.link_registry.
     registry = dict(core.link_registry)
     try:
-        from process_bigraph.visualizations import (
+        from viva_superpowers.visualizations import (
             TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap,
         )
         for cls in (TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap):
@@ -343,7 +343,7 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
         pass
 
     try:
-        from process_bigraph.visualization import Visualization
+        from viva_superpowers.visualization import Visualization
         def _walk(cls):
             for sub in cls.__subclasses__():
                 yield sub
@@ -457,7 +457,7 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
         from vivarium_workbench.lib.investigations import (
             build_viz_composite, gather_emitter_outputs,
         )
-        from process_bigraph.visualizations import (
+        from viva_superpowers.visualizations import (
             TimeSeriesPlot, TimeSeriesFromObservables,
         )
         from process_bigraph import Composite
@@ -468,7 +468,7 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
     # `local:<ClassName>` addresses resolve through core.link_registry.
     registry = dict(core.link_registry)
     try:
-        from process_bigraph.visualizations import (
+        from viva_superpowers.visualizations import (
             ParamVsObservable, Distribution, PhaseSpace, Heatmap,
         )
         for cls in (
@@ -484,7 +484,7 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
         pass
 
     try:
-        from process_bigraph.visualization import Visualization
+        from viva_superpowers.visualization import Visualization
         def _walk(cls):
             for sub in cls.__subclasses__():
                 yield sub
@@ -663,7 +663,7 @@ def execute(request_path: Path) -> int:
         try:
             _gen_entry = _generator_entry(req.spec_id)
             if _gen_entry is not None:
-                from process_bigraph.composite_generator import apply_core_extensions
+                from viva_superpowers.composite_generator import apply_core_extensions
                 core = apply_core_extensions(_gen_entry, core) or core
         except Exception as _ext_exc:  # noqa: BLE001
             _write_log(req, f"note: could not apply generator core_extensions: {_ext_exc}")

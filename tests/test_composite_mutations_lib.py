@@ -457,7 +457,7 @@ class TestCreateFromComposite:
         _stub_catalog(monkeypatch, {
             ref: {"name": "gen", "id": ref, "kind": "generator"},
         })
-        import process_bigraph.composite_generator as _cg
+        import viva_superpowers.composite_generator as _cg
         monkeypatch.setattr(_cg, "_REGISTRY", {ref: object()}, raising=False)
         monkeypatch.setattr(_cg, "build_generator",
                             lambda entry: {"name": "gen", "state": {"x": 1}})
@@ -497,7 +497,7 @@ class TestCreateFromComposite:
     def test_404_generator_build_failed(self, ws: Path, monkeypatch: Any) -> None:
         ref = "pbg_testws.composites.gen"
         _stub_catalog(monkeypatch, {ref: {"name": "gen", "id": ref, "kind": "generator"}})
-        import process_bigraph.composite_generator as _cg
+        import viva_superpowers.composite_generator as _cg
         monkeypatch.setattr(_cg, "_REGISTRY", {ref: object()}, raising=False)
 
         def _boom(entry):

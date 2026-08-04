@@ -46,7 +46,7 @@ def test_falls_back_to_generator_registry_when_yaml_missing(tmp_path, monkeypatc
         sys.modules, "viva_superpowers", types.SimpleNamespace(),
     )
     monkeypatch.setitem(
-        sys.modules, "process_bigraph.composite_generator", fake_mod,
+        sys.modules, "viva_superpowers.composite_generator", fake_mod,
     )
 
     path, is_generator, name = _resolve_composite_source_or_generate(
@@ -70,7 +70,7 @@ def test_raises_when_neither_yaml_nor_generator_resolves(tmp_path, monkeypatch):
         sys.modules, "viva_superpowers", types.SimpleNamespace(),
     )
     monkeypatch.setitem(
-        sys.modules, "process_bigraph.composite_generator", fake_mod,
+        sys.modules, "viva_superpowers.composite_generator", fake_mod,
     )
 
     with pytest.raises(FileNotFoundError, match="not registered as a"):
@@ -92,7 +92,7 @@ def test_materialize_generator_doc_runs_build_generator(tmp_path, monkeypatch):
         sys.modules, "viva_superpowers", types.SimpleNamespace(),
     )
     monkeypatch.setitem(
-        sys.modules, "process_bigraph.composite_generator", fake_mod,
+        sys.modules, "viva_superpowers.composite_generator", fake_mod,
     )
 
     doc = materialize_generator_doc("pkg.composites.module.func")

@@ -251,7 +251,7 @@ def test_explorer_run_lifecycle_folds_to_completed_status(tmp_path):
 # R1b — the DECLARATION SOURCE reaches the parquet branch (generator path)
 # --------------------------------------------------------------------------
 def _fake_registry(monkeypatch, spec_id, entry):
-    """Install a fake process_bigraph.composite_generator registry.
+    """Install a fake viva_superpowers.composite_generator registry.
 
     Mirrors the technique in test_inject_declared_emitter.py so this runs
     without the v2ecoli workspace checked out alongside.
@@ -259,13 +259,13 @@ def _fake_registry(monkeypatch, spec_id, entry):
     import sys
     import types
     from viva_superpowers import composite_generator as real
-    fake = types.ModuleType("process_bigraph.composite_generator")
+    fake = types.ModuleType("viva_superpowers.composite_generator")
     for attr in dir(real):
         if not attr.startswith("__"):
             setattr(fake, attr, getattr(real, attr))
     fake._REGISTRY = {spec_id: entry}
     fake.discover_generators = lambda *a, **k: dict(fake._REGISTRY)
-    monkeypatch.setitem(sys.modules, "process_bigraph.composite_generator", fake)
+    monkeypatch.setitem(sys.modules, "viva_superpowers.composite_generator", fake)
     return fake
 
 
@@ -299,7 +299,7 @@ def test_generator_declaration_source_reaches_install_default_emitters(monkeypat
 
     # Guard the property that made this silent: None really is a no-op, so a
     # regression here reverts to writing no durable output at all.
-    from process_bigraph.composite_generator import install_default_emitters
+    from viva_superpowers.composite_generator import install_default_emitters
     assert install_default_emitters({"a": 1}, None, run_id="r", out_dir="/tmp/p") == {"a": 1}
 
 

@@ -55,7 +55,7 @@ def _composite_analyses(spec_id: str, core) -> list:
     declarations (each a dict with at least ``name``, optionally ``params``).
     [] when the generator is unregistered or declares none."""
     try:
-        from process_bigraph.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
     except ImportError:
         return []
     if not _REGISTRY:

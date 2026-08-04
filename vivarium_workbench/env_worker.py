@@ -200,7 +200,7 @@ def _registry_catalog() -> dict:
     import process_bigraph as _pb
     EMITTER_CLS = getattr(_pb, "Emitter", None)
     try:
-        from process_bigraph.visualization import Visualization as VISUALIZATION_CLS
+        from viva_superpowers.visualization import Visualization as VISUALIZATION_CLS
     except ImportError:
         VISUALIZATION_CLS = None
 
@@ -333,7 +333,7 @@ def _list_visualizations() -> dict:
 
     # Inject the standard pbg-superpowers visualization classes.
     try:
-        from process_bigraph.visualizations import (
+        from viva_superpowers.visualizations import (
             Distribution, Heatmap, ParamVsObservable, PhaseSpace, TimeSeriesPlot,
         )
         for cls in [TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap]:
@@ -346,7 +346,7 @@ def _list_visualizations() -> dict:
         import importlib as _importlib
         import pkgutil as _pkgutil
 
-        from process_bigraph.visualization import Visualization as _VizBase
+        from viva_superpowers.visualization import Visualization as _VizBase
         _pkg_name = ws_data.get("package_path") or (
             "pbg_" + str(ws_data.get("name", "")).replace("-", "_"))
         viz_pkg = _importlib.import_module(f"{_pkg_name}.visualizations")
@@ -366,7 +366,7 @@ def _list_visualizations() -> dict:
         pass
 
     try:
-        from process_bigraph.visualization import Visualization as _VB
+        from viva_superpowers.visualization import Visualization as _VB
     except ImportError:
         _VB = None
 
@@ -890,7 +890,7 @@ def _lazy_core_for_ref(ref):
     if not ref:
         return None
     try:
-        from process_bigraph.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, apply_core_extensions, discover_generators,
         )
     except Exception:  # noqa: BLE001
@@ -1001,7 +1001,7 @@ def _resolve_composite_state(params: dict) -> dict:
     _import_workspace_package(_workspace)
     out: dict = {"__not_registered__": True}
     try:
-        from process_bigraph.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, apply_core_extensions, build_generator,
             discover_generators, emitter_defaults,
         )
@@ -1068,7 +1068,7 @@ def _resolve_inner_composite_state(params: dict) -> dict:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
     try:
-        from process_bigraph.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY, apply_core_extensions, build_generator, discover_generators,
         )
         from bigraph_schema import allocate_core
@@ -1191,7 +1191,7 @@ def _obs_available(params: dict) -> dict:
         apply_core_extensions = None
         build_generator = None
         try:
-            from process_bigraph.composite_generator import (
+            from viva_superpowers.composite_generator import (
                 _REGISTRY,
                 apply_core_extensions as _ace,
                 build_generator as _bg,
@@ -1296,7 +1296,7 @@ def _discover_composites() -> dict:
 
     reg_keys: list = []
     try:
-        from process_bigraph.composite_generator import _REGISTRY, discover_generators
+        from viva_superpowers.composite_generator import _REGISTRY, discover_generators
         if not _REGISTRY:
             try:
                 discover_generators()
@@ -1308,7 +1308,7 @@ def _discover_composites() -> dict:
 
     out: dict = {}
     try:
-        from process_bigraph.composite_discovery import discover_all
+        from viva_superpowers.composite_discovery import discover_all
         merged = discover_all() or {}
     except Exception:  # noqa: BLE001 — no generator discovery available → spec-only
         merged = {}
@@ -1390,7 +1390,7 @@ def _validate_generated_visualization(params: dict) -> dict:
                         pass
                 if not found:
                     try:
-                        from process_bigraph.visualization import Visualization as _VizBase
+                        from viva_superpowers.visualization import Visualization as _VizBase
                         if issubclass(attr_val, _VizBase) and attr_val is not _VizBase:
                             found = True
                             break
@@ -1890,7 +1890,7 @@ def _build_viz_core():
     registry = dict(core.link_registry)
 
     try:
-        from process_bigraph.visualizations import (
+        from viva_superpowers.visualizations import (
             Distribution, Heatmap, ParamVsObservable, PhaseSpace, TimeSeriesPlot,
         )
         for cls in (TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap):
@@ -1900,8 +1900,8 @@ def _build_viz_core():
         pass
 
     try:
-        from process_bigraph.composite_generator import discover_generators
-        from process_bigraph.visualization import Visualization
+        from viva_superpowers.composite_generator import discover_generators
+        from viva_superpowers.visualization import Visualization
         discover_generators()  # force-load packages so @Visualization classes appear
 
         def _walk(cls):
@@ -2475,7 +2475,7 @@ def _list_generators() -> dict:
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
-    from process_bigraph.composite_generator import _REGISTRY, discover_generators
+    from viva_superpowers.composite_generator import _REGISTRY, discover_generators
     try:
         if not _REGISTRY:
             discover_generators()

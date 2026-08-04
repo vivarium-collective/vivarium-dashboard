@@ -108,7 +108,7 @@ def build_composite_state_for_observables(ws_root: Path, ref: str) -> tuple[Any,
     apply_core_extensions: Any = None
     build_generator: Any = None
     try:
-        from process_bigraph.composite_generator import (
+        from viva_superpowers.composite_generator import (
             _REGISTRY,
             build_generator as _build_generator,
             discover_generators,
