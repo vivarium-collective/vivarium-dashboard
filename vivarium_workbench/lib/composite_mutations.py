@@ -541,7 +541,7 @@ def create_from_composite(ws_root: Path, body: dict[str, Any]) -> "tuple[dict, i
         # generator id (provenance); from the study's POV the sidecar is
         # an ordinary spec.
         try:
-            from viva_superpowers.composite_generator import _REGISTRY, build_generator, discover_generators
+            from process_bigraph.composite_generator import _REGISTRY, build_generator, discover_generators
         except ImportError as e:
             return {
                 "error": f"pbg-superpowers unavailable for generator resolution: {e}"

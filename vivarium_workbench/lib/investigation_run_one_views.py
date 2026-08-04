@@ -191,7 +191,7 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
             # Gather rendered viz HTML, if viva_superpowers is importable.
             viz_html = {{}}
             try:
-                from viva_superpowers.visualization import render_results
+                from process_bigraph.visualization import render_results
                 rendered = render_results(composite)
                 for path_tuple, payload in rendered.items():
                     key = '.'.join(str(p) for p in path_tuple)

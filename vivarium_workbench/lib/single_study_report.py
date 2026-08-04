@@ -1826,7 +1826,7 @@ def _resolve_composite_doc(ws_root: Path, spec: dict) -> Optional[dict]:
     doc = None
     # 1) generator registry (built composites)
     try:
-        from viva_superpowers.composite_generator import (
+        from process_bigraph.composite_generator import (
             _REGISTRY, build_generator, discover_generators,
         )
         if not _REGISTRY:

@@ -135,7 +135,7 @@ pbg-ptools = { path = "../pbg-ptools", editable = true }
 # the interface without dragging in an implementation, and a cloud adapter swaps
 # in without the port changing. Enforced in CI (`lint-imports`).
 [tool.importlinter]
-root_package = "vivarium_workbench"
+root_packages = ["vivarium_workbench", "viva_superpowers"]
 
 [[tool.importlinter.contracts]]
 name = "ports are pure interfaces (no adapter / no git-impl imports)"
@@ -147,6 +147,21 @@ forbidden_modules = [
     "vivarium_workbench.lib.work_state",
     "vivarium_workbench.lib.git_commit_views",
 ]
+
+[[tool.importlinter.contracts]]
+name = "workbench must not import the Phase-1 shims"
+type = "forbidden"
+source_modules = ["vivarium_workbench"]
+forbidden_modules = [
+  "viva_superpowers.composite_generator",
+  "viva_superpowers.composite_discovery",
+  "viva_superpowers.visualization",
+  "viva_superpowers.visualizations",
+]
+# Direct imports only: viva_superpowers.study_audit (a real, staying module — see
+# Phase 2.0 D3) internally uses composite_generator. That transitive edge is
+# out of scope for this contract, which polices the workbench's OWN imports.
+allow_indirect_imports = true
 
 [tool.mypy]
 python_version = "3.11"

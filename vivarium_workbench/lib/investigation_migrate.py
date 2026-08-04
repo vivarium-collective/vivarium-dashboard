@@ -117,7 +117,7 @@ def _resolve_composite_source_or_generate(
         pass  # fall through to generator lookup
 
     try:
-        from viva_superpowers.composite_generator import (
+        from process_bigraph.composite_generator import (
             _REGISTRY, discover_generators,
         )
     except ImportError as e:
@@ -154,7 +154,7 @@ def materialize_generator_doc(ref: str) -> dict:
     composites whose state contains live Process instances that can't be
     serialized — those need a different storage path).
     """
-    from viva_superpowers.composite_generator import (
+    from process_bigraph.composite_generator import (
         _REGISTRY, build_generator, discover_generators,
     )
     if not _REGISTRY:
