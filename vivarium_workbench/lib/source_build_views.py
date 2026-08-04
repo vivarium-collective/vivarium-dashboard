@@ -28,7 +28,12 @@ import json
 from pathlib import Path
 
 from vivarium_workbench.lib import active_workspace
-from vivarium_workbench.lib.remote_build_source import ensure_git_workspace, list_build_sources, materialize_build
+from vivarium_workbench.lib.remote_build_source import (
+    ensure_git_workspace,
+    list_build_sources,
+    materialize_build,
+    materialize_session_build,
+)
 from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
 from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
@@ -80,7 +85,7 @@ def build_remote(body: dict) -> tuple[dict, int]:
     )
 
 
-def switch_build(body: dict, *, switch_active: bool = True) -> tuple[dict, int]:
+def switch_build(body: dict, *, switch_active: bool = True, session_key: str | None = None) -> tuple[dict, int]:
     """Materialize a build's workspace (cached) + re-point. ``(body, status)``.
 
     ``switch_active`` (default ``True``) keeps the legacy **process-global**
@@ -88,6 +93,13 @@ def switch_build(body: dict, *, switch_active: bool = True) -> tuple[dict, int]:
     ``/api/source/switch-build`` route passes ``switch_active=False`` so the
     switch is **per session** (the route binds the caller's session to the
     materialized cache dir instead — mirrors ``/api/source/switch``, slice 4).
+
+    ``session_key``, when given, resolves to that session's OWN exclusive
+    clone of the build (``materialize_session_build`` — item 20's fix) instead
+    of the shared immutable base every session used to bind to directly. Kept
+    optional (default ``None`` → old shared-cache-dir behavior) so callers
+    that genuinely want the raw shared base (and every existing test in this
+    file, none of which pass a session key) are unaffected.
 
     Behaviour-preserving port of ``_post_source_switch_build``:
 
@@ -108,7 +120,10 @@ def switch_build(body: dict, *, switch_active: bool = True) -> tuple[dict, int]:
             return {"error": f"sms-api unavailable: {listing['error']}"}, 502
         return {"error": f"build {sim_id} not found"}, 404
     try:
-        cache_dir = materialize_build(client, sim_id, entry["commit"])
+        if session_key is not None:
+            cache_dir = materialize_session_build(client, session_key, sim_id, entry["commit"])
+        else:
+            cache_dir = materialize_build(client, sim_id, entry["commit"])
     except SmsApiError as e:
         return {"error": f"materialize failed: {e}"}, 502
     # Idempotent/self-healing: a bare tarball extraction has no `.git`, so a

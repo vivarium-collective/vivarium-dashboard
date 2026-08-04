@@ -5509,10 +5509,13 @@ def create_app() -> FastAPI:
         """Materialize a remote build's workspace (cached) and re-point to it.
 
         Body: ``{"simulator_id"}`` — looks the build up in the sms-api listing,
-        downloads+extracts its workspace once (cached per commit), stamps build
-        provenance into the cache dir (best-effort), then binds the **calling
-        session** to it (per-session, slice 4/5 — the process-global root and
-        other sessions are untouched) and returns ``{ok, source}``.
+        downloads+extracts its workspace once (cached per commit), then
+        materializes THIS session's own exclusive clone of it (item 20's fix —
+        every session used to bind to the same shared directory, with no write
+        isolation), stamps build provenance into that clone (best-effort), then
+        binds the **calling session** to it (per-session, slice 4/5 — the
+        process-global root and other sessions are untouched) and returns
+        ``{ok, source}``.
 
         Status codes:
           - 400  missing ``simulator_id`` (``{"error": "missing 'simulator_id'"}``)
@@ -5523,13 +5526,15 @@ def create_app() -> FastAPI:
 
         The CSRF middleware already guards this POST.  ``switch_active=False`` —
         materialize + resolve without the global re-point; the per-session bind is
-        ``session_registry.rebind``.
+        ``session_registry.rebind``. ``session_key`` is resolved BEFORE the call so
+        ``switch_build`` can materialize this session's own clone rather than the
+        shared base every session used to bind to directly.
         """
+        session_key = _session_key_of(request)
         body, status = _source_build_views.switch_build(
-            req.model_dump(), switch_active=False)
+            req.model_dump(), switch_active=False, session_key=session_key)
         if status != 200:
             return JSONResponse(status_code=status, content=body)
-        session_key = _session_key_of(request)
         source_path = (body.get("source") or {}).get("path")
         if session_key and source_path:
             session_registry.rebind(session_key, source_path)

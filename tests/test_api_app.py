@@ -4702,10 +4702,13 @@ class TestSourceSwitchBuildRoute:
             sbv, "list_build_sources", lambda c: {"builds": [self._entry(5)]},
         )
 
-        def _boom(c, sim_id, commit):
+        def _boom(c, session_key, sim_id, commit):
             raise SmsApiError("no tarball")
 
-        monkeypatch.setattr(sbv, "materialize_build", _boom)
+        # A real request always resolves a session key (minted on first contact),
+        # so the route calls materialize_session_build — item 20's per-session
+        # clone — not the bare materialize_build a session-less lib caller hits.
+        monkeypatch.setattr(sbv, "materialize_session_build", _boom)
         r = client.post("/api/source/switch-build", json={"simulator_id": 5})
         assert r.status_code == 502
         assert r.json() == {"error": "materialize failed: no tarball"}
@@ -4713,15 +4716,20 @@ class TestSourceSwitchBuildRoute:
     def test_happy_path_repoints(self, client, tmp_path, monkeypatch):
         from vivarium_workbench.lib import source_build_views as sbv
         from vivarium_workbench.lib import _root
-        cache = tmp_path / "cache"
+        cache = tmp_path / "session-clone"
         cache.mkdir()
         monkeypatch.setattr(sbv, "SmsApiClient", lambda base=None: object())
         monkeypatch.setattr(
             sbv, "list_build_sources", lambda c: {"builds": [self._entry(5)]},
         )
-        monkeypatch.setattr(
-            sbv, "materialize_build", lambda c, sim_id, commit: cache,
-        )
+        seen = {}
+
+        def _materialize_session(c, session_key, sim_id, commit):
+            seen["session_key"] = session_key
+            seen["args"] = (sim_id, commit)
+            return cache
+
+        monkeypatch.setattr(sbv, "materialize_session_build", _materialize_session)
         from vivarium_workbench.lib import session_registry
         session_registry.clear()
         before = _root.get_workspace_root()
@@ -4737,6 +4745,11 @@ class TestSourceSwitchBuildRoute:
         assert _root.get_workspace_root() == before
         key = client.cookies.get(session_registry.SESSION_COOKIE)
         assert key is not None and session_registry.get(key).source_path == Path(str(cache))
+        # item 20: the route must resolve+pass the caller's OWN session key, so
+        # switch_build materializes THAT session's exclusive clone, not the
+        # shared build cache directly.
+        assert seen["session_key"] == key
+        assert seen["args"] == (5, "deadbeef")
 
     def test_route_in_openapi(self, client):
         paths = client.get("/openapi.json").json()["paths"]
