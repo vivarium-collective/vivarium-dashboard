@@ -31,7 +31,7 @@ def _prime_registry() -> None:
     """Best-effort: import bigraph-schema packages so decorator-registered
     generators populate the process-bigraph registry. Monkeypatched in tests."""
     try:
-        from viva_superpowers.composite_generator import discover_generators
+        from process_bigraph.composite_generator import discover_generators
         discover_generators()
     except Exception:
         pass

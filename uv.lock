@@ -4822,8 +4822,8 @@ wheels = [
 
 [[package]]
 name = "process-bigraph"
-version = "1.7.0"
-source = { git = "https://github.com/vivarium-collective/process-bigraph.git?branch=main#4889ded6d685c5109445d0b7fe9673e0eafa8acd" }
+version = "1.8.2"
+source = { git = "https://github.com/vivarium-collective/process-bigraph.git?branch=main#0e65c0c2539dc0a9b594e40e7849b85b6b5f19a7" }
 dependencies = [
     { name = "bigraph-schema", marker = "python_full_version == '3.12.12'" },
     { name = "matplotlib", marker = "python_full_version == '3.12.12'" },
@@ -7256,7 +7256,7 @@ requires-dist = [
     { name = "pytest-xdist", marker = "extra == 'dev'", specifier = ">=3.6" },
     { name = "ray", marker = "extra == 'ray'", specifier = ">=2.10" },
     { name = "requests" },
-    { name = "scipy", specifier = "<1.18" },
+    { name = "scipy", specifier = ">=1.14,<1.18" },
     { name = "spatio-flux", git = "https://github.com/vivarium-collective/spatio-flux.git?branch=main" },
     { name = "sympy" },
     { name = "unum" },
@@ -7343,6 +7343,11 @@ wheels = [
 ]
 
 [[package]]
+name = "viva-marketplace"
+version = "0.1.0"
+source = { git = "https://github.com/vivarium-collective/viva-marketplace.git?branch=main#317764269a38a5dff255ce73a1f667032d393248" }
+
+[[package]]
 name = "viva-munk"
 version = "0.0.2"
 source = { git = "https://github.com/vivarium-collective/Viva-munk.git?branch=main#cb13949f3fd8d2a54343cdf7d56968b09c774bed" }
@@ -7377,7 +7382,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/3e/87/794e0b4c5dccbca30
 
 [[package]]
 name = "vivarium-workbench"
-version = "0.3.28"
+version = "0.3.29"
 source = { editable = "." }
 dependencies = [
     { name = "bigraph-schema", marker = "python_full_version == '3.12.12'" },
@@ -7394,6 +7399,7 @@ dependencies = [
     { name = "pypdf", marker = "python_full_version == '3.12.12'" },
     { name = "pyyaml", marker = "python_full_version == '3.12.12'" },
     { name = "uvicorn", marker = "python_full_version == '3.12.12'" },
+    { name = "viva-marketplace", marker = "python_full_version == '3.12.12'" },
     { name = "xarray", marker = "python_full_version == '3.12.12'" },
     { name = "zarr", marker = "python_full_version == '3.12.12'" },
 ]
@@ -7444,7 +7450,7 @@ requires-dist = [
     { name = "pbg-ptools", marker = "extra == 'demo'", editable = "../pbg-ptools" },
     { name = "pbg-superpowers", specifier = ">=0.14.0" },
     { name = "polars", marker = "extra == 'test'" },
-    { name = "process-bigraph", specifier = ">=1.7.0" },
+    { name = "process-bigraph", specifier = ">=1.8.2" },
     { name = "pyarrow", marker = "extra == 'test'" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pypdf", specifier = ">=4.0" },
@@ -7456,6 +7462,7 @@ requires-dist = [
     { name = "pyyaml" },
     { name = "uvicorn", specifier = ">=0.29" },
     { name = "v2ecoli", marker = "extra == 'demo'", editable = "../v2ecoli" },
+    { name = "viva-marketplace", git = "https://github.com/vivarium-collective/viva-marketplace.git?branch=main" },
     { name = "xarray", specifier = ">=2026.4" },
     { name = "xarray", marker = "extra == 'test'" },
     { name = "zarr", specifier = ">=3.1.6" },

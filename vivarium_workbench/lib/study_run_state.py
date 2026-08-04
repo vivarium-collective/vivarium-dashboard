@@ -74,7 +74,7 @@ def resolve_study_baseline_state(ws_root, pkg, spec_id, params):
     import sys as _sys
 
     try:
-        from viva_superpowers.composite_generator import (
+        from process_bigraph.composite_generator import (
             _REGISTRY, build_generator, discover_generators,
         )
     except ImportError:
@@ -115,7 +115,7 @@ def resolve_study_baseline_state(ws_root, pkg, spec_id, params):
         # via this path, removing the "Composites tab lists it but Run
         # rejects it" foot-gun.
         try:
-            from viva_superpowers.composite_discovery import discover_composites
+            from process_bigraph.composite_discovery import discover_composites
             specs = discover_composites()
         except Exception:  # noqa: BLE001
             specs = {}

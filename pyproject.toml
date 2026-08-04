@@ -23,7 +23,7 @@ dependencies = [
     # and `seed: 1.0` are one address — an older pbg computes a DIFFERENT
     # address, which is a silent cache miss, so this floor must not slip.
     # `migrate-artifacts` also needs 1.7.0's `legacy_artifact_id`.
-    "process-bigraph>=1.7.0",
+    "process-bigraph>=1.8.2",
     # SQLiteEmitter (and ParquetEmitter) were extracted from process-bigraph at
     # 1.4.17 into the focused pbg-emitters library; pb's `process_bigraph.emitter`
     # only re-exports SQLiteEmitter when pbg-emitters is installed. The dashboard
@@ -135,7 +135,7 @@ pbg-ptools = { path = "../pbg-ptools", editable = true }
 # the interface without dragging in an implementation, and a cloud adapter swaps
 # in without the port changing. Enforced in CI (`lint-imports`).
 [tool.importlinter]
-root_package = "vivarium_workbench"
+root_packages = ["vivarium_workbench", "viva_superpowers"]
 
 [[tool.importlinter.contracts]]
 name = "ports are pure interfaces (no adapter / no git-impl imports)"
@@ -147,6 +147,21 @@ forbidden_modules = [
     "vivarium_workbench.lib.work_state",
     "vivarium_workbench.lib.git_commit_views",
 ]
+
+[[tool.importlinter.contracts]]
+name = "workbench must not import the Phase-1 shims"
+type = "forbidden"
+source_modules = ["vivarium_workbench"]
+forbidden_modules = [
+  "viva_superpowers.composite_generator",
+  "viva_superpowers.composite_discovery",
+  "viva_superpowers.visualization",
+  "viva_superpowers.visualizations",
+]
+# Direct imports only: viva_superpowers.study_audit (a real, staying module — see
+# Phase 2.0 D3) internally uses composite_generator. That transitive edge is
+# out of scope for this contract, which polices the workbench's OWN imports.
+allow_indirect_imports = true
 
 [tool.mypy]
 python_version = "3.11"

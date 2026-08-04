@@ -721,7 +721,7 @@ def inject_declared_emitter(state: dict, *, spec_id: str, run_id: str,
     interface than this task's tuple return.
     """
     try:
-        from viva_superpowers.composite_generator import (
+        from process_bigraph.composite_generator import (
             _REGISTRY, discover_generators, install_default_emitters)
     except Exception:
         return state, None

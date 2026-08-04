@@ -703,7 +703,7 @@ def run_with_emitter(name, *, state, run_id, emit_paths, out_dir, core, steps,
         return result
 
     if kind == "parquet":
-        from viva_superpowers.composite_generator import install_default_emitters
+        from process_bigraph.composite_generator import install_default_emitters
         parquet_dir = str(Path(out_dir) / "parquet") if out_dir else None
         if also_sqlite_history:
             # Composite Explorer (gated by `also_sqlite_history`): the composite's
