@@ -424,8 +424,14 @@ def run_study_baseline(ws_root, body):
     else:
         entry = baseline[0]
     spec_id = entry.get("composite")
+    if not spec_id and entry.get("step"):
+        # baseline.step: run a bare registered Step as the baseline (no wrapper
+        # composite). Encoded as `step:<address>`; resolve_study_baseline_state
+        # wraps it into an equivalent state on the fly.
+        from vivarium_workbench.lib.step_baseline import STEP_PREFIX
+        spec_id = STEP_PREFIX + str(entry["step"])
     if not spec_id:
-        return {"error": f"baseline entry {entry.get('name')!r} has no composite"}, 400
+        return {"error": f"baseline entry {entry.get('name')!r} has no composite or step"}, 400
 
     params = dict(entry.get("params") or {})
     params_n_steps = params.pop("n_steps", None)
@@ -535,8 +541,11 @@ def run_study_variant(ws_root, body):
         else:
             entry = baseline[0]
         spec_id = entry.get("composite")
+        if not spec_id and entry.get("step"):
+            from vivarium_workbench.lib.step_baseline import STEP_PREFIX
+            spec_id = STEP_PREFIX + str(entry["step"])
         if not spec_id:
-            return {"error": f"baseline entry {entry.get('name')!r} has no composite"}, 400
+            return {"error": f"baseline entry {entry.get('name')!r} has no composite or step"}, 400
         params = dict(entry.get("params") or {})
 
     overrides = variant.get("parameter_overrides") or variant.get("params") or {}

@@ -65,13 +65,21 @@ def investigation_emitter_for_study(ws_root, study_name: str | None) -> str | No
 
 
 def resolve_study_baseline_state(ws_root, pkg, spec_id, params):
-    """Resolve a generator composite spec_id + params → a state dict.
+    """Resolve a baseline spec_id + params → a state dict.
 
-    Returns (state, error_dict_or_None). Studies always reference generator
-    composites (mirrors the generator branch of _post_composite_test_run).
+    Returns (state, error_dict_or_None). Two baseline forms are supported:
+    a composite spec_id (generator or file-discovered YAML), and a bare Step
+    ``step:<address>`` (``baseline.step``), which is wrapped into an equivalent
+    state on the fly by ``step_baseline.build_step_state`` — so a Step can be a
+    study baseline directly without a hand-written single-Step composite.
     """
     import importlib
     import sys as _sys
+
+    # baseline.step: a bare Step address, wrapped into a composite state here.
+    from vivarium_workbench.lib.step_baseline import is_step_spec, build_step_state
+    if is_step_spec(spec_id):
+        return build_step_state(spec_id, pkg, params)
 
     try:
         from process_bigraph.composite_generator import (
