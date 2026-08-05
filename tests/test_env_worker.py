@@ -575,8 +575,10 @@ def test_analysis_registry_lookups_import_the_analyses_package_first():
     pkg_imports = [i for i, ln in enumerate(src)
                    if "import v2ecoli.workflow.analyses" in ln and "from" not in ln]
     assert registry_sites, "expected at least one ANALYSIS_REGISTRY import site"
+    # The package import sits just before each registry import (a small
+    # best-effort try/except separates them), so allow a short window.
     unguarded = [r for r in registry_sites
-                 if not any(0 < r - p <= 2 for p in pkg_imports)]
+                 if not any(0 < r - p <= 8 for p in pkg_imports)]
     assert not unguarded, (
         f"ANALYSIS_REGISTRY imported without a preceding "
         f"`import v2ecoli.workflow.analyses` at source lines "
