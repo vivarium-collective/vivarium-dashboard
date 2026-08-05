@@ -29,6 +29,12 @@ from vivarium_workbench.lib.sms_api_client import SmsApiError
 # through the handler's existing 502 path (active workspace left unchanged).
 _COMMIT_RE = re.compile(r"\A[0-9a-fA-F]{4,40}\Z")
 
+# Session keys are server-minted (`session_registry.mint_key()`,
+# `secrets.token_urlsafe(32)`) — already a filesystem-safe charset — but this
+# is the second (and last) externally-influenced value that flows into a
+# build-cache path, so it gets the same allow-list treatment as `_COMMIT_RE`.
+_SESSION_KEY_RE = re.compile(r"\A[A-Za-z0-9_-]{8,128}\Z")
+
 # A real workspace tarball is ~50MB and takes minutes over the SSM tunnel
 # (measured ~224s); the client's 30s default would hard-fail the switch.
 _DOWNLOAD_TIMEOUT_S = 600.0
@@ -62,6 +68,23 @@ def _safe_commit(commit: str) -> str:
     if not commit or not _COMMIT_RE.match(commit):
         raise SmsApiError(f"refusing unsafe/empty commit ref from sms-api: {commit!r}")
     return commit
+
+
+def _safe_session_key(session_key: str) -> str:
+    if not session_key or not _SESSION_KEY_RE.match(session_key):
+        raise SmsApiError(f"refusing unsafe/empty session key: {session_key!r}")
+    return session_key
+
+
+def session_cache_dir_for(session_key: str, simulator_id: int, commit: str) -> Path:
+    """Where a given session's OWN writable clone of a build lives.
+
+    Distinct from ``cache_dir_for`` (the shared immutable base) — see
+    ``materialize_session_build``'s docstring for why the two must never be
+    the same directory.
+    """
+    session_key = _safe_session_key(session_key)
+    return build_cache_root() / "sessions" / session_key / f"sim{simulator_id}-{commit}"
 
 
 def materialize_build(client: Any, simulator_id: int, commit: str, *, force: bool = False) -> Path:
@@ -100,6 +123,56 @@ def materialize_build(client: Any, simulator_id: int, commit: str, *, force: boo
         shutil.rmtree(staging, ignore_errors=True)
     _stamp_build_meta(cache, simulator_id, commit)
     return cache
+
+
+def materialize_session_build(
+    client: Any, session_key: str, simulator_id: int, commit: str, *, force: bool = False
+) -> Path:
+    """Return a workspace dir EXCLUSIVE to ``session_key`` for this build.
+
+    ``materialize_build`` caches by ``(simulator_id, commit)`` only, on purpose
+    — the download+extract is expensive (~224s over the SSM tunnel) and the raw
+    tarball is immutable, so sharing that fetch across every session bound to
+    the same build is correct. The bug was everything downstream of that: a
+    session's own writes — ``ensure_git_workspace``'s real ``.git`` init/commit,
+    and every study-authoring write a bound session makes afterwards — landed
+    in that SAME shared directory. Two sessions (two tabs, or two different
+    people) bound to the same build read and wrote one physical directory with
+    no isolation.
+
+    The fix keeps the shared immutable fetch exactly as-is (still reused, still
+    cached by commit) and adds one more, per-session copy on top of it: this
+    session's own real, independent clone at ``session_cache_dir_for``. A real
+    ``shutil.copytree`` — NOT a hardlink — because a hardlink shares the
+    underlying inode on most filesystems (ext4/xfs without reflink); writing
+    to a hardlinked file mutates the SAME data for every other link, which
+    would silently reintroduce the exact bug this fixes. The extra copy time
+    is real but small next to the network fetch it avoids repeating, and
+    correctness here matters more than the copy's cost.
+
+    Idempotent per session (a session re-switching to the same build reuses
+    its own existing clone, same as ``materialize_build``'s reuse-by-commit).
+    """
+    session_key = _safe_session_key(session_key)
+    commit = _safe_commit(commit)
+    session_dir = session_cache_dir_for(session_key, simulator_id, commit)
+    if session_dir.exists() and not force:
+        return session_dir
+
+    base = materialize_build(client, simulator_id, commit, force=force)
+
+    root = build_cache_root()
+    staging = Path(tempfile.mkdtemp(prefix=f".staging-session-sim{simulator_id}-", dir=root))
+    try:
+        clone = staging / "clone"
+        shutil.copytree(base, clone)
+        session_dir.parent.mkdir(parents=True, exist_ok=True)
+        if session_dir.exists():
+            shutil.rmtree(session_dir)
+        os.replace(str(clone), str(session_dir))  # same-filesystem atomic move
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return session_dir
 
 
 def ensure_git_workspace(cache_dir: Path, repo_url: str, branch: str, commit: str, simulator_id: int) -> None:

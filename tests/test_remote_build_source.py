@@ -164,6 +164,64 @@ def test_materialize_rejects_unsafe_commit(_cache, tmp_path):
     assert client.downloads == 0  # never even reached the download
 
 
+# ---------------------------------------------------------------------------
+# materialize_session_build — item 20: per-session write isolation
+# ---------------------------------------------------------------------------
+def test_materialize_session_build_is_independent_per_session(_cache, tmp_path):
+    """The actual bug: two sessions bound to the same (simulator_id, commit)
+    build must NOT share one mutable directory. A write in one session's clone
+    must never appear in another's."""
+    tb = tmp_path / "src.tar.gz"; _make_tarball(tb)
+    client = _FakeClient(tb)
+
+    dir_a = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+    dir_b = rbs.materialize_session_build(client, "session-bbbbbbbb", 45, "32b901")
+
+    assert dir_a != dir_b
+    (dir_a / "workspace.yaml").write_text("mutated-by-session-a\n")
+    assert (dir_b / "workspace.yaml").read_text() == "name: built-ws\n"  # untouched
+
+
+def test_materialize_session_build_reuses_shared_base_download(_cache, tmp_path):
+    """The expensive part (network fetch) stays shared/cached by commit — only
+    the per-session clone is new work."""
+    tb = tmp_path / "src.tar.gz"; _make_tarball(tb)
+    client = _FakeClient(tb)
+
+    rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+    rbs.materialize_session_build(client, "session-bbbbbbbb", 45, "32b901")
+    assert client.downloads == 1  # base fetched once, reused for both sessions
+
+
+def test_materialize_session_build_reuses_same_session_clone(_cache, tmp_path):
+    tb = tmp_path / "src.tar.gz"; _make_tarball(tb)
+    client = _FakeClient(tb)
+
+    d1 = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+    (d1 / "extra.txt").write_text("session-local state\n")
+    d2 = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+
+    assert d1 == d2
+    assert (d2 / "extra.txt").exists()  # not clobbered by a re-clone
+
+
+def test_materialize_session_build_path_is_session_scoped(_cache, tmp_path):
+    tb = tmp_path / "src.tar.gz"; _make_tarball(tb)
+    client = _FakeClient(tb)
+    out = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+    assert out == rbs.session_cache_dir_for("session-aaaaaaaa", 45, "32b901")
+    assert out != rbs.cache_dir_for(45, "32b901")  # never the shared base itself
+
+
+def test_materialize_session_build_rejects_unsafe_session_key(_cache, tmp_path):
+    tb = tmp_path / "src.tar.gz"; _make_tarball(tb)
+    client = _FakeClient(tb)
+    for bad in ["", "short", "../escape", "a/../../etc", "has spaces"]:
+        with pytest.raises(sac.SmsApiError):
+            rbs.materialize_session_build(client, bad, 45, "32b901")
+    assert client.downloads == 0  # validated before the (expensive) base fetch
+
+
 def test_list_build_sources_maps_and_labels():
     client = _FakeClient(None)
     out = rbs.list_build_sources(client)
