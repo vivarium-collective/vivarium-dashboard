@@ -49,7 +49,7 @@ _NEW_COLUMNS = {
     # Coordinated-generation provenance (expert-feedback A.2). Links this run
     # to one (git_sha, param_set, composite_versions) snapshot so the report
     # can flag panels from an older generation as stale. See
-    # viva_superpowers.generation. Nullable: runs predating the model have NULL
+    # vivarium_workbench.lib.generation. Nullable: runs predating the model have NULL
     # and are treated as stale once any generation exists.
     "generation_id": "TEXT",
     # Analysis-tool capability tags derived from the run's emitted stores

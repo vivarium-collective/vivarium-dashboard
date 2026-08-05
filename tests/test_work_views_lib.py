@@ -70,9 +70,9 @@ class TestBuildGeneration:
     def test_null_when_no_active_generation(self, git_ws: Path) -> None:
         """A real workspace with viva_superpowers but no generation → null."""
         try:
-            from viva_superpowers import generation as _gen  # noqa: F401
+            from vivarium_workbench.lib import generation as _gen  # noqa: F401
         except ImportError:
-            pytest.skip("viva_superpowers.generation not available")
+            pytest.skip("vivarium_workbench.lib.generation not available")
         from vivarium_workbench.lib.work_views import build_generation
         result = build_generation(git_ws)
         assert result == {"generation": None}
@@ -80,9 +80,9 @@ class TestBuildGeneration:
     def test_returns_summary_when_active(self, git_ws: Path, monkeypatch) -> None:
         """When a generation is active the summary dict is returned."""
         try:
-            from viva_superpowers import generation as _gen  # noqa: F401
+            from vivarium_workbench.lib import generation as _gen  # noqa: F401
         except ImportError:
-            pytest.skip("viva_superpowers.generation not available")
+            pytest.skip("vivarium_workbench.lib.generation not available")
 
         class _FakeGen:
             generation_id = "gen-001"
@@ -92,7 +92,7 @@ class TestBuildGeneration:
             label = "test-label"
             runs = [1, 2, 3]  # len = 3
 
-        import viva_superpowers.generation as gen_mod
+        import vivarium_workbench.lib.generation as gen_mod
         monkeypatch.setattr(gen_mod, "current_generation",
                             lambda ws_root: _FakeGen())
         from vivarium_workbench.lib.work_views import build_generation

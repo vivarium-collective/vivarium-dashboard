@@ -5,7 +5,7 @@ this runs the baseline + every comparison variant those overlays reference (via
 the dashboard run API for the ``render_only``/single-``study`` paths, or via
 the investigation-as-composite run for a full run — which runs baseline +
 every variant the study's ``study.yaml`` declares), records every run into
-the workspace's *current* coordinated generation (``viva_superpowers.generation``
+the workspace's *current* coordinated generation (``vivarium_workbench.lib.generation``
 — the same core the run path stamps and the report's banner reads), then
 renders the comparative figures.
 
@@ -209,7 +209,7 @@ def prepare_investigation(workspace: Path | str, *,
     ``study``: prepare only this study (reuses the current generation).
     ``render_only``: skip sims; just re-render comparatives.
     """
-    from viva_superpowers import generation as _gen
+    from vivarium_workbench.lib import generation as _gen
 
     ws = Path(workspace)
     inv = investigation
