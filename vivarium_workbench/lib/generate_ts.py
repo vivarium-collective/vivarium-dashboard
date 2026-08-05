@@ -102,6 +102,8 @@ _MODELS: list[type[BaseModel]] = [
     _models.StudyFindingsResult,
     _models.StudyReadoutMigrationStatusResult,
     _models.FeedbackRecordActionResult,
+    # viva-investigation rewire model (Phase 2.1h)
+    _models.ISetCloseResult,
     # Observables + linkage-index models
     _models.ObservablesPayload,
     _models.StudyObservableCheck,

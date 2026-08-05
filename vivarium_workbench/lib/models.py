@@ -1862,6 +1862,44 @@ class FeedbackRecordActionResult(BaseModel):
     kind: Optional[str] = None
 
 
+# --- viva-investigation rewire endpoint (Phase 2.1h) -----------------------
+
+
+class ISetCloseBody(BaseModel):
+    """POST /api/iset-close {slug, dry_run?, no_pr?, skip_report?}
+
+    Closes an investigation: renders the workspace report, stamps the
+    investigation YAML (``status: closed`` + ``closed_at`` + ``report_url`` +
+    ``contributors[]``), commits on the investigation branch, and — unless
+    ``no_pr`` — opens/refreshes a PR (NEVER ``--auto``). Wraps
+    ``viva_superpowers.investigation_close.close_investigation``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    slug: Optional[str] = None
+    dry_run: Optional[bool] = None
+    no_pr: Optional[bool] = None
+    skip_report: Optional[bool] = None
+
+
+class ISetCloseResult(BaseModel):
+    """``POST /api/iset-close`` response — the plugin's ``CloseResult.to_dict()``
+    (``slug, branch, contributors, actions, pr_url, dry_run``).
+
+    Source: ``lib.iset_close_views.iset_close``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    slug: Optional[str] = None
+    branch: Optional[str] = None
+    contributors: list[dict] = Field(default_factory=list)
+    actions: list[dict] = Field(default_factory=list)
+    pr_url: Optional[str] = None
+    dry_run: bool = False
+
+
 class BandProvenanceSetBody(BaseModel):
     """POST /api/band-provenance {study, test_name, cites, calibration_anchor?}
 

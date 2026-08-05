@@ -374,6 +374,15 @@ export interface FeedbackRecordActionResult {
   kind: string | null;
 }
 
+export interface ISetCloseResult {
+  slug: string | null;
+  branch: string | null;
+  contributors: Record<string, any>[];
+  actions: Record<string, any>[];
+  pr_url: string | null;
+  dry_run: boolean;
+}
+
 export interface ObservablesPayload {
 }
 
