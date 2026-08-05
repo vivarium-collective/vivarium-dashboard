@@ -47,6 +47,36 @@ def test_complete_metadata_updates_status(tmp_path):
     assert runs[0]["completed_at"] is not None
 
 
+def test_complete_metadata_records_emitter_path_when_given(tmp_path):
+    """Regression (real-worker verdict path): the composite-run completion path
+    must record where the run emitted, else runs_meta.emitter_path stays NULL and
+    comparison_cards' run-store resolution can't find the store (its lazy on-read
+    backfill never runs for the synchronous per-study verdict path)."""
+    db_file = tmp_path / "runs.db"
+    conn = connect(db_file)
+    save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
+                  started_at=0.0, n_steps=10)
+    store = str(tmp_path / "runs.r1.zarr")
+    complete_metadata(conn, run_id="r1", n_steps=10, status="completed",
+                      emitter_path=store)
+    row = conn.execute(
+        "SELECT emitter_path FROM runs_meta WHERE run_id=?", ("r1",)).fetchone()
+    assert row[0] == store
+
+
+def test_complete_metadata_leaves_emitter_path_null_when_omitted(tmp_path):
+    """Back-compat: callers that don't know the store (failure paths) leave
+    emitter_path NULL rather than blanking a previously-recorded value."""
+    db_file = tmp_path / "runs.db"
+    conn = connect(db_file)
+    save_metadata(conn, spec_id="s", run_id="r1", params={}, label="",
+                  started_at=0.0, n_steps=10)
+    complete_metadata(conn, run_id="r1", n_steps=0, status="failed")
+    row = conn.execute(
+        "SELECT emitter_path FROM runs_meta WHERE run_id=?", ("r1",)).fetchone()
+    assert row[0] is None
+
+
 def test_query_runs_filtered_by_spec_id(tmp_path):
     db_file = tmp_path / "runs.db"
     conn = connect(db_file)

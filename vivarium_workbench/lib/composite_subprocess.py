@@ -677,8 +677,21 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
         except Exception:
             pass
 
+        # Record where this run emitted so downstream readers (comparison_cards'
+        # run-store resolution over the real-worker verdict path; capability
+        # derivation) can find the store without a lazy on-read backfill. The
+        # canonical convention is <study>/runs.<run_id>.zarr (== the child's
+        # store_path pin above); only record it if it actually landed on disk.
+        _emitter_path = None
+        try:
+            from vivarium_workbench.lib import run_store as _run_store
+            _cand = _run_store.zarr_store_path_for_db(Path(db_file), run_id)
+            if Path(_cand).exists():
+                _emitter_path = str(_cand)
+        except Exception:  # noqa: BLE001 — best-effort; never blocks completion
+            pass
         cr.complete_metadata(conn, run_id=run_id, n_steps=steps, status="completed",
-                             workspace=ws_root)
+                             workspace=ws_root, emitter_path=_emitter_path)
 
         # reproducible-rerun-spine Task 4: this run itself is a recorded
         # reproduction of an earlier one — verify the two result_fingerprints
