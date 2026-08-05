@@ -555,3 +555,29 @@ def test_viz_render_hooks_soft_degrade(monkeypatch):
     inputs, build_and_run = viz_render.viz_render_hooks("/ws")
     assert inputs == {}
     assert build_and_run({"any": "doc"}) == ""      # never raises
+
+
+def test_analysis_registry_lookups_import_the_analyses_package_first():
+    """Regression (real-worker verdict path): ANALYSIS_REGISTRY is populated by
+    each analysis module's import-time self-registration, so every dispatch site
+    that imports `v2ecoli.workflow.analysis` (the registry) and then does
+    `ANALYSIS_REGISTRY.get(name)` MUST first `import v2ecoli.workflow.analyses`
+    (the package) — otherwise only the core few register and ported analyses
+    (comparison_cards/comparison_matrix) look up as "unknown". This can't be
+    exercised in this repo's CI (v2ecoli isn't a dependency), so guard the
+    ordering invariant at the source level.
+    """
+    from pathlib import Path
+    src = (Path(__file__).parent.parent
+           / "vivarium_workbench" / "env_worker.py").read_text().splitlines()
+    registry_sites = [i for i, ln in enumerate(src)
+                      if "from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY" in ln]
+    pkg_imports = [i for i, ln in enumerate(src)
+                   if "import v2ecoli.workflow.analyses" in ln and "from" not in ln]
+    assert registry_sites, "expected at least one ANALYSIS_REGISTRY import site"
+    unguarded = [r for r in registry_sites
+                 if not any(0 < r - p <= 2 for p in pkg_imports)]
+    assert not unguarded, (
+        f"ANALYSIS_REGISTRY imported without a preceding "
+        f"`import v2ecoli.workflow.analyses` at source lines "
+        f"{[u + 1 for u in unguarded]} — ported analyses will look up as unknown")

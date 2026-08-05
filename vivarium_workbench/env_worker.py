@@ -1426,6 +1426,12 @@ def _run_study_analyses(params: dict) -> dict:
 
     # 1. build_analysis_options: map entries → {scale: {name: params}} via the registry.
     try:
+        # Import the analyses PACKAGE first: ANALYSIS_REGISTRY is filled by each
+        # analysis module's import-time self-registration, so importing only the
+        # `analysis` module (below) leaves it holding just the core few — every
+        # ported analysis (comparison_cards/matrix included) would look up as
+        # "unknown". The registry-LISTING path already imports this first.
+        import v2ecoli.workflow.analyses  # noqa: F401
         from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
     except ImportError:
         return {"written": [], "errors": [
@@ -1523,6 +1529,7 @@ def _run_investigation_analysis(params: dict) -> dict:
     _import_workspace_package(workspace)
 
     try:
+        import v2ecoli.workflow.analyses  # noqa: F401 — register all analyses before lookup
         from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
     except ImportError as exc:
         return {"written": [], "errors": [
@@ -1831,6 +1838,7 @@ def _run_study(params: dict) -> dict:
     if analyses_entries:
         result["analyses"] = {}
         try:
+            import v2ecoli.workflow.analyses  # noqa: F401 — register all analyses before lookup
             from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
         except Exception as exc:  # noqa: BLE001
             result["errors"].append({
