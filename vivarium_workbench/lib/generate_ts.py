@@ -96,6 +96,12 @@ _MODELS: list[type[BaseModel]] = [
     _models.ExpertSearchResult,
     # Findings-populate model (Phase 2.1f)
     _models.StudyFindingsPopulateResult,
+    # viva-study rewire models (Phase 2.1g)
+    _models.StudyVerifyResult,
+    _models.StudyNarrativeCommandResult,
+    _models.StudyFindingsResult,
+    _models.StudyReadoutMigrationStatusResult,
+    _models.FeedbackRecordActionResult,
     # Observables + linkage-index models
     _models.ObservablesPayload,
     _models.StudyObservableCheck,

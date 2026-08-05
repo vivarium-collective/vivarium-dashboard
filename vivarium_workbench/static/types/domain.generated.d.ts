@@ -335,6 +335,45 @@ export interface StudyFindingsPopulateResult {
   skipped: number;
 }
 
+export interface StudyVerifyResult {
+  study: string | null;
+  study_yaml: string | null;
+  findings: Record<string, any>[] | null;
+  summary: Record<string, any> | null;
+}
+
+export interface StudyNarrativeCommandResult {
+  study: string | null;
+  subcommand: string | null;
+  message: string | null;
+  dry_run: boolean;
+}
+
+export interface StudyFindingsResult {
+  study: string | null;
+  proposed: number;
+  appended: number;
+  skipped_existing: number;
+  cited_bib_keys: string[];
+  unknown_bib_keys: string[];
+  dry_run: boolean;
+  wrote: boolean;
+  wrote_path: string | null;
+}
+
+export interface StudyReadoutMigrationStatusResult {
+  study: string;
+  canonical: Record<string, any>[];
+  migratable: Record<string, any>[];
+  needs_human: Record<string, any>[];
+}
+
+export interface FeedbackRecordActionResult {
+  recorded: boolean;
+  path: string | null;
+  kind: string | null;
+}
+
 export interface ObservablesPayload {
 }
 

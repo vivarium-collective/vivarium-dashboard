@@ -74,6 +74,11 @@ from vivarium_workbench.lib import investigation_viz_mutations as _inv_viz_mut
 from vivarium_workbench.lib import lifecycle_mutations as _lifecycle_mut
 from vivarium_workbench.lib import readout_migrate_views as _readout_migrate_views
 from vivarium_workbench.lib import finding_observations_views as _finding_observations_views
+from vivarium_workbench.lib import study_verify_views as _study_verify_views
+from vivarium_workbench.lib import study_narrative_command_views as _study_narrative_command_views
+from vivarium_workbench.lib import study_findings_views as _study_findings_views
+from vivarium_workbench.lib import readout_migration_status_views as _readout_migration_status_views
+from vivarium_workbench.lib import feedback_record_views as _feedback_record_views
 from vivarium_workbench.lib import scaffold_mutations as _scaffold_mut
 from vivarium_workbench.lib import composite_state_views as _composite_state_views
 from vivarium_workbench.lib import analysis_viewers as _analysis_viewers
@@ -242,6 +247,15 @@ from vivarium_workbench.lib.models import (
     StudySyncRunsBody,
     StudyReadoutMigrateBody,
     StudyFindingsPopulateBody,
+    StudyVerifyBody,
+    StudyVerifyResult,
+    StudyNarrativeCommandBody,
+    StudyNarrativeCommandResult,
+    StudyFindingsBody,
+    StudyFindingsResult,
+    StudyReadoutMigrationStatusResult,
+    FeedbackRecordActionBody,
+    FeedbackRecordActionResult,
     BandProvenanceSetBody,
     # DELETE-route request-body models
     SimulationDeleteBody,
@@ -5066,6 +5080,139 @@ def create_app() -> FastAPI:
         if status != 200:
             return JSONResponse(status_code=status, content=body)
         return StudyFindingsPopulateResult.model_validate(body)
+
+    @app.post(
+        "/api/study-verify",
+        response_model=StudyVerifyResult,
+        tags=["Studies"],
+        summary="Statically verify a study.yaml's cross-references (no simulation)",
+    )
+    def study_verify(
+        req: StudyVerifyBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[StudyVerifyResult, JSONResponse]:
+        """Wraps ``viva_superpowers.study_verify.verify_study``.
+
+        Body: ``{study}``. Runs the plugin's static cross-reference checks
+        against the study's ``study.yaml`` (passing ``ws`` for workspace-level
+        cross-checks); no simulation is executed. Returns ``{study, study_yaml,
+        findings, summary}`` — the CLI's ``--json`` shape. 400 missing study,
+        404 study not found, 500 when ``viva_superpowers`` is unavailable or
+        verification fails. Phase 2.1g rewire-first.
+        """
+        body, status = _study_verify_views.study_verify(
+            ws, req.model_dump(exclude_unset=True)
+        )
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return StudyVerifyResult.model_validate(body)
+
+    @app.post(
+        "/api/study-narrative-command",
+        response_model=StudyNarrativeCommandResult,
+        tags=["Studies"],
+        summary="Mutate a v4 narrative-spine field (verdicts / anchor / pivot / requirement)",
+    )
+    def study_narrative_command(
+        req: StudyNarrativeCommandBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[StudyNarrativeCommandResult, JSONResponse]:
+        """Wraps ``viva_superpowers.study_narrative``'s four subcommands.
+
+        Body: ``{study, subcommand, args, dry_run?}`` — ``subcommand`` ∈
+        {set-verdicts, add-literature-anchor, add-pivot, add-requirement}.
+        Returns ``{study, subcommand, message, dry_run}``. 400 missing study /
+        bad-or-missing subcommand / missing required args, 404 study not found,
+        500 when ``viva_superpowers`` is unavailable or the command fails.
+        Phase 2.1g rewire-first.
+        """
+        body, status = _study_narrative_command_views.study_narrative_command(
+            ws, req.model_dump(exclude_unset=True)
+        )
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return StudyNarrativeCommandResult.model_validate(body)
+
+    @app.post(
+        "/api/study-findings",
+        response_model=StudyFindingsResult,
+        tags=["Studies"],
+        summary="Draft new findings[] from a study's computed outcomes",
+    )
+    def study_findings(
+        req: StudyFindingsBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[StudyFindingsResult, JSONResponse]:
+        """Wraps ``viva_superpowers.study_findings.run_findings_walk``.
+
+        Body: ``{study, auto?: bool, dry_run?: bool}``. Walks every
+        ``behavior_tests[]`` outcome under ``runs[]`` and DRAFTS one finding per
+        outcome not already covered by an ``evidence.from_test`` link, then
+        atomically appends the drafts to ``study.yaml`` (``dry_run: true``
+        computes without writing). The endpoint does only the deterministic
+        draft/write; interactive curation stays agent-side. Distinct from
+        ``/api/study-findings-populate-observations`` (fills slots on EXISTING
+        findings). 400 missing study, 404 study not found, 500 on failure.
+        Phase 2.1g rewire-first.
+        """
+        body, status = _study_findings_views.study_findings_draft(
+            ws, req.model_dump(exclude_unset=True)
+        )
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return StudyFindingsResult.model_validate(body)
+
+    @app.get(
+        "/api/study-readout-migration-status",
+        response_model=StudyReadoutMigrationStatusResult,
+        tags=["Studies"],
+        summary="Classify a study's readouts into migration buckets (read-only)",
+    )
+    def study_readout_migration_status_route(
+        study: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[StudyReadoutMigrationStatusResult, JSONResponse]:
+        """Read-only STATUS sibling of ``POST /api/study-readout-migrate``.
+
+        Wraps the PURE classifier
+        ``viva_superpowers.readout_migration.readout_migration_status`` — it
+        only reads ``study.yaml`` and buckets every readout into
+        ``{canonical, migratable, needs_human}``. No writes. 400 missing
+        ``?study=``, 404 study not found, 500 on failure. Phase 2.1g
+        rewire-first.
+        """
+        body, status = _readout_migration_status_views.readout_migration_status_view(
+            ws, {"study": study}
+        )
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return StudyReadoutMigrationStatusResult.model_validate(body)
+
+    @app.post(
+        "/api/feedback-record-action",
+        response_model=FeedbackRecordActionResult,
+        tags=["Studies"],
+        summary="Record a tracked feedback action (SP3b, AI-free)",
+    )
+    def feedback_record_action(
+        req: FeedbackRecordActionBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[FeedbackRecordActionResult, JSONResponse]:
+        """Wraps ``viva_superpowers.feedback_actions.record_feedback_action``.
+
+        Body: ``{item_id, kind, target_study, proposed_text, target_finding?,
+        by?}``. Persists an ``actions[item_id]`` entry (``status: open``) — the
+        SP3b sibling of ``/api/feedback-apply-action`` (record persists; apply
+        effects). Keys off ``item_id``, not a study slug. Returns
+        ``{recorded, path, kind}``. 400 missing field / bad ``kind``, 404
+        unknown ``item_id``, 500 on failure. Phase 2.1g rewire-first.
+        """
+        body, status = _feedback_record_views.feedback_record_action(
+            ws, req.model_dump(exclude_unset=True)
+        )
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return FeedbackRecordActionResult.model_validate(body)
 
     # -----------------------------------------------------------------------
     # study-* GET routes re-exposed over FastAPI (aliases + v3-native).
