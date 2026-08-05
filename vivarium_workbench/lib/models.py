@@ -581,7 +581,7 @@ class DirtyStatus(BaseModel):
 class GenerationSummary(BaseModel):
     """The inner ``generation`` object inside ``GET /api/generation``.
 
-    Fields from ``viva_superpowers.generation.Generation``.
+    Fields from ``vivarium_workbench.lib.generation.Generation``.
     ``extra="allow"`` for forward-compat.
     """
 

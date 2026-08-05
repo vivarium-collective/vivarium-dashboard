@@ -185,7 +185,7 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
     # just-completed run so per-study test pills stop showing pending
     # (guarded; SAFE DEFAULT — never stamps canonical).
     try:
-        from viva_superpowers import auto_evaluate
+        from vivarium_workbench.lib import auto_evaluate
         auto_evaluate.evaluate_on_run_completion(study_dir, run_id, ws_root=ws_root)
     except Exception as exc:  # never fail a successful run on an eval error
         print(f"[auto_evaluate] failed: {exc}", file=sys.stderr)
@@ -723,7 +723,7 @@ def run_study_variant(ws_root, body):
         # just-completed run so per-study test pills stop showing pending
         # (guarded; SAFE DEFAULT — never stamps canonical).
         try:
-            from viva_superpowers import auto_evaluate
+            from vivarium_workbench.lib import auto_evaluate
             auto_evaluate.evaluate_on_run_completion(study_dir, run_id, ws_root=ws_root)
         except Exception as exc:  # never fail a successful run on an eval error
             print(f"[auto_evaluate] failed: {exc}", file=sys.stderr)

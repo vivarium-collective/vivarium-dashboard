@@ -459,7 +459,7 @@ def read_runs_db_for_study(ws_root: Path, name: str) -> list[dict]:
     # older generation than the workspace's current one is flagged so the
     # report/Runs tab can mark it instead of silently mixing it in.
     try:
-        from viva_superpowers import generation as _gen
+        from vivarium_workbench.lib import generation as _gen
         _cur_gen = _gen.current_generation_id(ws_root)
     except Exception:  # noqa: BLE001
         _cur_gen = None

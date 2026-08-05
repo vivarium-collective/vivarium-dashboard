@@ -565,7 +565,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     # older generation as stale. No-op (None) when no generation is active.
     _generation_id = None
     try:
-        from viva_superpowers import generation as _gen
+        from vivarium_workbench.lib import generation as _gen
         _generation_id = _gen.current_generation_id(ws_root)
     except Exception:  # noqa: BLE001 — generation is advisory, never fatal
         _generation_id = None
