@@ -1425,6 +1425,17 @@ def _run_study_analyses(params: dict) -> dict:
         return {"written": [], "errors": []}
 
     # 1. build_analysis_options: map entries → {scale: {name: params}} via the registry.
+    # Import the analyses PACKAGE first (best-effort): ANALYSIS_REGISTRY is filled
+    # by each analysis module's import-time self-registration, so consulting only
+    # the `analysis` module below leaves it holding just the core few — every
+    # ported analysis (comparison_cards/matrix) would look up as "unknown". Kept
+    # SEPARATE + best-effort so an absent v2ecoli (or a test's faked registry,
+    # which injects only `v2ecoli.workflow.analysis`) still reaches the lookup
+    # below instead of short-circuiting here.
+    try:
+        import v2ecoli.workflow.analyses  # noqa: F401
+    except Exception:  # noqa: BLE001
+        pass
     try:
         from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
     except ImportError:
@@ -1522,6 +1533,10 @@ def _run_investigation_analysis(params: dict) -> dict:
         sys.path.insert(0, workspace)
     _import_workspace_package(workspace)
 
+    try:  # best-effort self-registration; kept separate so absent/faked v2ecoli
+        import v2ecoli.workflow.analyses  # noqa: F401
+    except Exception:  # noqa: BLE001 — reaches the lookup below regardless
+        pass
     try:
         from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
     except ImportError as exc:
@@ -1830,6 +1845,10 @@ def _run_study(params: dict) -> dict:
 
     if analyses_entries:
         result["analyses"] = {}
+        try:  # best-effort self-registration; kept separate so absent/faked v2ecoli
+            import v2ecoli.workflow.analyses  # noqa: F401
+        except Exception:  # noqa: BLE001 — reaches the lookup below regardless
+            pass
         try:
             from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
         except Exception as exc:  # noqa: BLE001

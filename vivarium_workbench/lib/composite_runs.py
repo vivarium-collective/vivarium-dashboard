@@ -321,14 +321,32 @@ def save_metadata(conn, *, spec_id, run_id, params, label, started_at,
         })
 
 
-def complete_metadata(conn, *, run_id, n_steps, status, workspace=None):
-    """Mark a run completed/failed; mirror the terminal event to the JSONL log."""
+def complete_metadata(conn, *, run_id, n_steps, status, workspace=None,
+                      emitter_path=None):
+    """Mark a run completed/failed; mirror the terminal event to the JSONL log.
+
+    ``emitter_path`` (when the caller knows where this run emitted — the
+    canonical ``<study>/runs.<run_id>.zarr`` store) is recorded into
+    ``runs_meta.emitter_path`` at completion. Nothing else on the composite-run
+    path wrote this column, so it stayed NULL and any reader needing the store
+    (comparison_cards' run-store resolution, capability derivation below) had to
+    rely on a lazy on-read backfill — which the SYNCHRONOUS per-study verdict
+    path, reading immediately after completion, does not get. Recording it here
+    makes the store discoverable eagerly.
+    """
     completed_at = time.time()
-    conn.execute(
-        "UPDATE runs_meta "
-        "SET completed_at=?, n_steps=?, status=? WHERE run_id=?",
-        (completed_at, n_steps, status, run_id),
-    )
+    if emitter_path is not None:
+        conn.execute(
+            "UPDATE runs_meta "
+            "SET completed_at=?, n_steps=?, status=?, emitter_path=? WHERE run_id=?",
+            (completed_at, n_steps, status, str(emitter_path), run_id),
+        )
+    else:
+        conn.execute(
+            "UPDATE runs_meta "
+            "SET completed_at=?, n_steps=?, status=? WHERE run_id=?",
+            (completed_at, n_steps, status, run_id),
+        )
     conn.commit()
     if status == "completed":
         try:
