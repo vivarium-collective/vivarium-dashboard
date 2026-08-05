@@ -1,10 +1,10 @@
 """``POST /api/feedback-record-action`` builder — wraps
-``viva_superpowers.feedback_actions.record_feedback_action``.
+``vivarium_workbench.lib.feedback_actions.record_feedback_action``.
 
 Rewire-first (same pattern as ``/api/feedback-apply-action`` and
 ``/api/study-readout-migrate``): the workbench keeps importing the plugin's
 compute to BACK this endpoint so the responder skill can call the dashboard API
-instead of importing ``viva_superpowers.feedback_actions`` directly.
+instead of importing ``vivarium_workbench.lib.feedback_actions`` directly.
 
 ``record_feedback_action`` is the SP3b *sibling* of ``apply_feedback_action``:
 where apply EFFECTS a tracked action, record merely PERSISTS one. It writes an
@@ -71,7 +71,7 @@ def feedback_record_action(ws_root: Path, body: dict) -> "tuple[dict, int]":
         return {"error": "proposed_text required"}, 400
 
     try:
-        from viva_superpowers.feedback_actions import record_feedback_action
+        from vivarium_workbench.lib.feedback_actions import record_feedback_action
     except ImportError as e:  # noqa: BLE001
         return {"error": f"feedback-record requires pbg-superpowers: {e}"}, 500
 

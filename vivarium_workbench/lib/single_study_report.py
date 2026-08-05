@@ -1132,12 +1132,12 @@ _DEBT_SEV_COLORS = {
 
 def _render_epistemic_debts(spec: dict) -> str:
     """W15 — "Open epistemic debts" panel, driven by the deterministic
-    ``viva_superpowers.needs_attention.open_epistemic_debts`` collector (which
+    ``vivarium_workbench.lib.needs_attention.open_epistemic_debts`` collector (which
     derives from rigor + viz-freshness so it can't drift). Returns '' when the
     collector isn't importable or there are no debts.
     """
     try:
-        from viva_superpowers.needs_attention import open_epistemic_debts
+        from vivarium_workbench.lib.needs_attention import open_epistemic_debts
     except Exception:
         return ""
     try:

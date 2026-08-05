@@ -831,7 +831,7 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     # viva_superpowers collector. Defensive: degrade to no panel if not importable.
     epistemic_debts: list = []
     try:
-        from viva_superpowers.needs_attention import open_epistemic_debts
+        from vivarium_workbench.lib.needs_attention import open_epistemic_debts
         epistemic_debts = open_epistemic_debts(spec) or []
     except Exception:
         epistemic_debts = []

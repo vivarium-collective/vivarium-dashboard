@@ -1179,7 +1179,7 @@ def _obs_available(params: dict) -> dict:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
     try:
-        from viva_superpowers.readout_validation import available_observables
+        from vivarium_workbench.lib.readout_validation import available_observables
     except Exception as e:  # noqa: BLE001
         return {"__no_validator__": str(e)}
 
@@ -1254,7 +1254,7 @@ def _study_readout_check(params: dict) -> dict:
     if any(k.startswith("__") for k in avail):
         return avail  # not_registered / build_error / no_validator / introspect_error
     try:
-        from viva_superpowers.readout_validation import validate_readouts
+        from vivarium_workbench.lib.readout_validation import validate_readouts
     except Exception as e:  # noqa: BLE001
         return {"__no_validator__": str(e)}
     try:

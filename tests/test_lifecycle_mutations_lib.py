@@ -70,7 +70,7 @@ def test_feedback_apply_action_unknown_item(ws: Path) -> None:
 
 def test_feedback_apply_action_happy(ws: Path) -> None:
     """Full happy path via viva_superpowers (requires it to be installed)."""
-    from viva_superpowers.feedback_actions import feedback_item_id
+    from vivarium_workbench.lib.feedback_actions import feedback_item_id
 
     _make_study(ws, "s1", findings=[{"id": "F-01", "statement": "X"}])
     iid = feedback_item_id("study-s1", "2026-01-01T10:00:00Z", "Alice")

@@ -92,5 +92,5 @@ def test_gate_detects_a_planted_violation():
     assert _violation("langchain_openai")
     assert _violation("google.generativeai")
     assert not _violation("viva_superpowers")
-    assert not _violation("viva_superpowers.linkage_index")
+    assert not _violation("vivarium_workbench.lib.linkage_index")
     assert not _violation("yaml")

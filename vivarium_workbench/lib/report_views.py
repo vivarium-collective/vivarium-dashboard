@@ -394,7 +394,7 @@ def _linkage_cached_index(ws_root: Path) -> Optional[dict]:
     if hit is not None and now - hit[0] < _LINKAGE_TTL:
         return hit[1]  # type: ignore[no-any-return]
     try:
-        from viva_superpowers.linkage_index import build_index
+        from vivarium_workbench.lib.linkage_index import build_index
         index = build_index(ws_root)
     except Exception:  # noqa: BLE001
         return None
@@ -484,7 +484,7 @@ def build_linkage_index(
     """
     ws_root = Path(ws_root)
     try:
-        from viva_superpowers import linkage_index as _li
+        from vivarium_workbench.lib import linkage_index as _li
     except Exception:  # noqa: BLE001
         return {"nodes": [], "edges": []}, 200
 
@@ -539,7 +539,7 @@ def build_needs_attention(
 ) -> tuple[dict, int]:
     """GET /api/needs-attention builder.
 
-    Runs ``viva_superpowers.needs_attention.scan_investigation`` and returns
+    Runs ``vivarium_workbench.lib.needs_attention.scan_investigation`` and returns
     ``(payload_dict, 200)``.  Always 200 — tolerant on absence / scan failure.
     """
     ws_root = Path(ws_root)
@@ -553,7 +553,7 @@ def build_needs_attention(
         },
     }
     try:
-        from viva_superpowers import needs_attention as _na
+        from vivarium_workbench.lib import needs_attention as _na
     except Exception:  # noqa: BLE001
         return _empty, 200
     try:

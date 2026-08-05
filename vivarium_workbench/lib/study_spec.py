@@ -765,7 +765,7 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         # Pure Python in pbg-superpowers (the dashboard never computes the
         # action — it renders this + applies via /api/feedback-apply-action).
         try:
-            from viva_superpowers.feedback_actions import study_feedback_actions
+            from vivarium_workbench.lib.feedback_actions import study_feedback_actions
             spec["feedback_actions"] = study_feedback_actions(ws_root, name)
         except Exception:  # noqa: BLE001
             pass

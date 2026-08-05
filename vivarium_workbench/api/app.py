@@ -2138,7 +2138,7 @@ def create_app() -> FastAPI:
 
         Returns ``{investigation, items: [...], summary: {by_severity,
         by_kind, total}}``.  Always HTTP 200 — degrades to empty lists/zeroes
-        when ``viva_superpowers.needs_attention`` is unavailable.
+        when ``vivarium_workbench.lib.needs_attention`` is unavailable.
 
         Library-backed via ``lib.report_views.build_needs_attention``.
         """
@@ -2389,7 +2389,7 @@ def create_app() -> FastAPI:
 
         Runs the SAME in-process composite build the Composite Explorer uses and
         reports its emittable observables via
-        ``viva_superpowers.readout_validation.available_observables``:
+        ``vivarium_workbench.lib.readout_validation.available_observables``:
         ``{ref, leaves: [dotted paths], catalogs: {observable: [labels]}}`` (plus
         ``cached: true`` on a TTL cache hit).
 
@@ -5201,7 +5201,7 @@ def create_app() -> FastAPI:
         req: FeedbackRecordActionBody,
         ws: Path = Depends(get_workspace),
     ) -> Union[FeedbackRecordActionResult, JSONResponse]:
-        """Wraps ``viva_superpowers.feedback_actions.record_feedback_action``.
+        """Wraps ``vivarium_workbench.lib.feedback_actions.record_feedback_action``.
 
         Body: ``{item_id, kind, target_study, proposed_text, target_finding?,
         by?}``. Persists an ``actions[item_id]`` entry (``status: open``) — the
