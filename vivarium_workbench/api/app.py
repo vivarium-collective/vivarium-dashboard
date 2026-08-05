@@ -2227,7 +2227,7 @@ def create_app() -> FastAPI:
         investigation's declared reference pool — the ``/viva-cite-bands``
         skill's Step 1b read.
 
-        Wraps ``viva_superpowers.citation_gaps.investigation_citation_gaps``.
+        Wraps ``vivarium_workbench.lib.citation_gaps.investigation_citation_gaps``.
         Returns ``{investigation, gaps: {study_slug: {uncited_bands:
         [{test, observable?}], available_references: [bib_key]}}}``.
 

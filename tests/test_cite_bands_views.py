@@ -262,8 +262,8 @@ def test_citation_gaps_surfaces_uncited_bands_and_references(tmp_path):
 
 
 def test_citation_gaps_equivalence_with_plugin(tmp_path):
-    pytest.importorskip("viva_superpowers.citation_gaps")
-    from viva_superpowers.citation_gaps import investigation_citation_gaps
+    pytest.importorskip("vivarium_workbench.lib.citation_gaps")
+    from vivarium_workbench.lib.citation_gaps import investigation_citation_gaps
 
     ws = _inv_ws(tmp_path)
     endpoint_body, status = cite_bands_views.build_citation_gaps(ws, "dnaa-inv")
