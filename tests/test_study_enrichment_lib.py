@@ -3,7 +3,7 @@
 Covers the four helpers extracted from server.py in Phase A, Batch 4:
 
 - reconcile_simset_with_runs   (pure-ish, ws_root-parameterised)
-- compute_param_enforcement     (pure — requires viva_superpowers.param_enforcement)
+- compute_param_enforcement     (pure — requires vivarium_workbench.lib.param_enforcement)
 - collect_study_feedback        (ws_root-parameterised)
 - study_acceptance_criterion    (ws_root-parameterised)
 
@@ -143,9 +143,9 @@ class TestComputeParamEnforcement:
     """Smoke tests for the pure helper — behavior mirrors the old server function."""
 
     def test_none_when_no_enforced_params(self) -> None:
-        mod = pytest.importorskip("viva_superpowers.param_enforcement")
+        mod = pytest.importorskip("vivarium_workbench.lib.param_enforcement")
         if not hasattr(mod, "resolve_run_expected"):
-            pytest.skip("viva_superpowers.param_enforcement.resolve_run_expected not available")
+            pytest.skip("vivarium_workbench.lib.param_enforcement.resolve_run_expected not available")
         from vivarium_workbench.lib.study_enrichment import compute_param_enforcement
         assert compute_param_enforcement({"runs": []}) is None
 

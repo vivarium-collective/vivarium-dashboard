@@ -284,7 +284,7 @@ def test_section_nav_omits_chips_for_empty_sections(_ws):
 _HAS_RIGOR = False
 try:  # pragma: no cover - environment dependent
     from viva_superpowers.rigor import study_rigor, finding_evidential_weight  # noqa: F401
-    from viva_superpowers.needs_attention import open_epistemic_debts  # noqa: F401
+    from vivarium_workbench.lib.needs_attention import open_epistemic_debts  # noqa: F401
     _HAS_RIGOR = True
 except Exception:  # pragma: no cover
     _HAS_RIGOR = False

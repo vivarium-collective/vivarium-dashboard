@@ -184,6 +184,12 @@ forbidden_modules = [
   "viva_superpowers.study_narrative",
   "viva_superpowers.expert_search",
   "viva_superpowers.study_findings",
+  # Moved INTO the workbench in 2.1k batch 2 (the needs_attention cluster).
+  "viva_superpowers.needs_attention",
+  "viva_superpowers.feedback_actions",
+  "viva_superpowers.linkage_index",
+  "viva_superpowers.param_enforcement",
+  "viva_superpowers.readout_validation",
 ]
 # Direct imports only: viva_superpowers.study_audit (a real, staying module — see
 # Phase 2.0 D3) internally uses composite_generator. That transitive edge is

@@ -160,7 +160,7 @@ def compute_param_enforcement(spec: dict) -> Optional[dict]:
     caught. The "applied" params are each run's recorded overrides
     (``runs_meta.params_json``), surfaced via ``spec["runs"]``.
     """
-    from viva_superpowers.param_enforcement import (  # noqa: PLC0415
+    from vivarium_workbench.lib.param_enforcement import (  # noqa: PLC0415
         load_enforced_params, check_enforced_params, resolve_run_expected,
     )
     declared = load_enforced_params(spec)

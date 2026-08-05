@@ -2,7 +2,7 @@
 (``lib.feedback_record_views.feedback_record_action``).
 
 Rewire-first: this endpoint wraps
-``viva_superpowers.feedback_actions.record_feedback_action`` unchanged — the
+``vivarium_workbench.lib.feedback_actions.record_feedback_action`` unchanged — the
 plugin still persists the tracked ``actions[item_id]`` entry into the feedback
 yaml; only the caller (the workbench, on behalf of the feedback-respond skill)
 moves off a direct plugin import. These tests exercise the lib builder directly
@@ -39,7 +39,7 @@ annotations:
 
 def _fb_ws(tmp_path: Path) -> "tuple[Path, str]":
     """Build a workspace with one imported feedback file; return (ws, item_id)."""
-    from viva_superpowers.feedback_actions import feedback_item_id
+    from vivarium_workbench.lib.feedback_actions import feedback_item_id
 
     ws = tmp_path / "ws"
     fb_dir = ws / "investigations" / _INV / "feedback"
@@ -68,7 +68,7 @@ def test_missing_proposed_text_400(tmp_path):
 
 
 def test_unknown_item_id_404(tmp_path):
-    pytest.importorskip("viva_superpowers.feedback_actions")
+    pytest.importorskip("vivarium_workbench.lib.feedback_actions")
     ws, _ = _fb_ws(tmp_path)
     body, status = views.feedback_record_action(
         ws,
@@ -85,8 +85,8 @@ def test_unknown_item_id_404(tmp_path):
 
 
 def test_record_persists_action(tmp_path):
-    pytest.importorskip("viva_superpowers.feedback_actions")
-    from viva_superpowers.feedback_actions import study_feedback_actions
+    pytest.importorskip("vivarium_workbench.lib.feedback_actions")
+    from vivarium_workbench.lib.feedback_actions import study_feedback_actions
 
     ws, item_id = _fb_ws(tmp_path)
 
@@ -120,9 +120,9 @@ def test_record_persists_action(tmp_path):
 
 def test_equivalence_with_direct_record_call(tmp_path):
     """The endpoint's result must match calling
-    ``viva_superpowers.feedback_actions.record_feedback_action`` directly —
+    ``vivarium_workbench.lib.feedback_actions.record_feedback_action`` directly —
     same ``recorded``/``kind`` outcome on an equivalent workspace."""
-    pbg_feedback_actions = pytest.importorskip("viva_superpowers.feedback_actions")
+    pbg_feedback_actions = pytest.importorskip("vivarium_workbench.lib.feedback_actions")
 
     ws, item_id = _fb_ws(tmp_path)
     endpoint_body, status = views.feedback_record_action(

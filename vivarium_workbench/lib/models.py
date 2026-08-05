@@ -1832,7 +1832,7 @@ class FeedbackRecordActionBody(BaseModel):
     {item_id, kind, target_study, proposed_text, target_finding?, by?}
 
     Keys off ``item_id`` (NOT a study slug); wraps
-    ``viva_superpowers.feedback_actions.record_feedback_action``. Extra keys are
+    ``vivarium_workbench.lib.feedback_actions.record_feedback_action``. Extra keys are
     forwarded to that primitive's ``**extra``.
     """
 

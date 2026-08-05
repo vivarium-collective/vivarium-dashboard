@@ -229,7 +229,7 @@ def feedback_apply_action(ws_root: Path, body: dict) -> "tuple[dict, int]":
     if not item_id:
         return {"error": "item_id required"}, 400
     try:
-        from viva_superpowers.feedback_actions import apply_feedback_action
+        from vivarium_workbench.lib.feedback_actions import apply_feedback_action
     except ImportError as e:
         return {"error": f"feedback-apply requires pbg-superpowers: {e}"}, 500
     try:
