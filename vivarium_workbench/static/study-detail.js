@@ -1110,17 +1110,44 @@
   // published read-only snapshot has no backend to launch against, so both
   // buttons are hidden there (see the snapshot-mode block near the end of
   // this file, mirroring the remote-run-panel hide).
+  // Mode-aware dispatch: ONE button, the actual target decided by deployment
+  // config, never a second button next to it. Items 18/19 exist specifically
+  // to eliminate the "which button do I click" choice, not reintroduce it
+  // under a new name. Remote-pinned deployments (VIVARIUM_WORKBENCH_REMOTE_PINNED,
+  // e.g. the live smscdk prod deployment) dispatch to AWS Batch via
+  // remote-run-submit; everything else keeps the existing local-engine path.
+  function _dispatchCurrentSpecBaseline() {
+    return api('GET', '/api/remote-run-config').then(function(cfgRes) {
+      var cfg = (cfgRes.status === 200 && cfgRes.body) || {};
+      if (cfg.pinned && cfg.simulator_id) return _dispatchRemotePinned(cfg);
+      return api('POST', '/api/study-run-baseline', { study: studyName() });
+    });
+  }
+
+  function _dispatchRemotePinned(cfg) {
+    var baseline = (window._study && window._study.baseline) || [];
+    var params = (baseline[0] && baseline[0].params) || {};
+    return api('POST', '/api/remote-run-submit', {
+      study: studyName(),
+      simulator_id: cfg.simulator_id,
+      num_generations: params.n_generations || 1,
+      num_seeds: params.n_seeds || 1,
+    });
+  }
+  window._dispatchCurrentSpecBaseline = _dispatchCurrentSpecBaseline;
+
   bindAll('#study-run-current-spec', function(btn) {
     if (!confirm("Run this study's CURRENT baseline spec as a new run?")) return;
     var orig = btn.textContent;
     btn.disabled = true;
     btn.textContent = '… running';
-    api('POST', '/api/study-run-baseline', { study: studyName() })
+    _dispatchCurrentSpecBaseline()
       .then(function(res) {
         btn.disabled = false;
         btn.textContent = orig;
-        if (res.status === 200) {
-          var msg = 'Run launched' + (res.body && res.body.run_id ? ' — new run ' + res.body.run_id : '');
+        if (res.status === 200 || res.status === 202) {
+          var runId = res.body && (res.body.run_id || res.body.simulation_id);
+          var msg = 'Run launched' + (runId ? ' — new run ' + runId : '');
           if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
           if (typeof _loadStudySims === 'function') _loadStudySims(true);
         } else {
