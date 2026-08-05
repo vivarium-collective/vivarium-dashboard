@@ -28,11 +28,19 @@ from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 # Tabular result extensions surfaced in the Data tab. Served inline-friendly
 # (text) but offered as a download by the route. Keep in sync with the
 # front-end's expectations.
-_RESULT_EXTS = {".csv", ".tsv"}
+_RESULT_EXTS = {".csv", ".tsv", ".json"}
+
+# `.json` is surfaced ONLY when it lives under an ``analyses/`` folder (a run's
+# analysis artifacts, e.g. a Step's emitted JSON copied to
+# ``analyses/<run_id>/``). Listing every `.json` under a study dir would
+# wrongly surface viewer/config packs (``viz/atlas/atlas.json``, ``config.json``)
+# as downloads. `.csv`/`.tsv` stay unrestricted.
+_ANALYSES_ONLY_EXTS = {".json"}
 
 _MIME = {
     ".csv": "text/csv; charset=utf-8",
     ".tsv": "text/tab-separated-values; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
 }
 
 # Directories whose contents are never analysis result files — skip them so the
@@ -46,13 +54,17 @@ def _iter_result_files(study_dir: Path):
     for path in sorted(study_dir.rglob("*")):
         if not path.is_file():
             continue
-        if path.suffix.lower() not in _RESULT_EXTS:
+        ext = path.suffix.lower()
+        if ext not in _RESULT_EXTS:
             continue
         rel_parts = path.relative_to(study_dir).parts[:-1]
         if any(
             part in _SKIP_DIR_NAMES or part.endswith(_SKIP_DIR_SUFFIXES)
             for part in rel_parts
         ):
+            continue
+        # analyses-only extensions (.json) must live under an `analyses/` folder
+        if ext in _ANALYSES_ONLY_EXTS and "analyses" not in rel_parts:
             continue
         yield path
 
