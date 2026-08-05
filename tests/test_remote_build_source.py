@@ -222,6 +222,88 @@ def test_materialize_session_build_rejects_unsafe_session_key(_cache, tmp_path):
     assert client.downloads == 0  # validated before the (expensive) base fetch
 
 
+def _make_tarball_with_dangling_symlink(path, top="org-repo-abc1234"):
+    """A GitHub-style tarball whose one symlink member points one level short
+    of its real target — the same shape as sms-ecoli's actual investigation/
+    study symlinks. `materialize_build`'s tar extraction faithfully carries
+    this into the shared base cache, dangling and all, same as production."""
+    with tarfile.open(path, "w:gz") as tar:
+        data = b"name: built-ws\n"
+        info = tarfile.TarInfo(f"{top}/workspace.yaml")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+
+        link = tarfile.TarInfo(f"{top}/investigations/demo/studies/orphan-study")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../studies/orphan-study"  # one `../` short — dangling
+        tar.addfile(link)
+
+
+def test_materialize_session_build_preserves_dangling_symlinks(_cache, tmp_path):
+    """Real-world regression (found live against sms-ecoli build #55): a
+    dangling symlink anywhere in the shared base must not crash the whole
+    session clone. The clone should faithfully carry the same dangling
+    symlink, not dereference-and-crash, not silently drop it."""
+    tb = tmp_path / "src.tar.gz"
+    _make_tarball_with_dangling_symlink(tb)
+    client = _FakeClient(tb)
+
+    session_dir = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+
+    link = session_dir / "investigations" / "demo" / "studies" / "orphan-study"
+    assert link.is_symlink()
+    assert not link.exists()  # still dangling, same as the source — not silently dropped
+    assert (session_dir / "workspace.yaml").read_text() == "name: built-ws\n"  # rest of the tree unaffected
+
+
+def _make_tarball_with_valid_symlink(path, top="org-repo-abc1234"):
+    """Same investigation/study symlink shape as the dangling case above, but
+    correctly-depthed and resolvable — to test that a WORKING symlink both
+    survives the clone and stays session-isolated through it, not just that
+    a broken one doesn't crash."""
+    with tarfile.open(path, "w:gz") as tar:
+        ws = b"name: built-ws\n"
+        info = tarfile.TarInfo(f"{top}/workspace.yaml")
+        info.size = len(ws)
+        tar.addfile(info, io.BytesIO(ws))
+
+        data = b"original\n"
+        info2 = tarfile.TarInfo(f"{top}/studies/real-study/data.txt")
+        info2.size = len(data)
+        tar.addfile(info2, io.BytesIO(data))
+
+        link = tarfile.TarInfo(f"{top}/investigations/demo/studies/real-study")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../../studies/real-study"  # correct depth — resolves
+        tar.addfile(link)
+
+
+def test_materialize_session_build_symlinked_content_stays_isolated(_cache, tmp_path):
+    """The actual property item 20 exists for, proven through a symlink
+    specifically: a valid relative symlink must resolve WITHIN each
+    session's own clone (not back to the shared base), and a write through
+    it in one session must never appear in another's."""
+    tb = tmp_path / "src.tar.gz"
+    _make_tarball_with_valid_symlink(tb)
+    client = _FakeClient(tb)
+
+    dir_a = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+    dir_b = rbs.materialize_session_build(client, "session-bbbbbbbb", 45, "32b901")
+
+    link_a = dir_a / "investigations" / "demo" / "studies" / "real-study"
+    link_b = dir_b / "investigations" / "demo" / "studies" / "real-study"
+    assert link_a.is_symlink() and link_b.is_symlink()
+    assert (link_a / "data.txt").read_text() == "original\n"
+    assert (link_b / "data.txt").read_text() == "original\n"
+
+    # the symlink must resolve INSIDE its own clone, not back to the shared base
+    assert os.path.realpath(link_a).startswith(str(dir_a))
+    assert os.path.realpath(link_b).startswith(str(dir_b))
+
+    (link_a / "data.txt").write_text("mutated-by-session-a\n")
+    assert (link_b / "data.txt").read_text() == "original\n"  # untouched
+
+
 def test_list_build_sources_maps_and_labels():
     client = _FakeClient(None)
     out = rbs.list_build_sources(client)

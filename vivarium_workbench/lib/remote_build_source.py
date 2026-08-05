@@ -165,7 +165,17 @@ def materialize_session_build(
     staging = Path(tempfile.mkdtemp(prefix=f".staging-session-sim{simulator_id}-", dir=root))
     try:
         clone = staging / "clone"
-        shutil.copytree(base, clone)
+        # symlinks=True: recreate symlinks as symlinks instead of dereferencing
+        # them into copies of their target's content. Two reasons, not one:
+        # (1) git itself tracks a symlink as a symlink, so dereferencing would
+        # silently diverge the clone from what `ensure_git_workspace`'s `git
+        # add -A` sees as clean; (2) a workspace can contain symlinks whose
+        # target is missing (e.g. an authoring bug in the source repo) —
+        # dereferencing tries to open the target and raises shutil.Error,
+        # aborting the ENTIRE session switch over one unrelated broken link
+        # elsewhere in the tree. Preserving the symlink as-is faithfully
+        # mirrors the source (dangling or not) without crashing.
+        shutil.copytree(base, clone, symlinks=True)
         session_dir.parent.mkdir(parents=True, exist_ok=True)
         if session_dir.exists():
             shutil.rmtree(session_dir)
