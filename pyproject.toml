@@ -149,17 +149,21 @@ forbidden_modules = [
 ]
 
 [[tool.importlinter.contracts]]
-# Phase 2.1a (§0.2 of the 2.1 decomposition plan): the workbench's long-term
-# contract is a NARROW, DECLARED core allowlist of viva_superpowers imports —
-# study_audit, study_canonicalize, study_io, study_evaluator, readout_resolver
-# (pre-existing core), plus viz_freshness and run_registry (de-vendored here).
-# This contract does not yet enforce the full allowlist (26 modules still
-# move in 2.1b-2.1j) — it only forbids what must NEVER come back:
-#   - the Phase-1 shims (unchanged)
-#   - vivarium_workbench.lib.viz_freshness — de-vendored in A.3; the workbench
+# Phase 2.1/3: the workbench imports only a NARROW, DECLARED core of
+# viva_superpowers (audit/eval spine + closure-blocked compute + ledger +
+# bootstrap). Phase 2.1k moved all the borrowed investigation-science compute
+# into vivarium_workbench/lib/, so this "forbidden" contract is the BELT that
+# names the specific modules that must NEVER be imported from the plugin again.
+# The SUSPENDERS — the positive allowlist that also catches any brand-new plugin
+# import — is tests/test_plugin_import_allowlist.py (AST-scanned; ALLOWED there
+# is the authoritative core surface). Keep the two in sync: a module added to
+# ALLOWED must not appear below, and vice-versa.
+#   - the Phase-1 substrate shims (moved to process_bigraph)
+#   - vivarium_workbench.lib.viz_freshness — de-vendored in 2.1a; the workbench
 #     must import viva_superpowers.viz_freshness directly, never re-vendor it.
-#   - vivarium_workbench.lib.backfill_runs — deleted in A.2 as dead code (zero
-#     callers); must not be reintroduced.
+#   - vivarium_workbench.lib.backfill_runs — deleted in 2.1a as dead code.
+#   - the 12 compute modules moved into lib/ in 2.1k + the refresh_viz twin
+#     (deleted from the plugin; the workbench owns lib/refresh_viz.py).
 # NOTE: vivarium_workbench.lib.run_registry is intentionally NOT listed here.
 # A.4 (de-vendor run_registry toward the plugin) is BLOCKED: the hard-gate
 # byte-diff of RUNS_META_DDL found the plugin's copy has grown a
@@ -195,6 +199,8 @@ forbidden_modules = [
   "viva_superpowers.generation",
   # Moved INTO the workbench in 2.1k (citation_gaps; console-script dropped).
   "viva_superpowers.citation_gaps",
+  # Dead twin deleted from the plugin in 2.1k — the workbench owns lib/refresh_viz.py.
+  "viva_superpowers.refresh_viz",
 ]
 # Direct imports only: viva_superpowers.study_audit (a real, staying module — see
 # Phase 2.0 D3) internally uses composite_generator. That transitive edge is
