@@ -4,23 +4,17 @@ The dashboard server spawns runs via ``spawn_detached`` and reconciles
 crash-orphaned rows via ``reconcile_stale_runs`` on startup. All read/write
 goes through ``composite_runs`` — this module only deals with OS processes.
 
-This module ALSO hosts a vendored ``runs_meta`` read accessor
-(``RUNS_META_DDL`` + ``latest_run``), originally a byte-faithful copy of the
-canonical ``viva_superpowers/run_registry.py`` (which carries the same name).
-
-Phase 2.1a (de-vendoring) intended to delete this vendored block and repoint
-callers at ``viva_superpowers.run_registry`` directly, but the HARD GATE in
-that plan step (byte-diff the two ``RUNS_META_DDL`` strings before swapping)
-failed: the plugin's DDL has grown a ``manifest_json TEXT`` column that this
-copy lacks. Swapping would risk `runs.db` schema-creation drift, so A.4 was
-skipped — this block is left in place, unswapped, pending its own DDL-drift
-fix. It currently has no importer in this repo (its one caller,
-``lib/backfill_runs.py``, was deleted as dead code in the same phase).
+(Historical note: this module used to also carry a vendored ``runs_meta`` read
+accessor — ``RUNS_META_DDL`` + ``latest_run`` — copied from
+``viva_superpowers/run_registry.py``. That block was dead code once its only
+caller, ``lib/backfill_runs.py``, was removed, so the Phase-2.1a DDL-drift
+deferral is resolved by simply deleting it. The workbench's real ``runs_meta``
+schema — including the ``manifest_json`` column the vendored copy lacked — is
+owned and migrated by ``composite_runs`` (``connect``/``_migrate_runs_meta``).)
 """
 from __future__ import annotations
 
 import os
-import sqlite3
 import subprocess
 import sys
 from pathlib import Path
@@ -29,54 +23,6 @@ from vivarium_workbench.lib import composite_runs as cr
 
 # Maximum simultaneous in-flight runs. POST returns 429 above this.
 CONCURRENCY_CAP = 4
-
-# --- vendored from viva_superpowers/run_registry.py (RUNS_META_DDL + latest_run) ---
-# Minimal DDL for tests + first-time creation. Real DBs are migrated by the
-# dashboard's composite_runs connect()/_migrate_runs_meta which ALTERs in
-# nullable columns (incl. emitter_path, added in the dashboard phase).
-RUNS_META_DDL = """
-CREATE TABLE IF NOT EXISTS runs_meta (
-    run_id        TEXT PRIMARY KEY,
-    spec_id       TEXT NOT NULL,
-    label         TEXT,
-    params_json   TEXT,
-    started_at    REAL NOT NULL,
-    completed_at  REAL,
-    n_steps       INTEGER,
-    status        TEXT NOT NULL,
-    sim_name      TEXT,
-    generation_id TEXT,
-    emitter_path  TEXT
-);
-"""
-
-_COLS = ("run_id", "spec_id", "started_at", "completed_at", "status",
-         "generation_id", "emitter_path")
-
-
-def latest_run(runs_db: Path) -> dict | None:
-    """Newest run row by COALESCE(completed_at, started_at), or None.
-
-    Tolerates older DBs missing the generation_id / emitter_path columns
-    (those keys are simply omitted from the returned dict)."""
-    runs_db = Path(runs_db)
-    if not runs_db.is_file():
-        return None
-    try:
-        conn = sqlite3.connect(f"file:{runs_db}?mode=ro", uri=True, timeout=1.0)
-        try:
-            have = {r[1] for r in conn.execute("PRAGMA table_info(runs_meta)")}
-            cols = [c for c in _COLS if c in have]
-            row = conn.execute(
-                f"SELECT {', '.join(cols)} FROM runs_meta "
-                "ORDER BY COALESCE(completed_at, started_at) DESC LIMIT 1"
-            ).fetchone()
-        finally:
-            conn.close()
-        return dict(zip(cols, row)) if row else None
-    except sqlite3.Error:
-        return None
-# --- end vendored ---
 
 
 def _pid_alive(pid: int) -> bool:
