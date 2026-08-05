@@ -42,7 +42,19 @@ def test_js_has_no_remote_run_handlers():
     still invoked from the template but its own `getElementById('remote-run-
     panel')` guard made it an unconditional no-op. Deleted as dead code,
     replacing the presence-assertions this test used to make (see git
-    history for the prior `test_js_has_remote_run_handlers_and_endpoints`)."""
+    history for the prior `test_js_has_remote_run_handlers_and_endpoints`).
+
+    The docstring above left one thing open: "pending a decision on whether
+    remote-run gets a header entry point." That decision is now made —
+    #study-run-current-spec (the SAME single header button, not a new one;
+    items 18/19 are about eliminating a run-button choice, not adding one
+    back) is mode-aware: remote-pinned deployments dispatch via the minimal
+    `_dispatchCurrentSpecBaseline`/`_dispatchRemotePinned` pair and
+    `/api/remote-run-submit`, everything else keeps the local-engine path.
+    This does NOT resurrect the old bloated thin client — none of the
+    functions below came back, and `/api/remote-run-build`/`-land`/`-poll`
+    are still unused; only `/api/remote-run-submit` (+`-config`, to read
+    pinned status) is now a legitimate, deliberate caller."""
     js = _js_text()
     for name in (
         "_submitRemoteRun", "_pollBuild", "_pollRun", "_submitRun",
@@ -50,12 +62,16 @@ def test_js_has_no_remote_run_handlers():
         "_renderRemoteRunProgressLegacy", "_rrDeriveStages", "_remoteRunState",
     ):
         assert name not in js, f"{name} should have been deleted as dead code"
-    # the thin-client endpoints are gone from the JS too (backend routes may
-    # still exist for other callers — not asserted here)
+    # the OLD thin-client's other endpoints are still unused (backend routes
+    # may still exist for other callers — not asserted here)
     assert "/api/remote-run-build" not in js
-    assert "/api/remote-run-submit" not in js
     assert "/api/remote-run-land" not in js
     assert "/api/remote-run-poll" not in js
+    # /api/remote-run-submit is now a deliberate, minimal caller (see above) —
+    # confirm it's the mode-aware dispatch, not the old thin client, calling it
+    assert "_dispatchCurrentSpecBaseline" in js
+    assert "_dispatchRemotePinned" in js
+    assert "/api/remote-run-submit" in js
 
 
 def test_rendered_study_detail_has_no_remote_run_panel():
