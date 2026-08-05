@@ -1704,6 +1704,164 @@ class StudyFindingsPopulateResult(BaseModel):
     skipped: int = 0
 
 
+# --- viva-study rewire endpoints (Phase 2.1g) ------------------------------
+
+
+class StudyVerifyBody(BaseModel):
+    """POST /api/study-verify {study}
+
+    Statically verifies a study.yaml's internal consistency and workspace
+    cross-references (baselines/variants/simulation_set/behavior_tests/
+    observables/parent_studies/cites/findings-evidence). No simulation is run.
+    Mirrors ``viva_superpowers.study_verify.verify_study``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+
+
+class StudyVerifyResult(BaseModel):
+    """``POST /api/study-verify`` response — the plugin CLI's ``--json`` shape
+    plus the resolved ``study`` slug: ``{study, study_yaml, findings, summary}``.
+    ``findings`` are ``study_verify.VerifyFinding.to_dict()`` mappings; ``summary``
+    carries the ``{error, warning, info}`` level counts.
+
+    Source: ``lib.study_verify_views.study_verify``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    study_yaml: Optional[str] = None
+    findings: Optional[list[dict]] = None
+    summary: Optional[dict] = None
+
+
+class StudyNarrativeCommandBody(BaseModel):
+    """POST /api/study-narrative-command {study, subcommand, args, dry_run?}
+
+    Dispatches on ``subcommand`` ∈ {set-verdicts, add-literature-anchor,
+    add-pivot, add-requirement} — each wraps the matching
+    ``viva_superpowers.study_narrative`` callable. ``args`` carries the chosen
+    subcommand's fields keyed by the target dataclass's field names;
+    ``dry_run`` computes the diff without writing study.yaml.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    subcommand: Optional[str] = None
+    args: Optional[dict] = None
+    dry_run: Optional[bool] = None
+
+
+class StudyNarrativeCommandResult(BaseModel):
+    """``POST /api/study-narrative-command`` response. ``message`` is the
+    diff/summary string the plugin callable returns.
+
+    Source: ``lib.study_narrative_command_views.study_narrative_command``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    subcommand: Optional[str] = None
+    message: Optional[str] = None
+    dry_run: bool = False
+
+
+class StudyFindingsBody(BaseModel):
+    """POST /api/study-findings {study, auto?, dry_run?}
+
+    Walks a study's ``behavior_tests[]`` outcomes under ``runs[]`` and DRAFTS
+    one ``findings[]`` entry per outcome not already covered by an
+    ``evidence.from_test`` link. ``auto``/``dry_run`` mirror
+    ``viva_superpowers.study_findings.run_findings_walk``'s keywords.
+    Distinct from ``/api/study-findings-populate-observations`` (which fills
+    slots on EXISTING findings).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    auto: Optional[bool] = None
+    dry_run: Optional[bool] = None
+
+
+class StudyFindingsResult(BaseModel):
+    """``POST /api/study-findings`` response — flattens
+    ``study_findings.run_findings_walk``'s ``WalkResult`` to JSON-able counts
+    plus the resolved ``study`` slug.
+
+    Source: ``lib.study_findings_views.study_findings_draft``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: Optional[str] = None
+    proposed: int = 0
+    appended: int = 0
+    skipped_existing: int = 0
+    cited_bib_keys: list[str] = Field(default_factory=list)
+    unknown_bib_keys: list[str] = Field(default_factory=list)
+    dry_run: bool = False
+    wrote: bool = False
+    wrote_path: Optional[str] = None
+
+
+class StudyReadoutMigrationStatusResult(BaseModel):
+    """GET /api/study-readout-migration-status result — verbatim passthrough of
+    ``viva_superpowers.readout_migration.readout_migration_status`` (three
+    buckets classifying a study's readouts) plus the resolved ``study`` slug.
+    PURE read: never modifies study.yaml.
+
+    Source: ``lib.readout_migration_status_views.readout_migration_status_view``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    study: str
+    canonical: list[dict] = Field(default_factory=list)
+    migratable: list[dict] = Field(default_factory=list)
+    needs_human: list[dict] = Field(default_factory=list)
+
+
+class FeedbackRecordActionBody(BaseModel):
+    """POST /api/feedback-record-action
+    {item_id, kind, target_study, proposed_text, target_finding?, by?}
+
+    Keys off ``item_id`` (NOT a study slug); wraps
+    ``viva_superpowers.feedback_actions.record_feedback_action``. Extra keys are
+    forwarded to that primitive's ``**extra``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    item_id: Optional[str] = None
+    kind: Optional[str] = None
+    target_study: Optional[str] = None
+    proposed_text: Optional[str] = None
+    target_finding: Optional[str] = None
+    by: Optional[str] = None
+
+
+class FeedbackRecordActionResult(BaseModel):
+    """``POST /api/feedback-record-action`` response — exactly what
+    ``feedback_actions.record_feedback_action`` returns on success
+    (``{recorded, path, kind}``); best-effort failures carry ``error`` via
+    ``extra="allow"``.
+
+    Source: ``lib.feedback_record_views.feedback_record_action``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    recorded: bool = False
+    path: Optional[str] = None
+    kind: Optional[str] = None
+
+
 class BandProvenanceSetBody(BaseModel):
     """POST /api/band-provenance {study, test_name, cites, calibration_anchor?}
 
