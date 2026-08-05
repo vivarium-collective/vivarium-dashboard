@@ -977,7 +977,7 @@ class CitationGaps(BaseModel):
 
     Shape: ``{investigation, gaps: {study_slug: {uncited_bands:
     [{test, observable?}], available_references: [bib_key]}}}`` — ``gaps`` is
-    exactly ``viva_superpowers.citation_gaps.investigation_citation_gaps``'s
+    exactly ``vivarium_workbench.lib.citation_gaps.investigation_citation_gaps``'s
     return value.
 
     Pure pass-through (``extra="allow"``, no declared fields).

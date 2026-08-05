@@ -16,7 +16,7 @@ Four builders, each ``(dict, int)``:
   wraps ``viva_superpowers.band_provenance.set_band_provenance`` (WRITE —
   the skill's ONLY sanctioned write path for citation provenance).
 - ``build_citation_gaps`` — ``GET /api/citation-gaps?investigation=``
-  wraps ``viva_superpowers.citation_gaps.investigation_citation_gaps`` (READ).
+  wraps ``vivarium_workbench.lib.citation_gaps.investigation_citation_gaps`` (READ).
 - ``build_expert_search`` — ``GET /api/expert-search?q=``
   wraps ``vivarium_workbench.lib.expert_search.search_expert_docs`` (READ).
 
@@ -162,7 +162,7 @@ def write_band_provenance(ws_root: Path, body: dict) -> "tuple[dict, int]":
 def build_citation_gaps(ws_root: Path, investigation: Optional[str]) -> "tuple[dict, int]":
     """GET /api/citation-gaps builder.
 
-    Wraps ``viva_superpowers.citation_gaps.investigation_citation_gaps``.
+    Wraps ``vivarium_workbench.lib.citation_gaps.investigation_citation_gaps``.
 
     Returns ``({"investigation": slug, "gaps": {study_slug: {uncited_bands,
     available_references}}}, 200)`` — ``gaps`` is exactly the plugin
@@ -184,7 +184,7 @@ def build_citation_gaps(ws_root: Path, investigation: Optional[str]) -> "tuple[d
         return {"error": f"investigation not found: {slug}"}, 404
 
     try:
-        from viva_superpowers.citation_gaps import investigation_citation_gaps
+        from vivarium_workbench.lib.citation_gaps import investigation_citation_gaps
     except ImportError as e:  # noqa: BLE001
         return {"error": f"citation gaps requires viva_superpowers: {e}"}, 500
 
