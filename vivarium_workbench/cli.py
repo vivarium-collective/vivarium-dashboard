@@ -842,6 +842,38 @@ def cmd_catalog_add(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scaffold_investigation(args: argparse.Namespace) -> int:
+    """Scaffold an investigation + one skeleton study per composite generator
+    (the ``investigation-from-wrapper`` bootstrap). Wraps
+    ``viva_superpowers.scaffold.scaffold_investigation_from_wrapper`` (Phase
+    2.1k step 0 — completes the ``/viva-expert`` rewire; the plugin still owns
+    the scaffold payload, only the caller moves)."""
+    try:
+        from viva_superpowers import scaffold
+    except ImportError as e:  # noqa: BLE001
+        print(f"error: investigation scaffolding requires viva_superpowers: {e}", file=sys.stderr)
+        return 1
+
+    ws = Path(args.workspace).resolve()
+    if not (ws / "workspace.yaml").is_file():
+        print(f"error: not a workspace (no workspace.yaml): {ws}", file=sys.stderr)
+        return 2
+    generators = [s.strip() for s in (args.studies or "").split(",") if s.strip()]
+    if not generators:
+        print("error: --studies requires at least one composite generator id", file=sys.stderr)
+        return 2
+    try:
+        result = scaffold.scaffold_investigation_from_wrapper(
+            ws, args.name, generators,
+            investigation_slug=args.investigation_slug, force=args.force,
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"error: investigation scaffold failed: {e}", file=sys.stderr)
+        return 1
+    print(json.dumps(result, indent=2, default=str))
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Dashboard server lifecycle (Phase 2.1j) — the detached-serve + status/stop/
 # open/restart verbs that replace viva_superpowers.workbench (the plugin's
@@ -1310,6 +1342,20 @@ def main(argv: list[str] | None = None) -> int:
     p_catadd.add_argument("--name", default=None, help="display name (default: from workspace.yaml)")
     p_catadd.add_argument("--package", default=None, help="workspace package path")
     p_catadd.set_defaults(func=cmd_catalog_add)
+
+    p_scaffinv = sub.add_parser(
+        "scaffold-investigation",
+        help="Scaffold an investigation + one skeleton study per composite generator",
+    )
+    p_scaffinv.add_argument("--name", required=True, help="Investigation name (derives slug + title)")
+    p_scaffinv.add_argument("--studies", required=True,
+                            help="Comma-separated composite generator ids "
+                                 "(e.g. 'pkg.composites.a.a_baseline,pkg.composites.b.b_baseline')")
+    p_scaffinv.add_argument("--workspace", default=".", help="Workspace root (default: cwd)")
+    p_scaffinv.add_argument("--investigation-slug", dest="investigation_slug", default=None,
+                            help="Directory slug (default: kebab-cased --name)")
+    p_scaffinv.add_argument("--force", action="store_true", help="Overwrite existing files")
+    p_scaffinv.set_defaults(func=cmd_scaffold_investigation)
 
     p_sstat = sub.add_parser("server-status", help="Report the dashboard server's state for a workspace")
     p_sstat.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
