@@ -1,10 +1,10 @@
 """``POST /api/study-findings`` builder — wraps
-``viva_superpowers.study_findings.run_findings_walk``.
+``vivarium_workbench.lib.study_findings.run_findings_walk``.
 
 Phase 2.1 (rewire-first): the workbench keeps importing the plugin's compute to
 BACK this endpoint (no module move yet). This lets
 ``skills/viva-study/SKILL.md`` (the ``/viva-study findings`` subcommand) stop
-importing ``viva_superpowers.study_findings`` directly and call the dashboard
+importing ``vivarium_workbench.lib.study_findings`` directly and call the dashboard
 API instead, matching the rewire-first pattern already used by
 ``/api/study-readout-migrate`` and ``/api/study-findings-populate-observations``.
 
@@ -14,7 +14,7 @@ API instead, matching the rewire-first pattern already used by
 ``runs[].test_results``) and DRAFTS one ``findings[]`` entry per outcome not
 already covered by an ``evidence.from_test`` link, then atomically appends the
 drafts to ``study.yaml``. ``dry_run=True`` computes the proposed drafts without
-writing. It returns a :class:`~viva_superpowers.study_findings.WalkResult`
+writing. It returns a :class:`~vivarium_workbench.lib.study_findings.WalkResult`
 dataclass; this builder flattens it to a JSON-able summary dict of counts.
 
 NOTE — distinct from ``/api/study-findings-populate-observations``
@@ -72,7 +72,7 @@ def study_findings_draft(ws_root: Path, body: dict) -> "tuple[dict, int]":
         return {"error": f"study not found: {slug}"}, 404
 
     try:
-        from viva_superpowers.study_findings import run_findings_walk
+        from vivarium_workbench.lib.study_findings import run_findings_walk
     except ImportError as e:  # noqa: BLE001
         return {"error": f"findings draft requires viva_superpowers: {e}"}, 500
 

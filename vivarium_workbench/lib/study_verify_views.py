@@ -1,11 +1,11 @@
 """``POST /api/study-verify`` builder — wraps
-``viva_superpowers.study_verify.verify_study``.
+``vivarium_workbench.lib.study_verify.verify_study``.
 
 Rewire-first (mirrors ``/api/study-readout-migrate`` and
 ``/api/study-findings-populate-observations``): the workbench keeps importing
 the plugin's compute to BACK this endpoint (no module move). This lets the
 ``/viva-study verify`` skill stop shelling out to
-``python -m viva_superpowers.study_verify`` and call the dashboard API instead.
+``python -m vivarium_workbench.lib.study_verify`` and call the dashboard API instead.
 
 ``verify_study(study_yaml, ws_root=None)`` is a pure, static cross-reference
 verifier: it parses a ``study.yaml`` and returns a flat ``list[VerifyFinding]``
@@ -58,7 +58,7 @@ def study_verify(ws_root: Path, body: dict) -> "tuple[dict, int]":
         return {"error": f"study not found: {slug}"}, 404
 
     try:
-        from viva_superpowers.study_verify import verify_study
+        from vivarium_workbench.lib.study_verify import verify_study
     except ImportError as e:  # noqa: BLE001
         return {"error": f"study verify requires viva_superpowers: {e}"}, 500
 

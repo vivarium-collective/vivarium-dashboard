@@ -178,6 +178,12 @@ forbidden_modules = [
   # De-vendored in 2.1a — the workbench must NOT re-vendor these
   "vivarium_workbench.lib.viz_freshness",
   "vivarium_workbench.lib.backfill_runs",
+  # Moved INTO the workbench in 2.1k batch 1 (lib/ now owns them) — the
+  # workbench must import its own lib copy, never the plugin's (which is deleted).
+  "viva_superpowers.study_verify",
+  "viva_superpowers.study_narrative",
+  "viva_superpowers.expert_search",
+  "viva_superpowers.study_findings",
 ]
 # Direct imports only: viva_superpowers.study_audit (a real, staying module — see
 # Phase 2.0 D3) internally uses composite_generator. That transitive edge is

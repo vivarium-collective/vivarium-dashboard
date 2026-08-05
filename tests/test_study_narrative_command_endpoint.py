@@ -1,7 +1,7 @@
 """Tests for ``POST /api/study-narrative-command``
 (``lib.study_narrative_command_views.study_narrative_command``).
 
-Rewire-first: this endpoint wraps ``viva_superpowers.study_narrative``'s four
+Rewire-first: this endpoint wraps ``vivarium_workbench.lib.study_narrative``'s four
 narrative-spine subcommands unchanged — the plugin still mutates study.yaml,
 only the caller (the workbench, on behalf of ``/viva-study``) moves. These
 tests exercise the lib builder directly (the same "endpoint test calls the lib
@@ -117,7 +117,7 @@ def test_set_verdicts_requires_a_track_400(tmp_path):
 
 
 def test_set_verdicts_happy(tmp_path):
-    pytest.importorskip("viva_superpowers.study_narrative")
+    pytest.importorskip("vivarium_workbench.lib.study_narrative")
     ws, sy = _study_ws(tmp_path)
     original = sy.read_text()
 
@@ -146,7 +146,7 @@ def test_set_verdicts_happy(tmp_path):
 
 
 def test_add_literature_anchor_happy(tmp_path):
-    pytest.importorskip("viva_superpowers.study_narrative")
+    pytest.importorskip("vivarium_workbench.lib.study_narrative")
     ws, sy = _study_ws(tmp_path)
     original = sy.read_text()
 
@@ -173,7 +173,7 @@ def test_add_literature_anchor_happy(tmp_path):
 
 
 def test_add_pivot_happy(tmp_path):
-    pytest.importorskip("viva_superpowers.study_narrative")
+    pytest.importorskip("vivarium_workbench.lib.study_narrative")
     ws, sy = _study_ws(tmp_path)
     original = sy.read_text()
 
@@ -199,7 +199,7 @@ def test_add_pivot_happy(tmp_path):
 
 
 def test_add_requirement_happy(tmp_path):
-    pytest.importorskip("viva_superpowers.study_narrative")
+    pytest.importorskip("vivarium_workbench.lib.study_narrative")
     ws, sy = _study_ws(tmp_path)
     original = sy.read_text()
 
@@ -231,7 +231,7 @@ def test_add_requirement_happy(tmp_path):
 
 
 def test_dry_run_does_not_write(tmp_path):
-    pytest.importorskip("viva_superpowers.study_narrative")
+    pytest.importorskip("vivarium_workbench.lib.study_narrative")
     ws, sy = _study_ws(tmp_path)
     original = sy.read_text()
 
@@ -259,7 +259,7 @@ def test_dry_run_does_not_write(tmp_path):
 def test_equivalence_with_direct_add_pivot(tmp_path):
     """The endpoint's write must match calling ``study_narrative.add_pivot``
     directly — same resulting study.yaml + same message string."""
-    sn = pytest.importorskip("viva_superpowers.study_narrative")
+    sn = pytest.importorskip("vivarium_workbench.lib.study_narrative")
 
     ws, sy = _study_ws(tmp_path)
     endpoint_body, status = views.study_narrative_command(
