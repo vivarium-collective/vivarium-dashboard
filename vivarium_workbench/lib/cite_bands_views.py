@@ -18,7 +18,7 @@ Four builders, each ``(dict, int)``:
 - ``build_citation_gaps`` — ``GET /api/citation-gaps?investigation=``
   wraps ``viva_superpowers.citation_gaps.investigation_citation_gaps`` (READ).
 - ``build_expert_search`` — ``GET /api/expert-search?q=``
-  wraps ``viva_superpowers.expert_search.search_expert_docs`` (READ).
+  wraps ``vivarium_workbench.lib.expert_search.search_expert_docs`` (READ).
 
 The skill's fourth import, ``study_io.load_yaml_mapping``, is a trivial YAML
 reader (``yaml.safe_load(path.read_text())``) with no endpoint of its own —
@@ -205,7 +205,7 @@ def build_expert_search(
 ) -> "tuple[dict, int]":
     """GET /api/expert-search builder.
 
-    Wraps ``viva_superpowers.expert_search.search_expert_docs``.
+    Wraps ``vivarium_workbench.lib.expert_search.search_expert_docs``.
 
     ``q`` is a comma-separated list of search terms (the plugin function
     takes ``terms: Iterable[str]`` — a GET query string flattens that to one
@@ -224,7 +224,7 @@ def build_expert_search(
         return {"error": "q required (comma-separated search terms)"}, 400
 
     try:
-        from viva_superpowers.expert_search import search_expert_docs
+        from vivarium_workbench.lib.expert_search import search_expert_docs
     except ImportError as e:  # noqa: BLE001
         return {"error": f"expert search requires viva_superpowers: {e}"}, 500
 

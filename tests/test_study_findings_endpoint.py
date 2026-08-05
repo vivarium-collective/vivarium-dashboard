@@ -2,7 +2,7 @@
 (``lib.study_findings_views.study_findings_draft``).
 
 Phase 2.1 (rewire-first): this endpoint wraps
-``viva_superpowers.study_findings.run_findings_walk`` unchanged — the plugin
+``vivarium_workbench.lib.study_findings.run_findings_walk`` unchanged — the plugin
 still walks the study's outcomes and DRAFTS new ``findings[]`` entries, only the
 caller (the workbench, on behalf of the ``/viva-study findings`` skill) moves.
 These tests exercise the lib builder directly (the same "endpoint test calls the
@@ -114,8 +114,8 @@ def test_dry_run_does_not_write(tmp_path):
 
 def test_equivalence_with_direct_walk_call(tmp_path):
     """The endpoint's proposed/skipped counts must match calling
-    ``viva_superpowers.study_findings.run_findings_walk`` directly."""
-    sf = pytest.importorskip("viva_superpowers.study_findings")
+    ``vivarium_workbench.lib.study_findings.run_findings_walk`` directly."""
+    sf = pytest.importorskip("vivarium_workbench.lib.study_findings")
 
     ws, _ = _study_ws(tmp_path)
     endpoint_body, status = views.study_findings_draft(

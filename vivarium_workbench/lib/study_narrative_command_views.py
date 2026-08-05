@@ -1,9 +1,9 @@
 """``POST /api/study-narrative-command`` builder — wraps
-``viva_superpowers.study_narrative``'s four narrative-spine subcommands.
+``vivarium_workbench.lib.study_narrative``'s four narrative-spine subcommands.
 
 Rewire-first: the workbench keeps importing the plugin's compute to BACK this
 endpoint (no module move yet). This lets the ``/viva-study`` skill stop
-importing ``viva_superpowers.study_narrative`` directly and call the dashboard
+importing ``vivarium_workbench.lib.study_narrative`` directly and call the dashboard
 API instead, matching the rewire-first pattern already used by
 ``/api/study-readout-migrate`` and ``/api/study-findings-populate-observations``.
 
@@ -123,7 +123,7 @@ def study_narrative_command(ws_root: Path, body: dict) -> "tuple[dict, int]":
         return {"error": f"study not found: {slug}"}, 404
 
     try:
-        from viva_superpowers.study_narrative import (
+        from vivarium_workbench.lib.study_narrative import (
             DesignPivot,
             ImplementationRequirement,
             LiteratureAnchor,

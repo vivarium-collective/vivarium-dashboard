@@ -296,8 +296,8 @@ def test_expert_search_no_docs_returns_empty_hits(tmp_path):
 
 
 def test_expert_search_equivalence_with_plugin(tmp_path):
-    pytest.importorskip("viva_superpowers.expert_search")
-    from viva_superpowers.expert_search import search_expert_docs
+    pytest.importorskip("vivarium_workbench.lib.expert_search")
+    from vivarium_workbench.lib.expert_search import search_expert_docs
 
     ws = tmp_path / "ws"
     ws.mkdir()

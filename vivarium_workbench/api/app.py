@@ -2255,7 +2255,7 @@ def create_app() -> FastAPI:
         """Search every ``workspace.yaml``-declared expert PDF for candidate
         quotes — the ``/viva-cite-bands`` skill's Step 2 read.
 
-        Wraps ``viva_superpowers.expert_search.search_expert_docs``. ``q`` is
+        Wraps ``vivarium_workbench.lib.expert_search.search_expert_docs``. ``q`` is
         a comma-separated list of search terms (test name, numeric bounds,
         domain keywords); ``max_hits`` caps hits returned per term (default 5).
 
@@ -5094,7 +5094,7 @@ def create_app() -> FastAPI:
         req: StudyVerifyBody,
         ws: Path = Depends(get_workspace),
     ) -> Union[StudyVerifyResult, JSONResponse]:
-        """Wraps ``viva_superpowers.study_verify.verify_study``.
+        """Wraps ``vivarium_workbench.lib.study_verify.verify_study``.
 
         Body: ``{study}``. Runs the plugin's static cross-reference checks
         against the study's ``study.yaml`` (passing ``ws`` for workspace-level
@@ -5120,7 +5120,7 @@ def create_app() -> FastAPI:
         req: StudyNarrativeCommandBody,
         ws: Path = Depends(get_workspace),
     ) -> Union[StudyNarrativeCommandResult, JSONResponse]:
-        """Wraps ``viva_superpowers.study_narrative``'s four subcommands.
+        """Wraps ``vivarium_workbench.lib.study_narrative``'s four subcommands.
 
         Body: ``{study, subcommand, args, dry_run?}`` — ``subcommand`` ∈
         {set-verdicts, add-literature-anchor, add-pivot, add-requirement}.
@@ -5146,7 +5146,7 @@ def create_app() -> FastAPI:
         req: StudyFindingsBody,
         ws: Path = Depends(get_workspace),
     ) -> Union[StudyFindingsResult, JSONResponse]:
-        """Wraps ``viva_superpowers.study_findings.run_findings_walk``.
+        """Wraps ``vivarium_workbench.lib.study_findings.run_findings_walk``.
 
         Body: ``{study, auto?: bool, dry_run?: bool}``. Walks every
         ``behavior_tests[]`` outcome under ``runs[]`` and DRAFTS one finding per

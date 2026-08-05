@@ -992,7 +992,7 @@ class ExpertSearchResult(BaseModel):
     """``GET /api/expert-search`` payload (lib.cite_bands_views.build_expert_search).
 
     Shape: ``{terms: [str], hits: [{doc, page, snippet, term}]}`` — ``hits``
-    is exactly ``viva_superpowers.expert_search.search_expert_docs``'s return
+    is exactly ``vivarium_workbench.lib.expert_search.search_expert_docs``'s return
     value for the parsed ``q`` terms.
 
     Pure pass-through (``extra="allow"``, no declared fields).
@@ -1713,7 +1713,7 @@ class StudyVerifyBody(BaseModel):
     Statically verifies a study.yaml's internal consistency and workspace
     cross-references (baselines/variants/simulation_set/behavior_tests/
     observables/parent_studies/cites/findings-evidence). No simulation is run.
-    Mirrors ``viva_superpowers.study_verify.verify_study``.
+    Mirrors ``vivarium_workbench.lib.study_verify.verify_study``.
     """
 
     model_config = ConfigDict(extra="allow")
@@ -1743,7 +1743,7 @@ class StudyNarrativeCommandBody(BaseModel):
 
     Dispatches on ``subcommand`` ∈ {set-verdicts, add-literature-anchor,
     add-pivot, add-requirement} — each wraps the matching
-    ``viva_superpowers.study_narrative`` callable. ``args`` carries the chosen
+    ``vivarium_workbench.lib.study_narrative`` callable. ``args`` carries the chosen
     subcommand's fields keyed by the target dataclass's field names;
     ``dry_run`` computes the diff without writing study.yaml.
     """
@@ -1777,7 +1777,7 @@ class StudyFindingsBody(BaseModel):
     Walks a study's ``behavior_tests[]`` outcomes under ``runs[]`` and DRAFTS
     one ``findings[]`` entry per outcome not already covered by an
     ``evidence.from_test`` link. ``auto``/``dry_run`` mirror
-    ``viva_superpowers.study_findings.run_findings_walk``'s keywords.
+    ``vivarium_workbench.lib.study_findings.run_findings_walk``'s keywords.
     Distinct from ``/api/study-findings-populate-observations`` (which fills
     slots on EXISTING findings).
     """

@@ -2,10 +2,10 @@
 (``lib.study_verify_views.study_verify``).
 
 Rewire-first: this endpoint wraps
-``viva_superpowers.study_verify.verify_study`` unchanged — the plugin still
+``vivarium_workbench.lib.study_verify.verify_study`` unchanged — the plugin still
 runs the static cross-reference checks; only the caller (the workbench, on
 behalf of ``/viva-study verify``) moves off shelling out to
-``python -m viva_superpowers.study_verify``. These tests exercise the lib
+``python -m vivarium_workbench.lib.study_verify``. These tests exercise the lib
 builder directly (the same "endpoint test calls the lib fn" idiom as
 ``test_study_findings_populate_endpoint.py``) plus an equivalence check against
 calling ``verify_study`` directly.
@@ -109,8 +109,8 @@ def test_clean_study_zero_findings(tmp_path):
 
 def test_equivalence_with_direct_verify_call(tmp_path):
     """The endpoint's findings must match calling
-    ``viva_superpowers.study_verify.verify_study`` directly."""
-    pbg_study_verify = pytest.importorskip("viva_superpowers.study_verify")
+    ``vivarium_workbench.lib.study_verify.verify_study`` directly."""
+    pbg_study_verify = pytest.importorskip("vivarium_workbench.lib.study_verify")
 
     ws, sy = _study_ws(tmp_path, DIRTY_STUDY_YAML, "verify-dirty")
 
