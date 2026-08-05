@@ -79,6 +79,7 @@ from vivarium_workbench.lib import study_narrative_command_views as _study_narra
 from vivarium_workbench.lib import study_findings_views as _study_findings_views
 from vivarium_workbench.lib import readout_migration_status_views as _readout_migration_status_views
 from vivarium_workbench.lib import feedback_record_views as _feedback_record_views
+from vivarium_workbench.lib import iset_close_views as _iset_close_views
 from vivarium_workbench.lib import scaffold_mutations as _scaffold_mut
 from vivarium_workbench.lib import composite_state_views as _composite_state_views
 from vivarium_workbench.lib import analysis_viewers as _analysis_viewers
@@ -255,6 +256,8 @@ from vivarium_workbench.lib.models import (
     StudyFindingsResult,
     StudyReadoutMigrationStatusResult,
     FeedbackRecordActionBody,
+    ISetCloseBody,
+    ISetCloseResult,
     FeedbackRecordActionResult,
     BandProvenanceSetBody,
     # DELETE-route request-body models
@@ -5213,6 +5216,35 @@ def create_app() -> FastAPI:
         if status != 200:
             return JSONResponse(status_code=status, content=body)
         return FeedbackRecordActionResult.model_validate(body)
+
+    @app.post(
+        "/api/iset-close",
+        response_model=ISetCloseResult,
+        tags=["Investigations"],
+        summary="Close an investigation (render report, stamp YAML, commit, open PR)",
+    )
+    def iset_close(
+        req: ISetCloseBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[ISetCloseResult, JSONResponse]:
+        """Wraps ``viva_superpowers.investigation_close.close_investigation``.
+
+        Body: ``{slug, dry_run?, no_pr?, skip_report?}``. Renders the workspace
+        report, copies it under the investigation dir, stamps the investigation
+        YAML (``status: closed`` + ``closed_at`` + ``report_url`` +
+        ``contributors[]``), commits on the investigation branch, and — unless
+        ``no_pr`` — opens/refreshes a PR (NEVER ``--auto``). git/gh run in the
+        workspace exactly as the plugin CLI did.
+
+        Returns ``CloseResult.to_dict()`` (``slug, branch, contributors,
+        actions, pr_url, dry_run``). 400 missing slug, 404 investigation/branch
+        not found, 500 on failure. Phase 2.1h rewire-first (the plugin still
+        computes; only the caller moves).
+        """
+        body, status = _iset_close_views.iset_close(ws, req.model_dump(exclude_unset=True))
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return ISetCloseResult.model_validate(body)
 
     # -----------------------------------------------------------------------
     # study-* GET routes re-exposed over FastAPI (aliases + v3-native).
