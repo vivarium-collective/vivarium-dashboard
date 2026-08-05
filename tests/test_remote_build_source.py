@@ -256,6 +256,54 @@ def test_materialize_session_build_preserves_dangling_symlinks(_cache, tmp_path)
     assert (session_dir / "workspace.yaml").read_text() == "name: built-ws\n"  # rest of the tree unaffected
 
 
+def _make_tarball_with_valid_symlink(path, top="org-repo-abc1234"):
+    """Same investigation/study symlink shape as the dangling case above, but
+    correctly-depthed and resolvable — to test that a WORKING symlink both
+    survives the clone and stays session-isolated through it, not just that
+    a broken one doesn't crash."""
+    with tarfile.open(path, "w:gz") as tar:
+        ws = b"name: built-ws\n"
+        info = tarfile.TarInfo(f"{top}/workspace.yaml")
+        info.size = len(ws)
+        tar.addfile(info, io.BytesIO(ws))
+
+        data = b"original\n"
+        info2 = tarfile.TarInfo(f"{top}/studies/real-study/data.txt")
+        info2.size = len(data)
+        tar.addfile(info2, io.BytesIO(data))
+
+        link = tarfile.TarInfo(f"{top}/investigations/demo/studies/real-study")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../../studies/real-study"  # correct depth — resolves
+        tar.addfile(link)
+
+
+def test_materialize_session_build_symlinked_content_stays_isolated(_cache, tmp_path):
+    """The actual property item 20 exists for, proven through a symlink
+    specifically: a valid relative symlink must resolve WITHIN each
+    session's own clone (not back to the shared base), and a write through
+    it in one session must never appear in another's."""
+    tb = tmp_path / "src.tar.gz"
+    _make_tarball_with_valid_symlink(tb)
+    client = _FakeClient(tb)
+
+    dir_a = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+    dir_b = rbs.materialize_session_build(client, "session-bbbbbbbb", 45, "32b901")
+
+    link_a = dir_a / "investigations" / "demo" / "studies" / "real-study"
+    link_b = dir_b / "investigations" / "demo" / "studies" / "real-study"
+    assert link_a.is_symlink() and link_b.is_symlink()
+    assert (link_a / "data.txt").read_text() == "original\n"
+    assert (link_b / "data.txt").read_text() == "original\n"
+
+    # the symlink must resolve INSIDE its own clone, not back to the shared base
+    assert os.path.realpath(link_a).startswith(str(dir_a))
+    assert os.path.realpath(link_b).startswith(str(dir_b))
+
+    (link_a / "data.txt").write_text("mutated-by-session-a\n")
+    assert (link_b / "data.txt").read_text() == "original\n"  # untouched
+
+
 def test_list_build_sources_maps_and_labels():
     client = _FakeClient(None)
     out = rbs.list_build_sources(client)
