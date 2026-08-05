@@ -237,6 +237,17 @@ def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
             },
         }, 200
 
+    # baseline.step: give the Step a per-run analysis output dir
+    # (`<study>/analyses/<run_id>/`) via its config, so a Step can drop a
+    # downloadable artifact (e.g. a JSON) that the Analysis/Runs tab lists under
+    # this run. Injected only for Step baselines (composite generators would
+    # reject an unknown build parameter); a Step that doesn't use it ignores it.
+    from vivarium_workbench.lib import step_baseline as _step_baseline
+    if _step_baseline.is_step_spec(spec_id):
+        from pathlib import Path as _P
+        params = dict(params or {})
+        params.setdefault("analysis_out_dir", str(_P(study_dir) / "analyses" / run_id))
+
     state, err = study_run_state.resolve_study_baseline_state(ws_root, pkg, spec_id, params)
     if err is not None:
         return err, 400
