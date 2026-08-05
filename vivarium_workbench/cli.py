@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import socket
+import subprocess
 import sys
 import time
 import warnings
@@ -35,6 +36,9 @@ def cmd_serve(args: argparse.Namespace) -> int:
     if not (workspace / "workspace.yaml").is_file():
         print(f"ERROR: not a workspace (no workspace.yaml): {workspace}", file=sys.stderr)
         return 2
+
+    if getattr(args, "detach", False):
+        return _serve_detached(workspace, args)
 
     # Make the workspace's own package importable for the render step
     # (e.g. pbg_chromosome_rep1.core.build_core), and register the workspace
@@ -838,6 +842,197 @@ def cmd_catalog_add(args: argparse.Namespace) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Dashboard server lifecycle (Phase 2.1j) — the detached-serve + status/stop/
+# open/restart verbs that replace viva_superpowers.workbench (the plugin's
+# server manager). All state lives at <ws>/.pbg/server/{server-info,server.pid}
+# — exactly what foreground ``vwb serve`` already writes, and what every skill
+# reads for the dashboard URL.
+# ---------------------------------------------------------------------------
+
+def _server_dir(ws: Path) -> Path:
+    return ws / ".pbg" / "server"
+
+
+def _read_server_info(ws: Path) -> dict | None:
+    try:
+        return json.loads((_server_dir(ws) / "server-info").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+
+
+def _server_pid(ws: Path) -> int | None:
+    info = _read_server_info(ws)
+    if info and info.get("pid"):
+        try:
+            return int(info["pid"])
+        except (TypeError, ValueError):
+            pass
+    try:
+        return int((_server_dir(ws) / "server.pid").read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+
+
+def _pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # alive, owned by another user
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def _http_ok(url: str, timeout: float = 1.0) -> bool:
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:  # noqa: S310 (loopback)
+            return 200 <= getattr(r, "status", 200) < 500
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _open_browser(url: str) -> None:
+    import webbrowser
+    try:
+        webbrowser.open(url)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _clear_server_state(ws: Path) -> None:
+    for name in ("server-info", "server.pid"):
+        try:
+            (_server_dir(ws) / name).unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _serve_detached(workspace: Path, args: argparse.Namespace) -> int:
+    """Launch ``vwb serve`` in the background, wait until it reports ready, and
+    print the URL. Adopts an already-running server for the workspace."""
+    server_dir = _server_dir(workspace)
+    server_dir.mkdir(parents=True, exist_ok=True)
+
+    existing = _read_server_info(workspace)
+    if existing and existing.get("url") and _pid_alive(_server_pid(workspace)) \
+            and _http_ok(existing["url"]):
+        print(f"Dashboard already running: {existing['url']}")
+        if getattr(args, "open", False):
+            _open_browser(_investigation_url(existing["url"], getattr(args, "investigation", None)))
+        return 0
+
+    _clear_server_state(workspace)
+    port = args.port or _pick_free_port()
+    log_file = server_dir / "server.log"
+
+    cmd = [sys.executable, "-m", "vivarium_workbench.cli", "serve",
+           "--workspace", str(workspace), "--port", str(port)]
+    if getattr(args, "host", None):
+        cmd += ["--host", args.host]
+    if getattr(args, "base_path", ""):
+        cmd += ["--base-path", args.base_path]
+
+    with open(log_file, "wb") as log:
+        proc = subprocess.Popen(  # noqa: S603
+            cmd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+            start_new_session=True, cwd=str(workspace),
+        )
+
+    url = None
+    for _ in range(400):  # ~40s (a cold workspace render + uvicorn boot is slow)
+        if not _pid_alive(proc.pid):
+            print(f"error: dashboard exited during startup — see {log_file}", file=sys.stderr)
+            return 1
+        info = _read_server_info(workspace)
+        if info and info.get("url") and _http_ok(info["url"]):
+            url = info["url"]
+            break
+        time.sleep(0.1)
+
+    if not url:
+        info = _read_server_info(workspace)
+        url = (info or {}).get("url") or f"http://127.0.0.1:{port}"
+        print(f"warning: dashboard did not report ready in time — check {log_file}",
+              file=sys.stderr)
+
+    print(f"Dashboard: {url}  (detached, pid {proc.pid})")
+    if getattr(args, "open", False):
+        _open_browser(_investigation_url(url, getattr(args, "investigation", None)))
+    return 0
+
+
+def _investigation_url(base_url: str, investigation: str | None) -> str:
+    if not investigation:
+        return base_url
+    return base_url.rstrip("/") + f"/investigations/{investigation}"
+
+
+def cmd_server_status(args: argparse.Namespace) -> int:
+    """Report the dashboard server's state for a workspace."""
+    ws = Path(args.workspace).resolve()
+    info = _read_server_info(ws)
+    if not info:
+        print(json.dumps({"state": "stopped"}))
+        return 0
+    pid = _server_pid(ws)
+    url = info.get("url", "")
+    alive = _pid_alive(pid)
+    reachable = _http_ok(url) if url else False
+    state = "running" if (alive and reachable) else "stale"
+    print(json.dumps({"state": state, "url": url, "pid": pid, "reachable": reachable}, indent=2))
+    return 0
+
+
+def cmd_server_stop(args: argparse.Namespace) -> int:
+    """Stop the dashboard server for a workspace + clear its state."""
+    ws = Path(args.workspace).resolve()
+    pid = _server_pid(ws)
+    if not pid or not _pid_alive(pid):
+        _clear_server_state(ws)
+        print("not running")
+        return 0
+    import signal as _signal
+    try:
+        os.kill(int(pid), _signal.SIGTERM)
+    except OSError as e:
+        print(f"error: could not stop pid {pid}: {e}", file=sys.stderr)
+        return 1
+    for _ in range(50):  # ~5s
+        if not _pid_alive(pid):
+            break
+        time.sleep(0.1)
+    _clear_server_state(ws)
+    print(f"stopped (pid {pid})")
+    return 0
+
+
+def cmd_server_open(args: argparse.Namespace) -> int:
+    """Open the running dashboard in a browser (optionally at an investigation)."""
+    ws = Path(args.workspace).resolve()
+    info = _read_server_info(ws)
+    if not info or not info.get("url"):
+        print("error: dashboard not running (no server-info). Run `vwb serve --detach` first.",
+              file=sys.stderr)
+        return 1
+    _open_browser(_investigation_url(info["url"], getattr(args, "investigation", None)))
+    print(info["url"])
+    return 0
+
+
+def cmd_server_restart(args: argparse.Namespace) -> int:
+    """Stop the dashboard server (if running) then start it detached."""
+    ws = Path(args.workspace).resolve()
+    cmd_server_stop(args)
+    args.detach = True
+    return cmd_serve(args)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vivarium-workbench")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -869,6 +1064,15 @@ def main(argv: list[str] | None = None) -> int:
              "(sets VIVARIUM_WORKBENCH_ALLOWED_ORIGINS). Repeatable. Use behind "
              "a proxy you control — an ALB terminating a /workbench subpath.",
     )
+    p_serve.add_argument(
+        "--detach", action="store_true",
+        help="Launch the dashboard in the background (writes .pbg/server/server-info, "
+             "prints the URL, and returns) instead of running in the foreground.",
+    )
+    p_serve.add_argument("--open", action="store_true",
+                         help="Open the dashboard in a browser after it is ready (with --detach).")
+    p_serve.add_argument("--investigation", default=None, metavar="SLUG",
+                         help="With --open, open the dashboard at this investigation.")
     p_serve.set_defaults(func=cmd_serve)
 
     p_mig = sub.add_parser(
@@ -1106,6 +1310,27 @@ def main(argv: list[str] | None = None) -> int:
     p_catadd.add_argument("--name", default=None, help="display name (default: from workspace.yaml)")
     p_catadd.add_argument("--package", default=None, help="workspace package path")
     p_catadd.set_defaults(func=cmd_catalog_add)
+
+    p_sstat = sub.add_parser("server-status", help="Report the dashboard server's state for a workspace")
+    p_sstat.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_sstat.set_defaults(func=cmd_server_status)
+
+    p_sstop = sub.add_parser("server-stop", help="Stop the dashboard server + clear its state")
+    p_sstop.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_sstop.set_defaults(func=cmd_server_stop)
+
+    p_sopen = sub.add_parser("server-open", help="Open the running dashboard in a browser")
+    p_sopen.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_sopen.add_argument("--investigation", default=None, metavar="SLUG",
+                         help="Open the dashboard at this investigation")
+    p_sopen.set_defaults(func=cmd_server_open)
+
+    p_srestart = sub.add_parser("server-restart", help="Stop then start the dashboard server (detached)")
+    p_srestart.add_argument("--workspace", default=".", help="Path to workspace root (default: cwd)")
+    p_srestart.add_argument("--port", type=int, default=0, help="Port (default: pick a free port)")
+    p_srestart.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1)")
+    p_srestart.add_argument("--base-path", default="", help="URL path prefix (default: root)")
+    p_srestart.set_defaults(func=cmd_server_restart)
 
     args = parser.parse_args(argv)
     return args.func(args)
