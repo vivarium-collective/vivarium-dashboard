@@ -222,6 +222,40 @@ def test_materialize_session_build_rejects_unsafe_session_key(_cache, tmp_path):
     assert client.downloads == 0  # validated before the (expensive) base fetch
 
 
+def _make_tarball_with_dangling_symlink(path, top="org-repo-abc1234"):
+    """A GitHub-style tarball whose one symlink member points one level short
+    of its real target — the same shape as sms-ecoli's actual investigation/
+    study symlinks. `materialize_build`'s tar extraction faithfully carries
+    this into the shared base cache, dangling and all, same as production."""
+    with tarfile.open(path, "w:gz") as tar:
+        data = b"name: built-ws\n"
+        info = tarfile.TarInfo(f"{top}/workspace.yaml")
+        info.size = len(data)
+        tar.addfile(info, io.BytesIO(data))
+
+        link = tarfile.TarInfo(f"{top}/investigations/demo/studies/orphan-study")
+        link.type = tarfile.SYMTYPE
+        link.linkname = "../../studies/orphan-study"  # one `../` short — dangling
+        tar.addfile(link)
+
+
+def test_materialize_session_build_preserves_dangling_symlinks(_cache, tmp_path):
+    """Real-world regression (found live against sms-ecoli build #55): a
+    dangling symlink anywhere in the shared base must not crash the whole
+    session clone. The clone should faithfully carry the same dangling
+    symlink, not dereference-and-crash, not silently drop it."""
+    tb = tmp_path / "src.tar.gz"
+    _make_tarball_with_dangling_symlink(tb)
+    client = _FakeClient(tb)
+
+    session_dir = rbs.materialize_session_build(client, "session-aaaaaaaa", 45, "32b901")
+
+    link = session_dir / "investigations" / "demo" / "studies" / "orphan-study"
+    assert link.is_symlink()
+    assert not link.exists()  # still dangling, same as the source — not silently dropped
+    assert (session_dir / "workspace.yaml").read_text() == "name: built-ws\n"  # rest of the tree unaffected
+
+
 def test_list_build_sources_maps_and_labels():
     client = _FakeClient(None)
     out = rbs.list_build_sources(client)
