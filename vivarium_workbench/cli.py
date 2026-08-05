@@ -784,6 +784,60 @@ def cmd_add_dashboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scaffold_workspace(args: argparse.Namespace) -> int:
+    """Scaffold a new process-bigraph workspace (bootstrap — runs before any
+    server exists). Wraps ``viva_superpowers.scaffold`` (Phase 2.1i rewire-
+    first: the plugin still owns the scaffold payload; only the caller — the
+    ``/viva-workspace`` skill — moves from ``python -m viva_superpowers.scaffold``
+    to this ``vwb`` verb. The module move is 2.1k)."""
+    try:
+        from viva_superpowers import scaffold
+    except ImportError as e:  # noqa: BLE001
+        print(f"error: workspace scaffolding requires viva_superpowers: {e}", file=sys.stderr)
+        return 1
+
+    target = Path(args.target).resolve()
+    try:
+        if args.in_place:
+            ws = scaffold.scaffold_workspace_in_place(
+                workspace_root=target,
+                workspace_name=args.name,
+                template_source=args.source,
+                branch=args.branch,
+                package_path=args.package,
+            )
+        else:
+            ws = scaffold.scaffold_workspace(target, args.name, source=args.source)
+    except Exception as e:  # noqa: BLE001
+        print(f"error: scaffold failed: {e}", file=sys.stderr)
+        return 1
+    print(str(ws))
+    return 0
+
+
+def cmd_catalog_add(args: argparse.Namespace) -> int:
+    """Register a workspace in ``~/.pbg/workspaces.json`` so it appears in the
+    dashboard's workspace switcher (idempotent). Wraps
+    ``viva_superpowers.workspace_catalog.add`` — the same call ``vwb serve``
+    already makes on boot (Phase 2.1i rewire-first)."""
+    try:
+        from viva_superpowers import workspace_catalog
+    except ImportError as e:  # noqa: BLE001
+        print(f"error: catalog registration requires viva_superpowers: {e}", file=sys.stderr)
+        return 1
+
+    try:
+        entry = workspace_catalog.add(args.path, name=args.name, package=args.package)
+    except ValueError as e:  # not a workspace (no workspace.yaml)
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    except Exception as e:  # noqa: BLE001
+        print(f"error: catalog add failed: {e}", file=sys.stderr)
+        return 1
+    print(json.dumps(entry, indent=2, default=str))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vivarium-workbench")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1028,6 +1082,30 @@ def main(argv: list[str] | None = None) -> int:
                         help="Link back to the source repo (default: https://github.com/<org>/<repo>)")
     p_dash.add_argument("--force", action="store_true", help="Overwrite existing files")
     p_dash.set_defaults(func=cmd_add_dashboard)
+
+    p_scaffold = sub.add_parser(
+        "scaffold-workspace",
+        help="Scaffold a new process-bigraph workspace (bootstrap; runs before any server)",
+    )
+    p_scaffold.add_argument("--name", required=True, help="workspace name")
+    p_scaffold.add_argument("--target", default=".", help="target directory (default: cwd)")
+    p_scaffold.add_argument("--source", default=None,
+                            help="template source (path or URL; default: viva-template)")
+    p_scaffold.add_argument("--in-place", action="store_true",
+                            help="promote an existing git checkout into a workspace branch")
+    p_scaffold.add_argument("--branch", default=None, help="workspace branch name (--in-place)")
+    p_scaffold.add_argument("--package", default=None,
+                            help="workspace Python package path (--in-place)")
+    p_scaffold.set_defaults(func=cmd_scaffold_workspace)
+
+    p_catadd = sub.add_parser(
+        "catalog-add",
+        help="Register a workspace in ~/.pbg/workspaces.json (dashboard switcher; idempotent)",
+    )
+    p_catadd.add_argument("--path", default=".", help="workspace root (default: cwd)")
+    p_catadd.add_argument("--name", default=None, help="display name (default: from workspace.yaml)")
+    p_catadd.add_argument("--package", default=None, help="workspace package path")
+    p_catadd.set_defaults(func=cmd_catalog_add)
 
     args = parser.parse_args(argv)
     return args.func(args)
