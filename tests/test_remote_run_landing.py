@@ -228,3 +228,88 @@ def test_land_multiseed_single_seed_still_works(tmp_path: Path):
     )
     zarr_dir = study / f"runs.{run_id}.zarr"
     assert [p.name for p in zarr_dir.glob("experiment_id=*")] == ["experiment_id=exp-seed00"]
+
+
+# --- native per-lineage zarr convention (BatchBaselineRunner/LineageProcess) -----
+# Dispatched through the generic run_pbg.py runner (backlog items 26/27), a batch's
+# own output is never restructured into seed_NN/store.zarr the way
+# scripts/run_batch_baseline_ray.py used to -- each lineage's store keeps its native
+# <experiment_id>_v<variant>_s<seed>.zarr name, and EVERY lineage in one batch shares
+# the SAME experiment_id/variant (confirmed against a real fixture,
+# tests/fixtures/redux_cards/v2ecoli_seed00.zarr: root -> experiment_id=X -> variant=Y
+# -> lineage_seed=Z), unlike seed_NN/store.zarr's per-seed-unique top-level partition.
+
+
+def _make_remote_native_lineage_tar(
+    tmp_path: Path, seeds: tuple[int, ...] = (0, 1), experiment_id: str = "exp-native", variant: int = 0
+) -> Path:
+    """Build a tar.gz mirroring a real multi-lineage batch dispatched through the
+    generic run_pbg.py runner: one independent `<experiment_id>_v<variant>_s<seed>.zarr`
+    store per lineage, each sharing the SAME experiment_id=X/variant=Y prefix
+    internally and differing only at lineage_seed=Z -- the shape that would have
+    been silently collapsed to one lineage by a naive top-level-only union."""
+    staging = tmp_path / "staging"
+    for seed in seeds:
+        part = (
+            staging
+            / f"{experiment_id}_v{variant}_s{seed}.zarr"
+            / f"experiment_id={experiment_id}"
+            / f"variant={variant}"
+            / f"lineage_seed={seed}"
+        )
+        part.mkdir(parents=True)
+        (part / "dry_mass.zarray").write_text('{"shape": [1]}')
+        # Trivial shared group markers, repeated at every level across every lineage
+        # (mirrors AsyncZarrBufferWriter always opening the same nested group path).
+        store_root = staging / f"{experiment_id}_v{variant}_s{seed}.zarr"
+        (store_root / "zarr.json").write_text('{"zarr_format":3}')
+        (store_root / f"experiment_id={experiment_id}" / "zarr.json").write_text('{"zarr_format":3}')
+        (store_root / f"experiment_id={experiment_id}" / f"variant={variant}" / "zarr.json").write_text(
+            '{"zarr_format":3}'
+        )
+    tar_path = tmp_path / "sim_native_lineage.tar.gz"
+    with tarfile.open(tar_path, "w:gz") as tar:
+        tar.add(staging, arcname=".")
+    return tar_path
+
+
+def test_land_native_lineage_zarr_keeps_every_lineage(tmp_path: Path):
+    """Regression guard for the same class of bug #674 fixed once already, recurring
+    one level deeper: every lineage in a batch shares experiment_id=X/variant=Y, so a
+    naive top-level union would keep only the first-processed lineage_seed and
+    silently drop the rest. All requested seeds must land."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_native_lineage_tar(tmp_path, seeds=(0, 1, 2))
+    run_id = land_remote_run(
+        study,
+        spec_id="v2ecoli.composites.ecoli_baseline",
+        simulation_id=200,
+        experiment_id="exp-native",
+        commit="abc123",
+        tar_path=tar,
+    )
+    zarr_dir = study / f"runs.{run_id}.zarr"
+    lineage_seeds = sorted(
+        p.name for p in zarr_dir.glob("experiment_id=*/variant=*/lineage_seed=*")
+    )
+    assert lineage_seeds == ["lineage_seed=0", "lineage_seed=1", "lineage_seed=2"]
+    # Only ONE experiment_id=X/variant=Y ancestor exists (shared, not duplicated) —
+    # confirms this is a genuine merge, not three independent copies side by side.
+    assert [p.name for p in zarr_dir.glob("experiment_id=*")] == ["experiment_id=exp-native"]
+    assert [p.name for p in zarr_dir.glob("experiment_id=*/variant=*")] == ["variant=0"]
+    for seed in (0, 1, 2):
+        leaf = zarr_dir / "experiment_id=exp-native" / "variant=0" / f"lineage_seed={seed}" / "dry_mass.zarray"
+        assert leaf.is_file()
+
+
+def test_land_native_lineage_zarr_single_lineage_still_works(tmp_path: Path):
+    """A single-lineage batch (n_seeds=1) still lands correctly — no regression."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_native_lineage_tar(tmp_path, seeds=(0,))
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=201, experiment_id="exp-native", commit="c", tar_path=tar,
+    )
+    zarr_dir = study / f"runs.{run_id}.zarr"
+    assert (zarr_dir / "experiment_id=exp-native" / "variant=0" / "lineage_seed=0").is_dir()
