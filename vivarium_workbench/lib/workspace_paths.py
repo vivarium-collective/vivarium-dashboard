@@ -57,6 +57,24 @@ LAYOUT_DEFAULTS: dict[str, str] = {
 LAYOUT_KEYS = tuple(LAYOUT_DEFAULTS) + ("package",)
 
 
+# mtime-keyed memo for ``WorkspacePaths.load``. ``load`` is called ~126 times
+# across the dashboard, and each call previously re-``stat``ed, re-read, and
+# re-parsed ``workspace.yaml``. The layout almost never changes within a server
+# lifetime, so we cache the resolved ``WorkspacePaths`` keyed by the resolved
+# root path, tagged with the ``workspace.yaml`` mtime (ns) used to build it.
+# A cached entry is reused only while that mtime is unchanged; any edit to the
+# file (or its creation/deletion) changes the mtime tag and forces a re-parse,
+# so the cache stays correct. Not guarded by a lock: a benign race just
+# re-parses. ``_parse_count`` is a test hook incremented on each real parse.
+_LOAD_CACHE: dict[str, tuple[Optional[int], "WorkspacePaths"]] = {}
+_parse_count = 0
+
+
+def _clear_load_cache() -> None:
+    """Drop the ``WorkspacePaths.load`` memo (test/utility helper)."""
+    _LOAD_CACHE.clear()
+
+
 def package_slug(name: str | None) -> str:
     """Default Python package directory for a workspace named `name`."""
     return f"pbg_{(name or 'workspace').replace('-', '_')}"
@@ -91,13 +109,32 @@ class WorkspacePaths:
 
     @classmethod
     def load(cls, root: Path | str) -> "WorkspacePaths":
-        """Resolve layout from ``<root>/workspace.yaml`` (empty if missing)."""
+        """Resolve layout from ``<root>/workspace.yaml`` (empty if missing).
+
+        Memoized by resolved root + ``workspace.yaml`` mtime: a repeated load
+        with an unchanged file returns the cached instance without re-parsing;
+        a changed (or newly created/deleted) file invalidates the entry.
+        """
         root = Path(root)
+        resolved = str(root.resolve())
         wf = root / "workspace.yaml"
+        try:
+            mtime: Optional[int] = wf.stat().st_mtime_ns
+        except OSError:
+            # Missing (or unreadable) workspace.yaml -> empty config. Tag with
+            # None so a later creation (mtime becomes an int) invalidates.
+            mtime = None
+        cached = _LOAD_CACHE.get(resolved)
+        if cached is not None and cached[0] == mtime:
+            return cached[1]
         config: dict = {}
-        if wf.exists():
+        if mtime is not None:
             config = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
-        return cls.from_config(root, config)
+            global _parse_count
+            _parse_count += 1
+        wp = cls.from_config(root, config)
+        _LOAD_CACHE[resolved] = (mtime, wp)
+        return wp
 
     def dir(self, name: str) -> Path:
         """Absolute path to the directory registered under logical `name`."""
@@ -170,10 +207,6 @@ class WorkspacePaths:
     def inputs_dir(self, inv_slug: str) -> Path:
         """investigations/<inv_slug>/inputs (per-investigation owned inputs)."""
         return self.dir("investigations") / inv_slug / "inputs"
-
-    def report_dir(self, inv_slug: str) -> Path:
-        """Per-investigation report/publication dir: investigations/<slug>/reports/."""
-        return self.dir("investigations") / inv_slug / "reports"
 
     def study_owner(self, slug: str):
         """Owning investigation slug for a study: nested layout, else the

@@ -4,7 +4,7 @@ parses results, writes a compact summary into study.yaml.tests.last_results.
 from __future__ import annotations
 import json, os, subprocess, sys, time
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import yaml

@@ -1059,7 +1059,6 @@ def cmd_server_open(args: argparse.Namespace) -> int:
 
 def cmd_server_restart(args: argparse.Namespace) -> int:
     """Stop the dashboard server (if running) then start it detached."""
-    ws = Path(args.workspace).resolve()
     cmd_server_stop(args)
     args.detach = True
     return cmd_serve(args)

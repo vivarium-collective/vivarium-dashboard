@@ -44,7 +44,6 @@ from pydantic import ValidationError
 from vivarium_workbench.lib.errors import APIError
 from vivarium_workbench.lib.request_logging import install_request_logging
 
-from vivarium_workbench.lib import active_workspace
 from vivarium_workbench.lib import session_env
 from vivarium_workbench.lib import session_registry
 from vivarium_workbench.lib.workspace_context import WorkspaceContext
@@ -91,8 +90,12 @@ from vivarium_workbench.lib import events as _events
 from vivarium_workbench.lib import explorer_data as _explorer_data
 from vivarium_workbench.lib import metadata_mutations as _meta_mut
 from vivarium_workbench.lib import study_crud_mutations as _study_crud_mut
-from vivarium_workbench.lib import git_status as _git_status
 from vivarium_workbench.lib.adapters import scientific_content as _record
+# git-status routes call through the scientific_content port, so this module is
+# not referenced by name in app.py — but the test suite reaches
+# `app._git_status.build_git_status/build_work_status` to monkeypatch git output,
+# so the alias must stay importable here. noqa: keep the seam.
+from vivarium_workbench.lib import git_status as _git_status  # noqa: F401
 from vivarium_workbench.lib import git_commit_views as _git_commit_views
 from vivarium_workbench.lib import work_mutations as _work_mutations
 from vivarium_workbench.lib import work_pr_views as _work_pr_views
@@ -132,13 +135,10 @@ from vivarium_workbench.lib import investigation_graph_views as _ig_views
 from vivarium_workbench.lib import audit_views as _audit_views
 from vivarium_workbench.lib import chain_views as _chain_views
 from vivarium_workbench.lib import study_variants as _study_variants
-from vivarium_workbench.lib import composite_runs as _composite_runs
 from vivarium_workbench.lib.composite_resolve import resolve_composite_for_request, _degraded_result
 from vivarium_workbench.lib.composites_query import composites_via_subprocess
 from vivarium_workbench.lib.models import (
-    AnalysisToolsPayload,
     BibEntry,
-    CatalogModule,
     CatalogPayload,
     CompositeRecord,
     CompositeResolvePayload,
@@ -205,10 +205,7 @@ from vivarium_workbench.lib.models import (
     WorkStatusActive,
     WorkStatusInactive,
     Generation,
-    GenerationSummary,
     WorkCompositeDiff,
-    WorkCompositeDiffEntry,
-    # Batch 18: request-body models for investigation & study mutations
     SetObservablesBody,
     SetAnalysesBody,
     SetConclusionsBody,
@@ -377,7 +374,6 @@ from investigation_contracts import FindingCreateBody, EvidenceCreateBody, Decis
 from vivarium_workbench.lib.catalog import build_catalog
 from vivarium_workbench.lib.registry import build_registry
 from vivarium_workbench.lib.visualization_classes import list_visualization_classes
-from vivarium_workbench.lib.simulations_index import list_simulations
 from vivarium_workbench.lib.study_charts import build_study_charts_payload
 
 WORKSPACE_ENV = "VIVARIUM_WORKBENCH_WORKSPACE"

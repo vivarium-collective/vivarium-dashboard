@@ -30,7 +30,6 @@ Batch 28 of the FastAPI strangler-fig migration (POST phase, Phase C).
 from __future__ import annotations
 
 import re
-import sys
 from pathlib import Path
 from typing import Any
 

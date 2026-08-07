@@ -28,6 +28,13 @@ jobs:
         # `demo` extra's editable path sources (../v2ecoli, ../pbg-ptools) — not
         # checked out in CI — are never touched. This gate only needs `dev`.
         run: uv sync --frozen --extra dev
+      - name: ruff (F + E722 correctness gate, shipped packages)
+        # Behaviour-only lint (pyflakes + bare-except): undefined names, unused
+        # imports/vars, duplicate defs. Config in [tool.ruff.lint]. Scoped to the
+        # shipped packages; the test tree is not yet under the gate.
+        # `--with` layers a pinned ruff onto the frozen env without adding it to
+        # uv.lock (re-locking this repo needs a sandbox worktree — avoided here).
+        run: uv run --frozen --with "ruff==0.16.2" ruff check vivarium_workbench vivarium_dashboard
       - name: mypy (typed modules)
         run: uv run --frozen mypy
       - name: import-linter (ports & adapters layering)

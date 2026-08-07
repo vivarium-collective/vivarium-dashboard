@@ -67,9 +67,9 @@ def diagnose(log: str) -> InstallDiagnosis | None:
             category="prerelease",
             summary=f"`{pkg}` is only available as a pre-release.",
             suggestion=(
-                f"Retry with pre-releases enabled. Run in your terminal:\n"
-                f"  uv pip install --python .venv/bin/python3 --prerelease=allow -e <path>\n"
-                f"Once installed, the dashboard's Registry tab will pick it up automatically."
+                "Retry with pre-releases enabled. Run in your terminal:\n"
+                "  uv pip install --python .venv/bin/python3 --prerelease=allow -e <path>\n"
+                "Once installed, the dashboard's Registry tab will pick it up automatically."
             ),
             raw_excerpt=m.group(0)[:400],
         )
