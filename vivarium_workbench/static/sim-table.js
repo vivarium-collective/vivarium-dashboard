@@ -212,7 +212,22 @@
     var data = (row.run_id && (row.store_path || row.db_path))
       ? '<a class="action-btn js-authoring" title="Download this run\'s results / raw emitter data (.zip)" ' +
         'href="' + BP + '/api/simulation-run-download?run_id=' + runIdEnc + '" download style="text-decoration:none;">⬇ Results</a>' : "";
-    var analysis = "";
+    // "Run analysis" — fires the analysis phase (cd1_*/ptools_*) on an existing,
+    // already-completed REMOTE simulation, via POST /api/remote-run-analysis ->
+    // viva-api POST /simulations/{id}/analysis. Remote-only and completed-only:
+    // a local run's analyses already ran in-process, and there is nothing to
+    // analyse before the sweep exists. viva-api auto-runs this as the dispatch
+    // DAG's last node, so the button is for RE-running it (a failed analysis, a
+    // study whose `analyses` changed since the run, or a simulation dispatched
+    // before the auto-trigger existed) — hence the label. No id is interpolated
+    // into markup: the delegated handler reads it back from the enclosing
+    // <tr data-remote-sim-id>, same idiom as ↻ Rerun below.
+    var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === "snapshot";
+    var remoteSimId = row && row.remote_origin && row.remote_origin.simulation_id;
+    var analysis = (remoteSimId != null && completed && !isSnapshot)
+      ? '<button type="button" class="action-btn js-authoring run-analysis-btn" ' +
+        'title="Re-run this simulation\'s analysis phase (cd1_*/ptools_*) on the remote deployment">' +
+        '🧪 Analysis</button>' : "";
     // Rerun — REPRODUCES this run (replays its recorded manifest verbatim —
     // params/seed/emitter/emit_paths/runtime exactly as launched, ignoring
     // whatever the study's spec currently says) via POST /api/study-reproduce
@@ -229,7 +244,6 @@
     // the enclosing <tr data-run-id data-study> (already safely HTML-escaped
     // there), and calls stopPropagation itself so the row's own
     // click-to-open handler (the <tr> is clickable) never fires.
-    var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === "snapshot";
     var rerun = (row.run_id && !isSnapshot)
       ? '<button type="button" class="action-btn js-authoring rerun-btn" ' +
         'title="Reproduce this run — replays its recorded manifest exactly, as a brand-new run">↻ Rerun</button>' : "";
@@ -313,6 +327,85 @@
   }
   document.addEventListener("click", _onRerunButtonClick, true);
 
+  // One-click analysis re-run for a completed REMOTE simulation:
+  // POST /api/remote-run-analysis -> viva-api POST /simulations/{id}/analysis.
+  // Then poll /api/remote-run-poll?analysis_id=… so the operator gets a real
+  // terminal signal (the analysis job pulls a multi-GB image before it runs, so
+  // "launched" alone is not useful feedback). Polling is a courtesy: giving up
+  // never means the analysis failed, and the toast says so.
+  var ANALYSIS_POLL_MS = 10000;
+  var ANALYSIS_POLL_MAX = 30;  // ~5 min ceiling, matching lib/remote_run_views.py
+
+  function _toast(msg) {
+    if (typeof _showToast === "function") _showToast(msg); else alert(msg);
+  }
+
+  function _pollAnalysis(analysisId, attempt) {
+    if (attempt >= ANALYSIS_POLL_MAX) {
+      _toast("Analysis " + analysisId + " still running — check back shortly.");
+      return;
+    }
+    fetch("/api/remote-run-poll?analysis_id=" + encodeURIComponent(analysisId))
+      .then(function (r) { return r.json(); })
+      .then(function (body) {
+        var phase = body && body.phase;
+        if (phase === "done") {
+          _toast("Analysis " + analysisId + " completed.");
+          if (typeof window._initSimulations === "function") window._initSimulations(true);
+          if (typeof window._loadStudySims === "function") window._loadStudySims(true);
+          return;
+        }
+        if (phase === "failed") {
+          _toast("Analysis " + analysisId + " failed: " + (body.error || "see viva-api logs"));
+          return;
+        }
+        setTimeout(function () { _pollAnalysis(analysisId, attempt + 1); }, ANALYSIS_POLL_MS);
+      })
+      .catch(function () {
+        setTimeout(function () { _pollAnalysis(analysisId, attempt + 1); }, ANALYSIS_POLL_MS);
+      });
+  }
+
+  function _runSimAnalysis(simulationId, btnEl, studySlug) {
+    if (!simulationId) return;
+    var origLabel = btnEl ? btnEl.textContent : "";
+    if (btnEl) { btnEl.disabled = true; btnEl.textContent = "… analyzing"; }
+    fetch("/api/remote-run-analysis", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ simulation_id: Number(simulationId), study: studySlug || "" }),
+    }).then(function (r) {
+      return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; })
+        .catch(function () { return { ok: r.ok, status: r.status, body: {} }; });
+    }).then(function (res) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = origLabel || "🧪 Analysis"; }
+      var body = res.body || {};
+      if (!res.ok) {
+        _toast("Analysis failed to start: " + (body.error || res.status));
+        return;
+      }
+      _toast("Analysis launched for simulation " + simulationId +
+        (body.analysis_id ? " — analysis " + body.analysis_id : ""));
+      if (body.analysis_id) _pollAnalysis(body.analysis_id, 0);
+    }).catch(function (err) {
+      if (btnEl) { btnEl.disabled = false; btnEl.textContent = origLabel || "🧪 Analysis"; }
+      _toast("Analysis failed to start: network error — " + err);
+    });
+  }
+  window._runSimAnalysis = _runSimAnalysis;
+
+  // Same delegation/capture-phase rationale as _onRerunButtonClick above.
+  function _onRunAnalysisButtonClick(e) {
+    var btn = e.target.closest(".run-analysis-btn");
+    if (!btn) return;
+    e.stopPropagation();
+    var tr = btn.closest("tr[data-remote-sim-id]");
+    var simId = tr ? tr.getAttribute("data-remote-sim-id") : "";
+    if (!simId) return;
+    _runSimAnalysis(simId, btn, tr ? tr.getAttribute("data-study") : "");
+  }
+  document.addEventListener("click", _onRunAnalysisButtonClick, true);
+
   // Render one <tr>. opts.scope === 'study' drops Investigation + Study columns.
   // opts.dropIds (set by renderTable() after dropEmptyColumns()) skips the
   // STUDY_COLS cells that were determined dead across the whole table; global
@@ -344,7 +437,13 @@
     if (keep("status")) cells += td(statusChip(row.status));
     if (keep("tools")) cells += td(toolsCell(row), "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;");
     if (keep("actions")) cells += td('<div class="run-actions">' + _actions(row) + '</div>', "vertical-align:middle;");
-    return '<tr data-run-id="' + esc(runId) + '" data-study="' + esc(study(row)) + '" ' +
+    // data-remote-sim-id: the remote deployment's simulation database id, present
+    // only for remote rows. The 🧪 Analysis handler reads it back from here rather
+    // than having it interpolated into an inline onclick= string (same reason as
+    // data-run-id — see _actions).
+    var remoteSimId = row.remote_origin && row.remote_origin.simulation_id;
+    var remoteAttr = remoteSimId != null ? ' data-remote-sim-id="' + esc(remoteSimId) + '"' : "";
+    return '<tr data-run-id="' + esc(runId) + '" data-study="' + esc(study(row)) + '"' + remoteAttr + " " +
       'style="border-bottom:1px solid #f3f4f6;cursor:pointer;" ' +
       'title="Click to open this run — its study, or the Composite Explorer">' + cells + "</tr>";
   }

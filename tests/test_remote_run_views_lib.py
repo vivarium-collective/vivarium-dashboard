@@ -472,6 +472,141 @@ def test_land_missing_simulation_id_400(monkeypatch, tmp_path):
     assert rrv.remote_run_land(tmp_path, {"study": "s"})[1] == 400
 
 
+# ---------------------------------------------------------------------------
+# Backlog item 23 — on-demand analysis for an EXISTING completed simulation.
+#
+# Before this there was NO way to fire the analysis phase from the UI at all:
+# `remote_run_land` triggers one, but only as a side effect of downloading a run
+# into a study, and only when that study declares `analyses`. A completed
+# simulation whose analysis failed, or that isn't being landed, or that has no
+# study at all, could only be re-analysed with the `atlantis` CLI.
+# ---------------------------------------------------------------------------
+
+
+def _bind_analysis_client(monkeypatch, tmp_path, *, client=None, authed=True):
+    monkeypatch.setattr(rrv.github_auth, "current_session", lambda: (object() if authed else None))
+    monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
+    c = client or _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: c)
+    return c
+
+
+def test_run_analysis_fires_on_an_existing_simulation(monkeypatch, tmp_path):
+    client = _bind_analysis_client(monkeypatch, tmp_path)
+    body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199})
+    assert status == 202
+    assert client.analyzed == (199, {})
+    assert body["simulation_id"] == 199
+    assert body["analysis_id"] == 7
+    assert body["phase"] == "analyzing"
+
+
+def test_run_analysis_needs_no_study(monkeypatch, tmp_path):
+    """A remote simulation row carries no study slug (remote builds aren't
+    study-organized), so requiring one would make the trigger unusable exactly
+    where it's needed."""
+    client = _bind_analysis_client(monkeypatch, tmp_path)
+    _body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199, "study": ""})
+    assert status == 202
+    assert client.analyzed[0] == 199
+
+
+def test_run_analysis_uses_the_studys_own_analyses_when_given_one(monkeypatch, tmp_path):
+    """Same source (`spec.analyses`) and same translator the local post-run
+    pipeline and remote_run_submit already use — not a third opinion."""
+    _wire_thin(monkeypatch, tmp_path)
+    client = _bind_analysis_client(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"analyses": [{"name": "cd1_fluxomics", "params": {}}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries: ({"multiseed": {"cd1_fluxomics": {}}}, []),
+    )
+    _body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199, "study": "s"})
+    assert status == 202
+    assert client.analyzed == (199, {"multiseed": {"cd1_fluxomics": {}}})
+
+
+def test_run_analysis_explicit_modules_win_over_the_study_spec(monkeypatch, tmp_path):
+    _wire_thin(monkeypatch, tmp_path)
+    client = _bind_analysis_client(monkeypatch, tmp_path)
+    explicit = {"single": {"ptools_rna": {"n_tp": 3}}}
+    _body, status = rrv.remote_run_analysis(
+        tmp_path, {"simulation_id": 199, "study": "s", "modules": explicit})
+    assert status == 202
+    assert client.analyzed == (199, explicit)
+
+
+def test_run_analysis_sends_no_guessed_default(monkeypatch, tmp_path):
+    """With no study and no explicit modules, the workbench must send an EMPTY
+    map and let viva-api resolve it (the simulation's own analysis_options, else
+    the model image's own 'applicable' set). A default guessed here would be a
+    third copy of a module list neither side can verify — the exact shape of the
+    2026-08-05 wrong-scale outage."""
+    client = _bind_analysis_client(monkeypatch, tmp_path)
+    rrv.remote_run_analysis(tmp_path, {"simulation_id": 199})
+    assert client.analyzed[1] == {}
+
+
+def test_run_analysis_missing_simulation_id_400(monkeypatch, tmp_path):
+    _bind_analysis_client(monkeypatch, tmp_path)
+    assert rrv.remote_run_analysis(tmp_path, {})[1] == 400
+
+
+def test_run_analysis_unauthenticated_401(monkeypatch, tmp_path):
+    _bind_analysis_client(monkeypatch, tmp_path, authed=False)
+    monkeypatch.setattr(rrv.remote_pinned, "is_pinned_enabled", lambda: False)
+    assert rrv.remote_run_analysis(tmp_path, {"simulation_id": 199})[1] == 401
+
+
+def test_run_analysis_surfaces_a_backend_failure(monkeypatch, tmp_path):
+    """Unlike the land-time trigger (best-effort, must never block landing), this
+    IS the requested action — swallowing the error would leave the operator
+    believing an analysis is running when none is."""
+
+    class _Boom(_FakeThinClient):
+        def run_analysis(self, simulation_id, modules):
+            raise rrv.SmsApiError("tunnel down")
+
+    _bind_analysis_client(monkeypatch, tmp_path, client=_Boom())
+    body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199})
+    assert status == 502
+    assert "tunnel down" in body["error"]
+
+
+class _AnalysisStatusClient:
+    def __init__(self, base=None, *, status=None):
+        self._status = status
+
+    def analysis_status(self, analysis_id):
+        return self._status
+
+
+def test_status_accepts_an_analysis_id(monkeypatch):
+    """One poll endpoint for all three phases — the JS panel already polls
+    remote-run-poll; the analysis phase must not need a second one."""
+    monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
+    monkeypatch.setattr(
+        rrv, "SmsApiClient",
+        lambda base=None: _AnalysisStatusClient(base, status={"status": "completed"}),
+    )
+    body, status = rrv.remote_run_status({"analysis_id": 7})
+    assert status == 200
+    assert body["kind"] == "analysis" and body["phase"] == "done" and body["analysis_id"] == 7
+
+
+def test_status_analysis_failed_maps_to_failed(monkeypatch):
+    monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
+    monkeypatch.setattr(
+        rrv, "SmsApiClient",
+        lambda base=None: _AnalysisStatusClient(base, status={"status": "failed", "error_log": "boom"}),
+    )
+    body, _status = rrv.remote_run_status({"analysis_id": 7})
+    assert body["phase"] == "failed" and body["error"] == "boom"
+
+
 class _StatusClient:
     """Fake for remote_run_status: returns canned status dicts (or raises)."""
     def __init__(self, base=None, *, sim_status=None, build_status=None, raise_err=None):

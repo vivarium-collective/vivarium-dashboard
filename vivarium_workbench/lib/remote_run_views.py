@@ -402,17 +402,94 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     return {"run_id": run_id}, 200
 
 
+def remote_run_analysis(ws_root: Path, body: dict) -> tuple[dict, int]:
+    """Fire the analysis phase on an EXISTING, already-completed simulation.
+
+    The on-demand counterpart to the dispatch DAG's own analysis node (viva-api
+    submits that one automatically when a run completes). This exists because a
+    completed simulation whose analysis failed, or predates its study's current
+    ``spec.analyses``, or was dispatched before the auto-trigger landed, was
+    otherwise only re-analysable through the ``atlantis`` CLI — which the
+    "everything through the Workbench" bar rules out.
+
+    Deliberately NOT coupled to landing: ``remote_run_land`` already triggers an
+    analysis as a side effect of downloading a run into a study, which cannot
+    serve a simulation that is not being landed (or is not in a study at all).
+
+    ``modules`` resolution, in order:
+      * an explicit ``modules`` in the body (a ``{scale: {name: params}}`` map);
+      * the named study's ``spec.analyses``, via the same
+        ``study_run_post.build_analysis_options`` the local post-run pipeline and
+        ``remote_run_submit`` use — so the button re-runs what the study asks for;
+      * nothing, letting viva-api resolve the simulation's own configured
+        analysis_options (and, failing that, the model image's own "every
+        applicable analysis" set). Passing a guessed default from here would be a
+        third, drift-prone copy of a list neither side can verify.
+
+    Returns ``({analysis_id, analysis_name, simulation_id, phase}, 202)``.
+    """
+    body = body or {}
+    if not _run_auth_ok():
+        return {"error": "not authenticated"}, 401
+    sim_id = body.get("simulation_id")
+    if not sim_id:
+        return {"error": "simulation_id is required"}, 400
+
+    modules = body.get("modules") or {}
+    study = (body.get("study") or "").strip()
+    if not modules and study:
+        spec_path = study_spec.study_spec_path(ws_root, study)
+        if spec_path is None or not spec_path.is_file():
+            return {"error": f"study {study!r} not found"}, 404
+        from vivarium_workbench.lib.study_run_post import build_analysis_options
+
+        modules, errors = build_analysis_options(load_spec(spec_path).get("analyses") or [])
+        for err in errors:
+            warnings.warn(f"remote_run_analysis: {study!r} analysis config: {err.get('error')}")
+
+    client = SmsApiClient(_sms_api_base())
+    try:
+        triggered = client.run_analysis(int(sim_id), modules)
+    except SmsApiError as e:
+        # Unlike the land-time trigger (best-effort, must never block landing),
+        # this IS the requested action — a failure has to reach the operator.
+        status = 401 if getattr(e, "status", None) == 401 else 502
+        return {"error": str(e), "simulation_id": int(sim_id)}, status
+    return {
+        "analysis_id": triggered.get("database_id"),
+        "analysis_name": triggered.get("analysis_name"),
+        "simulation_id": int(sim_id),
+        "phase": "analyzing",
+    }, 202
+
+
 def remote_run_status(params: dict) -> tuple[dict, int]:
     """On-demand status read from sms-api (NO in-process state). The JS panel
-    polls this per phase. Pass ``simulation_id`` (run phase) or ``simulator_id``
-    (build phase). Maps the raw sms-api status into a UI ``phase``."""
+    polls this per phase. Pass ``simulation_id`` (run phase), ``simulator_id``
+    (build phase) or ``analysis_id`` (analysis phase). Maps the raw sms-api
+    status into a UI ``phase``."""
     params = params or {}
     sim_id = params.get("simulation_id")
     sm_id = params.get("simulator_id")
-    if not sim_id and not sm_id:
-        return {"error": "simulator_id or simulation_id required"}, 400
+    an_id = params.get("analysis_id")
+    if not sim_id and not sm_id and not an_id:
+        return {"error": "simulator_id, simulation_id or analysis_id required"}, 400
     client = SmsApiClient(_sms_api_base())
     try:
+        if an_id:
+            # GET /analyses/{id}/status resolves against the job's own S3
+            # _manifest.json, so it answers for an auto-triggered (dispatch-DAG)
+            # analysis and a button-triggered one identically.
+            st = client.analysis_status(int(an_id))
+            raw = str(st.get("status", "")).lower()
+            phase = "done" if raw in _TERMINAL_OK else "failed" if raw in _TERMINAL_BAD else "running"
+            return {
+                "kind": "analysis",
+                "phase": phase,
+                "raw_status": raw,
+                "error": st.get("error_log") or st.get("error_message"),
+                "analysis_id": int(an_id),
+            }, 200
         if sim_id:
             st = client.simulation_status(int(sim_id))
             raw = str(st.get("status", "")).lower()
@@ -449,7 +526,7 @@ def remote_run_status(params: dict) -> tuple[dict, int]:
                 "error": st.get("error_message"),
                 "simulator_id": int(sm_id),
             }, 200
-        return {"error": "simulator_id or simulation_id required"}, 400
+        return {"error": "simulator_id, simulation_id or analysis_id required"}, 400
     except SmsApiError as e:
         # Tunnel down / SSO expired / sms-api error — surface a reachable=false
         # status so the panel shows it without the whole poll crashing.

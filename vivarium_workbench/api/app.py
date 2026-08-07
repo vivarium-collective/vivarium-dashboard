@@ -6417,17 +6417,35 @@ def create_app() -> FastAPI:
         body, status = _remote_run_views.remote_run_land(ws, req or {})
         return JSONResponse(status_code=status, content=body)
 
+    @app.post("/api/remote-run-analysis", tags=["Runs"], status_code=202,
+              summary="Fire the analysis phase on an existing completed simulation")
+    def remote_run_analysis(
+        req: Union[dict, None] = Body(default=None),
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """On-demand analysis for a remote simulation that has already finished.
+
+        viva-api auto-runs the analysis as the dispatch DAG's last node, so this
+        is for re-running it: a failed analysis, a study whose `analyses` changed
+        since the run, or a simulation dispatched before the auto-trigger
+        existed. Returns the analysis id to poll via `/api/remote-run-poll`."""
+        body, status = _remote_run_views.remote_run_analysis(ws, req or {})
+        return JSONResponse(status_code=status, content=body)
+
     @app.get("/api/remote-run-poll", tags=["Runs"],
-             summary="Thin-client on-demand status (build or run phase)")
+             summary="Thin-client on-demand status (build, run or analysis phase)")
     def remote_run_poll(
         simulator_id: int = 0,
         simulation_id: int = 0,
+        analysis_id: int = 0,
     ) -> JSONResponse:
         params: dict = {}
         if simulation_id:
             params["simulation_id"] = simulation_id
         if simulator_id:
             params["simulator_id"] = simulator_id
+        if analysis_id:
+            params["analysis_id"] = analysis_id
         body, status = _remote_run_views.remote_run_status(params)
         return JSONResponse(status_code=status, content=body)
 
