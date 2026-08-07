@@ -58,8 +58,8 @@ def test_flat_defaults_when_no_layout(tmp_path):
 
 def test_package_derives_from_name_or_package_path(tmp_path):
     assert WorkspacePaths.from_config(tmp_path, {"name": "v2-ecoli"}).package \
-        == tmp_path / "pbg_v2_ecoli"
-    assert package_slug("a-b-c") == "pbg_a_b_c"
+        == tmp_path / "viva_v2_ecoli"
+    assert package_slug("a-b-c") == "viva_a_b_c"
     # explicit package_path overrides derivation
     assert WorkspacePaths.from_config(tmp_path, {"name": "x", "package_path": "src/pkg"}).package \
         == tmp_path / "src" / "pkg"
@@ -91,7 +91,7 @@ def test_load_reads_workspace_yaml(tmp_path):
     wp = WorkspacePaths.load(tmp_path)
     assert wp.studies == tmp_path / "research" / "studies"
     assert wp.reports == tmp_path / "reports"   # default
-    assert wp.package == tmp_path / "pbg_demo"
+    assert wp.package == tmp_path / "viva_demo"
 
 
 def test_unknown_and_invalid_overrides_ignored(tmp_path):

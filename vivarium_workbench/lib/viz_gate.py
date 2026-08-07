@@ -64,7 +64,7 @@ def _read_study_spec(ws_root: Path, slug: str) -> dict:
     try:
         from vivarium_workbench.lib.workspace_paths import WorkspacePaths
         wp = WorkspacePaths.load(ws_root)
-        study_dir = wp.study_dir(slug)
+        study_dir = wp.study_dir(slug, must_exist=True)
     except Exception:  # noqa: BLE001
         study_dir = Path(ws_root) / "studies" / slug
     f = study_dir / "study.yaml"

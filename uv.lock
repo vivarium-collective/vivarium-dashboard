@@ -7364,6 +7364,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "viva-workspace"
+version = "0.1.0"
+source = { git = "https://github.com/vivarium-collective/viva-workspace.git?branch=main#1375b01910eb29aef3ab95f18a67d09d037276f3" }
+dependencies = [
+    { name = "pyyaml", marker = "python_full_version == '3.12.12'" },
+]
+
+[[package]]
 name = "vivarium-core"
 version = "1.6.5"
 source = { registry = "https://pypi.org/simple" }
@@ -7400,6 +7408,7 @@ dependencies = [
     { name = "pyyaml", marker = "python_full_version == '3.12.12'" },
     { name = "uvicorn", marker = "python_full_version == '3.12.12'" },
     { name = "viva-marketplace", marker = "python_full_version == '3.12.12'" },
+    { name = "viva-workspace", marker = "python_full_version == '3.12.12'" },
     { name = "xarray", marker = "python_full_version == '3.12.12'" },
     { name = "zarr", marker = "python_full_version == '3.12.12'" },
 ]
@@ -7463,6 +7472,7 @@ requires-dist = [
     { name = "uvicorn", specifier = ">=0.29" },
     { name = "v2ecoli", marker = "extra == 'demo'", editable = "../v2ecoli" },
     { name = "viva-marketplace", git = "https://github.com/vivarium-collective/viva-marketplace.git?branch=main" },
+    { name = "viva-workspace", git = "https://github.com/vivarium-collective/viva-workspace.git?branch=main" },
     { name = "xarray", specifier = ">=2026.4" },
     { name = "xarray", marker = "extra == 'test'" },
     { name = "zarr", specifier = ">=3.1.6" },

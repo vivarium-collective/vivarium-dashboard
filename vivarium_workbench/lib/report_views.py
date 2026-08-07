@@ -699,7 +699,7 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
     studies_out: list[dict] = []
     for slug in investigation_member_slugs(spec):
         try:
-            sp = wp.study_dir(slug) / "study.yaml"
+            sp = wp.study_dir(slug, must_exist=True) / "study.yaml"
         except FileNotFoundError:
             sp = wp.investigations / slug / "spec.yaml"
         if not sp.is_file():

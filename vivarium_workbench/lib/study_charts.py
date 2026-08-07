@@ -1579,7 +1579,7 @@ def build_study_charts_payload(ws_root, name: str, *, hide_superseded: bool = Fa
     # investigations/<inv>/studies/<slug>/ rather than the flat studies/<slug>/.
     _wp = WorkspacePaths.load(ws_root)
     try:
-        study_dir = _wp.study_dir(name)
+        study_dir = _wp.study_dir(name, must_exist=True)
     except FileNotFoundError:
         study_dir = _wp.studies / name
     runs_db = study_dir / "runs.db"

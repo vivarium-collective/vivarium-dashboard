@@ -207,7 +207,7 @@ def read_study_status(
     the workspace-coupled runs.db reader stays in the caller).
     """
     try:
-        sp = WorkspacePaths.load(ws_root).study_dir(slug) / "study.yaml"
+        sp = WorkspacePaths.load(ws_root).study_dir(slug, must_exist=True) / "study.yaml"
     except FileNotFoundError:
         sp = ws_root / "investigations" / slug / "spec.yaml"
     if sp.is_file():

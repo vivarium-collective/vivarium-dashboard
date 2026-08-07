@@ -161,7 +161,7 @@ def _owning_db(ws, origin: "str | None", study: "str | None") -> "Path | None":
         if not study:
             return None
         try:
-            return wp.study_dir(str(study)) / "runs.db"
+            return wp.study_dir(str(study), must_exist=True) / "runs.db"
         except FileNotFoundError:
             return None
     if origin == "composite":

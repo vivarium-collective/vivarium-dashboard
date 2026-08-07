@@ -86,7 +86,7 @@ def list_analysis_outputs(ws_root, slug: str) -> dict:
         raise DownloadError({"error": "missing study"}, 400)
     wp = WorkspacePaths.load(ws_root)
     try:
-        study_dir = wp.study_dir(slug)
+        study_dir = wp.study_dir(slug, must_exist=True)
     except FileNotFoundError:
         raise DownloadError({"error": f"study not found: {slug!r}"}, 404)
 
@@ -131,7 +131,7 @@ def _safe_study_file(ws_root, slug: str, relpath: str) -> tuple[Path, Path]:
         raise DownloadError({"error": "missing ?path="}, 400)
     wp = WorkspacePaths.load(ws_root)
     try:
-        study_dir = wp.study_dir(slug).resolve()
+        study_dir = wp.study_dir(slug, must_exist=True).resolve()
     except FileNotFoundError:
         raise DownloadError({"error": f"study not found: {slug!r}"}, 404)
 
@@ -172,7 +172,7 @@ def build_analysis_outputs_zip(ws_root, slug: str) -> tuple[bytes, str]:
     missing study; a study with no result files yields a valid empty zip.
     """
     info = list_analysis_outputs(ws_root, slug)
-    study_dir = WorkspacePaths.load(ws_root).study_dir(slug)
+    study_dir = WorkspacePaths.load(ws_root).study_dir(slug, must_exist=True)
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         for entry in info["files"]:
