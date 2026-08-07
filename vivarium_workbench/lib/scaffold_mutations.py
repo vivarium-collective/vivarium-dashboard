@@ -63,7 +63,14 @@ def investigation_create(ws_root: Path, body: dict[str, Any]) -> "tuple[dict, in
     if not _ISET_SLUG_RE.match(name):
         return {"error": "name must be kebab-case (^[a-z0-9][a-z0-9-]*$)"}, 400
 
-    inv_dir = ws_root / "investigations" / name
+    # Resolve through WorkspacePaths (not a hardcoded "investigations" literal):
+    # a workspace may relocate the investigations dir via a `layout:` map in
+    # workspace.yaml (e.g. sms-ecoli maps it to `workspace/investigations`).
+    # build_iset_detail below always resolves this way, so writing to the
+    # unmapped default here would create a file every read path is blind to.
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    inv_dir = WorkspacePaths.load(ws_root).investigations / name
     target = inv_dir / "investigation.yaml"
     if target.exists():
         return {"error": f"investigation '{name}' already exists"}, 409
@@ -124,10 +131,15 @@ def iset_clone(ws_root: Path, body: dict[str, Any]) -> "tuple[dict, int]":
     if source == target:
         return {"error": "source and target must differ"}, 400
 
-    src_dir = ws_root / "investigations" / source
+    # Same rationale as investigation_create: resolve through WorkspacePaths so
+    # a workspace's `layout:` override is honored, matching build_iset_detail.
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    inv_root = WorkspacePaths.load(ws_root).investigations
+    src_dir = inv_root / source
     if not src_dir.is_dir():
         return {"error": f"source investigation '{source}' not found"}, 404
-    dst_dir = ws_root / "investigations" / target
+    dst_dir = inv_root / target
     if dst_dir.exists():
         return {"error": f"target investigation '{target}' already exists"}, 409
 

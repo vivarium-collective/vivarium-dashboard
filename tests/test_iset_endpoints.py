@@ -703,3 +703,124 @@ def test_registry_imports_meta_empty():
     from vivarium_workbench.lib.registry import _registry_imports_meta
     assert _registry_imports_meta({}) == []
     assert _registry_imports_meta(None) == []
+
+
+# ---------------------------------------------------------------------------
+# Part 6: layout-aware investigations directory (regression — backlog item 22)
+#
+# A workspace may relocate `investigations/` via workspace.yaml's `layout:`
+# map (WorkspacePaths, e.g. the real sms-ecoli workspace maps it to
+# `workspace/investigations`). investigation_create/iset_clone used to
+# hardcode the unmapped "investigations" literal while every read path
+# (build_iset_detail, build_iset_summary, build_investigations) always
+# resolved through WorkspacePaths — so on such a workspace, a newly created
+# investigation was written to a directory no read path ever looked at.
+# investigation_create's own post-write read-back caught it as a 500
+# ("created investigation but failed to load detail"); GET
+# /api/investigation/<name> and /api/investigation-summaries then omitted it
+# too, matching the live-pod symptom: file confirmed on disk at
+# investigations/<name>/investigation.yaml (the unmapped path), yet
+# unreachable through the app.
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def _ws_custom_layout(tmp_path):
+    """Workspace whose workspace.yaml relocates investigations/ under
+    workspace/, mirroring the real sms-ecoli workspace's `layout:` block."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "workspace.yaml").write_text(
+        "schema_version: 2\nname: ws\ncreated: \"2026-05-16\"\nplugin_version: 0.6.1\n"
+        "package_path: pkg\nlayout:\n  investigations: workspace/investigations\n"
+    )
+    (ws / "workspace" / "investigations").mkdir(parents=True)
+    (ws / "studies").mkdir()
+    return ws
+
+
+def test_iset_create_honors_layout_override(_ws_custom_layout):
+    """investigation_create must write investigation.yaml under the
+    workspace's mapped layout.investigations dir, not the unmapped default."""
+    resp, code = _post_iset_create_for_test(
+        _ws_custom_layout, {"name": "cd1-reproduction-sms-ecoli"}
+    )
+    assert code == 200, resp
+    mapped = (_ws_custom_layout / "workspace" / "investigations"
+              / "cd1-reproduction-sms-ecoli" / "investigation.yaml")
+    unmapped = (_ws_custom_layout / "investigations"
+                / "cd1-reproduction-sms-ecoli" / "investigation.yaml")
+    assert mapped.is_file()
+    assert not unmapped.exists()
+
+
+def test_iset_create_then_detail_and_summary_visible_under_custom_layout(_ws_custom_layout):
+    """Regression: an investigation created on a layout-customized workspace
+    must be immediately visible via build_iset_detail / build_iset_summary —
+    the same resolution GET /api/investigation/<name> and
+    GET /api/investigation-summaries use. Before the fix, create() itself
+    500'd trying to read back what it had just (mis)written."""
+    resp, code = _post_iset_create_for_test(
+        _ws_custom_layout, {"name": "cd1-reproduction-sms-ecoli"}
+    )
+    assert code == 200, resp
+
+    detail, dcode = _build_iset_detail_for_test(
+        _ws_custom_layout, "cd1-reproduction-sms-ecoli"
+    )
+    assert dcode == 200, detail
+    assert detail["name"] == "cd1-reproduction-sms-ecoli"
+
+    summary = _build_iset_summary_for_test(_ws_custom_layout)
+    assert any(i["name"] == "cd1-reproduction-sms-ecoli" for i in summary)
+
+
+def test_iset_clone_source_precheck_honors_layout_override(_ws_custom_layout):
+    """Regression: iset_clone's source-exists pre-check is the same bug class
+    as investigation_create and must also resolve through the layout override.
+    The source investigation.yaml is pre-created directly at the MAPPED
+    location (not via the create endpoint, to isolate the pre-check itself).
+    No scripts/clone_investigation.py exists in this fixture, so a fixed
+    pre-check reaches the 501 "missing clone script" branch; the pre-fix bug
+    would instead 404 "source investigation not found" because it looked at
+    the unmapped default path where nothing was ever written."""
+    src = _ws_custom_layout / "workspace" / "investigations" / "src-inv"
+    src.mkdir(parents=True)
+    (src / "investigation.yaml").write_text("name: src-inv\n")
+
+    resp, code = _post_iset_clone_for_test(
+        _ws_custom_layout, {"source": "src-inv", "target": "dst-inv"}
+    )
+    assert code == 501, resp
+    assert "clone_investigation.py" in resp["error"]
+
+
+def test_iset_create_then_get_via_http_under_custom_layout(dashboard_client, tmp_path):
+    """End-to-end regression: the real HTTP path the UI's investigation-create
+    action drives — POST /api/investigation-create then
+    GET /api/investigation/<name> — against a workspace whose workspace.yaml
+    relocates investigations/ via `layout:` (mirrors the real sms-ecoli
+    workspace). Exercises the live FastAPI app via the dashboard_client
+    subprocess fixture, not just the lib functions directly."""
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    (ws / "workspace.yaml").write_text(
+        "name: ws\nlayout:\n  investigations: workspace/investigations\n"
+    )
+    (ws / "workspace" / "investigations").mkdir(parents=True)
+    client = dashboard_client(workspace=ws)
+
+    r = client.post(
+        "/api/investigation-create",
+        json={"name": "cd1-reproduction-sms-ecoli", "overview": "repro"},
+    )
+    assert r.status_code == 200, r.text
+
+    r2 = client.get("/api/investigation/cd1-reproduction-sms-ecoli")
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["name"] == "cd1-reproduction-sms-ecoli"
+
+    r3 = client.get("/api/investigation-summaries")
+    assert r3.status_code == 200, r3.text
+    names = [i["name"] for i in r3.json()["investigations"]]
+    assert "cd1-reproduction-sms-ecoli" in names
