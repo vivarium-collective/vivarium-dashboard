@@ -52,3 +52,22 @@ def test_sim_table_js_has_rerun_action(dashboard_client, ws_copy):
     # /api/study-reproduce, not the generic /api/run-rerun.
     assert "study-reproduce" in r.text
     assert "Rerun" in r.text
+
+
+def test_sim_table_js_has_run_analysis_action(dashboard_client, ws_copy):
+    """Backlog item 23: a per-row control that fires the analysis phase on an
+    EXISTING completed remote simulation. The original gap was found by grepping
+    static/*.js for any such client-side code and finding NONE — so this asserts
+    the wiring at the same level the gap was measured at: the button class, the
+    endpoint it posts to, and the `data-remote-sim-id` attribute the delegated
+    handler resolves the simulation id from (a button rendered without the
+    attribute would silently no-op)."""
+    client = dashboard_client(workspace=ws_copy)
+    r = client.get("/sim-table.js")
+    assert r.status_code == 200
+    assert "run-analysis-btn" in r.text
+    assert "/api/remote-run-analysis" in r.text
+    assert "data-remote-sim-id" in r.text
+    # …and it polls the real status endpoint rather than declaring success on
+    # submission (the analysis job pulls a multi-GB image before it even runs).
+    assert "analysis_id=" in r.text
