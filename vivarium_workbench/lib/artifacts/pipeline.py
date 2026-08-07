@@ -64,7 +64,7 @@ def _load_study_spec(ws_root: Path, slug: str) -> dict:
     surface, not swallow).
     """
     wp = WorkspacePaths.load(ws_root)
-    spec_path = wp.study_dir(slug) / "study.yaml"
+    spec_path = wp.study_dir(slug, must_exist=True) / "study.yaml"
     return yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
 
 
@@ -251,7 +251,7 @@ def resolve_study(
             finally:
                 shutil.rmtree(scratch, ignore_errors=True)
 
-        _record_pointer(wp.study_dir(slug) / "runs.db", output_name, oid)
+        _record_pointer(wp.study_dir(slug, must_exist=True) / "runs.db", output_name, oid)
 
         return {
             "slug": slug,

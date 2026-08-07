@@ -104,7 +104,7 @@ def _count_runs_for_study(
         wp = WorkspacePaths.load(ws_root)
         # Prefer the WorkspacePaths resolver (handles nested layout).
         try:
-            study_d = wp.study_dir(name)
+            study_d = wp.study_dir(name, must_exist=True)
         except FileNotFoundError:
             # Fall back to the flat studies/ path so the count still works
             # even when WorkspacePaths can't locate the study.

@@ -62,7 +62,7 @@ def _study_dir(ws_root: Path, name: str) -> Path:
     """
     wp = WorkspacePaths.load(ws_root)
     try:
-        return wp.study_dir(name)
+        return wp.study_dir(name, must_exist=True)
     except FileNotFoundError:
         pass
     flat = wp.studies / name

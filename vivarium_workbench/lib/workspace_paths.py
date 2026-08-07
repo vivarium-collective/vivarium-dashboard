@@ -1,223 +1,75 @@
-"""Canonical resolution of a workspace's directory layout.
+"""Thin shim over :mod:`viva_workspace` — the shared source of truth for
+workspace-layout logic.
 
-Every workspace has a set of well-known directories — ``studies/``,
-``investigations/``, ``composites/``, ``references/``, ``.pbg/``, the Python
-package, etc. Historically each of these names was hardcoded as a string
-literal at ~150 call sites across the dashboard, the pbg-superpowers skills,
-and ``lint-workspace.py``. This module is the single place that knows the
-layout, so the physical location of any directory can be changed in one spot
-(an optional ``layout:`` map in ``workspace.yaml``) instead of everywhere.
+The full ``WorkspacePaths`` / ``find_workspace_root`` / ``study_dir`` /
+``LAYOUT_DEFAULTS`` implementation that used to live here (its own duplicated
+~260-line copy) now lives in the standalone ``viva-workspace`` package, which
+consolidated the three divergent copies (this dashboard, viva-superpowers,
+v2ecoli). This module re-exports those names so the ~126 call sites that import
+``from vivarium_workbench.lib.workspace_paths import WorkspacePaths`` keep working
+unchanged.
 
-Backward compatibility: a key left out of ``layout:`` falls back to the
-conventional flat name (``studies`` -> ``studies/``). A workspace with no
-``layout:`` block at all therefore keeps the classic top-level layout, so all
-existing workspaces are unaffected.
+Workbench-local extra layered on top of the shared base: ``WorkspacePaths`` here
+subclasses the shared one to restore the *forward-list* ``study_owner`` fallback
+(scanning each ``investigation.yaml``'s ``studies:`` list via
+``investigation_member_slugs``). viva-workspace deliberately dropped that fallback
+to stay free of the vivarium-workbench dependency; the dashboard needs it for the
+common flat-layout case where ownership is declared only on the investigation side
+and the study.yaml carries no back-ref.
 
-Example ``workspace.yaml`` to nest research dirs under ``workspace/``::
-
-    layout:
-      studies: workspace/studies
-      investigations: workspace/investigations
-      composites: workspace/composites
-      references: workspace/references
-      datasets: workspace/datasets
-      reports: workspace/reports
-      pbg: workspace/.pbg
+Behaviour note — ``study_dir(..., must_exist=False)``: the shared resolver now
+RETURNS a computed canonical path for a not-yet-existing study by default instead
+of raising. Call sites that relied on the old raise-when-absent semantics pass
+``must_exist=True`` explicitly (see the migration audit in the adopting PR).
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Optional
+from typing import Optional
 
 import yaml
 
+from viva_workspace import (
+    LAYOUT_DEFAULTS,
+    find_workspace_root,
+    package_slug,
+)
+from viva_workspace import WorkspacePaths as _BaseWorkspacePaths
+from viva_workspace import paths as _vw_paths
+from viva_workspace.paths import LAYOUT_KEYS
+
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
-# The canonical flat layout — the single source of truth for directory names.
-# Keys are logical names used throughout the codebase; values are the default
-# workspace-root-relative paths. The Python package (`package`) is special: it
-# derives from `package_path`/`name` in workspace.yaml, so it has no fixed
-# default here.
-LAYOUT_DEFAULTS: dict[str, str] = {
-    "studies": "studies",
-    "investigations": "investigations",
-    "composites": "composites",
-    "references": "references",
-    "datasets": "datasets",
-    "reports": "reports",
-    "pbg": ".pbg",
-    "scripts": "scripts",
-    "tests": "tests",
-    "docs": "docs",
-}
-
-# Logical names a workspace may override via `layout:` (`package` is normally
-# set through `package_path`, but may also be relocated via `layout`).
-LAYOUT_KEYS = tuple(LAYOUT_DEFAULTS) + ("package",)
+__all__ = [
+    "WorkspacePaths",
+    "LAYOUT_DEFAULTS",
+    "LAYOUT_KEYS",
+    "find_workspace_root",
+    "study_dir",
+    "package_slug",
+]
 
 
-# mtime-keyed memo for ``WorkspacePaths.load``. ``load`` is called ~126 times
-# across the dashboard, and each call previously re-``stat``ed, re-read, and
-# re-parsed ``workspace.yaml``. The layout almost never changes within a server
-# lifetime, so we cache the resolved ``WorkspacePaths`` keyed by the resolved
-# root path, tagged with the ``workspace.yaml`` mtime (ns) used to build it.
-# A cached entry is reused only while that mtime is unchanged; any edit to the
-# file (or its creation/deletion) changes the mtime tag and forces a re-parse,
-# so the cache stays correct. Not guarded by a lock: a benign race just
-# re-parses. ``_parse_count`` is a test hook incremented on each real parse.
-_LOAD_CACHE: dict[str, tuple[Optional[int], "WorkspacePaths"]] = {}
-_parse_count = 0
+class WorkspacePaths(_BaseWorkspacePaths):
+    """Workbench ``WorkspacePaths``: the shared base plus the forward-list
+    ``study_owner`` fallback the dashboard relies on.
 
-
-def _clear_load_cache() -> None:
-    """Drop the ``WorkspacePaths.load`` memo (test/utility helper)."""
-    _LOAD_CACHE.clear()
-
-
-def package_slug(name: str | None) -> str:
-    """Default Python package directory for a workspace named `name`."""
-    return f"pbg_{(name or 'workspace').replace('-', '_')}"
-
-
-@dataclass(frozen=True)
-class WorkspacePaths:
-    """Resolved directory layout for a single workspace.
-
-    Construct via :meth:`load` (reads ``workspace.yaml``) or :meth:`from_config`
-    (caller supplies the parsed dict). Access directories by attribute
-    (``wp.studies``) or by name (``wp.dir("studies")``). Subpaths are formed by
-    joining onto the result, e.g. ``wp.pbg / "schemas"`` or
-    ``wp.reports / "figures" / study``.
+    Subclassing the shared frozen dataclass adds only methods (no new fields), so
+    the inherited ``load``/``from_config`` classmethods (which construct via
+    ``cls(...)``) return instances of THIS subclass, keeping the override live.
     """
 
-    root: Path
-    _layout: Mapping[str, str]
-
-    @classmethod
-    def from_config(cls, root: Path | str, config: Optional[Mapping] = None) -> "WorkspacePaths":
-        config = dict(config or {})
-        layout = dict(LAYOUT_DEFAULTS)
-        # Package directory: explicit package_path wins, else derive from name.
-        layout["package"] = config.get("package_path") or package_slug(config.get("name"))
-        # Apply explicit per-directory overrides.
-        overrides = config.get("layout") or {}
-        for key, value in overrides.items():
-            if key in LAYOUT_KEYS and isinstance(value, str) and value:
-                layout[key] = value
-        return cls(Path(root).resolve(), layout)
-
-    @classmethod
-    def load(cls, root: Path | str) -> "WorkspacePaths":
-        """Resolve layout from ``<root>/workspace.yaml`` (empty if missing).
-
-        Memoized by resolved root + ``workspace.yaml`` mtime: a repeated load
-        with an unchanged file returns the cached instance without re-parsing;
-        a changed (or newly created/deleted) file invalidates the entry.
-        """
-        root = Path(root)
-        resolved = str(root.resolve())
-        wf = root / "workspace.yaml"
-        try:
-            mtime: Optional[int] = wf.stat().st_mtime_ns
-        except OSError:
-            # Missing (or unreadable) workspace.yaml -> empty config. Tag with
-            # None so a later creation (mtime becomes an int) invalidates.
-            mtime = None
-        cached = _LOAD_CACHE.get(resolved)
-        if cached is not None and cached[0] == mtime:
-            return cached[1]
-        config: dict = {}
-        if mtime is not None:
-            config = yaml.safe_load(wf.read_text(encoding="utf-8")) or {}
-            global _parse_count
-            _parse_count += 1
-        wp = cls.from_config(root, config)
-        _LOAD_CACHE[resolved] = (mtime, wp)
-        return wp
-
-    def dir(self, name: str) -> Path:
-        """Absolute path to the directory registered under logical `name`."""
-        if name not in self._layout:
-            raise KeyError(f"unknown workspace directory: {name!r}")
-        return self.root / self._layout[name]
-
-    def rel(self, name: str) -> str:
-        """Workspace-root-relative path string for logical `name`."""
-        return self._layout[name]
-
-    # Convenience accessors -------------------------------------------------
-    @property
-    def studies(self) -> Path: return self.dir("studies")
-    @property
-    def investigations(self) -> Path: return self.dir("investigations")
-    @property
-    def composites(self) -> Path: return self.dir("composites")
-    @property
-    def references(self) -> Path: return self.dir("references")
-    @property
-    def datasets(self) -> Path: return self.dir("datasets")
-    @property
-    def reports(self) -> Path: return self.dir("reports")
-    @property
-    def pbg(self) -> Path: return self.dir("pbg")
-    @property
-    def scripts(self) -> Path: return self.dir("scripts")
-    @property
-    def tests(self) -> Path: return self.dir("tests")
-    @property
-    def docs(self) -> Path: return self.dir("docs")
-    @property
-    def package(self) -> Path: return self.dir("package")
-
-    # Study resolution (investigation-centric structure) --------------------
-    def iter_study_dirs(self):
-        """Yield every study dir. Top-level ``studies/<slug>/`` FIRST (so a
-        top-level study wins on a slug collision and is never shadowed by a nested
-        copy), then nested ``investigations/<inv>/studies/<slug>/`` for any slug
-        not already yielded. A dir is a study iff it holds ``study.yaml``."""
-        seen: set[str] = set()
-        flat = self.dir("studies")
-        if flat.is_dir():
-            for s in sorted(p for p in flat.iterdir() if p.is_dir()):
-                if (s / "study.yaml").is_file() and s.name not in seen:
-                    seen.add(s.name)
-                    yield s
-        inv_root = self.dir("investigations")
-        if inv_root.is_dir():
-            for inv in sorted(p for p in inv_root.iterdir() if p.is_dir()):
-                sroot = inv / "studies"
-                if sroot.is_dir():
-                    for s in sorted(p for p in sroot.iterdir() if p.is_dir()):
-                        if (s / "study.yaml").is_file() and s.name not in seen:
-                            seen.add(s.name)
-                            yield s
-
-    def report_dir(self, inv_slug: str) -> Path:
-        """Per-investigation report/publication dir: investigations/<slug>/reports/."""
-        return self.dir("investigations") / inv_slug / "reports"
-
-    def study_dir(self, slug: str) -> Path:
-        """Resolve a study by slug, nested-first then flat. Raises if absent."""
-        for s in self.iter_study_dirs():
-            if s.name == slug:
-                return s
-        raise FileNotFoundError(f"study {slug!r} not found under {self.root}")
-
-    def inputs_dir(self, inv_slug: str) -> Path:
-        """investigations/<inv_slug>/inputs (per-investigation owned inputs)."""
-        return self.dir("investigations") / inv_slug / "inputs"
-
-    def study_owner(self, slug: str):
+    def study_owner(self, slug: str) -> Optional[str]:
         """Owning investigation slug for a study: nested layout, else the
         study.yaml ``investigation:`` back-ref, else the investigation whose
         forward ``studies:`` list names this study, else None.
 
         The forward-list fallback matters for the common flat layout
         (``studies/<slug>/``) where ownership is declared only on the
-        investigation side and the study.yaml carries no back-ref."""
+        investigation side and the study.yaml carries no back-ref.
+        """
         try:
-            d = self.study_dir(slug)
+            d = self.study_dir(slug, must_exist=True)
         except FileNotFoundError:
             return self._forward_study_owner(slug)
         try:
@@ -234,7 +86,7 @@ class WorkspacePaths:
                 return owner
         return self._forward_study_owner(slug)
 
-    def _forward_study_owner(self, slug: str):
+    def _forward_study_owner(self, slug: str) -> Optional[str]:
         """Scan each ``investigations/<inv>/investigation.yaml`` for one whose
         ``studies:`` list names ``slug``; return that investigation slug or None.
         Tolerates list items given as bare slugs or ``{study|slug: ...}`` dicts."""
@@ -247,7 +99,7 @@ class WorkspacePaths:
                 continue
             try:
                 data = yaml.safe_load(iy.read_text(encoding="utf-8")) or {}
-            except Exception:
+            except Exception:  # noqa: BLE001
                 continue
             for st in investigation_member_slugs(data):
                 st_slug = st if isinstance(st, str) else (st or {}).get("study") or (st or {}).get("slug")
@@ -255,3 +107,34 @@ class WorkspacePaths:
                     return inv_dir.name
         return None
 
+
+def study_dir(
+    root_or_paths,
+    slug: str,
+    must_exist: bool = False,
+) -> Path:
+    """Layout-map-aware study directory resolver (re-exported from viva-workspace,
+    routed through the workbench :class:`WorkspacePaths` subclass so a passed root
+    resolves with the dashboard's ``study_owner`` behaviour available).
+
+    ``must_exist=False`` (default) returns the canonical write location for a
+    not-yet-created study; ``must_exist=True`` raises ``FileNotFoundError`` when
+    the slug is absent (the old workbench semantics).
+    """
+    paths = root_or_paths if isinstance(root_or_paths, _BaseWorkspacePaths) \
+        else WorkspacePaths.load(root_or_paths)
+    return paths.study_dir(slug, must_exist=must_exist)
+
+
+# ``load`` memoization internals live in ``viva_workspace.paths`` now. Re-export
+# the cache-clear helper directly, and proxy the live ``_parse_count`` counter via
+# module ``__getattr__`` so ``workspace_paths._parse_count`` reflects the shared
+# module's current value (a plain ``from ... import _parse_count`` would bind a
+# stale copy).
+_clear_load_cache = _vw_paths._clear_load_cache
+
+
+def __getattr__(name: str):
+    if name == "_parse_count":
+        return _vw_paths._parse_count
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

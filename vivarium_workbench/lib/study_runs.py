@@ -68,7 +68,7 @@ def _resolve_study_dir(ws_root, name):
     """
     from vivarium_workbench.lib.workspace_paths import WorkspacePaths
     try:
-        return WorkspacePaths.load(ws_root).study_dir(name)
+        return WorkspacePaths.load(ws_root).study_dir(name, must_exist=True)
     except FileNotFoundError:
         flat = ws_root / "studies" / name
         return flat if flat.is_dir() else ws_root / "investigations" / name

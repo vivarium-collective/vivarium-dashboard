@@ -57,6 +57,12 @@ dependencies = [
     # falls back to pbg-superpowers' stale bundled copy. Not on PyPI → bare here,
     # git URL via [tool.uv.sources] below (same pattern as pbg-basic-processes).
     "viva-marketplace",
+    # Shared workspace-layout source of truth (WorkspacePaths, find_workspace_root,
+    # study_dir, canonical-run outcomes, package naming). vivarium-workbench's
+    # lib/workspace_paths.py is now a thin shim re-exporting from here instead of
+    # carrying its own duplicated copy. Dependency-light (stdlib + pyyaml), no AI
+    # deps. Not on PyPI → bare here, git URL via [tool.uv.sources] below.
+    "viva-workspace",
 ]
 
 [project.optional-dependencies]
@@ -97,6 +103,7 @@ environments = ["python_full_version == '3.12.12'"]
 [tool.uv.sources]
 pbg-basic-processes = { git = "https://github.com/vivarium-collective/pbg-basic-processes.git", branch = "main" }
 viva-marketplace = { git = "https://github.com/vivarium-collective/viva-marketplace.git", branch = "main" }
+viva-workspace = { git = "https://github.com/vivarium-collective/viva-workspace.git", branch = "main" }
 # investigation-contracts is declared bare in [project.dependencies] (kept out
 # of published metadata) and is not on PyPI; supply its git URL here so `uv
 # sync`/`uv lock` can resolve it (the editable-install gap that was failing CI).

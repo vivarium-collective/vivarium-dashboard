@@ -150,7 +150,7 @@ def study_dir(ws_root: Path, name: str) -> Path:
     """
     wp = WorkspacePaths.load(ws_root)
     try:
-        return wp.study_dir(name)
+        return wp.study_dir(name, must_exist=True)
     except FileNotFoundError:
         pass
     flat_candidate = wp.studies / name
@@ -1381,7 +1381,7 @@ def has_graded_report_cards(ws_root: Path, slug: str) -> bool:
     _UNGRADED = {"", "ungraded", "pending", "planned", "not_run", "n/a", "none"}
     try:
         from vivarium_workbench.lib.workspace_paths import WorkspacePaths
-        rc_dir = WorkspacePaths(ws_root).study_dir(slug) / "viz" / "report_card"
+        rc_dir = WorkspacePaths(ws_root).study_dir(slug, must_exist=True) / "viz" / "report_card"
     except Exception:  # noqa: BLE001
         return False
     if not rc_dir.is_dir():
@@ -1412,13 +1412,14 @@ def report_card_findings_for_study(ws_root: Path, slug: str, existing_findings=N
 
 
 # Run statuses that count as "completed" when choosing the canonical run.
-# Kept in sync with viva_superpowers.study_outcomes._COMPLETE (client side).
+# Kept in sync with viva_workspace.canonical_run (the shared source of truth).
 _COMPLETE_STATUSES = {"complete", "completed", "ran", "done"}
 
 
 def _canonical_run(runs: list) -> dict | None:
-    """The run whose outcomes are authoritative, matching the client's
-    ``viva_superpowers.study_outcomes.canonical_run``:
+    """The run whose outcomes are authoritative — delegates to the shared
+    ``viva_workspace.canonical_run`` (the single source of truth, previously a
+    hand-copied duplicate here):
 
     1. an explicit ``canonical: true`` run wins (last such run if several);
     2. else the newest *completed* run by ``timestamp``;
@@ -1428,19 +1429,9 @@ def _canonical_run(runs: list) -> dict | None:
     This deliberately does NOT do last-run-wins per-test aggregation — it picks
     ONE authoritative run so the study page and the report agree on pass/fail.
     """
-    runs = [r for r in (runs or []) if isinstance(r, dict)]
-    if not runs:
-        return None
-    flagged = [r for r in runs if r.get("canonical") is True]
-    if flagged:
-        return flagged[-1]
-    completed = [
-        r for r in runs
-        if str(r.get("status", "")).lower() in _COMPLETE_STATUSES
-    ]
-    if completed:
-        return max(completed, key=lambda r: r.get("timestamp") or "")
-    return runs[-1]
+    from viva_workspace import canonical_run as _vw_canonical_run
+
+    return _vw_canonical_run(runs)
 
 
 def _latest_outcomes(spec: dict) -> tuple[dict, dict]:
@@ -1458,8 +1449,9 @@ def _latest_outcomes(spec: dict) -> tuple[dict, dict]:
     PASS/FAIL/SKIP/PARTIAL/pending plus a ``total`` and how many runs
     contributed outcomes (``runs`` — 0 or 1 under canonical semantics).
     """
-    run = _canonical_run(spec.get("runs", []) or [])
-    outcomes = (run or {}).get("outcomes")
+    from viva_workspace import canonical_outcomes as _vw_canonical_outcomes
+
+    outcomes = _vw_canonical_outcomes(spec.get("runs", []) or [])
     latest: dict = dict(outcomes) if isinstance(outcomes, dict) else {}
     rollup = {"PASS": 0, "FAIL": 0, "SKIP": 0, "PARTIAL": 0, "pending": 0,
               "total": 0, "runs": 1 if latest else 0}

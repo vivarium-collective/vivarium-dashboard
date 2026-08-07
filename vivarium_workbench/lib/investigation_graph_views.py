@@ -80,7 +80,7 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
     chains: dict[str, dict] = {}
     for slug in member_slugs:
         try:
-            sp = wp.study_dir(slug) / "study.yaml"
+            sp = wp.study_dir(slug, must_exist=True) / "study.yaml"
         except FileNotFoundError:
             sp = wp.investigations / slug / "spec.yaml"
         if not sp.is_file():

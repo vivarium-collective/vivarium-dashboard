@@ -380,7 +380,7 @@ def study_sync_runs(ws_root: Path, body: dict) -> "tuple[dict, int]":
     if not slug:
         return {"error": "study slug required"}, 400
     try:
-        study_dir = WorkspacePaths.load(Path(ws_root)).study_dir(slug)
+        study_dir = WorkspacePaths.load(Path(ws_root)).study_dir(slug, must_exist=True)
     except FileNotFoundError:
         return {"error": f"study not found: {slug}"}, 404
     summary = study_outcomes.sync(study_dir)  # record runs + compute outcomes

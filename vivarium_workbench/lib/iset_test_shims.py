@@ -71,7 +71,7 @@ def _read_study_multiaxis_status(ws_root: Path, slug: str) -> dict:
 def _read_study_discovery_implications(ws_root: Path, slug: str) -> dict:
     """Return the study's ``discovery_implications:`` block (or ``{}``)."""
     try:
-        sp = WorkspacePaths.load(ws_root).study_dir(slug) / "study.yaml"
+        sp = WorkspacePaths.load(ws_root).study_dir(slug, must_exist=True) / "study.yaml"
     except FileNotFoundError:
         sp = ws_root / "investigations" / slug / "spec.yaml"
     if sp.is_file():

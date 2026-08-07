@@ -126,7 +126,7 @@ def find_run(ws_root, run_id) -> tuple[str | None, dict | None]:
 
 def list_study_runs(ws_root, study) -> list[dict]:
     wp = WorkspacePaths.load(ws_root)
-    db_file = wp.study_dir(study) / "runs.db"
+    db_file = wp.study_dir(study, must_exist=True) / "runs.db"
     if not db_file.is_file():
         return []
     conn = cr.connect(str(db_file))
