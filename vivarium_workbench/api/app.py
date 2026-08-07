@@ -683,6 +683,22 @@ def create_app() -> FastAPI:
         return {"status": "ok"}
 
     @app.get(
+        "/api/server-version",
+        tags=["System"],
+        summary="Served-tree git revision + package version (skew detection)",
+    )
+    def server_version() -> dict[str, str]:
+        """``{"git_rev": "<short sha>", "version": "<package version>"}``.
+
+        The git rev comes from the served tree (this package's source checkout);
+        both fields fall back to ``"unknown"`` when git is unavailable. Read-only
+        and dependency-light so the ``/viva-*`` skills can detect skill<->server
+        skew (it stays available in readonly mode).
+        """
+        from vivarium_workbench.lib.server_version import server_version as _sv
+        return _sv()
+
+    @app.get(
         "/api/simulations",
         response_model=SimulationsPayload,
         tags=["Runs"],

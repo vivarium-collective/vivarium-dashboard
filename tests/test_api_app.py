@@ -38,6 +38,31 @@ def test_health(client):
     assert r.json() == {"status": "ok"}
 
 
+def test_server_version_shape(client):
+    """GET /api/server-version returns {"git_rev", "version"} — both strings,
+    never absent. This is the exact shape the /viva-* skills match on for
+    skill<->server skew detection."""
+    r = client.get("/api/server-version")
+    assert r.status_code == 200
+    body = r.json()
+    assert set(body.keys()) == {"git_rev", "version"}
+    assert isinstance(body["git_rev"], str) and body["git_rev"]
+    assert isinstance(body["version"], str) and body["version"]
+
+
+def test_server_version_available_in_readonly(client, monkeypatch):
+    """The endpoint must survive the readonly route filter (it is a pure GET),
+    so a published/readonly server can still report its served version."""
+    from vivarium_workbench.api import app as _app_mod
+    app = create_app()
+    _app_mod._apply_readonly_filter(app)
+    app.dependency_overrides[get_workspace] = lambda: Path("/tmp")
+    rc = TestClient(app)
+    r = rc.get("/api/server-version")
+    assert r.status_code == 200
+    assert set(r.json().keys()) == {"git_rev", "version"}
+
+
 # ---------------------------------------------------------------------------
 # Session-per-tab identity — the X-VW-Session header (docs/session-binding.md §3,
 # migration slice 1). The header is preferred over the cookie and echoed back to
