@@ -219,6 +219,52 @@ class TestLoadStudyDetailSpec:
 
 
 # ---------------------------------------------------------------------------
+# _latest_outcomes — canonical-run resolution (aligns SERVER with the client's
+# viva_superpowers.study_outcomes.canonical_outcomes: canonical: true wins,
+# else newest completed run — NOT last-run-wins across all runs).
+# ---------------------------------------------------------------------------
+
+class TestCanonicalOutcomes:
+    def test_older_canonical_run_wins_over_newer(self) -> None:
+        """An OLDER run flagged ``canonical: true`` provides the resolved
+        outcomes even though a newer completed run has different outcomes.
+        This is the disagreement the change fixes: report (client) and study
+        page (server) must agree on pass/fail."""
+        spec = {
+            "runs": [
+                {"name": "old", "status": "completed", "timestamp": "2026-01-01",
+                 "canonical": True,
+                 "outcomes": {"T1": {"result": "PASS"}}},
+                {"name": "new", "status": "completed", "timestamp": "2026-02-01",
+                 "outcomes": {"T1": {"result": "FAIL"}}},
+            ]
+        }
+        latest, rollup = study_spec._latest_outcomes(spec)
+        assert latest["T1"]["result"] == "PASS"   # from the OLDER canonical run
+        assert rollup["PASS"] == 1 and rollup["FAIL"] == 0
+        assert rollup["runs"] == 1                 # exactly one run contributes
+
+    def test_no_flag_picks_newest_completed(self) -> None:
+        """With no canonical flag, the newest completed run wins (by timestamp),
+        matching the client's fallback."""
+        spec = {
+            "runs": [
+                {"name": "old", "status": "completed", "timestamp": "2026-01-01",
+                 "outcomes": {"T1": {"result": "PASS"}}},
+                {"name": "new", "status": "completed", "timestamp": "2026-02-01",
+                 "outcomes": {"T1": {"result": "FAIL"}}},
+            ]
+        }
+        latest, _ = study_spec._latest_outcomes(spec)
+        assert latest["T1"]["result"] == "FAIL"    # newest completed
+
+    def test_no_outcomes_empty_rollup(self) -> None:
+        latest, rollup = study_spec._latest_outcomes({"runs": []})
+        assert latest == {}
+        assert rollup["total"] == 0 and rollup["runs"] == 0
+
+
+# ---------------------------------------------------------------------------
 # study_interface — reading canonical conditions.baseline
 # ---------------------------------------------------------------------------
 

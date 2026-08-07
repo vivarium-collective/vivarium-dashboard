@@ -1411,25 +1411,58 @@ def report_card_findings_for_study(ws_root: Path, slug: str, existing_findings=N
     return findings, rc_urls
 
 
-def _latest_outcomes(spec: dict) -> tuple[dict, dict]:
-    """Aggregate the latest authored outcome per test from ``runs[].outcomes``.
+# Run statuses that count as "completed" when choosing the canonical run.
+# Kept in sync with viva_superpowers.study_outcomes._COMPLETE (client side).
+_COMPLETE_STATUSES = {"complete", "completed", "ran", "done"}
 
-    Last run wins (runs are in chronological order). Returns
-    ``(latest_by_test, rollup)`` where ``latest_by_test`` maps test name ->
-    the outcome dict and ``rollup`` counts PASS/FAIL/SKIP/PARTIAL/pending plus a
-    ``total`` and how many runs contributed outcomes (``runs``).
+
+def _canonical_run(runs: list) -> dict | None:
+    """The run whose outcomes are authoritative, matching the client's
+    ``viva_superpowers.study_outcomes.canonical_run``:
+
+    1. an explicit ``canonical: true`` run wins (last such run if several);
+    2. else the newest *completed* run by ``timestamp``;
+    3. else the last run;
+    4. else ``None``.
+
+    This deliberately does NOT do last-run-wins per-test aggregation — it picks
+    ONE authoritative run so the study page and the report agree on pass/fail.
     """
-    latest: dict = {}
-    runs_with_outcomes = 0
-    for r in spec.get("runs", []) or []:
-        outcomes = (r or {}).get("outcomes")
-        if not isinstance(outcomes, dict) or not outcomes:
-            continue
-        runs_with_outcomes += 1
-        for tname, outcome in outcomes.items():
-            latest[tname] = outcome  # last wins → most recent run
+    runs = [r for r in (runs or []) if isinstance(r, dict)]
+    if not runs:
+        return None
+    flagged = [r for r in runs if r.get("canonical") is True]
+    if flagged:
+        return flagged[-1]
+    completed = [
+        r for r in runs
+        if str(r.get("status", "")).lower() in _COMPLETE_STATUSES
+    ]
+    if completed:
+        return max(completed, key=lambda r: r.get("timestamp") or "")
+    return runs[-1]
+
+
+def _latest_outcomes(spec: dict) -> tuple[dict, dict]:
+    """Resolve the study's authoritative per-test outcomes from the single
+    *canonical* run (see ``_canonical_run``), mirroring the client's
+    ``viva_superpowers.study_outcomes.canonical_outcomes``.
+
+    Previously this aggregated last-run-wins across ALL runs and ignored the
+    ``canonical:`` flag, so the report (client, canonical-run) and the study
+    page (server, this function) could disagree on pass/fail for the same YAML.
+    Now both pick the one canonical run.
+
+    Returns ``(outcomes_by_test, rollup)`` where ``outcomes_by_test`` maps test
+    name -> the outcome dict from the canonical run and ``rollup`` counts
+    PASS/FAIL/SKIP/PARTIAL/pending plus a ``total`` and how many runs
+    contributed outcomes (``runs`` — 0 or 1 under canonical semantics).
+    """
+    run = _canonical_run(spec.get("runs", []) or [])
+    outcomes = (run or {}).get("outcomes")
+    latest: dict = dict(outcomes) if isinstance(outcomes, dict) else {}
     rollup = {"PASS": 0, "FAIL": 0, "SKIP": 0, "PARTIAL": 0, "pending": 0,
-              "total": 0, "runs": runs_with_outcomes}
+              "total": 0, "runs": 1 if latest else 0}
     for outcome in latest.values():
         res = (outcome or {}).get("result") if isinstance(outcome, dict) else None
         key = res if res in ("PASS", "FAIL", "SKIP", "PARTIAL") else "pending"
