@@ -217,7 +217,6 @@ files = [
     "vivarium_workbench/lib/models.py",
     "vivarium_workbench/lib/active_workspace.py",
     "vivarium_workbench/lib/investigation_status.py",
-    "vivarium_workbench/lib/investigation_registry.py",
     "vivarium_workbench/lib/saved_visualizations.py",
     "vivarium_workbench/lib/data_sources.py",
     "vivarium_workbench/lib/git_status.py",

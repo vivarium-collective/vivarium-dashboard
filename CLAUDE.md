@@ -105,8 +105,7 @@ Each module owns one concern and is independently testable. Key ones:
 - `single_study_report.py` (~2.4k lines), `study_charts.py`, `report.py`,
   `comparative_viz.py` — rendering studies/investigations to HTML and charts.
 - `investigations.py` (~1.8k lines), `simulations_index.py`, `study_seed.py`,
-  `expected_behavior.py`, `scaffold_yaml.py` — investigation/study data model,
-  scaffolding, and gating.
+  `scaffold_yaml.py` — investigation/study data model, scaffolding, and gating.
 - `github_auth.py` — GitHub device-flow auth for the Branches tab.
 - `spec_migration.py` / `investigation_migrate.py` — schema version migrations.
 
