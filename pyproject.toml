@@ -207,6 +207,20 @@ forbidden_modules = [
 # out of scope for this contract, which polices the workbench's OWN imports.
 allow_indirect_imports = true
 
+[tool.ruff]
+# Focused correctness gate, not a formatter. `F` (pyflakes) catches the bugs
+# that rot silently — undefined names, unused imports/variables, duplicate
+# definitions — and `E722` bans bare `except:`. Style/formatting rules are
+# deliberately NOT selected: this gate polices behaviour, not layout. The CI
+# job (`.github/workflows/types.yml`) runs `ruff check` over the shipped
+# packages (vivarium_workbench + the vivarium_dashboard shim); the test tree is
+# not yet under the gate (it still carries benign unused-import noise — a
+# follow-up can extend coverage there).
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F", "E722"]
+
 [tool.mypy]
 python_version = "3.11"
 # Incremental adoption: type-check only the new, fully-typed modules for now.

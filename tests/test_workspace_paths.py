@@ -158,3 +158,48 @@ def test_study_owner_unowned_is_none(tmp_path):
     _make_investigation(tmp_path, "inv-c", ["something-else"])
     wp = WorkspacePaths.from_config(tmp_path, {"name": "ws"})
     assert wp.study_owner("orphan") is None
+
+
+# --- load() mtime-keyed memoization -----------------------------------------
+
+def test_load_caches_across_calls_with_unchanged_mtime(tmp_path):
+    """A second ``load`` of the same root with an unchanged ``workspace.yaml``
+    must NOT re-parse the file — it returns the memoized result."""
+    import vivarium_workbench.lib.workspace_paths as wp_mod
+    (tmp_path / "workspace.yaml").write_text("name: demo\n", encoding="utf-8")
+    wp_mod._clear_load_cache()
+
+    before = wp_mod._parse_count
+    wp1 = WorkspacePaths.load(tmp_path)
+    assert wp_mod._parse_count == before + 1, "first load should parse once"
+
+    wp2 = WorkspacePaths.load(tmp_path)
+    assert wp_mod._parse_count == before + 1, "second load must reuse the cache"
+    # Same resolved layout, and the cache returns the same instance.
+    assert wp2 is wp1
+    assert wp2.studies == wp1.studies
+
+
+def test_load_reparses_when_mtime_changes(tmp_path):
+    """Editing ``workspace.yaml`` (changing its mtime) must invalidate the memo
+    so the new layout is picked up."""
+    import vivarium_workbench.lib.workspace_paths as wp_mod
+    wf = tmp_path / "workspace.yaml"
+    wf.write_text("name: demo\n", encoding="utf-8")
+    wp_mod._clear_load_cache()
+
+    wp1 = WorkspacePaths.load(tmp_path)
+    assert wp1.rel("studies") == "studies"
+    n_after_first = wp_mod._parse_count
+
+    # Rewrite with a relocated layout and a strictly newer mtime (st_mtime_ns
+    # granularity can collapse writes within the same instant, so bump it).
+    wf.write_text(
+        "name: demo\nlayout:\n  studies: workspace/studies\n", encoding="utf-8")
+    st = wf.stat()
+    os.utime(wf, ns=(st.st_atime_ns, st.st_mtime_ns + 1_000_000))
+
+    wp2 = WorkspacePaths.load(tmp_path)
+    assert wp_mod._parse_count == n_after_first + 1, "changed mtime must re-parse"
+    assert wp2 is not wp1
+    assert wp2.rel("studies") == "workspace/studies"

@@ -33,7 +33,6 @@ import subprocess
 import sys
 import json
 from pathlib import Path
-from typing import Any
 
 import yaml
 

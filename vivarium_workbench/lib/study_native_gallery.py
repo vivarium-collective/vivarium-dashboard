@@ -17,7 +17,6 @@ import json
 from pathlib import Path
 
 from vivarium_workbench.lib.study_spec import read_runs_db_for_study
-from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
 
 def _is_error_panel(html: str) -> bool:

@@ -1,6 +1,5 @@
 # vivarium_workbench/testing/test_modular_tests_payload.py
 import json
-from pathlib import Path
 
 from vivarium_workbench.lib import study_spec
 

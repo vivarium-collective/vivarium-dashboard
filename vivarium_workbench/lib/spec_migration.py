@@ -1,7 +1,7 @@
 """Migration helper: legacy `composites:` shape → v2 `variants:` shape,
 and v2 → v3 study shape (list-of-composites baseline)."""
 from __future__ import annotations
-import pathlib, os
+import pathlib
 import yaml
 
 

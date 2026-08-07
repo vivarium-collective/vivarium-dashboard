@@ -23,13 +23,11 @@ the durable artefact — the in-memory job is just progress signalling.
 """
 from __future__ import annotations
 
-import json
 import threading
-import time
 import traceback
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Callable
 
 
 def _now() -> str:

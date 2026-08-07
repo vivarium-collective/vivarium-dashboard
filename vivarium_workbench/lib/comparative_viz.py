@@ -37,7 +37,6 @@ import re
 import sqlite3
 from html import escape
 from pathlib import Path
-from typing import Any
 
 
 _PLOTLY_CDN = (

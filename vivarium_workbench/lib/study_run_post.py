@@ -29,7 +29,6 @@ latest_run_timestamp        → most-recent run wall-clock time from runs_meta
 from __future__ import annotations
 
 import sqlite3
-import sys
 from pathlib import Path
 
 import yaml

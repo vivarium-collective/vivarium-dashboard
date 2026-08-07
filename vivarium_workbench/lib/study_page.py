@@ -785,7 +785,6 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     ``_normalize_asset_urls``/``_apply_live_base_path`` — the same helpers
     ``publish.py`` already uses for the static bundle.
     """
-    import yaml
     import jinja2
     from vivarium_workbench.lib.investigations import effective_status
     from vivarium_workbench.lib.study_spec import study_dir

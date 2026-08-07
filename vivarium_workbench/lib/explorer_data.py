@@ -11,7 +11,6 @@ import sqlite3
 from pathlib import Path
 
 from vivarium_workbench.lib import simulations_index
-from vivarium_workbench.lib import comparative_viz
 from vivarium_workbench.lib import emitters
 
 

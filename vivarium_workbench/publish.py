@@ -26,7 +26,6 @@ import json
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 from vivarium_workbench.lib.report import _normalize_asset_urls
