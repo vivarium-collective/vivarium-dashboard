@@ -13037,8 +13037,12 @@
               }).join(', ') + '</span>'
             : '';
           // Show the counts the verdict was derived from, so needs_calibration
-          // (4 passed · 1 skipped) reads as progress, not a bare badge.
-          var counts = _spineCountLabel(_studyOutcomeCounts(s));
+          // (4 passed · 1 skipped) reads as progress, not a bare badge. Prefer
+          // the canonical counts the server attaches to computed_gate_verdict
+          // (from viva_superpowers roll_up_verdict); fall back to a client-side
+          // recompute when an older/snapshot payload lacks them.
+          var cgvCounts = (s.computed_gate_verdict || {}).counts;
+          var counts = _spineCountLabel(cgvCounts || _studyOutcomeCounts(s));
           var countHtml = counts
             ? ' <span class="sdag-counts muted small" style="color:#64748b">(' + _h(counts) + ')</span>'
             : '';
