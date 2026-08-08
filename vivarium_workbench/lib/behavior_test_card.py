@@ -29,10 +29,7 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib.atomic_io import atomic_write_text
-from vivarium_workbench.lib.conclusion_card import (
-    _RESULT_TO_CANON,
-    _TRACK_COLORS,
-)
+from vivarium_workbench.lib.conclusion_card import _TRACK_COLORS
 
 SCHEMA = "behavior_test_card/v1"
 
