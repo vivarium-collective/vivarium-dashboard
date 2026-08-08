@@ -147,6 +147,58 @@ def test_baseline_accepts_legacy_dict_shape(tmp_path):
     assert not any(f.check.startswith("baseline-") for f in findings)
 
 
+def _make_v4_study(ws: Path, slug: str = "dnaa-v4") -> Path:
+    """v4-redesign shape: baseline under ``conditions.baseline`` (a ``composite``
+    with no ``name``), the way the current schema + study_audit expect it."""
+    spec = {
+        "name": slug,
+        "phase": "Design",
+        "conditions": {
+            "baseline": {"composite": "pkg.composites.wt", "params": {"condition": "basal"}},
+        },
+    }
+    return _write_yaml(ws / "studies" / slug / "study.yaml", spec)
+
+
+def test_v4_conditions_baseline_not_reported_missing(tmp_path):
+    """Regression for #207 — a correctly-authored v4 study (baseline under
+    ``conditions.baseline``) must NOT fire a false ``baseline-missing`` (or a
+    ``baseline-name`` on the un-named v4 mapping)."""
+    ws = _make_workspace(tmp_path)
+    sy = _make_v4_study(ws)
+    findings = sv.verify_study(sy)
+    offending = [f for f in findings if f.check.startswith("baseline-")]
+    assert not offending, (
+        "v4 conditions.baseline should verify cleanly, got: "
+        + "\n".join(f"{f.check}: {f.message}" for f in offending)
+    )
+
+
+def test_v4_missing_conditions_baseline_still_errors(tmp_path):
+    """The check still fires when neither top-level ``baseline`` nor
+    ``conditions.baseline`` is present."""
+    ws = _make_workspace(tmp_path)
+    sy = _make_v4_study(ws)
+    spec = yaml.safe_load(sy.read_text())
+    spec["conditions"] = {}
+    sy.write_text(yaml.safe_dump(spec))
+    findings = sv.verify_study(sy)
+    assert any(f.check == "baseline-missing" for f in findings)
+
+
+def test_v4_baseline_name_synthesized_for_variant_resolution(tmp_path):
+    """The un-named v4 baseline gets the study name synthesized (matching the
+    loader), so a variant referencing it by that name resolves."""
+    ws = _make_workspace(tmp_path)
+    sy = _make_v4_study(ws, slug="s1")
+    spec = yaml.safe_load(sy.read_text())
+    spec["variants"] = [{"name": "v", "base_composite": "s1"}]
+    sy.write_text(yaml.safe_dump(spec))
+    findings = sv.verify_study(sy)
+    assert not any(f.check.startswith("baseline-") for f in findings)
+    assert not any(f.check == "variant-base-unknown" for f in findings)
+
+
 # ---------------------------------------------------------------------------
 # Variant + simulation_set
 # ---------------------------------------------------------------------------
