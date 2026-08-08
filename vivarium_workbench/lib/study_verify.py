@@ -106,15 +106,46 @@ def _names_from_list(items: list | None, key: str = "name") -> list[str]:
     return out
 
 
-def _baseline_names(study: dict) -> list[str]:
+def _resolve_baselines(study: dict) -> tuple[list, bool]:
+    """Resolve baseline entries from either schema shape.
+
+    Returns ``(entries, present)`` — ``present`` is False only when *neither*
+    location declares a baseline.
+
+    - **v3** — top-level ``baseline:`` as a single dict or a list of dicts.
+    - **v4** — ``conditions.baseline:`` as a single dict that carries a
+      ``composite`` but no ``name``. Synthesize a ``name`` from the study's
+      ``name`` (falling back to ``"baseline"``), matching the loader's
+      ``conditions``→legacy projection, so variant→baseline resolution and the
+      per-entry checks behave identically across schema versions.
+
+    Without this, ``verify`` read only the v3 top-level ``baseline`` and fired a
+    false ``baseline-missing`` on every correctly-authored v4 study (#207).
+    """
     bl = study.get("baseline")
-    # baseline accepts dict-or-list shape in v3; verify both.
+    if bl is None:
+        conditions = study.get("conditions")
+        cond_bl = conditions.get("baseline") if isinstance(conditions, dict) else None
+        if cond_bl is None:
+            return [], False
+        if isinstance(cond_bl, dict):
+            entry = dict(cond_bl)
+            entry.setdefault("name", study.get("name") or "baseline")
+            return [entry], True
+        # Unexpected non-dict under conditions.baseline — surface as present so
+        # the shape check reports it rather than a misleading "missing".
+        return (list(cond_bl) if isinstance(cond_bl, list) else [cond_bl]), True
     if isinstance(bl, dict):
-        n = bl.get("name")
-        return [n] if isinstance(n, str) and n else []
+        return [bl], True
     if isinstance(bl, list):
-        return _names_from_list(bl)
-    return []
+        return bl, True
+    # present but a wrong scalar type (e.g. a string) — the shape check reports it
+    return [bl], True
+
+
+def _baseline_names(study: dict) -> list[str]:
+    entries, _ = _resolve_baselines(study)
+    return _names_from_list(entries)
 
 
 # ---------------------------------------------------------------------------
@@ -123,16 +154,18 @@ def _baseline_names(study: dict) -> list[str]:
 
 
 def _check_baselines(study: dict) -> Iterable[VerifyFinding]:
-    bl = study.get("baseline")
-    if bl is None:
+    items, present = _resolve_baselines(study)
+    if not present:
         yield VerifyFinding(
             level="error",
             check="baseline-missing",
             field_path="baseline",
-            message="study.yaml has no baseline. Add at least one.",
+            message=(
+                "study.yaml has no baseline. Add a top-level `baseline:` (v3) "
+                "or a `conditions.baseline:` mapping (v4)."
+            ),
         )
         return
-    items = [bl] if isinstance(bl, dict) else (bl if isinstance(bl, list) else [])
     if not items:
         yield VerifyFinding(
             level="error",
