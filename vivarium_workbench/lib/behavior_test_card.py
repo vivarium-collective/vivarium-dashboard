@@ -152,6 +152,33 @@ def render_behavior_tests_html(verdict: dict, spec: dict) -> str:
     )
 
 
+def render_behavior_card_response(ws_root, slug) -> tuple[str, int]:
+    """Render a study's behavior-tests card on demand (read-only; no file write).
+
+    Backs ``GET /api/study-behavior-card/<slug>`` so a study that has not yet
+    produced the on-disk ``behavior-tests.html`` artifact (e.g. still in Design,
+    never run) can still surface the default card. Returns ``(html, status)``:
+    404 when the study has no spec, 200 otherwise, 500 on an unexpected error.
+    """
+    try:
+        from vivarium_workbench.lib import study_spec
+        sf = study_spec.study_spec_path(Path(ws_root), str(slug))
+        if not sf.is_file():
+            return "<h1>Study not found</h1>", 404
+        spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+        if not isinstance(spec, dict):
+            return "<h1>Study spec invalid</h1>", 404
+        from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
+        spec = migrate_v2_to_v3(spec)
+        verdict = build_behavior_tests_verdict(spec)
+        return render_behavior_tests_html(verdict, spec), 200
+    except Exception as exc:  # noqa: BLE001
+        return (
+            "<h1>Behavior-tests card error</h1>"
+            f"<pre>{_html.escape(str(exc))}</pre>", 500
+        )
+
+
 def write_behavior_test_card(study_dir) -> bool:
     """Compute + atomically persist a study's behavior-tests report card.
 
