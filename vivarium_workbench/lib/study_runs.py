@@ -189,6 +189,14 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
         auto_evaluate.evaluate_on_run_completion(study_dir, run_id, ws_root=ws_root)
     except Exception as exc:  # never fail a successful run on an eval error
         print(f"[auto_evaluate] failed: {exc}", file=sys.stderr)
+    # Default "behavior-tests" report card: every study's behavior tests ARE a
+    # report card. Written AFTER auto_evaluate so runs[].outcomes are fresh
+    # (mirrors write_conclusion_card; never fails a run).
+    try:
+        from vivarium_workbench.lib import behavior_test_card
+        behavior_test_card.write_behavior_test_card(study_dir)
+    except Exception as exc:  # never fail a successful run on a report-card error
+        print(f"[behavior_test_card] write failed: {exc}", file=sys.stderr)
     lifecycle_mutations._sync_parent_investigation(ws_root, study_dir)  # SP1: roll up to investigation
     return response
 
