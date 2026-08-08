@@ -43,14 +43,18 @@ def build_saved_visualizations(ws_root) -> dict:
     for study_dir in wp.iter_study_dirs():
         study = study_dir.name
         rc_dir = study_dir / "viz" / "report_card"
+        # Independent of the relative_to append below, so it holds even if a
+        # path can't be made workspace-relative.
+        has_bt_artifact = (rc_dir / "behavior-tests.html").is_file()
         if rc_dir.is_dir():
             for rep in sorted(rc_dir.glob("*.html")):
                 try:
                     rel = rep.relative_to(ws_root).as_posix()
                 except ValueError:
                     continue
+                name = rep.name[: -len(".html")]
                 verdict = None
-                vfile = rep.with_name(rep.name[: -len(".html")] + ".verdict.json")
+                vfile = rep.with_name(name + ".verdict.json")
                 if vfile.is_file():
                     try:
                         verdict = json.loads(
@@ -63,11 +67,35 @@ def build_saved_visualizations(ws_root) -> dict:
                     created = None
                 report_cards.append({
                     "study": study,
-                    "name": rep.name[: -len(".html")],
+                    "name": name,
                     "url": "/" + rel,
                     "verdict": verdict,
                     "created": created,
                 })
+        # The behavior-tests card is the DEFAULT every study gets (#98 Stage 3b).
+        # Before a run produces the on-disk artifact, synthesize a pending entry
+        # (no file write — the workspace is git-tracked) pointing at the
+        # read-only render endpoint, so a study in Design still surfaces it.
+        if not has_bt_artifact:
+            try:
+                from vivarium_workbench.lib import behavior_test_card, study_spec
+                sf = study_spec.study_spec_file(study_dir)
+                if sf.is_file():
+                    spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+                    bts = (spec.get("behavior_tests")
+                           or spec.get("expected_behavior") or [])
+                    if isinstance(bts, list) and bts:
+                        verdict = behavior_test_card.build_behavior_tests_verdict(spec)
+                        report_cards.append({
+                            "study": study,
+                            "name": "behavior-tests",
+                            "url": f"/api/study-behavior-card/{study}",
+                            "verdict": verdict.get("overall"),
+                            "created": None,
+                            "synthesized": True,
+                        })
+            except Exception:
+                pass
         viz3d = study_dir / "viz" / "3d"
         if viz3d.is_dir():
             for pack in sorted(viz3d.glob("*.pack.json")):

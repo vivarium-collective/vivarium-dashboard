@@ -852,6 +852,27 @@ def create_app() -> FastAPI:
         return StudyChartsPayload.model_validate(build_study_charts_payload(ws, slug))
 
     @app.get(
+        "/api/study-behavior-card/{slug}",
+        tags=["Studies"],
+        summary="Behavior-tests report card (rendered on demand)",
+        response_class=Response,
+    )
+    def study_behavior_card(slug: str, ws: Path = Depends(get_workspace)) -> Response:
+        """Read-only render of a study's default behavior-tests report card.
+
+        Backs the synthesized ``behavior-tests`` entry in
+        ``/api/saved-visualizations`` so a study that has not yet produced the
+        on-disk ``behavior-tests.html`` artifact (still in Design / never run)
+        still surfaces the default card. No file write — the workspace stays
+        clean.
+        """
+        from vivarium_workbench.lib.behavior_test_card import (
+            render_behavior_card_response,
+        )
+        html, status = render_behavior_card_response(ws, slug)
+        return Response(content=html, status_code=status, media_type="text/html")
+
+    @app.get(
         "/api/study-native-gallery/{slug}",
         tags=["Studies"],
         summary="Native-analysis figure gallery from a study's latest run viz.json",
