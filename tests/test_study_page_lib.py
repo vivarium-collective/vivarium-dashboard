@@ -70,6 +70,43 @@ class TestBuildStudyDetailPage:
         assert "<h1>Study not found</h1>" in html
         assert "<code>does-not-exist</code>" in html
 
+    def test_invalid_spec_returns_error_card_not_empty(self, ws: Path, monkeypatch):
+        """A study whose spec fails to load renders a 400 error card naming the
+        problem, instead of letting InvestigationSpecError propagate to an empty
+        HTTP response ("localhost didn't send any data")."""
+        import vivarium_workbench.lib.study_spec as ss
+        from vivarium_workbench.lib import study_page as sp
+        from vivarium_workbench.lib.investigations import InvestigationSpecError
+
+        def boom(ws_root, name):
+            raise InvestigationSpecError(
+                "'baseline' must be a non-empty list of composites"
+            )
+
+        monkeypatch.setattr(ss, "load_study_detail_spec", boom)
+        html, status = sp.build_study_detail_page(ws, "dnaa-01-binding")
+        assert status == 400
+        assert html and "failed to load" in html
+        assert "baseline" in html            # the offending field is named
+        assert "dnaa-01-binding" in html     # and the study is identified
+
+    def test_error_card_escapes_html_in_message(self, ws: Path, monkeypatch):
+        """The loader message is HTML-escaped so it can't inject markup."""
+        import vivarium_workbench.lib.study_spec as ss
+        from vivarium_workbench.lib import study_page as sp
+        from vivarium_workbench.lib.investigations import InvestigationSpecError
+
+        monkeypatch.setattr(
+            ss, "load_study_detail_spec",
+            lambda ws_root, name: (_ for _ in ()).throw(
+                InvestigationSpecError("<script>x</script>")
+            ),
+        )
+        html, status = sp.build_study_detail_page(ws, "dnaa-01-binding")
+        assert status == 400
+        assert "<script>x</script>" not in html
+        assert "&lt;script&gt;" in html
+
     def test_valid_study_returns_200(self, ws: Path):
         from vivarium_workbench.lib.study_page import build_study_detail_page
         html, status = build_study_detail_page(ws, "dnaa-01-binding")

@@ -864,21 +864,55 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     return _apply_live_base_path(html, base_path)
 
 
+def _spec_error_card(slug: str, err: Exception) -> str:
+    """Readable HTML error card for a study whose spec fails to load.
+
+    Without this, an ``InvestigationSpecError`` propagated out of the route and
+    the browser got an empty response ("localhost didn't send any data") — the
+    reviewer had no idea which field was wrong.
+    """
+    import html as _html
+
+    slug_e = _html.escape(slug)
+    msg_e = _html.escape(str(err))
+    return (
+        "<!doctype html><meta charset='utf-8'>"
+        f"<title>Study spec error — {slug_e}</title>"
+        "<div style='max-width:52rem;margin:3rem auto;padding:0 1rem;"
+        "font-family:system-ui,-apple-system,sans-serif;line-height:1.5;color:#1a1a1a'>"
+        f"<h1 style='color:#b3261e'>Study &ldquo;{slug_e}&rdquo; failed to load</h1>"
+        "<p>Its <code>study.yaml</code> is structurally invalid, so the detail "
+        "page can&rsquo;t be rendered. Fix the field named below and reload.</p>"
+        "<pre style='background:#f6f6f6;border:1px solid #ddd;border-radius:6px;"
+        f"padding:1rem;white-space:pre-wrap'>{msg_e}</pre>"
+        "<p style='color:#666'>The same validation runs in <code>/viva-report</code>&rsquo;s "
+        "render-guarantee lint (the <code>render_blocked</code> finding).</p>"
+        "</div>"
+    )
+
+
 def build_study_detail_page(ws_root: Path, slug: str, *, base_path: str = "") -> tuple[str, int]:
     """Full study-detail page builder: validate → load spec → render.
 
-    Returns ``(html, status_code)`` where status_code is 200 on success
-    or 404 for an invalid/unknown slug.  The 404 bodies are byte-identical
-    to the legacy handler's ``_send_html`` responses.
+    Returns ``(html, status_code)`` where status_code is 200 on success, 404
+    for an invalid/unknown slug, or 400 for a study whose ``study.yaml`` is
+    structurally invalid (an error card naming the offending field, instead of
+    letting ``InvestigationSpecError`` propagate to an empty HTTP response).
+    The 404 bodies are byte-identical to the legacy handler's ``_send_html``
+    responses.
 
     ``base_path``: forwarded to ``render_study_detail_html`` for subpath
     hosting; see its docstring.
     """
+    from vivarium_workbench.lib.investigations import InvestigationSpecError
     from vivarium_workbench.lib.study_spec import load_study_detail_spec
 
     if not _SLUG_RE.match(slug):
         return "<h1>Not found</h1>", 404
-    spec: Optional[dict] = load_study_detail_spec(ws_root, slug)
+    try:
+        spec: Optional[dict] = load_study_detail_spec(ws_root, slug)
+    except InvestigationSpecError as e:
+        return _spec_error_card(slug, e), 400
     if spec is None:
         return (
             f"<h1>Study not found</h1><p><code>{slug}</code> does not exist.</p>",
