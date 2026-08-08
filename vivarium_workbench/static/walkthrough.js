@@ -17515,12 +17515,14 @@
   // glanceable status, the full status text is shown in the title tooltip.
   function _railStatusColor(status) {
     var s = String(status || '').toLowerCase();
-    if (s.indexOf('fail') !== -1 || s.indexOf('invalid') !== -1) return '#ef4444';   // red
-    if (s.indexOf('pending') !== -1 || s.indexOf('refresh') !== -1) return '#f59e0b';// amber
+    if (s.indexOf('fail') !== -1 || s.indexOf('invalid') !== -1 || s.indexOf('blocked') !== -1) return '#ef4444';   // red
+    if (s.indexOf('pending') !== -1 || s.indexOf('refresh') !== -1 || s.indexOf('needs') !== -1) return '#f59e0b';// amber
     if (s.indexOf('inconclusive') !== -1 || s.indexOf('partial') !== -1) return '#d97706'; // dark amber
     if (s.indexOf('running') === 0) return '#3b82f6';                                // blue
+    // 'pass' covers the gate verdict 'passed' as well as 'passing'/'passes'.
     if (s.indexOf('done') === 0 || s.indexOf('ran') === 0 || s.indexOf('complete') !== -1
-        || s.indexOf('evaluated') !== -1 || s.indexOf('confirmed') !== -1 || s.indexOf('passing') !== -1
+        || s.indexOf('evaluated') !== -1 || s.indexOf('confirmed') !== -1 || s.indexOf('pass') !== -1
+        || s.indexOf('accept') !== -1 || s.indexOf('decided') !== -1
         || s.indexOf('-wins') !== -1 || s.indexOf('in-band') !== -1) return '#16a34a'; // green
     if (s.indexOf('evaluate') === 0) return '#6366f1';                               // indigo (mid-pass action)
     return '#9ca3af';                                                                // gray (planned/unknown)
