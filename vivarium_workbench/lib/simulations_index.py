@@ -458,6 +458,14 @@ def _study_declared_composite(data: dict) -> str | None:
         for variant in baseline:
             if isinstance(variant, dict) and isinstance(variant.get("composite"), str):
                 return variant["composite"]
+        # A bare Step/Process baseline (baseline.step / baseline.process) has no
+        # composite; use its address as the run's spec_id so step/process-baseline
+        # study runs still surface in the Simulations DB.
+        for variant in baseline:
+            if isinstance(variant, dict):
+                ref = variant.get("step") or variant.get("process")
+                if isinstance(ref, str) and ref:
+                    return ref
     return None
 
 
