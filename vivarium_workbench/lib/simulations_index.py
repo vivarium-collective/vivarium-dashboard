@@ -1552,6 +1552,17 @@ def _launch_url_for_matched_tool(tool: dict, row: dict) -> "str | None":
 
     if kind != "launcher":
         return None  # unresolvable contributed "embed" viewer — omit
+    # A launcher whose contributed target is a self-contained static page (it
+    # carries an ``href``) deep-links straight to that page — which works in the
+    # read-only snapshot too, where the /api/.../launch endpoint has no live
+    # server. Prefer a target scoped to this row's study (global viewers may
+    # carry a single study-less target).
+    _tgts = tool.get("targets") or []
+    _href = next((t.get("href") for t in _tgts
+                  if isinstance(t, dict) and t.get("href")
+                  and (t.get("study") in (None, "", study))), None)
+    if _href:
+        return str(_href)
     uid = tool.get("uid") or tool.get("id")
     if not uid:
         return None
@@ -1570,10 +1581,16 @@ def _matched_tool_entry(tool: dict, row: dict) -> "dict | None":
     url = _launch_url_for_matched_tool(tool, row)
     if not url:
         return None
+    kind = tool.get("kind") or "launcher"
+    # A static page URL (not the /api resolve endpoint) is a direct deep-link the
+    # frontend opens as a plain link — so a launcher that resolved to its static
+    # target page renders (and works) as a deep-link, including in the snapshot.
+    if kind == "launcher" and not url.startswith("/api/"):
+        kind = "deep-link"
     return {
         "id": tool.get("uid") or tool.get("id"),
         "label": tool.get("title") or tool.get("label") or tool.get("id") or "Tool",
-        "kind": tool.get("kind") or "launcher",
+        "kind": kind,
         "launch_url": url,
     }
 
