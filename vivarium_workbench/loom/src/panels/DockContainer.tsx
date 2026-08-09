@@ -220,19 +220,27 @@ function DockZone(props: {
           }}
         />
       )}
-      {specs.map((spec) => {
+      {/* Collapsed panels share ONE compact horizontal row of thin chips at the
+          top of the zone (instead of each becoming a tall vertical bar that
+          eats the whole side). Expanded panels render below. */}
+      {specs.some((s) => state.panels[s.id]?.collapsed) && (
+        <div className="loom-dock-tabs-row">
+          {specs.filter((s) => state.panels[s.id]?.collapsed).map((spec) => (
+            <button
+              key={spec.id}
+              className="loom-dock-tab"
+              title={`Expand ${spec.title}`}
+              aria-label={`Expand ${spec.title}`}
+              onClick={() => props.onSetCollapsed(spec.id, false)}
+            >
+              {spec.title}
+            </button>
+          ))}
+        </div>
+      )}
+      {specs.filter((s) => !state.panels[s.id]?.collapsed).map((spec) => {
         const placement = state.panels[spec.id] ?? { side: spec.defaultSide, collapsed: false };
-        return placement.collapsed ? (
-          <button
-            key={spec.id}
-            className="loom-dock-tab"
-            title={`Expand ${spec.title}`}
-            aria-label={`Expand ${spec.title}`}
-            onClick={() => props.onSetCollapsed(spec.id, false)}
-          >
-            {spec.title}
-          </button>
-        ) : (
+        return (
           <section key={spec.id} className="loom-dock-panel" style={{ flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <header className="loom-dock-panel-header">
               <span className="loom-dock-panel-title">{spec.title}</span>

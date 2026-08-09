@@ -12,7 +12,7 @@ import ELK from 'elkjs/lib/elk.bundled.js';
 import type { Node, Edge } from '@xyflow/react';
 import { TIERS } from './tiers';
 import { wireStoreEndpoint, hubStoreIds } from '../storeFacts';
-import { fullFootprint } from './clusterGrid';
+import { fullFootprint, removeOverlaps, type Box } from './clusterGrid';
 import type { LayoutMode, LayoutResult } from './types';
 
 const elk = new ELK();
@@ -56,8 +56,12 @@ async function elkFlowLayout(
     layoutOptions: {
       'elk.algorithm': 'layered',
       'elk.direction': direction,
-      'elk.layered.spacing.nodeNodeBetweenLayers': '90',
-      'elk.spacing.nodeNode': '44',
+      // Tighter layers: nodes reserve their FULL-tier footprint (so nothing
+      // overlaps when zoomed in), which already spaces layers generously — a
+      // large between-layer gap on top of that leaves sinks stranded far away
+      // at low zoom. Keep the gap small; the footprints still prevent overlap.
+      'elk.layered.spacing.nodeNodeBetweenLayers': '48',
+      'elk.spacing.nodeNode': '36',
       // Speed on the sparse (hub-free) graph.
       'elk.layered.crossingMinimization.strategy': 'LAYER_SWEEP',
       'elk.layered.nodePlacement.strategy': 'SIMPLE',
@@ -79,7 +83,48 @@ async function elkFlowLayout(
     const p = pos.get(n.id);
     return p ? { ...n, position: { x: p.x, y: p.y } } : n;
   });
-  return { nodes: out };
+
+  // flow-right: the STEP flow runs left→right (ELK above), but store CONTAINMENT
+  // should still read top→bottom — a parent store sits above its children
+  // (tissue above fields/cells, cells above cell). ELK can only rank one
+  // direction per pass, so we post-process: re-bank each store onto a
+  // horizontal level by its place-graph depth, keeping its ELK flow x.
+  // Processes keep their ELK positions (the horizontal flow). Store rows are
+  // spaced by the tallest store so deeper levels never overlap the level above.
+  if (direction === 'RIGHT') {
+    const storeNodes = out.filter((n) => n.type === 'store');
+    if (storeNodes.length > 0) {
+      const depthOf = (n: Node): number => {
+        const p = (n.data as { path?: unknown } | undefined)?.path;
+        return Array.isArray(p) && p.length > 0 ? p.length : 1;
+      };
+      const rowH = Math.max(
+        90,
+        ...storeNodes.map((n) => footprint.get(n.id)?.h ?? 0),
+      ) + 70;                                   // tallest store + inter-row gap
+      const baseY = Math.min(...out.map((n) => n.position.y));
+      for (const n of storeNodes) {
+        n.position = { x: n.position.x, y: baseY + (depthOf(n) - 1) * rowH };
+      }
+    }
+  }
+
+  // Guarantee no overlaps. ELK reserves each node's footprint, but the RIGHT
+  // re-banking above can slide a store onto a process, and tight layer spacing
+  // can graze neighbours — push any overlapping boxes apart (order-stable,
+  // minimal move; early-returns when nothing overlaps, e.g. clean flow-down).
+  const boxes: Box[] = out.map((n) => {
+    const f = footprint.get(n.id) ?? { w: 120, h: 80 };
+    return { id: n.id, x: n.position.x, y: n.position.y, w: f.w, h: f.h };
+  });
+  removeOverlaps(boxes, 28, 1000);
+  const boxById = new Map(boxes.map((b) => [b.id, b] as const));
+  return {
+    nodes: out.map((n) => {
+      const b = boxById.get(n.id);
+      return b ? { ...n, position: { x: b.x, y: b.y } } : n;
+    }),
+  };
 }
 
 // "Hierarchy": ELK layered top-to-bottom — the store dependency hierarchy.

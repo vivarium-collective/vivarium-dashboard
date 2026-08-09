@@ -3,6 +3,7 @@ import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
 import { portInfo } from "../portInfo";
+import { KatexBlock } from "../Katex";
 import InnerCompositePreview from "./InnerCompositePreview";
 import { configParams } from "../configView";
 
@@ -73,6 +74,11 @@ function LegacyBody({ data, stepKind }: {
       <div className="process-body">
         <div className="process-label">
           {data.label}
+          {(data as any).isDraft && (
+            <span className="process-node-draft" title="Draft process — typed ports + contract, but NO update dynamics yet">
+              DRAFT
+            </span>
+          )}
           {data.isCompositeProcess && (
             <span
               className="process-node-drill"
@@ -251,7 +257,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   return (
     <div
       className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}
-      style={dims ? { width: dims.width, height: dims.height, overflow: 'auto' } : undefined}
+      style={dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : undefined}
     >
       <NodeResizer
         isVisible={show.ports}
@@ -312,6 +318,11 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         <div className="process-node-title">
           {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
           {data.label}
+          {(data as any).isDraft && (
+            <span className="process-node-draft" title="Draft process — typed ports + contract, but NO update dynamics yet">
+              DRAFT
+            </span>
+          )}
           {data.isCompositeProcess && (
             <span
               className="process-node-drill"
@@ -360,7 +371,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
         {show.contract && contract && contract.math.length > 0 && (
           <div className="process-node-math" title={SECTION_HINT.math}>
-            {contract.math.map((m, i) => <div key={i}>{m}</div>)}
+            {contract.math.map((m, i) => <KatexBlock key={i} tex={m} />)}
           </div>
         )}
 

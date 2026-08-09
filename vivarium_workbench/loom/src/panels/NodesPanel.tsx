@@ -7,7 +7,7 @@
 // when the node or any ancestor is hidden). The big bulk/listeners subtrees
 // start collapsed: only depth 0 is expanded by default.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { isHiddenByAncestor } from './filterHidden';
 
 // --- store-node tree ------------------------------------------------------
@@ -86,6 +86,14 @@ export interface NodesPanelProps {
   hidden: Set<string>;
   onToggleHidden: (id: string) => void;
   onShowAll: (kind: 'process' | 'store') => void;
+  /** Viewer fold state: group-store ids collapsed on the CANVAS. The tree and
+   *  the canvas share one fold state, so a caret here unfolds the branch there,
+   *  and checking a branch unfolds it (its children render). */
+  collapsedGroups: Set<string>;
+  onSetCollapsed: (id: string, collapsed: boolean) => void;
+  /** Reveal a node + its ancestor path (unhide + unfold ancestors), leaving
+   *  siblings hidden. Used when a currently-hidden row is checked. */
+  onRevealPath: (id: string) => void;
   /** Store node id (`path.join('.')`) clicked on the canvas — its row is
    *  expanded-to, scrolled into view and highlighted so it's easy to toggle. */
   selectedId?: string | null;
@@ -96,30 +104,14 @@ export interface NodesPanelProps {
 export function NodesPanel(props: NodesPanelProps) {
   const tree = useMemo(() => buildNodeTree(props.nodes), [props.nodes]);
 
-  // Default expansion: top-level stores only (depth 0). This keeps deep stores
-  // like `bulk` / `listeners` collapsed for performance on big composites.
-  const [expanded, setExpanded] = useState<Set<string>>(
-    () => new Set(tree.children.map((c) => c.id)),
-  );
+  // The tree shares the CANVAS fold state: a group row is OPEN when it is NOT
+  // collapsed in the viewer. So the caret here folds/unfolds the branch on the
+  // canvas, "Show all" (which clears the viewer's collapse set) unfolds
+  // everything, and checking a branch unfolds it.
+  const { onSetCollapsed } = props;
+  const isOpen = (id: string) => !props.collapsedGroups.has(id);
 
-  // Re-seed the default expansion when the underlying composite changes (the
-  // top-level store ids will differ). Keyed on the joined top-level ids.
-  const topIds = tree.children.map((c) => c.id).join('|');
-  useEffect(() => {
-    setExpanded(new Set(tree.children.map((c) => c.id)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [topIds]);
-
-  const toggleExpand = (id: string) => {
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
-
-  // Reveal a canvas-clicked STORE in the tree: expand its ancestor groups so the
+  // Reveal a canvas-clicked STORE in the tree: unfold its ancestor groups so the
   // row is visible, then scroll it into view (+ highlight, below). Processes
   // aren't in this tree, so a process click is a no-op here.
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
@@ -127,27 +119,23 @@ export function NodesPanel(props: NodesPanelProps) {
   useEffect(() => {
     if (!selectedId) return;
     const parts = selectedId.split('.');
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join('.'));
-      return next;
-    });
+    for (let i = 1; i < parts.length; i++) onSetCollapsed(parts.slice(0, i).join('.'), false);
     const t = setTimeout(() => {
       rowRefs.current.get(selectedId)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }, 40);
     return () => clearTimeout(t);
-  }, [props.revealNonce, selectedId]);
+  }, [props.revealNonce, selectedId, onSetCollapsed]);
 
   const total = countTree(tree);
 
-  // Flatten the visible (expanded) rows top-down into render specs.
+  // Flatten the visible (unfolded) rows top-down into render specs.
   const rows: { node: NodeTreeNode; depth: number; hasChildren: boolean; open: boolean }[] = [];
   const walk = (node: NodeTreeNode, depth: number) => {
     for (const child of node.children) {
       const hasChildren = child.children.length > 0;
-      const open = expanded.has(child.id);
+      const open = hasChildren && isOpen(child.id);
       rows.push({ node: child, depth, hasChildren, open });
-      if (hasChildren && open) walk(child, depth + 1);
+      if (open) walk(child, depth + 1);
     }
   };
   walk(tree, 0);
@@ -157,6 +145,7 @@ export function NodesPanel(props: NodesPanelProps) {
       <div style={{ marginBottom: 8 }}>
         <button
           onClick={() => props.onShowAll('store')}
+          title="Show and unfold every store branch"
           style={{
             background: 'transparent', border: 0, padding: 0,
             color: '#2563eb', fontSize: 12, cursor: 'pointer',
@@ -184,11 +173,11 @@ export function NodesPanel(props: NodesPanelProps) {
               boxShadow: isSelected ? 'inset 2px 0 0 #2563eb' : undefined,
             }}
           >
-            {/* expand caret (or a spacer to keep checkboxes aligned) */}
+            {/* fold caret — unfolds/folds this branch on the CANVAS too */}
             {hasChildren ? (
               <span
-                onClick={() => toggleExpand(node.id)}
-                title={open ? 'Collapse' : 'Expand'}
+                onClick={() => props.onSetCollapsed(node.id, open)}
+                title={open ? 'Fold branch' : 'Unfold branch'}
                 style={{
                   cursor: 'pointer', color: '#6b7280', width: 12,
                   textAlign: 'center', userSelect: 'none', lineHeight: '16px',
@@ -202,10 +191,18 @@ export function NodesPanel(props: NodesPanelProps) {
             <input
               type="checkbox"
               checked={!effectivelyHidden}
-              disabled={ancHidden}
-              onChange={() => props.onToggleHidden(node.id)}
-              title={ancHidden ? 'Hidden because an ancestor is hidden' : undefined}
-              style={{ marginTop: 2, cursor: ancHidden ? 'default' : 'pointer' }}
+              onChange={() => {
+                if (effectivelyHidden) {
+                  // Checking a hidden row reveals it + its ancestor path; its
+                  // siblings stay hidden.
+                  props.onRevealPath(node.id);
+                } else {
+                  // Unchecking hides just this node (its subtree follows).
+                  props.onToggleHidden(node.id);
+                }
+              }}
+              title={ancHidden ? 'Check to reveal this node and its parents' : undefined}
+              style={{ marginTop: 2, cursor: 'pointer' }}
             />
             <span style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
               <span style={{ color: effectivelyHidden ? '#9ca3af' : '#111827' }}>

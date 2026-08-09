@@ -68,11 +68,12 @@ describe('click-to-lock', () => {
     await loadOntoWiringTab();
     fireEvent.click(canvas().getByText('p1'));
 
-    // The clicked card is marked locked.
+    // The clicked card is marked locked (lock indicator + full-detail).
     expect(document.querySelector('.process-node.is-locked')).not.toBeNull();
-    // A lock counts as pinned, so the focus hint reports it.
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/1 pinned/i);
+    // The "N pinned" focus hint is a DENSITY affordance now gated to large
+    // graphs (>120 wires), so it is intentionally absent for this small fixture
+    // — locking still works without it.
+    expect(document.querySelector('.loom-focus-hint')).toBeNull();
   });
 
   it('unlocks when empty canvas is clicked', async () => {

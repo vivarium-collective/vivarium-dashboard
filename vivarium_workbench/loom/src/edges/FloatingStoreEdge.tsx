@@ -5,10 +5,10 @@
 // nearest that port, instead of a fixed left/right handle.
 import { memo } from 'react';
 import {
-  BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode, Position,
+  BaseEdge, EdgeLabelRenderer, useInternalNode,
   type EdgeProps,
 } from '@xyflow/react';
-import { circleAnchor, dominantSide, type Point, type Side } from './geometry';
+import { type Point } from './geometry';
 import { abbreviateType } from '../contract';
 import type { ZoomTierId } from '../layouts/types';
 
@@ -34,12 +34,49 @@ export function edgeLabelFor(tier: ZoomTierId, parts: EdgeLabelParts): string {
   return label;
 }
 
-const SIDE_TO_POSITION: Record<Side, Position> = {
-  left: Position.Left,
-  right: Position.Right,
-  top: Position.Top,
-  bottom: Position.Bottom,
-};
+/** The point on an axis-aligned box (half-width `hw`, half-height `hh` about
+ *  `center`) where the ray from the center toward `toward` crosses the
+ *  boundary — so a wire can attach ANYWHERE on the store's edge (whichever face
+ *  is most convenient), not only its top/bottom. */
+function boxAnchor(center: Point, hw: number, hh: number, toward: Point): Point {
+  const dx = toward.x - center.x, dy = toward.y - center.y;
+  if (dx === 0 && dy === 0) return { x: center.x + hw, y: center.y };
+  const s = Math.min(hw / (Math.abs(dx) || 1e-9), hh / (Math.abs(dy) || 1e-9));
+  return { x: center.x + dx * s, y: center.y + dy * s };
+}
+
+/** A point just outside `anchor` along the OUTWARD normal of the box face it
+ *  sits on, so the wire enters that face perpendicular. */
+function boxApproach(center: Point, hw: number, hh: number, anchor: Point, gap: number): Point {
+  const dx = anchor.x - center.x, dy = anchor.y - center.y;
+  if (Math.abs(dx) / hw >= Math.abs(dy) / hh) {
+    return { x: anchor.x + Math.sign(dx || 1) * gap, y: anchor.y };
+  }
+  return { x: anchor.x, y: anchor.y + Math.sign(dy || 1) * gap };
+}
+
+/** An SVG path through `pts` with rounded corners of radius `r` — an
+ *  orthogonal polyline whose bends are filleted so the wire reads as a smooth
+ *  route rather than hard right angles. */
+function roundedPath(pts: Point[], r: number): string {
+  if (pts.length === 0) return '';
+  if (pts.length === 1) return `M ${pts[0].x},${pts[0].y}`;
+  let d = `M ${pts[0].x},${pts[0].y}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+    const v1x = p0.x - p1.x, v1y = p0.y - p1.y;
+    const v2x = p2.x - p1.x, v2y = p2.y - p1.y;
+    const l1 = Math.hypot(v1x, v1y) || 1;
+    const l2 = Math.hypot(v2x, v2y) || 1;
+    const d1 = Math.min(r, l1 / 2), d2 = Math.min(r, l2 / 2);
+    const a = { x: p1.x + (v1x / l1) * d1, y: p1.y + (v1y / l1) * d1 };
+    const b = { x: p1.x + (v2x / l2) * d2, y: p1.y + (v2y / l2) * d2 };
+    d += ` L ${a.x.toFixed(2)},${a.y.toFixed(2)} Q ${p1.x.toFixed(2)},${p1.y.toFixed(2)} ${b.x.toFixed(2)},${b.y.toFixed(2)}`;
+  }
+  const last = pts[pts.length - 1];
+  d += ` L ${last.x.toFixed(2)},${last.y.toFixed(2)}`;
+  return d;
+}
 
 /** Absolute center of a node from its measured box. */
 function nodeCenter(n: RFInternalNode): Point {
@@ -93,49 +130,57 @@ function FloatingStoreEdge({
   // snap the input wire to the output handle.
   const procPoint = handlePoint(procNode, procHandleId, storeIsSource ? 'target' : 'source');
 
-  // Store end: nearest point on the store circle to that port.
+  // Store end: attaches on the store's BOX boundary (any face), not a fixed
+  // handle. The exact anchor is chosen per-case below from the approach side.
   const center = nodeCenter(storeNode);
-  const radius = (storeNode.measured.width ?? 0) / 2;
-  if (radius <= 0) return null;  // not measured yet — RF re-renders when it is
-  const storePoint = circleAnchor(center, radius, procPoint);
+  const shw = (storeNode.measured.width ?? 0) / 2;
+  const shh = (storeNode.measured.height ?? 0) / 2;
+  if (shw <= 0 || shh <= 0) return null;  // not measured yet — RF re-renders when it is
 
-  const storePosition = SIDE_TO_POSITION[dominantSide(center, procPoint)];
-  // Input ports sit on the process's left; output ports on its right.
-  const procPosition = storeIsSource ? Position.Left : Position.Right;
-
-  // Route AROUND the card, not under it. A bezier drawn straight from a port
-  // to a store below the card dives beneath the rectangle. Instead the wire
-  // leaves the port perpendicular — out past the card's left edge for inputs,
-  // its right edge for outputs — by EXIT_GAP, and only then curves to the
-  // store. That horizontal stub keeps the wire clear of the card's footprint,
-  // so it rounds a corner rather than crossing the body.
-  const EXIT_GAP = 26;
+  // Route AROUND the card so the wire can be tracked from its port, around the
+  // process body, to its store — never diving under the rectangle. The wire
+  // leaves the port perpendicular (out past the card's left edge for inputs,
+  // its right edge for outputs) by EXIT_GAP.
+  //
+  //  • Store OUT IN FRONT of that exit → a short vertical jog reaches it (a
+  //    clean L).
+  //  • Store BEHIND the port (the common read+write case, where an input's
+  //    store actually sits on the output side) → the wire runs out to a lane
+  //    just above or below the card, travels along that lane clear of the
+  //    body, and drops into the store's near face — an orthogonal C around the
+  //    process, instead of a bezier that cuts under it.
+  const EXIT_GAP = 24, LANE_GAP = 22, CORNER = 12;
   const pAbs = procNode.internals.positionAbsolute;
   const pw = procNode.measured.width ?? 0;
-  const exitX = storeIsSource ? pAbs.x - EXIT_GAP : pAbs.x + pw + EXIT_GAP;
-  const exit: Point = { x: exitX, y: procPoint.y };
+  const ph = procNode.measured.height ?? 0;
+  const box = { x0: pAbs.x, y0: pAbs.y, x1: pAbs.x + pw, y1: pAbs.y + ph };
+  const boxCy = (box.y0 + box.y1) / 2;
+  const outX = storeIsSource ? -1 : 1;              // input exits left, output exits right
+  const stub: Point = { x: procPoint.x + outX * EXIT_GAP, y: procPoint.y };
+  // Is the store out in front of the exit (same side as the port), or behind
+  // the card (so a straight run would cross the body)?
+  const storeInFront = outX < 0 ? center.x <= box.x0 : center.x >= box.x1;
+  const APPROACH = 14;
 
-  // Bezier for the store↔exit leg (perpendicular at the process end); the stub
-  // from the exit to the actual port is appended so the marker still lands on
-  // the process for inputs (path drawn store→process) and on the store for
-  // outputs (path drawn process→store).
-  let path: string, labelX: number, labelY: number;
-  if (storeIsSource) {
-    const [leg, lx, ly] = getBezierPath({
-      sourceX: storePoint.x, sourceY: storePoint.y, sourcePosition: storePosition,
-      targetX: exit.x, targetY: exit.y, targetPosition: procPosition,
-    });
-    path = `${leg} L ${procPoint.x},${procPoint.y}`;
-    labelX = lx; labelY = ly;
+  // Waypoints, drawn process→store; reversed below for inputs so the arrow
+  // marker still lands on the process port. The store end attaches on whichever
+  // box face is nearest the approach (boxAnchor), entered perpendicular.
+  let way: Point[];
+  if (storeInFront) {
+    const anchor = boxAnchor(center, shw, shh, stub);
+    const ap = boxApproach(center, shw, shh, anchor, APPROACH);
+    way = [procPoint, stub, ap, anchor];
   } else {
-    const [leg, lx, ly] = getBezierPath({
-      sourceX: exit.x, sourceY: exit.y, sourcePosition: procPosition,
-      targetX: storePoint.x, targetY: storePoint.y, targetPosition: storePosition,
-    });
-    const cIdx = leg.indexOf('C');
-    path = `M ${procPoint.x},${procPoint.y} L ${exit.x},${exit.y} ${leg.slice(cIdx)}`;
-    labelX = lx; labelY = ly;
+    const overTop = center.y < boxCy;
+    const laneY = overTop ? box.y0 - LANE_GAP : box.y1 + LANE_GAP;
+    const anchor = boxAnchor(center, shw, shh, { x: center.x, y: laneY });
+    const ap = boxApproach(center, shw, shh, anchor, APPROACH);
+    way = [procPoint, stub, { x: stub.x, y: laneY }, { x: ap.x, y: laneY }, ap, anchor];
   }
+  const pts = storeIsSource ? [...way].reverse() : way;
+  const path = roundedPath(pts, CORNER);
+  const mid = pts[Math.floor(pts.length / 2)];
+  const labelX = mid.x, labelY = mid.y;
 
   // Semantic zoom is opt-in: only process-column mode stamps `_tier` onto the
   // edge data. Absent it (hierarchy mode, or the glyph tier which App leaves

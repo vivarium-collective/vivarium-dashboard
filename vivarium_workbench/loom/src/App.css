@@ -152,12 +152,21 @@ body {
 
 .store-node:hover { border-color: #059669; }
 
+/* Read-only viewer: hide the connection-handle dots on store nodes
+   (top/bottom/left/right). The handles stay in the DOM so edges still anchor
+   to them — only the dot is made invisible and non-interactive. Process-node
+   ports use `.port-handle` and are unaffected. */
+.store-node .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+
 .store-node-collapsed {
   border-color: #f59e0b;
   background: #fffbeb;
 }
 
-.store-label { font-weight: 600; color: #1e293b; }
+.store-label { font-weight: 600; color: #1e293b; font-size: 15px; }
 
 .store-value {
   color: #64748b;
@@ -177,7 +186,7 @@ body {
    Font sizes stay constant across tiers, as with the process card: detail is
    revealed by adding rows, never by scaling text. */
 .store-node-value  { font-size: 10px; color: #64748b; line-height: 1.3; }
-.store-node-type   { font-size: 10px; color: #94a3b8; font-family: ui-monospace, monospace; }
+.store-node-type   { font-size: 12px; color: #94a3b8; font-family: ui-monospace, monospace; }
 .store-node-wiring { font-size: 10px; color: #475569; }
 .store-node-emit   { font-size: 9px; color: #0d9488; font-weight: 600; }
 
@@ -212,11 +221,18 @@ body {
   text-align: center;
 }
 .store-node-glyph .store-label,
-.store-node-ports .store-label { font-size: 24px; line-height: 1.15; }
+.store-node-ports .store-label { font-size: 30px; line-height: 1.15; }
+/* Detail tiers: the store box is large — let the name fill more of it. */
+.store-node-types .store-label,
+.store-node-contract .store-label,
+.store-node-full .store-label { font-size: 27px; line-height: 1.2; }
+.store-node-types .store-node-type,
+.store-node-contract .store-node-type,
+.store-node-full .store-node-type { font-size: 17px; }
 
 /* ── Edge labels (process-column semantic zoom) ─────────────────────────── */
 .loom-edge-label {
-  font-size: 10px;
+  font-size: 12px;
   color: #475569;
   background: rgba(255, 255, 255, 0.85);
   padding: 1px 4px;
@@ -282,11 +298,11 @@ body {
   background: #ffffff;
   border: 2px solid #6366f1;
   border-radius: 0;
-  padding: 10px 40px;
+  padding: 12px 26px;
   min-width: 100px;
   min-height: 50px;
   text-align: center;
-  font-size: 12px;
+  font-size: 14px;
   cursor: pointer;
   position: relative;
 }
@@ -315,11 +331,20 @@ body {
   align-items: center;
 }
 
-.process-label { font-weight: 600; color: #1e293b; }
+.process-label { font-weight: 600; color: #1e293b; font-size: 16px; }
+
+/* DRAFT badge — interface-only process (ports + contract, no update dynamics).
+   Sized in em so it scales with the title at every zoom tier. */
+.process-node-draft {
+  display: inline-block; margin-left: 8px; vertical-align: middle;
+  font-size: 0.55em; font-weight: 800; letter-spacing: 0.06em;
+  color: #b45309; background: #fef3c7; border: 1px solid #fcd34d;
+  border-radius: 4px; padding: 1px 6px;
+}
 
 .process-type {
   color: #94a3b8;
-  font-size: 10px;
+  font-size: 13px;
   font-style: italic;
 }
 
@@ -345,14 +370,14 @@ body {
 
 .port-label-left { right: calc(100% + 12px); text-align: right; }
 .port-label-right { left: calc(100% + 12px); text-align: left; }
-.port-label-name { font-size: 9px; color: #475569; font-weight: 500; }
+.port-label-name { font-size: 14px; color: #475569; font-weight: 500; }
 
 .port-label-tooltip {
   display: none;
   position: absolute;
   background: #1e293b;
   color: #e2e8f0;
-  font-size: 10px;
+  font-size: 12px;
   font-family: monospace;
   padding: 4px 8px;
   border-radius: 4px;
@@ -394,7 +419,7 @@ body {
 .port-in-label {
   position: absolute; transform: translateY(-50%);
   display: flex; flex-direction: column; line-height: 1.12;
-  max-width: 106px; white-space: nowrap;
+  max-width: 140px; white-space: nowrap;
   pointer-events: auto; cursor: pointer;   /* clickable → port info popover */
 }
 .port-in-label.is-in  { left: 13px;  align-items: flex-start; text-align: left; }
@@ -402,13 +427,13 @@ body {
 .port-in-label:hover .port-in-name { text-decoration: underline; text-underline-offset: 2px; }
 .port-in-label.is-open .port-in-name { color: #4f46e5; }
 .port-in-name {
-  font-size: 13px; font-weight: 650; color: #334155;
-  max-width: 106px; overflow: hidden; text-overflow: ellipsis;
+  font-size: 19px; font-weight: 650; color: #334155;
+  max-width: 140px; overflow: hidden; text-overflow: ellipsis;
 }
 .port-in-label.is-out .port-in-name { color: #0f766e; }
 .port-in-type {
-  font-family: ui-monospace, monospace; font-size: 10px; color: #94a3b8;
-  max-width: 106px; overflow: hidden; text-overflow: ellipsis;
+  font-family: ui-monospace, monospace; font-size: 15px; color: #94a3b8;
+  max-width: 140px; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* Port info popover — opens on click, shows where the port connects + its type. */
@@ -512,7 +537,7 @@ body {
 .process-contract { margin-top: 6px; }
 .contract-recital {
   font-family: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
-  font-size: 14.5px; line-height: 1.6; color: #1e293b;
+  font-size: 18px; line-height: 1.6; color: #1e293b;
   text-align: justify; margin: 0;
 }
 /* Overview tiers (glyph / ports): render the process NAME large + centered,
@@ -522,11 +547,11 @@ body {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center; text-align: center;
 }
-.process-node-glyph .process-node-title { font-size: 46px; line-height: 1.1; overflow-wrap: anywhere; }
-.process-node-ports .process-node-title { font-size: 30px; line-height: 1.15; overflow-wrap: anywhere; }
+.process-node-glyph .process-node-title { font-size: 54px; line-height: 1.1; overflow-wrap: anywhere; }
+.process-node-ports .process-node-title { font-size: 38px; line-height: 1.15; overflow-wrap: anywhere; }
 
-.process-node-title { font-size: 12px; font-weight: 600; color: #1e293b; line-height: 1.25; }
-.process-node-meta  { font-size: 11px; color: #64748b; margin-top: 3px; }
+.process-node-title { font-size: 25px; font-weight: 700; color: #1e293b; line-height: 1.2; }
+.process-node-meta  { font-size: 17px; color: #64748b; margin-top: 4px; }
 
 /* Composite-Process drill affordance: a subtle badge on cards whose inner model
    is itself a composite, plus a one-line hint that double-click opens it. */
@@ -701,7 +726,7 @@ body {
 .loom-crumb-link { color: #2563eb; cursor: pointer; }
 .loom-crumb-link:hover { text-decoration: underline; }
 .process-node-address {
-  font-size: 11px; color: #94a3b8; font-family: ui-monospace, monospace;
+  font-size: 16px; color: #94a3b8; font-family: ui-monospace, monospace;
   margin-top: 4px; overflow-wrap: anywhere;
 }
 .process-node-portlist { margin-top: 5px; border-top: 1px dashed #e5e7eb; padding-top: 4px; }
@@ -765,18 +790,23 @@ body {
   background: #f7f8fb; border: 1px solid #eceefb; border-left: 3px solid #6366f1;
   border-radius: 7px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px; color: #0f172a; line-height: 1.65;
+  font-size: 14px; color: #0f172a; line-height: 1.7;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .process-node-math > div { margin: 0; }
+/* KaTeX-typeset equations: tighten the display margins for the card and let a
+   wide equation scroll horizontally rather than overflow the box. */
+.process-node-math .katex-display { margin: 0.3em 0; overflow-x: auto; overflow-y: hidden; }
+.process-node-math .katex { font-size: 1.32em; }
+.katex-eq { text-align: center; }
 /* Symbol glossary — hanging-indent definition list, symbol in ink. */
 .process-node-symbols {
-  margin-top: 11px; font-size: 12px; color: #475569; line-height: 1.55;
+  margin-top: 11px; font-size: 15px; color: #475569; line-height: 1.55;
 }
 .process-node-symbols > div { padding-left: 1.3em; text-indent: -1.3em; margin: 1px 0; }
 .process-node-symbols em { font-style: italic; font-weight: 600; color: #1e293b; }
 .process-node-description {
-  margin-top: 11px; font-size: 12.5px; color: #475569; line-height: 1.55;
+  margin-top: 11px; font-size: 15px; color: #475569; line-height: 1.55;
   font-family: Georgia, 'Times New Roman', serif;
 }
 .process-node-completeness {
@@ -1773,14 +1803,21 @@ textarea.sr-input {
 .loom-dock-btn:hover { background: #eef2f7; color: #374151; }
 .loom-dock-panel-body { padding: 10px; }
 /* collapsed panel → thin vertical edge tab */
-.loom-dock-tab {
-  writing-mode: vertical-rl;
-  flex: 0 0 auto; align-self: flex-start;
-  border: 0; border-bottom: 1px solid #e5e7eb; background: #fafafa;
-  color: #374151; font-size: 12px; font-weight: 600; text-transform: capitalize;
-  padding: 10px 5px; cursor: pointer;
+/* Collapsed dock panels: a compact horizontal row of thin chips, so several
+   collapsed panels don't each eat a tall vertical strip of the side zone. */
+.loom-dock-tabs-row {
+  display: flex; flex-flow: row wrap; gap: 4px;
+  padding: 6px; align-items: flex-start;
+  border-bottom: 1px solid #e5e7eb;
 }
-.loom-dock-tab:hover { background: #eef2f7; }
+.loom-dock-tab {
+  writing-mode: horizontal-tb;
+  flex: 0 0 auto;
+  border: 1px solid #e5e7eb; border-radius: 4px; background: #fafafa;
+  color: #374151; font-size: 12px; font-weight: 600; text-transform: capitalize;
+  padding: 3px 9px; cursor: pointer; white-space: nowrap;
+}
+.loom-dock-tab:hover { background: #eef2f7; border-color: #cbd5e1; }
 
 /* One-line explanation of the empty-by-default canvas in edge-culling modes.
    Sits top-LEFT: the toolbar owns top-right and React Flow's Controls own

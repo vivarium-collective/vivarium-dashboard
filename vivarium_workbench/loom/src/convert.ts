@@ -312,6 +312,10 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           // A Composite Process (its inner model is itself a composite) — the
           // card gets a drill-in affordance; double-click opens the inner view.
           isCompositeProcess: node.is_composite_process === true,
+          // Draft process: interface-only (ports + contract), NO update dynamics
+          // yet. Badged on the card so `local:X` isn't read as a runnable impl.
+          isDraft: node._draft === true
+            || /draft/i.test(String((node._contract as { status?: string } | undefined)?.status ?? '')),
           // Extra schema data consumed by ProcessNode (as any cast in the component)
           ...(Object.keys(inputPortsSchema).length ? { inputPortsSchema, inputPortsTarget } : {}),
           ...(Object.keys(outputPortsSchema).length ? { outputPortsSchema, outputPortsTarget } : {}),

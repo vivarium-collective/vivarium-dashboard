@@ -111,9 +111,12 @@ describe('ProcessNode tiers', () => {
     expect(screen.queryByText(/p_i = max/)).toBeNull();
   });
 
-  it('contract adds the math lines', () => {
-    renderAt('contract');
-    expect(screen.getByText(/p_i = max/)).toBeTruthy();
+  it('contract adds the math lines (KaTeX-typeset)', () => {
+    const { container } = renderAt('contract');
+    // Equations are typeset with KaTeX (many spans), not a single text node —
+    // assert the math block and a rendered KaTeX root are present.
+    expect(container.querySelector('.process-node-math')).not.toBeNull();
+    expect(container.querySelector('.process-node-math .katex')).not.toBeNull();
   });
 
   it('full adds the completeness indicator', () => {
@@ -136,8 +139,11 @@ describe('ProcessNode tiers', () => {
   });
 
   it('pinned-open renders full detail regardless of tier', () => {
-    renderAt('glyph', { _pinnedOpen: true });
-    expect(screen.getByText(/p_i = max/)).toBeTruthy();
+    // Even at the glyph tier, a pinned-open card shows full detail — which now
+    // includes the KaTeX-typeset math block (equations are spans, not one text
+    // node), so assert the rendered math block rather than raw equation text.
+    const { container } = renderAt('glyph', { _pinnedOpen: true });
+    expect(container.querySelector('.process-node-math .katex')).not.toBeNull();
   });
 
   it('keeps the port handles at every tier so wires still attach', () => {

@@ -62,22 +62,20 @@ async function loadOntoWiringTab(metadata: Record<string, unknown>) {
 }
 
 describe('cluster-grid graph — App focus wiring', () => {
-  it('is focus-driven: shows the focus hint and highlights on click', async () => {
+  it('does not focus-cull a small graph: no focus hint, no pinned state', async () => {
     render(<App />);
     window.history.pushState({}, '', '?static=1');
     postCompositeLoad(ONE_PROCESS_STATE, { id: 'test.composites.hover-a', name: 'hover-a' });
     fireEvent.click(screen.getByRole('button', { name: /^Explore$/i }));
     await canvas().findByText('p1');
 
-    // Focus-driven mode → the focus hint is present, prompting interaction.
-    const hint = document.querySelector('.loom-focus-hint');
-    expect(hint).not.toBeNull();
-    expect(hint?.textContent).toMatch(/highlight its wiring/i);
-
-    // Clicking a canvas process focuses it → the hint reports it as highlighted.
+    // Focus-culling (hover / pin to reveal wiring) is a DENSITY tool now gated
+    // to large graphs (>120 wires). A small composite shows all wires in every
+    // mode — so there is no focus hint, and clicking a process does not enter a
+    // "pinned" state. (Consistent wiring across ○ / ↓ / → modes.)
+    expect(document.querySelector('.loom-focus-hint')).toBeNull();
     fireEvent.click(canvas().getByText('p1'));
-    expect(document.querySelector('.loom-focus-hint')?.textContent)
-      .toMatch(/highlighting wiring for 1 node/i);
+    expect(document.querySelector('.loom-focus-hint')).toBeNull();
   });
 
   it('stamps the semantic-zoom tier onto its cards', async () => {
