@@ -261,10 +261,13 @@ def _validate_study_v4_redesign(spec: dict) -> None:
         raise InvestigationSpecError("v4 study: 'conditions' must be a mapping")
 
     baseline = cond.get("baseline")
-    if not isinstance(baseline, dict) or not baseline.get("composite"):
+    if not isinstance(baseline, dict) or not (
+        baseline.get("composite") or baseline.get("step") or baseline.get("process")
+    ):
         raise InvestigationSpecError(
             "v4 study: conditions.baseline must be a mapping with at least a "
-            "'composite' key (dotted path to the composite function)"
+            "'composite' key (dotted path to the composite function) — or a "
+            "'step'/'process' dotted address for a bare Step/Process baseline"
         )
 
     variants = cond.get("variants", [])
@@ -441,6 +444,19 @@ def _project_v4_redesign_to_legacy_view(spec: dict) -> dict:
                 eff_bl_params = dict(top_bl[0].get("params") or {})
                 eff_bl_name = top_bl[0].get("name") or baseline_name
 
+        # A bare Step/Process baseline has no ``composite``; fall back to its
+        # dotted address (conditions.baseline.step/process, else the top-level
+        # v3 baseline list) so the canonical run set — and every surface derived
+        # from it (report "What we ran", Build/Conditions tab) — still renders a
+        # baseline entry instead of showing blank.
+        eff_bl_model = eff_bl_composite
+        if not eff_bl_model:
+            top_bl0 = out.get("baseline")
+            top_bl0 = top_bl0[0] if (isinstance(top_bl0, list) and top_bl0
+                                     and isinstance(top_bl0[0], dict)) else {}
+            eff_bl_model = (bl.get("step") or bl.get("process")
+                            or top_bl0.get("step") or top_bl0.get("process"))
+
         # Effective variants — union of conditions.variants and any top-level
         # variants list (de-duplicated by name; conditions wins).
         eff_variants = [v for v in new_variants if isinstance(v, dict)]
@@ -468,11 +484,11 @@ def _project_v4_redesign_to_legacy_view(spec: dict) -> dict:
                 seen_names.add(iv.get("name"))
 
         sim_set = []
-        if eff_bl_composite:
+        if eff_bl_model:
             sim_set.append({
                 "name":        eff_bl_name + "-baseline",
                 "kind":        "single",
-                "base_model":  eff_bl_composite,
+                "base_model":  eff_bl_model,
                 "is_baseline": True,
                 "description": "Reference run for the study — variants below perturb this.",
                 "params":      {**model_settings, **eff_bl_params},
@@ -481,7 +497,7 @@ def _project_v4_redesign_to_legacy_view(spec: dict) -> dict:
             sim_set.append({
                 "name":        v.get("name"),
                 "kind":        v.get("kind", "single"),
-                "base_model":  v.get("composite") or v.get("base_composite") or eff_bl_composite,
+                "base_model":  v.get("composite") or v.get("base_composite") or eff_bl_model,
                 "description": v.get("description", ""),
                 "params":      {**model_settings, **dict(v.get("parameter_overrides") or v.get("params") or {})},
                 "status":      v.get("status", "ready"),

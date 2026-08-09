@@ -13897,11 +13897,17 @@
         links.push('<a href="#' + sid.discovery + '">Discovery implications'
                    + (_nDisc ? ' <span class="sn-count">' + _nDisc + '</span>' : '') + '</a>');
       }
-      // Conditions sub-nav link: rendered when v4 ``conditions:`` exists.
+      // Conditions sub-nav link: rendered when the Conditions section will
+      // render — i.e. a v4 ``conditions:`` block, a server-folded
+      // ``simulation_set``, or (v3-shaped) a top-level ``baseline:`` list that
+      // _renderConditionsBlock now derives from.
       var _cond = (s.conditions && typeof s.conditions === 'object') ? s.conditions : null;
       var _nVar = (_cond && _cond.variants || []).length;
       var _nEI  = (_cond && (_cond.model_settings || _cond.expert_inputs) || []).length;
-      if (_cond) {
+      var _hasCond = !!_cond
+                     || (Array.isArray(s.simulation_set) && s.simulation_set.length)
+                     || (Array.isArray(s.baseline) && s.baseline.length);
+      if (_hasCond) {
         var _condCount = _nVar + _nEI;
         links.push('<a href="#' + sid.conditions + '">Conditions ' +
                    (_condCount ? '<span class="sn-count">' + _condCount + '</span>' : '') + '</a>');
@@ -15345,6 +15351,29 @@
           }
         });
         cond = {baseline: _derivedBaseline, variants: _derivedVariants, model_settings: []};
+      }
+      // Third fallback — v3-shaped studies that declare their setup ONLY as a
+      // top-level ``baseline:`` (+ ``variants:``) list and carry no ``conditions:``
+      // block and no server-folded ``simulation_set`` (migrate_v3_to_v4 doesn't
+      // synthesize one). Derive the conditions table straight from those lists so
+      // the "Conditions — what we set up to test it" section isn't blank by
+      // default. Handles a Step/Process baseline (no ``composite``) by using its
+      // dotted address, mirroring how the simulation_set fallback treats base_model.
+      if (!cond && Array.isArray(s.baseline) && s.baseline.length) {
+        var _b0 = s.baseline[0] || {};
+        var _bModel = _b0.composite || _b0.step || _b0.process || '';
+        var _dv = (Array.isArray(s.variants) ? s.variants : []).map(function(v) {
+          return {
+            name: v.name,
+            composite: v.composite || v.base_composite,
+            parameter_overrides: v.parameter_overrides || v.params || {},
+            description: v.description || v.notes || ''
+          };
+        });
+        if (_bModel || _dv.length) {
+          cond = {baseline: {composite: _bModel, params: _b0.params || {}},
+                  variants: _dv, model_settings: []};
+        }
       }
       if (!cond) return '';
       var baseline = cond.baseline || {};
