@@ -435,19 +435,33 @@ def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
     return out
 
 
-def _study_run_uid(study_slug: str, entry) -> "str | None":
+def _study_has_run_store(study_dir: "Path") -> bool:
+    """True if a study directory has its own run store (runs.db / parquet / zarr).
+    Such a study records real runs by their global id in each run's ``name``, so
+    those must not be study-prefixed (they merge with the store rows)."""
+    try:
+        study_dir = Path(study_dir)
+        return ((study_dir / "runs.db").exists()
+                or (study_dir / "parquet-runs").is_dir()
+                or (study_dir / "runs").is_dir())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _study_run_uid(study_slug: str, entry, has_store: bool = False) -> "str | None":
     """Workspace-unique run id for a study.yaml ``runs[]`` entry.
 
     A DICT entry that only *defines* a study-local run by ``name`` (e.g.
-    ``{name: baseline, status: completed}``) is unique within its study but not
-    across the workspace, so different studies' name-runs would collide in the
-    run-id-keyed index and collapse to one. Prefix those with the study slug
-    (``<slug>:<name>``).
+    ``{name: baseline, status: completed}``) in a STORE-LESS study is unique
+    within its study but not across the workspace, so different studies'
+    name-runs would collide in the run-id-keyed index and collapse to one.
+    Prefix those with the study slug (``<slug>:<name>``).
 
-    A run carrying an explicit ``run_id``/``simulation_id``, or a bare STRING
-    entry (``runs: ["shared"]``), is a *reference* to a global run id — possibly
-    one shared across studies (see ``run_to_studies``) or backed by a runs.db —
-    so it is used verbatim and still merges/shares.
+    Everything else is a *reference* to a global run id — used verbatim so it
+    still merges/shares: a bare STRING entry (``runs: ["shared"]``), an explicit
+    ``run_id``/``simulation_id``, or ANY entry in a study that has its own run
+    store (``has_store``), where the runner records real runs by their global id
+    in ``name`` (prefixing those would duplicate them against the store rows).
     """
     if isinstance(entry, str):
         return entry or None
@@ -457,7 +471,9 @@ def _study_run_uid(study_slug: str, entry) -> "str | None":
     if isinstance(uid, str) and uid:
         return uid
     name = entry.get("name") or entry.get("simulation")
-    return f"{study_slug}:{name}" if isinstance(name, str) and name else None
+    if not (isinstance(name, str) and name):
+        return None
+    return name if has_store else f"{study_slug}:{name}"
 
 
 # Run kinds that do NOT execute a composite — cross-study/meta aggregations. The
@@ -592,10 +608,11 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
         # (mbp-style studies declare it once under conditions.baseline).
         declared_composite = _study_declared_composite(data)
         declared_params = _study_declared_params(data)
+        has_store = _study_has_run_store(sdir)
         for entry in runs:
             if not isinstance(entry, dict):
                 continue
-            rid = _study_run_uid(sdir.name, entry)
+            rid = _study_run_uid(sdir.name, entry, has_store)
             if not rid:
                 continue
             _name = entry.get("name") or entry.get("simulation")
@@ -653,10 +670,11 @@ def _build_run_to_studies_map(workspace: Path) -> dict[str, list[str]]:
             data = yaml.safe_load(yml.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError:
             continue
+        has_store = _study_has_run_store(sdir)
         for entry in (data.get("runs") or []) if isinstance(data, dict) else []:
             # Same workspace-unique id the rows use, so the association matches
             # after dedup (name-runs are study-scoped, not global).
-            rid = _study_run_uid(sdir.name, entry)
+            rid = _study_run_uid(sdir.name, entry, has_store)
             if rid:
                 result.setdefault(rid, []).append(sdir.name)
     return result
@@ -1214,12 +1232,13 @@ def _rewrite_study_yaml_without(yaml_path: Path, run_id: str) -> bool:
     if not isinstance(runs, list):
         return False
     study_slug = yaml_path.parent.name
+    has_store = _study_has_run_store(yaml_path.parent)
     new_runs: list = []
     changed = False
     for entry in runs:
         # Match on the same workspace-unique id the index exposes (name-runs are
         # prefixed <slug>:<name>; explicit run_id/simulation_id runs are verbatim).
-        if _study_run_uid(study_slug, entry) == run_id:
+        if _study_run_uid(study_slug, entry, has_store) == run_id:
             changed = True
             continue
         new_runs.append(entry)

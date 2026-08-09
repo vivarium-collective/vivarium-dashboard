@@ -1070,3 +1070,19 @@ def test_study_with_atlas_pack_advertises_capability(tmp_path):
     sims = list_simulations(ws)
     row = next(s for s in sims if s.get("study_slug") == "atlas-study")
     assert "atlas_pack" in (row.get("capabilities") or [])
+
+
+def test_runner_recorded_runs_not_prefixed_when_study_has_store(tmp_path):
+    """A study with its own runs.db records real runs by their global id in each
+    run's `name`; those must stay verbatim (merge with the store row), NOT get
+    study-prefixed — otherwise running a study duplicates every row."""
+    ws = tmp_path / "ws"
+    sdir = ws / "studies" / "s"
+    sdir.mkdir(parents=True)
+    _seed_run(sdir / "runs.db", spec_id="pkg.x", run_id="run-abc", started_at=1.0)
+    (sdir / "study.yaml").write_text(yaml.safe_dump(
+        {"name": "s", "runs": [{"name": "run-abc", "status": "completed"}]}))
+    sims = list_simulations(ws)
+    ids = {s["run_id"] for s in sims}
+    # one row, verbatim id (store row + study.yaml entry merged), no "s:run-abc"
+    assert ids == {"run-abc"}
