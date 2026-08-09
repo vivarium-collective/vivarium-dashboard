@@ -1646,8 +1646,13 @@
         // hosted 3D viewer) — it opens directly in BOTH live and read-only,
         // since it needs no local launch backend. Otherwise fall back to the
         // live Launch button / the read-only "local workbench" note.
+        // A workspace-root-absolute href (/studies/…) must carry the hosting
+        // base path in the snapshot, or it 404s to the domain root; an external
+        // (http/protocol-relative) href opens as-is. Mirrors sim-table.toolsCell.
+        var _bp = window.__BASE_PATH__ || '';
+        var _openHref = (t.href && /^https?:|^\/\//.test(t.href)) ? t.href : (_bp + (t.href || ''));
         var action = t.href
-          ? '<a class="btn-mini" href="' + _esc(t.href) + '" target="_blank" rel="noopener">Open</a>'
+          ? '<a class="btn-mini" href="' + _esc(_openHref) + '" target="_blank" rel="noopener">Open ↗</a>'
           : (_isSnapshot
           ? '<span class="muted" style="font-size:0.8em">Launch from the local workbench</span>'
           : '<button class="btn-mini" onclick="_launchViewer(\'' + _esc(v.uid) + '\',\'' + _esc(t.study) + '\')">Launch</button>');
