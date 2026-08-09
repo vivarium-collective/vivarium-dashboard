@@ -408,6 +408,31 @@ def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
     return out
 
 
+def _study_run_uid(study_slug: str, entry) -> "str | None":
+    """Workspace-unique run id for a study.yaml ``runs[]`` entry.
+
+    A DICT entry that only *defines* a study-local run by ``name`` (e.g.
+    ``{name: baseline, status: completed}``) is unique within its study but not
+    across the workspace, so different studies' name-runs would collide in the
+    run-id-keyed index and collapse to one. Prefix those with the study slug
+    (``<slug>:<name>``).
+
+    A run carrying an explicit ``run_id``/``simulation_id``, or a bare STRING
+    entry (``runs: ["shared"]``), is a *reference* to a global run id — possibly
+    one shared across studies (see ``run_to_studies``) or backed by a runs.db —
+    so it is used verbatim and still merges/shares.
+    """
+    if isinstance(entry, str):
+        return entry or None
+    if not isinstance(entry, dict):
+        return None
+    uid = entry.get("run_id") or entry.get("simulation_id")
+    if isinstance(uid, str) and uid:
+        return uid
+    name = entry.get("name") or entry.get("simulation")
+    return f"{study_slug}:{name}" if isinstance(name, str) and name else None
+
+
 # Run kinds that do NOT execute a composite — cross-study/meta aggregations. The
 # study-declared-composite fallback is not applied to these (attributing the
 # study's composite to them would misrepresent what ran). Extend if new pure-meta
@@ -543,9 +568,7 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
         for entry in runs:
             if not isinstance(entry, dict):
                 continue
-            rid = str(entry.get("run_id") or entry.get("name")
-                      or entry.get("simulation_id") or entry.get("simulation")
-                      or "").strip()
+            rid = _study_run_uid(sdir.name, entry)
             if not rid:
                 continue
             _name = entry.get("name") or entry.get("simulation")
@@ -595,8 +618,16 @@ def _build_run_to_studies_map(workspace: Path) -> dict[str, list[str]]:
         yml = sdir / "study.yaml"
         if not yml.is_file():
             continue
-        for rid in _study_yaml_run_ids(yml):
-            result.setdefault(rid, []).append(sdir.name)
+        try:
+            data = yaml.safe_load(yml.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        for entry in (data.get("runs") or []) if isinstance(data, dict) else []:
+            # Same workspace-unique id the rows use, so the association matches
+            # after dedup (name-runs are study-scoped, not global).
+            rid = _study_run_uid(sdir.name, entry)
+            if rid:
+                result.setdefault(rid, []).append(sdir.name)
     return result
 
 
@@ -1151,17 +1182,15 @@ def _rewrite_study_yaml_without(yaml_path: Path, run_id: str) -> bool:
     runs = data.get("runs") or []
     if not isinstance(runs, list):
         return False
+    study_slug = yaml_path.parent.name
     new_runs: list = []
     changed = False
     for entry in runs:
-        if isinstance(entry, str):
-            if entry == run_id:
-                changed = True
-                continue
-        elif isinstance(entry, dict):
-            if entry.get("run_id") == run_id:
-                changed = True
-                continue
+        # Match on the same workspace-unique id the index exposes (name-runs are
+        # prefixed <slug>:<name>; explicit run_id/simulation_id runs are verbatim).
+        if _study_run_uid(study_slug, entry) == run_id:
+            changed = True
+            continue
         new_runs.append(entry)
     if not changed:
         return False
