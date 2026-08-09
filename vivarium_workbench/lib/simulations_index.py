@@ -164,6 +164,30 @@ def discover_default_baseline_db(workspace: Path) -> Path | None:
     return p if p.is_file() else None
 
 
+def _study_pack_capabilities(study_slug) -> list[str]:
+    """Study-level pack capabilities that don't depend on a run store.
+
+    A study that materialized an HRA atlas pack (``viz/atlas/atlas.json``)
+    advertises ``atlas_pack`` — the run's output IS the pack an atlas viewer
+    consumes as input — so the viewer matches the study's run even when the run
+    emitted no observable store (e.g. a bare Step that writes a pack)."""
+    if not study_slug:
+        return []
+    try:
+        ws = _root.workspace_root()
+    except Exception:  # noqa: BLE001
+        ws = None
+    if not ws:
+        return []
+    try:
+        studies = WorkspacePaths.load(ws).studies
+        if (studies / str(study_slug) / "viz" / "atlas" / "atlas.json").is_file():
+            return ["atlas_pack"]
+    except Exception:  # noqa: BLE001 — best-effort; never break capability derivation
+        pass
+    return []
+
+
 def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     """Capabilities for one runs_meta row: cached value, else derive.
 
@@ -180,6 +204,9 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
                 return parsed
         except Exception:  # noqa: BLE001
             pass
+    # Study-level pack capabilities are independent of any run store — a run that
+    # only wrote a pack (no observable store) still advertises them.
+    pack_caps = _study_pack_capabilities(row.get("study_slug"))
     # `row` may carry any of these three; store_path/emitter_path are absent
     # on plain runs_meta dicts unless the caller added them. `store_path` is
     # not an actual runs_meta column (it's a value some callers synthesize
@@ -188,7 +215,7 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     # emitters, and as the last-resort fallback).
     store = row.get("store_path") or row.get("emitter_path") or row.get("db_path")
     if not store:
-        return []
+        return pack_caps
     # Store paths in runs_meta are workspace-RELATIVE (e.g. ``.pbg/runs/<id>``),
     # so the reader needs the workspace root to resolve them — without it every
     # run derives ``[]``. Use the effective (per-request or process-default)
@@ -204,7 +231,7 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
             write_run_capabilities(conn, row["run_id"], tags)
         except Exception:  # noqa: BLE001 — caching is best-effort
             pass
-    return tags
+    return sorted(set(tags) | set(pack_caps))
 
 
 def _row_to_dict(row, db_path_str: str) -> dict:
@@ -581,6 +608,10 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
             _fallback = None if entry.get("kind") in _NON_COMPOSITE_RUN_KINDS else declared_composite
             out.append({
                 "run_id": rid,
+                # Study-level pack capabilities (e.g. atlas_pack) apply even to a
+                # store-less study.yaml run, so a viewer that consumes the study's
+                # pack matches this run in the Tools column.
+                "capabilities": _study_pack_capabilities(sdir.name),
                 "spec_id": _entry_composite or _fallback,
                 "config": _run_entry_config(entry, declared_params),
                 "sim_name": _name or rid,
@@ -1624,6 +1655,14 @@ def build_simulations_data(ws_root: Path) -> dict:
     import sys as _sys
     if ws not in _sys.path:
         _sys.path.insert(0, ws)
+    # Capability derivation (run stores + study pack detection) resolves paths
+    # against the global workspace root; the publish/CLI seam may not have set it
+    # yet, in which case every run backfilled below would freeze at capabilities
+    # []. Set it here so the snapshot carries capabilities (and matched Tools).
+    try:
+        _root.set_workspace_root(Path(ws_root))
+    except Exception:  # noqa: BLE001 — best-effort; never break the data build
+        pass
 
     # Pure-JSONL Simulations DB: migrate any runs still living only in the legacy
     # stores (sqlite runs.db / study.yaml / parquet-zarr hives) into the

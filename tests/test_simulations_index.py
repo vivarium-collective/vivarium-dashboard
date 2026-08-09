@@ -1053,3 +1053,20 @@ def test_dict_name_runs_are_study_scoped_not_collapsed(tmp_path):
     assert set(by) == {"study-a:baseline", "study-b:baseline"}
     assert by["study-a:baseline"] == "study-a"
     assert by["study-b:baseline"] == "study-b"
+
+
+def test_study_with_atlas_pack_advertises_capability(tmp_path):
+    """A study that materialized viz/atlas/atlas.json advertises the ``atlas_pack``
+    capability on its (store-less) run, so an atlas viewer requiring atlas_pack
+    matches the run in the Tools column — output(pack) == input(viewer)."""
+    from vivarium_workbench.lib import _root
+    ws = tmp_path / "ws"
+    sdir = ws / "studies" / "atlas-study"
+    (sdir / "viz" / "atlas").mkdir(parents=True)
+    (sdir / "viz" / "atlas" / "atlas.json").write_text("{}")
+    (sdir / "study.yaml").write_text(yaml.safe_dump(
+        {"name": "atlas-study", "runs": [{"name": "baseline", "status": "completed"}]}))
+    _root.set_workspace_root(ws.resolve())
+    sims = list_simulations(ws)
+    row = next(s for s in sims if s.get("study_slug") == "atlas-study")
+    assert "atlas_pack" in (row.get("capabilities") or [])
