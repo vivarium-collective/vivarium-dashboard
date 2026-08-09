@@ -20612,6 +20612,19 @@
     if (key === 'run') return String(row.sim_name || row.label || row.run_id || '').toLowerCase();
     if (key === 'composite') return String(row.spec_id || '').toLowerCase();
     if (key === 'status') return String(row.status || '').toLowerCase();
+    if (key === 'location') return String(row.store_path || row.db_path || '').toLowerCase();
+    if (key === 'config') {
+      var c = row.config || {};
+      return Object.keys(c).length ? JSON.stringify(c).toLowerCase() : '';
+    }
+    // Tools: sort by the matched tool's label so runs that have a tool (e.g. the
+    // atlas run → "HRA Computational Model Atlas") group together and, on the
+    // first (ascending) click, rise to the TOP; tool-less runs get a high
+    // sentinel so they sink. Clicking Tools thus surfaces the tool-linked runs.
+    if (key === 'tools') {
+      var mt = row.matched_tools || [];
+      return mt.length ? String(mt[0].label || mt[0].id || '').toLowerCase() : '\uffff';
+    }
     return '';
   }
 

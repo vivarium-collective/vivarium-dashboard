@@ -466,7 +466,7 @@
     { label: "Origin", key: "origin", id: "origin" },
     { label: "Emitter", key: "emitter", id: "emitter", html: function (row) { return emitterPill(row.emitter_type); } },
     { label: "Time", key: "time", id: "time" }, { label: "Status", key: "status", id: "status" },
-    { label: "Tools", key: null, id: "tools" }, { label: "", key: null, id: "actions" },
+    { label: "Tools", key: "tools", id: "tools" }, { label: "", key: null, id: "actions" },
   ];
 
   // Generic pre-render pass (Fable A #2 / study-design-fable-pass spec R3):
@@ -497,6 +497,17 @@
     if (key === "status") return String(row.status || "").toLowerCase();
     if (key === "location") return String(row.store_path || row.db_path || "").toLowerCase();
     if (key === "run") return String(row.sim_name || row.label || row.run_id || "").toLowerCase();
+    if (key === "config") {
+      var c = row.config || {};
+      return Object.keys(c).length ? JSON.stringify(c).toLowerCase() : "";
+    }
+    // Tools: matched-tool label, tool-less rows to the end (see walkthrough.js's
+    // _simSortValue for the same convention) so clicking Tools groups the
+    // tool-linked runs and floats them up on the first (ascending) click.
+    if (key === "tools") {
+      var mt = row.matched_tools || [];
+      return mt.length ? String(mt[0].label || mt[0].id || "").toLowerCase() : "\uffff";
+    }
     return "";
   }
 
