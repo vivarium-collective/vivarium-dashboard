@@ -103,9 +103,19 @@ def build_investigation_graph(ws_root: Path, inv_slug: str) -> tuple[dict, int]:
                     _node_status = "evaluated"
             except Exception:  # noqa: BLE001
                 pass
-        studies_out.append({"id": f"study/{slug}", "slug": slug, "type": "study",
-                            "label": study_spec.get("title") or study_spec.get("name") or slug,
-                            "status": _node_status})
+        _node = {"id": f"study/{slug}", "slug": slug, "type": "study",
+                 "label": study_spec.get("title") or study_spec.get("name") or slug,
+                 "status": _node_status}
+        # Canonical display confidence (Accepted/Investigating/Refuted/Planned)
+        # derived from the same verdict the rail dot reads, so the graph node and
+        # the rail never disagree. The frontend prefers this over its own
+        # status-fallback derivation (`s.confidence || …`). Derive-only; optional.
+        try:
+            from viva_superpowers.study_verdict import derive_confidence as _dc
+            _node["confidence"] = _dc(study_spec)
+        except Exception:  # noqa: BLE001 — viva_superpowers optional; frontend falls back
+            pass
+        studies_out.append(_node)
         if use_members:
             # New reference model: edges are derived from this member's
             # declared interface inputs, restricted to other members.
