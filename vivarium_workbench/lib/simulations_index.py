@@ -231,7 +231,13 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
             write_run_capabilities(conn, row["run_id"], tags)
         except Exception:  # noqa: BLE001 — caching is best-effort
             pass
-    return sorted(set(tags) | set(pack_caps))
+    # Preserve the derived tag order (tests + UI rely on it); append any pack
+    # capabilities not already present.
+    out = list(tags)
+    for c in pack_caps:
+        if c not in out:
+            out.append(c)
+    return out
 
 
 def _row_to_dict(row, db_path_str: str) -> dict:
