@@ -534,8 +534,11 @@ def test_build_bundle_default_base_path_unchanged(tmp_workspace, tmp_path):
 
     home_html = (out / "index.html").read_text()
 
-    # basePath must NOT be injected into __DASH_CONFIG__
-    assert 'basePath' not in home_html, \
+    # basePath must NOT be injected into __DASH_CONFIG__ by default. Match the
+    # injected KEY literal (`basePath: "…"`, publish._snapshot_config), not the
+    # bare word — the template legitimately READS `__DASH_CONFIG__.basePath` to
+    # derive window.__BASE_PATH__, which must not trip this check.
+    assert 'basePath:' not in home_html, \
         "basePath injected into __DASH_CONFIG__ by default (should only appear when set)"
 
     # Asset URLs must be root-absolute (not double-prefixed or missing)

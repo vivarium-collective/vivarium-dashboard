@@ -2098,6 +2098,15 @@ Nothing on <code id="pr-base-display-2">main</code> changes until someone presse
      local-server mode (default) fetches from the same-origin /api/* endpoints.
      Hosted mode (sub-projects #2/#3) will set a different config here. -->
 <script>window.__DASH_CONFIG__ = { mode: "local-server" };</script>
+<!-- Derive the global URL prefix from the (possibly publish-injected) config.
+     Many renderers prefix workspace-root-absolute links (/studies/, /api/)
+     with window.__BASE_PATH__ so they resolve when the read-only bundle is
+     hosted under a subpath (e.g. /viva-human-atlas/dashboard). Nothing set it,
+     so every such deep-link 404'd in the snapshot; source it from
+     __DASH_CONFIG__.basePath here (empty for root/local hosting). Kept as a
+     SEPARATE tag after the config line publish.py rewrites, so it always reads
+     the injected basePath. -->
+<script>window.__BASE_PATH__ = (window.__DASH_CONFIG__ && window.__DASH_CONFIG__.basePath) || "";</script>
 <script src="assets/data-source.js"></script>
 <script src="assets/render-helpers.js"></script>
 <script src="assets/client.js" onerror="/* live mode unavailable */"></script>
