@@ -180,3 +180,33 @@ def test_v4_behavior_tests_projection_carries_classification(tmp_path):
     by_name = {t["name"]: t for t in bt}
     assert by_name["t-primary"]["classification"] == "primary"
     assert by_name["t-decision"]["classification"] == "decision"
+
+
+def _v3_with_baseline(tmp_path, baseline_entry):
+    spec = dict(_V3_STUDY_BASE)
+    spec["baseline"] = [baseline_entry]
+    p = tmp_path / "study.yaml"
+    p.write_text(yaml.safe_dump(spec))
+    return p
+
+
+def test_load_spec_v3_baseline_step(tmp_path):
+    """A study baseline may reference a bare process-bigraph Step directly
+    (baseline.step) instead of a full composite — the workbench runs either."""
+    p = _v3_with_baseline(tmp_path, {"name": "b", "step": "local:pkg.mod.MyStep"})
+    spec = load_spec(p)
+    assert spec["baseline"][0]["step"] == "local:pkg.mod.MyStep"
+
+
+def test_load_spec_v3_baseline_process(tmp_path):
+    """A study baseline may reference a bare Process directly (baseline.process)."""
+    p = _v3_with_baseline(tmp_path, {"name": "b", "process": "local:pkg.mod.MyProcess"})
+    spec = load_spec(p)
+    assert spec["baseline"][0]["process"] == "local:pkg.mod.MyProcess"
+
+
+def test_load_spec_v3_baseline_requires_composite_step_or_process(tmp_path):
+    """A baseline entry with none of composite/step/process is rejected."""
+    p = _v3_with_baseline(tmp_path, {"name": "b"})
+    with pytest.raises(InvestigationSpecError, match="composite.*step.*process"):
+        load_spec(p)

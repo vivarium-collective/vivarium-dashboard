@@ -144,8 +144,12 @@ def _validate_study_v3_or_v4(spec: dict) -> None:
             raise InvestigationSpecError(f"v3 study: baseline[{i}] must be a mapping")
         if not c.get("name"):
             raise InvestigationSpecError(f"v3 study: baseline[{i}].name is required")
-        if not c.get("composite"):
-            raise InvestigationSpecError(f"v3 study: baseline[{i}].composite is required")
+        # A baseline is executable as a full composite OR as a single bare
+        # process-bigraph Step/Process referenced directly (baseline.step /
+        # baseline.process) — the workbench runs any of the three; require one.
+        if not (c.get("composite") or c.get("step") or c.get("process")):
+            raise InvestigationSpecError(
+                f"v3 study: baseline[{i}] requires one of 'composite', 'step', or 'process'")
 
     baseline_names = {c["name"] for c in baseline}
     variants = spec.get("variants", [])

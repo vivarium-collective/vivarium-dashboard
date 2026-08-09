@@ -164,6 +164,30 @@ def discover_default_baseline_db(workspace: Path) -> Path | None:
     return p if p.is_file() else None
 
 
+def _study_pack_capabilities(study_slug) -> list[str]:
+    """Study-level pack capabilities that don't depend on a run store.
+
+    A study that materialized an HRA atlas pack (``viz/atlas/atlas.json``)
+    advertises ``atlas_pack`` — the run's output IS the pack an atlas viewer
+    consumes as input — so the viewer matches the study's run even when the run
+    emitted no observable store (e.g. a bare Step that writes a pack)."""
+    if not study_slug:
+        return []
+    try:
+        ws = _root.workspace_root()
+    except Exception:  # noqa: BLE001
+        ws = None
+    if not ws:
+        return []
+    try:
+        studies = WorkspacePaths.load(ws).studies
+        if (studies / str(study_slug) / "viz" / "atlas" / "atlas.json").is_file():
+            return ["atlas_pack"]
+    except Exception:  # noqa: BLE001 — best-effort; never break capability derivation
+        pass
+    return []
+
+
 def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     """Capabilities for one runs_meta row: cached value, else derive.
 
@@ -180,6 +204,9 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
                 return parsed
         except Exception:  # noqa: BLE001
             pass
+    # Study-level pack capabilities are independent of any run store — a run that
+    # only wrote a pack (no observable store) still advertises them.
+    pack_caps = _study_pack_capabilities(row.get("study_slug"))
     # `row` may carry any of these three; store_path/emitter_path are absent
     # on plain runs_meta dicts unless the caller added them. `store_path` is
     # not an actual runs_meta column (it's a value some callers synthesize
@@ -188,7 +215,7 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     # emitters, and as the last-resort fallback).
     store = row.get("store_path") or row.get("emitter_path") or row.get("db_path")
     if not store:
-        return []
+        return pack_caps
     # Store paths in runs_meta are workspace-RELATIVE (e.g. ``.pbg/runs/<id>``),
     # so the reader needs the workspace root to resolve them — without it every
     # run derives ``[]``. Use the effective (per-request or process-default)
@@ -204,7 +231,13 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
             write_run_capabilities(conn, row["run_id"], tags)
         except Exception:  # noqa: BLE001 — caching is best-effort
             pass
-    return tags
+    # Preserve the derived tag order (tests + UI rely on it); append any pack
+    # capabilities not already present.
+    out = list(tags)
+    for c in pack_caps:
+        if c not in out:
+            out.append(c)
+    return out
 
 
 def _row_to_dict(row, db_path_str: str) -> dict:
@@ -408,6 +441,47 @@ def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
     return out
 
 
+def _study_has_run_store(study_dir: "Path") -> bool:
+    """True if a study directory has its own run store (runs.db / parquet / zarr).
+    Such a study records real runs by their global id in each run's ``name``, so
+    those must not be study-prefixed (they merge with the store rows)."""
+    try:
+        study_dir = Path(study_dir)
+        return ((study_dir / "runs.db").exists()
+                or (study_dir / "parquet-runs").is_dir()
+                or (study_dir / "runs").is_dir())
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _study_run_uid(study_slug: str, entry, has_store: bool = False) -> "str | None":
+    """Workspace-unique run id for a study.yaml ``runs[]`` entry.
+
+    A DICT entry that only *defines* a study-local run by ``name`` (e.g.
+    ``{name: baseline, status: completed}``) in a STORE-LESS study is unique
+    within its study but not across the workspace, so different studies'
+    name-runs would collide in the run-id-keyed index and collapse to one.
+    Prefix those with the study slug (``<slug>:<name>``).
+
+    Everything else is a *reference* to a global run id — used verbatim so it
+    still merges/shares: a bare STRING entry (``runs: ["shared"]``), an explicit
+    ``run_id``/``simulation_id``, or ANY entry in a study that has its own run
+    store (``has_store``), where the runner records real runs by their global id
+    in ``name`` (prefixing those would duplicate them against the store rows).
+    """
+    if isinstance(entry, str):
+        return entry or None
+    if not isinstance(entry, dict):
+        return None
+    uid = entry.get("run_id") or entry.get("simulation_id")
+    if isinstance(uid, str) and uid:
+        return uid
+    name = entry.get("name") or entry.get("simulation")
+    if not (isinstance(name, str) and name):
+        return None
+    return name if has_store else f"{study_slug}:{name}"
+
+
 # Run kinds that do NOT execute a composite — cross-study/meta aggregations. The
 # study-declared-composite fallback is not applied to these (attributing the
 # study's composite to them would misrepresent what ran). Extend if new pure-meta
@@ -458,6 +532,14 @@ def _study_declared_composite(data: dict) -> str | None:
         for variant in baseline:
             if isinstance(variant, dict) and isinstance(variant.get("composite"), str):
                 return variant["composite"]
+        # A bare Step/Process baseline (baseline.step / baseline.process) has no
+        # composite; use its address as the run's spec_id so step/process-baseline
+        # study runs still surface in the Simulations DB.
+        for variant in baseline:
+            if isinstance(variant, dict):
+                ref = variant.get("step") or variant.get("process")
+                if isinstance(ref, str) and ref:
+                    return ref
     return None
 
 
@@ -532,12 +614,11 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
         # (mbp-style studies declare it once under conditions.baseline).
         declared_composite = _study_declared_composite(data)
         declared_params = _study_declared_params(data)
+        has_store = _study_has_run_store(sdir)
         for entry in runs:
             if not isinstance(entry, dict):
                 continue
-            rid = str(entry.get("run_id") or entry.get("name")
-                      or entry.get("simulation_id") or entry.get("simulation")
-                      or "").strip()
+            rid = _study_run_uid(sdir.name, entry, has_store)
             if not rid:
                 continue
             _name = entry.get("name") or entry.get("simulation")
@@ -550,6 +631,10 @@ def _read_study_yaml_runs(workspace: Path) -> list[dict]:
             _fallback = None if entry.get("kind") in _NON_COMPOSITE_RUN_KINDS else declared_composite
             out.append({
                 "run_id": rid,
+                # Study-level pack capabilities (e.g. atlas_pack) apply even to a
+                # store-less study.yaml run, so a viewer that consumes the study's
+                # pack matches this run in the Tools column.
+                "capabilities": _study_pack_capabilities(sdir.name),
                 "spec_id": _entry_composite or _fallback,
                 "config": _run_entry_config(entry, declared_params),
                 "sim_name": _name or rid,
@@ -587,8 +672,17 @@ def _build_run_to_studies_map(workspace: Path) -> dict[str, list[str]]:
         yml = sdir / "study.yaml"
         if not yml.is_file():
             continue
-        for rid in _study_yaml_run_ids(yml):
-            result.setdefault(rid, []).append(sdir.name)
+        try:
+            data = yaml.safe_load(yml.read_text(encoding="utf-8")) or {}
+        except yaml.YAMLError:
+            continue
+        has_store = _study_has_run_store(sdir)
+        for entry in (data.get("runs") or []) if isinstance(data, dict) else []:
+            # Same workspace-unique id the rows use, so the association matches
+            # after dedup (name-runs are study-scoped, not global).
+            rid = _study_run_uid(sdir.name, entry, has_store)
+            if rid:
+                result.setdefault(rid, []).append(sdir.name)
     return result
 
 
@@ -1143,17 +1237,16 @@ def _rewrite_study_yaml_without(yaml_path: Path, run_id: str) -> bool:
     runs = data.get("runs") or []
     if not isinstance(runs, list):
         return False
+    study_slug = yaml_path.parent.name
+    has_store = _study_has_run_store(yaml_path.parent)
     new_runs: list = []
     changed = False
     for entry in runs:
-        if isinstance(entry, str):
-            if entry == run_id:
-                changed = True
-                continue
-        elif isinstance(entry, dict):
-            if entry.get("run_id") == run_id:
-                changed = True
-                continue
+        # Match on the same workspace-unique id the index exposes (name-runs are
+        # prefixed <slug>:<name>; explicit run_id/simulation_id runs are verbatim).
+        if _study_run_uid(study_slug, entry, has_store) == run_id:
+            changed = True
+            continue
         new_runs.append(entry)
     if not changed:
         return False
@@ -1484,6 +1577,17 @@ def _launch_url_for_matched_tool(tool: dict, row: dict) -> "str | None":
 
     if kind != "launcher":
         return None  # unresolvable contributed "embed" viewer — omit
+    # A launcher whose contributed target is a self-contained static page (it
+    # carries an ``href``) deep-links straight to that page — which works in the
+    # read-only snapshot too, where the /api/.../launch endpoint has no live
+    # server. Prefer a target scoped to this row's study (global viewers may
+    # carry a single study-less target).
+    _tgts = tool.get("targets") or []
+    _href = next((t.get("href") for t in _tgts
+                  if isinstance(t, dict) and t.get("href")
+                  and (t.get("study") in (None, "", study))), None)
+    if _href:
+        return str(_href)
     uid = tool.get("uid") or tool.get("id")
     if not uid:
         return None
@@ -1502,10 +1606,16 @@ def _matched_tool_entry(tool: dict, row: dict) -> "dict | None":
     url = _launch_url_for_matched_tool(tool, row)
     if not url:
         return None
+    kind = tool.get("kind") or "launcher"
+    # A static page URL (not the /api resolve endpoint) is a direct deep-link the
+    # frontend opens as a plain link — so a launcher that resolved to its static
+    # target page renders (and works) as a deep-link, including in the snapshot.
+    if kind == "launcher" and not url.startswith("/api/"):
+        kind = "deep-link"
     return {
         "id": tool.get("uid") or tool.get("id"),
         "label": tool.get("title") or tool.get("label") or tool.get("id") or "Tool",
-        "kind": tool.get("kind") or "launcher",
+        "kind": kind,
         "launch_url": url,
     }
 
@@ -1587,6 +1697,14 @@ def build_simulations_data(ws_root: Path) -> dict:
     import sys as _sys
     if ws not in _sys.path:
         _sys.path.insert(0, ws)
+    # Capability derivation (run stores + study pack detection) resolves paths
+    # against the global workspace root; the publish/CLI seam may not have set it
+    # yet, in which case every run backfilled below would freeze at capabilities
+    # []. Set it here so the snapshot carries capabilities (and matched Tools).
+    try:
+        _root.set_workspace_root(Path(ws_root))
+    except Exception:  # noqa: BLE001 — best-effort; never break the data build
+        pass
 
     # Pure-JSONL Simulations DB: migrate any runs still living only in the legacy
     # stores (sqlite runs.db / study.yaml / parquet-zarr hives) into the

@@ -19,6 +19,7 @@ CAPABILITY_TAGS: dict[str, str] = {
     "listeners": "run emits listener observables",
     "growth_division": "run emits growth & division observables",
     "3d_pack": "study has a 3D molecular pack (viz/3d/*.pack.json or hosted)",
+    "atlas_pack": "study has an HRA atlas pack (viz/atlas/atlas.json) — its run's output that an atlas viewer consumes as input",
 }
 
 # lib/explorer_data._categorize_leaves bucket name -> capability tag.

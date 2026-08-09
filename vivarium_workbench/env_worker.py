@@ -2387,11 +2387,19 @@ def _av_resolve_targets(viewer: dict, ws_root) -> list:
     out: list = []
     for item in t:
         if isinstance(item, dict) and item.get("study"):
-            out.append({
+            entry = {
                 "study": str(item["study"]),
                 "label": str(item.get("label") or item["study"]),
                 "detail": str(item.get("detail") or ""),
-            })
+            }
+            # Preserve a self-contained static ``href`` (a viewer that IS a
+            # standalone page, e.g. a study's viz/.../index.html). It lets a
+            # matched-tool chip deep-link the static viewer in the read-only
+            # snapshot, where the /api/.../launch endpoint has no live server.
+            href = item.get("href")
+            if isinstance(href, str) and href:
+                entry["href"] = href
+            out.append(entry)
     return out
 
 

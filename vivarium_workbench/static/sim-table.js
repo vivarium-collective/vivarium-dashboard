@@ -135,6 +135,7 @@
   function toolsCell(row) {
     var tools = (row && row.matched_tools) || [];
     if (!tools.length) return "";
+    var BP = window.__BASE_PATH__ || "";
     return tools.map(function (t) {
       var label = esc(t.label || t.id || "Tool");
       var url = t.launch_url || "";
@@ -142,8 +143,12 @@
         return '<button type="button" class="action-btn js-authoring tool-launch-btn" ' +
           'data-launch-url="' + esc(url) + '" title="Launch ' + label + '">' + label + " &#8599;</button>";
       }
+      // Direct deep-link (embed-explorer, embed-3d, static viewer page). It's
+      // plain markup the base-path shim never sees, so prefix the workspace-root
+      // absolute URL with __BASE_PATH__ so it resolves under a hosting prefix.
+      var href = /^https?:|^\/\//.test(url) ? url : (BP + url);
       return '<a class="action-btn js-authoring" title="Open ' + label + '" target="_blank" ' +
-        'rel="noopener" href="' + esc(url) + '" style="text-decoration:none;">' + label + " &#8599;</a>";
+        'rel="noopener" href="' + esc(href) + '" style="text-decoration:none;">' + label + " &#8599;</a>";
     }).join(" ");
   }
 

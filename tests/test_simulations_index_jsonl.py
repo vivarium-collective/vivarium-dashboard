@@ -52,8 +52,9 @@ def test_jsonl_only_new_run_sorts_before_older_legacy_run(tmp_path: Path):
 
     data = simulations_index.build_simulations_data(ws)
     run_ids = [r["run_id"] for r in data["simulations"]]
-    assert "old-run" in run_ids and "new-jsonl-run" in run_ids
-    assert run_ids.index("new-jsonl-run") < run_ids.index("old-run")
+    # store-less study's name-run is study-scoped (`legacy:old-run`)
+    assert "legacy:old-run" in run_ids and "new-jsonl-run" in run_ids
+    assert run_ids.index("new-jsonl-run") < run_ids.index("legacy:old-run")
 
 
 def test_jsonl_local_origin_still_validates_as_a_simrow(tmp_path: Path):

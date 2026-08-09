@@ -86,7 +86,7 @@ def test_study_yaml_run_timestamp_maps_to_started_completed(tmp_path):
                   "timestamp": 1234567890.0}],
     }))
     sims = list_simulations(ws)
-    row = next(s for s in sims if s["run_id"] == "r-ts")
+    row = next(s for s in sims if s["run_id"] == "foo:r-ts")
     assert row["started_at"] == 1234567890.0
     assert row["completed_at"] == 1234567890.0
 
@@ -124,7 +124,7 @@ def test_list_tags_nested_study_yaml_runs_with_investigation(tmp_path):
     }))
 
     sims = list_simulations(ws)
-    row = next((s for s in sims if s["run_id"] == "perf-sweep"), None)
+    row = next((s for s in sims if s["run_id"] == "colonies-02:perf-sweep"), None)
     assert row is not None, sims
     assert row["study_slug"] == "colonies-02"
     assert row["investigation_slug"] == "colonies"
@@ -159,7 +159,7 @@ def test_list_surfaces_emitterless_study_yaml_runs(tmp_path):
     sims = list_simulations(ws)
     assert len(sims) == 1
     s = sims[0]
-    assert s["run_id"] == "autopoiesis-meter"
+    assert s["run_id"] == "loop:autopoiesis-meter"
     assert s["source"] == "study_yaml"
     assert s["n_steps"] == 160
     assert s["studies"] == ["loop"]
@@ -1034,3 +1034,55 @@ def test_build_zip_sms_api_failure_404s_not_crashes(tmp_path, monkeypatch):
     data, filename, status = build_simulation_run_zip(ws, "r-s3-down")
     assert status == 404
     assert data == b""
+
+
+def test_dict_name_runs_are_study_scoped_not_collapsed(tmp_path):
+    """Two studies each recording a ``{name: baseline}`` run must surface as TWO
+    distinct, study-scoped rows (``<slug>:baseline``) rather than collapsing into
+    one on the shared name — the fix that lets every study's run appear in the
+    Simulations DB. (Bare-string references to a shared run id still associate
+    both studies; see test_list_run_referenced_by_multiple_studies.)"""
+    ws = tmp_path / "ws"
+    for name in ("study-a", "study-b"):
+        sdir = ws / "studies" / name
+        sdir.mkdir(parents=True)
+        (sdir / "study.yaml").write_text(yaml.safe_dump(
+            {"name": name, "runs": [{"name": "baseline", "status": "completed"}]}))
+    sims = list_simulations(ws)
+    by = {s["run_id"]: s.get("study_slug") for s in sims}
+    assert set(by) == {"study-a:baseline", "study-b:baseline"}
+    assert by["study-a:baseline"] == "study-a"
+    assert by["study-b:baseline"] == "study-b"
+
+
+def test_study_with_atlas_pack_advertises_capability(tmp_path):
+    """A study that materialized viz/atlas/atlas.json advertises the ``atlas_pack``
+    capability on its (store-less) run, so an atlas viewer requiring atlas_pack
+    matches the run in the Tools column — output(pack) == input(viewer)."""
+    from vivarium_workbench.lib import _root
+    ws = tmp_path / "ws"
+    sdir = ws / "studies" / "atlas-study"
+    (sdir / "viz" / "atlas").mkdir(parents=True)
+    (sdir / "viz" / "atlas" / "atlas.json").write_text("{}")
+    (sdir / "study.yaml").write_text(yaml.safe_dump(
+        {"name": "atlas-study", "runs": [{"name": "baseline", "status": "completed"}]}))
+    _root.set_workspace_root(ws.resolve())
+    sims = list_simulations(ws)
+    row = next(s for s in sims if s.get("study_slug") == "atlas-study")
+    assert "atlas_pack" in (row.get("capabilities") or [])
+
+
+def test_runner_recorded_runs_not_prefixed_when_study_has_store(tmp_path):
+    """A study with its own runs.db records real runs by their global id in each
+    run's `name`; those must stay verbatim (merge with the store row), NOT get
+    study-prefixed — otherwise running a study duplicates every row."""
+    ws = tmp_path / "ws"
+    sdir = ws / "studies" / "s"
+    sdir.mkdir(parents=True)
+    _seed_run(sdir / "runs.db", spec_id="pkg.x", run_id="run-abc", started_at=1.0)
+    (sdir / "study.yaml").write_text(yaml.safe_dump(
+        {"name": "s", "runs": [{"name": "run-abc", "status": "completed"}]}))
+    sims = list_simulations(ws)
+    ids = {s["run_id"] for s in sims}
+    # one row, verbatim id (store row + study.yaml entry merged), no "s:run-abc"
+    assert ids == {"run-abc"}
