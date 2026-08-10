@@ -230,6 +230,19 @@ def cmd_migrate_artifacts(args: argparse.Namespace) -> int:
 
 def cmd_run_composite_worker(args: argparse.Namespace) -> int:
     """CLI handler for the run-composite subcommand — runs one detached composite."""
+    # Diagnostics for issue #754: when the Runs-tab Stop button signals a frozen
+    # run (SIGTERM, via run_registry.stop_run), dump every thread's stack into
+    # this worker's run.log (stdout/stderr are redirected there) before exiting,
+    # then chain to the default handler so the process still terminates. This
+    # turns an opaque "stuck run, force-quit" into an actionable traceback of
+    # exactly what the job was blocked on.
+    import faulthandler
+    import signal
+    faulthandler.enable()
+    try:
+        faulthandler.register(signal.SIGTERM, all_threads=True, chain=True)
+    except (AttributeError, ValueError):
+        pass  # SIGTERM unavailable on this platform (e.g. Windows) — skip
     from vivarium_workbench.lib.run_runner import execute
     return execute(Path(args.request))
 

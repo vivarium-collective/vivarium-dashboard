@@ -15,6 +15,7 @@ owned and migrated by ``composite_runs`` (``connect``/``_migrate_runs_meta``).)
 from __future__ import annotations
 
 import os
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -23,6 +24,9 @@ from vivarium_workbench.lib import composite_runs as cr
 
 # Maximum simultaneous in-flight runs. POST returns 429 above this.
 CONCURRENCY_CAP = 4
+
+# Terminal statuses — a run in any of these is finished; stop_run is a no-op.
+_TERMINAL_STATUSES = {"completed", "failed", "orphaned", "cancelled"}
 
 
 def _pid_alive(pid: int) -> bool:
@@ -93,6 +97,69 @@ def reconcile_stale_runs(db_file: str | Path, workspace=None) -> int:
                 cr.mark_orphaned(conn, run_id=row["run_id"], workspace=workspace)
                 reconciled += 1
         return reconciled
+    finally:
+        conn.close()
+
+
+def stop_run(db_file: str | Path, run_id: str, *, workspace=None,
+             sig: int = signal.SIGTERM) -> dict:
+    """Stop an in-flight detached run and mark it ``cancelled`` (issue #754).
+
+    Signals the run's process GROUP — ``spawn_detached`` starts each run in its
+    own session (``start_new_session=True``), so the pid is a group leader and
+    ``killpg`` reaches the worker AND any children it spawned (e.g. Ray workers),
+    which a bare ``kill`` would orphan. The default ``SIGTERM`` lets the worker's
+    faulthandler dump a traceback into its run.log before exiting, giving a
+    starting point for diagnosing what a frozen run was stuck on.
+
+    Returns a result dict with an ``outcome``:
+
+      * ``not_found``       — no such run_id (caller → HTTP 404)
+      * ``already_terminal``— run already finished; no-op (caller → 200)
+      * ``no_pid``          — running but spawn never recorded a pid; marked
+                              cancelled without signalling (caller → 200)
+      * ``dead``            — pid recorded but the process is already gone;
+                              marked cancelled without signalling (caller → 200)
+      * ``signalled``       — live process group signalled + marked cancelled
+                              (caller → 200)
+
+    Idempotent: stopping an already-terminal run does nothing and never signals.
+    """
+    db_file = Path(db_file)
+    if not db_file.is_file():
+        return {"run_id": run_id, "outcome": "not_found"}
+    conn = cr.connect(db_file)
+    try:
+        row = cr.query_run_meta(conn, run_id=run_id)
+        if row is None:
+            return {"run_id": run_id, "outcome": "not_found"}
+        status = row["status"]
+        if status in _TERMINAL_STATUSES:
+            return {"run_id": run_id, "outcome": "already_terminal",
+                    "status": status}
+
+        pid = row["pid"]
+        if pid is None:
+            cr.mark_cancelled(conn, run_id=run_id, workspace=workspace)
+            return {"run_id": run_id, "outcome": "no_pid", "status": "cancelled"}
+
+        pid = int(pid)
+        if not _pid_alive(pid):
+            cr.mark_cancelled(conn, run_id=run_id, workspace=workspace)
+            return {"run_id": run_id, "outcome": "dead", "status": "cancelled"}
+
+        # Signal the whole process group; fall back to the bare pid if the
+        # process is (unexpectedly) not a group leader.
+        try:
+            os.killpg(os.getpgid(pid), sig)
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, sig)
+            except ProcessLookupError:
+                pass  # raced to exit between the alive-check and the signal
+        cr.mark_cancelled(conn, run_id=run_id, workspace=workspace)
+        return {"run_id": run_id, "outcome": "signalled", "status": "cancelled",
+                "pid": pid}
     finally:
         conn.close()
 

@@ -57,6 +57,7 @@ from vivarium_workbench.lib import remote_run_views as _remote_run_views
 from vivarium_workbench.lib import auth_views as _auth_views
 from vivarium_workbench.lib import composite_run_views as _cr_views
 from vivarium_workbench.lib import composite_test_run_views as _composite_test_run_views
+from vivarium_workbench.lib import composite_stop_views as _composite_stop_views
 from vivarium_workbench.lib import study_create_views as _study_create_views
 from vivarium_workbench.lib import investigation_run_one_views as _investigation_run_one_views
 from vivarium_workbench.lib import investigation_run_views as _investigation_run_views
@@ -2849,6 +2850,30 @@ def create_app() -> FastAPI:
         body, status = _cr_views.build_composite_run_status(ws, run_id)
         if status == 200:
             return CompositeRunStatus.model_validate(body)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.post(
+        "/api/composite-run/{run_id}/stop",
+        tags=["Composites"],
+        summary="Stop an in-flight detached run (SIGTERM the process group)",
+    )
+    def composite_run_stop_route(
+        run_id: str,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Stop a running composite run and mark it ``cancelled`` (issue #754).
+
+        Signals the run's process group (SIGTERM — the worker's faulthandler
+        dumps a traceback into its run.log before exiting) and records the
+        terminal ``cancelled`` state, so a frozen run is recoverable without
+        force-quitting the whole Python process.
+
+        Status codes (via ``lib.composite_stop_views.stop_composite_run``):
+          - 400  missing ``run_id``
+          - 404  unknown run (``{"outcome": "not_found"}``)
+          - 200  stopped / already terminal (idempotent no-op)
+        """
+        body, status = _composite_stop_views.stop_composite_run(ws, run_id)
         return JSONResponse(status_code=status, content=body)
 
     @app.get(

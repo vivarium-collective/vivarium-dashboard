@@ -33,3 +33,12 @@ def test_configure_run_routing_and_persist_present():
     # tolerant polling (WS1 pattern)
     assert "consecutiveErrors" in js or "setTimeout" in js
     assert ".catch(" in js
+
+
+def test_configure_run_has_stop_control():
+    """Issue #754: a running composite run must expose a Stop control that POSTs
+    the stop endpoint, so a frozen run is recoverable without force-quitting."""
+    js = _js()
+    assert "/stop" in js and "composite-run/" in js   # POSTs the stop endpoint
+    assert "cfg-stop-btn" in js                        # the Stop button
+    assert "_stopRun" in js and "_running" in js       # wired into the poll loop
