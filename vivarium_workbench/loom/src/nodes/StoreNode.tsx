@@ -115,12 +115,13 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
     wiring: tier === "contract" || tier === "full" || isHub,
     full: tier === "full",
   };
-  // Ports Detail override (the Detail menu) controls the store's type label:
-  // "ports with types" shows it; "show ports"/"no ports" hide it.
-  const _ov = (data as any)._detailOverrides as { ports?: string } | undefined;
+  // Stores Detail override (the Detail menu) controls how much of a store shows:
+  //   'name'  → just the label   'value' → + value   'type' → + value + type
+  const _ov = (data as any)._detailOverrides as { stores?: string } | undefined;
   if (_ov) {
-    if (_ov.ports === "types") show.type = true;
-    else if (_ov.ports === "plain" || _ov.ports === "none") show.type = false;
+    if (_ov.stores === "name")  { show.value = false; show.type = false; }
+    else if (_ov.stores === "value") { show.value = true;  show.type = false; }
+    else if (_ov.stores === "type")  { show.value = true;  show.type = true; }
   }
 
   return (

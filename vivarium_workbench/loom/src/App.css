@@ -231,6 +231,7 @@ body {
 .store-node.store-node-glyph,
 .store-node.store-node-ports,
 .store-node.store-node-types,
+.store-node.store-node-config,
 .store-node.store-node-contract,
 .store-node.store-node-full {
   width: 168px;
@@ -252,9 +253,11 @@ body {
 .store-node-ports .store-label { font-size: 30px; line-height: 1.15; }
 /* Detail tiers: the store box is large — let the name fill more of it. */
 .store-node-types .store-label,
+.store-node-config .store-label,
 .store-node-contract .store-label,
 .store-node-full .store-label { font-size: 27px; line-height: 1.2; }
 .store-node-types .store-node-type,
+.store-node-config .store-node-type,
 .store-node-contract .store-node-type,
 .store-node-full .store-node-type { font-size: 17px; }
 
@@ -844,7 +847,10 @@ body {
 }
 .process-node-lock { margin-right: 5px; font-size: 0.8em; }
 
-.process-node-config { margin-top: 5px; border-top: 1px dashed #e5e7eb; padding-top: 4px; }
+/* (Removed the legacy bare `.process-node-config` inner-section rule: it is no
+   longer emitted, and it COLLIDED with the config-TIER card class
+   `process-node process-node-config`, overriding the card's 2px top border with
+   a 1px dashed divider — the "missing top border" at the config tier.) */
 .process-node-config-row {
   display: flex; justify-content: space-between; gap: 8px;
   font-size: 11px; color: #475569; font-family: ui-monospace, monospace;

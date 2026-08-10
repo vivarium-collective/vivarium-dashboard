@@ -155,7 +155,11 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
     else if (ov.ports === 'plain') { show.ports = true;  show.types = false; }
     else if (ov.ports === 'types') { show.ports = true;  show.types = true; }
     if (ov.config === 'on')  show.config = true;  else if (ov.config === 'off')  show.config = false;
-    if (ov.contract === 'on') show.contract = true; else if (ov.contract === 'off') show.contract = false;
+    // 'full' = show the contract AND its full extended description (what you get
+    // by clicking the process open), not just the summary.
+    if (ov.contract === 'on') show.contract = true;
+    else if (ov.contract === 'off') show.contract = false;
+    else if (ov.contract === 'full') { show.contract = true; show.full = true; }
   }
 
   const contract = show.contract ? deriveContract(data) : null;

@@ -66,9 +66,13 @@ const LAYOUT_TIER: ZoomTierId = 'full';
 // the zoom-driven tier) or forced; ports has a 3rd state for showing types. They
 // layer on top of the tier-derived `show` inside the nodes.
 export type PortsDetail = 'auto' | 'none' | 'plain' | 'types';
+export type StoresDetail = 'auto' | 'name' | 'value' | 'type';
 export type TriDetail = 'auto' | 'on' | 'off';
-export type DetailOverrides = { ports: PortsDetail; config: TriDetail; contract: TriDetail };
-export const DETAIL_AUTO: DetailOverrides = { ports: 'auto', config: 'auto', contract: 'auto' };
+export type ContractDetail = 'auto' | 'on' | 'off' | 'full';
+export type DetailOverrides = {
+  ports: PortsDetail; stores: StoresDetail; config: TriDetail; contract: ContractDetail;
+};
+export const DETAIL_AUTO: DetailOverrides = { ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto' };
 const NODE_TYPES = { process: ProcessNode, store: StoreNode };
 // `light` is the cheap default wire (straight, no floating anchors / labels);
 // `floating` is the rich labelled edge, used only for FOCUSED wires. Non-wire
@@ -898,8 +902,9 @@ export default function App() {
     // Restore the per-feature Detail overrides (absent = all Auto).
     setDetailOverrides({
       ports: (view.detailOverrides?.ports ?? 'auto') as PortsDetail,
+      stores: (view.detailOverrides?.stores ?? 'auto') as StoresDetail,
       config: (view.detailOverrides?.config ?? 'auto') as TriDetail,
-      contract: (view.detailOverrides?.contract ?? 'auto') as TriDetail,
+      contract: (view.detailOverrides?.contract ?? 'auto') as ContractDetail,
     });
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
   }, [compositeId, state, layoutMode.modeId, layoutMode.setModeId]);
@@ -944,13 +949,15 @@ export default function App() {
       // Per-feature Detail overrides from the URL (?ports= / ?config= / ?contract=)
       // so a headless render can force a specific detail mix over the saved view.
       const pPorts = params.get('ports');
+      const pStores = params.get('stores');
       const pConfig = params.get('config');
       const pContract = params.get('contract');
-      if (pPorts || pConfig || pContract) {
+      if (pPorts || pStores || pConfig || pContract) {
         setDetailOverrides((o) => ({
           ports: (['none', 'plain', 'types'].includes(pPorts || '') ? pPorts : o.ports) as PortsDetail,
+          stores: (['name', 'value', 'type'].includes(pStores || '') ? pStores : o.stores) as StoresDetail,
           config: (['on', 'off'].includes(pConfig || '') ? pConfig : o.config) as TriDetail,
-          contract: (['on', 'off'].includes(pContract || '') ? pContract : o.contract) as TriDetail,
+          contract: (['on', 'off', 'full'].includes(pContract || '') ? pContract : o.contract) as ContractDetail,
         }));
       }
     })();

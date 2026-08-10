@@ -43,7 +43,7 @@ export type View = {
   hyperedges?: boolean;
   /** Per-feature Detail overrides (the Detail menu) in effect when captured.
    *  Each field 'auto' (or absent) = follow the zoom tier. */
-  detailOverrides?: { ports?: string; config?: string; contract?: string };
+  detailOverrides?: { ports?: string; stores?: string; config?: string; contract?: string };
 };
 
 export type ViewStore = {
@@ -169,10 +169,11 @@ export function normalizeView(v: any): View {
     detailOverrides: (v && typeof v.detailOverrides === 'object' && v.detailOverrides)
       ? {
           ports: typeof v.detailOverrides.ports === 'string' ? v.detailOverrides.ports : 'auto',
+          stores: typeof v.detailOverrides.stores === 'string' ? v.detailOverrides.stores : 'auto',
           config: typeof v.detailOverrides.config === 'string' ? v.detailOverrides.config : 'auto',
           contract: typeof v.detailOverrides.contract === 'string' ? v.detailOverrides.contract : 'auto',
         }
-      : { ports: 'auto', config: 'auto', contract: 'auto' },
+      : { ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto' },
   };
 }
 
