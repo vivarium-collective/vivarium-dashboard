@@ -9282,8 +9282,13 @@
       var filterStatus = (closed ? 'closed' : effStatus);
 
       // Per-study status → a compact breakdown line + an expandable study list.
-      var _SD = { complete:['#16a34a','done'], running:['#2563eb','running'],
-                  in_progress:['#d97706','in progress'], failed:['#dc2626','failed'],
+      // Keep the "done" vocabulary in sync with the backend roll-up
+      // (_STUDY_STATUS_DONE_ROLLUP): complete/ran/passed/evaluated/decided are all
+      // green "done" states, so a passed study never mislabels as "planned".
+      var _SD = { complete:['#16a34a','done'], ran:['#16a34a','done'], passed:['#16a34a','passed'],
+                  evaluated:['#16a34a','evaluated'], decided:['#16a34a','decided'],
+                  running:['#2563eb','running'], analyzing:['#2563eb','running'],
+                  in_progress:['#d97706','in progress'], failed:['#dc2626','failed'], invalid:['#dc2626','invalid'],
                   planning:['#94a3b8','planned'] };
       function _sMeta(st) { return _SD[st] || _SD[st === 'ran' ? 'complete' : 'planning'] || ['#94a3b8','planned']; }
       var studyObjs = _isetStudyObjs(iset);
@@ -9301,17 +9306,39 @@
           byStatus[st] + ' ' + _esc(m[1]) + '</span>';
       }).join('<span style="color:#cbd5e1">·</span>');
 
-      // Expandable study list (revealed by clicking the studies count).
+      // Expandable study list (revealed by clicking the studies count): each row
+      // pulls the study's objective text + the consistent action set — downloads
+      // (↓ figures / ↓ notebook, all modes) and, live only, ▶ run / ↻ reproduce.
+      var _isSnap = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
       var studyRows = studyObjs.map(function(s) {
         var m = _sMeta((s && (s.effective_status || s.status)) || 'planning');
         var slug = (s && s.name) || '';
-        return '<a href="/studies/' + encodeURIComponent(slug) + '" onclick="event.stopPropagation()" ' +
-          'style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;' +
-          'text-decoration:none;color:#334155;font-size:0.86em" ' +
+        var title = (s && s.title) ? String(s.title) : '';
+        var obj = (s && (s.objective || s.description)) ? String(s.objective || s.description) : '';
+        var objShort = obj ? (obj.length > 150 ? obj.slice(0, 150).replace(/\s+\S*$/, '') + '…' : obj) : '';
+        var lnk = 'font-size:0.82em;color:#3b82f6;text-decoration:none;white-space:nowrap;cursor:pointer';
+        var acts =
+          '<a href="#" style="' + lnk + '" title="Download this study\'s figures (panels + its composite) as a zip" ' +
+            'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ figures</a>' +
+          '<a href="#" style="' + lnk + '" title="Download this study\'s investigation runnable notebook" ' +
+            'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>' +
+          (_isSnap ? '' :
+            '<a href="#" style="' + lnk + '" title="Run this study\'s current baseline spec as a new run" ' +
+              'onclick="window._vivRunStudyFromRow(event,\'' + _esc(slug) + '\');return false;">▶ run</a>' +
+            '<a href="#" style="' + lnk + '" title="Reproduce this study\'s most recent run (replays its recorded manifest)" ' +
+              'onclick="window._vivReproduceStudyFromRow(event,\'' + _esc(slug) + '\');return false;">↻ reproduce</a>');
+        return '<div class="iset-study-row" style="padding:6px;border-radius:5px" ' +
           'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
-          '<span style="width:7px;height:7px;border-radius:50%;background:' + m[0] + '"></span>' +
-          '<code style="font-size:0.92em;color:#475569">' + _esc(slug) + '</code>' +
-          '<span style="margin-left:auto;color:#94a3b8">' + _esc(m[1]) + '</span></a>';
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="width:7px;height:7px;border-radius:50%;background:' + m[0] + '"></span>' +
+            '<a href="/studies/' + encodeURIComponent(slug) + '" onclick="event.stopPropagation()" style="text-decoration:none">' +
+              '<code style="font-size:0.92em;color:#475569">' + _esc(slug) + '</code></a>' +
+            (title ? '<span style="font-size:0.86em;color:#334155">' + _esc(title) + '</span>' : '') +
+            '<span style="margin-left:auto;color:#94a3b8;font-size:0.82em">' + _esc(m[1]) + '</span>' +
+          '</div>' +
+          (objShort ? '<div style="font-size:0.8em;color:#64748b;margin:2px 0 0 15px;line-height:1.35">' + _esc(objShort) + '</div>' : '') +
+          '<div style="display:flex;gap:14px;margin:4px 0 0 15px">' + acts + '</div>' +
+        '</div>';
       }).join('');
 
       var qFull = iset.question ? String(iset.question).split('\n')[0] : '';
@@ -9327,8 +9354,8 @@
              'data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" ' +
              'data-iset-status="' + _esc(String(filterStatus).toLowerCase()) + '" ' +
              'style="' + cardStyle + '">' +
-        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">' +
-          '<strong style="font-size:1.05em;flex:1">' + _esc(iset.title || iset.name) + '</strong>' +
+        '<div style="display:flex;align-items:baseline;gap:6px 10px;flex-wrap:wrap;margin-bottom:6px;">' +
+          '<strong style="font-size:1.05em;flex:1 1 100%">' + _esc(iset.title || iset.name) + '</strong>' +
           currentPill +
           statusPill +
           _originBadge(iset.origin_repo) +
@@ -9345,6 +9372,9 @@
           '<a href="#" title="Download the runnable notebook for this investigation" ' +
             'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ notebook</a>' +
+          (iset.n_figures ? '<a href="#" title="Download all figures for this investigation (studies figures + post-study composites), as a zip" ' +
+            'onclick="window._vivFiguresFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
+            'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ figures</a>' : '') +
         '</div>' +
         '<div class="iset-studies-detail" style="display:' + (full ? 'block' : 'none') + ';margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">' + (studyRows || '<span class="muted" style="font-size:0.85em">No studies.</span>') + '</div>' +
         // "Run this investigation in your terminal" chip (like the composite/process card).
@@ -9662,14 +9692,32 @@
     var actions = document.getElementById('ws-actions');
     if (!actions) return;
     var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
+    var name = window._wsInvestigation || window._currentIset || '';
+    // Match the investigation CARD's ↓ actions (↓ report / ↓ notebook / ↓ figures)
+    // instead of the old emoji buttons. ↓ figures is injected async, only when the
+    // investigation actually has figures (same n_figures gate as the card).
     actions.innerHTML =
       '<button class="btn-mini" onclick="_generateInvestigationReport()" ' +
-        'title="Generate a shareable HTML report">Report 📄</button> ' +
+        'title="Generate a shareable HTML report">↓ report</button> ' +
       '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
-        'title="Download a self-contained Jupyter notebook">Notebook 📓</button>' +
+        'title="Download a self-contained Jupyter notebook">↓ notebook</button>' +
+      '<span id="ws-actions-figures"></span>' +
       (isSnapshot ? '' :
       ' <button class="btn-mini" onclick="_rerunInvestigation()" ' +
         'title="Re-run every member study\'s CURRENT baseline spec (re-derives from each study\'s study.yaml)">▶ Run current spec</button>');
+    if (name) {
+      fetch('/api/investigation-summaries', {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var me = ((j && j.investigations) || []).filter(function (i) { return i.name === name; })[0];
+          var host = document.getElementById('ws-actions-figures');
+          if (me && me.n_figures && host) {
+            host.innerHTML = ' <button class="btn-mini" ' +
+              'onclick="window._vivFiguresFromCard(event,\'' + _esc(name) + '\')" ' +
+              'title="Download all figures (studies figures + post-study composites) as a zip">↓ figures</button>';
+          }
+        }).catch(function () {});
+    }
   }
   window._wsSetInvestigationActions = _wsSetInvestigationActions;
 
@@ -9803,8 +9851,8 @@
            'data-iset-slug="' + _esc(String(s.name).toLowerCase()) + '" ' +
            'data-iset-status="' + _esc(String(status).toLowerCase()) + '" ' +
            'style="' + cardStyle + '">' +
-      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">' +
-        '<strong style="font-size:1.02em;flex:1">' + _esc(s.title || s.name) + '</strong>' +
+      '<div style="display:flex;align-items:baseline;gap:6px 10px;flex-wrap:wrap;margin-bottom:6px;">' +
+        '<strong style="font-size:1.02em;flex:1 1 100%">' + _esc(s.title || s.name) + '</strong>' +
         '<span style="font-size:0.72em;border-radius:9999px;padding:1px 9px;white-space:nowrap;' +
           'background:' + m[0] + '22;color:' + m[0] + ';border:1px solid ' + m[0] + '55">' + _esc(m[1]) + '</span>' +
         _originBadge(s.origin_repo) +
@@ -9989,6 +10037,9 @@
           '<a href="#" title="Download the runnable notebook for this investigation" ' +
             'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none">↓ notebook</a>' +
+          (iset.n_figures ? '<a href="#" title="Download all figures for this investigation (studies figures + post-study composites), as a zip" ' +
+            'onclick="window._vivFiguresFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
+            'style="color:#3b82f6;text-decoration:none;margin-left:10px">↓ figures</a>' : '') +
         '</td>' +
         '</tr>';
     }).join('');
@@ -10977,6 +11028,24 @@
     return out + '</div>';
   }
 
+  // Download affordances for a graph study card: ↓ figures (this study's own
+  // figures) + ↓ notebook (the parent investigation's runnable notebook). Unlike
+  // the run/continue controls these are NOT authoring-gated — they survive into
+  // the read-only snapshot so shared links can still grab figures. Deliberately
+  // no ▶ run here: the small card stays uncluttered; running lives on the full
+  // study tab.
+  function _dagDownloadControlsHtml(slug) {
+    var lnk = 'font-size:0.66em;color:#3b82f6;text-decoration:none;white-space:nowrap';
+    return '<div class="dag-download-controls" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">' +
+      '<a href="#" title="Download this study\'s figures (panels + its composite) as a zip" ' +
+        'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
+        'style="' + lnk + '">↓ figures</a>' +
+      '<a href="#" title="Download this investigation\'s runnable notebook (includes this study)" ' +
+        'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
+        'style="' + lnk + '">↓ notebook</a>' +
+      '</div>';
+  }
+
   function _triggerStudy(slug, onMissing, btnEl) {
     if (!_dagInvSlug) return;
     var original = btnEl ? btnEl.textContent : '';
@@ -11273,8 +11342,10 @@
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
           ? window._chainBlockHtml(chainsBySlug[s.name]) : '') +
-        // Layer-4: cached/compute badge + run/continue buttons (live only).
+        // Layer-4: cached/compute badge + downloads (↓figures/↓notebook, all
+        // modes) + run/continue buttons (live only).
         _dagCacheBadgeHtml(s.name) +
+        _dagDownloadControlsHtml(s.name) +
         _dagTriggerControlsHtml(s.name);
       node._followUps = followUps;
       nodesHost.appendChild(node);
@@ -11958,6 +12029,74 @@
     var a = document.createElement('a');
     a.href = url; a.download = name + '.ipynb';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // Download the FULL figure archive for an investigation (every study's figures
+  // + the post-study composites) as a zip. Snapshot: a prebuilt static zip under
+  // figures/<slug>/; live: the server builds it on demand.
+  window._vivFiguresFromCard = function (ev, name) {
+    if (ev) ev.stopPropagation();
+    var c = window.__DASH_CONFIG__ || {};
+    var base = c.basePath || '';
+    var url = (c.mode === 'snapshot')
+      ? base + '/figures/' + encodeURIComponent(name) + '/figures.zip'
+      : '/api/investigation/' + encodeURIComponent(name) + '/figures.zip';
+    var a = document.createElement('a');
+    a.href = url; a.download = name + '-figures.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // A single study's figures (its panels + its own composite) as a zip.
+  window._vivStudyFiguresFromCard = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    var c = window.__DASH_CONFIG__ || {};
+    var base = c.basePath || '';
+    var url = (c.mode === 'snapshot')
+      ? base + '/figures/studies/' + encodeURIComponent(slug) + '.zip'
+      : '/api/study/' + encodeURIComponent(slug) + '/figures.zip';
+    var a = document.createElement('a');
+    a.href = url; a.download = slug + '-figures.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // A study's ↓ notebook is its parent investigation's runnable notebook (there
+  // is no per-study notebook). In the graph the parent is the open investigation.
+  window._vivStudyNotebookFromCard = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    var inv = window._wsInvestigation || window._currentIset || '';
+    if (inv && window._vivNotebookFromCard) window._vivNotebookFromCard(ev, inv);
+  };
+  // ▶ run — launch a study's CURRENT baseline spec as a new run (live only).
+  window._vivRunStudyFromRow = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return;
+    if (!confirm("Run this study's current baseline spec as a new run?")) return;
+    fetch('/api/study-run-baseline', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({study: slug}),
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var id = j && (j.run_id || j.simulation_id);
+      var msg = id ? ('Run launched — ' + id) : ('Run: ' + ((j && j.error) || 'done'));
+      if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+    }).catch(function (e) { alert('Run failed: ' + e); });
+  };
+  // ↻ reproduce — replay a study's most recent run's recorded manifest (live
+  // only). Resolves the latest run id from /api/simulations first.
+  window._vivReproduceStudyFromRow = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return;
+    fetch('/api/simulations?study=' + encodeURIComponent(slug))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var rows = (j && (j.simulations || j.runs)) || [];
+        var latest = rows[0] && (rows[0].run_id || rows[0].id || rows[0].name);
+        if (!latest) { alert('No run to reproduce yet for ' + slug + '.'); return; }
+        return fetch('/api/study-reproduce', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({study: slug, run_id: latest}),
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          var id = res && res.run_id;
+          var msg = id ? ('Reproduce launched — ' + id) : ('Reproduce: ' + ((res && res.error) || 'done'));
+          if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+        });
+      }).catch(function (e) { alert('Reproduce failed: ' + e); });
   };
 
   // Download the coder-facing notebook for the current investigation. In a

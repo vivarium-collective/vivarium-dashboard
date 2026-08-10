@@ -24,6 +24,15 @@
     {% endif %}
   </h1>
   <span class="study-header-actions" style="display:inline-flex; gap:6px; flex-shrink:0;">
+    {# Downloads first (↓), then the launch actions (▶ / ↻) — same iconography as
+       the investigation card / graph study card. Downloads are NOT hidden in the
+       snapshot; the launch buttons are (they need a live backend). #}
+    {% if study.visualizations %}
+    <button type="button" class="btn-mini" onclick="window._vivStudyFiguresFromCard(event, '{{ study.name }}')" title="Download this study's figures (panels + its composite) as a zip">↓ figures</button>
+    {% endif %}
+    {% if study.investigation %}
+    <button type="button" class="btn-mini" onclick="window._vivNotebookFromCard(event, '{{ study.investigation }}')" title="Download this study's investigation runnable notebook (includes this study)">↓ notebook</button>
+    {% endif %}
     <button type="button" id="study-reproduce" class="btn-mini" title="Replay this study's most recent run's RECORDED manifest verbatim (POST /api/study-reproduce) — ignores any study.yaml edits made since">↻ Reproduce</button>
     <button type="button" id="study-run-current-spec" class="btn-mini" title="Run this study's CURRENT baseline spec (POST /api/study-run-baseline) as a brand-new run">▶ Run current spec</button>
   </span>

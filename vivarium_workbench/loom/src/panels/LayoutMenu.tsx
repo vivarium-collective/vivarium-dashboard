@@ -70,6 +70,17 @@ export default function LayoutMenu(props: {
           boxShadow: '0 2px 10px rgba(0,0,0,0.14)', overflow: 'hidden',
           minWidth: 200, zIndex: 20,
         }}>
+          {/* Re-layout FIRST — the most-reached-for action (re-runs auto-layout). */}
+          <button
+            onClick={() => { onRelayout(); setOpen(false); }}
+            title="Re-run auto-layout on the currently visible nodes and fit the view"
+            style={{ ...itemBtn, fontWeight: 600 }}
+            {...hover}
+          >
+            <span style={{ width: 16, textAlign: 'center' }}>⟳</span>
+            Re-layout
+          </button>
+          <div style={{ height: 1, background: '#e5e7eb', margin: '4px 0' }} />
           <div style={{ padding: '6px 12px 2px', fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
             Direction
           </div>
@@ -118,15 +129,6 @@ export default function LayoutMenu(props: {
           >
             <span style={{ width: 16, textAlign: 'center' }}>⊹</span>
             Center on locked process
-          </button>
-          <button
-            onClick={() => { onRelayout(); setOpen(false); }}
-            title="Re-run auto-layout on the currently visible nodes and fit the view"
-            style={itemBtn}
-            {...hover}
-          >
-            <span style={{ width: 16, textAlign: 'center' }}>⟳</span>
-            Re-layout
           </button>
         </div>
       )}

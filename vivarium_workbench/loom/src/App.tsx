@@ -33,6 +33,7 @@ import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
 import LayoutMenu from './panels/LayoutMenu';
+import DetailMenu from './panels/DetailMenu';
 import { getDefaultView, decodeView, fetchView, normalizeView, type View } from './viewStore';
 import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
 import { ProcessPanel } from './panels/ProcessPanel';
@@ -61,11 +62,17 @@ import type { ExploreInspectMsg, ParameterDecl } from './api';
 // lists `tier` as a dep, and does not clear the saved layout on a tier change),
 // so zooming reveals card content but does NOT move nodes.
 const LAYOUT_TIER: ZoomTierId = 'full';
-// Card-detail ladder, least → most detail. Used by the "Detail" toolbar floor.
-const DETAIL_LABELS: Record<string, string> = {
-  '': 'Auto (zoom)', glyph: 'Minimal', ports: 'Ports', types: 'Port types',
-  config: 'Config', contract: 'Contracts', full: 'Full detail',
+// Per-feature Detail overrides (the Detail menu). Each feature is 'auto' (follow
+// the zoom-driven tier) or forced; ports has a 3rd state for showing types. They
+// layer on top of the tier-derived `show` inside the nodes.
+export type PortsDetail = 'auto' | 'none' | 'plain' | 'types';
+export type StoresDetail = 'auto' | 'name' | 'value' | 'type';
+export type TriDetail = 'auto' | 'on' | 'off';
+export type ContractDetail = 'auto' | 'on' | 'off' | 'full';
+export type DetailOverrides = {
+  ports: PortsDetail; stores: StoresDetail; config: TriDetail; contract: ContractDetail;
 };
+export const DETAIL_AUTO: DetailOverrides = { ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto' };
 const NODE_TYPES = { process: ProcessNode, store: StoreNode };
 // `light` is the cheap default wire (straight, no floating anchors / labels);
 // `floating` is the rich labelled edge, used only for FOCUSED wires. Non-wire
@@ -103,6 +110,10 @@ export default function App() {
   // removed processes kept rendering).
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
+  // Guards the once-per-composite startup-view apply (declared here, up top, so
+  // the postMessage composite-load handler can RESET it — a re-open of the same
+  // composite must re-apply its saved default view, not keep the reset defaults).
+  const startupViewRef = useRef<string | null>(null);
   // Explicit-emit store paths (joined by '/'). Descendants inherit emission.
   // Seeded from the composite's declared emit-all paths when it declares an
   // emitter step, else every top-level store (see `initialEmitSet`).
@@ -282,6 +293,9 @@ export default function App() {
     } catch { return null; }
   });
   const effTier: ZoomTierId = detailFloor ?? tier;
+  // Per-feature Detail overrides (the Detail menu) — each 'auto' follows the
+  // zoom tier; anything forced layers on top of the node's tier-derived `show`.
+  const [detailOverrides, setDetailOverrides] = useState<DetailOverrides>(DETAIL_AUTO);
   // Zoom-fight fix: applying a new tier resizes every card, and doing that on
   // EVERY wheel step mid-gesture makes React Flow re-measure growing nodes while
   // the user is still zooming — which reads as the canvas shoving back / zooming
@@ -303,6 +317,11 @@ export default function App() {
   useEffect(() => {
     const off = onCompositeLoad((msg) => {
       setState(msg.state);
+      // A (re)loaded composite must re-apply its saved default view — this handler
+      // resets collapsed/hidden to defaults, so without re-arming the startup-view
+      // guard a re-open of the SAME composite would keep the reset defaults (the
+      // "default view keeps resetting" bug).
+      startupViewRef.current = null;
       setCollapsed(defaultCollapsedIds(msg.state));  // light overview by default
       setHidden(defaultHiddenIds(msg.state));   // re-seed the noisy-process hide
       // Node ids are dotted paths, so a same-named path in the NEXT composite
@@ -663,7 +682,7 @@ export default function App() {
         return {
           ...n,
           data: {
-            ...n.data, _tier: effTier,
+            ...n.data, _tier: effTier, _detailOverrides: detailOverrides,
             // Full-detail ("open") card = explicitly kept-open ∪ the currently
             // selected/locked one. Keep-open persists; selection opens the card
             // you just clicked. Wire-reveal is a separate concept (ctx below).
@@ -685,12 +704,12 @@ export default function App() {
       return {
         ...n,
         data: {
-          ...n.data, _tier: effTier, _isHub: isHub,
+          ...n.data, _tier: effTier, _detailOverrides: detailOverrides, _isHub: isHub,
           _readers: wiring.readers, _writers: wiring.writers,
         },
       };
     });
-  }, [nodes, edges, effTier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
+  }, [nodes, edges, effTier, detailOverrides, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -853,7 +872,9 @@ export default function App() {
     collapse: collapseRedundant,
     // Record the Milner (processes → hyperedges) view.
     hyperedges: hyperedgeMode,
-  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant, hyperedgeMode]);
+    // Record the per-feature Detail overrides (Detail menu).
+    detailOverrides,
+  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant, hyperedgeMode, detailOverrides]);
 
   // Applying a view pins its positions (via the layout store, which the layout
   // effect reads) and sets collapsed/hidden — the existing effects re-lay-out
@@ -887,6 +908,13 @@ export default function App() {
     // Restore the collapse-repeats + Milner-hyperedge toggles (absent = off).
     setCollapseRedundant(view.collapse === true);
     setHyperedgeMode(view.hyperedges === true);
+    // Restore the per-feature Detail overrides (absent = all Auto).
+    setDetailOverrides({
+      ports: (view.detailOverrides?.ports ?? 'auto') as PortsDetail,
+      stores: (view.detailOverrides?.stores ?? 'auto') as StoresDetail,
+      config: (view.detailOverrides?.config ?? 'auto') as TriDetail,
+      contract: (view.detailOverrides?.contract ?? 'auto') as ContractDetail,
+    });
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
   }, [compositeId, state, layoutMode.modeId, layoutMode.setModeId]);
 
@@ -896,7 +924,7 @@ export default function App() {
   //   3. the saved default view for this composite (localStorage)
   //   4. the WORKSPACE default view (server) — the only one a headless figure
   //      render can see, so this is what makes renders match "Save as default".
-  const startupViewRef = useRef<string | null>(null);
+  //  (startupViewRef is declared up top so the postMessage handler can reset it.)
   useEffect(() => {
     if (!state || !compositeId) return;
     if (startupViewRef.current === compositeId) return;
@@ -918,6 +946,29 @@ export default function App() {
         } catch { /* offline / static — no server default */ }
       }
       if (view) applyView(view);
+      // Explicit URL params OVERRIDE the applied view: a headless
+      // `?hyperedges=1` / `?collapse=1` / `?detail=` render must win over a
+      // default view that was saved in the opposite mode (e.g. rendering Fig 2a
+      // with hyperedges from a default view saved in process mode). Applied
+      // AFTER applyView, which would otherwise reset these to the view's values.
+      if (params.get('hyperedges') === '1') setHyperedgeMode(true);
+      if (params.get('collapse') === '1') setCollapseRedundant(true);
+      const dParam = params.get('detail');
+      if (dParam) setDetailFloor(dParam as ZoomTierId);
+      // Per-feature Detail overrides from the URL (?ports= / ?config= / ?contract=)
+      // so a headless render can force a specific detail mix over the saved view.
+      const pPorts = params.get('ports');
+      const pStores = params.get('stores');
+      const pConfig = params.get('config');
+      const pContract = params.get('contract');
+      if (pPorts || pStores || pConfig || pContract) {
+        setDetailOverrides((o) => ({
+          ports: (['none', 'plain', 'types'].includes(pPorts || '') ? pPorts : o.ports) as PortsDetail,
+          stores: (['name', 'value', 'type'].includes(pStores || '') ? pStores : o.stores) as StoresDetail,
+          config: (['on', 'off'].includes(pConfig || '') ? pConfig : o.config) as TriDetail,
+          contract: (['on', 'off', 'full'].includes(pContract || '') ? pContract : o.contract) as ContractDetail,
+        }));
+      }
     })();
   }, [state, compositeId, applyView]);
 
@@ -1645,26 +1696,9 @@ export default function App() {
                     toggleHyperedges={() => setHyperedgeMode((v) => !v)}
                     onRelayout={handleResetLayout}
                   />
-                  {/* Detail floor: force at least this much card detail at ANY
-                      zoom (Auto = follow the zoom-driven semantic tier). */}
-                  <select
-                    value={detailFloor ?? ''}
-                    onChange={(e) => setDetailFloor((e.target.value || null) as ZoomTierId | null)}
-                    title="Card detail — pin cards to exactly this level at any zoom, from Minimal (name only) to Full (Auto follows zoom)"
-                    style={{
-                      height: 28, padding: '0 8px', fontSize: 12,
-                      background: detailFloor ? '#eff6ff' : '#fff',
-                      border: '1px solid #d1d5db', borderRadius: 4,
-                      cursor: 'pointer', color: detailFloor ? '#2563eb' : '#374151',
-                      fontWeight: detailFloor ? 600 : 400,
-                    }}
-                  >
-                    {['', 'glyph', 'ports', 'types', 'config', 'contract', 'full'].map((v) => (
-                      <option key={v} value={v}>
-                        {v === '' ? 'Detail: Auto' : `Detail: ${DETAIL_LABELS[v]}`}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Detail: per-feature toggles (ports / config / contract),
+                      each Auto = follow the zoom-driven semantic tier. */}
+                  <DetailMenu overrides={detailOverrides} setOverrides={setDetailOverrides} />
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}

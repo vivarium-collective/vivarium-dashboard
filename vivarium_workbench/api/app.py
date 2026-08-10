@@ -3197,6 +3197,103 @@ def create_app() -> FastAPI:
         )
 
     @app.get(
+        "/api/investigation/{slug}/figure/{n}.{ext}",
+        tags=["Downloads"],
+        summary="A single composite figure file (svg|png)",
+        response_class=Response,
+    )
+    def investigation_figure_route(
+        slug: str,
+        n: int,
+        ext: str,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Serve ``Figure <n>``'s composite file in ``.<ext>`` (svg|png).
+
+        404 ``{"error": …}`` when the investigation, figure, or format is absent.
+        Library-backed via ``lib.investigation_figures.resolve_figure_file``.
+        """
+        from vivarium_workbench.lib import investigation_figures as _figs
+        path = _figs.resolve_figure_file(ws, slug, n, ext)
+        if path is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"no figure {n}.{ext} for investigation {slug!r}"},
+            )
+        mime = _figs._EXT_MIME[ext.lower().lstrip(".")]
+        return Response(
+            content=path.read_bytes(),
+            headers={
+                "Content-Type": mime,
+                "Content-Disposition": f'attachment; filename="figure_{n}.{ext}"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @app.get(
+        "/api/investigation/{slug}/figures.zip",
+        tags=["Downloads"],
+        summary="Zip of ALL investigation figures (panels + composites)",
+        response_class=Response,
+    )
+    def investigation_figures_zip_route(
+        slug: str,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Serve the full figure archive — every member study's figures plus the
+        post-study composites — as ``<slug>-figures.zip``.
+
+        404 ``{"error": …}`` when the investigation has no figures.
+        Library-backed via ``lib.investigation_figures.build_figures_zip``.
+        """
+        from vivarium_workbench.lib import investigation_figures as _figs
+        blob = _figs.build_figures_zip(ws, slug)
+        if blob is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"no figures for investigation {slug!r}"},
+            )
+        return Response(
+            content=blob,
+            headers={
+                "Content-Type": "application/zip",
+                "Content-Disposition": f'attachment; filename="{slug}-figures.zip"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @app.get(
+        "/api/study/{slug}/figures.zip",
+        tags=["Downloads"],
+        summary="Zip of a single study's figures (panels + its composite)",
+        response_class=Response,
+    )
+    def study_figures_zip_route(
+        slug: str,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Serve one study's figure archive as ``<slug>-figures.zip``.
+
+        404 ``{"error": …}`` when the study has no figures.
+        Library-backed via ``lib.investigation_figures.build_study_figures_zip``.
+        """
+        from vivarium_workbench.lib import investigation_figures as _figs
+        blob = _figs.build_study_figures_zip(ws, slug)
+        if blob is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"no figures for study {slug!r}"},
+            )
+        return Response(
+            content=blob,
+            headers={
+                "Content-Type": "application/zip",
+                "Content-Disposition": f'attachment; filename="{slug}-figures.zip"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @app.get(
         "/api/guidance",
         tags=["Downloads"],
         summary="Latest guidance HTML (204 when none)",

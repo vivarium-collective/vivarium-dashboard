@@ -26,9 +26,11 @@ from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 # Sets used by compute_investigation_status. Module scope so the derivation
 # rules are inspectable / overridable from tests.
 _STUDY_STATUS_FAILED = frozenset({"failed", "invalid"})
-_STUDY_STATUS_COMPLETE = frozenset({"complete", "ran"})
+# "passed" = the study's acceptance gate PASSED (auto-derived from the gate
+# evaluator) — the strongest "done" signal, so it counts as complete everywhere.
+_STUDY_STATUS_COMPLETE = frozenset({"complete", "ran", "passed"})
 # Terminal "done" states for the INVESTIGATION roll-up only (Simulate ->
-# Evaluate -> Decide): an all-evaluated investigation reads "complete".
+# Evaluate -> Decide): an all-evaluated/passed investigation reads "complete".
 _STUDY_STATUS_DONE_ROLLUP = _STUDY_STATUS_COMPLETE | frozenset({"evaluated", "decided"})
 _STUDY_STATUS_RUNNING = frozenset({"running", "implementing", "runnable", "analyzing"})
 _STUDY_STATUS_PLANNED = frozenset({"planned", "planning"})
@@ -246,6 +248,13 @@ def build_iset_summary(
         ]
         statuses = [s for s, _ in statuses_and_runs]
         has_runs = [r for _, r in statuses_and_runs]
+        # Number of post-study composite figures — gates the card's ↓ figures
+        # action (guarded; a resolver hiccup must never break the summaries).
+        try:
+            from vivarium_workbench.lib.investigation_figures import build_investigation_figures
+            n_figures = build_investigation_figures(ws_root, spec.get("name", d.name))["n_composites"]
+        except Exception:
+            n_figures = 0
         out.append({
             "name":             spec.get("name", d.name),
             "title":            spec.get("title", spec.get("name", d.name)),
@@ -255,6 +264,7 @@ def build_iset_summary(
             "question":         spec.get("question", ""),
             "hypothesis":       spec.get("hypothesis", ""),
             "n_studies":        len(study_slugs),
+            "n_figures":        n_figures,
             "studies":          study_slugs,
             "lifecycle":        iset_lifecycle(ws_root, spec.get("name", d.name)),
             "current":          (d.name == current_slug),
