@@ -1858,6 +1858,13 @@ textarea.sr-input {
   padding: 3px 9px; cursor: pointer; white-space: nowrap;
 }
 .loom-dock-tab:hover { background: #eef2f7; border-color: #cbd5e1; }
+/* Vertical rail labels (all panels collapsed) — rotated so the rail is a thin
+   ~30px strip and the canvas keeps the rest of the width. */
+.loom-dock-tab-vert {
+  writing-mode: vertical-rl;
+  padding: 10px 4px;
+  text-align: center;
+}
 
 /* One-line explanation of the empty-by-default canvas in edge-culling modes.
    Sits top-LEFT: the toolbar owns top-right and React Flow's Controls own
