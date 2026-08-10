@@ -103,6 +103,46 @@ def _artifact_base_dir(ws_root: "Path", spec: "CompositeSpec") -> "Path":
     return snap if snap.is_dir() else Path(ws_root)
 
 
+def classify_run_kind(state: "dict | None") -> str:
+    """Classify a resolved composite as ``temporal`` / ``workflow`` / ``unknown``.
+
+    A composite's Run form shows a "Steps" box, but "Steps" is only meaningful
+    for a TEMPORAL composite — one with Processes that advance in simulated time
+    (each step is a timestep). A WORKFLOW is a Step-only DAG (e.g. the ParCa
+    pipeline) that runs its stages ONCE; a step count doesn't correspond to
+    anything. The Run form uses this to label the control honestly.
+
+    Rule: any ``_type == "process"`` node anywhere in the state tree → temporal;
+    otherwise, if there are Step nodes → workflow; otherwise unknown (no wiring
+    resolved, so nothing to judge). Emitter nodes are Steps too, so a lone
+    emitter never makes an otherwise-empty composite read as a workflow — a real
+    workflow always has non-emitter Steps, and any Process short-circuits first.
+    """
+    has_process = False
+    has_step = False
+
+    def _walk(node) -> None:
+        nonlocal has_process, has_step
+        if isinstance(node, dict):
+            t = node.get("_type")
+            if t == "process":
+                has_process = True
+            elif t == "step":
+                has_step = True
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    _walk(state)
+    if has_process:
+        return "temporal"
+    if has_step:
+        return "workflow"
+    return "unknown"
+
+
 def _degraded_result(
     spec_id: str, error: "BaseException", *, kind: str = "spec",
     notice: "str | None" = None,
@@ -122,7 +162,7 @@ def _degraded_result(
         "schema": {}, "requires": {}, "tags": [], "analyses": [],
         "visualizations": [], "emitters": [], "kind": kind,
         "module": "", "default_n_steps": None, "svg": None,
-        "wiring_status": "unavailable",
+        "wiring_status": "unavailable", "run_kind": "unknown",
         "notice": notice if notice is not None else f"composite could not be resolved: {error}",
     }
 
@@ -280,7 +320,8 @@ def resolve_composite(
                     "visualizations": spec.visualizations, "analyses": spec.analyses,
                     "emitters": spec.emitters, "kind": spec.kind, "module": spec.module,
                     "default_n_steps": spec.default_n_steps, "svg": None,
-                    "wiring_status": "error", "notice": override_err, "error": override_err,
+                    "wiring_status": "error", "run_kind": "unknown",
+                    "notice": override_err, "error": override_err,
                 }
         if state is None:
             try:
@@ -340,7 +381,8 @@ def resolve_composite(
             "visualizations": spec.visualizations, "analyses": spec.analyses,
             "emitters": spec.emitters, "kind": spec.kind, "module": spec.module,
             "default_n_steps": spec.default_n_steps, "svg": None,
-            "wiring_status": wiring_status, "notice": notice,
+            "wiring_status": wiring_status, "run_kind": classify_run_kind(state),
+            "notice": notice,
         }
     except Exception as e:
         # In-process import/discovery failures (e.g. a generator module whose

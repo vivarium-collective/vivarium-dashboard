@@ -4,6 +4,34 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
     return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
 
+  // Run-kind labelling (resolve payload's `run_kind`): a TEMPORAL composite has
+  // Processes advancing in simulated time, so "Steps" = timesteps; a WORKFLOW is
+  // a one-shot Step pipeline (e.g. ParCa) where a step count is not a duration.
+  // Makes the single "Steps" box mean the right thing instead of confusing the two.
+  function _stepsLabel(d) {
+    return d && d.run_kind === "temporal" ? "time steps"
+         : d && d.run_kind === "workflow" ? "pipeline ticks"
+         : "steps";
+  }
+  function _stepsHint(d) {
+    return d && d.run_kind === "temporal"
+      ? "Number of simulated timesteps to run (each step ≈ one time unit)."
+      : d && d.run_kind === "workflow"
+        ? "This is a one-shot pipeline — one run computes its full result. The count is not a simulated duration."
+        : "How many steps to run.";
+  }
+  function _runKindNote(d) {
+    var k = d && d.run_kind;
+    if (k === "temporal")
+      return '<p class="cfg-kind muted">⏱ <strong>Temporal composite</strong> — its Processes advance in simulated time. ' +
+             '“Steps” below is the number of <strong>timesteps</strong> to simulate (each ≈ one time unit).</p>';
+    if (k === "workflow")
+      return '<p class="cfg-kind muted">⚙ <strong>Workflow</strong> — a one-shot Step pipeline' +
+             (d.default_n_steps != null ? ' (' + esc(d.default_n_steps) + ' stages)' : '') +
+             ', not a timed simulation. One run computes its full result; the count below ticks the pipeline and is <em>not</em> a simulated duration.</p>';
+    return '';
+  }
+
   // Build a config form from composite-resolve's parameters:
   // {name: {type:"string"|"float"|"int"|"bool"|"integer"|"boolean", default, description}}. May be null/{}.
   // Accepts both legacy aliases (int/bool) and canonical vocabulary (integer/boolean).
@@ -77,9 +105,10 @@
         }
         box.innerHTML =
           '<h4>' + esc(d.name || id) + '</h4>' +
+          _runKindNote(d) +
           '<form class="cfg-form">' + _buildConfigForm(d.parameters) + '</form>' +
-          '<label class="cfg-row"><span class="cfg-name">steps</span>' +
-          '<input type="number" class="cfg-steps" value="' + esc(d.default_n_steps != null ? d.default_n_steps : 5) + '"></label>' +
+          '<label class="cfg-row"><span class="cfg-name">' + _stepsLabel(d) + '</span>' +
+          '<input type="number" class="cfg-steps" title="' + esc(_stepsHint(d)) + '" value="' + esc(d.default_n_steps != null ? d.default_n_steps : 5) + '"></label>' +
           (isSnapshot
             ? '<div class="cfg-actions"><button type="button" class="btn-mini" disabled title="Run on a live dashboard">▶ Run</button>' +
               ' <span class="muted">read-only preview — open this composite on a live dashboard to configure &amp; run</span></div>'
