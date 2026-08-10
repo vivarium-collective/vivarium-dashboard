@@ -9327,8 +9327,8 @@
              'data-iset-slug="' + _esc(String(iset.name).toLowerCase()) + '" ' +
              'data-iset-status="' + _esc(String(filterStatus).toLowerCase()) + '" ' +
              'style="' + cardStyle + '">' +
-        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">' +
-          '<strong style="font-size:1.05em;flex:1">' + _esc(iset.title || iset.name) + '</strong>' +
+        '<div style="display:flex;align-items:baseline;gap:6px 10px;flex-wrap:wrap;margin-bottom:6px;">' +
+          '<strong style="font-size:1.05em;flex:1 1 100%">' + _esc(iset.title || iset.name) + '</strong>' +
           currentPill +
           statusPill +
           _originBadge(iset.origin_repo) +
@@ -9345,6 +9345,9 @@
           '<a href="#" title="Download the runnable notebook for this investigation" ' +
             'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ notebook</a>' +
+          (iset.n_figures ? '<a href="#" title="Download all figures for this investigation (studies figures + post-study composites), as a zip" ' +
+            'onclick="window._vivFiguresFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
+            'style="color:#3b82f6;text-decoration:none;white-space:nowrap">↓ figures</a>' : '') +
         '</div>' +
         '<div class="iset-studies-detail" style="display:' + (full ? 'block' : 'none') + ';margin-top:8px;border-top:1px solid #f1f5f9;padding-top:6px">' + (studyRows || '<span class="muted" style="font-size:0.85em">No studies.</span>') + '</div>' +
         // "Run this investigation in your terminal" chip (like the composite/process card).
@@ -9803,8 +9806,8 @@
            'data-iset-slug="' + _esc(String(s.name).toLowerCase()) + '" ' +
            'data-iset-status="' + _esc(String(status).toLowerCase()) + '" ' +
            'style="' + cardStyle + '">' +
-      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:6px;">' +
-        '<strong style="font-size:1.02em;flex:1">' + _esc(s.title || s.name) + '</strong>' +
+      '<div style="display:flex;align-items:baseline;gap:6px 10px;flex-wrap:wrap;margin-bottom:6px;">' +
+        '<strong style="font-size:1.02em;flex:1 1 100%">' + _esc(s.title || s.name) + '</strong>' +
         '<span style="font-size:0.72em;border-radius:9999px;padding:1px 9px;white-space:nowrap;' +
           'background:' + m[0] + '22;color:' + m[0] + ';border:1px solid ' + m[0] + '55">' + _esc(m[1]) + '</span>' +
         _originBadge(s.origin_repo) +
@@ -9989,6 +9992,9 @@
           '<a href="#" title="Download the runnable notebook for this investigation" ' +
             'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
             'style="color:#3b82f6;text-decoration:none">↓ notebook</a>' +
+          (iset.n_figures ? '<a href="#" title="Download all figures for this investigation (studies figures + post-study composites), as a zip" ' +
+            'onclick="window._vivFiguresFromCard(event,\'' + _esc(iset.name) + '\');return false;" ' +
+            'style="color:#3b82f6;text-decoration:none;margin-left:10px">↓ figures</a>' : '') +
         '</td>' +
         '</tr>';
     }).join('');
@@ -11957,6 +11963,20 @@
       : '/api/investigation-notebook/' + encodeURIComponent(name);
     var a = document.createElement('a');
     a.href = url; a.download = name + '.ipynb';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // Download the FULL figure archive for an investigation (every study's figures
+  // + the post-study composites) as a zip. Snapshot: a prebuilt static zip under
+  // figures/<slug>/; live: the server builds it on demand.
+  window._vivFiguresFromCard = function (ev, name) {
+    if (ev) ev.stopPropagation();
+    var c = window.__DASH_CONFIG__ || {};
+    var base = c.basePath || '';
+    var url = (c.mode === 'snapshot')
+      ? base + '/figures/' + encodeURIComponent(name) + '/figures.zip'
+      : '/api/investigation/' + encodeURIComponent(name) + '/figures.zip';
+    var a = document.createElement('a');
+    a.href = url; a.download = name + '-figures.zip';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
 

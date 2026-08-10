@@ -246,6 +246,13 @@ def build_iset_summary(
         ]
         statuses = [s for s, _ in statuses_and_runs]
         has_runs = [r for _, r in statuses_and_runs]
+        # Number of post-study composite figures — gates the card's ↓ figures
+        # action (guarded; a resolver hiccup must never break the summaries).
+        try:
+            from vivarium_workbench.lib.investigation_figures import build_investigation_figures
+            n_figures = build_investigation_figures(ws_root, spec.get("name", d.name))["n_composites"]
+        except Exception:
+            n_figures = 0
         out.append({
             "name":             spec.get("name", d.name),
             "title":            spec.get("title", spec.get("name", d.name)),
@@ -255,6 +262,7 @@ def build_iset_summary(
             "question":         spec.get("question", ""),
             "hypothesis":       spec.get("hypothesis", ""),
             "n_studies":        len(study_slugs),
+            "n_figures":        n_figures,
             "studies":          study_slugs,
             "lifecycle":        iset_lifecycle(ws_root, spec.get("name", d.name)),
             "current":          (d.name == current_slug),

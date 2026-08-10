@@ -194,6 +194,7 @@ class InvestigationSummary(BaseModel):
     question: Optional[str] = None
     hypothesis: Optional[str] = None
     n_studies: Optional[int] = None
+    n_figures: Optional[int] = None
     studies: list[str] = []
     lifecycle: Any = None
     current: Optional[bool] = None
