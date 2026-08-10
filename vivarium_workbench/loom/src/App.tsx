@@ -28,7 +28,7 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
-import { collapseRedundantProcesses } from './collapseRedundant';
+import { collapseRedundantProcesses, processesToHyperedges } from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
@@ -443,14 +443,19 @@ export default function App() {
     try { return new URLSearchParams(window.location.search).get('collapse') === '1'; }
     catch { return false; }
   });
+  // Milner view: replace processes with hyperedges over their stores.
+  const [hyperedgeMode, setHyperedgeMode] = useState<boolean>(() => {
+    try { return new URLSearchParams(window.location.search).get('hyperedges') === '1'; }
+    catch { return false; }
+  });
   const raw = useMemo(
     () => {
-      const base = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
-      return collapseRedundant
-        ? collapseRedundantProcesses(base.nodes as any[], base.edges as any[]) as typeof base
-        : base;
+      let g = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
+      if (collapseRedundant) g = collapseRedundantProcesses(g.nodes as any[], g.edges as any[]) as typeof g;
+      if (hyperedgeMode) g = processesToHyperedges(g.nodes as any[], g.edges as any[]) as typeof g;
+      return g;
     },
-    [state, collapseRedundant],
+    [state, collapseRedundant, hyperedgeMode],
   );
 
   // Focus-culling (hover/click/pin to reveal wiring, with the "N pinned" hint)
@@ -846,7 +851,9 @@ export default function App() {
     detail: detailFloor,
     // Record whether repeated processes were collapsed, so the view restores it.
     collapse: collapseRedundant,
-  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant]);
+    // Record the Milner (processes → hyperedges) view.
+    hyperedges: hyperedgeMode,
+  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant, hyperedgeMode]);
 
   // Applying a view pins its positions (via the layout store, which the layout
   // effect reads) and sets collapsed/hidden — the existing effects re-lay-out
@@ -877,8 +884,9 @@ export default function App() {
     // fills detail:null for them, so a legacy view resets to Auto, matching how
     // it actually rendered when captured (before the override existed).
     setDetailFloor((view.detail as ZoomTierId | null) ?? null);
-    // Restore the collapse-repeats toggle (absent = off).
+    // Restore the collapse-repeats + Milner-hyperedge toggles (absent = off).
     setCollapseRedundant(view.collapse === true);
+    setHyperedgeMode(view.hyperedges === true);
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
   }, [compositeId, state, layoutMode.modeId, layoutMode.setModeId]);
 
@@ -1633,6 +1641,8 @@ export default function App() {
                     onCenter={() => { if (focus.locked) handleCenterOnProcess(focus.locked); }}
                     collapseRedundant={collapseRedundant}
                     toggleCollapse={() => setCollapseRedundant((v) => !v)}
+                    hyperedgeMode={hyperedgeMode}
+                    toggleHyperedges={() => setHyperedgeMode((v) => !v)}
                     onRelayout={handleResetLayout}
                   />
                   {/* Detail floor: force at least this much card detail at ANY

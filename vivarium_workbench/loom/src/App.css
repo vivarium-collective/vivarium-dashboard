@@ -149,6 +149,15 @@ body {
   font-size: 11px;
   cursor: pointer;
 }
+/* Milner hyperedge marker (processes → hyperedges): dashed purple, distinct
+   from the solid-green place-graph nodes. */
+.store-node.store-node-hyperedge {
+  border: 2px dashed #a855f7;
+  background: #faf5ff;
+  color: #7e22ce;
+  width: 46px; height: 46px;
+  font-weight: 700;
+}
 
 .store-node:hover { border-color: #059669; }
 

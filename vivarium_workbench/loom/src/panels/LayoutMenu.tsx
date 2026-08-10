@@ -20,9 +20,12 @@ export default function LayoutMenu(props: {
   onCenter: () => void;
   collapseRedundant: boolean;
   toggleCollapse: () => void;
+  hyperedgeMode: boolean;
+  toggleHyperedges: () => void;
   onRelayout: () => void;
 }) {
-  const { modeId, setModeId, canCenter, onCenter, collapseRedundant, toggleCollapse, onRelayout } = props;
+  const { modeId, setModeId, canCenter, onCenter, collapseRedundant, toggleCollapse,
+          hyperedgeMode, toggleHyperedges, onRelayout } = props;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -93,6 +96,16 @@ export default function LayoutMenu(props: {
             <span style={{ width: 16, textAlign: 'center' }}>⊞</span>
             Collapse repeats
             {collapseRedundant && <span style={{ marginLeft: 'auto', color: '#2563eb' }}>✓</span>}
+          </button>
+          <button
+            onClick={() => { toggleHyperedges(); }}
+            title="Milner view — replace each process with a hyperedge over the stores it connects (process bigraph → Milner bigraph)"
+            style={{ ...itemBtn, color: hyperedgeMode ? '#7e22ce' : '#374151', fontWeight: hyperedgeMode ? 600 : 400 }}
+            {...hover}
+          >
+            <span style={{ width: 16, textAlign: 'center' }}>⇢</span>
+            Processes → hyperedges
+            {hyperedgeMode && <span style={{ marginLeft: 'auto', color: '#7e22ce' }}>✓</span>}
           </button>
           <button
             onClick={() => { if (canCenter) { onCenter(); setOpen(false); } }}

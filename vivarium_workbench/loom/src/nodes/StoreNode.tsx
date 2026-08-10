@@ -59,6 +59,18 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
     />
   );
 
+  // Hyperedge marker (Milner view): a compact dashed node standing in for a
+  // process that has been collapsed into a hyperedge over its stores.
+  if ((data as any)._hyperedge) {
+    return (
+      <div className="store-node store-node-hyperedge" style={sizeStyle}>
+        {resizer}
+        <StoreHandles />
+        <div className="store-label">{data.label}</div>
+      </div>
+    );
+  }
+
   // Hierarchy mode never stamps a tier — render the legacy circle unchanged so
   // that mode is byte-identical to before semantic zoom existed.
   if (tierRaw == null) {

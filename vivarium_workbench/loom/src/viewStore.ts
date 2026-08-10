@@ -39,6 +39,8 @@ export type View = {
   detail?: string | null;
   /** Whether "Collapse repeated processes" was on when captured. */
   collapse?: boolean;
+  /** Whether the Milner "processes → hyperedges" view was on when captured. */
+  hyperedges?: boolean;
 };
 
 export type ViewStore = {
@@ -158,6 +160,8 @@ export function normalizeView(v: any): View {
     detail: typeof v?.detail === 'string' && v.detail ? v.detail : null,
     // Collapse-repeats toggle; absent → false.
     collapse: v?.collapse === true,
+    // Milner hyperedge view; absent → false.
+    hyperedges: v?.hyperedges === true,
   };
 }
 

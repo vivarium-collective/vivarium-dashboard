@@ -81,3 +81,58 @@ export function collapseRedundantProcesses(
   }
   return { nodes: outNodes, edges: outEdges };
 }
+
+// ── Processes → hyperedges (the Milner-bigraph view) ─────────────────────────
+// Replace every PROCESS node with a hyperedge: a small marker (rendered as a
+// dashed hyperedge node) connected by dashed links to each store the process
+// touched. This turns a process bigraph (processes wired to stores via ports)
+// into a Milner bigraph (a link graph of hyperedges over the same nodes) — the
+// place graph (store nesting) is untouched.
+export function processesToHyperedges(
+  nodes: AnyNode[], edges: AnyEdge[],
+): { nodes: AnyNode[]; edges: AnyEdge[] } {
+  const procs = nodes.filter((n) => n.type === 'process');
+  if (procs.length === 0) return { nodes, edges };
+  const procIds = new Set(procs.map((p) => p.id));
+
+  const outNodes: AnyNode[] = nodes.filter((n) => n.type !== 'process');
+  const outEdges: AnyEdge[] = [];
+  let ei = 0;
+  for (const p of procs) {
+    // Stores this process was wired to (either direction), skipping other procs.
+    const stores = new Set<string>();
+    for (const e of edges) {
+      if (e.source === p.id && !procIds.has(e.target)) stores.add(e.target);
+      if (e.target === p.id && !procIds.has(e.source)) stores.add(e.source);
+    }
+    if (stores.size === 0) continue;
+    ei += 1;
+    const hid = `__hyper__${p.id}`;
+    const label = typeof p.data?.label === 'string' ? p.data.label : `e${ei}`;
+    outNodes.push({
+      id: hid,
+      type: 'store',
+      data: { label, _hyperedge: true, path: [hid] },
+      // seed at the process's spot so a saved layout still roughly applies.
+      position: (p as any).position ?? { x: 0, y: 0 },
+    } as AnyNode);
+    for (const sid of stores) {
+      outEdges.push({
+        id: `${hid}--${sid}`,
+        source: hid, target: sid,
+        type: 'floating',
+        sourceHandle: 'bottom-place', targetHandle: 'top-place',
+        // Milner hyperedge: purple dashed link (distinct from the grey wire /
+        // solid place edges).
+        style: { stroke: '#a855f7', strokeDasharray: '4,4', strokeWidth: 1.6 },
+        data: { edgeType: 'hyperedge' },
+      } as AnyEdge);
+    }
+  }
+  // Keep the place graph (store↔store) edges; drop the process wire edges.
+  for (const e of edges) {
+    if (procIds.has(e.source) || procIds.has(e.target)) continue;
+    outEdges.push(e);
+  }
+  return { nodes: outNodes, edges: outEdges };
+}
