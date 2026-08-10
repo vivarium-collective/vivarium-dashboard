@@ -1426,6 +1426,18 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=400, content={"error": "hops must be JSON"})
         if not isinstance(parsed, list):
             return JSONResponse(status_code=400, content={"error": "hops must be a list"})
+        # Prefer a COMMITTED inner-state (reports/composite-inner-state/<key>.json)
+        # over a live env-worker build: instant, deterministic, and robust to the
+        # warm-pool being briefly unavailable or a few-second cold build — the same
+        # cache the figure outputs / read-only bundle use. Fall through to a live
+        # build when none is committed (or the committed file is unreadable).
+        try:
+            from vivarium_workbench.lib.composite_inner_states import inner_state_key
+            _committed = ws / "reports" / "composite-inner-state" / f"{inner_state_key(ref, parsed)}.json"
+            if _committed.exists():
+                return CompositeState.model_validate(json.loads(_committed.read_text()))
+        except Exception:  # noqa: BLE001 — corrupt/missing → live build below
+            pass
         body, status = _composite_state_views.build_inner_composite_state(
             ws, ref, parsed
         )
