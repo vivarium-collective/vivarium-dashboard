@@ -145,6 +145,18 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
     contract: t === 'contract' || t === 'full',
     full:     t === 'full',
   };
+  // Per-feature Detail overrides (the Detail menu) layer on top of the tier: each
+  // feature is 'auto' (keep the tier value) or forced. Never applied to a pinned-
+  // open card (that always shows everything).
+  const ov = (data as any)._detailOverrides as
+    { ports?: string; config?: string; contract?: string } | undefined;
+  if (ov && !(data as any)._pinnedOpen) {
+    if (ov.ports === 'none')  { show.ports = false; show.types = false; }
+    else if (ov.ports === 'plain') { show.ports = true;  show.types = false; }
+    else if (ov.ports === 'types') { show.ports = true;  show.types = true; }
+    if (ov.config === 'on')  show.config = true;  else if (ov.config === 'off')  show.config = false;
+    if (ov.contract === 'on') show.contract = true; else if (ov.contract === 'off') show.contract = false;
+  }
 
   const contract = show.contract ? deriveContract(data) : null;
   const completeness = show.full ? contractCompleteness(contract, data) : null;

@@ -115,6 +115,13 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
     wiring: tier === "contract" || tier === "full" || isHub,
     full: tier === "full",
   };
+  // Ports Detail override (the Detail menu) controls the store's type label:
+  // "ports with types" shows it; "show ports"/"no ports" hide it.
+  const _ov = (data as any)._detailOverrides as { ports?: string } | undefined;
+  if (_ov) {
+    if (_ov.ports === "types") show.type = true;
+    else if (_ov.ports === "plain" || _ov.ports === "none") show.type = false;
+  }
 
   return (
     <div

@@ -41,6 +41,9 @@ export type View = {
   collapse?: boolean;
   /** Whether the Milner "processes → hyperedges" view was on when captured. */
   hyperedges?: boolean;
+  /** Per-feature Detail overrides (the Detail menu) in effect when captured.
+   *  Each field 'auto' (or absent) = follow the zoom tier. */
+  detailOverrides?: { ports?: string; config?: string; contract?: string };
 };
 
 export type ViewStore = {
@@ -162,6 +165,14 @@ export function normalizeView(v: any): View {
     collapse: v?.collapse === true,
     // Milner hyperedge view; absent → false.
     hyperedges: v?.hyperedges === true,
+    // Per-feature Detail overrides; absent → all 'auto'.
+    detailOverrides: (v && typeof v.detailOverrides === 'object' && v.detailOverrides)
+      ? {
+          ports: typeof v.detailOverrides.ports === 'string' ? v.detailOverrides.ports : 'auto',
+          config: typeof v.detailOverrides.config === 'string' ? v.detailOverrides.config : 'auto',
+          contract: typeof v.detailOverrides.contract === 'string' ? v.detailOverrides.contract : 'auto',
+        }
+      : { ports: 'auto', config: 'auto', contract: 'auto' },
   };
 }
 
