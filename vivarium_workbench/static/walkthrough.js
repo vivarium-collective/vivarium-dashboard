@@ -11001,6 +11001,24 @@
     return out + '</div>';
   }
 
+  // Download affordances for a graph study card: ↓ figures (this study's own
+  // figures) + ↓ notebook (the parent investigation's runnable notebook). Unlike
+  // the run/continue controls these are NOT authoring-gated — they survive into
+  // the read-only snapshot so shared links can still grab figures. Deliberately
+  // no ▶ run here: the small card stays uncluttered; running lives on the full
+  // study tab.
+  function _dagDownloadControlsHtml(slug) {
+    var lnk = 'font-size:0.66em;color:#3b82f6;text-decoration:none;white-space:nowrap';
+    return '<div class="dag-download-controls" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">' +
+      '<a href="#" title="Download this study\'s figures (panels + its composite) as a zip" ' +
+        'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
+        'style="' + lnk + '">↓ figures</a>' +
+      '<a href="#" title="Download this investigation\'s runnable notebook (includes this study)" ' +
+        'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
+        'style="' + lnk + '">↓ notebook</a>' +
+      '</div>';
+  }
+
   function _triggerStudy(slug, onMissing, btnEl) {
     if (!_dagInvSlug) return;
     var original = btnEl ? btnEl.textContent : '';
@@ -11297,8 +11315,10 @@
         (_opts.followups ? followUpsChip : '') +
         (_opts.chain && chainsBySlug && typeof window._chainBlockHtml === 'function'
           ? window._chainBlockHtml(chainsBySlug[s.name]) : '') +
-        // Layer-4: cached/compute badge + run/continue buttons (live only).
+        // Layer-4: cached/compute badge + downloads (↓figures/↓notebook, all
+        // modes) + run/continue buttons (live only).
         _dagCacheBadgeHtml(s.name) +
+        _dagDownloadControlsHtml(s.name) +
         _dagTriggerControlsHtml(s.name);
       node._followUps = followUps;
       nodesHost.appendChild(node);
@@ -11996,6 +12016,25 @@
     var a = document.createElement('a');
     a.href = url; a.download = name + '-figures.zip';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // A single study's figures (its panels + its own composite) as a zip.
+  window._vivStudyFiguresFromCard = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    var c = window.__DASH_CONFIG__ || {};
+    var base = c.basePath || '';
+    var url = (c.mode === 'snapshot')
+      ? base + '/figures/studies/' + encodeURIComponent(slug) + '.zip'
+      : '/api/study/' + encodeURIComponent(slug) + '/figures.zip';
+    var a = document.createElement('a');
+    a.href = url; a.download = slug + '-figures.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // A study's ↓ notebook is its parent investigation's runnable notebook (there
+  // is no per-study notebook). In the graph the parent is the open investigation.
+  window._vivStudyNotebookFromCard = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    var inv = window._wsInvestigation || window._currentIset || '';
+    if (inv && window._vivNotebookFromCard) window._vivNotebookFromCard(ev, inv);
   };
 
   // Download the coder-facing notebook for the current investigation. In a
