@@ -114,6 +114,37 @@
   }
   function _status(el, html) { var s = el.querySelector(".cfg-status"); if (s) { s.hidden = false; s.innerHTML = html; } }
 
+  // Render the "Running…" line with a Stop control (issue #754): a frozen run
+  // (e.g. memory climbing, never finishing) can be terminated without
+  // force-quitting the whole Python process. Wires the button after each
+  // re-render since _status replaces innerHTML.
+  function _running(el, phase) {
+    _status(el, 'Running… (' + esc(phase || "queued") + ') ' +
+      '<button type="button" class="btn-mini cfg-stop-btn">■ Stop</button>');
+    var sb = el.querySelector(".cfg-stop-btn");
+    if (sb) sb.onclick = function () { _stopRun(el, sb); };
+  }
+
+  function _stopRun(el, sb) {
+    var run = el._lastRunId || "";
+    if (!run) return;
+    sb.disabled = true; sb.textContent = "Stopping…";
+    _post(_api("/api/composite-run/" + encodeURIComponent(run) + "/stop"), {})
+      .then(function (res) {
+        if (res.status !== 200) {
+          sb.disabled = false; sb.textContent = "■ Stop";
+          _status(el, '<span class="inv-run-err">stop failed: ' +
+            esc((res.body && (res.body.error || res.body.outcome)) || res.status) + '</span>');
+        }
+        // On success the poll loop sees status 'cancelled' and renders the
+        // terminal line; nothing more to do here.
+      })
+      .catch(function (e) {
+        sb.disabled = false; sb.textContent = "■ Stop";
+        _status(el, '<span class="inv-run-err">' + esc(String(e)) + '</span>');
+      });
+  }
+
   function _poll(el, statusUrl) {
     var tries = 0;
     var ticks = 0;
@@ -134,7 +165,7 @@
           _reenableBtn();
           return;
         }
-        _status(el, "Running… (" + esc(phase || "queued") + ")");
+        _running(el, phase);
         setTimeout(tick, 2500);
       }).catch(function () { tries += 1; if (tries < 4) setTimeout(tick, 3000); else { _status(el, '<span class="inv-run-err">poll error</span>'); _reenableBtn(); } });
     }

@@ -504,6 +504,30 @@ def mark_orphaned(conn: sqlite3.Connection, *, run_id: str,
         })
 
 
+def mark_cancelled(conn: sqlite3.Connection, *, run_id: str,
+                   workspace=None) -> None:
+    """Mark a run the user stopped from the UI (issue #754).
+
+    Mirrors :func:`mark_orphaned` but records the deliberate terminal state
+    ``cancelled`` (distinct from ``orphaned``, which reconciliation assigns to a
+    run whose process died on its own). Mirrors the terminal event to the JSONL
+    log when ``workspace`` is given, since the JSONL fold wins over sqlite in
+    ``simulations_index`` — without the mirror a stopped run reads ``running``
+    forever.
+    """
+    completed_at = time.time()
+    conn.execute(
+        "UPDATE runs_meta SET status='cancelled', completed_at=? WHERE run_id=?",
+        (completed_at, run_id),
+    )
+    conn.commit()
+    if workspace is not None:
+        run_log.append_run_event(workspace, {
+            "run_id": run_id, "event": "cancelled",
+            "completed_at": completed_at, "status": "cancelled",
+        })
+
+
 PRUNE_KEEP = 20
 
 
