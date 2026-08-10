@@ -211,3 +211,33 @@ def build_figures_zip(ws_root, name: str) -> Optional[bytes]:
             except OSError:
                 continue
     return buf.getvalue()
+
+
+def study_figure_files(ws_root, slug: str) -> list[Path]:
+    """Every declared image-figure file on a single study (panels + its own
+    composite). Backs the study-scoped ``↓ figures``."""
+    ws_root = Path(ws_root)
+    sdir, spec = _load_study(ws_root, slug)
+    if sdir is None:
+        return []
+    return _image_files(sdir, spec)
+
+
+def build_study_figures_zip(ws_root, slug: str) -> Optional[bytes]:
+    """Zip a single study's figures (flat, ``<filename>``), or ``None`` when the
+    study has none. Backs ``GET /api/study/<slug>/figures.zip``."""
+    imgs = study_figure_files(ws_root, slug)
+    if not imgs:
+        return None
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        seen: set[str] = set()
+        for p in imgs:
+            if p.name in seen or not p.is_file():
+                continue
+            seen.add(p.name)
+            try:
+                zf.write(p, p.name)
+            except OSError:
+                continue
+    return buf.getvalue()

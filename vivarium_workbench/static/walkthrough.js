@@ -9665,14 +9665,32 @@
     var actions = document.getElementById('ws-actions');
     if (!actions) return;
     var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
+    var name = window._wsInvestigation || window._currentIset || '';
+    // Match the investigation CARD's ↓ actions (↓ report / ↓ notebook / ↓ figures)
+    // instead of the old emoji buttons. ↓ figures is injected async, only when the
+    // investigation actually has figures (same n_figures gate as the card).
     actions.innerHTML =
       '<button class="btn-mini" onclick="_generateInvestigationReport()" ' +
-        'title="Generate a shareable HTML report">Report 📄</button> ' +
+        'title="Generate a shareable HTML report">↓ report</button> ' +
       '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
-        'title="Download a self-contained Jupyter notebook">Notebook 📓</button>' +
+        'title="Download a self-contained Jupyter notebook">↓ notebook</button>' +
+      '<span id="ws-actions-figures"></span>' +
       (isSnapshot ? '' :
       ' <button class="btn-mini" onclick="_rerunInvestigation()" ' +
         'title="Re-run every member study\'s CURRENT baseline spec (re-derives from each study\'s study.yaml)">▶ Run current spec</button>');
+    if (name) {
+      fetch('/api/investigation-summaries', {headers: {Accept: 'application/json'}})
+        .then(function (r) { return r.json(); })
+        .then(function (j) {
+          var me = ((j && j.investigations) || []).filter(function (i) { return i.name === name; })[0];
+          var host = document.getElementById('ws-actions-figures');
+          if (me && me.n_figures && host) {
+            host.innerHTML = ' <button class="btn-mini" ' +
+              'onclick="window._vivFiguresFromCard(event,\'' + _esc(name) + '\')" ' +
+              'title="Download all figures (studies figures + post-study composites) as a zip">↓ figures</button>';
+          }
+        }).catch(function () {});
+    }
   }
   window._wsSetInvestigationActions = _wsSetInvestigationActions;
 

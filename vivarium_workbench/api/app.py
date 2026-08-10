@@ -3238,6 +3238,37 @@ def create_app() -> FastAPI:
         )
 
     @app.get(
+        "/api/study/{slug}/figures.zip",
+        tags=["Downloads"],
+        summary="Zip of a single study's figures (panels + its composite)",
+        response_class=Response,
+    )
+    def study_figures_zip_route(
+        slug: str,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Serve one study's figure archive as ``<slug>-figures.zip``.
+
+        404 ``{"error": …}`` when the study has no figures.
+        Library-backed via ``lib.investigation_figures.build_study_figures_zip``.
+        """
+        from vivarium_workbench.lib import investigation_figures as _figs
+        blob = _figs.build_study_figures_zip(ws, slug)
+        if blob is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"no figures for study {slug!r}"},
+            )
+        return Response(
+            content=blob,
+            headers={
+                "Content-Type": "application/zip",
+                "Content-Disposition": f'attachment; filename="{slug}-figures.zip"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @app.get(
         "/api/guidance",
         tags=["Downloads"],
         summary="Latest guidance HTML (204 when none)",
