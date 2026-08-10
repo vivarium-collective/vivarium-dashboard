@@ -187,3 +187,62 @@ def test_emit_paths_for_explicit_selection_still_wins_over_declared(monkeypatch)
         lambda spec_id: [{"paths": ["global_time", "bulk"]}])
     out = rr._emit_paths_for(_req(["listeners/mass"]), {}, spec=None, spec_id="x")
     assert out == ["listeners/mass"]
+
+
+# --- #754 robustness: registry-free resolution, source labels, kind-honoring ---
+
+def test_emit_paths_from_state_recovers_nested_emitter_wires():
+    """The declared paths are recoverable from the built state's own emitter node
+    even when it's nested (ecoli_baseline's lives at agents/0/emitter) — the
+    rebrand-proof source that needs no generator registry. Internal '_'-ports skip."""
+    from vivarium_workbench.lib.run_runner import _emit_paths_from_state
+    state = {"global_time": 0.0, "agents": {"0": {"emitter": {
+        "address": "local:pbg_emitters.parquet_emitter.ParquetEmitter",
+        "inputs": {"global_time": ["global_time"], "bulk": ["bulk"],
+                   "listeners": ["listeners"], "_layer_in_7": ["_loom"]}}}}}
+    assert _emit_paths_from_state(state) == ["global_time", "bulk", "listeners"]
+
+
+def test_resolve_emit_paths_falls_through_to_state_when_registry_empty(monkeypatch):
+    """The core robustness: when generator-registry resolution returns nothing
+    (the pbg->viva skew that made the first fix a no-op), the run still emits the
+    declared observables via the state walk — NOT all-stores."""
+    import vivarium_workbench.lib.run_runner as rr
+    monkeypatch.setattr(rr, "_generator_emitter_defaults", lambda spec_id: [])
+    monkeypatch.setattr(rr.cr, "all_store_paths",
+                        lambda s: (_ for _ in ()).throw(AssertionError("must not emit-all")))
+    state = {"emitter": {"address": "local:XArrayEmitter",
+                         "inputs": {"global_time": ["global_time"], "bulk": ["bulk"]}}}
+    paths, source = rr._resolve_emit_paths(_req([]), state, spec=None, spec_id="x")
+    assert paths == ["global_time", "bulk"] and source == "state"
+
+
+def test_resolve_emit_paths_source_labels(monkeypatch):
+    import vivarium_workbench.lib.run_runner as rr
+    # explicit
+    p, s = rr._resolve_emit_paths(_req(["a/b"]), {}, spec=None, spec_id="x")
+    assert (p, s) == (["a/b"], "explicit")
+    # declared (registry)
+    monkeypatch.setattr(rr, "_generator_emitter_defaults",
+                        lambda spec_id: [{"paths": ["global_time", "bulk"]}])
+    p, s = rr._resolve_emit_paths(_req([]), {}, spec=None, spec_id="x")
+    assert (p, s) == (["global_time", "bulk"], "declared")
+    # all-stores (nothing declared, no emitter node in state)
+    monkeypatch.setattr(rr, "_generator_emitter_defaults", lambda spec_id: [])
+    monkeypatch.setattr(rr.cr, "all_store_paths", lambda s: ["x", "y"])
+    p, s = rr._resolve_emit_paths(_req([]), {"x": 1, "y": 2}, spec=None, spec_id="x")
+    assert (p, s) == (["x", "y"], "all-stores")
+
+
+def test_declared_emitter_name_maps_class_to_kind():
+    from vivarium_workbench.lib.run_runner import _declared_emitter_name
+    assert _declared_emitter_name([{"address": "local:XArrayEmitter"}]) == "xarray"
+    assert _declared_emitter_name([{"address": "local:ParquetEmitter"}]) == "parquet"
+    assert _declared_emitter_name([{"address": "local:SQLiteEmitter"}]) == "sqlite"
+    assert _declared_emitter_name([]) is None
+
+
+def test_state_has_process_detects_temporal():
+    from vivarium_workbench.lib.run_runner import _state_has_process
+    assert _state_has_process({"agents": {"0": {"c": {"_type": "process"}}}}) is True
+    assert _state_has_process({"a": {"_type": "step"}}) is False
