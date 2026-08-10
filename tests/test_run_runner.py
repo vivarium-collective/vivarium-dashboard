@@ -150,3 +150,40 @@ def test_execute_marks_failed_on_bad_spec(tmp_path):
     # Traceback / error landed in the log.
     log = ws / meta["log_path"]
     assert log.is_file() and log.stat().st_size > 0
+
+
+# --- #754: default emit_paths to the composite's DECLARED paths, not all stores ---
+
+def test_emit_paths_for_defaults_to_declared_paths_for_a_generator(monkeypatch):
+    """A generator that declares emit paths (e.g. ecoli_baseline →
+    global_time/bulk/listeners) must default to THOSE, not every store — emitting
+    the entire whole-cell state to stacked RAM/sqlite/parquet sinks each tick is
+    the #754 memory blow-up. Mirrors what the direct composite.run() emits."""
+    import vivarium_workbench.lib.run_runner as rr
+    monkeypatch.setattr(
+        rr, "_generator_emitter_defaults",
+        lambda spec_id: [{"paths": ["global_time", "bulk", "listeners"]}])
+    # all_store_paths must NOT be consulted when a declaration exists.
+    monkeypatch.setattr(rr.cr, "all_store_paths",
+                        lambda state: (_ for _ in ()).throw(AssertionError("emit-all")))
+    out = rr._emit_paths_for(_req([]), {"bulk": {}}, spec=None, spec_id="ecoli_baseline")
+    assert out == ["global_time", "bulk", "listeners"]
+
+
+def test_emit_paths_for_falls_back_to_all_stores_when_nothing_declared(monkeypatch):
+    """A composite with no declared emitters keeps the emit-all default."""
+    import vivarium_workbench.lib.run_runner as rr
+    monkeypatch.setattr(rr, "_generator_emitter_defaults", lambda spec_id: [])
+    monkeypatch.setattr(rr.cr, "all_store_paths", lambda state: ["a", "b"])
+    out = rr._emit_paths_for(_req([]), {"a": 1, "b": 2}, spec=None, spec_id="plain")
+    assert out == ["a", "b"]
+
+
+def test_emit_paths_for_explicit_selection_still_wins_over_declared(monkeypatch):
+    """An explicit wiring-view selection always wins, even when paths are declared."""
+    import vivarium_workbench.lib.run_runner as rr
+    monkeypatch.setattr(
+        rr, "_generator_emitter_defaults",
+        lambda spec_id: [{"paths": ["global_time", "bulk"]}])
+    out = rr._emit_paths_for(_req(["listeners/mass"]), {}, spec=None, spec_id="x")
+    assert out == ["listeners/mass"]

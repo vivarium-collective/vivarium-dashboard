@@ -207,14 +207,36 @@ class _RunTimeout(Exception):
     """
 
 
-def _emit_paths_for(req: RunRequest, state: dict) -> list[str]:
+def _emit_paths_for(req: RunRequest, state: dict, *,
+                    spec: "dict | None" = None,
+                    spec_id: "str | None" = None) -> list[str]:
     """Resolve which store paths the run should emit.
 
-    The wiring-view paths the user hand-picked, or — when they picked none —
-    every store in the composite. This makes "emit all" the Composite Explorer
-    Run tab's default; an explicit selection always wins.
+    Priority: the wiring-view paths the user hand-picked → the composite's
+    DECLARED emit paths → every store in the composite.
+
+    Defaulting to the DECLARED paths (from the composite's ``emitters=[...]``
+    decl — e.g. ``global_time/bulk/listeners`` for v2ecoli's ``ecoli_baseline``)
+    mirrors what a direct ``composite.run()`` emits. The old unconditional
+    ``all_store_paths`` default made a whole-cell run emit its ENTIRE state (the
+    ~25k-molecule bulk array + every unique-molecule array + all derived stores)
+    to the stacked RAM + SQLite + Parquet sinks every tick — an unbounded
+    per-tick deep-copy that climbed memory without finishing (issue #754). A
+    composite that declares no emit paths keeps the emit-all default. An explicit
+    selection always wins.
     """
-    return req.emit_paths or cr.all_store_paths(state)
+    if req.emit_paths:
+        return req.emit_paths
+    if spec is not None:
+        from process_bigraph.composite_generator import emitter_defaults
+        decls = emitter_defaults(spec)
+    else:
+        decls = _generator_emitter_defaults(spec_id)
+    from vivarium_workbench.lib.composite_resolve import declared_emit_paths
+    declared = declared_emit_paths(decls)
+    if declared:
+        return declared
+    return cr.all_store_paths(state)
 
 
 def _render_viz(composite, run_dir: Path, *,
@@ -686,7 +708,7 @@ def execute(request_path: Path) -> int:
         # R3: record the resolved emitter kind so the Sims DB Emitter column
         # reflects the sink that actually persisted this run.
         _record_run_emitter(req.workspace, req.run_id, name)
-        emit_paths = _emit_paths_for(req, state)
+        emit_paths = _emit_paths_for(req, state, spec=spec, spec_id=req.spec_id)
 
         # The progress callback both heartbeats and enforces the max-runtime
         # self-terminate: raising _RunTimeout aborts the broker's run loop and
