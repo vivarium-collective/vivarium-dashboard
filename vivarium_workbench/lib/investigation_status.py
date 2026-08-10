@@ -26,9 +26,11 @@ from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 # Sets used by compute_investigation_status. Module scope so the derivation
 # rules are inspectable / overridable from tests.
 _STUDY_STATUS_FAILED = frozenset({"failed", "invalid"})
-_STUDY_STATUS_COMPLETE = frozenset({"complete", "ran"})
+# "passed" = the study's acceptance gate PASSED (auto-derived from the gate
+# evaluator) — the strongest "done" signal, so it counts as complete everywhere.
+_STUDY_STATUS_COMPLETE = frozenset({"complete", "ran", "passed"})
 # Terminal "done" states for the INVESTIGATION roll-up only (Simulate ->
-# Evaluate -> Decide): an all-evaluated investigation reads "complete".
+# Evaluate -> Decide): an all-evaluated/passed investigation reads "complete".
 _STUDY_STATUS_DONE_ROLLUP = _STUDY_STATUS_COMPLETE | frozenset({"evaluated", "decided"})
 _STUDY_STATUS_RUNNING = frozenset({"running", "implementing", "runnable", "analyzing"})
 _STUDY_STATUS_PLANNED = frozenset({"planned", "planning"})

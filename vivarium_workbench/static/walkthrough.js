@@ -9282,8 +9282,13 @@
       var filterStatus = (closed ? 'closed' : effStatus);
 
       // Per-study status → a compact breakdown line + an expandable study list.
-      var _SD = { complete:['#16a34a','done'], running:['#2563eb','running'],
-                  in_progress:['#d97706','in progress'], failed:['#dc2626','failed'],
+      // Keep the "done" vocabulary in sync with the backend roll-up
+      // (_STUDY_STATUS_DONE_ROLLUP): complete/ran/passed/evaluated/decided are all
+      // green "done" states, so a passed study never mislabels as "planned".
+      var _SD = { complete:['#16a34a','done'], ran:['#16a34a','done'], passed:['#16a34a','passed'],
+                  evaluated:['#16a34a','evaluated'], decided:['#16a34a','decided'],
+                  running:['#2563eb','running'], analyzing:['#2563eb','running'],
+                  in_progress:['#d97706','in progress'], failed:['#dc2626','failed'], invalid:['#dc2626','invalid'],
                   planning:['#94a3b8','planned'] };
       function _sMeta(st) { return _SD[st] || _SD[st === 'ran' ? 'complete' : 'planning'] || ['#94a3b8','planned']; }
       var studyObjs = _isetStudyObjs(iset);
