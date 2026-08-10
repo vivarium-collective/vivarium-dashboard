@@ -133,12 +133,15 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // dropping content, never from shrinking text. A pinned-open card always
   // shows full detail regardless of the current zoom tier.
   const tier = ((data as any)._tier ?? 'ports') as
-    'glyph' | 'ports' | 'types' | 'contract' | 'full';
+    'glyph' | 'ports' | 'types' | 'config' | 'contract' | 'full';
   const t = (data as any)._pinnedOpen ? 'full' : tier;
 
   const show = {
     ports:    t !== 'glyph',
-    types:    t === 'types' || t === 'contract' || t === 'full',
+    types:    t === 'types' || t === 'config' || t === 'contract' || t === 'full',
+    // The config band moved to its own tier (between Port types and Contracts):
+    // it appears from `config` up, NOT at the `types` tier.
+    config:   t === 'config' || t === 'contract' || t === 'full',
     contract: t === 'contract' || t === 'full',
     full:     t === 'full',
   };
@@ -294,7 +297,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           left/right port columns supply the inputs→outputs framing spatially,
           so no abstract ƒ(inputs; config)→outputs line is needed. */}
       <div className="process-node-center">
-        {show.types && cfg.length > 0 && (
+        {show.config && cfg.length > 0 && (
           <div
             className={`process-node-config-band section-box${openSection === 'config' ? ' is-open' : ''}`}
             title={SECTION_HINT.config}
@@ -332,6 +335,12 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         <div className="process-node-title">
           {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
           {data.label}
+          {/* Collapsed array of identical processes → how many this stands for. */}
+          {(data as any)._collapsedCount > 1 && (
+            <span className="process-node-count" title={`${(data as any)._collapsedCount} identical processes collapsed into this one`}>
+              ×{(data as any)._collapsedCount}
+            </span>
+          )}
           {/* Minimal (glyph) tier = name only; the DRAFT badge appears from the
               ports tier up. */}
           {show.ports && (data as any).isDraft && (

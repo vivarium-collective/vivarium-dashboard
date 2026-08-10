@@ -28,6 +28,7 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
+import { collapseRedundantProcesses } from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
@@ -62,7 +63,7 @@ const LAYOUT_TIER: ZoomTierId = 'full';
 // Card-detail ladder, least → most detail. Used by the "Detail" toolbar floor.
 const DETAIL_LABELS: Record<string, string> = {
   '': 'Auto (zoom)', glyph: 'Minimal', ports: 'Ports', types: 'Port types',
-  contract: 'Contracts', full: 'Full detail',
+  config: 'Config', contract: 'Contracts', full: 'Full detail',
 };
 const NODE_TYPES = { process: ProcessNode, store: StoreNode };
 // `light` is the cheap default wire (straight, no floating anchors / labels);
@@ -275,7 +276,7 @@ export default function App() {
     // → null (Auto, zoom-driven).
     try {
       const d = new URLSearchParams(window.location.search).get('detail');
-      const valid = ['glyph', 'ports', 'types', 'contract', 'full'];
+      const valid = ['glyph', 'ports', 'types', 'config', 'contract', 'full'];
       return d && valid.includes(d) ? (d as ZoomTierId) : null;
     } catch { return null; }
   });
@@ -433,12 +434,22 @@ export default function App() {
   // Walk the composite state ONCE per state change. On the whole-cell baseline
   // the state is ~6 MB / 345 nodes, so this graph walk is expensive; the layout
   // effect, the reset handler, and the sidebar lists all derive from this.
+  // "Collapse repeated processes": merge topologically-identical array elements
+  // (dFBA[0,0], dFBA[1,0], … → one dFBA[*] with a count). Initialised from
+  // ?collapse=1 so a headless figure render can request it; also captured in
+  // saved views (see captureCurrentView/applyView).
+  const [collapseRedundant, setCollapseRedundant] = useState<boolean>(() => {
+    try { return new URLSearchParams(window.location.search).get('collapse') === '1'; }
+    catch { return false; }
+  });
   const raw = useMemo(
     () => {
-      // Always show BOTH processes and stores (the collapse toggle was removed).
-      return state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
+      const base = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
+      return collapseRedundant
+        ? collapseRedundantProcesses(base.nodes as any[], base.edges as any[]) as typeof base
+        : base;
     },
-    [state],
+    [state, collapseRedundant],
   );
 
   // Focus-culling (hover/click/pin to reveal wiring, with the "N pinned" hint)
@@ -832,7 +843,9 @@ export default function App() {
     // Record the manual detail override (Detail dropdown) — null = Auto — so a
     // saved/default view restores the level of detail it was captured at.
     detail: detailFloor,
-  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor]);
+    // Record whether repeated processes were collapsed, so the view restores it.
+    collapse: collapseRedundant,
+  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant]);
 
   // Applying a view pins its positions (via the layout store, which the layout
   // effect reads) and sets collapsed/hidden — the existing effects re-lay-out
@@ -857,6 +870,8 @@ export default function App() {
     // fills detail:null for them, so a legacy view resets to Auto, matching how
     // it actually rendered when captured (before the override existed).
     setDetailFloor((view.detail as ZoomTierId | null) ?? null);
+    // Restore the collapse-repeats toggle (absent = off).
+    setCollapseRedundant(view.collapse === true);
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
   }, [compositeId, layoutMode.modeId, layoutMode.setModeId]);
 
@@ -1667,12 +1682,28 @@ export default function App() {
                       fontWeight: detailFloor ? 600 : 400,
                     }}
                   >
-                    {['', 'glyph', 'ports', 'types', 'contract', 'full'].map((v) => (
+                    {['', 'glyph', 'ports', 'types', 'config', 'contract', 'full'].map((v) => (
                       <option key={v} value={v}>
                         {v === '' ? 'Detail: Auto' : `Detail: ${DETAIL_LABELS[v]}`}
                       </option>
                     ))}
                   </select>
+                  {/* Collapse repeated processes: dFBA[0,0], dFBA[1,0], … →
+                      one dFBA[*] node with a count. */}
+                  <button
+                    onClick={() => setCollapseRedundant((v) => !v)}
+                    title="Collapse topologically-identical repeated processes (e.g. an array of dFBA[i,j]) into a single representative that shows how many it stands for"
+                    style={{
+                      height: 28, padding: '0 10px', fontSize: 12,
+                      display: 'inline-flex', alignItems: 'center',
+                      background: collapseRedundant ? '#eff6ff' : '#fff',
+                      border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer',
+                      color: collapseRedundant ? '#2563eb' : '#374151',
+                      fontWeight: collapseRedundant ? 600 : 400,
+                    }}
+                  >
+                    ⊞ Collapse repeats
+                  </button>
                   <button
                     onClick={handleResetLayout}
                     title="Re-run auto-layout on the currently visible nodes and fit the view"

@@ -342,6 +342,14 @@ body {
   border-radius: 4px; padding: 1px 6px;
 }
 
+/* Count badge on a collapsed array of identical processes (dFBA[*] ×16). */
+.process-node-count {
+  display: inline-block; margin-left: 8px; vertical-align: middle;
+  font-size: 0.6em; font-weight: 800; letter-spacing: 0.03em;
+  color: #3730a3; background: #e0e7ff; border: 1px solid #c7d2fe;
+  border-radius: 999px; padding: 1px 8px;
+}
+
 .process-type {
   color: #94a3b8;
   font-size: 13px;
@@ -505,28 +513,33 @@ body {
    box for its big centered name). */
 .process-node-ports    .process-node-center,
 .process-node-types    .process-node-center,
+.process-node-config   .process-node-center,
 .process-node-contract .process-node-center,
 .process-node-full     .process-node-center { margin: 0 122px; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */
+/* The config band spreads across the FULL top of the card (negative margins
+   pull it out past the center's port-clearing margins — safe because the ports
+   sit lower down), with larger chips than the body text. */
 .process-node-config-band {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 5px;
-  margin: -2px 0 8px; padding-bottom: 7px;
+  display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 8px 14px;
+  margin: -2px 0 14px; padding-bottom: 12px;
   border-bottom: 1px solid #e5e7eb;
 }
-.config-band-caret { font-size: 10px; color: #a855f7; font-weight: 700; letter-spacing: 0.02em; }
+.config-band-caret { font-size: 17px; color: #a855f7; font-weight: 700; letter-spacing: 0.02em; }
 .config-chip {
-  display: inline-flex; align-items: baseline; gap: 4px;
-  background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 5px;
-  padding: 1px 7px; font-size: 11px;
+  display: inline-flex; align-items: baseline; gap: 5px;
+  background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px;
+  padding: 3px 12px; font-size: 18px;
 }
 .config-chip .config-key { color: #7e22ce; font-weight: 600; }
 .config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
 /* A parameter the composite explicitly SET (vs running on its default) reads
    stronger; defaults are the quieter majority. */
 .config-chip.is-set { background: #f3e8ff; border-color: #d8b4fe; }
-.config-more { font-size: 10.5px; color: #a855f7; font-weight: 600; align-self: center; }
+.config-more { font-size: 16px; color: #a855f7; font-weight: 600; align-self: center; }
 .section-popover-row.is-set .section-popover-key { font-weight: 700; color: #6b21a8; }
 .section-popover-row.is-set .section-popover-val { color: #1e293b; }
 
@@ -547,8 +560,21 @@ body {
   display: flex; flex-direction: column;
   align-items: center; justify-content: center; text-align: center;
 }
+/* No-contract tiers (ports / types / config) have lots of empty card — use
+   bigger process names + ports to fill it, shrinking as more content appears. */
 .process-node-glyph .process-node-title { font-size: 54px; line-height: 1.1; overflow-wrap: anywhere; }
-.process-node-ports .process-node-title { font-size: 38px; line-height: 1.15; overflow-wrap: anywhere; }
+.process-node-ports .process-node-title { font-size: 46px; line-height: 1.12; overflow-wrap: anywhere; }
+.process-node-types .process-node-title { font-size: 40px; line-height: 1.15; overflow-wrap: anywhere; }
+.process-node-config .process-node-title { font-size: 34px; line-height: 1.18; overflow-wrap: anywhere; }
+/* Bigger port names + types at those same no-contract tiers. */
+.process-node-ports .port-in-name,
+.process-node-types .port-in-name,
+.process-node-config .port-in-name { font-size: 27px; max-width: 200px; }
+.process-node-ports .port-in-type,
+.process-node-types .port-in-type,
+.process-node-config .port-in-type { font-size: 20px; max-width: 200px; }
+.process-node-ports .process-node-meta,
+.process-node-types .process-node-meta { font-size: 22px; }
 
 .process-node-title { font-size: 25px; font-weight: 700; color: #1e293b; line-height: 1.2; }
 .process-node-meta  { font-size: 17px; color: #64748b; margin-top: 4px; }
@@ -796,7 +822,8 @@ body {
 .process-node-math > div { margin: 0; }
 /* KaTeX-typeset equations: tighten the display margins for the card and let a
    wide equation scroll horizontally rather than overflow the box. */
-.process-node-math .katex-display { margin: 0.3em 0; overflow-x: auto; overflow-y: hidden; }
+/* No scrollbar — KatexBlock scales a wide equation to fit (see Katex.tsx). */
+.process-node-math .katex-display { margin: 0.3em 0; overflow: visible; }
 .process-node-math .katex { font-size: 1.32em; }
 .katex-eq { text-align: center; }
 /* Symbol glossary — hanging-indent definition list, symbol in ink. */

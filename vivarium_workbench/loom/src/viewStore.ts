@@ -37,6 +37,8 @@ export type View = {
   /** Detail override in effect when captured: '' / null = Auto (zoom-driven),
    *  else a pinned tier ('glyph' | 'ports' | 'types' | 'contract' | 'full'). */
   detail?: string | null;
+  /** Whether "Collapse repeated processes" was on when captured. */
+  collapse?: boolean;
 };
 
 export type ViewStore = {
@@ -154,6 +156,8 @@ export function normalizeView(v: any): View {
     pins: Array.isArray(v?.pins) ? v.pins.filter((p: unknown) => typeof p === 'string') : [],
     // Detail override; absent/invalid → null (Auto, zoom-driven).
     detail: typeof v?.detail === 'string' && v.detail ? v.detail : null,
+    // Collapse-repeats toggle; absent → false.
+    collapse: v?.collapse === true,
   };
 }
 

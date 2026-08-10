@@ -98,7 +98,7 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
 
   const show = {
     value: tier !== "glyph",
-    type: tier === "types" || tier === "contract" || tier === "full",
+    type: tier === "types" || tier === "config" || tier === "contract" || tier === "full",
     wiring: tier === "contract" || tier === "full" || isHub,
     full: tier === "full",
   };

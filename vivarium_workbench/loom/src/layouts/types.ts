@@ -26,7 +26,7 @@ export interface LayoutResult {
   bands?: GroupBand[];
 }
 
-export type ZoomTierId = 'glyph' | 'ports' | 'types' | 'contract' | 'full';
+export type ZoomTierId = 'glyph' | 'ports' | 'types' | 'config' | 'contract' | 'full';
 
 export interface ZoomTier {
   id: ZoomTierId;
