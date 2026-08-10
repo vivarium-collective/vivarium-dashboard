@@ -161,6 +161,29 @@ def _emitter_decl_source(spec: dict | None, spec_id: str):
     return spec if spec is not None else _generator_entry(spec_id)
 
 
+# Declared-emitter address class → the workbench emitter NAME its kind maps to.
+_EMITTER_CLASS_TO_NAME = {
+    "ParquetEmitter": "parquet",
+    "XArrayEmitter": "xarray",
+    "SQLiteEmitter": "sqlite",
+    "RAMEmitter": "ram",
+}
+
+
+def _declared_emitter_name(decls: "list | None") -> "str | None":
+    """The workbench emitter NAME for a composite's declared emitter(s), from the
+    first decl's ``address`` class (``local:XArrayEmitter`` → ``"xarray"``), or
+    ``None`` when nothing recognizable is declared."""
+    for decl in decls or []:
+        if not isinstance(decl, dict):
+            continue
+        cls = str(decl.get("address", "")).split(":")[-1].split(".")[-1]
+        name = _EMITTER_CLASS_TO_NAME.get(cls)
+        if name:
+            return name
+    return None
+
+
 def _select_emitter_name(*, spec: dict | None, spec_id: str, db_file: str) -> str:
     """Pick the emitter NAME for a run, honoring the composite's DECLARED sink.
 
@@ -179,7 +202,11 @@ def _select_emitter_name(*, spec: dict | None, spec_id: str, db_file: str) -> st
     declared = (emitter_defaults(spec) if spec is not None
                 else _generator_emitter_defaults(spec_id))
     if declared:
-        return "parquet"
+        # Honor the KIND the composite declared (xarray → streaming zarr, which
+        # avoids the parquet path's unbounded RAM history for whole-cell runs;
+        # sqlite; …), not a blanket "parquet". Falls back to parquet only when the
+        # declared address isn't a recognized emitter class.
+        return _declared_emitter_name(declared) or "parquet"
     return emitters.default_emitter(spec, Path(db_file))
 
 
@@ -207,14 +234,106 @@ class _RunTimeout(Exception):
     """
 
 
-def _emit_paths_for(req: RunRequest, state: dict) -> list[str]:
-    """Resolve which store paths the run should emit.
+def _state_has_process(state) -> bool:
+    """True if the built ``state`` contains any ``_type: process`` node — i.e. a
+    temporal composite (whole-cell etc.), for which an all-stores emit fallback
+    is the dangerous, memory-unbounded case worth warning about (#754)."""
+    if isinstance(state, dict):
+        if state.get("_type") == "process":
+            return True
+        return any(_state_has_process(v) for v in state.values())
+    if isinstance(state, list):
+        return any(_state_has_process(v) for v in state)
+    return False
 
-    The wiring-view paths the user hand-picked, or — when they picked none —
-    every store in the composite. This makes "emit all" the Composite Explorer
-    Run tab's default; an explicit selection always wins.
+
+def _emit_paths_from_state(state: dict) -> list[str]:
+    """Declared emit paths recovered REGISTRY-FREE from the built ``state``.
+
+    Walks the whole state tree (the composite's emitter step can be nested — e.g.
+    ecoli_baseline's lives at ``agents/0/emitter``) and returns the '/'-joined
+    store paths each emitter node is wired to read. This is the robustness net:
+    it recovers what the composite actually emits without consulting the
+    generator registry, so a run still honors the declared observables even when
+    registry resolution silently returns nothing (e.g. the pbg→viva module skew
+    that made #754's fix a no-op). Internal/layout ports (``_``-prefixed, e.g.
+    loom ``_layer_in_*``) are skipped.
     """
-    return req.emit_paths or cr.all_store_paths(state)
+    out: list[str] = []
+
+    def _walk(node) -> None:
+        if isinstance(node, dict):
+            addr = str(node.get("address", ""))
+            if addr.split(":")[-1].endswith("Emitter"):
+                wires = node.get("inputs")
+                if isinstance(wires, dict):
+                    for port, target in wires.items():
+                        if str(port).startswith("_"):
+                            continue
+                        segs = target if isinstance(target, list) else [target]
+                        norm = "/".join(str(s) for s in segs if s not in (None, ""))
+                        if norm and norm not in out:
+                            out.append(norm)
+            for v in node.values():
+                _walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                _walk(v)
+
+    _walk(state)
+    return out
+
+
+def _resolve_emit_paths(req: RunRequest, state: dict, *,
+                        spec: "dict | None" = None,
+                        spec_id: "str | None" = None) -> "tuple[list[str], str]":
+    """Return ``(emit_paths, source)`` for a run. Priority chain:
+
+      1. ``explicit``   — the wiring-view paths the user hand-picked.
+      2. ``declared``   — the composite's ``emitters=[...]`` declaration, read
+         from the generator registry / static spec.
+      3. ``state``      — the same declaration recovered REGISTRY-FREE by walking
+         the built state's emitter node(s) (rebrand-proof; see
+         :func:`_emit_paths_from_state`).
+      4. ``all-stores`` — last resort: every store. Emitting a whole-cell state
+         into the stacked RAM+SQLite+Parquet sinks each tick is the #754 memory
+         blow-up, so this is the path the caller warns about for temporal runs.
+
+    ``source`` is returned so ``execute`` can log which rung resolved (observability
+    — a silent fall-through to all-stores was exactly the gap that reintroduced
+    the OOM).
+    """
+    if req.emit_paths:
+        return list(req.emit_paths), "explicit"
+    from vivarium_workbench.lib.composite_resolve import declared_emit_paths
+    if spec is not None:
+        from process_bigraph.composite_generator import emitter_defaults
+        decls = emitter_defaults(spec)
+    else:
+        decls = _generator_emitter_defaults(spec_id)
+    declared = declared_emit_paths(decls)
+    if declared:
+        return declared, "declared"
+    from_state = _emit_paths_from_state(state)
+    if from_state:
+        return from_state, "state"
+    return cr.all_store_paths(state), "all-stores"
+
+
+def _emit_paths_for(req: RunRequest, state: dict, *,
+                    spec: "dict | None" = None,
+                    spec_id: "str | None" = None) -> list[str]:
+    """Resolve which store paths the run should emit (paths only; see
+    :func:`_resolve_emit_paths` for the priority chain and the ``source`` label).
+
+    Defaulting to the composite's DECLARED paths — recovered from the generator
+    declaration OR, as a rebrand-proof fallback, from the built state's own
+    emitter node — mirrors what a direct ``composite.run()`` emits and keeps a
+    whole-cell run from deep-copying its ENTIRE state into the RAM+SQLite+Parquet
+    sinks every tick (issue #754). Only a composite with no emitter at all falls
+    through to emit-all. An explicit selection always wins.
+    """
+    return _resolve_emit_paths(req, state, spec=spec, spec_id=spec_id)[0]
 
 
 def _render_viz(composite, run_dir: Path, *,
@@ -686,7 +805,21 @@ def execute(request_path: Path) -> int:
         # R3: record the resolved emitter kind so the Sims DB Emitter column
         # reflects the sink that actually persisted this run.
         _record_run_emitter(req.workspace, req.run_id, name)
-        emit_paths = _emit_paths_for(req, state)
+        emit_paths, _emit_src = _resolve_emit_paths(
+            req, state, spec=spec, spec_id=req.spec_id)
+        # Observability (#754): a silent fall-through to emitting every store was
+        # exactly how a whole-cell run's memory blew up. Log which rung resolved,
+        # and WARN loudly when a temporal composite ends up emitting all stores.
+        _write_log(req, f"emit: {len(emit_paths)} path(s) via '{_emit_src}'"
+                        f"{': ' + ', '.join(emit_paths[:8]) if emit_paths else ''}")
+        if _emit_src == "all-stores" and _state_has_process(state):
+            _write_log(
+                req,
+                f"WARNING: no declared emitter found for temporal composite "
+                f"'{req.spec_id}' — emitting ALL {len(emit_paths)} stores. This "
+                f"deep-copies the full state every tick and can grow memory "
+                f"without bound (#754); declare an emitter (emitters=[...]) or "
+                f"pass explicit emit_paths.")
 
         # The progress callback both heartbeats and enforces the max-runtime
         # self-terminate: raising _RunTimeout aborts the broker's run loop and
