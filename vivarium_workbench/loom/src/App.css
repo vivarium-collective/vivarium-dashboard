@@ -570,7 +570,7 @@ body {
    card, the config band spans edge-to-edge, and the name grows large. */
 .process-node-noports .process-node-center { margin-left: 14px !important; margin-right: 14px !important; }
 .process-node-noports .process-node-config-band { margin-left: 0; margin-right: 0; }
-.process-node-noports .process-node-title { font-size: 52px !important; line-height: 1.08 !important; }
+.process-node-noports .process-node-title { font-size: 34px !important; line-height: 1.1 !important; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */
