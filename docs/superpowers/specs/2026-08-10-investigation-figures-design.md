@@ -65,19 +65,43 @@ build_investigation_figures(ws_root, name) -> list[Figure]
       include: true      # optional (default true; false hides an auto figure)
   ```
 
-- **Output** — an ordered list of light records (URLs, **not** inlined bytes):
+- **Two categories per investigation:**
+  - **Post-study composites** (`figure_<N>`) — the "final figures," one per figure
+    study. These are the presentation stars (Figures tab) and get numbers/captions.
+  - **Study figures** (the panels) — every *other* image visualization declared on
+    each member study (loom SVGs, sim PNGs, gifs). These are the raw components.
+
+- **Output:**
 
   ```
-  Figure = {
-    number, title, caption, study,
-    svg_url, png_url,          # resolved per mode (live vs snapshot)
+  {
+    composites: [ {number, title, caption, study, svg_url, png_url}, … ],  # ordered
+    files:      [ {study, arcname, rel_path}, … ],   # EVERY figure file, for the zip
+    n_composites: int,                               # card-gating count
   }
   ```
 
-  Ordering: by `order` when given, else by `number`.
+  `composites` drives the Figures tab + per-figure downloads (URLs, **not** inlined
+  bytes). `files` is the flat, comprehensive set for the zip — panels *and*
+  composites across **all** member studies. Ordering of composites: by `order`
+  when given, else `number`.
 
 The resolver never raises; a missing file or malformed `figures:` entry is
-skipped so the rest still render.
+skipped so the rest still resolve.
+
+### Download scope — the full investigation figures
+
+The `↓ figures` zip is the **complete** figure archive for the investigation:
+every member study's declared image figures (the panels) **and** the post-study
+composites, organized `<study>/<filename>` (e.g. `fig-07/7a-community-dfba.svg`,
+`fig-07/figure_7.svg`). This is deliberately comprehensive ("the studies figures
+and the post-studies figures"), so the zip can be tens of MB — acceptable for an
+explicit download.
+
+**Card gating:** `↓ figures` appears only when the investigation has ≥1
+post-study composite (or an explicit `figures:` block). This keeps it off
+investigations that merely have scattered study charts (e.g. the test-suite),
+while paper-figures — which has composites — offers the full archive.
 
 ## Payload wiring
 
