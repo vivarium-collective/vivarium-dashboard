@@ -363,6 +363,15 @@ def build_investigations(ws_root: Path) -> dict:
             "composites": composites,
             "description": spec.get("description", ""),
             "topic": spec.get("topic", ""),
+            # Objective text for the expanded investigation-card study rows:
+            # the study's purpose.question (falling back to a top-level question),
+            # its display title, and its one-line claim.
+            "title": spec.get("title", ""),
+            "objective": (
+                (spec.get("purpose") or {}).get("question", "")
+                if isinstance(spec.get("purpose"), dict) else ""
+            ) or spec.get("question", ""),
+            "claim": spec.get("claim", ""),
             "tags": spec.get("tags") or [],
             # Display status: multi-axis truth with "running" gated on a real
             # active run, so a stale `status: running` doesn't mislabel a study
@@ -445,6 +454,15 @@ def build_investigations(ws_root: Path) -> dict:
             "composites": [],
             "description": spec.get("description", ""),
             "topic": spec.get("topic", ""),
+            # Objective text for the expanded investigation-card study rows:
+            # the study's purpose.question (falling back to a top-level question),
+            # its display title, and its one-line claim.
+            "title": spec.get("title", ""),
+            "objective": (
+                (spec.get("purpose") or {}).get("question", "")
+                if isinstance(spec.get("purpose"), dict) else ""
+            ) or spec.get("question", ""),
+            "claim": spec.get("claim", ""),
             "tags": spec.get("tags") or [],
             "status": spec.get("status", "planned"),
             "phase": spec.get("phase"),

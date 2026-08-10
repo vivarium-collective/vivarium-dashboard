@@ -9301,17 +9301,39 @@
           byStatus[st] + ' ' + _esc(m[1]) + '</span>';
       }).join('<span style="color:#cbd5e1">·</span>');
 
-      // Expandable study list (revealed by clicking the studies count).
+      // Expandable study list (revealed by clicking the studies count): each row
+      // pulls the study's objective text + the consistent action set — downloads
+      // (↓ figures / ↓ notebook, all modes) and, live only, ▶ run / ↻ reproduce.
+      var _isSnap = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
       var studyRows = studyObjs.map(function(s) {
         var m = _sMeta((s && (s.effective_status || s.status)) || 'planning');
         var slug = (s && s.name) || '';
-        return '<a href="/studies/' + encodeURIComponent(slug) + '" onclick="event.stopPropagation()" ' +
-          'style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-radius:5px;' +
-          'text-decoration:none;color:#334155;font-size:0.86em" ' +
+        var title = (s && s.title) ? String(s.title) : '';
+        var obj = (s && (s.objective || s.description)) ? String(s.objective || s.description) : '';
+        var objShort = obj ? (obj.length > 150 ? obj.slice(0, 150).replace(/\s+\S*$/, '') + '…' : obj) : '';
+        var lnk = 'font-size:0.82em;color:#3b82f6;text-decoration:none;white-space:nowrap;cursor:pointer';
+        var acts =
+          '<a href="#" style="' + lnk + '" title="Download this study\'s figures (panels + its composite) as a zip" ' +
+            'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ figures</a>' +
+          '<a href="#" style="' + lnk + '" title="Download this study\'s investigation runnable notebook" ' +
+            'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>' +
+          (_isSnap ? '' :
+            '<a href="#" style="' + lnk + '" title="Run this study\'s current baseline spec as a new run" ' +
+              'onclick="window._vivRunStudyFromRow(event,\'' + _esc(slug) + '\');return false;">▶ run</a>' +
+            '<a href="#" style="' + lnk + '" title="Reproduce this study\'s most recent run (replays its recorded manifest)" ' +
+              'onclick="window._vivReproduceStudyFromRow(event,\'' + _esc(slug) + '\');return false;">↻ reproduce</a>');
+        return '<div class="iset-study-row" style="padding:6px;border-radius:5px" ' +
           'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
-          '<span style="width:7px;height:7px;border-radius:50%;background:' + m[0] + '"></span>' +
-          '<code style="font-size:0.92em;color:#475569">' + _esc(slug) + '</code>' +
-          '<span style="margin-left:auto;color:#94a3b8">' + _esc(m[1]) + '</span></a>';
+          '<div style="display:flex;align-items:center;gap:8px">' +
+            '<span style="width:7px;height:7px;border-radius:50%;background:' + m[0] + '"></span>' +
+            '<a href="/studies/' + encodeURIComponent(slug) + '" onclick="event.stopPropagation()" style="text-decoration:none">' +
+              '<code style="font-size:0.92em;color:#475569">' + _esc(slug) + '</code></a>' +
+            (title ? '<span style="font-size:0.86em;color:#334155">' + _esc(title) + '</span>' : '') +
+            '<span style="margin-left:auto;color:#94a3b8;font-size:0.82em">' + _esc(m[1]) + '</span>' +
+          '</div>' +
+          (objShort ? '<div style="font-size:0.8em;color:#64748b;margin:2px 0 0 15px;line-height:1.35">' + _esc(objShort) + '</div>' : '') +
+          '<div style="display:flex;gap:14px;margin:4px 0 0 15px">' + acts + '</div>' +
+        '</div>';
       }).join('');
 
       var qFull = iset.question ? String(iset.question).split('\n')[0] : '';
@@ -12035,6 +12057,41 @@
     if (ev) ev.stopPropagation();
     var inv = window._wsInvestigation || window._currentIset || '';
     if (inv && window._vivNotebookFromCard) window._vivNotebookFromCard(ev, inv);
+  };
+  // ▶ run — launch a study's CURRENT baseline spec as a new run (live only).
+  window._vivRunStudyFromRow = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return;
+    if (!confirm("Run this study's current baseline spec as a new run?")) return;
+    fetch('/api/study-run-baseline', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({study: slug}),
+    }).then(function (r) { return r.json(); }).then(function (j) {
+      var id = j && (j.run_id || j.simulation_id);
+      var msg = id ? ('Run launched — ' + id) : ('Run: ' + ((j && j.error) || 'done'));
+      if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+    }).catch(function (e) { alert('Run failed: ' + e); });
+  };
+  // ↻ reproduce — replay a study's most recent run's recorded manifest (live
+  // only). Resolves the latest run id from /api/simulations first.
+  window._vivReproduceStudyFromRow = function (ev, slug) {
+    if (ev) ev.stopPropagation();
+    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return;
+    fetch('/api/simulations?study=' + encodeURIComponent(slug))
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        var rows = (j && (j.simulations || j.runs)) || [];
+        var latest = rows[0] && (rows[0].run_id || rows[0].id || rows[0].name);
+        if (!latest) { alert('No run to reproduce yet for ' + slug + '.'); return; }
+        return fetch('/api/study-reproduce', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({study: slug, run_id: latest}),
+        }).then(function (r) { return r.json(); }).then(function (res) {
+          var id = res && res.run_id;
+          var msg = id ? ('Reproduce launched — ' + id) : ('Reproduce: ' + ((res && res.error) || 'done'));
+          if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
+        });
+      }).catch(function (e) { alert('Reproduce failed: ' + e); });
   };
 
   // Download the coder-facing notebook for the current investigation. In a
