@@ -1,8 +1,9 @@
-import { memo, useState } from "react";
-import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
+import { memo, useEffect, useState } from "react";
+import { Handle, Position, NodeResizer, useReactFlow, useNodeId, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
 import { portInfo } from "../portInfo";
+import { KatexBlock } from "../Katex";
 import InnerCompositePreview from "./InnerCompositePreview";
 import { configParams } from "../configView";
 
@@ -73,6 +74,11 @@ function LegacyBody({ data, stepKind }: {
       <div className="process-body">
         <div className="process-label">
           {data.label}
+          {(data as any).isDraft && (
+            <span className="process-node-draft" title="Draft process — typed ports + contract, but NO update dynamics yet">
+              DRAFT
+            </span>
+          )}
           {data.isCompositeProcess && (
             <span
               className="process-node-drill"
@@ -127,12 +133,15 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // dropping content, never from shrinking text. A pinned-open card always
   // shows full detail regardless of the current zoom tier.
   const tier = ((data as any)._tier ?? 'ports') as
-    'glyph' | 'ports' | 'types' | 'contract' | 'full';
+    'glyph' | 'ports' | 'types' | 'config' | 'contract' | 'full';
   const t = (data as any)._pinnedOpen ? 'full' : tier;
 
   const show = {
     ports:    t !== 'glyph',
-    types:    t === 'types' || t === 'contract' || t === 'full',
+    types:    t === 'types' || t === 'config' || t === 'contract' || t === 'full',
+    // The config band moved to its own tier (between Port types and Contracts):
+    // it appears from `config` up, NOT at the `types` tier.
+    config:   t === 'config' || t === 'contract' || t === 'full',
     contract: t === 'contract' || t === 'full',
     full:     t === 'full',
   };
@@ -239,7 +248,20 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // override of the tier size. The corner handles are HIDDEN by default and
   // revealed only on card hover (CSS), so they don't clutter every card — the
   // functionality is there, just not always visible.
-  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  // Hand-set size persists on data._size (saved with the layout/default view);
+  // local `dims` gives smooth drag feedback, seeded from + synced to it.
+  const _rf = useReactFlow();
+  const _nodeId = useNodeId();
+  const savedSize = (data as any)._size as { width: number; height: number } | undefined;
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(savedSize ?? null);
+  useEffect(() => {
+    if (savedSize) setDims(savedSize);
+  }, [savedSize?.width, savedSize?.height]);
+  const commitSize = (w: number, h: number) => {
+    if (!_nodeId) return;
+    _rf.setNodes((ns: any[]) => ns.map((n) =>
+      n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: w, height: h } } } : n));
+  };
   // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.
   const [openPort, setOpenPort] = useState<string | null>(null);
   // Which middle section's detail is expanded (click a center box). 'config'
@@ -251,13 +273,14 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   return (
     <div
       className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}
-      style={dims ? { width: dims.width, height: dims.height, overflow: 'auto' } : undefined}
+      style={dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : undefined}
     >
       <NodeResizer
         isVisible={show.ports}
         minWidth={360}
         minHeight={200}
         onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
+        onResizeEnd={(_e, p) => commitSize(p.width, p.height)}
         handleClassName="loom-resize-handle"
         lineClassName="loom-resize-line"
       />
@@ -274,7 +297,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           left/right port columns supply the inputs→outputs framing spatially,
           so no abstract ƒ(inputs; config)→outputs line is needed. */}
       <div className="process-node-center">
-        {show.types && cfg.length > 0 && (
+        {show.config && cfg.length > 0 && (
           <div
             className={`process-node-config-band section-box${openSection === 'config' ? ' is-open' : ''}`}
             title={SECTION_HINT.config}
@@ -312,6 +335,14 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         <div className="process-node-title">
           {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
           {data.label}
+          {/* Collapsed array of identical processes → how many this stands for. */}
+          {(data as any)._collapsedCount > 1 && (
+            <span className="process-node-count" title={`${(data as any)._collapsedCount} identical processes collapsed into this one`}>
+              ×{(data as any)._collapsedCount}
+            </span>
+          )}
+          {/* No separate DRAFT badge — the meta line below reads "draft process"
+              instead of "process" (more discrete, shown from the ports tier up). */}
           {data.isCompositeProcess && (
             <span
               className="process-node-drill"
@@ -323,7 +354,9 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         </div>
         {show.ports && (
           <div className="process-node-meta" title={SECTION_HINT.meta}>
-            {data.processType} · {inputPorts.length} in / {outputPorts.length} out
+            {/* "draft process" / "process" — the in/out counts are omitted: the
+                port columns already make the arity obvious. */}
+            {(data as any).isDraft ? `draft ${data.processType}` : data.processType}
             {data.interval != null && <span> · every {data.interval}</span>}
           </div>
         )}
@@ -360,7 +393,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
         {show.contract && contract && contract.math.length > 0 && (
           <div className="process-node-math" title={SECTION_HINT.math}>
-            {contract.math.map((m, i) => <div key={i}>{m}</div>)}
+            {contract.math.map((m, i) => <KatexBlock key={i} tex={m} />)}
           </div>
         )}
 

@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
+import { memo, useEffect, useState } from "react";
+import { Handle, Position, NodeResizer, useReactFlow, useNodeId, type NodeProps } from "@xyflow/react";
 import type { StoreNodeData } from "../types";
 import type { ZoomTierId } from "../layouts/types";
 import { abbreviateType } from "../contract";
@@ -28,12 +28,56 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
   const isCollapsed = (data as any).isCollapsed;
   const tierRaw = (data as any)._tier as ZoomTierId | undefined;
 
+  // Manual resize: drag a corner to widen/enlarge the store, just like a
+  // process card. Handles are hidden by CSS until the node is hovered.
+  // Hand-set size persists on data._size (saved with the layout/default view);
+  // local `dims` gives smooth drag feedback, seeded from + synced to it.
+  const _rf = useReactFlow();
+  const _nodeId = useNodeId();
+  const savedSize = (data as any)._size as { width: number; height: number } | undefined;
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(savedSize ?? null);
+  useEffect(() => {
+    if (savedSize) setDims(savedSize);
+  }, [savedSize?.width, savedSize?.height]);
+  // Override the tier's max-width/height caps too, or the inline width can't
+  // grow past them and a drag just shifts the box instead of widening it.
+  const sizeStyle = dims
+    ? { width: dims.width, height: dims.height, maxWidth: dims.width, maxHeight: dims.height }
+    : undefined;
+  const resizer = (
+    <NodeResizer
+      isVisible
+      minWidth={72}
+      minHeight={44}
+      onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
+      onResizeEnd={(_e, p) => {
+        if (_nodeId) _rf.setNodes((ns: any[]) => ns.map((n) =>
+          n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: p.width, height: p.height } } } : n));
+      }}
+      handleClassName="loom-resize-handle"
+      lineClassName="loom-resize-line"
+    />
+  );
+
+  // Hyperedge marker (Milner view): a compact dashed node standing in for a
+  // process that has been collapsed into a hyperedge over its stores.
+  if ((data as any)._hyperedge) {
+    return (
+      <div className="store-node store-node-hyperedge" style={sizeStyle}>
+        {resizer}
+        <StoreHandles />
+        <div className="store-label">{data.label}</div>
+      </div>
+    );
+  }
+
   // Hierarchy mode never stamps a tier — render the legacy circle unchanged so
   // that mode is byte-identical to before semantic zoom existed.
   if (tierRaw == null) {
     const hasValue = data.value !== undefined && data.value !== null;
     return (
-      <div className={`store-node ${isCollapsed ? "store-node-collapsed" : ""}`}>
+      <div className={`store-node ${isCollapsed ? "store-node-collapsed" : ""}`} style={sizeStyle}>
+        {resizer}
         <Handle type="target" position={Position.Top} id="top-place" />
         <Handle type="source" position={Position.Left} id="left-out" />
         <Handle type="target" position={Position.Right} id="right-in" />
@@ -43,10 +87,8 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
             {String(data.value).slice(0, 20)}
           </div>
         )}
-        {(data as any).isGroup && (
-          <div className="collapse-indicator">
-            {isCollapsed ? "▶" : "▼"}
-          </div>
+        {(data as any).isGroup && isCollapsed && (
+          <div className="collapse-indicator">▶</div>
         )}
         <Handle type="source" position={Position.Bottom} id="bottom-place" />
       </div>
@@ -68,13 +110,17 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
 
   const show = {
     value: tier !== "glyph",
-    type: tier === "types" || tier === "contract" || tier === "full",
+    type: tier === "types" || tier === "config" || tier === "contract" || tier === "full",
     wiring: tier === "contract" || tier === "full" || isHub,
     full: tier === "full",
   };
 
   return (
-    <div className={`store-node store-node-${tier} ${isCollapsed ? "store-node-collapsed" : ""} ${isHub ? "store-node-hub" : ""}`}>
+    <div
+      className={`store-node store-node-${tier} ${isCollapsed ? "store-node-collapsed" : ""} ${isHub ? "store-node-hub" : ""}`}
+      style={sizeStyle}
+    >
+      {resizer}
       <StoreHandles />
       <div className="store-label">{data.label}</div>
       {show.value && data.value != null && (

@@ -404,7 +404,7 @@ export const hierarchyMode: LayoutMode = {
     // for ELK — otherwise a tall card overflows downward past its ELK box into
     // the next layer and visually collides. `nodeSize` reads this `_elkH`, so
     // both the ELK ranks and the trailing grid space the card correctly.
-    const showsPortRows = tier.id === 'types' || tier.id === 'contract' || tier.id === 'full';
+    const showsPortRows = tier.id === 'types' || tier.id === 'config' || tier.id === 'contract' || tier.id === 'full';
     const PORT_ROW_H = 16;
     const processHeight = (n: Node): number => {
       if (!showsPortRows) return tier.cardHeight;

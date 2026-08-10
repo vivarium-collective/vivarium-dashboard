@@ -16,6 +16,7 @@ The FastAPI app (``api/app.py``) imports these builders directly; ``server.py``'
 """
 from __future__ import annotations
 
+import base64
 import io
 import json
 import zipfile
@@ -339,14 +340,54 @@ def build_run_artifact(ws_root, run_id: str, name: str) -> tuple[bytes, str, "st
         return b"", media_type, None, 404
     raw = path.read_bytes()
     if name == "viz":
-        # viz.json is {viz_name: html_string}; wrap into a viewable page.
-        import html as _html
         try:
             viz = json.loads(raw.decode("utf-8"))
         except (json.JSONDecodeError, UnicodeDecodeError):
             viz = {}
+        items = list(viz.items()) if isinstance(viz, dict) else []
+
+        # When every visualization is a standalone image (an SVG document or a
+        # PNG data-URI — the paper-figure / bigraph-loom case), serve the file(s)
+        # as a FILE DOWNLOAD rather than an inline HTML viewer page: a single file
+        # directly, or a .zip when the run has several (e.g. an SVG + PNG of each
+        # panel). Detected by content, so plot/GIF/HTML viz (the normal
+        # simulation case) still open inline via the page below.
+        def _is_svg(s: object) -> bool:
+            return isinstance(s, str) and s.lstrip()[:200].lstrip().startswith(("<?xml", "<svg"))
+
+        def _is_png(s: object) -> bool:
+            return isinstance(s, str) and s.startswith("data:image/png")
+
+        def _as_file(vn: str, vh: str):
+            """(filename, bytes) for one image viz entry."""
+            vn = str(vn)
+            if _is_png(vh):
+                fn = vn if vn.lower().endswith(".png") else f"{vn}.png"
+                return fn, base64.b64decode(vh[vh.index(",") + 1:])
+            fn = vn if vn.lower().endswith(".svg") else f"{vn}.svg"
+            return fn, vh.encode("utf-8")
+
+        images = [(vn, vh) for vn, vh in items if _is_svg(vh) or _is_png(vh)]
+        if images and len(images) == len(items):
+            if len(images) == 1:
+                fn, data = _as_file(*images[0])
+                media = "image/png" if fn.lower().endswith(".png") else "image/svg+xml"
+                return data, media, fn, 200
+            buf = io.BytesIO()
+            with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for vn, vh in images:
+                    fn, data = _as_file(vn, vh)
+                    zf.writestr(fn, data)
+            # Clean zip name: drop the "<pkg>.composites." prefix and the
+            # "__<ts>__<hash>" run-id suffix, leaving e.g. "fig07-…_viz.zip".
+            base = str(run_id).rsplit(".", 1)[-1].split("__", 1)[0] or "run"
+            safe = base.replace("/", "_")
+            return buf.getvalue(), "application/zip", f"{safe}_viz.zip", 200
+
+        # Otherwise: viz.json is {viz_name: html_string}; wrap into a viewable page.
+        import html as _html
         sections = []
-        for vname, vhtml in (viz.items() if isinstance(viz, dict) else []):
+        for vname, vhtml in items:
             sections.append(
                 f'<section style="margin:18px 0"><h3 style="font-family:system-ui;'
                 f'color:#111827">{_html.escape(str(vname))}</h3>{vhtml}</section>'

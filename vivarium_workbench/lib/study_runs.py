@@ -131,6 +131,73 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
         response.setdefault("viz_files", []).extend(viz_files)
     if viz_errors:
         response.setdefault("viz_errors", []).extend(viz_errors)
+    # Mirror the study's visualizations into the run's own artifact
+    # (.pbg/runs/<run_id>/viz.json = {name: html}) so the Runs-tab per-run
+    # "download viz" button resolves. The study-baseline flow never wrote the
+    # run-dir viz.json — only the composite/env-worker run paths did — so the
+    # button 404'd for every study-launched run.
+    #
+    # Prefer STATIC image visualizations (address `image:<rel>`): read the
+    # referenced file (e.g. a pre-rendered bigraph-loom SVG) directly and embed
+    # it. render_study_visualizations can't render these — it looks the address
+    # up as a Visualization class and writes a "Failed to render" stub — so we
+    # bypass it for image entries and fall back to any real rendered HTML for
+    # the rest. Best-effort; never fail a run.
+    if run_id:
+        try:
+            from pathlib import Path
+            from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+            run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
+            viz_html: dict[str, str] = {}
+            # 1. Static image visualizations, resolved from the study spec.
+            for v in (spec.get("visualizations") or []):
+                if not isinstance(v, dict):
+                    continue
+                addr = str(v.get("address") or "")
+                if not addr.startswith("image:"):
+                    continue
+                img = Path(study_dir) / addr[len("image:"):]
+                if not img.is_file():
+                    continue
+                try:
+                    content = img.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                name = v.get("name") or img.name
+                # Store the RAW SVG so the Runs-tab "Viz" action can serve it as
+                # a direct file download (build_run_artifact detects image-only
+                # viz.json and attaches the file(s) / a .zip instead of an inline
+                # HTML page).
+                if img.suffix.lower() == ".svg" or content.lstrip().startswith("<"):
+                    viz_html[name] = content
+                    # Emit the sibling PNG too (rendered alongside the SVG), as a
+                    # data-URI, so the download bundles both formats of every image.
+                    png = img.with_suffix(".png")
+                    if png.is_file():
+                        import base64
+                        b64 = base64.b64encode(png.read_bytes()).decode("ascii")
+                        png_key = (name[:-4] if name.lower().endswith(".svg") else name) + ".png"
+                        viz_html[png_key] = f"data:image/png;base64,{b64}"
+            # 2. Any successfully-rendered (non-stub) HTML from the viz render.
+            for rel in (viz_files or []):
+                p = Path(study_dir) / rel
+                if not p.is_file():
+                    continue
+                key = p.name[:-5] if p.name.endswith(".html") else p.name
+                if key in viz_html:
+                    continue
+                try:
+                    html = p.read_text(encoding="utf-8")
+                except OSError:
+                    continue
+                if "Failed to render" not in html:
+                    viz_html[key] = html
+            if viz_html:
+                run_dir.mkdir(parents=True, exist_ok=True)
+                (run_dir / "viz.json").write_text(
+                    json.dumps(viz_html, default=str), encoding="utf-8")
+        except Exception:  # noqa: BLE001 — artifact mirror is best-effort
+            pass
     # post_run_scripts: study-yaml-declared scripts to invoke after the
     # auto-render dispatch. Pattern for hand-rolled render scripts that
     # don't fit the @Visualization class registry (e.g. chromosome-state

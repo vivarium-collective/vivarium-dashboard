@@ -197,6 +197,34 @@ function DockZone(props: {
     e.preventDefault();
   };
 
+  // All panels in this zone collapsed → a THIN vertical rail (rotated labels)
+  // so the canvas reclaims the whole zone width instead of a ~250px horizontal
+  // tab row. Clicking a label re-expands that panel.
+  if (!anyExpanded) {
+    return (
+      <div
+        className={`loom-dock-zone loom-dock-zone-${side} loom-dock-rail`}
+        style={{
+          flex: '0 0 auto', display: 'flex', flexDirection: 'column',
+          gap: 6, padding: '8px 3px', background: '#fff', ...border,
+          fontFamily: 'system-ui, sans-serif',
+        }}
+      >
+        {specs.map((spec) => (
+          <button
+            key={spec.id}
+            className="loom-dock-tab loom-dock-tab-vert"
+            title={`Expand ${spec.title}`}
+            aria-label={`Expand ${spec.title}`}
+            onClick={() => props.onSetCollapsed(spec.id, false)}
+          >
+            {spec.title}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div
       className={`loom-dock-zone loom-dock-zone-${side}`}
@@ -220,19 +248,27 @@ function DockZone(props: {
           }}
         />
       )}
-      {specs.map((spec) => {
+      {/* Collapsed panels share ONE compact horizontal row of thin chips at the
+          top of the zone (instead of each becoming a tall vertical bar that
+          eats the whole side). Expanded panels render below. */}
+      {specs.some((s) => state.panels[s.id]?.collapsed) && (
+        <div className="loom-dock-tabs-row">
+          {specs.filter((s) => state.panels[s.id]?.collapsed).map((spec) => (
+            <button
+              key={spec.id}
+              className="loom-dock-tab"
+              title={`Expand ${spec.title}`}
+              aria-label={`Expand ${spec.title}`}
+              onClick={() => props.onSetCollapsed(spec.id, false)}
+            >
+              {spec.title}
+            </button>
+          ))}
+        </div>
+      )}
+      {specs.filter((s) => !state.panels[s.id]?.collapsed).map((spec) => {
         const placement = state.panels[spec.id] ?? { side: spec.defaultSide, collapsed: false };
-        return placement.collapsed ? (
-          <button
-            key={spec.id}
-            className="loom-dock-tab"
-            title={`Expand ${spec.title}`}
-            aria-label={`Expand ${spec.title}`}
-            onClick={() => props.onSetCollapsed(spec.id, false)}
-          >
-            {spec.title}
-          </button>
-        ) : (
+        return (
           <section key={spec.id} className="loom-dock-panel" style={{ flex: '1 1 0', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <header className="loom-dock-panel-header">
               <span className="loom-dock-panel-title">{spec.title}</span>

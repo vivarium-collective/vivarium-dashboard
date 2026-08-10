@@ -4,7 +4,7 @@ import {
   useNodesState, useEdgesState, getNodesBounds, getViewportForBounds,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { toPng, toSvg } from 'html-to-image';
+import { toPng, toSvg, getFontEmbedCSS } from 'html-to-image';
 
 // ProcessNode and StoreNode are default exports from the loom node modules
 import ProcessNode from './nodes/ProcessNode';
@@ -28,11 +28,12 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
-import { collapseStores, collapseProcesses } from './collapse';
+import { collapseRedundantProcesses, processesToHyperedges } from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
-import { getDefaultView, decodeView, fetchView, type View } from './viewStore';
+import LayoutMenu from './panels/LayoutMenu';
+import { getDefaultView, decodeView, fetchView, normalizeView, type View } from './viewStore';
 import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
 import { ProcessPanel } from './panels/ProcessPanel';
 import { NodesPanel } from './panels/NodesPanel';
@@ -60,6 +61,11 @@ import type { ExploreInspectMsg, ParameterDecl } from './api';
 // lists `tier` as a dep, and does not clear the saved layout on a tier change),
 // so zooming reveals card content but does NOT move nodes.
 const LAYOUT_TIER: ZoomTierId = 'full';
+// Card-detail ladder, least → most detail. Used by the "Detail" toolbar floor.
+const DETAIL_LABELS: Record<string, string> = {
+  '': 'Auto (zoom)', glyph: 'Minimal', ports: 'Ports', types: 'Port types',
+  config: 'Config', contract: 'Contracts', full: 'Full detail',
+};
 const NODE_TYPES = { process: ProcessNode, store: StoreNode };
 // `light` is the cheap default wire (straight, no floating anchors / labels);
 // `floating` is the rich labelled edge, used only for FOCUSED wires. Non-wire
@@ -109,7 +115,6 @@ export default function App() {
   const layoutMode = useLayoutMode();
   // Collapse view: 'none' (both), 'stores' (process-only graph), 'processes'
   // (stores + processes shrunk to hyperedge junctions).
-  const [collapseMode, setCollapseMode] = useState<'none' | 'stores' | 'processes'>('none');
   // Which processes are "active" (hovered / selected / pinned). Modes that
   // implement `edgeVisibility` use this to cull wires; modes that don't
   // (hierarchy) ignore it entirely and keep drawing every edge.
@@ -121,7 +126,9 @@ export default function App() {
   // STRUCTURALLY via a toggle (its `edgeVisibility` is defined but ignores
   // focus), so its focus is inert — hover tracking, the focus hint, and pin
   // pruning stay gated off, exactly as before hierarchy gained hub-hiding.
-  const culls = !!layoutMode.mode.focusReveals;
+  // `culls` (focus-culling: start with wires hidden, hover/click/pin to reveal)
+  // is defined AFTER `raw` below — it now also depends on the wire-edge count so
+  // small composites never cull (every mode shows all wires; `○` matches flow).
   // Hub-store wires (bulk/listeners/…) are always hidden in the overview — the
   // former "Show hub wires" toggle was removed as noise. Kept as a const so the
   // drawn-edge seam (drawFocus / culls) still reads it; focusing a process still
@@ -130,10 +137,23 @@ export default function App() {
   // Initial tab honours ?tab=<id> (used by the workbench to embed a single
   // view — e.g. the Visualizations/Results panel inside the card's Outputs).
   const [tab, setTab] = useState<TabId>(() => {
+    const valid: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
     try {
-      const t = new URLSearchParams(window.location.search).get('tab');
-      const valid: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get('tab');
       if (t && (valid as string[]).includes(t)) return t as TabId;
+      // Honor ?tabs= so the default landing tab is one that is actually visible.
+      const raw = params.get('tabs');
+      if (raw) {
+        const alias: Record<string, TabId> = {
+          explore: 'wiring', wiring: 'wiring', configure: 'setup', setup: 'setup',
+          results: 'results', visualizations: 'visualizations', document: 'document',
+        };
+        const allowed = raw.split(',')
+          .map((s) => alias[s.trim().toLowerCase()])
+          .filter(Boolean) as TabId[];
+        if (allowed.length && !allowed.includes('wiring')) return allowed[0];
+      }
     } catch { /* no-op */ }
     return 'wiring';
   });
@@ -153,6 +173,14 @@ export default function App() {
   // committed JSON snapshot (?stateUrl=) instead of the /api/* endpoints.
   const STATIC = useMemo(
     () => new URLSearchParams(window.location.search).get('static') === '1',
+    [],
+  );
+  // Read-only render mode: the headless figure renderer sets ?nopersist=1 so it
+  // NEVER writes node positions back to the workspace. Without this, opening a
+  // composite to render it re-ran auto-layout and persisted THOSE positions,
+  // silently overwriting the user's hand-arranged default layout.
+  const NO_PERSIST = useMemo(
+    () => new URLSearchParams(window.location.search).get('nopersist') === '1',
     [],
   );
   const [runContext, setRunContext] = useState<string>('');
@@ -239,6 +267,21 @@ export default function App() {
   // never re-runs the layout. `tieredNodes` stamps `_tier` from this for card
   // rendering; the layout effect deliberately does not depend on it.
   const [tier, setTier] = useState<ZoomTierId>('ports');
+  // Manual DETAIL override (top-toolbar dropdown). `null` = Auto: the card
+  // detail follows the zoom-driven `tier`. Set to a tier to PIN card detail to
+  // exactly that level at ANY zoom — from `minimal` (name only) up through
+  // `full` — so you can force less OR more detail than the zoom would give.
+  const [detailFloor, setDetailFloor] = useState<ZoomTierId | null>(() => {
+    // ?detail=<tier> pins the detail level on load (used by the headless SVG
+    // renderer to force e.g. `glyph` for big array composites). Empty/invalid
+    // → null (Auto, zoom-driven).
+    try {
+      const d = new URLSearchParams(window.location.search).get('detail');
+      const valid = ['glyph', 'ports', 'types', 'config', 'contract', 'full'];
+      return d && valid.includes(d) ? (d as ZoomTierId) : null;
+    } catch { return null; }
+  });
+  const effTier: ZoomTierId = detailFloor ?? tier;
   // Zoom-fight fix: applying a new tier resizes every card, and doing that on
   // EVERY wheel step mid-gesture makes React Flow re-measure growing nodes while
   // the user is still zooming — which reads as the canvas shoving back / zooming
@@ -313,7 +356,16 @@ export default function App() {
         if (cancelled) return;
         // Accept either an /api/composite-state response ({state: ...}) or a
         // bare state object (a committed snapshot may be either shape).
-        const st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
+        let st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
+        // A discovered static composite spec is
+        //   { name, description, requires, state: {...bigraph document} }
+        // so the actual document is one level deeper. Unwrap it (guarded on the
+        // spec markers + absence of a leaf `_type`) so the graph renders the
+        // stores/processes, not the spec's metadata keys.
+        if (st && typeof st === 'object' && 'state' in st && !('_type' in st) &&
+            ('requires' in st || 'parameters' in st || 'description' in st)) {
+          st = (st as { state: unknown }).state;
+        }
         if (st && !state) {
           setState(st);
           setEmitSet(initialEmitSet(st));
@@ -365,8 +417,17 @@ export default function App() {
   >(null);
   if (!debouncedPersistRef.current) {
     debouncedPersistRef.current = debounce(
-      (id: string, positions: ReturnType<typeof positionsFromNodes>, modeId: string) =>
-        saveLayout(id, positions, modeId),
+      (id: string, positions: ReturnType<typeof positionsFromNodes>, modeId: string) => {
+        saveLayout(id, positions, modeId);
+        // Also persist to the WORKSPACE so a hand-tuned layout survives reloads
+        // across sessions AND is picked up by headless renders (the study figure
+        // SVGs). Best-effort — offline/static mode just keeps the local cache.
+        fetch('/api/composite-layout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id, mode: modeId, positions }),
+        }).catch(() => {});
+      },
       250,
     );
   }
@@ -374,17 +435,41 @@ export default function App() {
   // Walk the composite state ONCE per state change. On the whole-cell baseline
   // the state is ~6 MB / 345 nodes, so this graph walk is expensive; the layout
   // effect, the reset handler, and the sidebar lists all derive from this.
+  // "Collapse repeated processes": merge topologically-identical array elements
+  // (dFBA[0,0], dFBA[1,0], … → one dFBA[*] with a count). Initialised from
+  // ?collapse=1 so a headless figure render can request it; also captured in
+  // saved views (see captureCurrentView/applyView).
+  const [collapseRedundant, setCollapseRedundant] = useState<boolean>(() => {
+    try { return new URLSearchParams(window.location.search).get('collapse') === '1'; }
+    catch { return false; }
+  });
+  // Milner view: replace processes with hyperedges over their stores.
+  const [hyperedgeMode, setHyperedgeMode] = useState<boolean>(() => {
+    try { return new URLSearchParams(window.location.search).get('hyperedges') === '1'; }
+    catch { return false; }
+  });
   const raw = useMemo(
     () => {
-      const base = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
-      // 'stores' → process-only graph (who feeds whom); 'processes' → store-only
-      // graph (which state feeds which). Both drop the other node type entirely.
-      if (collapseMode === 'stores') return collapseStores(base.nodes, base.edges);
-      if (collapseMode === 'processes') return collapseProcesses(base.nodes, base.edges);
-      return base;
+      let g = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
+      if (collapseRedundant) g = collapseRedundantProcesses(g.nodes as any[], g.edges as any[]) as typeof g;
+      if (hyperedgeMode) g = processesToHyperedges(g.nodes as any[], g.edges as any[]) as typeof g;
+      return g;
     },
-    [state, collapseMode],
+    [state, collapseRedundant, hyperedgeMode],
   );
+
+  // Focus-culling (hover/click/pin to reveal wiring, with the "N pinned" hint)
+  // is a DENSITY tool for big graphs. Only enable it when a mode asks for it AND
+  // the graph is actually large — so small composites show ALL wires in every
+  // mode and `○` is consistent with the flow (↓ / →) modes.
+  const wireEdgeCount = useMemo(
+    () => (raw.edges as any[]).filter((e) => {
+      const k = (e.data as { edgeType?: string } | undefined)?.edgeType;
+      return k === 'input' || k === 'output';
+    }).length,
+    [raw],
+  );
+  const culls = !!layoutMode.mode.focusReveals && wireEdgeCount > 120;
 
   // (Re)generate nodes + edges whenever the composite state OR the set of
   // collapsed groups changes. Saved positions take precedence over the
@@ -423,7 +508,20 @@ export default function App() {
     const visibleEdges = retargetEdgesToVisible(raw.edges as any[], visibleIds);
 
     (async () => {
-      const saved = loadLayout(compositeId, layoutMode.modeId);
+      let saved = loadLayout(compositeId, layoutMode.modeId);
+      // Prefer WORKSPACE-persisted positions (shared across sessions + used by
+      // headless renders) over the local cache; merge so any local-only nodes
+      // keep their spot. Best-effort — offline/static mode uses the local cache.
+      if (compositeId) {
+        try {
+          const r = await fetch(
+            `/api/composite-layout?id=${encodeURIComponent(compositeId)}&mode=${encodeURIComponent(layoutMode.modeId)}`);
+          if (r.ok) {
+            const serverPos = (await r.json())?.positions;
+            if (serverPos && Object.keys(serverPos).length) saved = { ...saved, ...serverPos };
+          }
+        } catch { /* no server — use local cache */ }
+      }
       // Always lay out at the LARGEST (full) tier so cards never overlap at any
       // zoom and positions are stable across tier changes (persistent placement).
       const { nodes: laidOut } = await layoutMode.runLayout(
@@ -445,7 +543,8 @@ export default function App() {
           if (p
             && p.position?.x === n.position?.x
             && p.position?.y === n.position?.y
-            && (p.hidden ?? false) === h) {
+            && (p.hidden ?? false) === h
+            && (p.data?.isCollapsed ?? false) === (n.data?.isCollapsed ?? false)) {
             return p;
           }
           return { ...(p ?? n), position: n.position, data: n.data, hidden: h };
@@ -517,9 +616,14 @@ export default function App() {
     [focus.ctx, showHubWires],
   );
   const drawnEdges = useMemo(
-    () => pickDrawnEdges(layoutMode.mode, edges as any[], drawFocus, nodesRef.current as any[]),
+    // Only cull when `culls` is on (a focus-reveal mode AND a large graph).
+    // Otherwise draw every wire — so small composites show all wiring in every
+    // mode, with no "hover/pin to reveal" surprise in the `○` view.
+    () => (culls
+      ? pickDrawnEdges(layoutMode.mode, edges as any[], drawFocus, nodesRef.current as any[])
+      : edges as any[]),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [edges, drawFocus, layoutMode.mode],
+    [edges, drawFocus, layoutMode.mode, culls],
   );
 
   /** Distinct nodes whose wiring is currently drawn (hover/selection ∪ pins). */
@@ -553,13 +657,13 @@ export default function App() {
     // Reader/writer facts are only surfaced from the 'contract' tier up;
     // computing them for every store at every tier would be wasted work — EXCEPT
     // for hub stores, whose hidden fan must show its count at any tier.
-    const wiringTier = tier === 'contract' || tier === 'full';
+    const wiringTier = effTier === 'contract' || effTier === 'full';
     return (nodes as any[]).map((n) => {
       if (n.type === 'process') {
         return {
           ...n,
           data: {
-            ...n.data, _tier: tier,
+            ...n.data, _tier: effTier,
             // Full-detail ("open") card = explicitly kept-open ∪ the currently
             // selected/locked one. Keep-open persists; selection opens the card
             // you just clicked. Wire-reveal is a separate concept (ctx below).
@@ -581,12 +685,12 @@ export default function App() {
       return {
         ...n,
         data: {
-          ...n.data, _tier: tier, _isHub: isHub,
+          ...n.data, _tier: effTier, _isHub: isHub,
           _readers: wiring.readers, _writers: wiring.writers,
         },
       };
     });
-  }, [nodes, edges, tier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops, collapseMode]);
+  }, [nodes, edges, effTier, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -608,16 +712,26 @@ export default function App() {
   // New objects are minted only when the drawn set, node map, or tier changes —
   // so a plain pan/hover-within-a-tier does not churn the edge array.
   const tieredEdges = useMemo(() => {
+    // Small composites: route EVERY wire around the cards (the floating edge's
+    // perpendicular port exit) so dashed wires stay trackable instead of
+    // cutting straight under the process boxes. Large composites keep the cheap
+    // straight `light` edge for non-focused wires (the ~400-edge perf path).
+    const wireCount = (drawnEdges as any[]).filter((e) => {
+      const k = (e.data as any)?.edgeType;
+      return k === 'input' || k === 'output';
+    }).length;
+    const routeAroundAll = wireCount <= 120;
     return (drawnEdges as any[]).map((e) => {
       const kind = (e.data as any)?.edgeType;
       if (kind !== 'input' && kind !== 'output') return e;  // place edge: default renderer
       const focused = (e.data as any)?._focused === true;
-      // Non-focused wire → lightweight straight edge (no label).
-      if (!focused) return { ...e, type: 'light' };
+      // Non-focused wire → straight `light` edge in big graphs (perf); in small
+      // graphs, route it around the cards like the focused wires do.
+      if (!focused) return { ...e, type: routeAroundAll ? 'floating' : 'light' };
       // Focused wire → rich floating edge; label it in step with the cards
       // (except at glyph / non-tiered modes, where no label is drawn).
       const base = { ...e, type: 'floating' };
-      if (!layoutMode.mode.tiers || tier === 'glyph') return base;
+      if (!layoutMode.mode.tiers || effTier === 'glyph') return base;
       const isOut = kind === 'output';
       const pdata = nodeById.get(isOut ? e.source : e.target)?.data as
         ProcessNodeData | undefined;
@@ -627,21 +741,22 @@ export default function App() {
       return {
         ...base,
         data: {
-          ...e.data, _tier: tier, port,
+          ...e.data, _tier: effTier, port,
           _portType: portType(types[port]) || undefined,
           _semantic: isOut ? contract?.outputs?.[port] : contract?.inputs?.[port],
         },
       };
     });
-  }, [drawnEdges, nodeById, tier, layoutMode.modeId]);
+  }, [drawnEdges, nodeById, effTier, layoutMode.modeId]);
 
   // Persist node positions on every change. The layout effect itself sets
   // node positions; we save those too so the layout is "pinned" the first
   // time a composite renders. Subsequent drags update the same store.
   useEffect(() => {
+    if (NO_PERSIST) return;   // headless render: never write layouts back
     if (!compositeId || nodes.length === 0) return;
     debouncedPersistRef.current?.(compositeId, positionsFromNodes(nodes as any), layoutMode.modeId);
-  }, [nodes, compositeId, layoutMode.modeId]);
+  }, [nodes, compositeId, layoutMode.modeId, NO_PERSIST]);
 
   // ("Stack stores by depth" was retired — the flow-direction switch supersedes
   // it. `depthStackLayout` remains on disk, exercised by its unit tests.)
@@ -731,7 +846,14 @@ export default function App() {
     // Record the mode the arrangement was captured in, so applying the view
     // restores the layout it was built for.
     mode: layoutMode.modeId,
-  }), [nodes, collapsed, hidden, layoutMode.modeId]);
+    // Record the manual detail override (Detail dropdown) — null = Auto — so a
+    // saved/default view restores the level of detail it was captured at.
+    detail: detailFloor,
+    // Record whether repeated processes were collapsed, so the view restores it.
+    collapse: collapseRedundant,
+    // Record the Milner (processes → hyperedges) view.
+    hyperedges: hyperedgeMode,
+  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant, hyperedgeMode]);
 
   // Applying a view pins its positions (via the layout store, which the layout
   // effect reads) and sets collapsed/hidden — the existing effects re-lay-out
@@ -750,14 +872,30 @@ export default function App() {
     saveLayout(compositeId, view.positions || {}, viewMode);
     if (viewMode !== layoutMode.modeId) layoutMode.setModeId(viewMode);
     setCollapsed(new Set(view.collapsed || []));
-    setHidden(new Set(view.hidden || []));
+    // Union the view's hidden set with the always-noise defaults (top-level
+    // global_time, emitters, allocators, listeners, timing scratch). Those are
+    // bookkeeping, never biology — so they must STAY hidden even when a saved or
+    // bootstrapped view (captured while they were visible, e.g. hidden:[]) is
+    // applied. Without this, hiding global_time never "sticks" across a reload
+    // or a headless figure render — it kept reappearing.
+    setHidden(new Set([...(view.hidden || []), ...defaultHiddenIds(state)]));
+    // Restore the detail override (null / absent = Auto). Older views without a
+    // `detail` field leave the current setting untouched? No — normalizeView
+    // fills detail:null for them, so a legacy view resets to Auto, matching how
+    // it actually rendered when captured (before the override existed).
+    setDetailFloor((view.detail as ZoomTierId | null) ?? null);
+    // Restore the collapse-repeats + Milner-hyperedge toggles (absent = off).
+    setCollapseRedundant(view.collapse === true);
+    setHyperedgeMode(view.hyperedges === true);
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
-  }, [compositeId, layoutMode.modeId, layoutMode.setModeId]);
+  }, [compositeId, state, layoutMode.modeId, layoutMode.setModeId]);
 
   // On open, apply a startup view ONCE per composite, in priority order:
   //   1. ?view=<encoded>   (ad-hoc shareable link)
   //   2. ?viewUrl=<url>    (committed view file — README-featured link)
   //   3. the saved default view for this composite (localStorage)
+  //   4. the WORKSPACE default view (server) — the only one a headless figure
+  //      render can see, so this is what makes renders match "Save as default".
   const startupViewRef = useRef<string | null>(null);
   useEffect(() => {
     if (!state || !compositeId) return;
@@ -769,6 +907,16 @@ export default function App() {
       const viewUrl = params.get('viewUrl');
       if (!view && viewUrl) view = await fetchView(viewUrl);
       if (!view) view = getDefaultView(compositeId);
+      if (!view) {
+        try {
+          const r = await fetch(
+            `/api/composite-default-view?id=${encodeURIComponent(compositeId)}`);
+          if (r.ok) {
+            const raw = (await r.json())?.view;
+            if (raw) view = normalizeView(raw);
+          }
+        } catch { /* offline / static — no server default */ }
+      }
       if (view) applyView(view);
     })();
   }, [state, compositeId, applyView]);
@@ -810,10 +958,29 @@ export default function App() {
         const a = document.createElement('a');
         a.href = url; a.download = `${baseName}.${ext}`; a.click();
       };
+      // Pre-embed @font-face fonts (incl. KaTeX's math fonts) as data URIs so
+      // the SVG-foreignObject rasterization has the glyphs — otherwise typeset
+      // equations export as empty boxes (only the font-independent fraction
+      // rules survive). Best-effort: a fetch failure just falls back to the
+      // exporter's own embedding.
+      const fontEmbedCSS = await getFontEmbedCSS(el).catch(() => undefined);
       if (format === 'svg') {
-        grab(await toSvg(el, { backgroundColor: '#ffffff', width: w, height: h, style }), 'svg');
+        // Re-encode the SVG as a proper UTF-8 blob with an XML prolog. The
+        // data-URL html-to-image returns can be read back as Latin-1 by a
+        // standalone .svg viewer, mojibake-ing every unicode math symbol
+        // (∂, ∇, λ, −, —, ·). A UTF-8 blob + `encoding="UTF-8"` fixes it.
+        const dataUrl = await toSvg(el, { backgroundColor: '#ffffff', width: w, height: h, style, fontEmbedCSS });
+        const svgText = decodeURIComponent(dataUrl.slice(dataUrl.indexOf(',') + 1));
+        const withProlog = svgText.startsWith('<?xml')
+          ? svgText
+          : '<?xml version="1.0" encoding="UTF-8"?>\n' + svgText;
+        const blobUrl = URL.createObjectURL(
+          new Blob([withProlog], { type: 'image/svg+xml;charset=utf-8' }),
+        );
+        grab(blobUrl, 'svg');
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       } else {
-        const png = await toPng(el, { backgroundColor: '#ffffff', width: w, height: h, style, pixelRatio: 2 });
+        const png = await toPng(el, { backgroundColor: '#ffffff', width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
         if (format === 'png') { grab(png, 'png'); }
         else {
           const { jsPDF } = await import('jspdf');
@@ -828,6 +995,66 @@ export default function App() {
       setExporting(false);
     }
   }, [nodes, name, compositeId]);
+
+  // Headless export hook: returns the SVG string directly (no download), so a
+  // renderer (playwright) can grab it via page.evaluate() — blob-URL downloads
+  // are unreliable to capture headlessly. Same framing/font-embedding as the
+  // Download → svg path. Returns null if the graph has not rendered yet.
+  useEffect(() => {
+    (window as any).__loomExportSvg = async (): Promise<string | null> => {
+      if (nodes.length === 0) return null;
+      setExporting(true);
+      await new Promise((r) => setTimeout(r, 250));
+      try {
+        const el = canvasWrapRef.current?.querySelector('.react-flow__viewport') as HTMLElement | null;
+        if (!el) return null;
+        const framed = (nodes as any[]).filter((n) => !n.hidden);
+        const bounds = getNodesBounds((framed.length ? framed : nodes) as any);
+        const PAD = 60, MAX = 6000;
+        const rawW = bounds.width + PAD * 2, rawH = bounds.height + PAD * 2;
+        const scale = Math.min(1, MAX / Math.max(rawW, rawH, 1));
+        const w = Math.max(1, Math.ceil(rawW * scale)), h = Math.max(1, Math.ceil(rawH * scale));
+        const vp = getViewportForBounds(bounds, w, h, 0.02, 4, 0.08);
+        const style = { width: `${w}px`, height: `${h}px`, transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})` };
+        const fontEmbedCSS = await getFontEmbedCSS(el).catch(() => undefined);
+        const dataUrl = await toSvg(el, { backgroundColor: '#ffffff', width: w, height: h, style, fontEmbedCSS });
+        const svgText = decodeURIComponent(dataUrl.slice(dataUrl.indexOf(',') + 1));
+        return svgText.startsWith('<?xml') ? svgText : '<?xml version="1.0" encoding="UTF-8"?>\n' + svgText;
+      } catch (err) {
+        console.error('[bigraph-loom] __loomExportSvg failed', err);
+        return null;
+      } finally {
+        setExporting(false);
+      }
+    };
+    // PNG twin of __loomExportSvg — same framing/font-embedding, rasterised via
+    // toPng at 2× so a headless renderer can emit a .png alongside the .svg.
+    // Returns a `data:image/png;base64,…` URL (or null if not yet rendered).
+    (window as any).__loomExportPng = async (): Promise<string | null> => {
+      if (nodes.length === 0) return null;
+      setExporting(true);
+      await new Promise((r) => setTimeout(r, 250));
+      try {
+        const el = canvasWrapRef.current?.querySelector('.react-flow__viewport') as HTMLElement | null;
+        if (!el) return null;
+        const framed = (nodes as any[]).filter((n) => !n.hidden);
+        const bounds = getNodesBounds((framed.length ? framed : nodes) as any);
+        const PAD = 60, MAX = 6000;
+        const rawW = bounds.width + PAD * 2, rawH = bounds.height + PAD * 2;
+        const scale = Math.min(1, MAX / Math.max(rawW, rawH, 1));
+        const w = Math.max(1, Math.ceil(rawW * scale)), h = Math.max(1, Math.ceil(rawH * scale));
+        const vp = getViewportForBounds(bounds, w, h, 0.02, 4, 0.08);
+        const style = { width: `${w}px`, height: `${h}px`, transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})` };
+        const fontEmbedCSS = await getFontEmbedCSS(el).catch(() => undefined);
+        return await toPng(el, { backgroundColor: '#ffffff', width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
+      } catch (err) {
+        console.error('[bigraph-loom] __loomExportPng failed', err);
+        return null;
+      } finally {
+        setExporting(false);
+      }
+    };
+  }, [nodes]);
 
   const handleNodeClick = useCallback((ev: any, node: any) => {
     const payload = {
@@ -858,6 +1085,35 @@ export default function App() {
   // Clicking empty canvas UNLOCKS: drops the lock + selection (comparison pins
   // survive) — the way back to the clean, structure-only view.
   const handlePaneClick = useCallback(() => focus.lock(null), [focus.lock]);
+
+  // Shift-held drag = axis lock: constrain movement to pure horizontal or pure
+  // vertical from the drag origin (whichever the pointer has moved further).
+  // We snapshot the start position(s) of every node in the drag (the dragged
+  // node plus any co-selected nodes move together) and, while Shift is held,
+  // re-pin the off-axis coordinate to its start value on each drag tick.
+  const dragStartRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  const handleNodeDragStart = useCallback((_ev: any, _node: any, dragged: any[]) => {
+    const m = new Map<string, { x: number; y: number }>();
+    for (const n of dragged ?? []) m.set(n.id, { x: n.position.x, y: n.position.y });
+    dragStartRef.current = m;
+  }, []);
+  const handleNodeDrag = useCallback((ev: any, _node: any, dragged: any[]) => {
+    if (!ev?.shiftKey) return;
+    const starts = dragStartRef.current;
+    const group = dragged ?? [];
+    // Decide the lock axis from the leader's total displacement.
+    const lead = group[0];
+    const s0 = lead && starts.get(lead.id);
+    if (!lead || !s0) return;
+    const horizontal = Math.abs(lead.position.x - s0.x) >= Math.abs(lead.position.y - s0.y);
+    rfRef.current?.setNodes?.((ns: any[]) => ns.map((n) => {
+      const s = starts.get(n.id);
+      if (!s) return n;
+      return horizontal
+        ? { ...n, position: { x: n.position.x, y: s.y } }
+        : { ...n, position: { x: s.x, y: n.position.y } };
+    }));
+  }, []);
 
   // Jump the canvas to a process picked in the rail, matching handleResetLayout's
   // deterministic setCenter (with a clamped zoom). setCenter frames the node so
@@ -1047,7 +1303,63 @@ export default function App() {
       const next = new Set([...prev].filter((id) => !ids.has(id)));
       return next;
     });
+    // Stores also UNFOLD: clear the viewer's collapse set so the whole store
+    // hierarchy expands at once (the Nodes tree's "Show all" = show + unfold).
+    if (kind === 'store') setCollapsed(new Set());
   }, [allNodes]);
+
+  // Fold/unfold a group store on the canvas from the Nodes tree (caret /
+  // check-to-unfold). Idempotent: returns the same set when nothing changes.
+  const setNodeCollapsed = useCallback((id: string, val: boolean) => {
+    setCollapsed((prev) => {
+      if (val ? prev.has(id) : !prev.has(id)) return prev;
+      const next = new Set(prev);
+      if (val) next.add(id); else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // Reveal a node's PATH: show the node and unhide + unfold its ancestors, but
+  // leave siblings untouched — checking `DNA` shows DNA (and molecules > cell >
+  // …) while mRNA/protein stay hidden. Off-path children of a NEWLY-revealed
+  // ancestor are hidden so unfolding it doesn't dump every sibling into view;
+  // ancestors already open keep their visible children. A checked GROUP also
+  // unfolds so its own children appear.
+  const revealPath = useCallback((nodeId: string) => {
+    const childrenByParent = new Map<string, string[]>();
+    for (const n of allNodes) {
+      const path: string[] = n.data?.path ?? [];
+      if (path.length < 1) continue;
+      const parent = path.slice(0, -1).join('.');
+      if (!parent) continue;                       // top-level: parent is root
+      const list = childrenByParent.get(parent) ?? [];
+      list.push(path.join('.'));
+      childrenByParent.set(parent, list);
+    }
+    const parts = nodeId.split('.');
+    const onPath = new Set<string>();
+    for (let i = 1; i <= parts.length; i++) onPath.add(parts.slice(0, i).join('.'));
+
+    const nextHidden = new Set(hidden);
+    const nextCollapsed = new Set(collapsed);
+    nextHidden.delete(nodeId);
+    for (let i = 1; i < parts.length; i++) {
+      const anc = parts.slice(0, i).join('.');
+      const wasFolded = collapsed.has(anc) || hidden.has(anc);   // not currently showing children
+      nextHidden.delete(anc);
+      nextCollapsed.delete(anc);
+      if (wasFolded) {
+        for (const c of childrenByParent.get(anc) ?? []) {
+          if (!onPath.has(c)) nextHidden.add(c);
+        }
+      }
+    }
+    // A checked group unfolds so its own children render (siblings-of-children
+    // are all its children → all shown, which is the "unfold this branch" case).
+    if (childrenByParent.has(nodeId)) nextCollapsed.delete(nodeId);
+    setHidden(nextHidden);
+    setCollapsed(nextCollapsed);
+  }, [allNodes, hidden, collapsed]);
 
   // The three dockable panels around the canvas. Process starts LEFT; Inspector
   // and Nodes stack on the RIGHT. `render` closes over the latest props so each
@@ -1120,12 +1432,15 @@ export default function App() {
           hidden={hidden}
           onToggleHidden={toggleHidden}
           onShowAll={showAll}
+          collapsedGroups={collapsed}
+          onSetCollapsed={setNodeCollapsed}
+          onRevealPath={revealPath}
           selectedId={selection?.kind === 'store' ? (selection.path.join('.') || '<root>') : null}
           revealNonce={inspectorReveal}
         />
       ),
     },
-  ] as DockPanelSpec[]).filter((p) => !(chromeless && p.id === 'config')), [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, selection, inspectorReveal,
+  ] as DockPanelSpec[]).filter((p) => !(chromeless && p.id === 'config')), [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, collapsed, setNodeCollapsed, revealPath, selection, inspectorReveal,
       compositeId, parameters, overrides, handleApplied, STATIC, chromeless]);
 
   if (!state) {
@@ -1155,10 +1470,30 @@ export default function App() {
   // (form visible, Run/Preview disabled); Results/Visualizations show a
   // read-only empty state (no run data in the snapshot).
   // Explore (the interactive graph) leads and is the default landing tab.
-  const tabs: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
+  // Full tab set. A ?tabs= query param (comma list of ids or friendly labels,
+  // e.g. ?tabs=explore,document) trims the bar for "basic use" / standalone
+  // embeds; absent, all tabs show. 'explore'→wiring, 'configure'→setup.
+  const ALL_TABS: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
+  const TAB_ALIAS: Record<string, TabId> = {
+    explore: 'wiring', wiring: 'wiring',
+    configure: 'setup', setup: 'setup',
+    results: 'results', visualizations: 'visualizations', document: 'document',
+  };
+  let tabs: TabId[] = ALL_TABS;
+  try {
+    const raw = new URLSearchParams(window.location.search).get('tabs');
+    if (raw) {
+      const want = new Set(
+        raw.split(',')
+          .map((s) => TAB_ALIAS[s.trim().toLowerCase()])
+          .filter(Boolean) as TabId[],
+      );
+      if (want.size) tabs = ALL_TABS.filter((t) => want.has(t));
+    }
+  } catch { /* no-op */ }
 
   // Display label map: ids that need a human-readable label different from the
-  // capitalized id. E.g. 'setup' → 'Setup & Run'.
+  // capitalized id. E.g. 'setup' → 'Configure', 'wiring' → 'Explore'.
   const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Configure', wiring: 'Explore' };
 
   return (
@@ -1297,99 +1632,39 @@ export default function App() {
                   flexWrap: 'wrap', justifyContent: 'flex-end',
                   maxWidth: 'calc(100% - 16px)',
                 }}>
-                  {/* Layout: relationship packing (○), or the flow-network DAG
-                      oriented top-to-bottom ("hierarchy") / left-to-right ("flow"). */}
-                  <div
-                    style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
-                    title="Layout: packing, hierarchy (top→bottom), or flow (left→right)"
-                  >
-                    {([
-                      { id: 'hierarchy', label: '○', t: 'Packing — relationship layout, no enforced direction' },
-                      { id: 'flow-down', label: '↓', t: 'Hierarchy — store dependency, top → bottom (flow-network DAG)' },
-                      { id: 'flow-right', label: '→', t: 'Flow — workflow DAG: stores → processes → stores lined up, left → right' },
-                    ] as const).map((opt) => {
-                      const active = layoutMode.modeId === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          onClick={() => layoutMode.setModeId(opt.id)}
-                          title={opt.t}
-                          style={{
-                            width: 30, height: 28, fontSize: 15, lineHeight: 1,
-                            border: 'none', cursor: 'pointer',
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            background: active ? '#eff6ff' : '#fff',
-                            color: active ? '#2563eb' : '#6b7280',
-                            fontWeight: active ? 700 : 500,
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* Collapse view: both / process-only (stores collapsed) /
-                      store-centric (processes collapsed into hyperedge junctions). */}
-                  <div
-                    style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
-                    title="Collapse the graph"
-                  >
-                    {([
-                      { mode: 'none', label: 'both', t: 'Show processes and stores' },
-                      { mode: 'stores', label: 'proc', t: 'Process-only graph: collapse stores into direct process to process edges' },
-                      { mode: 'processes', label: 'store', t: 'Store-only graph: collapse processes into direct store to store edges' },
-                    ] as const).map((opt) => {
-                      const active = collapseMode === opt.mode;
-                      return (
-                        <button
-                          key={opt.mode}
-                          onClick={() => setCollapseMode(opt.mode)}
-                          title={opt.t}
-                          style={{
-                            height: 28, padding: '0 10px', fontSize: 12, border: 'none', cursor: 'pointer',
-                            display: 'inline-flex', alignItems: 'center',
-                            background: active ? '#eff6ff' : '#fff',
-                            color: active ? '#2563eb' : '#6b7280',
-                            fontWeight: active ? 700 : 400,
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* Divider: view-mode controls (left) vs. actions (right). */}
-                  <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />
-                  {/* Center on the locked process (inputs left, outputs right,
-                      shared stores below). Disabled until a process is locked. */}
-                  <button
-                    onClick={() => { if (focus.locked) handleCenterOnProcess(focus.locked); }}
-                    disabled={!focus.locked}
-                    title={focus.locked
-                      ? 'Center the layout on the locked process (inputs left, outputs right, shared stores below)'
-                      : 'Lock a process first (click it, then the lock), then center the layout on it'}
+                  {/* Layout controls grouped into one dropdown to keep the top
+                      bar to Layout · Detail · Views · Download. */}
+                  <LayoutMenu
+                    modeId={layoutMode.modeId}
+                    setModeId={layoutMode.setModeId}
+                    canCenter={!!focus.locked}
+                    onCenter={() => { if (focus.locked) handleCenterOnProcess(focus.locked); }}
+                    collapseRedundant={collapseRedundant}
+                    toggleCollapse={() => setCollapseRedundant((v) => !v)}
+                    hyperedgeMode={hyperedgeMode}
+                    toggleHyperedges={() => setHyperedgeMode((v) => !v)}
+                    onRelayout={handleResetLayout}
+                  />
+                  {/* Detail floor: force at least this much card detail at ANY
+                      zoom (Auto = follow the zoom-driven semantic tier). */}
+                  <select
+                    value={detailFloor ?? ''}
+                    onChange={(e) => setDetailFloor((e.target.value || null) as ZoomTierId | null)}
+                    title="Card detail — pin cards to exactly this level at any zoom, from Minimal (name only) to Full (Auto follows zoom)"
                     style={{
-                      height: 28, padding: '0 10px', fontSize: 12,
-                      display: 'inline-flex', alignItems: 'center',
-                      background: '#fff', border: '1px solid #d1d5db',
-                      borderRadius: 4, cursor: focus.locked ? 'pointer' : 'default',
-                      color: focus.locked ? '#374151' : '#b8bec9',
+                      height: 28, padding: '0 8px', fontSize: 12,
+                      background: detailFloor ? '#eff6ff' : '#fff',
+                      border: '1px solid #d1d5db', borderRadius: 4,
+                      cursor: 'pointer', color: detailFloor ? '#2563eb' : '#374151',
+                      fontWeight: detailFloor ? 600 : 400,
                     }}
                   >
-                    ⊹ Center
-                  </button>
-                  <button
-                    onClick={handleResetLayout}
-                    title="Re-run auto-layout on the currently visible nodes and fit the view"
-                    style={{
-                      height: 28, padding: '0 10px', fontSize: 12,
-                      display: 'inline-flex', alignItems: 'center',
-                      background: '#fff', border: '1px solid #d1d5db',
-                      borderRadius: 4, cursor: 'pointer', color: '#374151',
-                    }}
-                  >
-                    ⟳ Re-layout
-                  </button>
+                    {['', 'glyph', 'ports', 'types', 'config', 'contract', 'full'].map((v) => (
+                      <option key={v} value={v}>
+                        {v === '' ? 'Detail: Auto' : `Detail: ${DETAIL_LABELS[v]}`}
+                      </option>
+                    ))}
+                  </select>
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}
@@ -1446,6 +1721,8 @@ export default function App() {
                   edgeTypes={EDGE_TYPES}
                   onNodeClick={handleNodeClick}
                   onNodeDoubleClick={handleNodeDoubleClick}
+                  onNodeDragStart={handleNodeDragStart}
+                  onNodeDrag={handleNodeDrag}
                   // Only wired up in modes that actually cull edges by focus
                   // (hierarchy mode's focus is inert): otherwise every node the
                   // pointer crosses sets state and re-renders App — which, on
@@ -1472,6 +1749,16 @@ export default function App() {
                   edgesReconnectable={false}
                   connectOnClick={false}
                   deleteKeyCode={null}
+                  /* Box-select: left-drag on empty canvas draws a selection
+                     rectangle; the selected nodes then drag together. Panning
+                     moves to middle/right mouse so left-drag is free for select.
+                     Shift stays reserved for axis-locked node drag (above), so
+                     multi-select-by-click uses Meta/Ctrl instead. */
+                  selectionOnDrag
+                  selectNodesOnDrag={false}
+                  panOnDrag={[1, 2]}
+                  multiSelectionKeyCode={['Meta', 'Control']}
+                  selectionKeyCode={null}
                 >
                   <Background />
                   <Controls />

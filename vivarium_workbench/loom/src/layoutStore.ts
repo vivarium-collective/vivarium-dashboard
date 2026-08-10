@@ -23,7 +23,9 @@ import type { Node } from '@xyflow/react';
 // persist under :v2.
 const KEY_PREFIX = 'bigraph-loom:layout:v2:';
 
-export type LayoutPositions = Record<string, { x: number; y: number }>;
+// Per-node saved layout: position (x,y) plus optional hand-set size (w,h) from
+// the node resizer, so a saved view restores BOTH placement and node sizes.
+export type LayoutPositions = Record<string, { x: number; y: number; w?: number; h?: number }>;
 
 function keyFor(compositeId: string | null | undefined, modeId = 'hierarchy'): string | null {
   if (!compositeId) return null;
@@ -80,7 +82,12 @@ export function clearLayout(compositeId: string | null | undefined, modeId?: str
 export function positionsFromNodes(nodes: Node[]): LayoutPositions {
   const out: LayoutPositions = {};
   for (const n of nodes) {
-    if (n.position) out[n.id] = { x: n.position.x, y: n.position.y };
+    if (!n.position) continue;
+    const entry: { x: number; y: number; w?: number; h?: number } = { x: n.position.x, y: n.position.y };
+    // Hand-set node size (from the resizer) lives on data._size — persist it too.
+    const s = (n.data as { _size?: { width: number; height: number } } | undefined)?._size;
+    if (s && s.width && s.height) { entry.w = s.width; entry.h = s.height; }
+    out[n.id] = entry;
   }
   return out;
 }
@@ -92,7 +99,13 @@ export function positionsFromNodes(nodes: Node[]): LayoutPositions {
 export function applySavedPositions(nodes: Node[], saved: LayoutPositions): Node[] {
   return nodes.map((n) => {
     const p = saved[n.id];
-    return p ? { ...n, position: { x: p.x, y: p.y } } : n;
+    if (!p) return n;
+    const node: Node = { ...n, position: { x: p.x, y: p.y } };
+    // Restore hand-set node size onto data._size so the node re-renders at it.
+    if (p.w && p.h) {
+      node.data = { ...(n.data as object), _size: { width: p.w, height: p.h } };
+    }
+    return node;
   });
 }
 
