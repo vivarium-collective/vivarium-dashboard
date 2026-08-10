@@ -875,19 +875,21 @@ body {
 .process-node-summary { font-size: 11px; color: #334155; margin-top: 6px; line-height: 1.4; }
 /* Governing equations — one restrained block, thin indigo accent, wraps. */
 .process-node-math {
-  margin-top: 11px; padding: 11px 13px;
+  /* Extend past the center's port-clearing margins toward the card edges so wide
+     equations get the FULL card width (less scale-down → bigger, clearer math),
+     and tighten the padding so the box isn't mostly whitespace. */
+  margin: 8px -78px 0; padding: 6px 10px;
   background: #f7f8fb; border: 1px solid #eceefb; border-left: 3px solid #6366f1;
   border-radius: 7px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 14px; color: #0f172a; line-height: 1.7;
+  font-size: 14px; color: #0f172a; line-height: 1.35;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .process-node-math > div { margin: 0; }
-/* KaTeX-typeset equations: tighten the display margins for the card and let a
-   wide equation scroll horizontally rather than overflow the box. */
-/* No scrollbar — KatexBlock scales a wide equation to fit (see Katex.tsx). */
-.process-node-math .katex-display { margin: 0.3em 0; overflow: visible; }
-.process-node-math .katex { font-size: 1.32em; }
+/* KaTeX-typeset equations: tight display margins; KatexBlock scales a too-wide
+   equation to fit (see Katex.tsx) — bigger base so it stays legible after fit. */
+.process-node-math .katex-display { margin: 0.15em 0; overflow: visible; }
+.process-node-math .katex { font-size: 1.7em; }
 .katex-eq { text-align: center; }
 /* Symbol glossary — hanging-indent definition list, symbol in ink. */
 .process-node-symbols {
