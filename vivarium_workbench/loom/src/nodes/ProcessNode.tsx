@@ -172,9 +172,11 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
     (data as { configSchema?: Record<string, unknown> }).configSchema,
     data.config,
   );
-  // Inline band shows the scalar "knobs" (readable at a glance); the ParCa-scale
-  // arrays/maps/matrices live in the click-to-expand detail popover.
-  const inlineCfg = cfg.filter((c) => c.scalar);
+  // The config band shows real configuration KEYS only — drop the metadata keys
+  // (summary / contract / status) that ride along in a draft process's config
+  // dict; the summary belongs to the meta/contract, not the config.
+  const CONFIG_META = new Set(["summary", "contract", "status", "description", "math", "symbols", "ports"]);
+  const realCfg = cfg.filter((c) => !CONFIG_META.has(c.name));
 
   const topFor = (i: number, n: number) => `${((i + 1) / (n + 1)) * 100}%`;
 
@@ -288,7 +290,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   return (
     <div
-      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}`}
+      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}`}
       style={dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : undefined}
     >
       <NodeResizer
@@ -313,37 +315,18 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           left/right port columns supply the inputs→outputs framing spatially,
           so no abstract ƒ(inputs; config)→outputs line is needed. */}
       <div className="process-node-center">
-        {show.config && cfg.length > 0 && (
-          <div
-            className={`process-node-config-band section-box${openSection === 'config' ? ' is-open' : ''}`}
-            title={SECTION_HINT.config}
-            onClick={(e) => { e.stopPropagation(); toggleSection('config'); }}
-          >
-            <span className="config-band-caret">▾ config</span>
-            {(inlineCfg.length ? inlineCfg : cfg).slice(0, 8).map((c) => (
-              <span key={c.name} className="config-chip" title={`${c.name}: ${c.type || '—'} = ${c.value}`}>
+        {show.config && realCfg.length > 0 && (
+          <div className="process-node-config-band" title={SECTION_HINT.config}>
+            <span className="config-band-caret">config</span>
+            {realCfg.slice(0, 10).map((c) => (
+              <span key={c.name} className="config-chip" title={`${c.name}: ${c.type || '—'}${c.value ? ' = ' + c.value : ''}`}>
                 <span className="config-key">{c.name}</span>
-                {show.contract && <span className="config-val">{c.value.slice(0, 24)}</span>}
+                {/* Types ride the port-detail level: shown once ports show types. */}
+                {show.types && c.type && <span className="config-type">{c.type}</span>}
               </span>
             ))}
-            {cfg.length > Math.min(8, (inlineCfg.length ? inlineCfg : cfg).length) && (
-              <span className="config-more">+{cfg.length - Math.min(8, (inlineCfg.length ? inlineCfg : cfg).length)} more…</span>
-            )}
-            {openSection === 'config' && (
-              <div className="section-popover" onClick={(e) => e.stopPropagation()}>
-                <div className="section-popover-head">
-                  config parameters ({cfg.length}) <span className="section-popover-sub">value · type</span>
-                </div>
-                {cfg.map((c) => (
-                  <div key={c.name} className="section-popover-row">
-                    <span className="section-popover-key">{c.name}</span>
-                    <span className="section-popover-val mono" title={c.value}>
-                      {c.value.slice(0, 80)}
-                    </span>
-                    <span className="section-popover-type mono">{c.type || '—'}</span>
-                  </div>
-                ))}
-              </div>
+            {realCfg.length > 10 && (
+              <span className="config-more">+{realCfg.length - 10} more…</span>
             )}
           </div>
         )}

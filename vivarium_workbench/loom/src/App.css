@@ -551,6 +551,12 @@ body {
 .process-node-ports    .process-node-center,
 .process-node-types    .process-node-center,
 .process-node-config   .process-node-center { margin: 0 158px; }
+/* No ports shown → the side columns are gone, so reclaim the port-clearing
+   margins: the center content (name / config / contract / math) fills the whole
+   card, the config band spans edge-to-edge, and the name grows large. */
+.process-node-noports .process-node-center { margin-left: 14px !important; margin-right: 14px !important; }
+.process-node-noports .process-node-config-band { margin-left: 0; margin-right: 0; }
+.process-node-noports .process-node-title { font-size: 52px !important; line-height: 1.08 !important; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */
@@ -574,6 +580,8 @@ body {
 .config-chip .config-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 15ch; }
 .config-chip .config-key { color: #7e22ce; font-weight: 600; }
 .config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
+/* Config param TYPE (shown once ports show types) — muted mono, like a port type. */
+.config-chip .config-type { color: #94a3b8; font-family: ui-monospace, monospace; font-size: 0.9em; }
 /* A parameter the composite explicitly SET (vs running on its default) reads
    stronger; defaults are the quieter majority. */
 .config-chip.is-set { background: #f3e8ff; border-color: #d8b4fe; }
