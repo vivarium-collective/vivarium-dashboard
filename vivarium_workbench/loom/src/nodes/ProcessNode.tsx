@@ -288,15 +288,25 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const toggleSection = (s: 'config' | 'contract') =>
     setOpenSection((cur) => (cur === s ? null : s));
 
+  // The card's minimum height must fit BOTH its text (CSS min-content) AND its
+  // evenly-spaced port rows. Ports are absolutely positioned (out of flow), so
+  // min-content can't see them — feed the room they need as a CSS var that the
+  // min-height max()es against, so squeezing never overlaps the ports.
+  const maxPorts = show.ports ? Math.max(inputPorts.length, outputPorts.length) : 0;
+  const portsMinH = maxPorts > 0 ? (maxPorts + 1) * 46 : 0;
+
   return (
     <div
       className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}`}
-      style={dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : undefined}
+      style={{
+        ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
+        ['--ports-min-h' as string]: `${portsMinH}px`,
+      } as React.CSSProperties}
     >
       <NodeResizer
         isVisible={show.ports}
-        minWidth={360}
-        minHeight={200}
+        minWidth={160}
+        minHeight={56}
         onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
         onResizeEnd={(_e, p) => commitSize(p.width, p.height)}
         handleClassName="loom-resize-handle"

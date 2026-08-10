@@ -444,11 +444,19 @@ body {
 .process-node-contract,
 .process-node-full {
   width: 620px;
-  min-height: 320px;
+  /* Height is CONTENT-driven: the card is exactly as tall as its shown detail
+     needs (min-content), so it can be squeezed short and grows automatically as
+     more detail is added — text never overflows and never scrolls. */
+  height: auto;
+  min-height: min-content;
   padding: 12px 16px;
   text-align: left;
   min-width: 0;
 }
+/* A card can't shrink below its content OR the room its port rows need — so
+   squeezing never overflows text and never overlaps ports (--ports-min-h is set
+   per-card from its port count in ProcessNode). */
+.process-node { min-height: max(min-content, var(--ports-min-h, 0px)); }
 /* Border dots sit half-outside the card edge — don't clip them. */
 .process-node { overflow: visible; }
 
