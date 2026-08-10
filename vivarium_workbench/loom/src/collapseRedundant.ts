@@ -136,3 +136,36 @@ export function processesToHyperedges(
   }
   return { nodes: outNodes, edges: outEdges };
 }
+
+/**
+ * Relax each Milner hyperedge vertex to the CENTROID of the nodes it connects,
+ * so it floats naturally in the middle of its spokes instead of being pinned at
+ * the collapsed process's old spot (which left the dashed links fanning
+ * unnaturally out of one corner). Run on POST-layout positions. Nodes the user
+ * pinned (a saved position) are left in place; everything else settles to the
+ * average center of its connected ports. Returns a new array.
+ */
+export function relaxHyperedgePositions(
+  nodes: AnyNode[], edges: AnyEdge[], pinned?: Set<string>,
+): AnyNode[] {
+  const byId = new Map<string, any>(nodes.map((n) => [n.id, n]));
+  const DEF = { w: 130, h: 74 }; // approx store-card size, for centering
+  const centerOf = (n: any) => {
+    const w = n?.width ?? DEF.w, h = n?.height ?? DEF.h;
+    return { x: (n.position?.x ?? 0) + w / 2, y: (n.position?.y ?? 0) + h / 2 };
+  };
+  return nodes.map((n) => {
+    if (!(n.data as any)?._hyperedge || pinned?.has(n.id)) return n;
+    let sx = 0, sy = 0, c = 0;
+    for (const e of edges) {
+      const other = e.source === n.id ? e.target : e.target === n.id ? e.source : null;
+      const t = other ? byId.get(other) : undefined;
+      if (!t?.position) continue;
+      const ctr = centerOf(t);
+      sx += ctr.x; sy += ctr.y; c += 1;
+    }
+    if (!c) return n;
+    // Place the (tiny) vertex AT the centroid of the connected ports' centers.
+    return { ...n, position: { x: sx / c, y: sy / c } };
+  });
+}

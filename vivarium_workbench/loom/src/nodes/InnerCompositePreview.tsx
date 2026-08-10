@@ -31,13 +31,33 @@ function _notify(key: string) {
   (_WAITERS.get(key) ?? new Set()).forEach((cb) => cb());
 }
 
+/** Fetch the inner state, retrying transient failures with backoff. The inner
+ *  build runs in an env-worker warm pool that can be briefly unavailable (503)
+ *  right after a server (re)start, and the first cold build is a few seconds —
+ *  a single attempt turns those into a permanent "preview unavailable". Retry a
+ *  few times before giving up so the preview renders on its own. */
+async function _fetchWithRetry(rootId: string, hops: string[][], tries = 4) {
+  let lastErr: any;
+  for (let i = 0; i < tries; i++) {
+    try {
+      return await fetchInnerComposite(rootId, hops);
+    } catch (e) {
+      lastErr = e;
+      if (i < tries - 1) await new Promise((r) => setTimeout(r, 700 * (i + 1)));
+    }
+  }
+  throw lastErr;
+}
+
 async function _load(rootId: string, hops: string[][]) {
   const key = _key(rootId, hops);
-  if (_CACHE.has(key)) return;
+  const cur = _CACHE.get(key);
+  // Load once; but a prior ERROR is retryable (click-to-retry re-enters here).
+  if (cur && cur.status !== 'error') return;
   _CACHE.set(key, { status: 'loading' });
   _notify(key);
   try {
-    const res = await fetchInnerComposite(rootId, hops);
+    const res = await _fetchWithRetry(rootId, hops);
     _CACHE.set(key, { status: 'ready', graph: _overviewGraph(res.state) });
   } catch (e: any) {
     _CACHE.set(key, { status: 'error', error: e?.message || String(e) });
@@ -342,9 +362,13 @@ export default function InnerCompositePreview(props: {
   }
   if (entry.status === 'error' || !entry.graph) {
     return (
-      <div className="inner-preview inner-preview-error">
+      <div
+        className="inner-preview inner-preview-error"
+        title="Retry building the inner-composite preview"
+        onClick={(e) => { e.stopPropagation(); _load(props.rootId, props.hops); }}
+      >
         <span className="inner-preview-badge">⤢ inner composite</span>
-        <span className="inner-preview-hint">preview unavailable</span>
+        <span className="inner-preview-hint">preview unavailable — click to retry</span>
       </div>
     );
   }

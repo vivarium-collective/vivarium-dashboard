@@ -28,7 +28,9 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
-import { collapseRedundantProcesses, processesToHyperedges } from './collapseRedundant';
+import {
+  collapseRedundantProcesses, processesToHyperedges, relaxHyperedgePositions,
+} from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
@@ -546,7 +548,14 @@ export default function App() {
       const { nodes: laidOut } = await layoutMode.runLayout(
         visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
       );
-      const withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      let withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      // Milner view: settle each hyperedge vertex to the centroid of the ports it
+      // links, so the dashed spokes fan naturally from the middle instead of from
+      // the collapsed process's old corner. Pinned (saved-position) vertices stay.
+      if (hyperedgeMode) {
+        withSaved = relaxHyperedgePositions(
+          withSaved, visibleEdges as any[], new Set(Object.keys(saved)));
+      }
       if (cancelled) return;
       // Apply the CURRENT hidden set to the freshly-rebuilt nodes + edges (read
       // via ref, not a dep). Without this, rebuilding edges here would drop the
@@ -683,11 +692,13 @@ export default function App() {
           ...n,
           data: {
             ...n.data, _tier: effTier, _detailOverrides: detailOverrides,
-            // Full-detail ("open") card = explicitly kept-open ∪ the currently
-            // selected/locked one. Keep-open persists; selection opens the card
-            // you just clicked. Wire-reveal is a separate concept (ctx below).
-            _pinnedOpen: focus.keptOpen.has(n.id)
-              || focus.selected === n.id || focus.locked === n.id,
+            // Full-detail ("open") card = explicitly kept-open ONLY. A plain
+            // single click just SELECTS (drives the Inspector + wire highlight)
+            // and must NOT change the card's size/detail — so the user can drag
+            // and arrange without the card jumping to full detail. DOUBLE click
+            // toggles keep-open (see handleNodeDoubleClick) to blow the card up
+            // to full detail + full size for the current tier.
+            _pinnedOpen: focus.keptOpen.has(n.id),
             _locked: focus.locked === n.id,
             // Drill context for the in-card inner-composite mini-map: the root
             // composite id + the accumulated hops to THIS view. The card appends
@@ -1303,15 +1314,21 @@ export default function App() {
       drillInto(node);
       return;
     }
-    // Only group stores (synthesized container nodes) can be collapsed.
-    if (!(node.data as any)?.isGroup) return;
-    setCollapsed((prev) => {
-      const next = new Set(prev);
-      if (next.has(node.id)) next.delete(node.id);
-      else next.add(node.id);
-      return next;
-    });
-  }, [drillInto]);
+    // A group store (synthesized container node) toggles collapse.
+    if ((node.data as any)?.isGroup) {
+      setCollapsed((prev) => {
+        const next = new Set(prev);
+        if (next.has(node.id)) next.delete(node.id);
+        else next.add(node.id);
+        return next;
+      });
+      return;
+    }
+    // Any other PROCESS: double-click blows it up to full detail + full size for
+    // the current tier (single click only selects, keeping the compact card for
+    // easy dragging/arrangement). Double-clicking again collapses it back.
+    if (node.type === 'process') focus.toggleKeepOpen(node.id);
+  }, [drillInto, focus.toggleKeepOpen]);
 
   const handleApplied = useCallback(
     (newOverrides: Record<string, unknown>, newState: unknown) => {
