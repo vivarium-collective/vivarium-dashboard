@@ -941,6 +941,18 @@ export default function App() {
       if (params.get('collapse') === '1') setCollapseRedundant(true);
       const dParam = params.get('detail');
       if (dParam) setDetailFloor(dParam as ZoomTierId);
+      // Per-feature Detail overrides from the URL (?ports= / ?config= / ?contract=)
+      // so a headless render can force a specific detail mix over the saved view.
+      const pPorts = params.get('ports');
+      const pConfig = params.get('config');
+      const pContract = params.get('contract');
+      if (pPorts || pConfig || pContract) {
+        setDetailOverrides((o) => ({
+          ports: (['none', 'plain', 'types'].includes(pPorts || '') ? pPorts : o.ports) as PortsDetail,
+          config: (['on', 'off'].includes(pConfig || '') ? pConfig : o.config) as TriDetail,
+          contract: (['on', 'off'].includes(pContract || '') ? pContract : o.contract) as TriDetail,
+        }));
+      }
     })();
   }, [state, compositeId, applyView]);
 
