@@ -113,7 +113,7 @@ def build_investigation_figures(ws_root, name: str) -> dict:
     ``*_rel`` paths are workspace-root-relative POSIX strings; the API/publish
     layers turn them into live vs snapshot URLs.
     """
-    ws_root = Path(ws_root)
+    ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     inv = _load_investigation(ws_root, name) or {}
     slugs = investigation_member_slugs(inv)
 
@@ -175,7 +175,7 @@ def resolve_figure_file(ws_root, name: str, number: int, ext: str) -> Optional[P
     ext = ext.lower().lstrip(".")
     if ext not in _EXT_MIME:
         return None
-    ws_root = Path(ws_root)
+    ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     for c in build_investigation_figures(ws_root, name)["composites"]:
         if int(c["number"]) != int(number):
             continue
@@ -192,7 +192,7 @@ def build_figures_zip(ws_root, name: str) -> Optional[bytes]:
     member studies, arranged ``<study>/<filename>``. Returns ``None`` when the
     investigation has no figure files. Backs
     ``GET /api/investigation/<slug>/figures.zip``."""
-    ws_root = Path(ws_root)
+    ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     figs = build_investigation_figures(ws_root, name)
     entries = figs["files"]
     if not entries:
@@ -216,7 +216,7 @@ def build_figures_zip(ws_root, name: str) -> Optional[bytes]:
 def study_figure_files(ws_root, slug: str) -> list[Path]:
     """Every declared image-figure file on a single study (panels + its own
     composite). Backs the study-scoped ``↓ figures``."""
-    ws_root = Path(ws_root)
+    ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     sdir, spec = _load_study(ws_root, slug)
     if sdir is None:
         return []

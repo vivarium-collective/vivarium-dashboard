@@ -1081,6 +1081,38 @@ def _do_build(
         investigations_flat = {"investigations": []}
     _write_json(api_dir / "investigations.json", investigations_flat)
 
+    # figures/ — the downloadable figure archives (Investigation Figures feature).
+    # Mirrors the live /api/investigation/<slug>/figures.zip + /api/study/<slug>/
+    # figures.zip so the card / study ↓ figures actions work in the read-only
+    # bundle. The frontend builds <base>/figures/<slug>/figures.zip and
+    # <base>/figures/studies/<slug>.zip in snapshot mode — stage exactly those.
+    try:
+        from vivarium_workbench.lib import investigation_figures as _figs
+        figures_root = out_dir / "figures"
+        studies_with_figures: set[str] = set()
+        for inv_name in investigations:
+            try:
+                figdata = _figs.build_investigation_figures(ws_root, inv_name)
+            except Exception as exc:  # noqa: BLE001 — never abort a publish on one investigation
+                print(f"  warn: figures resolve failed for {inv_name!r}: {exc}")
+                continue
+            for f in figdata.get("files", []):
+                studies_with_figures.add(f["study"])
+            if figdata.get("n_composites"):
+                blob = _figs.build_figures_zip(ws_root, inv_name)
+                if blob:
+                    dst = figures_root / inv_name / "figures.zip"
+                    dst.parent.mkdir(parents=True, exist_ok=True)
+                    dst.write_bytes(blob)
+        for slug in sorted(studies_with_figures):
+            blob = _figs.build_study_figures_zip(ws_root, slug)
+            if blob:
+                dst = figures_root / "studies" / f"{slug}.zip"
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_bytes(blob)
+    except Exception as exc:  # noqa: BLE001 — figures staging is best-effort
+        print(f"  warn: figures staging failed: {exc}")
+
     # api/investigation/<id>.json  (+ per-investigation runnable notebook export)
     # Each investigation also ships a self-contained Jupyter notebook + .py under
     # bundle/investigation-notebooks/ — the coder-facing complement to the HTML
