@@ -875,10 +875,13 @@ body {
 .process-node-summary { font-size: 11px; color: #334155; margin-top: 6px; line-height: 1.4; }
 /* Governing equations — one restrained block, thin indigo accent, wraps. */
 .process-node-math {
-  /* Extend past the center's port-clearing margins toward the card edges so wide
-     equations get the FULL card width (less scale-down → bigger, clearer math),
-     and tighten the padding so the box isn't mostly whitespace. */
-  margin: 8px -78px 0; padding: 6px 10px;
+  /* Live INSIDE the center channel (which already clears the port columns at
+     every tier) — no fixed negative margin. A fixed outward margin can't be
+     right for both port tiers (it overlapped the port labels) and the no-ports
+     tier (it overshot the 14px inset and spilled past the card border). Cards
+     are content-driven, so the card auto-widens to fit the equation at full
+     size: big math that always clears the ports and never leaves the box. */
+  margin: 8px 0 0; padding: 6px 12px;
   background: #f7f8fb; border: 1px solid #eceefb; border-left: 3px solid #6366f1;
   border-radius: 7px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
