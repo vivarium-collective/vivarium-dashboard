@@ -188,28 +188,43 @@ def resolve_figure_file(ws_root, name: str, number: int, ext: str) -> Optional[P
 
 
 def build_figures_zip(ws_root, name: str) -> Optional[bytes]:
-    """Zip EVERY figure file (panels + composites) across the investigation's
-    member studies, arranged ``<study>/<filename>``. Returns ``None`` when the
+    """Zip EVERY figure file across the investigation's member studies. The
+    per-study PANELS are arranged ``<study>/<filename>``; the post-study stitched
+    figures (``figure_<N>.{svg,png}``) are ALSO collected together into a single
+    top-level ``final/`` folder (``final/figure_1.svg`` …) so the finished figures
+    sit side by side, not buried one-per-study. Returns ``None`` when the
     investigation has no figure files. Backs
     ``GET /api/investigation/<slug>/figures.zip``."""
     ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     figs = build_investigation_figures(ws_root, name)
     entries = figs["files"]
-    if not entries:
+    composites = figs["composites"]
+    if not entries and not composites:
         return None
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         seen: set[str] = set()
-        for e in entries:
-            src = ws_root / e["rel_path"]
-            arc = e["arcname"]
+
+        def _write(src: Path, arc: str) -> None:
             if arc in seen or not src.is_file():
-                continue
+                return
             seen.add(arc)
             try:
                 zf.write(src, arc)
             except OSError:
+                pass
+
+        # Panels, per study — but NOT the stitched figure_<N> (those go to final/).
+        for e in entries:
+            if _COMPOSITE_RE.match(Path(e["rel_path"]).stem):
                 continue
+            _write(ws_root / e["rel_path"], e["arcname"])
+
+        # final/: every stitched figure together, figure_<N>.{svg,png}.
+        for c in composites:
+            for rel in (c.get("svg_rel"), c.get("png_rel")):
+                if rel:
+                    _write(ws_root / rel, f"final/{Path(rel).name}")
     return buf.getvalue()
 
 
