@@ -59,14 +59,15 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
     />
   );
 
-  // Hyperedge marker (Milner view): a compact dashed node standing in for a
-  // process that has been collapsed into a hyperedge over its stores.
+  // Hyperedge marker (Milner view): the process is FULLY collapsed — no node
+  // object at all, just a single point vertex where its (dashed) hyperedges
+  // converge. All handles are centered on the point so every edge radiates from
+  // it; the label sits just beneath.
   if ((data as any)._hyperedge) {
     return (
-      <div className="store-node store-node-hyperedge" style={sizeStyle}>
-        {resizer}
+      <div className="loom-hyperedge" title={data.label}>
         <StoreHandles />
-        <div className="store-label">{data.label}</div>
+        <span className="loom-hyperedge-label">{data.label}</span>
       </div>
     );
   }

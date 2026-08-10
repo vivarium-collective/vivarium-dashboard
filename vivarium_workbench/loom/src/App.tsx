@@ -918,6 +918,15 @@ export default function App() {
         } catch { /* offline / static — no server default */ }
       }
       if (view) applyView(view);
+      // Explicit URL params OVERRIDE the applied view: a headless
+      // `?hyperedges=1` / `?collapse=1` / `?detail=` render must win over a
+      // default view that was saved in the opposite mode (e.g. rendering Fig 2a
+      // with hyperedges from a default view saved in process mode). Applied
+      // AFTER applyView, which would otherwise reset these to the view's values.
+      if (params.get('hyperedges') === '1') setHyperedgeMode(true);
+      if (params.get('collapse') === '1') setCollapseRedundant(true);
+      const dParam = params.get('detail');
+      if (dParam) setDetailFloor(dParam as ZoomTierId);
     })();
   }, [state, compositeId, applyView]);
 
