@@ -864,7 +864,13 @@ export default function App() {
     saveLayout(compositeId, view.positions || {}, viewMode);
     if (viewMode !== layoutMode.modeId) layoutMode.setModeId(viewMode);
     setCollapsed(new Set(view.collapsed || []));
-    setHidden(new Set(view.hidden || []));
+    // Union the view's hidden set with the always-noise defaults (top-level
+    // global_time, emitters, allocators, listeners, timing scratch). Those are
+    // bookkeeping, never biology — so they must STAY hidden even when a saved or
+    // bootstrapped view (captured while they were visible, e.g. hidden:[]) is
+    // applied. Without this, hiding global_time never "sticks" across a reload
+    // or a headless figure render — it kept reappearing.
+    setHidden(new Set([...(view.hidden || []), ...defaultHiddenIds(state)]));
     // Restore the detail override (null / absent = Auto). Older views without a
     // `detail` field leave the current setting untouched? No — normalizeView
     // fills detail:null for them, so a legacy view resets to Auto, matching how
@@ -873,7 +879,7 @@ export default function App() {
     // Restore the collapse-repeats toggle (absent = off).
     setCollapseRedundant(view.collapse === true);
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
-  }, [compositeId, layoutMode.modeId, layoutMode.setModeId]);
+  }, [compositeId, state, layoutMode.modeId, layoutMode.setModeId]);
 
   // On open, apply a startup view ONCE per composite, in priority order:
   //   1. ?view=<encoded>   (ad-hoc shareable link)

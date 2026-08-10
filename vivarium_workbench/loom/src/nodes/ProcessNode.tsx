@@ -341,13 +341,8 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
               ×{(data as any)._collapsedCount}
             </span>
           )}
-          {/* Minimal (glyph) tier = name only; the DRAFT badge appears from the
-              ports tier up. */}
-          {show.ports && (data as any).isDraft && (
-            <span className="process-node-draft" title="Draft process — typed ports + contract, but NO update dynamics yet">
-              DRAFT
-            </span>
-          )}
+          {/* No separate DRAFT badge — the meta line below reads "draft process"
+              instead of "process" (more discrete, shown from the ports tier up). */}
           {data.isCompositeProcess && (
             <span
               className="process-node-drill"
@@ -359,7 +354,9 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         </div>
         {show.ports && (
           <div className="process-node-meta" title={SECTION_HINT.meta}>
-            {data.processType} · {inputPorts.length} in / {outputPorts.length} out
+            {/* "draft process" / "process" — the in/out counts are omitted: the
+                port columns already make the arity obvious. */}
+            {(data as any).isDraft ? `draft ${data.processType}` : data.processType}
             {data.interval != null && <span> · every {data.interval}</span>}
           </div>
         )}

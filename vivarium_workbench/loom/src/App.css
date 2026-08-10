@@ -409,6 +409,7 @@ body {
 .process-node-glyph,
 .process-node-ports,
 .process-node-types,
+.process-node-config,
 .process-node-contract,
 .process-node-full {
   width: 620px;
@@ -511,29 +512,35 @@ body {
 
 /* Center channel — margined clear of the two port columns (glyph keeps the full
    box for its big centered name). */
-.process-node-ports    .process-node-center,
-.process-node-types    .process-node-center,
-.process-node-config   .process-node-center,
 .process-node-contract .process-node-center,
 .process-node-full     .process-node-center { margin: 0 122px; }
+/* No-contract tiers use bigger port labels, so give the center more side
+   clearance — otherwise a wide port type ("concentration") overlaps the big
+   centered name. */
+.process-node-ports    .process-node-center,
+.process-node-types    .process-node-center,
+.process-node-config   .process-node-center { margin: 0 158px; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */
-/* The config band spreads across the FULL top of the card (negative margins
-   pull it out past the center's port-clearing margins — safe because the ports
-   sit lower down), with larger chips than the body text. */
+/* The config band spreads across the FULL top of the card — negative margins
+   pull it out past the center's port-clearing margins to the card edges (safe:
+   the ports sit lower, so the top strip is free). Chips flow left-to-right and
+   wrap tightly so the band stays a shallow header and never pushes the contract
+   math out the bottom of the card. */
 .process-node-config-band {
   display: flex; flex-wrap: wrap; align-items: center;
-  justify-content: space-between; gap: 8px 14px;
-  margin: -2px 0 14px; padding-bottom: 12px;
+  justify-content: flex-start; gap: 5px 9px;
+  margin: 0 -106px 12px; padding-bottom: 9px;
   border-bottom: 1px solid #e5e7eb;
 }
-.config-band-caret { font-size: 17px; color: #a855f7; font-weight: 700; letter-spacing: 0.02em; }
+.config-band-caret { font-size: 15px; color: #a855f7; font-weight: 700; letter-spacing: 0.02em; flex: 0 0 auto; }
 .config-chip {
   display: inline-flex; align-items: baseline; gap: 5px;
   background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px;
-  padding: 3px 12px; font-size: 18px;
+  padding: 2px 9px; font-size: 15px; max-width: 100%;
 }
+.config-chip .config-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 15ch; }
 .config-chip .config-key { color: #7e22ce; font-weight: 600; }
 .config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
 /* A parameter the composite explicitly SET (vs running on its default) reads
@@ -562,19 +569,25 @@ body {
 }
 /* No-contract tiers (ports / types / config) have lots of empty card — use
    bigger process names + ports to fill it, shrinking as more content appears. */
-.process-node-glyph .process-node-title { font-size: 54px; line-height: 1.1; overflow-wrap: anywhere; }
+.process-node-glyph .process-node-title { font-size: 52px; line-height: 1.1; overflow-wrap: anywhere; }
 .process-node-ports .process-node-title { font-size: 46px; line-height: 1.12; overflow-wrap: anywhere; }
-.process-node-types .process-node-title { font-size: 40px; line-height: 1.15; overflow-wrap: anywhere; }
-.process-node-config .process-node-title { font-size: 34px; line-height: 1.18; overflow-wrap: anywhere; }
-/* Bigger port names + types at those same no-contract tiers. */
+.process-node-types .process-node-title { font-size: 40px; line-height: 1.14; overflow-wrap: anywhere; }
+.process-node-config .process-node-title { font-size: 34px; line-height: 1.16; overflow-wrap: anywhere; }
+/* Bigger port names + types at those same no-contract tiers — max-width kept
+   inside the widened side clearance so they never reach the centered name. */
 .process-node-ports .port-in-name,
 .process-node-types .port-in-name,
-.process-node-config .port-in-name { font-size: 27px; max-width: 200px; }
+.process-node-config .port-in-name { font-size: 24px; max-width: 150px; }
 .process-node-ports .port-in-type,
 .process-node-types .port-in-type,
-.process-node-config .port-in-type { font-size: 20px; max-width: 200px; }
+.process-node-config .port-in-type { font-size: 17px; max-width: 150px; }
+/* The "draft process" line + address, enlarged to fill the body at these tiers. */
 .process-node-ports .process-node-meta,
-.process-node-types .process-node-meta { font-size: 22px; }
+.process-node-types .process-node-meta,
+.process-node-config .process-node-meta { font-size: 26px; margin-top: 8px; }
+.process-node-ports .process-node-address,
+.process-node-types .process-node-address,
+.process-node-config .process-node-address { font-size: 20px; }
 
 .process-node-title { font-size: 25px; font-weight: 700; color: #1e293b; line-height: 1.2; }
 .process-node-meta  { font-size: 17px; color: #64748b; margin-top: 4px; }
