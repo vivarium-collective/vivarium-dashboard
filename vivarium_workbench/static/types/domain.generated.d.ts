@@ -99,6 +99,7 @@ export interface InvestigationSummary {
   question: string | null;
   hypothesis: string | null;
   n_studies: number | null;
+  n_figures: number | null;
   studies: string[];
   lifecycle: any;
   current: boolean | null;
