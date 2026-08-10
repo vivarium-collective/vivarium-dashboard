@@ -110,6 +110,10 @@ export default function App() {
   // removed processes kept rendering).
   const hiddenRef = useRef(hidden);
   hiddenRef.current = hidden;
+  // Guards the once-per-composite startup-view apply (declared here, up top, so
+  // the postMessage composite-load handler can RESET it — a re-open of the same
+  // composite must re-apply its saved default view, not keep the reset defaults).
+  const startupViewRef = useRef<string | null>(null);
   // Explicit-emit store paths (joined by '/'). Descendants inherit emission.
   // Seeded from the composite's declared emit-all paths when it declares an
   // emitter step, else every top-level store (see `initialEmitSet`).
@@ -313,6 +317,11 @@ export default function App() {
   useEffect(() => {
     const off = onCompositeLoad((msg) => {
       setState(msg.state);
+      // A (re)loaded composite must re-apply its saved default view — this handler
+      // resets collapsed/hidden to defaults, so without re-arming the startup-view
+      // guard a re-open of the SAME composite would keep the reset defaults (the
+      // "default view keeps resetting" bug).
+      startupViewRef.current = null;
       setCollapsed(defaultCollapsedIds(msg.state));  // light overview by default
       setHidden(defaultHiddenIds(msg.state));   // re-seed the noisy-process hide
       // Node ids are dotted paths, so a same-named path in the NEXT composite
@@ -915,7 +924,7 @@ export default function App() {
   //   3. the saved default view for this composite (localStorage)
   //   4. the WORKSPACE default view (server) — the only one a headless figure
   //      render can see, so this is what makes renders match "Save as default".
-  const startupViewRef = useRef<string | null>(null);
+  //  (startupViewRef is declared up top so the postMessage handler can reset it.)
   useEffect(() => {
     if (!state || !compositeId) return;
     if (startupViewRef.current === compositeId) return;
