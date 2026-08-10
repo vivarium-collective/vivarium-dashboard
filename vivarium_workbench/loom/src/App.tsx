@@ -28,7 +28,9 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
-import { collapseRedundantProcesses, processesToHyperedges } from './collapseRedundant';
+import {
+  collapseRedundantProcesses, processesToHyperedges, relaxHyperedgePositions,
+} from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
@@ -546,7 +548,14 @@ export default function App() {
       const { nodes: laidOut } = await layoutMode.runLayout(
         visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
       );
-      const withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      let withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      // Milner view: settle each hyperedge vertex to the centroid of the ports it
+      // links, so the dashed spokes fan naturally from the middle instead of from
+      // the collapsed process's old corner. Pinned (saved-position) vertices stay.
+      if (hyperedgeMode) {
+        withSaved = relaxHyperedgePositions(
+          withSaved, visibleEdges as any[], new Set(Object.keys(saved)));
+      }
       if (cancelled) return;
       // Apply the CURRENT hidden set to the freshly-rebuilt nodes + edges (read
       // via ref, not a dep). Without this, rebuilding edges here would drop the
