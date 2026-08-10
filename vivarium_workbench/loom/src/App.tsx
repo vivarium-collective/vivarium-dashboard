@@ -32,6 +32,7 @@ import { collapseRedundantProcesses } from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
+import LayoutMenu from './panels/LayoutMenu';
 import { getDefaultView, decodeView, fetchView, normalizeView, type View } from './viewStore';
 import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
 import { ProcessPanel } from './panels/ProcessPanel';
@@ -1623,57 +1624,17 @@ export default function App() {
                   flexWrap: 'wrap', justifyContent: 'flex-end',
                   maxWidth: 'calc(100% - 16px)',
                 }}>
-                  {/* Layout: relationship packing (○), or the flow-network DAG
-                      oriented top-to-bottom ("hierarchy") / left-to-right ("flow"). */}
-                  <div
-                    style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden', background: '#fff' }}
-                    title="Layout: packing, hierarchy (top→bottom), or flow (left→right)"
-                  >
-                    {([
-                      { id: 'hierarchy', label: '○', t: 'Packing — relationship layout, no enforced direction' },
-                      { id: 'flow-down', label: '↓', t: 'Hierarchy — store dependency, top → bottom (flow-network DAG)' },
-                      { id: 'flow-right', label: '→', t: 'Flow — workflow DAG: stores → processes → stores lined up, left → right' },
-                    ] as const).map((opt) => {
-                      const active = layoutMode.modeId === opt.id;
-                      return (
-                        <button
-                          key={opt.id}
-                          onClick={() => layoutMode.setModeId(opt.id)}
-                          title={opt.t}
-                          style={{
-                            width: 30, height: 28, fontSize: 15, lineHeight: 1,
-                            border: 'none', cursor: 'pointer',
-                            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                            background: active ? '#eff6ff' : '#fff',
-                            color: active ? '#2563eb' : '#6b7280',
-                            fontWeight: active ? 700 : 500,
-                          }}
-                        >
-                          {opt.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {/* Divider: view-mode controls (left) vs. actions (right). */}
-                  <div style={{ width: 1, height: 20, background: '#e5e7eb' }} />
-                  {/* Center on the locked process (inputs left, outputs right,
-                      shared stores below). Disabled until a process is locked. */}
-                  <button
-                    onClick={() => { if (focus.locked) handleCenterOnProcess(focus.locked); }}
-                    disabled={!focus.locked}
-                    title={focus.locked
-                      ? 'Center the layout on the locked process (inputs left, outputs right, shared stores below)'
-                      : 'Lock a process first (click it, then the lock), then center the layout on it'}
-                    style={{
-                      height: 28, padding: '0 10px', fontSize: 12,
-                      display: 'inline-flex', alignItems: 'center',
-                      background: '#fff', border: '1px solid #d1d5db',
-                      borderRadius: 4, cursor: focus.locked ? 'pointer' : 'default',
-                      color: focus.locked ? '#374151' : '#b8bec9',
-                    }}
-                  >
-                    ⊹ Center
-                  </button>
+                  {/* Layout controls grouped into one dropdown to keep the top
+                      bar to Layout · Detail · Views · Download. */}
+                  <LayoutMenu
+                    modeId={layoutMode.modeId}
+                    setModeId={layoutMode.setModeId}
+                    canCenter={!!focus.locked}
+                    onCenter={() => { if (focus.locked) handleCenterOnProcess(focus.locked); }}
+                    collapseRedundant={collapseRedundant}
+                    toggleCollapse={() => setCollapseRedundant((v) => !v)}
+                    onRelayout={handleResetLayout}
+                  />
                   {/* Detail floor: force at least this much card detail at ANY
                       zoom (Auto = follow the zoom-driven semantic tier). */}
                   <select
@@ -1694,34 +1655,6 @@ export default function App() {
                       </option>
                     ))}
                   </select>
-                  {/* Collapse repeated processes: dFBA[0,0], dFBA[1,0], … →
-                      one dFBA[*] node with a count. */}
-                  <button
-                    onClick={() => setCollapseRedundant((v) => !v)}
-                    title="Collapse topologically-identical repeated processes (e.g. an array of dFBA[i,j]) into a single representative that shows how many it stands for"
-                    style={{
-                      height: 28, padding: '0 10px', fontSize: 12,
-                      display: 'inline-flex', alignItems: 'center',
-                      background: collapseRedundant ? '#eff6ff' : '#fff',
-                      border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer',
-                      color: collapseRedundant ? '#2563eb' : '#374151',
-                      fontWeight: collapseRedundant ? 600 : 400,
-                    }}
-                  >
-                    ⊞ Collapse repeats
-                  </button>
-                  <button
-                    onClick={handleResetLayout}
-                    title="Re-run auto-layout on the currently visible nodes and fit the view"
-                    style={{
-                      height: 28, padding: '0 10px', fontSize: 12,
-                      display: 'inline-flex', alignItems: 'center',
-                      background: '#fff', border: '1px solid #d1d5db',
-                      borderRadius: 4, cursor: 'pointer', color: '#374151',
-                    }}
-                  >
-                    ⟳ Re-layout
-                  </button>
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}
