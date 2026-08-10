@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listViews, getDefaultName, getView, saveView, deleteView, setDefault,
-  shareableUrl, normalizeView, type View,
+  normalizeView, type View,
 } from '../viewStore';
 
 export default function ViewsMenu(props: {
@@ -43,14 +43,19 @@ export default function ViewsMenu(props: {
   const names = compositeId ? listViews(compositeId) : [];
   const defaultName = compositeId ? getDefaultName(compositeId) : null;
 
-  const onSave = useCallback(() => {
+  // Mirror the default view to the WORKSPACE (server) so it survives across
+  // browsers AND is applied by headless figure renders — localStorage alone is
+  // invisible to the renderer. `null` clears the stored default.
+  const persistServerDefault = useCallback((view: View | null) => {
     if (!compositeId) return;
-    const name = window.prompt('Save current view as:', '');
-    if (!name || !name.trim()) return;
-    saveView(compositeId, name.trim(), captureCurrentView());
-    refresh();
-    flash(`Saved "${name.trim()}"`);
-  }, [compositeId, captureCurrentView]);
+    try {
+      fetch('/api/composite-default-view', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: compositeId, view }),
+      }).catch(() => { /* offline / static — localStorage still holds it */ });
+    } catch { /* no fetch */ }
+  }, [compositeId]);
 
   const onApply = (name: string) => {
     if (!compositeId) return;
@@ -66,40 +71,41 @@ export default function ViewsMenu(props: {
 
   const onSetDefault = (name: string) => {
     if (!compositeId) return;
-    setDefault(compositeId, name === defaultName ? null : name);
+    const unset = name === defaultName;
+    setDefault(compositeId, unset ? null : name);
+    // Keep the workspace default in sync: store the named view, or clear it.
+    persistServerDefault(unset ? null : (getView(compositeId, name) ?? null));
     refresh();
   };
 
-  const onCopyLink = useCallback(async () => {
-    const url = shareableUrl(captureCurrentView());
-    try {
-      await navigator.clipboard.writeText(url);
-      flash('Shareable link copied');
-    } catch {
-      window.prompt('Copy this shareable link:', url);
-    }
-    setOpen(false);
-  }, [captureCurrentView]);
-
   const onExportFile = useCallback(() => {
     const blob = new Blob([JSON.stringify(captureCurrentView(), null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
+    a.href = url;
     a.download = `${(compositeId || 'composite').replace(/[^\w.-]+/g, '_')}.view.json`;
+    // Firefox only fires the download if the anchor is in the document; and the
+    // object URL must outlive the click, so revoke on a timer (a synchronous
+    // revoke can cancel the download before it starts).
+    document.body.appendChild(a);
     a.click();
-    URL.revokeObjectURL(a.href);
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
     setOpen(false);
+    flash('View saved to file');
   }, [captureCurrentView, compositeId]);
 
   // Save the current arrangement as THE default (a reserved "Default" view that
   // opens automatically and that "Go to default" restores).
   const onSaveDefault = useCallback(() => {
     if (!compositeId) return;
-    saveView(compositeId, 'Default', captureCurrentView());
+    const view = captureCurrentView();
+    saveView(compositeId, 'Default', view);
     setDefault(compositeId, 'Default');
+    persistServerDefault(view);   // → workspace, so headless renders use it too
     refresh();
     flash('Saved as default');
-  }, [compositeId, captureCurrentView]);
+  }, [compositeId, captureCurrentView, persistServerDefault]);
 
   const onGoToDefault = () => {
     if (!compositeId || !defaultName) return;
@@ -205,9 +211,6 @@ export default function ViewsMenu(props: {
           <div style={{ height: 1, background: '#e5e7eb' }} />
           <button onClick={onExportFile} style={itemBtn} {...hover}>⭳ Save current view (file)</button>
           <button onClick={() => fileRef.current?.click()} style={itemBtn} {...hover}>⭱ Load view (file)</button>
-          <div style={{ height: 1, background: '#e5e7eb' }} />
-          <button onClick={onSave} style={itemBtn} {...hover}>＋ Save named view…</button>
-          <button onClick={onCopyLink} style={itemBtn} {...hover}>🔗 Copy shareable link</button>
           <input
             ref={fileRef} type="file" accept="application/json,.json"
             style={{ display: 'none' }}

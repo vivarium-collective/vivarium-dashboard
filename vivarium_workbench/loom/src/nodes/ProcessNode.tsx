@@ -1,5 +1,5 @@
-import { memo, useState } from "react";
-import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
+import { memo, useEffect, useState } from "react";
+import { Handle, Position, NodeResizer, useReactFlow, useNodeId, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
 import { portInfo } from "../portInfo";
@@ -245,7 +245,20 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // override of the tier size. The corner handles are HIDDEN by default and
   // revealed only on card hover (CSS), so they don't clutter every card — the
   // functionality is there, just not always visible.
-  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  // Hand-set size persists on data._size (saved with the layout/default view);
+  // local `dims` gives smooth drag feedback, seeded from + synced to it.
+  const _rf = useReactFlow();
+  const _nodeId = useNodeId();
+  const savedSize = (data as any)._size as { width: number; height: number } | undefined;
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(savedSize ?? null);
+  useEffect(() => {
+    if (savedSize) setDims(savedSize);
+  }, [savedSize?.width, savedSize?.height]);
+  const commitSize = (w: number, h: number) => {
+    if (!_nodeId) return;
+    _rf.setNodes((ns: any[]) => ns.map((n) =>
+      n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: w, height: h } } } : n));
+  };
   // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.
   const [openPort, setOpenPort] = useState<string | null>(null);
   // Which middle section's detail is expanded (click a center box). 'config'
@@ -264,6 +277,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         minWidth={360}
         minHeight={200}
         onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
+        onResizeEnd={(_e, p) => commitSize(p.width, p.height)}
         handleClassName="loom-resize-handle"
         lineClassName="loom-resize-line"
       />
@@ -318,7 +332,9 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         <div className="process-node-title">
           {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
           {data.label}
-          {(data as any).isDraft && (
+          {/* Minimal (glyph) tier = name only; the DRAFT badge appears from the
+              ports tier up. */}
+          {show.ports && (data as any).isDraft && (
             <span className="process-node-draft" title="Draft process — typed ports + contract, but NO update dynamics yet">
               DRAFT
             </span>

@@ -34,6 +34,9 @@ export type View = {
   mode?: string;
   /** Pinned process node ids (process-column mode). */
   pins?: string[];
+  /** Detail override in effect when captured: '' / null = Auto (zoom-driven),
+   *  else a pinned tier ('glyph' | 'ports' | 'types' | 'contract' | 'full'). */
+  detail?: string | null;
 };
 
 export type ViewStore = {
@@ -149,6 +152,8 @@ export function normalizeView(v: any): View {
     // in the hierarchy layout, so default there and keep old ?view= links working.
     mode: typeof v?.mode === 'string' ? v.mode : 'hierarchy',
     pins: Array.isArray(v?.pins) ? v.pins.filter((p: unknown) => typeof p === 'string') : [],
+    // Detail override; absent/invalid → null (Auto, zoom-driven).
+    detail: typeof v?.detail === 'string' && v.detail ? v.detail : null,
   };
 }
 

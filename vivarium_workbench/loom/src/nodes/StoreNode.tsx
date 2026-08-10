@@ -1,5 +1,5 @@
-import { memo, useState } from "react";
-import { Handle, Position, NodeResizer, type NodeProps } from "@xyflow/react";
+import { memo, useEffect, useState } from "react";
+import { Handle, Position, NodeResizer, useReactFlow, useNodeId, type NodeProps } from "@xyflow/react";
 import type { StoreNodeData } from "../types";
 import type { ZoomTierId } from "../layouts/types";
 import { abbreviateType } from "../contract";
@@ -30,7 +30,15 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
 
   // Manual resize: drag a corner to widen/enlarge the store, just like a
   // process card. Handles are hidden by CSS until the node is hovered.
-  const [dims, setDims] = useState<{ width: number; height: number } | null>(null);
+  // Hand-set size persists on data._size (saved with the layout/default view);
+  // local `dims` gives smooth drag feedback, seeded from + synced to it.
+  const _rf = useReactFlow();
+  const _nodeId = useNodeId();
+  const savedSize = (data as any)._size as { width: number; height: number } | undefined;
+  const [dims, setDims] = useState<{ width: number; height: number } | null>(savedSize ?? null);
+  useEffect(() => {
+    if (savedSize) setDims(savedSize);
+  }, [savedSize?.width, savedSize?.height]);
   // Override the tier's max-width/height caps too, or the inline width can't
   // grow past them and a drag just shifts the box instead of widening it.
   const sizeStyle = dims
@@ -42,6 +50,10 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
       minWidth={72}
       minHeight={44}
       onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
+      onResizeEnd={(_e, p) => {
+        if (_nodeId) _rf.setNodes((ns: any[]) => ns.map((n) =>
+          n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: p.width, height: p.height } } } : n));
+      }}
       handleClassName="loom-resize-handle"
       lineClassName="loom-resize-line"
     />

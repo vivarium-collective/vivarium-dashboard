@@ -1056,6 +1056,101 @@ def create_app() -> FastAPI:
         """
         return RegistryPayload.model_validate(build_registry(ws))
 
+    @app.get(
+        "/api/composite-layout",
+        tags=["Composites"],
+        summary="Load saved bigraph-loom node positions for a composite (workspace-persisted)",
+    )
+    def composite_layout_get(
+        id: str, mode: str = "hierarchy", ws: Path = Depends(get_workspace)
+    ) -> dict:
+        """Return `{positions}` saved by the loom viewer for this composite+mode,
+        from `.pbg/loom-layouts/<id>__<mode>.json`; `{}` if none."""
+        import json as _json, re as _re
+        safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", str(id))
+        p = ws / ".pbg" / "loom-layouts" / f"{safe}__{mode}.json"
+        if p.exists():
+            try:
+                return {"positions": _json.loads(p.read_text())}
+            except Exception:
+                return {"positions": {}}
+        return {"positions": {}}
+
+    @app.post(
+        "/api/composite-layout",
+        tags=["Composites"],
+        summary="Save bigraph-loom node positions for a composite to the workspace",
+    )
+    def composite_layout_post(
+        payload: dict = Body(default={}), ws: Path = Depends(get_workspace)
+    ) -> dict:
+        """Persist `{id, mode, positions}` to `.pbg/loom-layouts/<id>__<mode>.json`
+        so hand-tuned layouts survive reloads AND are picked up by headless
+        renders (the study figure SVGs)."""
+        import json as _json, re as _re
+        cid = str(payload.get("id", ""))
+        mode = str(payload.get("mode", "hierarchy"))
+        positions = payload.get("positions", {})
+        if not cid:
+            return {"ok": False, "error": "missing id"}
+        safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", cid)
+        d = ws / ".pbg" / "loom-layouts"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / f"{safe}__{mode}.json").write_text(_json.dumps(positions))
+        return {"ok": True}
+
+    @app.get(
+        "/api/composite-default-view",
+        tags=["Composites"],
+        summary="Load the saved default bigraph-loom VIEW for a composite (workspace-persisted)",
+    )
+    def composite_default_view_get(
+        id: str, ws: Path = Depends(get_workspace)
+    ) -> dict:
+        """Return `{view}` — the full default View (mode + positions + sizes +
+        collapsed + hidden + detail) saved via the loom's "Save current as
+        default", from `.pbg/loom-views/<id>.json`; `{"view": None}` if none.
+
+        Unlike `/api/composite-layout` (positions only, per mode), this carries
+        the WHOLE view so headless figure renders reproduce the exact default a
+        user arranged — including which layout MODE it was saved in."""
+        import json as _json, re as _re
+        safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", str(id))
+        p = ws / ".pbg" / "loom-views" / f"{safe}.json"
+        if p.exists():
+            try:
+                return {"view": _json.loads(p.read_text())}
+            except Exception:
+                return {"view": None}
+        return {"view": None}
+
+    @app.post(
+        "/api/composite-default-view",
+        tags=["Composites"],
+        summary="Save (or clear) the default bigraph-loom VIEW for a composite to the workspace",
+    )
+    def composite_default_view_post(
+        payload: dict = Body(default={}), ws: Path = Depends(get_workspace)
+    ) -> dict:
+        """Persist `{id, view}` to `.pbg/loom-views/<id>.json` so the default
+        view survives reloads AND is applied by headless figure renders. A null
+        / missing `view` clears the stored default."""
+        import json as _json, re as _re
+        cid = str(payload.get("id", ""))
+        if not cid:
+            return {"ok": False, "error": "missing id"}
+        safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", cid)
+        d = ws / ".pbg" / "loom-views"
+        d.mkdir(parents=True, exist_ok=True)
+        p = d / f"{safe}.json"
+        view = payload.get("view")
+        if view is None:
+            if p.exists():
+                p.unlink()
+            return {"ok": True, "cleared": True}
+        p.write_text(_json.dumps(view))
+        return {"ok": True}
+
     @app.post(
         "/api/registry/run-process",
         tags=["Registry & catalog"],

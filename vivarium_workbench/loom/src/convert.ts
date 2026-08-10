@@ -258,8 +258,10 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
     if (node._type === 'process' || node._type === 'step') {
       const id = pathKey(path);
       const parentPath = path.slice(0, -1);  // wire targets are relative to this
-      const inputPorts = Object.keys(node.inputs ?? {});
-      const outputPorts = Object.keys(node.outputs ?? {});
+      // Show the DECLARED interface ports (`_inputs`/`_outputs`) so an UNWIRED
+      // draft process still renders its ports; fall back to the wiring keys.
+      const inputPorts = Object.keys((node as any)._inputs ?? node.inputs ?? {});
+      const outputPorts = Object.keys((node as any)._outputs ?? node.outputs ?? {});
 
       // Build inputPortsSchema / outputPortsSchema from wiring targets (informational).
       // These keep the RAW target joined verbatim — it is what the port hover
@@ -336,7 +338,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: port,          // process's left input port
           label: port,
           animated: false,
-          style: { stroke: '#94a3b8', strokeDasharray: '5,5' },  // wire convention: dashed (inline stroke so image export captures it)
+          style: { stroke: '#94a3b8', strokeDasharray: '5,5', strokeWidth: 1.5 },  // wire convention: dashed, slightly thicker for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the process's input port
           data: { edgeType: 'input' },
         });
@@ -354,7 +356,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: 'right-in',    // store's right handle
           label: port,
           animated: false,
-          style: { stroke: '#94a3b8', strokeDasharray: '5,5' },  // wire convention: dashed (inline stroke so image export captures it)
+          style: { stroke: '#94a3b8', strokeDasharray: '5,5', strokeWidth: 1.5 },  // wire convention: dashed, slightly thicker for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the store's incoming side
           data: { edgeType: 'output' },
         });
