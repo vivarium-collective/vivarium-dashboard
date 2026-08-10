@@ -774,6 +774,35 @@ def _summarize_large_values(node, max_list: int = 40, max_str: int = 2000):
     return f"⟨{n} items⟩" if n > max_list else node
 
 
+def _tag_inner_process_nodes(node):
+    """Re-tag process/step nodes in a LIVE composite state so the loom + the
+    downstream doc-attach recognise them.
+
+    ``Composite.serialize_state()`` (and ``.state``) render a built process node
+    WITHOUT the spec-form ``_type`` and with the address as ``{protocol, data}``
+    rather than a ``protocol:data`` string — so ``convert.ts`` and
+    ``_attach_process_docs`` (both keyed on ``_type in (process, step)``) treat
+    every process as a plain store. That is why a drilled inner composite renders
+    as "0 processes · N stores": true structure lost. Walk the doc in place and,
+    for any dict node that carries an ``address`` plus process-shaped keys
+    (``inputs``/``outputs``/``interval``/``instance``), restore ``_type`` (a
+    ``step`` has no ``interval``) and flatten the address to a string. Guarded so
+    a plain config/wire dict is never mistaken for a process."""
+    if isinstance(node, dict):
+        addr = node.get("address")
+        looks_proc = addr is not None and any(
+            k in node for k in ("inputs", "outputs", "interval", "instance"))
+        if looks_proc and node.get("_type") not in ("process", "step"):
+            node["_type"] = "process" if "interval" in node else "step"
+        if isinstance(addr, dict) and "protocol" in addr and "data" in addr:
+            node["address"] = f"{addr['protocol']}:{addr['data']}"
+        for v in node.values():
+            _tag_inner_process_nodes(v)
+    elif isinstance(node, list):
+        for v in node:
+            _tag_inner_process_nodes(v)
+
+
 def _attach_process_docs(doc, get_core=None):
     """Walk a composite-state doc in place, setting ``node['doc']`` for each
     process/step from its address's class description. All failures swallowed.
@@ -1099,6 +1128,10 @@ def _resolve_inner_composite_state(params: dict) -> dict:
             crumbs.append(hop[-1] if hop else "?")
             cur = inner
         inner_doc = _summarize_large_values(cur.state)
+        # Restore spec-form _type + string address on the live process nodes so
+        # the inner composite renders as a true process/store graph (not all
+        # stores), and so _attach_process_docs / composite-process flagging work.
+        _tag_inner_process_nodes(inner_doc)
         icore = getattr(cur, "core", None) or core
         _attach_process_docs(inner_doc, get_core=lambda: icore)
         _render_port_schemas(inner_doc)
