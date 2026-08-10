@@ -136,13 +136,16 @@ export function defaultHiddenIds(state: any): Set<string> {
     name === 'pinned_flux_targets' ||
     (name === 'global_time' && path.length === 1);
   function walk(node: any, path: string[]) {
-    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
     const name = path[path.length - 1] || '';
+    // Noise STORES can be BARE-VALUE leaves (e.g. top-level `global_time = 0`,
+    // not `{_type:'float'}`), so match on name/path BEFORE bailing on non-objects
+    // — otherwise a scalar global_time is walked past and never hidden.
+    if (path.length > 0 && isNoiseStore(name, path)) { out.add(path.join('.')); return; }
+    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
     if (node._type === 'process' || node._type === 'step') {
       if (isNoise(name) || isEmitter(name)) out.add(path.join('.'));
       return;
     }
-    if (path.length > 0 && isNoiseStore(name, path)) { out.add(path.join('.')); return; }
     if ('_type' in node) return;  // other typed leaf store
     for (const [k, v] of Object.entries(node)) {
       if (k === DECLARED_EMIT_PATHS_KEY) continue;
