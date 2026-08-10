@@ -256,10 +256,16 @@ body {
 .store-node-config .store-label,
 .store-node-contract .store-label,
 .store-node-full .store-label { font-size: 27px; line-height: 1.2; }
+/* Detail tiers: make the store's VALUE and TYPE big + legible (they were tiny
+   grey afterthoughts under a large name). Darker ink so the type reads clearly. */
 .store-node-types .store-node-type,
 .store-node-config .store-node-type,
 .store-node-contract .store-node-type,
-.store-node-full .store-node-type { font-size: 17px; }
+.store-node-full .store-node-type { font-size: 22px; color: #64748b; }
+.store-node-types .store-node-value,
+.store-node-config .store-node-value,
+.store-node-contract .store-node-value,
+.store-node-full .store-node-value { font-size: 20px; color: #475569; }
 
 /* ── Edge labels (process-column semantic zoom) ─────────────────────────── */
 .loom-edge-label {

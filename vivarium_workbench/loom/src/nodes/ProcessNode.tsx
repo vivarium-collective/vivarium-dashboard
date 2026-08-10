@@ -277,7 +277,13 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   }, [savedSize?.width, savedSize?.height]);
   const commitSize = (w: number, h: number) => {
     if (!_nodeId) return;
-    _rf.setNodes((ns: any[]) => ns.map((n) =>
+    // Route through App's commit so the size lands in the persisted node state
+    // (a bare _rf.setNodes writes React Flow's store but not useNodesState, so
+    // the size silently reset on the next reload).
+    const commit = (data as any)._commitSize as
+      | ((id: string, s: { width: number; height: number }) => void) | undefined;
+    if (commit) commit(_nodeId, { width: w, height: h });
+    else _rf.setNodes((ns: any[]) => ns.map((n) =>
       n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: w, height: h } } } : n));
   };
   // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.

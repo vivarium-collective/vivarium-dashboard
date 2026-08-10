@@ -269,6 +269,17 @@ export default function App() {
   const nodesRef = useRef<any[]>([]);
   nodesRef.current = nodes;
 
+  // Commit a hand-set node size into APP's node state (useNodesState), so it
+  // survives layout rebuilds AND gets persisted. A node's own resizer used
+  // useReactFlow().setNodes, which writes React Flow's internal store but does
+  // NOT flow back into this useNodesState `nodes` array — so `data._size` never
+  // reached positionsFromNodes and the size silently reset on the next reload.
+  const commitNodeSize = useCallback(
+    (id: string, size: { width: number; height: number }) => {
+      setNodes((ns: any[]) => ns.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, _size: size } } : n));
+    }, [setNodes]);
+
   // Semantic-zoom tier, driven by the live viewport zoom (process-column mode
   // only). The tier decides how much detail each process card shows AND how
   // tall it is, so the column must re-flow when it changes. `tierForZoom`'s
@@ -705,6 +716,7 @@ export default function App() {
             // its own path to fetch its inner composite (Composite Processes).
             _rootId: rootIdRef.current,
             _hops: drillHops,
+            _commitSize: commitNodeSize,
           },
         };
       }
@@ -716,11 +728,11 @@ export default function App() {
         ...n,
         data: {
           ...n.data, _tier: effTier, _detailOverrides: detailOverrides, _isHub: isHub,
-          _readers: wiring.readers, _writers: wiring.writers,
+          _readers: wiring.readers, _writers: wiring.writers, _commitSize: commitNodeSize,
         },
       };
     });
-  }, [nodes, edges, effTier, detailOverrides, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
+  }, [nodes, edges, effTier, detailOverrides, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops, commitNodeSize]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
