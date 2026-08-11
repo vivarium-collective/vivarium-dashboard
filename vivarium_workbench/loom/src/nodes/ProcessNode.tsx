@@ -310,9 +310,9 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
       } as React.CSSProperties}
     >
       <NodeResizer
-        isVisible={show.ports}
-        minWidth={160}
-        minHeight={56}
+        isVisible
+        minWidth={120}
+        minHeight={48}
         onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
         onResizeEnd={(_e, p) => commitSize(p.width, p.height)}
         handleClassName="loom-resize-handle"

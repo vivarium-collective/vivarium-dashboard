@@ -5,7 +5,7 @@
 // nearest that port, instead of a fixed left/right handle.
 import { memo } from 'react';
 import {
-  BaseEdge, EdgeLabelRenderer, useInternalNode,
+  BaseEdge, EdgeLabelRenderer, useInternalNode, useStore,
   type EdgeProps,
 } from '@xyflow/react';
 import { type Point } from './geometry';
@@ -78,6 +78,66 @@ function roundedPath(pts: Point[], r: number): string {
   return d;
 }
 
+// --- Milner-hyperedge obstacle routing: route a spoke AROUND intervening node
+//     boxes instead of straight through them. ------------------------------------
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+
+function segCross(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
+  const d = (a: Point, b: Point, c: Point) =>
+    (c.y - a.y) * (b.x - a.x) - (b.y - a.y) * (c.x - a.x);
+  return (d(p3, p4, p1) > 0) !== (d(p3, p4, p2) > 0)
+      && (d(p1, p2, p3) > 0) !== (d(p1, p2, p4) > 0);
+}
+
+function segHitsRect(a: Point, b: Point, r: Rect): boolean {
+  const inside = (p: Point) => p.x > r.x0 && p.x < r.x1 && p.y > r.y0 && p.y < r.y1;
+  if (inside(a) || inside(b)) return true;
+  const c = [
+    { x: r.x0, y: r.y0 }, { x: r.x1, y: r.y0 },
+    { x: r.x1, y: r.y1 }, { x: r.x0, y: r.y1 },
+  ];
+  return segCross(a, b, c[0], c[1]) || segCross(a, b, c[1], c[2])
+      || segCross(a, b, c[2], c[3]) || segCross(a, b, c[3], c[0]);
+}
+
+/** Route start→end avoiding `obstacles` (node boxes): insert corner waypoints of
+ *  the matching PADDED rect (which sit clear of the node) around whatever leg
+ *  still crosses a node, a few passes deep. Straight when nothing is in the way. */
+function routeAroundObstacles(
+  start: Point, end: Point, obstacles: Rect[], padded: Rect[],
+): Point[] {
+  const pts: Point[] = [start, end];
+  for (let pass = 0; pass < 6; pass++) {
+    let inserted = false;
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      let hit = -1, hitD = Infinity;
+      for (let k = 0; k < obstacles.length; k++) {
+        if (!segHitsRect(a, b, obstacles[k])) continue;
+        const cx = (obstacles[k].x0 + obstacles[k].x1) / 2;
+        const cy = (obstacles[k].y0 + obstacles[k].y1) / 2;
+        const dd = Math.hypot(cx - a.x, cy - a.y);
+        if (dd < hitD) { hitD = dd; hit = k; }
+      }
+      if (hit < 0) continue;
+      const pr = padded[hit], o = obstacles[hit];
+      const corners = [
+        { x: pr.x0, y: pr.y0 }, { x: pr.x1, y: pr.y0 },
+        { x: pr.x1, y: pr.y1 }, { x: pr.x0, y: pr.y1 },
+      ];
+      let best: Point | null = null, bestLen = Infinity;
+      for (const c of corners) {
+        if (segHitsRect(a, c, o) || segHitsRect(c, b, o)) continue;
+        const len = Math.hypot(c.x - a.x, c.y - a.y) + Math.hypot(b.x - c.x, b.y - c.y);
+        if (len < bestLen) { bestLen = len; best = c; }
+      }
+      if (best) { pts.splice(i + 1, 0, best); inserted = true; break; }
+    }
+    if (!inserted) break;
+  }
+  return pts;
+}
+
 /** Absolute center of a node from its measured box. */
 function nodeCenter(n: RFInternalNode): Point {
   const p = n.internals.positionAbsolute;
@@ -115,7 +175,34 @@ function FloatingStoreEdge({
 }: EdgeProps) {
   const sourceNode = useInternalNode(source);
   const targetNode = useInternalNode(target);
+  const nodeLookup = useStore((s) => s.nodeLookup);
   if (!sourceNode || !targetNode) return null;
+
+  // Milner hyperedge: source is a tiny POINT VERTEX, target a store. Route a spoke
+  // from the vertex center to the store's nearest boundary that goes AROUND any
+  // intervening node boxes (a straight spoke cut across them; the process-wire
+  // routing below pinched it at the vertex).
+  if ((data as { edgeType?: string } | undefined)?.edgeType === 'hyperedge') {
+    const vtx = nodeCenter(sourceNode);
+    const st = nodeCenter(targetNode);
+    const hw = (targetNode.measured.width ?? 0) / 2;
+    const hh = (targetNode.measured.height ?? 0) / 2;
+    if (hw <= 0 || hh <= 0) return null;  // not measured yet
+    const anchor = boxAnchor(st, hw, hh, vtx);
+    const PAD = 16;
+    const obstacles: Rect[] = [], padded: Rect[] = [];
+    for (const n of nodeLookup.values()) {
+      if (n.id === source || n.id === target) continue;
+      if ((n.data as { _hyperedge?: boolean } | undefined)?._hyperedge) continue;
+      const p = n.internals?.positionAbsolute;
+      const w = n.measured?.width, h = n.measured?.height;
+      if (!p || !w || !h) continue;
+      obstacles.push({ x0: p.x, y0: p.y, x1: p.x + w, y1: p.y + h });
+      padded.push({ x0: p.x - PAD, y0: p.y - PAD, x1: p.x + w + PAD, y1: p.y + h + PAD });
+    }
+    const pts = routeAroundObstacles(vtx, anchor, obstacles, padded);
+    return <BaseEdge path={roundedPath(pts, 10)} markerEnd={markerEnd} style={style} />;
+  }
 
   // edgeType 'input'  → source = store,   target = process
   // edgeType 'output' → source = process, target = store

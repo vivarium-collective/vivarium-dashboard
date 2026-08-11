@@ -914,6 +914,19 @@ export default function App() {
     // positions under a phantom localStorage key.
     const viewMode = getMode(view.mode).id;
     saveLayout(compositeId, view.positions || {}, viewMode);
+    // ALSO overwrite the WORKSPACE-persisted layout. The layout effect prefers
+    // server positions (/api/composite-layout) over the local cache, so without
+    // this a node you moved AFTER saving the default would win — "restore default"
+    // would appear to do nothing. Skip under nopersist (headless render).
+    if (!NO_PERSIST) {
+      try {
+        void fetch('/api/composite-layout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: compositeId, mode: viewMode, positions: view.positions || {} }),
+        });
+      } catch { /* offline — localStorage is enough */ }
+    }
     if (viewMode !== layoutMode.modeId) layoutMode.setModeId(viewMode);
     setCollapsed(new Set(view.collapsed || []));
     // Union the view's hidden set with the always-noise defaults (top-level

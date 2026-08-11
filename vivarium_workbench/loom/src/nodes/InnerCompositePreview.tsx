@@ -96,7 +96,7 @@ export function prefetchInner(rootId: string, hops: string[][]) {
 }
 
 const PROC = { w: 150, h: 52 };
-const STORE = { w: 60, h: 60 };
+const STORE = { w: 112, h: 58 };
 
 /** Truncate a process label to fit inside the mini-card. */
 function _short(label: string, max = 13): string {
@@ -257,25 +257,27 @@ function MiniMap(props: { graph: Graph }) {
             />
           );
         })}
-        {/* Stores as small labelled dots (behind). Hover shows the full name. */}
+        {/* Stores as loom-style rounded rectangles (green border, label inside). */}
         {nodes.filter((n) => n.type !== 'process').map((n: any) => {
+          const p = posById.get(n.id);
           const c = centerById.get(n.id);
-          if (!c) return null;
+          if (!p || !c) return null;
           const name = n.data?.label ?? '';
           const on = sel === n.id;
           return (
             <g key={n.id} className={`mini-store${on ? ' is-sel' : ''}`}
                onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (store)</title>
-              <circle cx={c.x} cy={c.y} r={STORE.w / 1.7}
-                fill={on ? '#dbeafe' : '#eef2f7'} stroke={on ? '#3b82f6' : '#b6c2d1'} strokeWidth={sw} />
+              <rect x={p.x} y={p.y} width={STORE.w} height={STORE.h} rx={13}
+                fill={on ? '#ecfdf5' : '#ffffff'} stroke={on ? '#059669' : '#34d399'}
+                strokeWidth={on ? sw * 3.2 : sw * 2.2} />
               <text
-                x={c.x} y={c.y - STORE.w / 1.3} fontSize={lbl * 0.82}
-                textAnchor="middle" dominantBaseline="ideographic" fill="#64748b"
+                x={c.x} y={c.y} fontSize={lbl * 0.78}
+                textAnchor="middle" dominantBaseline="central" fill="#065f46"
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
                 className="mini-store-label"
               >
-                {_short(name, 14)}
+                {_short(name, 11)}
               </text>
             </g>
           );
@@ -292,9 +294,9 @@ function MiniMap(props: { graph: Graph }) {
                onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (process)</title>
               <rect
-                x={p.x} y={p.y} width={PROC.w} height={PROC.h}
-                fill={on ? '#eff6ff' : '#ffffff'} stroke={on ? '#1d4ed8' : '#3b82f6'}
-                strokeWidth={on ? sw * 3.4 : sw * 2.2}
+                x={p.x} y={p.y} width={PROC.w} height={PROC.h} rx={8}
+                fill={on ? '#eff6ff' : '#ffffff'} stroke={on ? '#1d4ed8' : '#6366f1'}
+                strokeWidth={on ? sw * 3.4 : sw * 2.4}
               />
               <text
                 x={c.x} y={c.y} fontSize={lbl} textAnchor="middle"

@@ -165,7 +165,29 @@ export function relaxHyperedgePositions(
       sx += ctr.x; sy += ctr.y; c += 1;
     }
     if (!c) return n;
-    // Place the (tiny) vertex AT the centroid of the connected ports' centers.
-    return { ...n, position: { x: sx / c, y: sy / c } };
+    // Start at the centroid of the connected ports' centers.
+    let vx = sx / c, vy = sy / c;
+    // Keep the (tiny) vertex OUT of any node box — if the centroid lands inside a
+    // node, push it just past that node's nearest edge, so its spokes emanate from
+    // open space instead of from inside a card.
+    const NEAR = 12, MG = 30;  // treat "within NEAR of a node edge" as overlapping
+    for (const mn of nodes) {
+      const m = mn as any;
+      if (m.data?._hyperedge || !m.position) continue;
+      const w = m.width ?? DEF.w, h = m.height ?? DEF.h;
+      const x0 = m.position.x - NEAR, y0 = m.position.y - NEAR;
+      const x1 = m.position.x + w + NEAR, y1 = m.position.y + h + NEAR;
+      if (vx > x0 && vx < x1 && vy > y0 && vy < y1) {
+        // push out past the nearest inflated edge (so the vertex clears the card)
+        const dl = vx - x0, dr = x1 - vx, dt = vy - y0, db = y1 - vy;
+        const mmin = Math.min(dl, dr, dt, db);
+        if (mmin === dl) vx = x0 - MG;
+        else if (mmin === dr) vx = x1 + MG;
+        else if (mmin === dt) vy = y0 - MG;
+        else vy = y1 + MG;
+        break;  // one clean nudge; avoid ping-ponging between adjacent cards
+      }
+    }
+    return { ...n, position: { x: vx, y: vy } };
   });
 }

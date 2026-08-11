@@ -170,9 +170,9 @@ body {
 }
 .loom-hyperedge-label {
   position: absolute;
-  top: 13px; left: 50%;
+  top: 16px; left: 50%;
   transform: translateX(-50%);
-  font-size: 9px; font-weight: 700;
+  font-size: 20px; font-weight: 700;
   color: #7e22ce;
   white-space: nowrap;
   pointer-events: none;
