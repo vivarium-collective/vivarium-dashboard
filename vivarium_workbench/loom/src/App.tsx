@@ -278,7 +278,21 @@ export default function App() {
     (id: string, size: { width: number; height: number }) => {
       setNodes((ns: any[]) => ns.map((n) =>
         n.id === id ? { ...n, data: { ...n.data, _size: size } } : n));
-    }, [setNodes]);
+      // Flush the size to persistence IMMEDIATELY (not via the 250 ms debounce),
+      // so a resize can never be lost if the user reloads/navigates right after.
+      // setNodes is async, so compute the positions from the latest nodes with
+      // this one node's size overridden rather than reading stale state.
+      if (NO_PERSIST || !compositeId) return;
+      const updated = (nodesRef.current || []).map((n: any) =>
+        n.id === id ? { ...n, data: { ...n.data, _size: size } } : n);
+      const positions = positionsFromNodes(updated as any);
+      saveLayout(compositeId, positions, layoutMode.modeId);
+      void fetch('/api/composite-layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: compositeId, mode: layoutMode.modeId, positions }),
+      }).catch(() => {});
+    }, [setNodes, NO_PERSIST, compositeId, layoutMode.modeId]);
 
   // Semantic-zoom tier, driven by the live viewport zoom (process-column mode
   // only). The tier decides how much detail each process card shows AND how

@@ -1133,9 +1133,20 @@ def create_app() -> FastAPI:
     def composite_default_view_post(
         payload: dict = Body(default={}), ws: Path = Depends(get_workspace)
     ) -> dict:
-        """Persist `{id, view}` to `.pbg/loom-views/<id>.json` so the default
-        view survives reloads AND is applied by headless figure renders. A null
-        / missing `view` clears the stored default."""
+        """Persist `{id, view}` as the default bigraph-loom view — ROBUSTLY, to
+        three places kept in lock-step so a saved arrangement (incl. hand-set node
+        sizes) can never be lost or disagree with itself:
+
+          1. `.pbg/loom-views/<id>.json`            — the default view
+          2. `.pbg/loom-layouts/<id>__<mode>.json`  — the per-mode positions the
+             layout effect PREFERS on reload (kept === the view's positions, so a
+             resize saved here can't be clobbered by a stale layout cache)
+          3. `investigations/*/loom-views/<id>.json` — the git-tracked source of
+             truth, when one already exists (alias-aware: a figure browsed under
+             its static id updates its committed generator-id view, and vice
+             versa), so "Save as default" lands straight in git.
+
+        A null / missing `view` clears the `.pbg` default (git is left alone)."""
         import json as _json, re as _re
         cid = str(payload.get("id", ""))
         if not cid:
@@ -1150,7 +1161,32 @@ def create_app() -> FastAPI:
                 p.unlink()
             return {"ok": True, "cleared": True}
         p.write_text(_json.dumps(view))
-        return {"ok": True}
+        # (2) keep the per-mode layout cache === the view's positions, so the
+        # layout effect (which prefers loom-layouts) never restores a stale size.
+        mode = str(view.get("mode", "hierarchy"))
+        ld = ws / ".pbg" / "loom-layouts"
+        ld.mkdir(parents=True, exist_ok=True)
+        (ld / f"{safe}__{mode}.json").write_text(_json.dumps(view.get("positions", {}) or {}))
+        # (3) mirror into the git-tracked committed view if one exists. Alias:
+        # bridge the static <-> generator id forms of a figure composite.
+        aliases = [cid]
+        if ".composites.figures." in cid:
+            aliases.append(cid.replace(".composites.figures.", ".composites."))
+        elif ".composites." in cid:
+            aliases.append(cid.replace(".composites.", ".composites.figures."))
+        committed = None
+        for a in aliases:
+            a_safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", a)
+            for vd in sorted((ws / "investigations").glob("*/loom-views")):
+                cand = vd / f"{a_safe}.json"
+                if cand.exists():
+                    committed = cand
+                    break
+            if committed:
+                break
+        if committed is not None:
+            committed.write_text(_json.dumps(view, indent=2) + "\n")
+        return {"ok": True, "committed": str(committed.relative_to(ws)) if committed else None}
 
     @app.post(
         "/api/registry/run-process",
