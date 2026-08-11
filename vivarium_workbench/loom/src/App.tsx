@@ -196,6 +196,16 @@ export default function App() {
     () => new URLSearchParams(window.location.search).get('nopersist') === '1',
     [],
   );
+  // Transparent export: with ?bg=transparent (or ?transparent=1), SVG/PNG export
+  // omits the white backdrop so a figure composited onto a colored panel lets the
+  // panel background show through. Default stays white.
+  const exportBg = useMemo(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return (p.get('bg') === 'transparent' || p.get('transparent') === '1')
+        ? undefined : '#ffffff';
+    } catch { return '#ffffff'; }
+  }, []);
   const [runContext, setRunContext] = useState<string>('');
   // Display metadata for the top bar — composite name + the library it's from.
   const [name, setName] = useState<string | null>(null);
@@ -1070,7 +1080,7 @@ export default function App() {
         // data-URL html-to-image returns can be read back as Latin-1 by a
         // standalone .svg viewer, mojibake-ing every unicode math symbol
         // (∂, ∇, λ, −, —, ·). A UTF-8 blob + `encoding="UTF-8"` fixes it.
-        const dataUrl = await toSvg(el, { backgroundColor: '#ffffff', width: w, height: h, style, fontEmbedCSS });
+        const dataUrl = await toSvg(el, { backgroundColor: exportBg, width: w, height: h, style, fontEmbedCSS });
         const svgText = decodeURIComponent(dataUrl.slice(dataUrl.indexOf(',') + 1));
         const withProlog = svgText.startsWith('<?xml')
           ? svgText
@@ -1081,7 +1091,7 @@ export default function App() {
         grab(blobUrl, 'svg');
         setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       } else {
-        const png = await toPng(el, { backgroundColor: '#ffffff', width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
+        const png = await toPng(el, { backgroundColor: exportBg, width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
         if (format === 'png') { grab(png, 'png'); }
         else {
           const { jsPDF } = await import('jspdf');
@@ -1118,7 +1128,7 @@ export default function App() {
         const vp = getViewportForBounds(bounds, w, h, 0.02, 4, 0.08);
         const style = { width: `${w}px`, height: `${h}px`, transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})` };
         const fontEmbedCSS = await getFontEmbedCSS(el).catch(() => undefined);
-        const dataUrl = await toSvg(el, { backgroundColor: '#ffffff', width: w, height: h, style, fontEmbedCSS });
+        const dataUrl = await toSvg(el, { backgroundColor: exportBg, width: w, height: h, style, fontEmbedCSS });
         const svgText = decodeURIComponent(dataUrl.slice(dataUrl.indexOf(',') + 1));
         return svgText.startsWith('<?xml') ? svgText : '<?xml version="1.0" encoding="UTF-8"?>\n' + svgText;
       } catch (err) {
@@ -1147,7 +1157,7 @@ export default function App() {
         const vp = getViewportForBounds(bounds, w, h, 0.02, 4, 0.08);
         const style = { width: `${w}px`, height: `${h}px`, transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})` };
         const fontEmbedCSS = await getFontEmbedCSS(el).catch(() => undefined);
-        return await toPng(el, { backgroundColor: '#ffffff', width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
+        return await toPng(el, { backgroundColor: exportBg, width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
       } catch (err) {
         console.error('[bigraph-loom] __loomExportPng failed', err);
         return null;

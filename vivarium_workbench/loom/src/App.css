@@ -594,7 +594,7 @@ body {
    card, the config band spans edge-to-edge, and the name grows large. */
 .process-node-noports .process-node-center { margin-left: 14px !important; margin-right: 14px !important; }
 .process-node-noports .process-node-config-band { margin-left: 0; margin-right: 0; }
-.process-node-noports .process-node-title { font-size: 34px !important; line-height: 1.1 !important; }
+.process-node-noports .process-node-title { font-size: 28px !important; line-height: 1.12 !important; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */
@@ -645,11 +645,15 @@ body {
   align-items: center; justify-content: center; text-align: center;
 }
 /* No-contract tiers (ports / types / config) have lots of empty card — use
-   bigger process names + ports to fill it, shrinking as more content appears. */
-.process-node-glyph .process-node-title { font-size: 52px; line-height: 1.1; overflow-wrap: anywhere; }
-.process-node-ports .process-node-title { font-size: 46px; line-height: 1.12; overflow-wrap: anywhere; }
-.process-node-types .process-node-title { font-size: 40px; line-height: 1.14; overflow-wrap: anywhere; }
-.process-node-config .process-node-title { font-size: 34px; line-height: 1.16; overflow-wrap: anywhere; }
+   bigger process names + ports to fill it, shrinking as more content appears.
+   Sizes kept moderate so long names (spatial_dFBA, monod_kinetics, pputida dFBA)
+   fit on one line in a normal box instead of wrapping per-letter. break-word (not
+   `anywhere`) breaks only at word boundaries — a long single token overflows into
+   a wider box rather than shattering mid-word. */
+.process-node-glyph .process-node-title { font-size: 38px; line-height: 1.12; overflow-wrap: break-word; }
+.process-node-ports .process-node-title { font-size: 31px; line-height: 1.14; overflow-wrap: break-word; }
+.process-node-types .process-node-title { font-size: 28px; line-height: 1.16; overflow-wrap: break-word; }
+.process-node-config .process-node-title { font-size: 25px; line-height: 1.18; overflow-wrap: break-word; }
 /* Bigger port names + types at those same no-contract tiers — max-width kept
    inside the widened side clearance so they never reach the centered name. */
 .process-node-ports .port-in-name,

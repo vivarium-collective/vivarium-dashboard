@@ -348,6 +348,12 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
                 strokeLinejoin="round" />
         </svg>
       </button>
+      {/* Place-graph handles: a process nested inside a store (e.g. a Composite
+          Process under a `simulations` store) is a place-graph child, so it needs
+          the same top/bottom place anchors a store has — otherwise the parent's
+          nesting edge has nothing to attach to and doesn't render. */}
+      <Handle type="target" position={Position.Top} id="top-place" style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Bottom} id="bottom-place" style={{ opacity: 0 }} />
       {/* Connection dots on the border (all tiers, so focused wiring attaches). */}
       {inputPorts.map((p, i) => borderHandle(p, false, i, inputPorts.length, inTypes))}
       {outputPorts.map((p, i) => borderHandle(p, true, i, outputPorts.length, outTypes))}
