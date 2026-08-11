@@ -135,6 +135,43 @@ def figures_staleness(ws_root) -> dict:
     return stale
 
 
+def kick_figure_build(ws_root, inv_dir) -> bool:
+    """Launch the investigation's declared incremental figure build in the
+    BACKGROUND, so a saved loom view is reflected in the download with no manual
+    rebuild — transparently. The build (investigation.yaml ``figures_build:``) is
+    single-flight + self-coalescing (it re-checks for saves made while it runs),
+    so this is safe to fire on every save. Returns True if launched. Never raises
+    — a background figure rebuild must never break the save that triggered it."""
+    import shlex
+    import subprocess
+    import sys as _sys
+
+    import yaml as _yaml
+    try:
+        inv = _yaml.safe_load((Path(inv_dir) / "investigation.yaml").read_text()) or {}
+        fb = inv.get("figures_build")
+        if not fb:
+            return False
+        cmd = fb if isinstance(fb, str) else (fb.get("command")
+                                              or f"python {fb.get('script', 'scripts/build_all_figures.py')}")
+        parts = shlex.split(cmd)
+        if parts and parts[0] == "python":  # resolve to the workspace's own python
+            base = Path(ws_root).name.split("--")[0]
+            for c in (Path(ws_root) / ".venv" / "bin" / "python",
+                      Path(ws_root).parent / base / ".venv" / "bin" / "python"):
+                if c.exists():
+                    parts[0] = str(c)
+                    break
+            else:
+                parts[0] = _sys.executable
+        subprocess.Popen(parts, cwd=str(ws_root),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)  # detached: outlives the request
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def build_investigation_figures(ws_root, name: str) -> dict:
     """Resolve ``name``'s figures.
 

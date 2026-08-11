@@ -1184,9 +1184,18 @@ def create_app() -> FastAPI:
                     break
             if committed:
                 break
+        kicked = False
         if committed is not None:
             committed.write_text(_json.dumps(view, indent=2) + "\n")
-        return {"ok": True, "committed": str(committed.relative_to(ws)) if committed else None}
+            # Transparent freshness: kick the owning investigation's incremental
+            # figure build in the background so the download reflects THIS save with
+            # no manual rebuild. The build is single-flight + re-checks for saves
+            # made while it runs, so rapid saves converge. Best-effort — a figure
+            # rebuild must never break the save.
+            from vivarium_workbench.lib import investigation_figures as _figs
+            kicked = _figs.kick_figure_build(ws, committed.parent.parent)  # <inv>/loom-views -> <inv>
+        return {"ok": True, "committed": str(committed.relative_to(ws)) if committed else None,
+                "figure_build_kicked": kicked}
 
     @app.post(
         "/api/registry/run-process",
