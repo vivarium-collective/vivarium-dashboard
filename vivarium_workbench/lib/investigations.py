@@ -1045,7 +1045,8 @@ def _flatten_numeric_leaves(node, *, prefix: str, max_depth: int, _depth: int = 
                 v, prefix=path, max_depth=max_depth, _depth=_depth + 1)
 
 
-def gather_emitter_outputs(db_path: Path) -> dict:
+def gather_emitter_outputs(db_path: Path, *, run_id: str | None = None,
+                           max_state_bytes: int | None = None) -> dict:
     """Flatten runs.db into per-observable trajectories + emitter schemas.
 
     Returns:
@@ -1053,6 +1054,18 @@ def gather_emitter_outputs(db_path: Path) -> dict:
           "schemas": {<run_id>: {<observable>: <type_str>}, ...},
           "by_sim": {<sim_name>: [{run_id, sim_name, params, observables}, ...]},
         }
+
+    ``run_id`` (optional) scopes the whole scan to a single run — the
+    workspace-level composite-runs.db accumulates every Composite-Explorer run,
+    and callers that only render one run's figure would otherwise ``json.loads``
+    every OTHER run's full state history too (issue #784). When ``None`` the scan
+    covers all runs (canonical behavior, byte-identical to before).
+
+    ``max_state_bytes`` (optional) skips any history row whose serialized state
+    exceeds the cap instead of parsing it. A whole-cell state blob (~16k-species
+    ``bulk`` array + listeners) is far too large to json.loads per row into an
+    unbounded observable set; the generic default-viz fallback passes a cap so it
+    can never hang on such a composite (issue #784, layer 3). ``None`` = no cap.
     """
     db_path = Path(db_path)
     if not db_path.is_file():
@@ -1061,9 +1074,16 @@ def gather_emitter_outputs(db_path: Path) -> dict:
     conn = sqlite3.connect(str(db_path))
     conn.row_factory = sqlite3.Row
     try:
-        meta_rows = conn.execute(
-            "SELECT run_id, sim_name, params_json FROM runs_meta"
-        ).fetchall()
+        if run_id is not None:
+            meta_rows = conn.execute(
+                "SELECT run_id, sim_name, params_json FROM runs_meta "
+                "WHERE run_id=?",
+                (run_id,),
+            ).fetchall()
+        else:
+            meta_rows = conn.execute(
+                "SELECT run_id, sim_name, params_json FROM runs_meta"
+            ).fetchall()
         run_meta = {}
         for r in meta_rows:
             try:
@@ -1102,8 +1122,16 @@ def gather_emitter_outputs(db_path: Path) -> dict:
                     (run_id,),
                 ).fetchall()
                 for row in rows:
+                    raw = row["state"]
+                    if (raw and max_state_bytes is not None
+                            and len(raw) > max_state_bytes):
+                        # Whole-cell-scale blob: skip parsing (issue #784).
+                        # Keep a time point so a mixed run still has an axis.
+                        observables.setdefault("time", []).append(
+                            row["global_time"])
+                        continue
                     try:
-                        state = json.loads(row["state"]) if row["state"] else {}
+                        state = json.loads(raw) if raw else {}
                     except json.JSONDecodeError:
                         continue
                     for k, v in state.items():
