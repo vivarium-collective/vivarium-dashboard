@@ -411,6 +411,14 @@ body {
   border-radius: 999px; padding: 1px 8px;
 }
 
+/* Same pill as the process collapse count, for a collapsed sibling-store group. */
+.store-node-count {
+  display: inline-block; margin-left: 6px; vertical-align: middle;
+  font-size: 0.62em; font-weight: 800; letter-spacing: 0.03em;
+  color: #3730a3; background: #e0e7ff; border: 1px solid #c7d2fe;
+  border-radius: 999px; padding: 0 7px;
+}
+
 .process-type {
   color: #94a3b8;
   font-size: 13px;
@@ -580,15 +588,17 @@ body {
 .react-flow__node:hover .loom-resize-handle { opacity: 1; }
 
 /* Center channel — margined clear of the two port columns (glyph keeps the full
-   box for its big centered name). */
+   box for its big centered name). --port-col is the ADAPTIVE column width that
+   ProcessNode measures from the longest port label; the px fallback is the old
+   fixed reservation for any card that doesn't set it. */
 .process-node-contract .process-node-center,
-.process-node-full     .process-node-center { margin: 0 122px; }
+.process-node-full     .process-node-center { margin: 0 var(--port-col, 122px); }
 /* No-contract tiers use bigger port labels, so give the center more side
    clearance — otherwise a wide port type ("concentration") overlaps the big
    centered name. */
 .process-node-ports    .process-node-center,
 .process-node-types    .process-node-center,
-.process-node-config   .process-node-center { margin: 0 158px; }
+.process-node-config   .process-node-center { margin: 0 var(--port-col, 158px); }
 /* No ports shown → the side columns are gone, so reclaim the port-clearing
    margins: the center content (name / config / contract / math) fills the whole
    card, the config band spans edge-to-edge, and the name grows large. */
@@ -847,7 +857,9 @@ body {
 .loom-crumb-link:hover { text-decoration: underline; }
 .process-node-address {
   font-size: 16px; color: #94a3b8; font-family: ui-monospace, monospace;
-  margin-top: 4px; overflow-wrap: anywhere;
+  /* break-word (not `anywhere`) keeps `local:Diffusion` whole when it fits —
+     only a genuinely too-long token breaks, never mid-word on a narrow box. */
+  margin-top: 4px; overflow-wrap: break-word;
 }
 .process-node-portlist { margin-top: 5px; border-top: 1px dashed #e5e7eb; padding-top: 4px; }
 .process-node-port-row {
@@ -937,6 +949,9 @@ body {
 .process-node-description {
   margin-top: 11px; font-size: 15px; color: #475569; line-height: 1.55;
   font-family: Georgia, 'Times New Roman', serif;
+  /* Bound the extended description so a verbose workflow step (preprocess /
+     analysis) can't spill past its card and collide with the next node. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden;
 }
 .process-node-completeness {
   font-size: 10px; color: #94a3b8; margin-top: 10px;

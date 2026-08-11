@@ -16,7 +16,21 @@ this can never break the composite-state response.
 from __future__ import annotations
 
 import importlib
+import re
 from typing import Any
+
+# A Composite Process built via ``type(name, bases, dict)`` (and some builtins)
+# has no docstring of its own, so ``cls.__doc__`` falls through to an inherited
+# builtin docstring — junk like "type(name, bases, dict, **kwds) -> a new type".
+# Never surface those as a process description.
+_JUNK_DOC = re.compile(
+    r"^\s*(type\(name, bases|Create and return a new object|"
+    r"The base class of the class hierarchy|str\(object=|int\(\[|"
+    r"dict\(\)|list\(\)|tuple\(\)|object\(\)|Built-in)")
+
+
+def _is_junk_doc(doc: str) -> bool:
+    return bool(doc) and bool(_JUNK_DOC.match(doc))
 
 
 def _describe_class(cls: Any) -> str:
@@ -45,7 +59,8 @@ def _describe_class(cls: Any) -> str:
     if isinstance(desc, str) and desc.strip():
         return desc.strip()
     doc = getattr(cls, "__doc__", None)
-    return doc.strip() if isinstance(doc, str) else ""
+    doc = doc.strip() if isinstance(doc, str) else ""
+    return "" if _is_junk_doc(doc) else doc
 
 
 def _contract_for_class(cls: Any) -> dict | None:

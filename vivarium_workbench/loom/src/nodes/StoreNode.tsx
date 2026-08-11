@@ -136,7 +136,18 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
     >
       {resizer}
       <StoreHandles />
-      <div className="store-label">{data.label}</div>
+      <div className="store-label">
+        {data.label}
+        {/* Collapsed group of identical sibling stores → how many this stands for. */}
+        {(data as any)._collapsedCount > 1 && (
+          <span
+            className="store-node-count"
+            title={`${(data as any)._collapsedCount} identical sibling stores collapsed into this one`}
+          >
+            {" "}×{(data as any)._collapsedCount}
+          </span>
+        )}
+      </div>
       {show.value && data.value != null && (
         <div className="store-node-value">{String(data.value)}</div>
       )}

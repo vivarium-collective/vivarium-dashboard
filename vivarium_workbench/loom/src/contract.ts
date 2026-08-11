@@ -65,14 +65,29 @@ function fromDocstring(doc: string): ProcessContract {
   return c;
 }
 
+// A Composite Process built via `type(name, bases, dict)` inherits a builtin
+// docstring ("type(name, bases, dict, **kwds) -> a new type", object's base-class
+// blurb, …). It carries no real contract — never surface it as one, whichever
+// field it rode in on (declared _contract summary, or a derived docstring).
+const JUNK_DOC = /^\s*(type\(name, bases|Create and return|The base class of the class hierarchy|str\(object=|int\(\[|dict\(\)|list\(\)|tuple\(\)|object\(\)|Built-in)/;
+
+const clean = (s: string | undefined): string =>
+  (s && !JUNK_DOC.test(s.trim())) ? s : '';
+
 /** The process's contract: declared if present, else derived from its doc. */
 export function deriveContract(data: ProcessNodeData): ProcessContract | null {
   const declared = (data as unknown as { contract?: Partial<ProcessContract> }).contract;
   if (declared && typeof declared === 'object') {
-    return { ...emptyContract(), ...declared };
+    const c = { ...emptyContract(), ...declared };
+    // Strip builtin-docstring junk from whichever field carried it (summary or
+    // description); if nothing real survives, the process has no contract.
+    c.summary = clean(c.summary);
+    c.description = clean(c.description);
+    if (!c.summary && !c.description && c.math.length === 0) return null;
+    return c;
   }
   const doc = data.description;
-  if (!doc || !doc.trim()) return null;
+  if (!doc || !doc.trim() || JUNK_DOC.test(doc.trim())) return null;
   return fromDocstring(doc);
 }
 

@@ -29,7 +29,7 @@ import {
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
 import {
-  collapseRedundantProcesses, processesToHyperedges, relaxHyperedgePositions,
+  collapseRedundantProcesses, collapseRedundantStores, processesToHyperedges, relaxHyperedgePositions,
 } from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
@@ -507,7 +507,10 @@ export default function App() {
   const raw = useMemo(
     () => {
       let g = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
-      if (collapseRedundant) g = collapseRedundantProcesses(g.nodes as any[], g.edges as any[]) as typeof g;
+      if (collapseRedundant) {
+        g = collapseRedundantProcesses(g.nodes as any[], g.edges as any[]) as typeof g;
+        g = collapseRedundantStores(g.nodes as any[], g.edges as any[]) as typeof g;
+      }
       if (hyperedgeMode) g = processesToHyperedges(g.nodes as any[], g.edges as any[]) as typeof g;
       return g;
     },

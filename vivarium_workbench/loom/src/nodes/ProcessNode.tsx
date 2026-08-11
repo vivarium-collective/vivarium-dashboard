@@ -7,6 +7,18 @@ import { KatexBlock } from "../Katex";
 import InnerCompositePreview from "./InnerCompositePreview";
 import { configParams } from "../configView";
 
+// Canvas text metrics — used to reserve exactly the room the widest port label
+// needs (see the adaptive port-column width below). A shared module-level context
+// is cheap; falls back to a per-char estimate only when there is no DOM (the
+// headless figure render runs in real chromium, so this is exact there too).
+const _measureCanvas: HTMLCanvasElement | null =
+  typeof document !== 'undefined' ? document.createElement('canvas') : null;
+const _measureCtx = _measureCanvas ? _measureCanvas.getContext('2d') : null;
+function measureLabel(text: string, font: string, perChar: number): number {
+  if (_measureCtx) { _measureCtx.font = font; return _measureCtx.measureText(text).width; }
+  return text.length * perChar;
+}
+
 function _classifyStep(address: string | undefined, label: string | undefined): 'process' | 'emitter' | 'visualization' {
   const addr = address || '';
   const lbl = label || '';
@@ -315,6 +327,34 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const maxPorts = show.ports ? Math.max(inputPorts.length, outputPorts.length) : 0;
   const portsMinH = maxPorts > 0 ? (maxPorts + 1) * 46 : 0;
 
+  // Adaptive port-column width: reserve EXACTLY the widest port label (name, or
+  // its type when types show) needs — MEASURED at the tier's real font and capped
+  // by the CSS max-width. Short-port cards stop squishing their middle text into a
+  // sliver; wide types ("concentration") still get enough room to never overlap
+  // it. A fixed margin could only ever be right for one of those.
+  const bigPorts = t === 'ports' || t === 'types' || t === 'config';  // 24px names (App.css)
+  const nameFont = `650 ${bigPorts ? 24 : 19}px Inter, system-ui, sans-serif`;
+  const typeFont = `${bigPorts ? 17 : 15}px ui-monospace, monospace`;
+  const labelCap = bigPorts ? 150 : 140;   // .port-in-name / .port-in-type max-width
+  let widestLabel = 0;
+  if (show.ports) {
+    const measurePort = (p: string, isOut: boolean, types: Record<string, unknown>) => {
+      widestLabel = Math.max(widestLabel, measureLabel(String(p), nameFont, bigPorts ? 15 : 12));
+      if (show.types) {
+        const info = portInfo(p, isOut, {
+          typeSchema: types,
+          portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
+          portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
+        });
+        if (info.type) widestLabel = Math.max(widestLabel, measureLabel(info.type, typeFont, bigPorts ? 11 : 9));
+      }
+    };
+    inputPorts.forEach((p) => measurePort(p, false, inTypes));
+    outputPorts.forEach((p) => measurePort(p, true, outTypes));
+  }
+  // 13px = the .port-in-label left/right offset; +10px clearance from the center.
+  const portCol = show.ports ? Math.round(13 + Math.min(labelCap, widestLabel) + 10) : 14;
+
   return (
     <div
       ref={nodeRef}
@@ -322,6 +362,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
       style={{
         ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
         ['--ports-min-h' as string]: `${portsMinH}px`,
+        ['--port-col' as string]: `${portCol}px`,
       } as React.CSSProperties}
     >
       <NodeResizer
