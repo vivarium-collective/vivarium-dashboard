@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Handle, Position, NodeResizer, useReactFlow, useNodeId, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
@@ -270,6 +270,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // local `dims` gives smooth drag feedback, seeded from + synced to it.
   const _rf = useReactFlow();
   const _nodeId = useNodeId();
+  const nodeRef = useRef<HTMLDivElement>(null);
   const savedSize = (data as any)._size as { width: number; height: number } | undefined;
   const [dims, setDims] = useState<{ width: number; height: number } | null>(savedSize ?? null);
   useEffect(() => {
@@ -285,6 +286,19 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
     if (commit) commit(_nodeId, { width: w, height: h });
     else _rf.setNodes((ns: any[]) => ns.map((n) =>
       n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: w, height: h } } } : n));
+  };
+  // Snap-to-fit: release the explicit size so the card shrink-wraps to its
+  // content (min-width/height only), then measure that natural box and persist
+  // it — the process rectangle collapses down to the smallest size that still
+  // fits its content (just the name, when that's all it shows).
+  const snapToFit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDims(null);
+    requestAnimationFrame(() => {
+      const el = nodeRef.current;
+      if (!el) return;
+      commitSize(Math.ceil(el.offsetWidth), Math.ceil(el.offsetHeight));
+    });
   };
   // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.
   const [openPort, setOpenPort] = useState<string | null>(null);
@@ -303,6 +317,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   return (
     <div
+      ref={nodeRef}
       className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}`}
       style={{
         ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
@@ -318,6 +333,21 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         handleClassName="loom-resize-handle"
         lineClassName="loom-resize-line"
       />
+      {/* Snap-to-fit: collapse the rectangle down to its smallest content-fit
+          size. Hover-revealed so it never clutters; crop-mark glyph reads as
+          "shrink to frame". */}
+      <button
+        type="button"
+        className="process-node-fit-btn nodrag nopan"
+        title="Snap to smallest size — fit the rectangle to its content (the name)"
+        onClick={snapToFit}
+      >
+        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+          <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" fill="none"
+                stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
+                strokeLinejoin="round" />
+        </svg>
+      </button>
       {/* Connection dots on the border (all tiers, so focused wiring attaches). */}
       {inputPorts.map((p, i) => borderHandle(p, false, i, inputPorts.length, inTypes))}
       {outputPorts.map((p, i) => borderHandle(p, true, i, outputPorts.length, outTypes))}
