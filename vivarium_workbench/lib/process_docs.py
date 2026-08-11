@@ -48,22 +48,43 @@ def _describe_class(cls: Any) -> str:
     return doc.strip() if isinstance(doc, str) else ""
 
 
-def _doc_for_address(address: str) -> str:
-    """Return the formal description for a ``local:<dotted.path>`` address, or ''."""
+def _contract_for_class(cls: Any) -> dict | None:
+    """The structured ``.contract`` a process advertises (summary + governing
+    equations + symbol key), expanded to the loom's ``_contract`` shape so the
+    process CARD can render it. ``None`` when the class declares no contract."""
+    c = getattr(cls, "contract", None)
+    if not isinstance(c, dict) or not c.get("summary"):
+        return None
+    return {
+        "summary": c["summary"],
+        "description": c.get("description", c["summary"]),
+        "status": "",
+        "math": list(c.get("math", [])),
+        "symbols": dict(c.get("symbols", {})),
+        "inputs": {}, "outputs": {},
+    }
+
+
+def _resolve_class(address: str) -> Any:
+    """Import the class for a ``local:<dotted.path>`` address, or None. Bare
+    registry-name addresses (``local:DynamicFBA``) can't be imported here — the
+    env-worker resolves those against the workspace core."""
     if not isinstance(address, str) or not address:
-        return ""
+        return None
     addr = address.split(":", 1)[1] if ":" in address else address
     if "." not in addr:
-        return ""  # bare registry name — can't import a dotted path
+        return None
     module_path, _, cls_name = addr.rpartition(".")
     try:
-        mod = importlib.import_module(module_path)
-        cls = getattr(mod, cls_name, None)
-        if cls is None:
-            return ""
-        return _describe_class(cls)
+        return getattr(importlib.import_module(module_path), cls_name, None)
     except Exception:
-        return ""
+        return None
+
+
+def _doc_for_address(address: str) -> str:
+    """Return the formal description for a ``local:<dotted.path>`` address, or ''."""
+    cls = _resolve_class(address)
+    return _describe_class(cls) if cls is not None else ""
 
 
 def summarize_large_values(node: Any, max_list: int = 40, max_str: int = 2000) -> Any:
@@ -103,17 +124,25 @@ def attach_process_docs(doc: Any) -> Any:
 
     Returns the same object for convenience. Safe to call on any JSON-ish value.
     """
-    _cache: dict[str, str] = {}
+    _cache: dict[str, tuple[str, dict | None]] = {}
 
     def walk(node: Any) -> None:
         if isinstance(node, dict):
-            if node.get("_type") in ("process", "step") and "doc" not in node:
+            if node.get("_type") in ("process", "step"):
                 addr = node.get("address", "")
                 if addr not in _cache:
-                    _cache[addr] = _doc_for_address(addr)
-                d = _cache[addr]
-                if d:
-                    node["doc"] = d
+                    cls = _resolve_class(addr)
+                    _cache[addr] = (
+                        _describe_class(cls) if cls is not None else "",
+                        _contract_for_class(cls) if cls is not None else None,
+                    )
+                doc, contract = _cache[addr]
+                if doc and "doc" not in node:
+                    node["doc"] = doc
+                # Surface the process's structured contract on the CARD (governing
+                # equations), live — the same contract the static figures bake in.
+                if contract and "_contract" not in node:
+                    node["_contract"] = contract
             for v in node.values():
                 walk(v)
         elif isinstance(node, list):
