@@ -98,6 +98,43 @@ def _caption_for(spec: dict) -> str:
     return " ".join(str(mech or "").split())
 
 
+def figures_staleness(ws_root) -> dict:
+    """Per-study figure staleness, read from the figure-build manifest
+    (``.pbg/figures/manifest.json``, written by ``scripts/build_all_figures.py``).
+
+    A study is STALE when any of its figure nodes' declared input files (a saved
+    loom view, a composite spec, a sim script) hash differently than when the
+    figure was last built — i.e. the downloadable figure is out of date and the
+    incremental builder would rebuild it. Returns ``{study: reason}``; empty when
+    no manifest exists (the incremental pipeline hasn't run). Never raises — a
+    freshness signal must never break the figures response."""
+    import hashlib
+    import json as _json
+
+    ws_root = Path(ws_root).resolve()
+    try:
+        manifest = _json.loads((ws_root / ".pbg" / "figures" / "manifest.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+    def _hash(rel: str) -> Optional[str]:
+        try:
+            return hashlib.sha256((ws_root / rel).read_bytes()).hexdigest()[:16]
+        except OSError:
+            return None
+
+    stale: dict[str, str] = {}
+    for key, rec in (manifest.items() if isinstance(manifest, dict) else []):
+        study = str(key).split("/", 1)[0]
+        if study in stale:
+            continue
+        for rel, recorded in (rec.get("inputs") or {}).items():
+            if _hash(rel) != recorded:
+                stale[study] = f"{rel} changed since last build"
+                break
+    return stale
+
+
 def build_investigation_figures(ws_root, name: str) -> dict:
     """Resolve ``name``'s figures.
 
@@ -105,13 +142,18 @@ def build_investigation_figures(ws_root, name: str) -> dict:
 
         {
           "composites": [ {study, number, title, caption, order,
-                           svg_rel, png_rel|None}, … ],   # ordered
+                           svg_rel, png_rel|None, stale, stale_reason?}, … ],
           "files":      [ {study, arcname, rel_path}, … ], # EVERY figure file
           "n_composites": int,
+          "stale":      [ study, … ],   # studies whose figures are out of date
+          "n_stale":    int,
         }
 
     ``*_rel`` paths are workspace-root-relative POSIX strings; the API/publish
-    layers turn them into live vs snapshot URLs.
+    layers turn them into live vs snapshot URLs. ``stale`` reflects whether a
+    figure's declared inputs changed since it was last built (see
+    :func:`figures_staleness`) — so the download can say so instead of silently
+    serving stale bytes.
     """
     ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     inv = _load_investigation(ws_root, name) or {}
@@ -163,7 +205,13 @@ def build_investigation_figures(ws_root, name: str) -> dict:
             })
 
     composites.sort(key=lambda c: (c["order"], c["number"]))
-    return {"composites": composites, "files": files, "n_composites": len(composites)}
+    stale = figures_staleness(ws_root)
+    for c in composites:
+        c["stale"] = c["study"] in stale
+        if c["stale"]:
+            c["stale_reason"] = stale[c["study"]]
+    return {"composites": composites, "files": files, "n_composites": len(composites),
+            "stale": sorted(stale.keys()), "n_stale": len(stale)}
 
 
 _EXT_MIME = {"svg": "image/svg+xml", "png": "image/png"}
