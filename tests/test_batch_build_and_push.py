@@ -93,6 +93,22 @@ def test_batch_build_targets_the_live_batch_queue_and_job_definition() -> None:
     assert 'JOB_DEF="smscdk-vecoli-dind-build"' in text
 
 
+def test_batch_build_sanitizes_dots_out_of_the_job_name() -> None:
+    """Found live, 2026-08-12: the first real submission
+    (`--job-name vivarium-workbench-build-0.3.39`) was rejected by AWS Batch —
+    job names must match ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$, which excludes the
+    dots a version tag like "0.3.39" always has. VERSION itself must stay
+    dot-intact everywhere else (it's a real docker tag), so only the job-name
+    construction may substitute dots out."""
+    text = SCRIPT.read_text(encoding="utf-8")
+    assert 'JOB_NAME="vivarium-workbench-build-${VERSION//./-}"' in text
+    assert '--job-name "${JOB_NAME}"' in text
+    submit_job_lines = [line for line in _non_comment_lines(text) if "--job-name" in line]
+    assert all("${VERSION}" not in line for line in submit_job_lines), (
+        "the raw, dot-containing ${VERSION} must never reach --job-name directly"
+    )
+
+
 def test_batch_build_confirms_target_commit_is_pushed_to_origin() -> None:
     """The Batch job clones origin fresh — it cannot see local uncommitted or
     unpushed work. A silent stale-commit build would be worse than a loud error."""

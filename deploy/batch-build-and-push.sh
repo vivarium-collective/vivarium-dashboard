@@ -79,10 +79,14 @@ SCRIPT
 
 CONTAINER_OVERRIDES="$(jq -n --arg script "${BUILD_SCRIPT}" '{command: ["sh", "-c", $script]}')"
 
+# AWS Batch job names must match ^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$ — VERSION is a
+# docker tag (dots allowed, e.g. "0.3.39") but not a valid job-name fragment.
+JOB_NAME="vivarium-workbench-build-${VERSION//./-}"
+
 echo "submitting Batch build job (queue=${QUEUE}, commit=${COMMIT:0:12}, version=${VERSION})"
 JOB_ID="$(aws batch submit-job \
   --region "${REGION}" \
-  --job-name "vivarium-workbench-build-${VERSION}" \
+  --job-name "${JOB_NAME}" \
   --job-queue "${QUEUE}" \
   --job-definition "${JOB_DEF}" \
   --container-overrides "${CONTAINER_OVERRIDES}" \
