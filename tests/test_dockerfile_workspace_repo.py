@@ -20,10 +20,12 @@ code; see tests/test_study_run_post_lib.py.)
 """
 
 import re
+import tomllib
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DOCKERFILE = REPO_ROOT / "Dockerfile"
+PYPROJECT = REPO_ROOT / "pyproject.toml"
 
 
 def _non_comment_lines(text: str) -> list[str]:
@@ -118,4 +120,41 @@ def test_dockerfile_sanity_check_imports_the_real_workspace_package_name() -> No
     ]
     assert sanity_lines and any("import v2ecoli" in line for line in sanity_lines), (
         f"expected the build-time sanity check to 'import v2ecoli', found: {sanity_lines}"
+    )
+
+
+def test_dockerfile_installs_every_git_sourced_core_dependency() -> None:
+    """The workspace image's own build EXCLUDES vivarium-workbench entirely
+    (sms-ecoli's Dockerfile: `uv sync --no-install-package vivarium-workbench`),
+    so nothing unique to vivarium-workbench's own dependency tree ever lands in
+    the pulled venv -- the workbench's `--no-deps` install (this Dockerfile)
+    can't pull those in either. Found 2026-08-12: `viva-workspace` raised a real
+    ModuleNotFoundError on the first build that ever got far enough to exercise
+    it (every earlier attempt failed even earlier, for unrelated reasons). Fixed
+    by explicitly installing all 4 non-PyPI core deps that existed at the time
+    -- this test generalizes the fix so any FUTURE git-sourced core dependency
+    added to pyproject.toml is caught here too, not rediscovered one broken
+    build at a time."""
+    pyproject = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    core_dep_names = {
+        re.split(r"[<>=\[; ]", dep, maxsplit=1)[0]
+        for dep in pyproject["project"]["dependencies"]
+    }
+    sources = pyproject["tool"]["uv"]["sources"]
+    git_sourced_core_deps = {
+        name for name, source in sources.items()
+        if name in core_dep_names and "git" in source
+    }
+    assert git_sourced_core_deps, (
+        "expected at least one git-sourced core dependency in pyproject.toml "
+        "-- if this is now empty, the Dockerfile step this test guards may be "
+        "removable, not a test bug"
+    )
+
+    dockerfile_text = DOCKERFILE.read_text(encoding="utf-8")
+    missing = sorted(name for name in git_sourced_core_deps if name not in dockerfile_text)
+    assert not missing, (
+        f"Dockerfile must explicitly install every non-PyPI, git-sourced CORE "
+        f"dependency declared in pyproject.toml's [tool.uv.sources] -- missing: "
+        f"{missing} (all required: {sorted(git_sourced_core_deps)})"
     )

@@ -106,14 +106,42 @@ COPY --from=workspace /root/.local/share/uv/python /root/.local/share/uv/python
 WORKDIR /app/v2ecoli
 ENV PATH="/app/v2ecoli/.venv/bin:${PATH}"
 
-# ─── overlay THIS repo's workbench code (deps already satisfied above) ───────
-# `--no-deps`: every dependency was installed by the sync above, so this only
-# swaps the pinned git-main workbench for the exact code in this build context,
-# and installs the `vivarium-workbench` / `vwb` console scripts into the venv.
+# ─── overlay THIS repo's workbench code ───────────────────────────────────────
+# `--no-deps`: PyPI-published dependencies were already resolved by the sync
+# above (avoiding a version-skew risk — see workbench-image-process-bigraph-
+# version-floor-risk), so this only swaps the pinned git-main workbench for the
+# exact code in this build context, and installs the `vivarium-workbench` /
+# `vwb` console scripts into the venv.
 WORKDIR /app/vivarium-workbench
 COPY . .
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps .
+
+# ─── vivarium-workbench's own non-PyPI, git-sourced core dependencies ─────────
+# The workspace image's build EXCLUDES vivarium-workbench entirely (sms-ecoli's
+# own Dockerfile: `uv sync --no-install-package vivarium-workbench`, since
+# sms-ecoli doesn't need the workbench to run simulations) — so nothing unique
+# to vivarium-workbench's own dependency tree ever lands in the pulled venv,
+# on ANY build, regardless of how recently sms-ecoli was rebuilt (confirmed:
+# WORKSPACE_IMAGE's pinned commit postdates viva-workspace's adoption below by
+# days — this is a structural gap, not a staleness one). The `--no-deps`
+# install above only swaps in this repo's own code; it can't pull these in.
+# Found 2026-08-12: `viva-workspace` was the first of these to actually get
+# exercised by a real build (every earlier build attempt failed even earlier,
+# for unrelated reasons) — installing all 4 non-PyPI core deps here together,
+# not just the one that happened to surface first, per pyproject.toml's own
+# [tool.uv.sources] (the single source of truth for these refs — keep this
+# list in sync with that section, not the other way around).
+# `investigation-contracts` is pinned to a specific rev, NOT `main`, matching
+# pyproject.toml's own deliberate choice there — a floating branch ref is
+# exactly what hid a breaking pbg-superpowers change for ~3 weeks once already
+# (issue #483); do not change this to `@main`.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps \
+        "pbg-basic-processes @ git+https://github.com/vivarium-collective/pbg-basic-processes.git@main" \
+        "viva-marketplace @ git+https://github.com/vivarium-collective/viva-marketplace.git@main" \
+        "viva-workspace @ git+https://github.com/vivarium-collective/viva-workspace.git@main" \
+        "investigation-contracts @ git+https://github.com/vivarium-collective/investigation-contracts.git@65c793fd231d952e49a9cfe4244797dadde1bedc"
 
 # ─── overlay the Pathway Tools Omics-Viewer plugin (pbg-ptools) ───────────────
 # The workbench discovers this at runtime via its pbg-* distribution scan and
