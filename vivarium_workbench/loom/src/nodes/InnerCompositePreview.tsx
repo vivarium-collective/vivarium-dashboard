@@ -96,7 +96,7 @@ export function prefetchInner(rootId: string, hops: string[][]) {
 }
 
 const PROC = { w: 150, h: 52 };
-const STORE = { w: 60, h: 60 };
+const STORE = { w: 112, h: 58 };
 
 /** Truncate a process label to fit inside the mini-card. */
 function _short(label: string, max = 13): string {
@@ -154,13 +154,42 @@ function _miniLayout(nodes: any[]): Map<string, { x: number; y: number }> {
   return pos;
 }
 
+/** Map a composite's SAVED VIEW positions onto the mini-nodes, normalized so the
+ *  mini node sizes stay legible (the view's coords are full-canvas scale). The
+ *  arrangement is preserved; only the overall scale is fit to the mini node grid.
+ *  Falls back to the auto grid if the view doesn't position every node. */
+function _viewLayout(nodes: any[], viewPos: Record<string, { x: number; y: number }>)
+  : Map<string, { x: number; y: number }> | null {
+  const pts: Array<[string, { x: number; y: number }]> = [];
+  for (const n of nodes) {
+    const v = viewPos[n.id];
+    if (!v || typeof v.x !== 'number' || typeof v.y !== 'number') return null;  // incomplete → grid
+    pts.push([n.id, { x: v.x, y: v.y }]);
+  }
+  if (!pts.length) return null;
+  // Fit the saved view into a LANDSCAPE box (mini-cards are wide, and a portrait
+  // source layout would otherwise blow the preview's height). x and y scale
+  // independently so the left/right ordering is preserved while the vertical
+  // spread is compressed to fit — enough to convey the arrangement.
+  const xs = pts.map(([, p]) => p.x), ys = pts.map(([, p]) => p.y);
+  const spanX = Math.max(1, Math.max(...xs) - Math.min(...xs));
+  const spanY = Math.max(1, Math.max(...ys) - Math.min(...ys));
+  const W = Math.max(1, Math.ceil(Math.sqrt(pts.length))) * (PROC.w + 40);
+  const H = W * 0.6;
+  const sx = W / spanX, sy = H / spanY;
+  const minX = Math.min(...xs), minY = Math.min(...ys);
+  const out = new Map<string, { x: number; y: number }>();
+  for (const [id, p] of pts) out.set(id, { x: (p.x - minX) * sx, y: (p.y - minY) * sy });
+  return out;
+}
+
 /** Draw the laid-out inner graph as a scaled static SVG mini-map: real
  *  labelled process cards, small store dots, thin wires. Aspect-fit (the SVG box
  *  matches the content's aspect via width:100%/height:auto), so the graph fills
  *  the width with no wasted vertical margins. */
-function MiniMap(props: { graph: Graph }) {
+function MiniMap(props: { graph: Graph; viewPos?: Record<string, { x: number; y: number }> }) {
   const { nodes, edges } = props.graph;
-  const posById = _miniLayout(nodes);
+  const posById = (props.viewPos && _viewLayout(nodes, props.viewPos)) || _miniLayout(nodes);
   const sizeOf = (n: any) => (n.type === 'process' ? PROC : STORE);
   const centerById = new Map<string, { x: number; y: number }>();
 
@@ -257,25 +286,27 @@ function MiniMap(props: { graph: Graph }) {
             />
           );
         })}
-        {/* Stores as small labelled dots (behind). Hover shows the full name. */}
+        {/* Stores as loom-style rounded rectangles (green border, label inside). */}
         {nodes.filter((n) => n.type !== 'process').map((n: any) => {
+          const p = posById.get(n.id);
           const c = centerById.get(n.id);
-          if (!c) return null;
+          if (!p || !c) return null;
           const name = n.data?.label ?? '';
           const on = sel === n.id;
           return (
             <g key={n.id} className={`mini-store${on ? ' is-sel' : ''}`}
                onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (store)</title>
-              <circle cx={c.x} cy={c.y} r={STORE.w / 1.7}
-                fill={on ? '#dbeafe' : '#eef2f7'} stroke={on ? '#3b82f6' : '#b6c2d1'} strokeWidth={sw} />
+              <rect x={p.x} y={p.y} width={STORE.w} height={STORE.h} rx={13}
+                fill={on ? '#ecfdf5' : '#ffffff'} stroke={on ? '#059669' : '#34d399'}
+                strokeWidth={on ? sw * 3.2 : sw * 2.2} />
               <text
-                x={c.x} y={c.y - STORE.w / 1.3} fontSize={lbl * 0.82}
-                textAnchor="middle" dominantBaseline="ideographic" fill="#64748b"
+                x={c.x} y={c.y} fontSize={lbl * 0.78}
+                textAnchor="middle" dominantBaseline="central" fill="#065f46"
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
                 className="mini-store-label"
               >
-                {_short(name, 14)}
+                {_short(name, 11)}
               </text>
             </g>
           );
@@ -292,9 +323,9 @@ function MiniMap(props: { graph: Graph }) {
                onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (process)</title>
               <rect
-                x={p.x} y={p.y} width={PROC.w} height={PROC.h}
-                fill={on ? '#eff6ff' : '#ffffff'} stroke={on ? '#1d4ed8' : '#3b82f6'}
-                strokeWidth={on ? sw * 3.4 : sw * 2.2}
+                x={p.x} y={p.y} width={PROC.w} height={PROC.h} rx={0}
+                fill={on ? '#eff6ff' : '#ffffff'} stroke={on ? '#1d4ed8' : '#6366f1'}
+                strokeWidth={on ? sw * 3.4 : sw * 2.4}
               />
               <text
                 x={c.x} y={c.y} fontSize={lbl} textAnchor="middle"
@@ -319,7 +350,25 @@ export default function InnerCompositePreview(props: {
    *  icon) instead — used at the `contract` tier to avoid a ParCa build on every
    *  card the moment zoom crosses the threshold; `full` tier auto-loads. */
   auto: boolean;
+  /** The inner document, if the Composite Process already carries it statically
+   *  (config.state). When present we render the mini-map DIRECTLY from it — no
+   *  live `/api/composite-inner-state` build — so a static composite (and the
+   *  headless figure render, where the env-worker build can't complete) shows its
+   *  inner bigraph instead of "preview unavailable". */
+  localState?: unknown;
+  /** Saved-view node positions for the inner composite (from the process's
+   *  config._inner_view.positions). When given, the mini-map uses this hand-tuned
+   *  layout instead of the generic grid. */
+  viewPos?: Record<string, { x: number; y: number }>;
 }) {
+  // Fast path: a self-contained composite process — render its own inner doc. If
+  // the caller supplies the source composite's SAVED VIEW positions (props.viewPos,
+  // from the process's config._inner_view), lay the mini-map out with them so the
+  // preview mirrors that composite's hand-tuned layout.
+  if (props.localState && typeof props.localState === 'object') {
+    const graph = _overviewGraph(props.localState);
+    if (graph.nodes.length) return <MiniMap graph={graph} viewPos={props.viewPos} />;
+  }
   const key = _key(props.rootId, props.hops);
   const [, bump] = useState(0);
   const entry = _CACHE.get(key);

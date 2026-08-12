@@ -63,6 +63,7 @@ export function configParams(
   }
   for (const [name, v] of Object.entries(config ?? {})) {
     if (seen.has(name)) continue;
+    if (name.startsWith('_')) continue;  // internal metadata (e.g. _inner_view) — not a param
     out.push({ name, type: configValueType(v), value: fmtConfigValue(v), set: true, scalar: true });
   }
   return out.sort((a, b) => (Number(b.scalar) - Number(a.scalar)) || a.name.localeCompare(b.name));

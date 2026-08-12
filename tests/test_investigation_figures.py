@@ -91,7 +91,12 @@ def test_investigation_zip_contents(tmp_path):
     blob = figs.build_figures_zip(_make_ws(tmp_path), "inv")
     assert blob
     names = set(zipfile.ZipFile(io.BytesIO(blob)).namelist())
-    assert names == {"fig-07/panel-a.svg", "fig-07/figure_7.svg", "fig-99/only.svg"}
+    # Panels live under <study>/; the stitched composite figures are grouped under
+    # final/ (svg + png), matching the downloadable bundle layout.
+    assert names == {
+        "fig-07/panel-a.svg", "fig-99/only.svg",
+        "final/figure_7.svg", "final/figure_7.png",
+    }
 
 
 def test_study_zip_contents(tmp_path):
@@ -113,7 +118,7 @@ def test_resolve_figure_file(tmp_path):
 def test_missing_investigation_is_empty(tmp_path):
     _make_ws(tmp_path)
     assert figs.build_investigation_figures(tmp_path, "nope") == {
-        "composites": [], "files": [], "n_composites": 0,
+        "composites": [], "files": [], "n_composites": 0, "stale": [], "n_stale": 0,
     }
 
 

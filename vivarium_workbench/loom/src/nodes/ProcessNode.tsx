@@ -1,4 +1,4 @@
-import { memo, useEffect, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { Handle, Position, NodeResizer, useReactFlow, useNodeId, type NodeProps } from "@xyflow/react";
 import type { ProcessNodeData } from "../types";
 import { deriveContract, contractCompleteness } from "../contract";
@@ -6,6 +6,18 @@ import { portInfo } from "../portInfo";
 import { KatexBlock } from "../Katex";
 import InnerCompositePreview from "./InnerCompositePreview";
 import { configParams } from "../configView";
+
+// Canvas text metrics — used to reserve exactly the room the widest port label
+// needs (see the adaptive port-column width below). A shared module-level context
+// is cheap; falls back to a per-char estimate only when there is no DOM (the
+// headless figure render runs in real chromium, so this is exact there too).
+const _measureCanvas: HTMLCanvasElement | null =
+  typeof document !== 'undefined' ? document.createElement('canvas') : null;
+const _measureCtx = _measureCanvas ? _measureCanvas.getContext('2d') : null;
+function measureLabel(text: string, font: string, perChar: number): number {
+  if (_measureCtx) { _measureCtx.font = font; return _measureCtx.measureText(text).width; }
+  return text.length * perChar;
+}
 
 function _classifyStep(address: string | undefined, label: string | undefined): 'process' | 'emitter' | 'visualization' {
   const addr = address || '';
@@ -270,6 +282,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // local `dims` gives smooth drag feedback, seeded from + synced to it.
   const _rf = useReactFlow();
   const _nodeId = useNodeId();
+  const nodeRef = useRef<HTMLDivElement>(null);
   const savedSize = (data as any)._size as { width: number; height: number } | undefined;
   const [dims, setDims] = useState<{ width: number; height: number } | null>(savedSize ?? null);
   useEffect(() => {
@@ -277,8 +290,27 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   }, [savedSize?.width, savedSize?.height]);
   const commitSize = (w: number, h: number) => {
     if (!_nodeId) return;
-    _rf.setNodes((ns: any[]) => ns.map((n) =>
+    // Route through App's commit so the size lands in the persisted node state
+    // (a bare _rf.setNodes writes React Flow's store but not useNodesState, so
+    // the size silently reset on the next reload).
+    const commit = (data as any)._commitSize as
+      | ((id: string, s: { width: number; height: number }) => void) | undefined;
+    if (commit) commit(_nodeId, { width: w, height: h });
+    else _rf.setNodes((ns: any[]) => ns.map((n) =>
       n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: w, height: h } } } : n));
+  };
+  // Snap-to-fit: release the explicit size so the card shrink-wraps to its
+  // content (min-width/height only), then measure that natural box and persist
+  // it — the process rectangle collapses down to the smallest size that still
+  // fits its content (just the name, when that's all it shows).
+  const snapToFit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setDims(null);
+    requestAnimationFrame(() => {
+      const el = nodeRef.current;
+      if (!el) return;
+      commitSize(Math.ceil(el.offsetWidth), Math.ceil(el.offsetHeight));
+    });
   };
   // Which port's info popover is open (click a port name). Keyed 'i-'/'o-'+port.
   const [openPort, setOpenPort] = useState<string | null>(null);
@@ -295,23 +327,74 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const maxPorts = show.ports ? Math.max(inputPorts.length, outputPorts.length) : 0;
   const portsMinH = maxPorts > 0 ? (maxPorts + 1) * 46 : 0;
 
+  // Adaptive port-column width: reserve EXACTLY the widest port label (name, or
+  // its type when types show) needs — MEASURED at the tier's real font and capped
+  // by the CSS max-width. Short-port cards stop squishing their middle text into a
+  // sliver; wide types ("concentration") still get enough room to never overlap
+  // it. A fixed margin could only ever be right for one of those.
+  const bigPorts = t === 'ports' || t === 'types' || t === 'config';  // 24px names (App.css)
+  const nameFont = `650 ${bigPorts ? 24 : 19}px Inter, system-ui, sans-serif`;
+  const typeFont = `${bigPorts ? 17 : 15}px ui-monospace, monospace`;
+  const labelCap = bigPorts ? 150 : 140;   // .port-in-name / .port-in-type max-width
+  let widestLabel = 0;
+  if (show.ports) {
+    const measurePort = (p: string, isOut: boolean, types: Record<string, unknown>) => {
+      widestLabel = Math.max(widestLabel, measureLabel(String(p), nameFont, bigPorts ? 15 : 12));
+      if (show.types) {
+        const info = portInfo(p, isOut, {
+          typeSchema: types,
+          portsSchema: isOut ? (data.outputPortsSchema ?? undefined) : (data.inputPortsSchema ?? undefined),
+          portsTarget: isOut ? (data.outputPortsTarget ?? undefined) : (data.inputPortsTarget ?? undefined),
+        });
+        if (info.type) widestLabel = Math.max(widestLabel, measureLabel(info.type, typeFont, bigPorts ? 11 : 9));
+      }
+    };
+    inputPorts.forEach((p) => measurePort(p, false, inTypes));
+    outputPorts.forEach((p) => measurePort(p, true, outTypes));
+  }
+  // 13px = the .port-in-label left/right offset; +10px clearance from the center.
+  const portCol = show.ports ? Math.round(13 + Math.min(labelCap, widestLabel) + 10) : 14;
+
   return (
     <div
+      ref={nodeRef}
       className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}`}
       style={{
         ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
         ['--ports-min-h' as string]: `${portsMinH}px`,
+        ['--port-col' as string]: `${portCol}px`,
       } as React.CSSProperties}
     >
       <NodeResizer
-        isVisible={show.ports}
-        minWidth={160}
-        minHeight={56}
+        isVisible
+        minWidth={120}
+        minHeight={48}
         onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
         onResizeEnd={(_e, p) => commitSize(p.width, p.height)}
         handleClassName="loom-resize-handle"
         lineClassName="loom-resize-line"
       />
+      {/* Snap-to-fit: collapse the rectangle down to its smallest content-fit
+          size. Hover-revealed so it never clutters; crop-mark glyph reads as
+          "shrink to frame". */}
+      <button
+        type="button"
+        className="process-node-fit-btn nodrag nopan"
+        title="Snap to smallest size — fit the rectangle to its content (the name)"
+        onClick={snapToFit}
+      >
+        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+          <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" fill="none"
+                stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"
+                strokeLinejoin="round" />
+        </svg>
+      </button>
+      {/* Place-graph handles: a process nested inside a store (e.g. a Composite
+          Process under a `simulations` store) is a place-graph child, so it needs
+          the same top/bottom place anchors a store has — otherwise the parent's
+          nesting edge has nothing to attach to and doesn't render. */}
+      <Handle type="target" position={Position.Top} id="top-place" style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Bottom} id="bottom-place" style={{ opacity: 0 }} />
       {/* Connection dots on the border (all tiers, so focused wiring attaches). */}
       {inputPorts.map((p, i) => borderHandle(p, false, i, inputPorts.length, inTypes))}
       {outputPorts.map((p, i) => borderHandle(p, true, i, outputPorts.length, outTypes))}
@@ -375,10 +458,13 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
             tier (the focused/most-zoomed card); at `contract` tier it shows the
             ⤢ viz icon to render on demand — so zoom doesn't trigger a ParCa
             build on every card at once. Double-click still opens the full view. */}
-        {show.contract && data.isCompositeProcess && (data as any)._rootId && (
+        {show.contract && data.isCompositeProcess
+          && ((data as any)._rootId || (data.config as any)?.state) && (
           <InnerCompositePreview
-            rootId={(data as any)._rootId}
+            rootId={(data as any)._rootId ?? ''}
             hops={[...(((data as any)._hops as string[][]) ?? []), data.path]}
+            localState={(data.config as any)?.state}
+            viewPos={(data.config as any)?._inner_view?.positions}
             auto
           />
         )}

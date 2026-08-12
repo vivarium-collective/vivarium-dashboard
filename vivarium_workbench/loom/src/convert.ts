@@ -26,6 +26,16 @@ type RFEdge = {
  *  Place edges stay un-arrowed — they're nesting relationships, not flow. */
 const WIRE_ARROW = { type: MarkerType.ArrowClosed, width: 14, height: 14, color: '#475569' };
 
+/** A Composite Process built via `type(...)` (or other builtins) inherits the
+ *  builtin's docstring — junk like "type(name, bases, dict, **kwds) -> a new
+ *  type". Suppress those so a card shows no description rather than noise. */
+const JUNK_DOC = /^\s*(type\(name, bases|Create and return|str\(object=|int\(\[|dict\(\)|list\(\)|tuple\(\)|object\(\)|The base class of the class hierarchy)/;
+function cleanDoc(doc: unknown): string | undefined {
+  if (typeof doc !== 'string') return undefined;
+  const d = doc.trim();
+  return d && !JUNK_DOC.test(d) ? doc : undefined;
+}
+
 /**
  * Compact display string for a store leaf value. CRITICAL for big composites:
  * a whole-cell `bulk` store is a multi-MB array of thousands of molecules —
@@ -307,7 +317,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           path,
           inputPorts,
           outputPorts,
-          description: node.doc ?? node._doc ?? node.description ?? undefined,
+          description: cleanDoc(node.doc ?? node._doc ?? node.description),
           // Port TYPE schemas (from the process spec's _inputs/_outputs), shown
           // as separate sections in the inspector. Distinct from the wiring
           // (inputPortsSchema/outputPortsSchema = where each port connects).
@@ -341,7 +351,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: port,          // process's left input port
           label: port,
           animated: false,
-          style: { stroke: '#94a3b8', strokeDasharray: '5,5', strokeWidth: 1.5 },  // wire convention: dashed, slightly thicker for legibility (inline stroke so image export captures it)
+          style: { stroke: '#94a3b8', strokeDasharray: '6,4', strokeWidth: 2.6 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the process's input port
           data: { edgeType: 'input' },
         });
@@ -359,7 +369,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: 'right-in',    // store's right handle
           label: port,
           animated: false,
-          style: { stroke: '#94a3b8', strokeDasharray: '5,5', strokeWidth: 1.5 },  // wire convention: dashed, slightly thicker for legibility (inline stroke so image export captures it)
+          style: { stroke: '#94a3b8', strokeDasharray: '6,4', strokeWidth: 2.6 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the store's incoming side
           data: { edgeType: 'output' },
         });
@@ -368,7 +378,14 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
     }
 
     if ('_type' in node) {
-      // Typed store leaf (bigraph-schema typed value)
+      // Typed store leaf (bigraph-schema typed value). For a typed array/map,
+      // fold the element type (`_data`) into the label — `array[concentration]`
+      // reads more precisely than a bare `array`.
+      const _n = node as { _type?: unknown; _data?: unknown; _default?: unknown };
+      const _base = String(_n._type);
+      const _elem = typeof _n._data === 'string' ? _n._data : undefined;
+      const valueType = (_elem && (_base === 'array' || _base === 'map'))
+        ? `${_base}[${_elem}]` : _base;
       nodes.push({
         id: pathKey(path),
         type: 'store',
@@ -376,7 +393,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           label: path[path.length - 1] ?? '<root>',
           nodeType: 'store',
           value: node._default != null ? (displayValue(node._default) ?? undefined) : undefined,
-          valueType: String(node._type),
+          valueType,
           path,
         } satisfies StoreNodeData,
         position: { x: 0, y: 0 },
@@ -417,7 +434,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           sourceHandle: 'bottom-place',  // parent store's bottom handle
           targetHandle: 'top-place',     // child store's top handle
           animated: false,
-          style: { stroke: '#64748b', strokeWidth: 2.5 },  // place convention: thick solid (inline stroke for export)
+          style: { stroke: '#64748b', strokeWidth: 3.6 },  // place convention: thick solid (inline stroke for export)
           data: { edgeType: 'place' },
         });
       }

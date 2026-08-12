@@ -1898,16 +1898,52 @@ def render_visualizations(spec: dict, inv_dir: Path, name: str, *,
     paths = []
     for viz_spec in visualizations:
         target = viz_dir / f"{viz_spec['name']}.html"
-        try:
-            doc = build_viz_composite(viz_spec, gathered, core_registry or {},
-                                      inputs_by_class=inputs_by_class)
-            html = build_and_run(doc, core_registry)
-        except Exception as e:
-            html = (
-                f'<p style="color:#991b1b">Failed to render '
-                f'<code>{viz_spec.get("name", "?")}</code>: '
-                f'<code>{type(e).__name__}: {e}</code></p>'
-            )
+        # A static-figure viz (address scheme image:/png:/svg:/gif:/… , or
+        # chart == "image") is a file on disk, NOT a viz-class dispatch — embed it
+        # as an <img> instead of routing it through build_viz_composite (which
+        # would treat the file path as an unregistered visualization class).
+        if _is_static_image_viz(viz_spec):
+            html = _render_image_viz_html(viz_spec, inv_dir)
+        else:
+            try:
+                doc = build_viz_composite(viz_spec, gathered, core_registry or {},
+                                          inputs_by_class=inputs_by_class)
+                html = build_and_run(doc, core_registry)
+            except Exception as e:
+                html = (
+                    f'<p style="color:#991b1b">Failed to render '
+                    f'<code>{viz_spec.get("name", "?")}</code>: '
+                    f'<code>{type(e).__name__}: {e}</code></p>'
+                )
         target.write_text(html, encoding="utf-8")
         paths.append(target)
     return paths
+
+
+# Static-figure address schemes (mirrors study_charts._FIGURE_ADDR_SCHEMES): a
+# viz whose address points at an image/svg file on disk, rendered as an <img>.
+_STATIC_IMAGE_SCHEMES = {"gif", "png", "svg", "jpg", "jpeg", "image", "file"}
+
+
+def _is_static_image_viz(viz_spec: dict) -> bool:
+    addr = str(viz_spec.get("address", "")).strip()
+    scheme = addr.split(":", 1)[0].strip().lower() if ":" in addr else ""
+    return scheme in _STATIC_IMAGE_SCHEMES or str(viz_spec.get("chart", "")).lower() == "image"
+
+
+def _render_image_viz_html(viz_spec: dict, base_dir: Path) -> str:
+    """Embed a static-figure viz as a self-contained <img> (data URI), resolving
+    its file relative to ``base_dir`` (the study/investigation dir)."""
+    import base64
+    import mimetypes
+    addr = str(viz_spec.get("address", "")).strip()
+    rel = addr.split(":", 1)[1].strip() if ":" in addr else addr
+    name = viz_spec.get("name", "?")
+    p = Path(base_dir) / rel
+    if not p.is_file():
+        return f'<p style="color:#991b1b">Image not found: <code>{rel}</code></p>'
+    mime = "image/svg+xml" if p.suffix.lower() == ".svg" else (
+        mimetypes.guess_type(p.name)[0] or "image/png")
+    data = base64.b64encode(p.read_bytes()).decode("ascii")
+    return (f'<img src="data:{mime};base64,{data}" alt="{name}" '
+            f'style="max-width:100%;height:auto;display:block;margin:0 auto;">')

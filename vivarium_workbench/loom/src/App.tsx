@@ -29,7 +29,7 @@ import {
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
 import {
-  collapseRedundantProcesses, processesToHyperedges, relaxHyperedgePositions,
+  collapseRedundantProcesses, collapseRedundantStores, processesToHyperedges, relaxHyperedgePositions,
 } from './collapseRedundant';
 import { prefetchInner } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
@@ -196,6 +196,16 @@ export default function App() {
     () => new URLSearchParams(window.location.search).get('nopersist') === '1',
     [],
   );
+  // Transparent export: with ?bg=transparent (or ?transparent=1), SVG/PNG export
+  // omits the white backdrop so a figure composited onto a colored panel lets the
+  // panel background show through. Default stays white.
+  const exportBg = useMemo(() => {
+    try {
+      const p = new URLSearchParams(window.location.search);
+      return (p.get('bg') === 'transparent' || p.get('transparent') === '1')
+        ? undefined : '#ffffff';
+    } catch { return '#ffffff'; }
+  }, []);
   const [runContext, setRunContext] = useState<string>('');
   // Display metadata for the top bar — composite name + the library it's from.
   const [name, setName] = useState<string | null>(null);
@@ -268,6 +278,31 @@ export default function App() {
   // a brand-new edges array — on each of those frames for an identical result.
   const nodesRef = useRef<any[]>([]);
   nodesRef.current = nodes;
+
+  // Commit a hand-set node size into APP's node state (useNodesState), so it
+  // survives layout rebuilds AND gets persisted. A node's own resizer used
+  // useReactFlow().setNodes, which writes React Flow's internal store but does
+  // NOT flow back into this useNodesState `nodes` array — so `data._size` never
+  // reached positionsFromNodes and the size silently reset on the next reload.
+  const commitNodeSize = useCallback(
+    (id: string, size: { width: number; height: number }) => {
+      setNodes((ns: any[]) => ns.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, _size: size } } : n));
+      // Flush the size to persistence IMMEDIATELY (not via the 250 ms debounce),
+      // so a resize can never be lost if the user reloads/navigates right after.
+      // setNodes is async, so compute the positions from the latest nodes with
+      // this one node's size overridden rather than reading stale state.
+      if (NO_PERSIST || !compositeId) return;
+      const updated = (nodesRef.current || []).map((n: any) =>
+        n.id === id ? { ...n, data: { ...n.data, _size: size } } : n);
+      const positions = positionsFromNodes(updated as any);
+      saveLayout(compositeId, positions, layoutMode.modeId);
+      void fetch('/api/composite-layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: compositeId, mode: layoutMode.modeId, positions }),
+      }).catch(() => {});
+    }, [setNodes, NO_PERSIST, compositeId, layoutMode.modeId]);
 
   // Semantic-zoom tier, driven by the live viewport zoom (process-column mode
   // only). The tier decides how much detail each process card shows AND how
@@ -472,7 +507,10 @@ export default function App() {
   const raw = useMemo(
     () => {
       let g = state ? stateToReactFlow(state) : { nodes: [] as any[], edges: [] as any[] };
-      if (collapseRedundant) g = collapseRedundantProcesses(g.nodes as any[], g.edges as any[]) as typeof g;
+      if (collapseRedundant) {
+        g = collapseRedundantProcesses(g.nodes as any[], g.edges as any[]) as typeof g;
+        g = collapseRedundantStores(g.nodes as any[], g.edges as any[]) as typeof g;
+      }
       if (hyperedgeMode) g = processesToHyperedges(g.nodes as any[], g.edges as any[]) as typeof g;
       return g;
     },
@@ -705,6 +743,7 @@ export default function App() {
             // its own path to fetch its inner composite (Composite Processes).
             _rootId: rootIdRef.current,
             _hops: drillHops,
+            _commitSize: commitNodeSize,
           },
         };
       }
@@ -716,11 +755,11 @@ export default function App() {
         ...n,
         data: {
           ...n.data, _tier: effTier, _detailOverrides: detailOverrides, _isHub: isHub,
-          _readers: wiring.readers, _writers: wiring.writers,
+          _readers: wiring.readers, _writers: wiring.writers, _commitSize: commitNodeSize,
         },
       };
     });
-  }, [nodes, edges, effTier, detailOverrides, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops]);
+  }, [nodes, edges, effTier, detailOverrides, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops, commitNodeSize]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -902,6 +941,19 @@ export default function App() {
     // positions under a phantom localStorage key.
     const viewMode = getMode(view.mode).id;
     saveLayout(compositeId, view.positions || {}, viewMode);
+    // ALSO overwrite the WORKSPACE-persisted layout. The layout effect prefers
+    // server positions (/api/composite-layout) over the local cache, so without
+    // this a node you moved AFTER saving the default would win — "restore default"
+    // would appear to do nothing. Skip under nopersist (headless render).
+    if (!NO_PERSIST) {
+      try {
+        void fetch('/api/composite-layout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: compositeId, mode: viewMode, positions: view.positions || {} }),
+        });
+      } catch { /* offline — localStorage is enough */ }
+    }
     if (viewMode !== layoutMode.modeId) layoutMode.setModeId(viewMode);
     setCollapsed(new Set(view.collapsed || []));
     // Union the view's hidden set with the always-noise defaults (top-level
@@ -1031,7 +1083,7 @@ export default function App() {
         // data-URL html-to-image returns can be read back as Latin-1 by a
         // standalone .svg viewer, mojibake-ing every unicode math symbol
         // (∂, ∇, λ, −, —, ·). A UTF-8 blob + `encoding="UTF-8"` fixes it.
-        const dataUrl = await toSvg(el, { backgroundColor: '#ffffff', width: w, height: h, style, fontEmbedCSS });
+        const dataUrl = await toSvg(el, { backgroundColor: exportBg, width: w, height: h, style, fontEmbedCSS });
         const svgText = decodeURIComponent(dataUrl.slice(dataUrl.indexOf(',') + 1));
         const withProlog = svgText.startsWith('<?xml')
           ? svgText
@@ -1042,7 +1094,7 @@ export default function App() {
         grab(blobUrl, 'svg');
         setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
       } else {
-        const png = await toPng(el, { backgroundColor: '#ffffff', width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
+        const png = await toPng(el, { backgroundColor: exportBg, width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
         if (format === 'png') { grab(png, 'png'); }
         else {
           const { jsPDF } = await import('jspdf');
@@ -1079,7 +1131,7 @@ export default function App() {
         const vp = getViewportForBounds(bounds, w, h, 0.02, 4, 0.08);
         const style = { width: `${w}px`, height: `${h}px`, transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})` };
         const fontEmbedCSS = await getFontEmbedCSS(el).catch(() => undefined);
-        const dataUrl = await toSvg(el, { backgroundColor: '#ffffff', width: w, height: h, style, fontEmbedCSS });
+        const dataUrl = await toSvg(el, { backgroundColor: exportBg, width: w, height: h, style, fontEmbedCSS });
         const svgText = decodeURIComponent(dataUrl.slice(dataUrl.indexOf(',') + 1));
         return svgText.startsWith('<?xml') ? svgText : '<?xml version="1.0" encoding="UTF-8"?>\n' + svgText;
       } catch (err) {
@@ -1108,7 +1160,7 @@ export default function App() {
         const vp = getViewportForBounds(bounds, w, h, 0.02, 4, 0.08);
         const style = { width: `${w}px`, height: `${h}px`, transform: `translate(${vp.x}px, ${vp.y}px) scale(${vp.zoom})` };
         const fontEmbedCSS = await getFontEmbedCSS(el).catch(() => undefined);
-        return await toPng(el, { backgroundColor: '#ffffff', width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
+        return await toPng(el, { backgroundColor: exportBg, width: w, height: h, style, pixelRatio: 2, fontEmbedCSS });
       } catch (err) {
         console.error('[bigraph-loom] __loomExportPng failed', err);
         return null;

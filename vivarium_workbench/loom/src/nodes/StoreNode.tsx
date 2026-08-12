@@ -51,7 +51,12 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
       minHeight={44}
       onResize={(_e, p) => setDims({ width: p.width, height: p.height })}
       onResizeEnd={(_e, p) => {
-        if (_nodeId) _rf.setNodes((ns: any[]) => ns.map((n) =>
+        // Route through App's commit so the size lands in the persisted node
+        // state (a bare _rf.setNodes would reset on the next reload).
+        const commit = (data as any)._commitSize as
+          | ((id: string, s: { width: number; height: number }) => void) | undefined;
+        if (_nodeId && commit) commit(_nodeId, { width: p.width, height: p.height });
+        else if (_nodeId) _rf.setNodes((ns: any[]) => ns.map((n) =>
           n.id === _nodeId ? { ...n, data: { ...n.data, _size: { width: p.width, height: p.height } } } : n));
       }}
       handleClassName="loom-resize-handle"
@@ -131,7 +136,18 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
     >
       {resizer}
       <StoreHandles />
-      <div className="store-label">{data.label}</div>
+      <div className="store-label">
+        {data.label}
+        {/* Collapsed group of identical sibling stores → how many this stands for. */}
+        {(data as any)._collapsedCount > 1 && (
+          <span
+            className="store-node-count"
+            title={`${(data as any)._collapsedCount} identical sibling stores collapsed into this one`}
+          >
+            {" "}×{(data as any)._collapsedCount}
+          </span>
+        )}
+      </div>
       {show.value && data.value != null && (
         <div className="store-node-value">{String(data.value)}</div>
       )}

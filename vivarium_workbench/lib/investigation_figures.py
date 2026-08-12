@@ -98,6 +98,80 @@ def _caption_for(spec: dict) -> str:
     return " ".join(str(mech or "").split())
 
 
+def figures_staleness(ws_root) -> dict:
+    """Per-study figure staleness, read from the figure-build manifest
+    (``.pbg/figures/manifest.json``, written by ``scripts/build_all_figures.py``).
+
+    A study is STALE when any of its figure nodes' declared input files (a saved
+    loom view, a composite spec, a sim script) hash differently than when the
+    figure was last built — i.e. the downloadable figure is out of date and the
+    incremental builder would rebuild it. Returns ``{study: reason}``; empty when
+    no manifest exists (the incremental pipeline hasn't run). Never raises — a
+    freshness signal must never break the figures response."""
+    import hashlib
+    import json as _json
+
+    ws_root = Path(ws_root).resolve()
+    try:
+        manifest = _json.loads((ws_root / ".pbg" / "figures" / "manifest.json").read_text())
+    except (OSError, ValueError):
+        return {}
+
+    def _hash(rel: str) -> Optional[str]:
+        try:
+            return hashlib.sha256((ws_root / rel).read_bytes()).hexdigest()[:16]
+        except OSError:
+            return None
+
+    stale: dict[str, str] = {}
+    for key, rec in (manifest.items() if isinstance(manifest, dict) else []):
+        study = str(key).split("/", 1)[0]
+        if study in stale:
+            continue
+        for rel, recorded in (rec.get("inputs") or {}).items():
+            if _hash(rel) != recorded:
+                stale[study] = f"{rel} changed since last build"
+                break
+    return stale
+
+
+def kick_figure_build(ws_root, inv_dir) -> bool:
+    """Launch the investigation's declared incremental figure build in the
+    BACKGROUND, so a saved loom view is reflected in the download with no manual
+    rebuild — transparently. The build (investigation.yaml ``figures_build:``) is
+    single-flight + self-coalescing (it re-checks for saves made while it runs),
+    so this is safe to fire on every save. Returns True if launched. Never raises
+    — a background figure rebuild must never break the save that triggered it."""
+    import shlex
+    import subprocess
+    import sys as _sys
+
+    import yaml as _yaml
+    try:
+        inv = _yaml.safe_load((Path(inv_dir) / "investigation.yaml").read_text()) or {}
+        fb = inv.get("figures_build")
+        if not fb:
+            return False
+        cmd = fb if isinstance(fb, str) else (fb.get("command")
+                                              or f"python {fb.get('script', 'scripts/build_all_figures.py')}")
+        parts = shlex.split(cmd)
+        if parts and parts[0] == "python":  # resolve to the workspace's own python
+            base = Path(ws_root).name.split("--")[0]
+            for c in (Path(ws_root) / ".venv" / "bin" / "python",
+                      Path(ws_root).parent / base / ".venv" / "bin" / "python"):
+                if c.exists():
+                    parts[0] = str(c)
+                    break
+            else:
+                parts[0] = _sys.executable
+        subprocess.Popen(parts, cwd=str(ws_root),
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)  # detached: outlives the request
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def build_investigation_figures(ws_root, name: str) -> dict:
     """Resolve ``name``'s figures.
 
@@ -105,13 +179,18 @@ def build_investigation_figures(ws_root, name: str) -> dict:
 
         {
           "composites": [ {study, number, title, caption, order,
-                           svg_rel, png_rel|None}, … ],   # ordered
+                           svg_rel, png_rel|None, stale, stale_reason?}, … ],
           "files":      [ {study, arcname, rel_path}, … ], # EVERY figure file
           "n_composites": int,
+          "stale":      [ study, … ],   # studies whose figures are out of date
+          "n_stale":    int,
         }
 
     ``*_rel`` paths are workspace-root-relative POSIX strings; the API/publish
-    layers turn them into live vs snapshot URLs.
+    layers turn them into live vs snapshot URLs. ``stale`` reflects whether a
+    figure's declared inputs changed since it was last built (see
+    :func:`figures_staleness`) — so the download can say so instead of silently
+    serving stale bytes.
     """
     ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     inv = _load_investigation(ws_root, name) or {}
@@ -163,7 +242,13 @@ def build_investigation_figures(ws_root, name: str) -> dict:
             })
 
     composites.sort(key=lambda c: (c["order"], c["number"]))
-    return {"composites": composites, "files": files, "n_composites": len(composites)}
+    stale = figures_staleness(ws_root)
+    for c in composites:
+        c["stale"] = c["study"] in stale
+        if c["stale"]:
+            c["stale_reason"] = stale[c["study"]]
+    return {"composites": composites, "files": files, "n_composites": len(composites),
+            "stale": sorted(stale.keys()), "n_stale": len(stale)}
 
 
 _EXT_MIME = {"svg": "image/svg+xml", "png": "image/png"}
@@ -188,28 +273,43 @@ def resolve_figure_file(ws_root, name: str, number: int, ext: str) -> Optional[P
 
 
 def build_figures_zip(ws_root, name: str) -> Optional[bytes]:
-    """Zip EVERY figure file (panels + composites) across the investigation's
-    member studies, arranged ``<study>/<filename>``. Returns ``None`` when the
+    """Zip EVERY figure file across the investigation's member studies. The
+    per-study PANELS are arranged ``<study>/<filename>``; the post-study stitched
+    figures (``figure_<N>.{svg,png}``) are ALSO collected together into a single
+    top-level ``final/`` folder (``final/figure_1.svg`` …) so the finished figures
+    sit side by side, not buried one-per-study. Returns ``None`` when the
     investigation has no figure files. Backs
     ``GET /api/investigation/<slug>/figures.zip``."""
     ws_root = Path(ws_root).resolve()  # absolute → relative_to(ws_root) is safe when callers pass '.'
     figs = build_investigation_figures(ws_root, name)
     entries = figs["files"]
-    if not entries:
+    composites = figs["composites"]
+    if not entries and not composites:
         return None
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         seen: set[str] = set()
-        for e in entries:
-            src = ws_root / e["rel_path"]
-            arc = e["arcname"]
+
+        def _write(src: Path, arc: str) -> None:
             if arc in seen or not src.is_file():
-                continue
+                return
             seen.add(arc)
             try:
                 zf.write(src, arc)
             except OSError:
+                pass
+
+        # Panels, per study — but NOT the stitched figure_<N> (those go to final/).
+        for e in entries:
+            if _COMPOSITE_RE.match(Path(e["rel_path"]).stem):
                 continue
+            _write(ws_root / e["rel_path"], e["arcname"])
+
+        # final/: every stitched figure together, figure_<N>.{svg,png}.
+        for c in composites:
+            for rel in (c.get("svg_rel"), c.get("png_rel")):
+                if rel:
+                    _write(ws_root / rel, f"final/{Path(rel).name}")
     return buf.getvalue()
 
 

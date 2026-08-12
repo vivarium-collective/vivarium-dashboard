@@ -170,9 +170,9 @@ body {
 }
 .loom-hyperedge-label {
   position: absolute;
-  top: 13px; left: 50%;
+  top: 16px; left: 50%;
   transform: translateX(-50%);
-  font-size: 9px; font-weight: 700;
+  font-size: 20px; font-weight: 700;
   color: #7e22ce;
   white-space: nowrap;
   pointer-events: none;
@@ -256,10 +256,23 @@ body {
 .store-node-config .store-label,
 .store-node-contract .store-label,
 .store-node-full .store-label { font-size: 27px; line-height: 1.2; }
+/* Detail tiers: make the store's VALUE and TYPE big + legible (they were tiny
+   grey afterthoughts under a large name). Darker ink so the type reads clearly. */
 .store-node-types .store-node-type,
 .store-node-config .store-node-type,
 .store-node-contract .store-node-type,
-.store-node-full .store-node-type { font-size: 17px; }
+.store-node-full .store-node-type { font-size: 24px; color: #64748b; }
+.store-node-types .store-node-value,
+.store-node-config .store-node-value,
+.store-node-contract .store-node-value,
+.store-node-full .store-node-value { font-size: 22px; color: #475569; }
+/* The `ports` tier (what the paper figures render at) had a big 30px name but
+   still the tiny 10/12px base value+type — unreadable at figure scale. Give it
+   value/type sizes in line with the big name. */
+.store-node-glyph .store-node-type,
+.store-node-ports .store-node-type { font-size: 21px; color: #64748b; }
+.store-node-glyph .store-node-value,
+.store-node-ports .store-node-value { font-size: 19px; color: #475569; }
 
 /* ── Edge labels (process-column semantic zoom) ─────────────────────────── */
 .loom-edge-label {
@@ -340,6 +353,30 @@ body {
 
 .process-node:hover { border-color: #4f46e5; }
 
+/* Snap-to-fit button — top-right corner, revealed on hover so it never clutters
+   the card (and never shows in the static SVG export, which has no hover). */
+.process-node-fit-btn {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #6366f1;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  z-index: 6;
+}
+.process-node:hover .process-node-fit-btn { opacity: 0.85; }
+.process-node-fit-btn:hover { opacity: 1; background: #eef2ff; border-color: #6366f1; }
+
 /* Step kind colors — distinguish emitters and visualizations from regular processes.
  * Classification is driven by ProcessNode._classifyStep based on the node's address. */
 .process-node-emitter {
@@ -379,6 +416,14 @@ body {
   font-size: 0.6em; font-weight: 800; letter-spacing: 0.03em;
   color: #3730a3; background: #e0e7ff; border: 1px solid #c7d2fe;
   border-radius: 999px; padding: 1px 8px;
+}
+
+/* Same pill as the process collapse count, for a collapsed sibling-store group. */
+.store-node-count {
+  display: inline-block; margin-left: 6px; vertical-align: middle;
+  font-size: 0.62em; font-weight: 800; letter-spacing: 0.03em;
+  color: #3730a3; background: #e0e7ff; border: 1px solid #c7d2fe;
+  border-radius: 999px; padding: 0 7px;
 }
 
 .process-type {
@@ -550,21 +595,23 @@ body {
 .react-flow__node:hover .loom-resize-handle { opacity: 1; }
 
 /* Center channel — margined clear of the two port columns (glyph keeps the full
-   box for its big centered name). */
+   box for its big centered name). --port-col is the ADAPTIVE column width that
+   ProcessNode measures from the longest port label; the px fallback is the old
+   fixed reservation for any card that doesn't set it. */
 .process-node-contract .process-node-center,
-.process-node-full     .process-node-center { margin: 0 122px; }
+.process-node-full     .process-node-center { margin: 0 var(--port-col, 122px); }
 /* No-contract tiers use bigger port labels, so give the center more side
    clearance — otherwise a wide port type ("concentration") overlaps the big
    centered name. */
 .process-node-ports    .process-node-center,
 .process-node-types    .process-node-center,
-.process-node-config   .process-node-center { margin: 0 158px; }
+.process-node-config   .process-node-center { margin: 0 var(--port-col, 158px); }
 /* No ports shown → the side columns are gone, so reclaim the port-clearing
    margins: the center content (name / config / contract / math) fills the whole
    card, the config band spans edge-to-edge, and the name grows large. */
 .process-node-noports .process-node-center { margin-left: 14px !important; margin-right: 14px !important; }
 .process-node-noports .process-node-config-band { margin-left: 0; margin-right: 0; }
-.process-node-noports .process-node-title { font-size: 52px !important; line-height: 1.08 !important; }
+.process-node-noports .process-node-title { font-size: 28px !important; line-height: 1.12 !important; }
 
 /* ---- Config enters from the TOP --------------------------------------------
    A band above the title holding the parameters that tune the translation. */
@@ -615,11 +662,15 @@ body {
   align-items: center; justify-content: center; text-align: center;
 }
 /* No-contract tiers (ports / types / config) have lots of empty card — use
-   bigger process names + ports to fill it, shrinking as more content appears. */
-.process-node-glyph .process-node-title { font-size: 52px; line-height: 1.1; overflow-wrap: anywhere; }
-.process-node-ports .process-node-title { font-size: 46px; line-height: 1.12; overflow-wrap: anywhere; }
-.process-node-types .process-node-title { font-size: 40px; line-height: 1.14; overflow-wrap: anywhere; }
-.process-node-config .process-node-title { font-size: 34px; line-height: 1.16; overflow-wrap: anywhere; }
+   bigger process names + ports to fill it, shrinking as more content appears.
+   Sizes kept moderate so long names (spatial_dFBA, monod_kinetics, pputida dFBA)
+   fit on one line in a normal box instead of wrapping per-letter. break-word (not
+   `anywhere`) breaks only at word boundaries — a long single token overflows into
+   a wider box rather than shattering mid-word. */
+.process-node-glyph .process-node-title { font-size: 38px; line-height: 1.12; overflow-wrap: break-word; }
+.process-node-ports .process-node-title { font-size: 31px; line-height: 1.14; overflow-wrap: break-word; }
+.process-node-types .process-node-title { font-size: 28px; line-height: 1.16; overflow-wrap: break-word; }
+.process-node-config .process-node-title { font-size: 25px; line-height: 1.18; overflow-wrap: break-word; }
 /* Bigger port names + types at those same no-contract tiers — max-width kept
    inside the widened side clearance so they never reach the centered name. */
 .process-node-ports .port-in-name,
@@ -813,7 +864,9 @@ body {
 .loom-crumb-link:hover { text-decoration: underline; }
 .process-node-address {
   font-size: 16px; color: #94a3b8; font-family: ui-monospace, monospace;
-  margin-top: 4px; overflow-wrap: anywhere;
+  /* break-word (not `anywhere`) keeps `local:Diffusion` whole when it fits —
+     only a genuinely too-long token breaks, never mid-word on a narrow box. */
+  margin-top: 4px; overflow-wrap: break-word;
 }
 .process-node-portlist { margin-top: 5px; border-top: 1px dashed #e5e7eb; padding-top: 4px; }
 .process-node-port-row {
@@ -903,6 +956,9 @@ body {
 .process-node-description {
   margin-top: 11px; font-size: 15px; color: #475569; line-height: 1.55;
   font-family: Georgia, 'Times New Roman', serif;
+  /* Bound the extended description so a verbose workflow step (preprocess /
+     analysis) can't spill past its card and collide with the next node. */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 5; overflow: hidden;
 }
 .process-node-completeness {
   font-size: 10px; color: #94a3b8; margin-top: 10px;

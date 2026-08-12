@@ -1133,9 +1133,20 @@ def create_app() -> FastAPI:
     def composite_default_view_post(
         payload: dict = Body(default={}), ws: Path = Depends(get_workspace)
     ) -> dict:
-        """Persist `{id, view}` to `.pbg/loom-views/<id>.json` so the default
-        view survives reloads AND is applied by headless figure renders. A null
-        / missing `view` clears the stored default."""
+        """Persist `{id, view}` as the default bigraph-loom view — ROBUSTLY, to
+        three places kept in lock-step so a saved arrangement (incl. hand-set node
+        sizes) can never be lost or disagree with itself:
+
+          1. `.pbg/loom-views/<id>.json`            — the default view
+          2. `.pbg/loom-layouts/<id>__<mode>.json`  — the per-mode positions the
+             layout effect PREFERS on reload (kept === the view's positions, so a
+             resize saved here can't be clobbered by a stale layout cache)
+          3. `investigations/*/loom-views/<id>.json` — the git-tracked source of
+             truth, when one already exists (alias-aware: a figure browsed under
+             its static id updates its committed generator-id view, and vice
+             versa), so "Save as default" lands straight in git.
+
+        A null / missing `view` clears the `.pbg` default (git is left alone)."""
         import json as _json, re as _re
         cid = str(payload.get("id", ""))
         if not cid:
@@ -1150,7 +1161,41 @@ def create_app() -> FastAPI:
                 p.unlink()
             return {"ok": True, "cleared": True}
         p.write_text(_json.dumps(view))
-        return {"ok": True}
+        # (2) keep the per-mode layout cache === the view's positions, so the
+        # layout effect (which prefers loom-layouts) never restores a stale size.
+        mode = str(view.get("mode", "hierarchy"))
+        ld = ws / ".pbg" / "loom-layouts"
+        ld.mkdir(parents=True, exist_ok=True)
+        (ld / f"{safe}__{mode}.json").write_text(_json.dumps(view.get("positions", {}) or {}))
+        # (3) mirror into the git-tracked committed view if one exists. Alias:
+        # bridge the static <-> generator id forms of a figure composite.
+        aliases = [cid]
+        if ".composites.figures." in cid:
+            aliases.append(cid.replace(".composites.figures.", ".composites."))
+        elif ".composites." in cid:
+            aliases.append(cid.replace(".composites.", ".composites.figures."))
+        committed = None
+        for a in aliases:
+            a_safe = _re.sub(r"[^A-Za-z0-9._-]+", "_", a)
+            for vd in sorted((ws / "investigations").glob("*/loom-views")):
+                cand = vd / f"{a_safe}.json"
+                if cand.exists():
+                    committed = cand
+                    break
+            if committed:
+                break
+        kicked = False
+        if committed is not None:
+            committed.write_text(_json.dumps(view, indent=2) + "\n")
+            # Transparent freshness: kick the owning investigation's incremental
+            # figure build in the background so the download reflects THIS save with
+            # no manual rebuild. The build is single-flight + re-checks for saves
+            # made while it runs, so rapid saves converge. Best-effort — a figure
+            # rebuild must never break the save.
+            from vivarium_workbench.lib import investigation_figures as _figs
+            kicked = _figs.kick_figure_build(ws, committed.parent.parent)  # <inv>/loom-views -> <inv>
+        return {"ok": True, "committed": str(committed.relative_to(ws)) if committed else None,
+                "figure_build_kicked": kicked}
 
     @app.post(
         "/api/registry/run-process",
@@ -1426,6 +1471,18 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=400, content={"error": "hops must be JSON"})
         if not isinstance(parsed, list):
             return JSONResponse(status_code=400, content={"error": "hops must be a list"})
+        # Prefer a COMMITTED inner-state (reports/composite-inner-state/<key>.json)
+        # over a live env-worker build: instant, deterministic, and robust to the
+        # warm-pool being briefly unavailable or a few-second cold build — the same
+        # cache the figure outputs / read-only bundle use. Fall through to a live
+        # build when none is committed (or the committed file is unreadable).
+        try:
+            from vivarium_workbench.lib.composite_inner_states import inner_state_key
+            _committed = ws / "reports" / "composite-inner-state" / f"{inner_state_key(ref, parsed)}.json"
+            if _committed.exists():
+                return CompositeState.model_validate(json.loads(_committed.read_text()))
+        except Exception:  # noqa: BLE001 — corrupt/missing → live build below
+            pass
         body, status = _composite_state_views.build_inner_composite_state(
             ws, ref, parsed
         )
@@ -3253,14 +3310,70 @@ def create_app() -> FastAPI:
                 status_code=404,
                 content={"error": f"no figures for investigation {slug!r}"},
             )
-        return Response(
-            content=blob,
-            headers={
-                "Content-Type": "application/zip",
-                "Content-Disposition": f'attachment; filename="{slug}-figures.zip"',
-                "Cache-Control": "no-store",
-            },
-        )
+        # Freshness verdict: X-Figures-Stale lists the studies whose figures'
+        # declared inputs (saved views etc.) changed since the last build, so the
+        # UI can badge "stale — rebuild" instead of silently handing back old bytes.
+        stale = _figs.figures_staleness(ws)
+        headers = {
+            "Content-Type": "application/zip",
+            "Content-Disposition": f'attachment; filename="{slug}-figures.zip"',
+            "Cache-Control": "no-store",
+            "X-Figures-Stale": ",".join(sorted(stale)) if stale else "",
+        }
+        return Response(content=blob, headers=headers)
+
+    @app.post(
+        "/api/investigation/{slug}/figures-build",
+        tags=["Downloads"],
+        summary="Run the investigation's declared (incremental) figure build",
+    )
+    def investigation_figures_build_route(
+        slug: str,
+        payload: dict = Body(default={}),
+        ws: Path = Depends(get_workspace),
+    ) -> dict:
+        """Run the investigation's DECLARED figure build so the download reflects
+        the current saved views. The command comes from ``investigation.yaml``'s
+        ``figures_build:`` (the investigation-level analog of a study's
+        ``canonical_runs``) — the workbench stays generic. Incremental by default;
+        pass ``{"all": true}`` to force a full rebuild. Runs detached in the
+        workspace (the build self-discovers this dashboard + the loom); returns
+        immediately with the pid. 404 when the investigation declares no builder.
+        """
+        import shlex
+        import subprocess
+        import sys as _sys
+        from vivarium_workbench.lib import investigation_figures as _figs
+
+        inv = _figs._load_investigation(ws, slug) or {}
+        fb = inv.get("figures_build")
+        if not fb:
+            return JSONResponse(status_code=404, content={
+                "error": f"investigation {slug!r} declares no figures_build",
+                "hint": "add `figures_build: python scripts/build_all_figures.py` to investigation.yaml",
+            })
+        if isinstance(fb, dict):
+            cmd = fb.get("command") or f"python {fb.get('script', 'scripts/build_all_figures.py')}"
+        else:
+            cmd = str(fb)
+        parts = shlex.split(cmd)
+        # Resolve `python` to the workspace's interpreter (a worktree shares the
+        # base checkout's .venv, e.g. spatio-flux--figures-step -> spatio-flux).
+        if parts and parts[0] == "python":
+            base = ws.name.split("--")[0]
+            for c in (ws / ".venv" / "bin" / "python", ws.parent / base / ".venv" / "bin" / "python"):
+                if c.exists():
+                    parts[0] = str(c)
+                    break
+            else:
+                parts[0] = _sys.executable
+        if payload.get("all"):
+            parts.append("--all")
+        try:
+            proc = subprocess.Popen(parts, cwd=str(ws))
+        except Exception as e:  # noqa: BLE001
+            return JSONResponse(status_code=500, content={"error": str(e), "command": " ".join(parts)})
+        return {"ok": True, "started": True, "pid": proc.pid, "command": " ".join(parts)}
 
     @app.get(
         "/api/study/{slug}/figures.zip",
