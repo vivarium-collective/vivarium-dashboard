@@ -36,6 +36,26 @@ def test_bio_failed_and_pending_normalization():
     assert D.conclusion_verdicts({})["biological_validation"]["result"] == "PENDING"
 
 
+def test_norm_gate_result_empty_is_pending():
+    assert D.norm_gate_result(None) == "PENDING"
+    assert D.norm_gate_result("") == "PENDING"
+    assert D.norm_gate_result("   ") == "PENDING"
+
+
+def test_norm_gate_result_recognized_values_map():
+    assert D.norm_gate_result("passed") == "PASS"
+    assert D.norm_gate_result("FAILED") == "FAIL"
+    assert D.norm_gate_result("needs_calibration") == "PARTIAL"
+
+
+def test_norm_gate_result_truthy_unrecognized_is_surfaced_not_hidden():
+    # A real, unexpected status must NOT masquerade as PENDING ("not run
+    # yet") — it's visibly flagged instead so it can't be mistaken for "no
+    # data" when a run actually produced a status this mapping doesn't know.
+    assert D.norm_gate_result("some_new_status") == "UNKNOWN:some_new_status"
+    assert D.norm_gate_result("Skipped") == "UNKNOWN:skipped"
+
+
 def test_verdict_insight_key_metrics():
     assert D.verdict({"gate_status": "passed"}) == "passing"
     assert D.verdict({}) == ""
