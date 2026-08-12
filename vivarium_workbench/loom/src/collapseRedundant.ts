@@ -17,21 +17,27 @@ type AnyEdge = {
   label?: string; data?: any;
 };
 
-const INDEXED = /^(.+?)\s*\[[^\]]*\]\s*$/; // "dFBA[0,0]" → base "dFBA"
+const INDEXED = /^(.+?)\s*\[[^\]]*\]\s*$/;      // "dFBA[0,0]" → base "dFBA"
+const GENERATED = /^(.+?)_[0-9a-f]{4,}$/i;       // "p_4bd003" → base "p" (auto-id hash)
 
-/** Base name of an array element, or null if the label is not `name[...]`. */
-function baseName(label: unknown): string | null {
+/** Base + collapsed wildcard label for a repeated process, or null if the label
+ *  is neither an array element (`name[...]`) nor an auto-generated id
+ *  (`prefix_<hexhash>`, e.g. a per-particle composite process p_4bd003). */
+function baseInfo(label: unknown): { base: string; wildcard: string } | null {
   if (typeof label !== 'string') return null;
-  const m = INDEXED.exec(label);
-  return m ? m[1].trim() : null;
+  let m = INDEXED.exec(label);
+  if (m) { const b = m[1].trim(); return { base: b, wildcard: `${b}[*]` }; }
+  m = GENERATED.exec(label);
+  if (m) { const b = m[1].trim(); return { base: b, wildcard: `${b}_*` }; }
+  return null;
 }
 
-/** Topology signature: process type + sorted port sets + array base name. */
+/** Topology signature: process type + sorted port sets + repeated-node base name. */
 function signature(n: AnyNode): string {
   const d = n.data ?? {};
   const inP = [...(d.inputPorts ?? [])].sort().join(',');
   const outP = [...(d.outputPorts ?? [])].sort().join(',');
-  return `${d.processType ?? ''}|${inP}|${outP}|${baseName(d.label)}`;
+  return `${d.processType ?? ''}|${inP}|${outP}|${baseInfo(d.label)?.base ?? ''}`;
 }
 
 export function collapseRedundantProcesses(
@@ -41,7 +47,7 @@ export function collapseRedundantProcesses(
   const groups = new Map<string, AnyNode[]>();
   for (const n of nodes) {
     if (n.type !== 'process') continue;
-    if (!baseName(n.data?.label)) continue;
+    if (!baseInfo(n.data?.label)) continue;
     const key = signature(n);
     const g = groups.get(key);
     if (g) g.push(n); else groups.set(key, [n]);
@@ -49,13 +55,12 @@ export function collapseRedundantProcesses(
 
   const remap = new Map<string, string>();      // dropped member id → rep id
   const count = new Map<string, number>();       // rep id → members collapsed
-  const relabel = new Map<string, string>();     // rep id → "base[*]"
+  const relabel = new Map<string, string>();     // rep id → "base[*]" / "base_*"
   for (const members of groups.values()) {
     if (members.length < 2) continue;
     const rep = members[0];
-    const base = baseName(rep.data?.label)!;
     count.set(rep.id, members.length);
-    relabel.set(rep.id, `${base}[*]`);
+    relabel.set(rep.id, baseInfo(rep.data?.label)!.wildcard);
     for (let i = 1; i < members.length; i++) remap.set(members[i].id, rep.id);
   }
   if (remap.size === 0) return { nodes, edges };

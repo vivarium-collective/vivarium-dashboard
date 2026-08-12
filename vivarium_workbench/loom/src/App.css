@@ -261,11 +261,18 @@ body {
 .store-node-types .store-node-type,
 .store-node-config .store-node-type,
 .store-node-contract .store-node-type,
-.store-node-full .store-node-type { font-size: 22px; color: #64748b; }
+.store-node-full .store-node-type { font-size: 24px; color: #64748b; }
 .store-node-types .store-node-value,
 .store-node-config .store-node-value,
 .store-node-contract .store-node-value,
-.store-node-full .store-node-value { font-size: 20px; color: #475569; }
+.store-node-full .store-node-value { font-size: 22px; color: #475569; }
+/* The `ports` tier (what the paper figures render at) had a big 30px name but
+   still the tiny 10/12px base value+type — unreadable at figure scale. Give it
+   value/type sizes in line with the big name. */
+.store-node-glyph .store-node-type,
+.store-node-ports .store-node-type { font-size: 21px; color: #64748b; }
+.store-node-glyph .store-node-value,
+.store-node-ports .store-node-value { font-size: 19px; color: #475569; }
 
 /* ── Edge labels (process-column semantic zoom) ─────────────────────────── */
 .loom-edge-label {
