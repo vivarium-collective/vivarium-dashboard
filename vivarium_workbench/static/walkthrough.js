@@ -9348,16 +9348,15 @@
         var obj = (s && (s.objective || s.description)) ? String(s.objective || s.description) : '';
         var objShort = obj ? (obj.length > 150 ? obj.slice(0, 150).replace(/\s+\S*$/, '') + '…' : obj) : '';
         var lnk = 'font-size:0.82em;color:#3b82f6;text-decoration:none;white-space:nowrap;cursor:pointer';
+        // Card rows carry the DOWNLOADS only (↓ figures / ↓ notebook). The
+        // run/reproduce launch actions live on the study tab's header
+        // (▶ Run current spec / ↻ Reproduce), not here — so a card stays a
+        // browse+download surface.
         var acts =
           '<a href="#" style="' + lnk + '" title="Download this study\'s figures (panels + its composite) as a zip" ' +
             'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ figures</a>' +
           '<a href="#" style="' + lnk + '" title="Download this study\'s investigation runnable notebook" ' +
-            'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>' +
-          (_isSnap ? '' :
-            '<a href="#" style="' + lnk + '" title="Run this study\'s current baseline spec as a new run" ' +
-              'onclick="window._vivRunStudyFromRow(event,\'' + _esc(slug) + '\');return false;">▶ run</a>' +
-            '<a href="#" style="' + lnk + '" title="Reproduce this study\'s most recent run (replays its recorded manifest)" ' +
-              'onclick="window._vivReproduceStudyFromRow(event,\'' + _esc(slug) + '\');return false;">↻ reproduce</a>');
+            'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>';
         return '<div class="iset-study-row" style="padding:6px;border-radius:5px" ' +
           'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
           '<div style="display:flex;align-items:center;gap:8px">' +
