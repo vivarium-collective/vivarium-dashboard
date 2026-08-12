@@ -93,3 +93,29 @@ def test_dockerfile_copies_v2ecoli_from_the_workspace_stage() -> None:
     assert any("/app/v2ecoli" in line for line in copy_lines), (
         f"expected a COPY --from=workspace of /app/v2ecoli, found: {copy_lines}"
     )
+
+
+def test_dockerfile_sanity_check_imports_the_real_workspace_package_name() -> None:
+    """The build-time sanity check must import the workspace's REAL top-level
+    package name. Found 2026-08-12, the first time this Dockerfile ever built
+    far enough to reach this step (every prior attempt failed earlier, at the
+    git-clone-auth step): it still imported `pbg_v2ecoli`, a name that predates
+    sms-ecoli replacing vivarium-collective/v2ecoli as the canonical workspace
+    -- sms-ecoli's own pyproject.toml declares `name = "v2ecoli"` (bare, no
+    `pbg_` prefix), matching what Fix A's build_analysis_options() already
+    imports successfully in production (`from v2ecoli.workflow.analysis import
+    ANALYSIS_REGISTRY`). sms-ecoli's own pbg_v2ecoli/ directory is dead (empty
+    but for a stale __pycache__, zero .py source) -- importing it can only
+    ever fail."""
+    text = DOCKERFILE.read_text(encoding="utf-8")
+    assert "import pbg_v2ecoli" not in text, (
+        "Dockerfile must not import the stale 'pbg_v2ecoli' name -- "
+        "sms-ecoli's real, current package is bare 'v2ecoli'"
+    )
+    sanity_lines = [
+        line for line in _non_comment_lines(text)
+        if "import v2ecoli" in line or "import pbg_v2ecoli" in line
+    ]
+    assert sanity_lines and any("import v2ecoli" in line for line in sanity_lines), (
+        f"expected the build-time sanity check to 'import v2ecoli', found: {sanity_lines}"
+    )

@@ -1,21 +1,31 @@
 name: Build and Push Image
 
 # Builds the combined workbench+v2ecoli image (linux/amd64, for the EKS nodes) and
-# pushes it to ghcr.io. Triggered by publishing a GitHub Release (image tag = the
-# release tag, minus a leading "v", to match sms-api's kustomize `newTag`
-# convention) or manually via workflow_dispatch. Runs natively on an amd64 runner
-# so there is no local QEMU cross-build. The image is ~15 GB, so we free runner
-# disk first.
-
+# pushes it to ghcr.io. Manual only (workflow_dispatch) — runs natively on an
+# amd64 runner so there is no local QEMU cross-build. The image is ~15 GB, so we
+# free runner disk first.
+#
+# NOT triggered by publishing a GitHub Release. Backlog item 39 "Fix B" replaced
+# the build-time `git clone` of a workspace repo with a multi-stage COPY from the
+# workspace's own already-published, per-commit image (WORKSPACE_IMAGE) — this
+# runner has no credential to pull that image (it lives in a GovCloud ECR repo;
+# no OIDC federation from GitHub Actions into that account exists anywhere in
+# this ecosystem, and building one is real, separate infra work, not a CI-config
+# fix). A release-triggered run would fail immediately with no value ever able
+# to resolve automatically, which is exactly how v0.3.38 shipped a real,
+# confirmed-broken tag+Release. Build+push manually instead
+# (`WORKSPACE_IMAGE=<ecr-ref>:<sms-ecoli-commit-sha> deploy/build-and-push.sh`,
+# same command this workflow runs) or via this workflow's own manual dispatch.
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       version:
         description: "Image tag to build+push (default: git short sha)"
         required: false
         default: ""
+      workspace_image:
+        description: "WORKSPACE_IMAGE build-arg (e.g. <ecr-ref>:<sms-ecoli-commit-sha>) — required, no safe default (this ecosystem publishes per-commit tags only)"
+        required: true
 
 jobs:
   build-and-push:
@@ -47,10 +57,11 @@ jobs:
           password: ${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
 
       - name: Build + push (linux/amd64)
+        env:
+          WORKSPACE_IMAGE: ${{ inputs.workspace_image }}
         run: |
           set -euo pipefail
           chmod +x deploy/build-and-push.sh
-          # Release tag wins; else the manual input; else the script's git-sha default.
-          VERSION="${{ github.event.release.tag_name || inputs.version }}"
+          VERSION="${{ inputs.version }}"
           VERSION="${VERSION#v}"   # strip a leading v -> matches sms-api newTag (e.g. 0.1.0)
           deploy/build-and-push.sh "$VERSION"
