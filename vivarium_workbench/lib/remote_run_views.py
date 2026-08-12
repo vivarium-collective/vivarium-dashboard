@@ -319,7 +319,7 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
     from vivarium_workbench.lib.study_run_post import build_analysis_options
 
     analysis_options, analysis_errors = build_analysis_options(
-        spec.get("analyses") or []
+        spec.get("analyses") or [], ws_root
     )
     for err in analysis_errors:
         warnings.warn(
@@ -371,7 +371,7 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
         # errors (unresolvable analysis names) are intentionally not surfaced here:
         # this trigger is best-effort and must never block landing the simulation
         # itself, which is the primary, always-must-succeed action of this route.
-        analysis_options, _errors = build_analysis_options(analyses)
+        analysis_options, _errors = build_analysis_options(analyses, ws_root)
         if analysis_options:
             try:
                 triggered = client.run_analysis(int(sim_id), analysis_options)
@@ -443,7 +443,7 @@ def remote_run_analysis(ws_root: Path, body: dict) -> tuple[dict, int]:
             return {"error": f"study {study!r} not found"}, 404
         from vivarium_workbench.lib.study_run_post import build_analysis_options
 
-        modules, errors = build_analysis_options(load_spec(spec_path).get("analyses") or [])
+        modules, errors = build_analysis_options(load_spec(spec_path).get("analyses") or [], ws_root)
         for err in errors:
             warnings.warn(f"remote_run_analysis: {study!r} analysis config: {err.get('error')}")
 

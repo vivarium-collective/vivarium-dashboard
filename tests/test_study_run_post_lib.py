@@ -136,27 +136,41 @@ def _inject_analysis_registry(name_to_scale: dict[str, str]) -> None:
     sys.modules["v2ecoli.workflow.analysis"] = mod
 
 
-def test_build_analysis_options_groups_by_scale():
+def test_build_analysis_options_groups_by_scale(tmp_path):
     _inject_analysis_registry({"ptools_rna": "single", "ccm": "multiseed"})
     entries = [{"name": "ptools_rna", "params": {"n": 8}}, {"name": "ccm"}]
-    opts, errors = srp.build_analysis_options(entries)
+    opts, errors = srp.build_analysis_options(entries, tmp_path)
     assert errors == []
     assert opts["single"]["ptools_rna"] == {"n": 8}
     assert opts["multiseed"]["ccm"] == {}
 
 
-def test_build_analysis_options_unknown_name_records_error():
+def test_build_analysis_options_unknown_name_records_error(tmp_path):
     _inject_analysis_registry({"ptools_rna": "single"})
     opts, errors = srp.build_analysis_options(
-        [{"name": "ptools_rna"}, {"name": "missing"}])
+        [{"name": "ptools_rna"}, {"name": "missing"}], tmp_path)
     assert len(errors) == 1
     assert errors[0]["analysis"] == "missing"
     assert "single" in opts and "ptools_rna" in opts["single"]
 
 
-def test_build_analysis_options_empty():
+def test_build_analysis_options_empty(tmp_path):
     _inject_analysis_registry({})
-    assert srp.build_analysis_options([]) == ({}, [])
+    assert srp.build_analysis_options([], tmp_path) == ({}, [])
+
+
+def test_build_analysis_options_adds_ws_root_to_sys_path(tmp_path):
+    """ws_root must land on sys.path before the ANALYSIS_REGISTRY import, so a
+    live served workspace's own v2ecoli shadows any build-time-baked one
+    (backlog item 39)."""
+    _inject_analysis_registry({})
+    assert str(tmp_path) not in sys.path
+    try:
+        srp.build_analysis_options([], tmp_path)
+        assert str(tmp_path) in sys.path
+    finally:
+        if str(tmp_path) in sys.path:
+            sys.path.remove(str(tmp_path))
 
 
 # ---------------------------------------------------------------------------
