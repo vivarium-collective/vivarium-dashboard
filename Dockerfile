@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 #
 # vivarium-workbench DEMO image (combined). Approach A from docs/REFACTOR-PLAN.md
-# §2B: the workbench must import the workspace's package (`pbg_v2ecoli`, via
+# §2B: the workbench must import the workspace's package (`v2ecoli`, via
 # build_core) IN-PROCESS to render, so it needs the *same* environment v2ecoli
 # runs in. Pulls that environment from the workspace's OWN published, per-commit
 # image (WORKSPACE_IMAGE below — see backlog item 39, "Fix B") rather than
@@ -145,7 +145,7 @@ RUN bash scripts/build_loom.sh
 # rather than shipping a silent runtime ModuleNotFoundError (see the loom build
 # above), and confirm the built bundle actually landed on disk.
 RUN python -c "\
-import pbg_v2ecoli, vivarium_workbench, pbg_ptools.workbench_viewers; \
+import v2ecoli, vivarium_workbench, pbg_ptools.workbench_viewers; \
 from vivarium_workbench.loom_assets import asset_dir; \
 d = asset_dir(); \
 assert (d / 'index.html').is_file(), f'loom bundle missing: {d}'; \
