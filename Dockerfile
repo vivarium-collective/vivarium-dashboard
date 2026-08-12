@@ -43,10 +43,39 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Self-contained venv (real wheel copies, not links into the BuildKit cache mount).
 ENV UV_LINK_MODE=copy
 
-# ─── v2ecoli locked environment (mirrors ../v2ecoli/Dockerfile) ──────────────
+# ─── workspace locked environment (mirrors ../sms-ecoli/Dockerfile) ──────────
 # Cloned from git so the build context here is just the workbench repo.
+#
+# WORKSPACE_REPO_URL is a build ARG, not hardcoded — this image is shared by
+# every deployment that mounts a real workspace PVC over it (real production
+# smscdk AND smsvpctest both build from this SAME Dockerfile; see
+# viva-api/kustomize/overlays/sms-api-stanford-test/kustomization.yaml's own
+# comment on the `vivarium-workbench` image tag for confirmation neither
+# passes a build-arg override today). A deployment serving a DIFFERENT
+# workspace repo passes `--build-arg WORKSPACE_REPO_URL=...` at build time —
+# this default only sets what an unparameterized build gets.
+#
+# Default is CovertLabEcoli/sms-ecoli, the ecosystem's own stated canonical
+# workspace (see ecosystem/CLAUDE.md) and the only repo either currently-live
+# workbench deployment (smscdk/smsvpctest) actually dispatches against
+# (VIVARIUM_WORKBENCH_REMOTE_REPO_URL in kustomize/base/workbench/
+# workbench.yaml, both overlays). It was PREVIOUSLY hardcoded to
+# vivarium-collective/v2ecoli (a structurally-diverged sibling repo, predating
+# sms-ecoli becoming canonical) — every deployed workbench image was
+# importing v2ecoli's OWN, much smaller `v2ecoli.workflow.analysis.
+# ANALYSIS_REGISTRY` (6 entries, none cd1_*/ptools_*) at build time,
+# completely disconnected from whatever commit is actually dispatched at
+# runtime. Any analysis name the running workspace defines beyond that stale
+# 6-entry set got silently dropped by lib/study_run_post.py's
+# build_analysis_options() with zero error surfaced anywhere (see
+# tests/test_dockerfile_workspace_repo.py for the regression guard). The
+# distribution/package name stays `v2ecoli` regardless of which repo is
+# cloned (sms-ecoli's own pyproject.toml name is still "v2ecoli"; `pbg_v2ecoli`
+# is kept there too as a back-compat shim) — nothing downstream of this line
+# needs to change based on which repo URL is in effect.
+ARG WORKSPACE_REPO_URL=https://github.com/CovertLabEcoli/sms-ecoli.git
 ARG V2ECOLI_REF=main
-RUN git clone https://github.com/vivarium-collective/v2ecoli.git /app/v2ecoli \
+RUN git clone "${WORKSPACE_REPO_URL}" /app/v2ecoli \
  && git -C /app/v2ecoli checkout "${V2ECOLI_REF}"
 WORKDIR /app/v2ecoli
 # v2ecoli pins requires-python == 3.12.12 exactly; let uv fetch that interpreter.
