@@ -214,16 +214,26 @@ def _truthy(v: Any) -> str:
 
 
 def _study_header_md(study: dict, slug: str) -> str:
-    # Design intent only — question / objective / hypothesis. Result-bearing
-    # fields (verdict, key_metrics, conclusion prose) are intentionally omitted:
-    # this notebook states *parameters* and lets the coder produce the results.
-    lines = [f"## Study: `{slug}`"]
+    # Design intent only — question / objective / hypothesis / purpose / claim.
+    # Result-bearing fields (verdict, key_metrics, conclusion prose) are
+    # intentionally omitted: this notebook states *parameters* and lets the
+    # coder produce the results.
+    title = _truthy(study.get("title"))
+    lines = [f"## Study: {title} (`{slug}`)" if title else f"## Study: `{slug}`"]
     if study.get("question"):
         lines += ["", f"**Question.** {_truthy(study['question'])}"]
     if study.get("objective"):
         lines += ["", f"**Objective.** {_truthy(study['objective'])}"]
     if study.get("hypothesis"):
         lines += ["", f"**Hypothesis.** {_truthy(study['hypothesis'])}"]
+    # v2 study schema: `purpose` (str or {mechanism,...}) and one-line `claim`.
+    purpose = study.get("purpose")
+    if isinstance(purpose, dict):
+        purpose = purpose.get("mechanism") or purpose.get("summary") or purpose.get("text")
+    if _truthy(purpose):
+        lines += ["", f"**Purpose.** {_truthy(purpose)}"]
+    if study.get("claim"):
+        lines += ["", f"**Claim.** {_truthy(study['claim'])}"]
     return "\n".join(lines)
 
 
@@ -534,6 +544,38 @@ RERUN = True
         '    print("\\nfull editable spec dict:")\n'
         "    print(_json.dumps(spec, indent=2, default=str))"
     )
+    # Generic figure renderer — used when the workspace ships no
+    # scripts/render_study_viz.py (so `render_import` is empty and nothing
+    # defines _render_one). Resolves an ``image:<relpath>`` visualization to
+    # displayable HTML relative to the study dir; other schemes degrade to a
+    # note instead of crashing the notebook.
+    if strat.get("render_kind") == "generic":
+        src += (
+            "\n\nimport base64 as _b64, pathlib as _pl\n"
+            "def _render_one(address, config, runs_db, study_yaml):\n"
+            '    """Generic figure renderer (no workspace render_study_viz.py):\n'
+            '    resolve an ``image:<relpath>`` visualization to displayable HTML,\n'
+            '    relative to the study directory."""\n'
+            "    addr = str(address or '')\n"
+            "    for _scheme in ('image:', 'file:', 'gif:', 'png:', 'svg:', 'jpg:', 'jpeg:'):\n"
+            "        if addr.startswith(_scheme):\n"
+            "            addr = addr[len(_scheme):]; break\n"
+            "    _p = _pl.Path(addr)\n"
+            "    if not _p.is_absolute():\n"
+            "        _p = _pl.Path(study_yaml).resolve().parent / _p\n"
+            "    if not _p.is_file():\n"
+            "        return f'<p style=\"color:#b91c1c\">figure not found: {address}</p>'\n"
+            "    _suffix = _p.suffix.lower()\n"
+            "    if _suffix == '.svg':\n"
+            "        return _p.read_text(encoding='utf-8', errors='replace')\n"
+            "    if _suffix in ('.png', '.jpg', '.jpeg', '.gif', '.webp'):\n"
+            "        _mime = 'jpeg' if _suffix in ('.jpg', '.jpeg') else _suffix[1:]\n"
+            "        _data = _b64.b64encode(_p.read_bytes()).decode('ascii')\n"
+            "        return f'<img src=\"data:image/{_mime};base64,{_data}\" style=\"max-width:100%\"/>'\n"
+            "    if _suffix in ('.html', '.htm'):\n"
+            "        return _p.read_text(encoding='utf-8', errors='replace')\n"
+            "    return f'<p style=\"color:#6b7280\">unsupported figure type: {address}</p>'"
+        )
     return [_code(src)]
 
 
@@ -616,8 +658,13 @@ def _intro_blocks(inv: dict, slug: str) -> list[dict]:
     lines = [f"# {title}", "", f"_Investigation `{slug}` — coder reproduction notebook._"]
     if inv.get("question"):
         lines += ["", f"**Question.** {_truthy(inv['question'])}"]
-    execu = inv.get("executive") or {}
-    if execu.get("what_is_this"):
+    # `executive` may be a structured dict (v2 spine) OR a plain prose string
+    # (older investigations). Handle both — a string is the what-is-this blurb.
+    execu = inv.get("executive")
+    if isinstance(execu, str):
+        if _truthy(execu):
+            lines += ["", _truthy(execu)]
+    elif isinstance(execu, dict) and execu.get("what_is_this"):
         lines += ["", _truthy(execu["what_is_this"])]
     lines += [
         "",
@@ -633,7 +680,8 @@ def _intro_blocks(inv: dict, slug: str) -> list[dict]:
 
 
 def _outro_blocks(inv: dict) -> list[dict]:
-    execu = inv.get("executive") or {}
+    execu = inv.get("executive")
+    execu = execu if isinstance(execu, dict) else {}   # may be a prose string
     decisions = execu.get("decisions_needed") or []
     if not decisions:
         return []
