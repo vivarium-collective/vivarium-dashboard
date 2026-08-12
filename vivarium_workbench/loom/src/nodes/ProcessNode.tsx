@@ -464,6 +464,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
             rootId={(data as any)._rootId ?? ''}
             hops={[...(((data as any)._hops as string[][]) ?? []), data.path]}
             localState={(data.config as any)?.state}
+            viewPos={(data.config as any)?._inner_view?.positions}
             auto
           />
         )}
