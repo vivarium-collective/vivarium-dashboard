@@ -321,7 +321,18 @@ export default function InnerCompositePreview(props: {
    *  icon) instead — used at the `contract` tier to avoid a ParCa build on every
    *  card the moment zoom crosses the threshold; `full` tier auto-loads. */
   auto: boolean;
+  /** The inner document, if the Composite Process already carries it statically
+   *  (config.state). When present we render the mini-map DIRECTLY from it — no
+   *  live `/api/composite-inner-state` build — so a static composite (and the
+   *  headless figure render, where the env-worker build can't complete) shows its
+   *  inner bigraph instead of "preview unavailable". */
+  localState?: unknown;
 }) {
+  // Fast path: a self-contained composite process — render its own inner doc.
+  if (props.localState && typeof props.localState === 'object') {
+    const graph = _overviewGraph(props.localState);
+    if (graph.nodes.length) return <MiniMap graph={graph} />;
+  }
   const key = _key(props.rootId, props.hops);
   const [, bump] = useState(0);
   const entry = _CACHE.get(key);
