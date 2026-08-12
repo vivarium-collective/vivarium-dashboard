@@ -187,7 +187,14 @@ function _viewLayout(nodes: any[], viewPos: Record<string, { x: number; y: numbe
  *  labelled process cards, small store dots, thin wires. Aspect-fit (the SVG box
  *  matches the content's aspect via width:100%/height:auto), so the graph fills
  *  the width with no wasted vertical margins. */
-function MiniMap(props: { graph: Graph; viewPos?: Record<string, { x: number; y: number }> }) {
+function MiniMap(props: {
+  graph: Graph;
+  viewPos?: Record<string, { x: number; y: number }>;
+  /** The composite process's OUTER ports — drawn as bridge connectors from the
+   *  card edge to the matching inner store (input ports on the left, output on
+   *  the right), representing how the Composite's ports link to its inner doc. */
+  bridge?: { inputs: string[]; outputs: string[] };
+}) {
   const { nodes, edges } = props.graph;
   const posById = (props.viewPos && _viewLayout(nodes, props.viewPos)) || _miniLayout(nodes);
   const sizeOf = (n: any) => (n.type === 'process' ? PROC : STORE);
@@ -204,9 +211,14 @@ function MiniMap(props: { graph: Graph; viewPos?: Record<string, { x: number; y:
   }
   if (!isFinite(minX)) return null;
   const pad = 16;
-  const w = maxX - minX + pad * 2, h = maxY - minY + pad * 2;
-  const vb = `${minX - pad} ${minY - pad} ${w} ${h}`;
-  const Cx = minX - pad + w / 2, Cy = minY - pad + h / 2;
+  // Extra horizontal room for the composite-bridge connectors + their labels.
+  const bgap = props.bridge ? PROC.w * 0.9 : 0;      // connector length
+  const bmargin = props.bridge ? bgap + PROC.w : 0;   // + port + label room
+  const w = maxX - minX + pad * 2 + 2 * bmargin;
+  const h = maxY - minY + pad * 2;
+  const vbX = minX - pad - bmargin;
+  const vb = `${vbX} ${minY - pad} ${w} ${h}`;
+  const Cx = vbX + w / 2, Cy = minY - pad + h / 2;
   const sw = Math.max(1, Math.max(w, h) / 700);
   const lbl = PROC.h * 0.42;
 
@@ -280,9 +292,12 @@ function MiniMap(props: { graph: Graph; viewPos?: Record<string, { x: number; y:
             <line
               key={e.id}
               x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-              stroke={hot ? '#2563eb' : place ? '#cbd5e1' : '#bcd4f5'}
-              strokeWidth={hot ? sw * 2 : place ? sw * 1.2 : sw}
-              strokeOpacity={hot ? 0.9 : place ? 0.5 : 0.4}
+              // Match the outer canvas: place edges solid slate, process wires
+              // dashed slate.
+              stroke={hot ? '#2563eb' : place ? '#64748b' : '#94a3b8'}
+              strokeWidth={hot ? sw * 3.4 : place ? sw * 3.4 : sw * 2.4}
+              strokeDasharray={place ? undefined : `${sw * 5},${sw * 4}`}
+              strokeOpacity={hot ? 0.95 : 0.85}
             />
           );
         })}
@@ -297,17 +312,35 @@ function MiniMap(props: { graph: Graph; viewPos?: Record<string, { x: number; y:
             <g key={n.id} className={`mini-store${on ? ' is-sel' : ''}`}
                onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (store)</title>
-              <rect x={p.x} y={p.y} width={STORE.w} height={STORE.h} rx={13}
+              {(() => {
+                const vtype = (n.data as { valueType?: string })?.valueType || '';
+                const nameY = vtype ? c.y - lbl * 0.34 : c.y;
+                return (
+              <>
+              <rect x={p.x} y={p.y} width={STORE.w} height={STORE.h} rx={10}
                 fill={on ? '#ecfdf5' : '#ffffff'} stroke={on ? '#059669' : '#34d399'}
                 strokeWidth={on ? sw * 3.2 : sw * 2.2} />
+              {/* Match the outer store: dark-slate name (bold), grey type below. */}
               <text
-                x={c.x} y={c.y} fontSize={lbl * 0.78}
-                textAnchor="middle" dominantBaseline="central" fill="#065f46"
+                x={c.x} y={nameY} fontSize={lbl * 0.8}
+                textAnchor="middle" dominantBaseline="central" fill="#1e293b" fontWeight={600}
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
                 className="mini-store-label"
               >
-                {_short(name, 11)}
+                {_short(name, 12)}
               </text>
+              {vtype && (
+                <text
+                  x={c.x} y={c.y + lbl * 0.5} fontSize={lbl * 0.6}
+                  textAnchor="middle" dominantBaseline="central" fill="#94a3b8"
+                  fontFamily="ui-monospace, monospace"
+                >
+                  {_short(vtype, 14)}
+                </text>
+              )}
+              </>
+                );
+              })()}
             </g>
           );
         })}
@@ -322,21 +355,60 @@ function MiniMap(props: { graph: Graph; viewPos?: Record<string, { x: number; y:
             <g key={n.id} className={`mini-proc${on ? ' is-sel' : ''}`}
                onClick={(e) => { e.stopPropagation(); setSel(on ? null : n.id); }}>
               <title>{name} (process)</title>
+              {/* Box STRETCHES to fit the label (centered on the node), so a long
+                  name like gene_expression isn't clipped. Sharp purple rectangle +
+                  dark-slate text, matching the outer process cards. */}
+              {(() => { const pw = Math.max(PROC.w, name.length * lbl * 0.6 + 26); return (
+              <>
               <rect
-                x={p.x} y={p.y} width={PROC.w} height={PROC.h} rx={0}
+                x={c.x - pw / 2} y={p.y} width={pw} height={PROC.h} rx={0}
                 fill={on ? '#eff6ff' : '#ffffff'} stroke={on ? '#1d4ed8' : '#6366f1'}
                 strokeWidth={on ? sw * 3.4 : sw * 2.4}
               />
               <text
                 x={c.x} y={c.y} fontSize={lbl} textAnchor="middle"
-                dominantBaseline="central" fill="#1e3a8a"
+                dominantBaseline="central" fill="#1e293b" fontWeight={600}
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
               >
-                {_short(name, 16)}
+                {name}
               </text>
+              </>
+              ); })()}
             </g>
           );
         })}
+        {/* Composite bridge: the outer ports linked to the matching inner store —
+            inputs enter from the left edge, outputs leave to the right, as small
+            ports on dashed wires (the same style the outer card uses). */}
+        {props.bridge && (() => {
+          const storeCenter = (nm: string) => {
+            const s = nodes.find((n) => n.type !== 'process' && n.data?.label === nm);
+            return s ? centerById.get(s.id) ?? null : null;
+          };
+          const conns: Array<{ nm: string; side: -1 | 1 }> = [
+            ...(props.bridge!.inputs || []).map((nm) => ({ nm, side: -1 as const })),
+            ...(props.bridge!.outputs || []).map((nm) => ({ nm, side: 1 as const })),
+          ];
+          return conns.map(({ nm, side }) => {
+            const t = storeCenter(nm);
+            if (!t) return null;
+            const px = side < 0 ? minX - pad - bgap : maxX + pad + bgap;
+            const r = STORE.h * 0.16;
+            return (
+              <g key={`bridge-${side}-${nm}`}>
+                <line x1={px} y1={t.y} x2={t.x} y2={t.y}
+                  stroke="#94a3b8" strokeWidth={sw * 2.4}
+                  strokeDasharray={`${sw * 5},${sw * 4}`} strokeOpacity={0.85} />
+                <circle cx={px} cy={t.y} r={r} fill="#ffffff" stroke="#10b981"
+                  strokeWidth={sw * 2.2} />
+                <text x={side < 0 ? px - r - 6 : px + r + 6} y={t.y}
+                  fontSize={lbl * 0.7} textAnchor={side < 0 ? 'end' : 'start'}
+                  dominantBaseline="central" fill="#0f766e" fontWeight={600}
+                  fontFamily="ui-sans-serif, system-ui, sans-serif">{nm}</text>
+              </g>
+            );
+          });
+        })()}
         </g>
       </svg>
     </div>
@@ -360,6 +432,8 @@ export default function InnerCompositePreview(props: {
    *  config._inner_view.positions). When given, the mini-map uses this hand-tuned
    *  layout instead of the generic grid. */
   viewPos?: Record<string, { x: number; y: number }>;
+  /** The composite process's outer ports → drawn as bridge connectors. */
+  bridge?: { inputs: string[]; outputs: string[] };
 }) {
   // Fast path: a self-contained composite process — render its own inner doc. If
   // the caller supplies the source composite's SAVED VIEW positions (props.viewPos,
@@ -367,7 +441,7 @@ export default function InnerCompositePreview(props: {
   // preview mirrors that composite's hand-tuned layout.
   if (props.localState && typeof props.localState === 'object') {
     const graph = _overviewGraph(props.localState);
-    if (graph.nodes.length) return <MiniMap graph={graph} viewPos={props.viewPos} />;
+    if (graph.nodes.length) return <MiniMap graph={graph} viewPos={props.viewPos} bridge={props.bridge} />;
   }
   const key = _key(props.rootId, props.hops);
   const [, bump] = useState(0);
@@ -421,5 +495,5 @@ export default function InnerCompositePreview(props: {
       </div>
     );
   }
-  return <MiniMap graph={entry.graph} />;
+  return <MiniMap graph={entry.graph} viewPos={props.viewPos} bridge={props.bridge} />;
 }
