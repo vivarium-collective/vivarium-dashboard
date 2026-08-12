@@ -560,8 +560,12 @@ def render_v4_test_charts(spec: dict,
       - Caption = test.question + the pass_if criterion as plain text.
       - Source = 'study' if drawn from runs_db, 'default-baseline' if
         from fallback_db.
+      - A test whose path is missing or unresolvable in every source still
+        gets a card: ``status: "unresolved"`` with a caption explaining why,
+        instead of silently vanishing from the report.
 
-    Returns [] if neither db has runs or all tests' paths are unresolvable.
+    Returns [] if no test declares a ``measure.path`` at all, or neither db
+    has runs.
     """
     # In schema_version 4, `tests` is the pytest-autodiscover config *dict*
     # (auto_discover/data_source/…) and the behavior-test *list* lives under
@@ -626,7 +630,21 @@ def render_v4_test_charts(spec: dict,
     for t in tests:
         measure = t.get("measure") or {}
         path = measure.get("path")
+        title = f"{t.get('name','(unnamed)')}  ({t.get('classification','test')})"
         if not path:
+            # Honesty fix: a silent `continue` here made a declared test
+            # vanish from the report with no signal — a reviewer would just
+            # see fewer cards than declared tests. Emit a visible stub
+            # instead (mirrors the "default-baseline" warning-caption
+            # pattern below).
+            charts.append({
+                "key": f"v4-{t.get('name','test')}",
+                "title": title,
+                "caption": "⚠ Unresolved: this test declares no measure.path.",
+                "status": "unresolved",
+                "source": "live",
+                "data_source": None,
+            })
             continue
         idx = measure.get("index")
         key = (path, idx)
@@ -640,10 +658,23 @@ def render_v4_test_charts(spec: dict,
                 xs, ys, used_source = cand_xs, cand_ys, label
                 break
         if not xs:
+            # Same honesty fix: the path is declared but unresolvable in any
+            # source (study runs or default-baseline) — stub it, don't drop it.
+            idx_txt = f" index {idx}" if idx is not None else ""
+            charts.append({
+                "key": f"v4-{t.get('name','test')}",
+                "title": title,
+                "caption": (
+                    f"⚠ Unresolved: no data found for path '{path}'{idx_txt} "
+                    "in the study's runs or the workspace default-baseline."
+                ),
+                "status": "unresolved",
+                "source": "live",
+                "data_source": None,
+            })
             continue
 
         band, hline = _pass_if_to_overlay(t.get("pass_if") or {})
-        title = f"{t.get('name','(unnamed)')}  ({t.get('classification','test')})"
         caption_bits = []
         if t.get("question"):
             caption_bits.append(t["question"])
