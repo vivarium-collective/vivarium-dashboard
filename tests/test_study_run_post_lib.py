@@ -18,6 +18,7 @@ the lib functions.
 
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import subprocess
@@ -130,10 +131,29 @@ def test_purge_stale_viz_noop_without_runs_db(tmp_path):
 # ---------------------------------------------------------------------------
 
 def _inject_analysis_registry(name_to_scale: dict[str, str]) -> None:
+    """Stub both v2ecoli.workflow.analysis (the registry) AND the sibling
+    v2ecoli.workflow.analyses package (plural -- what build_analysis_options
+    now also imports, see item 39 continued) so these tests, which exist to
+    check the grouping/error-handling LOGIC, don't need a real v2ecoli
+    install. The plural stub is an empty no-op module: these tests
+    pre-populate the registry directly, they don't rely on real
+    __init_subclass__ registration -- that's what
+    test_build_analysis_options_real_import_chain_registers_plural_package
+    below exists to cover, without any mocking."""
     registry = {n: type(n, (), {"scale": s}) for n, s in name_to_scale.items()}
     mod = types.ModuleType("v2ecoli.workflow.analysis")
     mod.ANALYSIS_REGISTRY = registry  # type: ignore[attr-defined]
     sys.modules["v2ecoli.workflow.analysis"] = mod
+    # A bare `import a.b.c` (unlike `from a.b.c import x`) requires every
+    # parent package to resolve too, not just the leaf -- stub the whole
+    # chain so the plural `import v2ecoli.workflow.analyses` build_analysis_
+    # options now also does (see item 39 continued) doesn't try to load a
+    # real (nonexistent, in this test env) v2ecoli package.
+    sys.modules.setdefault("v2ecoli", types.ModuleType("v2ecoli"))
+    sys.modules.setdefault("v2ecoli.workflow", types.ModuleType("v2ecoli.workflow"))
+    sys.modules.setdefault(
+        "v2ecoli.workflow.analyses", types.ModuleType("v2ecoli.workflow.analyses")
+    )
 
 
 def test_build_analysis_options_groups_by_scale(tmp_path):
@@ -171,6 +191,74 @@ def test_build_analysis_options_adds_ws_root_to_sys_path(tmp_path):
     finally:
         if str(tmp_path) in sys.path:
             sys.path.remove(str(tmp_path))
+
+
+def _write_real_v2ecoli_fixture(ws_root: Path) -> None:
+    """Build a REAL, on-disk v2ecoli package (no mocking) mirroring the exact
+    shape of the live bug found in backlog item 39: ANALYSIS_REGISTRY starts
+    empty in the singular `analysis` module and is only populated by
+    __init_subclass__ side effects when the sibling PLURAL `analyses` package
+    gets imported. `workflow/__init__.py` deliberately does NOT import
+    `analyses` -- matching the real v2ecoli package -- so this fixture would
+    genuinely reproduce the bug if build_analysis_options's own explicit
+    plural import were ever removed."""
+    pkg = ws_root / "v2ecoli" / "workflow"
+    pkg.mkdir(parents=True)
+    (ws_root / "v2ecoli" / "__init__.py").write_text("")
+    (pkg / "__init__.py").write_text("")
+    (pkg / "analysis.py").write_text(
+        "ANALYSIS_REGISTRY = {}\n"
+        "\n"
+        "class AnalysisStep:\n"
+        "    scale = 'single'\n"
+        "    def __init_subclass__(cls, **kwargs):\n"
+        "        super().__init_subclass__(**kwargs)\n"
+        "        if 'name' in cls.__dict__:\n"
+        "            ANALYSIS_REGISTRY[cls.name] = cls\n"
+    )
+    analyses_pkg = pkg / "analyses"
+    analyses_pkg.mkdir()
+    (analyses_pkg / "__init__.py").write_text(
+        "from v2ecoli.workflow.analyses import cd1_fake  # noqa: F401\n"
+    )
+    (analyses_pkg / "cd1_fake.py").write_text(
+        "from v2ecoli.workflow.analysis import AnalysisStep\n"
+        "\n"
+        "class Cd1Fake(AnalysisStep):\n"
+        "    name = 'cd1_fake'\n"
+        "    scale = 'multiseed'\n"
+    )
+
+
+def test_build_analysis_options_real_import_chain_registers_plural_package(tmp_path):
+    """Regression test for item 39 continued: a real (unmocked) v2ecoli
+    fixture, exercised in a FRESH subprocess so no other test's sys.modules
+    state can mask the bug via caching. Reproduces the exact live finding:
+    `cd1_fake` (standing in for the real cd1_*/ptools_* suite) is defined
+    ONLY in the plural `analyses` package, never imported by
+    `workflow/__init__.py` or `workflow/analysis.py` themselves -- if
+    build_analysis_options ever regresses to importing just the singular
+    `analysis` module, this resolves as an unknown analysis on the very
+    first call, exactly as it did on the real smscdk deployment."""
+    _write_real_v2ecoli_fixture(tmp_path)
+    script = (
+        "import sys, json\n"
+        "from vivarium_workbench.lib.study_run_post import build_analysis_options\n"
+        f"opts, errors = build_analysis_options([{{'name': 'cd1_fake'}}], {str(tmp_path)!r})\n"
+        "print(json.dumps({'opts': opts, 'errors': errors}))\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, f"subprocess failed: {result.stderr}"
+    payload = json.loads(result.stdout.strip().splitlines()[-1])
+    assert payload["errors"] == [], (
+        f"cd1_fake should resolve cleanly: {payload['errors']}"
+    )
+    assert payload["opts"]["multiseed"]["cd1_fake"] == {}
 
 
 # ---------------------------------------------------------------------------
