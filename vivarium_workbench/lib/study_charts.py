@@ -874,16 +874,30 @@ def _extract_paths_from_parquet(
     max_points: int = 200,
 ) -> dict[tuple[str, int | None], tuple[list[float], list[float]]]:
     """Single-pass extraction of N observable paths from a hive-partitioned
-    parquet run via one DuckDB query.
+    parquet run via one wide DuckDB query.
 
-    Mirrors :func:`_extract_paths_from_db`'s signature. Each ``path_spec``
-    is ``(dotted-or-slash path, optional index)``. ParquetEmitter flattens
-    nested observable paths into column names by replacing the separator
-    with ``__`` (e.g. ``listeners.mass.cell_mass`` → column
-    ``listeners__mass__cell_mass``). For array-valued columns, ``idx``
-    selects element ``idx+1`` (DuckDB lists are 1-indexed).
+    Mirrors :func:`_extract_paths_from_db`'s signature and single-wide-SELECT
+    shape (one ``json_extract`` column per path there; one ``value_expr``
+    column per path here). Each ``path_spec`` is ``(dotted-or-slash path,
+    optional index)``. ParquetEmitter flattens nested observable paths into
+    column names by replacing the separator with ``__`` (e.g.
+    ``listeners.mass.cell_mass`` → column ``listeners__mass__cell_mass``).
+    For array-valued columns, ``idx`` selects element ``idx+1`` (DuckDB lists
+    are 1-indexed).
 
-    Subsamples to ~``max_points`` per spec. Returns
+    Previously this issued ~2 DuckDB round-trips PER requested path (one
+    ``COUNT`` to size the subsample stride, one ``SELECT`` to fetch it) —
+    ~2N total for N paths. Now it's a fixed 3 round-trips regardless of N: one
+    ``DESCRIBE`` (schema), one ``COUNT`` (a single shared subsample stride,
+    same convention as :func:`_extract_paths_from_db`'s one shared stride
+    over ``history``'s total row count — not per-path non-null count), and
+    one wide ``SELECT`` projecting every resolved path as its own column.
+    Subsampled rows are shared across all traces; a trace's own null values
+    are skipped when building its ``(times, values)`` — same semantics as
+    before, just computed from one pass over one shared row set instead of a
+    separate query per path.
+
+    Subsamples to ~``max_points`` total rows. Returns
     ``{(path, index): (times, values)}`` with empty tuples for paths that
     didn't resolve.
     """
@@ -937,104 +951,116 @@ def _extract_paths_from_parquet(
         # sequentially via a cumulative-time offset.
         has_gen = "generation" in available
 
-        # Resolve final column per spec; fall back to stripping an
-        # ``agents__<id>__`` prefix if present in the flattened column name
-        # (mirrors the sqlite branch's $.agents.0.<path> fallback).
+        # Resolve final column + value_expr per spec in one bulk pass; fall
+        # back to stripping an ``agents__<id>__`` prefix if present in the
+        # flattened column name (mirrors the sqlite branch's
+        # $.agents.0.<path> fallback). Scalar columns pass through as-is;
+        # array-typed columns get a 1-indexed lookup, probed from the
+        # DESCRIBE type. idx supplied against a scalar column is skipped —
+        # same as before, to avoid a DuckDB indexing error.
+        type_by_col = {r[0]: (r[1] or "") for r in schema_rows}
         resolved: list[tuple[tuple[str, int | None], str]] = []
         for path, idx, col in supported:
             chosen = None
             if col in available:
                 chosen = col
             else:
-                # try stripping a leading agents__<id>__
                 stripped = re.sub(r"^agents__[^_]+__", "", col)
                 if stripped in available:
                     chosen = stripped
             if chosen is None:
                 continue
-            resolved.append(((path, idx), chosen))
+            col_type = type_by_col.get(chosen, "")
+            is_list = col_type.endswith("[]") or col_type.startswith(("LIST", "ARRAY"))
+            if idx is not None and is_list:
+                value_expr = f'"{chosen}"[{int(idx) + 1}]'
+            elif idx is not None and not is_list:
+                continue
+            else:
+                value_expr = f'"{chosen}"'
+            resolved.append(((path, idx), value_expr))
         if not resolved:
             return out
 
-        # Build SELECT expressions: scalar columns pass through;
-        # array-typed columns get a 1-indexed lookup. Probe the column
-        # type from the schema (DESCRIBE returns (name, type, ...)).
-        type_by_col = {r[0]: (r[1] or "") for r in schema_rows}
+        # One alias per requested (path, idx) — distinct even when two specs
+        # share an underlying column with different indices.
+        aliases = [f"v{i}" for i in range(len(resolved))]
+        select_exprs = ", ".join(
+            f"{expr} AS {alias}" for ((_, expr), alias) in zip(resolved, aliases)
+        )
 
-        # Extract one path at a time to keep SQL simple and to subsample
-        # per-trace (paths can have different valid-row counts when null).
-        for (path, idx), col in resolved:
-            col_type = type_by_col.get(col, "")
-            is_list = col_type.endswith("[]") or col_type.startswith(("LIST", "ARRAY"))
-            if idx is not None and is_list:
-                value_expr = f'"{col}"[{int(idx) + 1}]'
-            elif idx is not None and not is_list:
-                # idx supplied but column is scalar — skip to avoid SQL error
-                continue
+        # ONE shared subsample stride for every requested path (parity with
+        # _extract_paths_from_db's single stride over history's total row
+        # count) instead of a per-path COUNT filtered on that path's nulls.
+        try:
+            n_rows = conn.execute(
+                f"SELECT COUNT(*) FROM read_parquet('{glob}', hive_partitioning=1)"
+            ).fetchone()[0] or 0
+        except Exception:
+            return out
+        stride = max(1, n_rows // max_points) if n_rows > max_points else 1
+
+        try:
+            if has_gen:
+                # Cumulative lineage time: normalise each generation to
+                # start at 0 (gt - gmin), then offset by the summed
+                # durations of all prior generations. Correct whether
+                # global_time resets per gen (gmin≈0) or is already
+                # cumulative (gmin large → the subtraction is a no-op net
+                # of the offset). CAST so "10" sorts after "2".
+                sql = (
+                    f"WITH base AS (SELECT CAST(generation AS BIGINT) AS g, "
+                    f"  global_time AS gt, {select_exprs} "
+                    f"  FROM read_parquet('{glob}', hive_partitioning=1) "
+                    f"  WHERE generation IS NOT NULL), "
+                    f"stats AS (SELECT g, MIN(gt) AS gmin, MAX(gt) AS gmax "
+                    f"  FROM base GROUP BY g), "
+                    f"off AS (SELECT g, gmin, COALESCE(SUM(gmax - gmin) OVER "
+                    f"  (ORDER BY g ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS off "
+                    f"  FROM stats), "
+                    f"seq AS (SELECT (b.gt - o.gmin + o.off) AS t, "
+                    f"  {', '.join('b.' + a for a in aliases)}, "
+                    f"  row_number() OVER (ORDER BY b.g, b.gt) AS rn "
+                    f"  FROM base b JOIN off o ON b.g = o.g) "
+                    f"SELECT t, {', '.join(aliases)} FROM seq "
+                    f"WHERE (rn - 1) % {max(1, stride)} = 0 ORDER BY t"
+                )
+            elif stride > 1:
+                sql = (
+                    f"SELECT t, {', '.join(aliases)} FROM ("
+                    f"  SELECT global_time AS t, {select_exprs}, "
+                    f"         row_number() OVER (ORDER BY global_time) AS rn "
+                    f"  FROM read_parquet('{glob}', hive_partitioning=1)"
+                    f") WHERE (rn - 1) % {stride} = 0 ORDER BY t"
+                )
             else:
-                value_expr = f'"{col}"'
-            try:
-                n_rows = conn.execute(
-                    f"SELECT COUNT(*) FROM read_parquet('{glob}', hive_partitioning=1) "
-                    f"WHERE {value_expr} IS NOT NULL"
-                ).fetchone()[0] or 0
-            except Exception:
+                sql = (
+                    f"SELECT global_time AS t, {select_exprs} "
+                    f"FROM read_parquet('{glob}', hive_partitioning=1) "
+                    f"ORDER BY t"
+                )
+            rows = conn.execute(sql).fetchall()
+        except Exception:
+            return out
+
+        for row in rows:
+            tm = row[0]
+            if tm is None:
                 continue
-            stride = max(1, n_rows // max_points) if n_rows > max_points else 1
             try:
-                if has_gen:
-                    # Cumulative lineage time: normalise each generation to
-                    # start at 0 (gt - gmin), then offset by the summed
-                    # durations of all prior generations. Correct whether
-                    # global_time resets per gen (gmin≈0) or is already
-                    # cumulative (gmin large → the subtraction is a no-op net
-                    # of the offset). CAST so "10" sorts after "2".
-                    sql = (
-                        f"WITH base AS (SELECT CAST(generation AS BIGINT) AS g, "
-                        f"  global_time AS gt, {value_expr} AS v "
-                        f"  FROM read_parquet('{glob}', hive_partitioning=1) "
-                        f"  WHERE {value_expr} IS NOT NULL AND generation IS NOT NULL), "
-                        f"stats AS (SELECT g, MIN(gt) AS gmin, MAX(gt) AS gmax "
-                        f"  FROM base GROUP BY g), "
-                        f"off AS (SELECT g, gmin, COALESCE(SUM(gmax - gmin) OVER "
-                        f"  (ORDER BY g ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING), 0) AS off "
-                        f"  FROM stats), "
-                        f"seq AS (SELECT (b.gt - o.gmin + o.off) AS t, b.v AS v, "
-                        f"  row_number() OVER (ORDER BY b.g, b.gt) AS rn "
-                        f"  FROM base b JOIN off o ON b.g = o.g) "
-                        f"SELECT t, v FROM seq WHERE (rn - 1) % {max(1, stride)} = 0 ORDER BY t"
-                    )
-                elif stride > 1:
-                    sql = (
-                        f"SELECT global_time, v FROM ("
-                        f"  SELECT global_time, {value_expr} AS v, "
-                        f"         row_number() OVER (ORDER BY global_time) AS rn "
-                        f"  FROM read_parquet('{glob}', hive_partitioning=1) "
-                        f"  WHERE {value_expr} IS NOT NULL"
-                        f") WHERE (rn - 1) % {stride} = 0 ORDER BY global_time"
-                    )
-                else:
-                    sql = (
-                        f"SELECT global_time, {value_expr} AS v "
-                        f"FROM read_parquet('{glob}', hive_partitioning=1) "
-                        f"WHERE {value_expr} IS NOT NULL "
-                        f"ORDER BY global_time"
-                    )
-                rows = conn.execute(sql).fetchall()
-            except Exception:
+                t_val = float(tm)
+            except (TypeError, ValueError):
                 continue
-            times: list[float] = []
-            values: list[float] = []
-            for tm, v in rows:
-                if tm is None or v is None:
+            for i, (key, _) in enumerate(resolved):
+                v = row[1 + i]
+                if v is None:
                     continue
                 try:
-                    times.append(float(tm))
-                    values.append(float(v))
+                    v_val = float(v)
                 except (TypeError, ValueError):
                     continue
-            if times:
-                out[(path, idx)] = (times, values)
+                out[key][0].append(t_val)
+                out[key][1].append(v_val)
         return out
     finally:
         try:
