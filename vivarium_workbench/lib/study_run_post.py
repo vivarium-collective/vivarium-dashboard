@@ -29,6 +29,7 @@ latest_run_timestamp        → most-recent run wall-clock time from runs_meta
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import yaml
@@ -145,17 +146,38 @@ def run_post_run_scripts(spec: dict, ws_root: Path) -> tuple[list[str], list[dic
     return written, errors
 
 
-def build_analysis_options(entries: list[dict]) -> tuple[dict, list[dict]]:
+def _ws_add_to_sys_path(ws_root: Path) -> None:
+    """Make the workspace's own Python package(s) importable.
+
+    Replicates ``server._ws_add_to_sys_path`` (which used the ``WORKSPACE``
+    global): insert ``ws_root`` at the front of ``sys.path`` so the live
+    served workspace's package (e.g. ``v2ecoli``) resolves ahead of anything
+    baked into the process's own build-time venv.
+    """
+    ws = str(ws_root)
+    if ws not in sys.path:
+        sys.path.insert(0, ws)
+
+
+def build_analysis_options(entries: list[dict], ws_root: Path) -> tuple[dict, list[dict]]:
     """Translate ``spec.analyses`` entries into v2ecoli ``analysis_options``.
 
     Looks up each entry's ``name`` in ``v2ecoli.workflow.analysis.ANALYSIS_REGISTRY``
     to discover its ``scale``, then groups it into
     ``{scale: {name: params}}``.
 
+    ``ws_root`` is prepended to ``sys.path`` first (``_ws_add_to_sys_path``,
+    the same pattern already used by 30+ other ``lib/`` call sites) so
+    ``ANALYSIS_REGISTRY`` resolves from the LIVE served workspace, never a
+    disconnected build-time-baked venv (see backlog item 39 — a remote
+    deployment's own installed ``v2ecoli`` can be a stub with a much smaller
+    registry than what's actually being dispatched, silently truncating any
+    analysis name outside it with zero error surfaced anywhere).
+
     Returns ``(analysis_options, errors)`` where ``errors`` lists dicts for
-    unknown analysis names.  Importable as a pure helper so it is unit-testable
-    without a workspace.
+    unknown analysis names.
     """
+    _ws_add_to_sys_path(ws_root)
     try:
         from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY  # type: ignore[import]
     except ImportError:
