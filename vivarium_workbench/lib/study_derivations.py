@@ -19,7 +19,19 @@ RUN_COMPLETED = {"completed", "complete", "success", "succeeded", "ok", "done", 
 
 
 def norm_gate_result(val) -> str:
-    return GATE_RESULT_NORM.get(str(val or "").strip().lower(), "PENDING")
+    """Normalize a ``gate_evaluator.result`` / ``gate_status`` value.
+
+    An empty value (``None``/``""``/whitespace) means "not evaluated yet" ->
+    PENDING. A truthy value that ISN'T one of the recognized statuses is a
+    real, unexpected result (e.g. a new gate_evaluator outcome this mapping
+    hasn't been taught yet) — surface it as ``UNKNOWN:<val>`` rather than
+    silently collapsing it to PENDING, which would read as "not run" when a
+    run actually happened and produced something this code doesn't recognize.
+    """
+    s = str(val or "").strip().lower()
+    if not s:
+        return "PENDING"
+    return GATE_RESULT_NORM.get(s, f"UNKNOWN:{s}")
 
 
 def as_findings(v):

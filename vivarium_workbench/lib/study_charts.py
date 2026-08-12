@@ -21,6 +21,7 @@ from xml.sax.saxutils import escape
 
 from vivarium_workbench.lib import emitters
 from vivarium_workbench.lib import run_store
+from vivarium_workbench.lib.agents0 import agents0_json_extract_pair
 
 # DnaA monomer index (PD03831[c]) in monomer_ids; hardcoded fallback.
 DNAA_MONOMER_IDX = 3861
@@ -1071,12 +1072,7 @@ def _extract_paths_from_db(
         # per-agent (agents/0/) form. v2ecoli single-cell composites scope
         # listener stores under agents/0/, so the emitter captures observables
         # there; the literal form covers non-agent composites. Coalesce per row.
-        sql_paths = []  # flat list of (literal, agent) suffixes per supported
-        for path, idx in supported:
-            suffix = (f"[{int(idx)}]"
-                      if idx is not None and isinstance(idx, int) else "")
-            sql_paths.append(("$." + path + suffix,
-                              "$.agents.0." + path + suffix))
+        sql_paths = [agents0_json_extract_pair(path, idx) for path, idx in supported]
 
         select_cols = ["global_time"] + [
             "json_extract(state, ?)" for _ in supported for _ in (0, 1)

@@ -38,6 +38,8 @@ import sqlite3
 from html import escape
 from pathlib import Path
 
+from vivarium_workbench.lib.agents0 import agents0_json_extract_pair
+
 
 _PLOTLY_CDN = (
     '<script src="https://cdn.plot.ly/plotly-2.27.0.min.js" charset="utf-8"></script>'
@@ -120,15 +122,11 @@ def _extract_trace(db_path: Path,
         if n_rows == 0:
             return [], []
         stride = max(1, n_rows // subsample) if n_rows > 0 else 1
-        idx = (f"[{int(observable_index)}]"
-               if observable_index is not None and isinstance(observable_index, int)
-               else "")
-        sql_path = "$." + observable_path + idx
         # v2ecoli single-cell composites scope listener stores under agents/0/,
         # so the emitter captures the observable at agents/0/<path>. Try the
         # literal path first, fall back to the per-agent path — the declared-
         # path emitter nests captured state to mirror the path, so one resolves.
-        ag_path = "$.agents.0." + observable_path + idx
+        sql_path, ag_path = agents0_json_extract_pair(observable_path, observable_index)
         cursor = conn.execute(
             "SELECT global_time, json_extract(state, ?), json_extract(state, ?) "
             "FROM history WHERE simulation_id=? AND (step % ?) = 0 ORDER BY step ASC",
