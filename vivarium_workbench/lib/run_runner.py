@@ -336,6 +336,70 @@ def _emit_paths_for(req: RunRequest, state: dict, *,
     return _resolve_emit_paths(req, state, spec=spec, spec_id=spec_id)[0]
 
 
+# The generic default-viz fallback skips any history-row state blob larger than
+# this when gathering observables, so a whole-cell composite (~16k-species bulk
+# array + listeners per row) can't be json.loads()'d into an unbounded set and
+# hang the render (issue #784, layer 3). A normal composite's per-step state is
+# well under this; a whole-cell blob is many times larger.
+_DEFAULT_VIZ_MAX_STATE_BYTES = 512 * 1024  # 512 KiB
+
+
+def _safe_link_registry_dict(core) -> dict:
+    """Materialize ``core.link_registry`` into a plain dict, skipping any entry
+    whose lazy lookup raises.
+
+    A foreign package that fails at generator-discovery import time can leave a
+    dangling key in the lazy link registry; ``dict(core.link_registry)`` then
+    raises ``KeyError`` when it materializes that key, crashing viz rendering
+    (issue #784, layer 1 — a stray ``vEcoli``/``genecoli`` install in the venv).
+    Degrade gracefully instead: a broken third-party registry entry must not take
+    down a run's visualization tail.
+    """
+    registry = getattr(core, "link_registry", None)
+    if registry is None:
+        return {}
+    try:
+        keys = list(registry.keys())
+    except Exception:
+        try:
+            return dict(registry)
+        except Exception:
+            return {}
+    out: dict = {}
+    for key in keys:
+        try:
+            out[key] = registry[key]
+        except Exception:
+            continue
+    return out
+
+
+def _spec_declares_canonical_viz(spec_id: str | None) -> bool:
+    """True when the composite generator for ``spec_id`` declares one or more
+    canonical visualizations.
+
+    Used to keep a whole-cell composite (which always declares its panels) out of
+    the generic ``_render_default_viz`` fallback even when canonical rendering
+    fails for some reason — a canonical-viz *failure* leaves ``viz_html`` empty,
+    which must NOT be mistaken for "declares no visualizations" (issue #784,
+    layer 2). Best-effort; returns False when the registry can't be read.
+    """
+    if not spec_id:
+        return False
+    try:
+        from process_bigraph.composite_generator import (
+            _REGISTRY, discover_generators)
+    except ImportError:
+        return False
+    if not _REGISTRY:
+        try:
+            discover_generators()
+        except Exception:
+            return False
+    entry = _REGISTRY.get(spec_id)
+    return bool(getattr(entry, "visualizations", None))
+
+
 def _render_viz(composite, run_dir: Path, *,
                 spec_id: str | None = None,
                 db_file: str | None = None,
@@ -384,8 +448,12 @@ def _render_viz(composite, run_dir: Path, *,
         except Exception:
             traceback.print_exc()
 
-    # 3. Default figure when a composite declares no visualizations.
-    if not viz_html and db_file and run_id and core is not None:
+    # 3. Default figure ONLY when a composite declares no visualizations at all.
+    #    A canonical-viz *failure* also leaves viz_html empty, but a whole-cell
+    #    composite that DECLARES panels must not silently route into the generic
+    #    (and expensive) fallback on that failure (issue #784, layer 2).
+    if (not viz_html and db_file and run_id and core is not None
+            and not _spec_declares_canonical_viz(spec_id)):
         try:
             for k, html in _render_default_viz(
                     db_file=db_file, run_id=run_id, core=core).items():
@@ -447,7 +515,7 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
     # Build the Visualization class registry the same way
     # _render_study_visualizations does, so `local:<ClassName>`
     # addresses resolve through core.link_registry.
-    registry = dict(core.link_registry)
+    registry = _safe_link_registry_dict(core)
     try:
         from process_bigraph.visualizations import (
             TimeSeriesPlot, ParamVsObservable, Distribution, PhaseSpace, Heatmap,
@@ -480,8 +548,9 @@ def _render_canonical_viz(*, spec_id: str, db_file: str, run_id: str, core,
 
     # Pull emitter output for this run only — the workspace-level
     # composite-runs.db can hold many CE runs and we don't want the viz to
-    # pick up trajectories from a different one.
-    gathered = gather_emitter_outputs(Path(db_file))
+    # pick up trajectories from a different one. Scope the SQL scan to this run
+    # so we don't json.loads every OTHER run's state history too (issue #784).
+    gathered = gather_emitter_outputs(Path(db_file), run_id=run_id)
     by_sim_filtered: dict = {}
     for sim_name, runs in (gathered.get("by_sim") or {}).items():
         keep = [r for r in runs if r.get("run_id") == run_id]
@@ -585,7 +654,7 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
 
     # Register viz classes the same way _render_canonical_viz does so
     # `local:<ClassName>` addresses resolve through core.link_registry.
-    registry = dict(core.link_registry)
+    registry = _safe_link_registry_dict(core)
     try:
         from process_bigraph.visualizations import (
             ParamVsObservable, Distribution, PhaseSpace, Heatmap,
@@ -619,7 +688,12 @@ def _render_default_viz(*, db_file: str, run_id: str, core) -> dict:
     except Exception:
         pass
 
-    gathered = gather_emitter_outputs(Path(db_file))
+    # Scope to this run AND cap per-row blob size: the generic fallback must
+    # never json.loads a whole-cell-scale state per row into an unbounded
+    # observable set (issue #784, layer 3 — the actual hang).
+    gathered = gather_emitter_outputs(
+        Path(db_file), run_id=run_id,
+        max_state_bytes=_DEFAULT_VIZ_MAX_STATE_BYTES)
     by_sim_filtered: dict = {}
     for sim_name, runs in (gathered.get("by_sim") or {}).items():
         keep = [r for r in runs if r.get("run_id") == run_id]
