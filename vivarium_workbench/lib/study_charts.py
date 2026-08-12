@@ -21,6 +21,7 @@ from xml.sax.saxutils import escape
 
 from vivarium_workbench.lib import emitters
 from vivarium_workbench.lib import run_store
+from vivarium_workbench.lib.refusal import Refusal, present_leaves_from_runs_db
 
 # DnaA monomer index (PD03831[c]) in monomer_ids; hardcoded fallback.
 DNAA_MONOMER_IDX = 3861
@@ -622,6 +623,38 @@ def render_v4_test_charts(spec: dict,
     for db_path, label in db_candidates:
         sources.append((label, _extract_paths_from_db(db_path, path_specs)))
 
+    # Lazily-computed, memoized: the refusal's ``present`` field (typed
+    # run→finding chain design, §3a) — the leaves the run's store DOES
+    # carry. Computed once (not per missing test), since it's the same
+    # store for every miss in this render pass, and only if a miss actually
+    # occurs (never charged against the common all-paths-resolve case).
+    _present_cache: list[str] | None = None
+
+    def _present_leaves() -> list[str]:
+        nonlocal _present_cache
+        if _present_cache is None:
+            present: list[str] = []
+            for db_path_, _label in db_candidates:
+                present = present_leaves_from_runs_db(db_path_)
+                if present:
+                    break
+            if not present:
+                # No sqlite dialect available (e.g. a zarr/parquet-only
+                # study) — fall back to the OTHER declared measure paths
+                # that DID resolve to data in `sources`. Narrower than a
+                # true store-wide leaf manifest (that's the design's later
+                # `wb.run.to_dialect` leaf-manifest work, recorded at write
+                # time — out of scope here), but still names real, present
+                # observables rather than nothing.
+                seen: set[str] = set()
+                for _label, src in sources:
+                    for (p, _idx), (sxs, _sys) in src.items():
+                        if sxs:
+                            seen.add(p)
+                present = sorted(seen)
+            _present_cache = present
+        return _present_cache
+
     charts: list[dict] = []
     for t in tests:
         measure = t.get("measure") or {}
@@ -640,6 +673,31 @@ def render_v4_test_charts(spec: dict,
                 xs, ys, used_source = cand_xs, cand_ys, label
                 break
         if not xs:
+            # Genuine no-image case (Boundary G / `wb.measure.read` in the
+            # typed run→finding chain design, §3a): this path has NO image
+            # in ANY source we checked here — this is NOT the
+            # workspace-default-baseline fallback below (that's a
+            # DIFFERENT, deliberately untouched case: `used_source ==
+            # "default-baseline"` means data WAS found, just from the
+            # fallback db). A refusal names the missing path and what the
+            # store DOES carry, replacing the prior silent `continue`.
+            present = _present_leaves()
+            refusal = Refusal(
+                reason=(
+                    f"no image for observable path {path!r} in this run's store"
+                    + (f" (present: {', '.join(present[:8])}"
+                       f"{', …' if len(present) > 8 else ''})" if present else "")
+                ),
+                missing=[path],
+                present=present,
+            )
+            charts.append({
+                "key": f"v4-{t.get('name','test')}",
+                "title": f"{t.get('name','(unnamed)')}  ({t.get('classification','test')})",
+                **refusal.to_dict(),
+                "source": "live",
+                "data_source": None,
+            })
             continue
 
         band, hline = _pass_if_to_overlay(t.get("pass_if") or {})
