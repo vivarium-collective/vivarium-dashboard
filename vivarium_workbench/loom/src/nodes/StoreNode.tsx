@@ -3,6 +3,7 @@ import { Handle, Position, NodeResizer, useReactFlow, useNodeId, type NodeProps 
 import type { StoreNodeData } from "../types";
 import type { ZoomTierId } from "../layouts/types";
 import { abbreviateType } from "../contract";
+import { displayName } from "../labels";
 
 /** The four store handles + optional collapse indicator, shared by both the
  *  legacy (hierarchy) and the tiered (process-column) render paths. Edge
@@ -72,7 +73,7 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
     return (
       <div className="loom-hyperedge" title={data.label}>
         <StoreHandles />
-        <span className="loom-hyperedge-label">{data.label}</span>
+        <span className="loom-hyperedge-label">{displayName(data.label)}</span>
       </div>
     );
   }
@@ -87,7 +88,7 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
         <Handle type="target" position={Position.Top} id="top-place" />
         <Handle type="source" position={Position.Left} id="left-out" />
         <Handle type="target" position={Position.Right} id="right-in" />
-        <div className="store-label">{data.label}</div>
+        <div className="store-label">{displayName(data.label)}</div>
         {hasValue && (
           <div className="store-value" title={String(data.value)}>
             {String(data.value).slice(0, 20)}
@@ -140,7 +141,7 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
       {resizer}
       <StoreHandles />
       <div className="store-label">
-        {data.label}
+        {displayName(data.label)}
         {/* Collapsed group of identical sibling stores → how many this stands for. */}
         {(data as any)._collapsedCount > 1 && (
           <span

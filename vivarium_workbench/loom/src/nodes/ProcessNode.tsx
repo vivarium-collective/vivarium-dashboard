@@ -6,6 +6,7 @@ import { portInfo } from "../portInfo";
 import { KatexBlock } from "../Katex";
 import InnerCompositePreview from "./InnerCompositePreview";
 import { configParams } from "../configView";
+import { displayName } from "../labels";
 
 // Canvas text metrics — used to reserve exactly the room the widest port label
 // needs (see the adaptive port-column width below). A shared module-level context
@@ -85,7 +86,7 @@ function LegacyBody({ data, stepKind }: {
 
       <div className="process-body">
         <div className="process-label">
-          {data.label}
+          {displayName(data.label)}
           {(data as any).isDraft && (
             <span className="process-node-draft" title="Draft process — typed ports + contract, but NO update dynamics yet">
               DRAFT
@@ -433,7 +434,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
         <div className="process-node-title">
           {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
-          {data.label}
+          {displayName(data.label)}
           {/* Collapsed array of identical processes → how many this stands for. */}
           {(data as any)._collapsedCount > 1 && (
             <span className="process-node-count" title={`${(data as any)._collapsedCount} identical processes collapsed into this one`}>

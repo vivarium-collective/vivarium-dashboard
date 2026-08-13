@@ -14,6 +14,7 @@ import {
   stateToReactFlow, defaultCollapsedIds, defaultHiddenIds,
 } from '../convert';
 import { fetchInnerComposite } from '../api';
+import { displayName } from '../labels';
 
 type Graph = { nodes: any[]; edges: any[] };
 type CacheEntry = { status: 'loading' | 'ready' | 'error'; graph?: Graph; error?: string };
@@ -330,7 +331,7 @@ function MiniMap(props: {
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
                 className="mini-store-label"
               >
-                {_short(name, 12)}
+                {_short(displayName(name), 12)}
               </text>
               {vtype && (
                 <text
@@ -373,7 +374,7 @@ function MiniMap(props: {
                 dominantBaseline="central" fill="#1e293b" fontWeight={600}
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
               >
-                {name}
+                {displayName(name)}
               </text>
               </>
               ); })()}
