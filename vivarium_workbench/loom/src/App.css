@@ -242,7 +242,7 @@ body {
   box-sizing: border-box;
   overflow-wrap: anywhere;
   padding: 8px 10px;
-  border-radius: 14px;
+  border-radius: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
