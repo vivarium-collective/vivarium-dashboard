@@ -144,6 +144,60 @@ def _run_recipes(runs_db: Path) -> list[dict]:
     return out
 
 
+def _baseline_recipes(study: dict) -> list[dict]:
+    """Reproduction recipes synthesized from ``study.yaml`` ``baseline[]`` — the
+    fallback when a study has no ``runs.db`` (figure / reference studies). Same
+    shape as :func:`_run_recipes`, so the parameters table + editable-composite
+    cells render from the study's declared composite + parameters instead of
+    being empty.
+    """
+    baseline = study.get("baseline")
+    if not baseline:
+        cond = study.get("conditions")
+        if isinstance(cond, dict):
+            baseline = cond.get("baseline")
+    if isinstance(baseline, dict):
+        baseline = [baseline]
+    if not isinstance(baseline, list):
+        return []
+    out: list[dict] = []
+    for b in baseline:
+        if not isinstance(b, dict):
+            continue
+        spec_id = b.get("composite") or b.get("base_model") or b.get("spec_id")
+        if not spec_id:
+            continue
+        params = b.get("params") if isinstance(b.get("params"), dict) else {}
+        out.append(
+            {
+                "sim": b.get("name") or str(spec_id).rsplit(".", 1)[-1],
+                "spec_id": str(spec_id),
+                "n_steps": int(params.get("n_steps") or params.get("steps") or 0),
+                "params": params,
+                "status": "baseline (study.yaml)",
+            }
+        )
+    return out
+
+
+def _resolve_composite_path(composites_dir: Path, spec_id: str):
+    """Locate a composite spec file for ``spec_id`` (a dotted id such as
+    ``pkg.composites.sub.name`` OR a bare ``name``). Searches ``composites/``
+    for ``<stem>.composite.{json,yaml,yml}``, flat first then recursively, so it
+    works for both the ``.composite.json`` figure specs and nested layouts."""
+    if not composites_dir.is_dir():
+        return None
+    stem = str(spec_id).rsplit(".", 1)[-1]
+    for ext in ("json", "yaml", "yml"):
+        flat = composites_dir / f"{stem}.composite.{ext}"
+        if flat.is_file():
+            return flat
+        matches = sorted(composites_dir.rglob(f"{stem}.composite.{ext}"))
+        if matches:
+            return matches[0]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Run / render strategy discovery
 # ---------------------------------------------------------------------------
@@ -318,8 +372,7 @@ def _spec_var(spec_id: str) -> str:
     return f"spec_{_py_ident(spec_id)}"
 
 
-def _load_inspect_code(package: str, spec_id: str, var: str) -> str:
-    comp_rel = f"{package}/composites/{spec_id}.composite.yaml"
+def _load_inspect_code(comp_rel: str, var: str) -> str:
     return (
         "from viva_superpowers.composite_spec import load_spec\n"
         f"{var} = load_spec(REPO / {comp_rel!r})\n"
@@ -587,16 +640,22 @@ def _study_blocks(ws_root: Path, layout: dict, slug: str, strat: dict) -> list[d
     studies_rel = layout.get("studies") or "studies"
     package = strat["package"]
     study_dir = _studies_dir(ws_root, layout) / slug
-    recipes = _run_recipes(study_dir / "runs.db")
+    run_recipes = _run_recipes(study_dir / "runs.db")
+    # Params + editable-composite cells fall back to the study.yaml `baseline`
+    # when there is no runs.db, so figure/reference studies still expose their
+    # composite + parameters. The Run cell keeps using `run_recipes` only (no
+    # recorded runs → nothing to reproduce), so exposing params never turns into
+    # an attempt to re-simulate a static figure.
+    display_recipes = run_recipes or _baseline_recipes(study)
 
     blocks: list[dict] = [_md(_study_header_md(study, slug))]
 
     # --- parameters (no results) ---
-    blocks.append(_md(_parameters_md(study, recipes, package)))
+    blocks.append(_md(_parameters_md(study, display_recipes, package)))
 
     # --- editable spec: one load/inspect + control-panel cell per composite ---
     seen_specs: list[str] = []
-    for r in recipes:
+    for r in display_recipes:
         if r["spec_id"] not in seen_specs:
             seen_specs.append(r["spec_id"])
     spec_vars = {sid: _spec_var(sid) for sid in seen_specs}
@@ -605,11 +664,17 @@ def _study_blocks(ws_root: Path, layout: dict, slug: str, strat: dict) -> list[d
         blocks.append(_md(_COMPOSITE_INTRO_MD))
         for spec_id in seen_specs:
             var = spec_vars[spec_id]
+            comp_path = _resolve_composite_path(composites_dir, spec_id)
             blocks.append(_md(f"**Composite `{spec_id}`** — `{var}` (a plain, editable dict)"))
-            blocks.append(_code(_load_inspect_code(package, spec_id, var)))
-            comp_path = composites_dir / f"{spec_id}.composite.yaml"
-            if comp_path.is_file():
+            if comp_path is not None:
+                comp_rel = comp_path.relative_to(ws_root).as_posix()
+                blocks.append(_code(_load_inspect_code(comp_rel, var)))
                 blocks.append(_code(_control_panel_code(var, _load_yaml(comp_path))))
+            else:
+                blocks.append(
+                    _md(f"_composite spec file for `{spec_id}` not found under "
+                        f"`{package}/composites/` — skipped._")
+                )
 
     # --- run section: editable runtime/interval, build & run the edited spec ---
     blocks.append(
@@ -619,7 +684,7 @@ def _study_blocks(ws_root: Path, layout: dict, slug: str, strat: dict) -> list[d
             "figures below read it. Set `RERUN = False` to skip re-simulating._"
         )
     )
-    blocks.append(_code(_run_code(slug, studies_rel, recipes, spec_vars, strat)))
+    blocks.append(_code(_run_code(slug, studies_rel, run_recipes, spec_vars, strat)))
 
     # --- per-visualization render blocks ---
     # The figures ARE the results — text stays parameter-only, so the authored

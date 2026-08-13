@@ -131,6 +131,17 @@ th{background:rgba(0,0,0,0.03)}
 .json-tree summary{cursor:pointer;user-select:none}
 code{font-family:ui-monospace,Menlo,monospace;background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px}
 img{max-width:100%}
+
+/* Study Visualizations tab — keep figure media inside its column. Committed
+   figures render as INLINE SVG (large loom diagrams / multi-panel figures);
+   an <svg> has no intrinsic width cap, so without this the big ones render at
+   natural size, overflow their card, and bleed across the study layout (over
+   the sticky header while scrolling). iframes/imgs get the same containment. */
+.figure-card{ max-width:100%; overflow-x:auto }
+.figure-card svg{ display:block; max-width:100%; height:auto }
+.figure-media-frame{ display:block; width:100%; max-width:100%; border:0 }
+.figure-card img, .chart-img, .figure-media{ max-width:100%; height:auto }
+
 .stage-label{
   display:inline-block;
   font-size:0.7em;
