@@ -475,11 +475,13 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         )}
 
         {/* Composite Process: render a live mini-map of its INNER composite in
-            place of the contract, at the contract+ tier. Auto-loads at `full`
-            tier (the focused/most-zoomed card); at `contract` tier it shows the
-            ⤢ viz icon to render on demand — so zoom doesn't trigger a ParCa
-            build on every card at once. Double-click still opens the full view. */}
-        {show.contract && data.isCompositeProcess
+            place of the contract. Shown from the `types` tier up — INDEPENDENT of
+            the contract toggle, so a composite still shows its inner map even when
+            contracts are turned off (Detail → Contract: Hide). Auto-loads only at
+            `full` tier (the focused/most-zoomed card, and the headless figure
+            render); at lower tiers it shows the ⤢ viz icon to render on demand, so
+            zoom doesn't trigger a ParCa build on every card at once. */}
+        {show.ports && data.isCompositeProcess
           && ((data as any)._rootId || (data.config as any)?.state) && (
           <InnerCompositePreview
             rootId={(data as any)._rootId ?? ''}
@@ -533,7 +535,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
           <div className="process-node-address">{(data as any).address}</div>
         )}
 
-        {show.full && completeness && completeness.total > 0 && (
+        {show.full && show.contract && completeness && completeness.total > 0 && (
           <div className="process-node-completeness">
             {completeness.documented}/{completeness.total} ports documented
             {completeness.unknownPorts.length > 0 && (
