@@ -106,6 +106,38 @@ COPY --from=workspace /root/.local/share/uv/python /root/.local/share/uv/python
 WORKDIR /app/v2ecoli
 ENV PATH="/app/v2ecoli/.venv/bin:${PATH}"
 
+# ─── patch the copied workspace venv: process-bigraph/bigraph-schema version
+#     floor (backlog item 44) ─────────────────────────────────────────────────
+# sms-ecoli's own lock (which built the copied venv above) pins these to
+# whatever IT needs — historically far below what vivarium-workbench itself
+# requires (see backlog items 44/45 and memory
+# workbench-image-process-bigraph-version-floor-risk). The `--no-deps`
+# installs below never enforce vivarium-workbench's own floor
+# (pyproject.toml's `process-bigraph>=1.8.2`, `bigraph-schema>=1.4.3`), so
+# without this step the shipped image silently keeps whatever sms-ecoli
+# locked — which is EXACTLY what caused a real production crash
+# (`ModuleNotFoundError: No module named 'process_bigraph.artifacts'`, item
+# 44): sms-ecoli's process-bigraph 1.5.0 predates that submodule by about a
+# month. bigraph-schema needs the same treatment even though no direct
+# ImportError surfaced yet: process-bigraph 1.8.2's OWN pyproject.toml
+# requires bigraph-schema>=1.4.5 (stricter than vivarium-workbench's own
+# floor), and 1.4.5 fixed a real, dated bug ("a link's config is a value,
+# not a schema") in exactly the resolve/default path Composite construction
+# calls directly — sms-ecoli's locked 1.4.2 predates that fix too.
+#
+# Deliberately NOT a bare `--no-deps .` re-resolve of vivarium-workbench's
+# full tree (that would risk upgrading OTHER shared substrate packages
+# sms-ecoli's own code wasn't tested against — see the memory above for why
+# `--no-deps` exists at all): pin to the EXACT commits vivarium-workbench's
+# OWN uv.lock already resolved, so this only touches the two packages
+# actually needed, no wider blast radius. tests/test_process_bigraph_pin.py
+# asserts both pins stay in sync with uv.lock — update all three together
+# if either ever needs to change.
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps \
+        "process-bigraph @ git+https://github.com/vivarium-collective/process-bigraph.git@0e65c0c2539dc0a9b594e40e7849b85b6b5f19a7" \
+        "bigraph-schema @ git+https://github.com/vivarium-collective/bigraph-schema.git@cf7514659a9272d4b63217f8be6aeeaa96cbc3fc"
+
 # ─── overlay THIS repo's workbench code ───────────────────────────────────────
 # `--no-deps`: PyPI-published dependencies were already resolved by the sync
 # above (avoiding a version-skew risk — see workbench-image-process-bigraph-
@@ -169,11 +201,17 @@ RUN bash scripts/build_loom.sh
 
 # Sanity: the workspace package, the workbench, the viewer plugin, and the loom
 # explorer all import in one interpreter (the plugin's top-level imports exercise
-# the workbench too). loom_assets is added here so a regression fails the BUILD
-# rather than shipping a silent runtime ModuleNotFoundError (see the loom build
-# above), and confirm the built bundle actually landed on disk.
+# the workbench too). `vivarium_workbench.api.app` is imported explicitly and
+# separately — it's the actual module chain that crashed in production (item 44):
+# a bare `import vivarium_workbench` alone doesn't eagerly pull in `api.app`, so
+# this exact class of regression previously shipped silently past this check and
+# only surfaced as a live CrashLoopBackOff. loom_assets is added here so a
+# regression fails the BUILD rather than shipping a silent runtime
+# ModuleNotFoundError (see the loom build above), and confirm the built bundle
+# actually landed on disk.
 RUN python -c "\
 import v2ecoli, vivarium_workbench, pbg_ptools.workbench_viewers; \
+import vivarium_workbench.api.app; \
 from vivarium_workbench.loom_assets import asset_dir; \
 d = asset_dir(); \
 assert (d / 'index.html').is_file(), f'loom bundle missing: {d}'; \
