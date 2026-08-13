@@ -201,13 +201,24 @@ function MiniMap(props: {
   const sizeOf = (n: any) => (n.type === 'process' ? PROC : STORE);
   const centerById = new Map<string, { x: number; y: number }>();
 
+  const lbl = PROC.h * 0.5;
+  // A process box STRETCHES wider than PROC.w to fit its label (see the mini-proc
+  // render below), centred on the node — so measure the bounds with that stretched
+  // width, else a long-named process (e.g. "gene expression") gets clipped by the
+  // fit-to-box viewBox.
+  const procWidth = (n: any) =>
+    n.type === 'process'
+      ? Math.max(PROC.w, String(displayName(n.data?.label ?? '')).length * lbl * 0.6 + 26)
+      : STORE.w;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of nodes) {
     const p = posById.get(n.id);
     if (!p) continue;
     const s = sizeOf(n);
-    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + s.w); maxY = Math.max(maxY, p.y + s.h);
+    const ew = procWidth(n);                 // effective (rendered) width
+    const left = p.x + (s.w - ew) / 2;        // process box is centred on the node
+    minX = Math.min(minX, left); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, left + ew); maxY = Math.max(maxY, p.y + s.h);
     centerById.set(n.id, { x: p.x + s.w / 2, y: p.y + s.h / 2 });
   }
   if (!isFinite(minX)) return null;
@@ -221,7 +232,6 @@ function MiniMap(props: {
   const vb = `${vbX} ${minY - pad} ${w} ${h}`;
   const Cx = vbX + w / 2, Cy = minY - pad + h / 2;
   const sw = Math.max(1, Math.max(w, h) / 700);
-  const lbl = PROC.h * 0.5;
 
   const procCount = nodes.filter((n) => n.type === 'process').length;
   const storeCount = nodes.length - procCount;
