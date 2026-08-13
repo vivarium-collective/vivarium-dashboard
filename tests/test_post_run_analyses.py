@@ -33,6 +33,12 @@ def test_single_entry_places_correct_scale(tmp_path):
     fake_mod = types.ModuleType("v2ecoli.workflow.analysis")
     fake_mod.ANALYSIS_REGISTRY = fake_registry  # type: ignore[attr-defined]
     sys.modules["v2ecoli.workflow.analysis"] = fake_mod
+    # A bare `import a.b.c` (build_analysis_options now does this for the
+    # plural analyses package, item 39 continued) needs every parent level
+    # resolvable, not just the leaf -- stub the whole chain.
+    sys.modules.setdefault("v2ecoli", types.ModuleType("v2ecoli"))
+    sys.modules.setdefault("v2ecoli.workflow", types.ModuleType("v2ecoli.workflow"))
+    sys.modules.setdefault("v2ecoli.workflow.analyses", types.ModuleType("v2ecoli.workflow.analyses"))
 
     from vivarium_workbench.lib.study_run_post import build_analysis_options as _build_analysis_options
 
@@ -54,6 +60,12 @@ def test_multiple_entries_different_scales(monkeypatch, tmp_path):
     fake_mod = types.ModuleType("v2ecoli.workflow.analysis")
     fake_mod.ANALYSIS_REGISTRY = fake_registry  # type: ignore[attr-defined]
     sys.modules["v2ecoli.workflow.analysis"] = fake_mod
+    # A bare `import a.b.c` (build_analysis_options now does this for the
+    # plural analyses package, item 39 continued) needs every parent level
+    # resolvable, not just the leaf -- stub the whole chain.
+    sys.modules.setdefault("v2ecoli", types.ModuleType("v2ecoli"))
+    sys.modules.setdefault("v2ecoli.workflow", types.ModuleType("v2ecoli.workflow"))
+    sys.modules.setdefault("v2ecoli.workflow.analyses", types.ModuleType("v2ecoli.workflow.analyses"))
 
     from vivarium_workbench.lib.study_run_post import build_analysis_options as _build_analysis_options
 
@@ -75,6 +87,12 @@ def test_unknown_analysis_name_records_error(monkeypatch, tmp_path):
     fake_mod = types.ModuleType("v2ecoli.workflow.analysis")
     fake_mod.ANALYSIS_REGISTRY = fake_registry  # type: ignore[attr-defined]
     sys.modules["v2ecoli.workflow.analysis"] = fake_mod
+    # A bare `import a.b.c` (build_analysis_options now does this for the
+    # plural analyses package, item 39 continued) needs every parent level
+    # resolvable, not just the leaf -- stub the whole chain.
+    sys.modules.setdefault("v2ecoli", types.ModuleType("v2ecoli"))
+    sys.modules.setdefault("v2ecoli.workflow", types.ModuleType("v2ecoli.workflow"))
+    sys.modules.setdefault("v2ecoli.workflow.analyses", types.ModuleType("v2ecoli.workflow.analyses"))
 
     from vivarium_workbench.lib.study_run_post import build_analysis_options as _build_analysis_options
 
@@ -94,6 +112,12 @@ def test_empty_entries_returns_empty(monkeypatch, tmp_path):
     fake_mod = types.ModuleType("v2ecoli.workflow.analysis")
     fake_mod.ANALYSIS_REGISTRY = {}  # type: ignore[attr-defined]
     sys.modules["v2ecoli.workflow.analysis"] = fake_mod
+    # A bare `import a.b.c` (build_analysis_options now does this for the
+    # plural analyses package, item 39 continued) needs every parent level
+    # resolvable, not just the leaf -- stub the whole chain.
+    sys.modules.setdefault("v2ecoli", types.ModuleType("v2ecoli"))
+    sys.modules.setdefault("v2ecoli.workflow", types.ModuleType("v2ecoli.workflow"))
+    sys.modules.setdefault("v2ecoli.workflow.analyses", types.ModuleType("v2ecoli.workflow.analyses"))
 
     from vivarium_workbench.lib.study_run_post import build_analysis_options as _build_analysis_options
 

@@ -174,11 +174,26 @@ def build_analysis_options(entries: list[dict], ws_root: Path) -> tuple[dict, li
     registry than what's actually being dispatched, silently truncating any
     analysis name outside it with zero error surfaced anywhere).
 
+    ``ANALYSIS_REGISTRY`` itself starts empty and is populated by
+    ``__init_subclass__`` side effects as each concrete analysis module gets
+    imported — importing ``v2ecoli.workflow.analysis`` alone (the module the
+    registry is *defined* in) does NOT import the sibling
+    ``v2ecoli.workflow.analyses`` package (the *plural* one) where every real
+    analysis, including the whole ``cd1_*``/``ptools_*`` suite, actually
+    lives. ``env_worker.py`` already does this explicit plural import for the
+    LOCAL run path (see its own "import-time registration" comments); without
+    it here too, a cold process resolves every ``cd1_*``/``ptools_*`` name as
+    unknown regardless of which ``v2ecoli`` is on ``sys.path`` (found live on
+    the real smscdk deployment, item 39 continued: a genuinely correct,
+    freshly-built ``v2ecoli`` install still only exposed 6 of 45 real
+    entries).
+
     Returns ``(analysis_options, errors)`` where ``errors`` lists dicts for
     unknown analysis names.
     """
     _ws_add_to_sys_path(ws_root)
     try:
+        import v2ecoli.workflow.analyses  # type: ignore[import]  # noqa: F401  (import-time registration, mirrors env_worker.py)
         from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY  # type: ignore[import]
     except ImportError:
         return {}, [{"error": "v2ecoli not installed; cannot resolve analysis scales"}]
