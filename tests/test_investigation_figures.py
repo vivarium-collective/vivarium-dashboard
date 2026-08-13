@@ -123,12 +123,16 @@ def test_missing_investigation_is_empty(tmp_path):
 
 
 def test_summary_carries_n_figures(tmp_path):
-    # The investigation card gates its ↓ figures action on this count.
+    # The investigation card gates its ↓ figures action on this count, which now
+    # reflects EVERY downloadable figure file (panels + composites across member
+    # studies), not just stitched composites — so a panel-only investigation still
+    # gets the action. This ws has 3 figure files (fig-07: panel-a + figure_7;
+    # fig-99: only).
     from vivarium_workbench.lib import investigation_status as ist
     ws = _make_ws(tmp_path)
     out = ist.build_iset_summary(ws, study_has_runs=lambda s, spec: False)
     row = [r for r in out if r["name"] == "inv"][0]
-    assert row["n_figures"] == 1
+    assert row["n_figures"] == 3
 
 
 def test_publish_staging_paths(tmp_path):
