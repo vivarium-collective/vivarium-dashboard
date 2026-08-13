@@ -127,14 +127,16 @@ environments = ["python_full_version == '3.12.12'"]
 # the URL OUT of the published metadata so it never conflicts with the bare
 # requirement from pbg-superpowers.
 [tool.uv.sources]
-# viva-superpowers: sourced from git `main` (NOT PyPI 0.22.0) because only main
-# has migrated off pbg-emitters onto viva-emitters>=0.2.3 — the whole point of
-# this change. `branch = "main"` (not a rev pin) is deliberate here: v2ecoli's
-# demo-extra metadata references viva-superpowers via `git ...branch=main`, so
-# matching that exact source lets uv unify the two into one node (a rev pin would
-# read as a different URL → "conflicting URLs"). Drop this source and pin a PyPI
-# floor once viva-superpowers ships a release that requires viva-emitters.
-viva-superpowers = { git = "https://github.com/vivarium-collective/viva-superpowers.git", branch = "main" }
+# viva-superpowers: sourced from git (NOT PyPI 0.22.0) because only main has
+# migrated off pbg-emitters onto viva-emitters>=0.2.3 — the whole point of this
+# change. Pinned to a REV, not `branch = "main"`, matching the deliberate choice
+# for investigation-contracts below: a floating branch ref lets `uv lock`
+# silently re-resolve to whatever main points at, so a breaking upstream change
+# lands here with no commit in this repo (the exact failure mode that hid a
+# pbg-superpowers break for ~3 weeks — issue #483). Bump this rev deliberately
+# when adopting upstream changes; drop the source and pin a PyPI floor once
+# viva-superpowers ships a release that requires viva-emitters.
+viva-superpowers = { git = "https://github.com/vivarium-collective/viva-superpowers.git", rev = "1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca" }
 pbg-basic-processes = { git = "https://github.com/vivarium-collective/pbg-basic-processes.git", branch = "main" }
 viva-marketplace = { git = "https://github.com/vivarium-collective/viva-marketplace.git", branch = "main" }
 viva-workspace = { git = "https://github.com/vivarium-collective/viva-workspace.git", branch = "main" }

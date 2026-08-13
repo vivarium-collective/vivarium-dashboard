@@ -7391,7 +7391,7 @@ dependencies = [
 [[package]]
 name = "viva-superpowers"
 version = "0.22.0"
-source = { git = "https://github.com/vivarium-collective/viva-superpowers.git?branch=main#1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca" }
+source = { git = "https://github.com/vivarium-collective/viva-superpowers.git?rev=1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca#1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca" }
 dependencies = [
     { name = "bigraph-schema" },
     { name = "click" },
@@ -7513,7 +7513,7 @@ requires-dist = [
     { name = "v2ecoli", marker = "extra == 'demo'", editable = "../v2ecoli" },
     { name = "viva-emitters", extras = ["sqlite", "xarray"], specifier = ">=0.2.3" },
     { name = "viva-marketplace", git = "https://github.com/vivarium-collective/viva-marketplace.git?branch=main" },
-    { name = "viva-superpowers", git = "https://github.com/vivarium-collective/viva-superpowers.git?branch=main" },
+    { name = "viva-superpowers", git = "https://github.com/vivarium-collective/viva-superpowers.git?rev=1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca" },
     { name = "viva-workspace", git = "https://github.com/vivarium-collective/viva-workspace.git?branch=main" },
     { name = "xarray", specifier = ">=2026.4" },
     { name = "xarray", marker = "extra == 'test'" },

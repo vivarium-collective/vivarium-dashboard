@@ -128,7 +128,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # install above only swaps in this repo's own code; it can't pull these in.
 # Found 2026-08-12: `viva-workspace` was the first of these to actually get
 # exercised by a real build (every earlier build attempt failed even earlier,
-# for unrelated reasons) — installing all 4 non-PyPI core deps here together,
+# for unrelated reasons) — installing all non-PyPI core deps here together,
 # not just the one that happened to surface first, per pyproject.toml's own
 # [tool.uv.sources] (the single source of truth for these refs — keep this
 # list in sync with that section, not the other way around).
@@ -138,6 +138,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 # (issue #483); do not change this to `@main`.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps \
+        "viva-superpowers @ git+https://github.com/vivarium-collective/viva-superpowers.git@1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca" \
         "pbg-basic-processes @ git+https://github.com/vivarium-collective/pbg-basic-processes.git@main" \
         "viva-marketplace @ git+https://github.com/vivarium-collective/viva-marketplace.git@main" \
         "viva-workspace @ git+https://github.com/vivarium-collective/viva-workspace.git@main" \

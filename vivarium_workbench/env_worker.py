@@ -1956,6 +1956,26 @@ def _build_viz_core():
         from process_bigraph.visualization import Visualization
         discover_generators()  # force-load packages so @Visualization classes appear
 
+        # Force-import the workspace's own <pkg>.visualizations submodules so
+        # their Visualization subclasses become discoverable via __subclasses__
+        # below — mirroring _list_visualizations. Without this, workspace-local
+        # viz classes are absent from viz_class_inputs (build_viz_composite then
+        # can't assemble their docs). This gap was masked while
+        # viva_superpowers._demo_visualizations shipped framework Demo* classes
+        # that populated __subclasses__; the pbg->viva rebrand removed them
+        # (viva-superpowers 0.22), exposing it.
+        try:
+            import importlib as _importlib
+            import pkgutil as _pkgutil
+            _viz_pkg = _importlib.import_module(f"{package_name}.visualizations")
+            for _, _modname, _ in _pkgutil.iter_modules(_viz_pkg.__path__):
+                try:
+                    _importlib.import_module(f"{package_name}.visualizations.{_modname}")
+                except Exception:  # noqa: BLE001 — best-effort, per module
+                    pass
+        except Exception:  # noqa: BLE001 — no .visualizations package is fine
+            pass
+
         def _walk(cls):
             for sub in cls.__subclasses__():
                 yield sub

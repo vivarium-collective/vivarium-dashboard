@@ -876,10 +876,16 @@ def cmd_scaffold_investigation(args: argparse.Namespace) -> int:
         print("error: --studies requires at least one composite generator id", file=sys.stderr)
         return 2
     try:
-        result = scaffold.scaffold_investigation_from_wrapper(
-            ws, args.name, generators,
-            investigation_slug=args.investigation_slug, force=args.force,
-        )
+        # viva-superpowers' scaffold_investigation_from_wrapper prints `wrote: <path>`
+        # progress lines to stdout. This verb's stdout is a machine-readable JSON
+        # contract (the /viva-expert skill parses it), so route the scaffold's own
+        # chatter to stderr — keep it visible to humans, off the JSON channel.
+        import contextlib
+        with contextlib.redirect_stdout(sys.stderr):
+            result = scaffold.scaffold_investigation_from_wrapper(
+                ws, args.name, generators,
+                investigation_slug=args.investigation_slug, force=args.force,
+            )
     except Exception as e:  # noqa: BLE001
         print(f"error: investigation scaffold failed: {e}", file=sys.stderr)
         return 1
