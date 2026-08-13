@@ -760,6 +760,11 @@ body {
 .node-figure-img { max-width: 100%; max-height: 130px; height: auto; display: block; }
 .node-figure-svg { display: flex; justify-content: center; max-width: 100%; }
 .node-figure-svg svg { max-width: 100%; max-height: 130px; height: auto; display: block; }
+/* Contract showing → the figure is a small badge pinned to the card's top-left
+   corner (out of flow), so the prose + equations reclaim the vertical space. */
+.node-figure.is-corner { position: absolute; top: 8px; left: 10px; margin: 0; z-index: 1; pointer-events: none; }
+.node-figure.is-corner .node-figure-img,
+.node-figure.is-corner .node-figure-svg svg { max-width: 40px; max-height: 40px; }
 .inner-preview-hint { font-size: 10px; color: #64748b; font-style: italic; }
 .inner-preview-idle {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;

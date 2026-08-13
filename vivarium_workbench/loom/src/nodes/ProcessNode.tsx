@@ -461,9 +461,12 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         )}
 
         {/* Optional illustrative figure (Detail → Figures). Inline SVG string is
-            injected verbatim; anything else (data-URI / url) renders as <img>. */}
+            injected verbatim; anything else (data-URI / url) renders as <img>.
+            When the contract is showing the card is already tall with prose +
+            equations, so tuck the figure into the top-left corner (absolute, out
+            of flow) instead of a centered row that costs vertical space. */}
         {showFigure && (
-          <div className="node-figure">
+          <div className={`node-figure${show.contract ? ' is-corner' : ''}`}>
             {data.figure!.trimStart().startsWith('<svg')
               ? <span className="node-figure-svg" dangerouslySetInnerHTML={{ __html: data.figure! }} />
               : <img className="node-figure-img" src={data.figure} alt="" draggable={false} />}
