@@ -17,7 +17,9 @@ from pathlib import Path
 
 import yaml
 
-from vivarium_workbench.lib.composite_study_stats import _bucket, _iter_study_yamls
+from vivarium_workbench.lib.composite_study_stats import (
+    _iter_study_yamls, tally_outcomes,
+)
 
 _SKIP = ("/.venv/", "/node_modules/", "/.git/", "/out/", "/build-cache/",
          "/__pycache__/", "/.pbg/")
@@ -120,14 +122,7 @@ def process_study_stats(ws_root, procs) -> "dict[str, dict]":
             continue
         # Tally this study's report-card outcomes once, then credit each
         # participating process with them.
-        b = {"pass": 0, "inconclusive": 0, "fail": 0}
-        for r in runs:
-            oc = r.get("outcomes") if isinstance(r, dict) else None
-            if not isinstance(oc, dict):
-                continue
-            for v in oc.values():
-                res = v.get("result") if isinstance(v, dict) else v
-                b[_bucket(res)] += 1
+        b = tally_outcomes(runs)
         for addr in participants:
             e = acc.setdefault(addr, {"_studies": set(), "_slugs": set(), "pass": 0, "inconclusive": 0, "fail": 0})
             e["_studies"].add(str(f.parent))

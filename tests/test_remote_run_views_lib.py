@@ -291,7 +291,7 @@ def test_submit_threads_analysis_options_from_spec(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "vivarium_workbench.lib.study_run_post.build_analysis_options",
-        lambda entries: ({"multiseed": {"ecocyc_table": {}}}, []),
+        lambda entries, ws_root: ({"multiseed": {"ecocyc_table": {}}}, []),
     )
     client = _FakeThinClient()
     monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
@@ -337,7 +337,7 @@ def test_land_triggers_analysis_and_polls_real_status_when_spec_has_analyses(mon
     )
     monkeypatch.setattr(
         "vivarium_workbench.lib.study_run_post.build_analysis_options",
-        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+        lambda entries, ws_root: ({"multiseed": {"doubling_time_distribution": {}}}, []),
     )
     client = _FakeThinClient()
     monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
@@ -369,7 +369,7 @@ def test_land_polls_until_terminal_then_stops(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "vivarium_workbench.lib.study_run_post.build_analysis_options",
-        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+        lambda entries, ws_root: ({"multiseed": {"doubling_time_distribution": {}}}, []),
     )
 
     class _SlowAnalysisClient(_FakeThinClient):
@@ -404,7 +404,7 @@ def test_land_gives_up_after_poll_ceiling(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(
         "vivarium_workbench.lib.study_run_post.build_analysis_options",
-        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+        lambda entries, ws_root: ({"multiseed": {"doubling_time_distribution": {}}}, []),
     )
 
     class _StuckAnalysisClient(_FakeThinClient):
@@ -447,7 +447,7 @@ def test_land_analysis_trigger_failure_does_not_block_landing(monkeypatch, tmp_p
     )
     monkeypatch.setattr(
         "vivarium_workbench.lib.study_run_post.build_analysis_options",
-        lambda entries: ({"multiseed": {"doubling_time_distribution": {}}}, []),
+        lambda entries, ws_root: ({"multiseed": {"doubling_time_distribution": {}}}, []),
     )
 
     class _FailingAnalysisClient(_FakeThinClient):
@@ -522,7 +522,7 @@ def test_run_analysis_uses_the_studys_own_analyses_when_given_one(monkeypatch, t
     )
     monkeypatch.setattr(
         "vivarium_workbench.lib.study_run_post.build_analysis_options",
-        lambda entries: ({"multiseed": {"cd1_fluxomics": {}}}, []),
+        lambda entries, ws_root: ({"multiseed": {"cd1_fluxomics": {}}}, []),
     )
     _body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199, "study": "s"})
     assert status == 202

@@ -28,6 +28,7 @@ import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib import study_derivations as _D
+from vivarium_workbench.lib.conclusion_card import _TRACK_COLORS
 
 
 # ---------------------------------------------------------------------------
@@ -450,16 +451,6 @@ def _render_viz_embeds(viz_entries: list[dict]) -> str:
         + fit_script
         + '</section>'
     )
-
-
-# ---------------------------------------------------------------------------
-_TRACK_COLORS = {
-    "PASS": ("#dcfce7", "#166534"),
-    "PARTIAL": ("#fef3c7", "#92400e"),
-    "FAIL": ("#fee2e2", "#991b1b"),
-    "GAP": ("#f1f5f9", "#475569"),
-    "PENDING": ("#f1f5f9", "#475569"),
-}
 
 
 def _render_conclusion_verdicts(spec: dict) -> str:
