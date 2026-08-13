@@ -25,29 +25,55 @@ dependencies = [
     # `migrate-artifacts` also needs 1.7.0's `legacy_artifact_id`.
     "process-bigraph>=1.8.2",
     # SQLiteEmitter (and ParquetEmitter) were extracted from process-bigraph at
-    # 1.4.17 into the focused pbg-emitters library; pb's `process_bigraph.emitter`
-    # only re-exports SQLiteEmitter when pbg-emitters is installed. The dashboard
-    # imports SQLiteEmitter (lazily, in several run paths), so depend on it
-    # directly. The `[sqlite]` extra is stdlib-only (no extra deps).
+    # 1.4.17 into the focused emitters library; pb's `process_bigraph.emitter`
+    # only re-exports SQLiteEmitter when the emitters lib is installed. The
+    # dashboard imports SQLiteEmitter (lazily, in several run paths), so depend on
+    # it directly. The `[sqlite]` extra is stdlib-only (no extra deps).
     #
     # Task 6 flipped the default emitter to xarray (see lib/emitters.py
     # DEFAULT_EMITTER), so its runtime deps are now MANDATORY, not test-only:
-    # pull the pbg-emitters `[xarray]` extra and pin xarray + zarr at the same
-    # specifiers the `[test]` extra below uses (kept consistent).
-    "pbg-emitters[sqlite,xarray]>=0.2.0",
+    # pull the `[xarray]` extra and pin xarray + zarr at the same specifiers the
+    # `[test]` extra below uses (kept consistent).
+    #
+    # REBRAND: this was `pbg-emitters[sqlite,xarray]>=0.2.0`. The pbg-emitters
+    # repo's `main` was renamed to the `viva-emitters` distribution — a git build
+    # of the old URL now produces a package named `viva-emitters`, failing uv's
+    # name check for a `pbg-emitters` requirement. viva-emitters 0.2.3 (PyPI)
+    # ships the real `viva_emitters` package AND a `pbg_emitters` back-compat shim
+    # whose meta-path finder redirects submodule imports like
+    # `pbg_emitters.xarray_emitter` / `pbg_emitters.sqlite_emitter` to their
+    # `viva_emitters.*` homes — so process-discovery's emitter import keeps working
+    # and the dashboard's own `from pbg_emitters.sqlite_emitter import SQLiteEmitter`
+    # path resolves. (The standalone `pbg-emitters` PyPI dist still exists at 0.2.1
+    # and ships a colliding real `pbg_emitters` package; pinning viva-emitters here
+    # keeps THIS project off it. See PR body for the still-transitive superpowers
+    # pull and the one narrow `process_bigraph.emitter` re-export gap in the shim.)
+    "viva-emitters[sqlite,xarray]>=0.2.3",
     "xarray>=2026.04",
     # Uncapped (>= not ~=): ~=3.1.6 excluded 3.2.x — a downgrade for py3.12+ vs
     # the prior version-split. The [test] extra below uses a bare `zarr`, so
     # >=3.1.6 keeps the runtime + test specifiers aligned (a floor, not a cap).
     "zarr>=3.1.6",
     "bigraph-schema>=1.4.3",
-    "pbg-superpowers>=0.14.0",
-    # pbg-superpowers 0.14+ requires pbg-basic-processes, which is not yet on
+    # REBRAND: was `pbg-superpowers>=0.14.0`. The pbg-superpowers repo was renamed
+    # to `viva-superpowers` (the git URL redirects; `main` now builds the
+    # `viva-superpowers` distribution), and this package's own code imports
+    # `viva_superpowers.*` (30+ call sites), so the declared dist must be
+    # viva-superpowers. Crucially, viva-superpowers `main` migrated its emitter
+    # dependency from `pbg-emitters` to `viva-emitters>=0.2.3` — so sourcing it
+    # from `main` (below) is what keeps the stale standalone `pbg-emitters` out of
+    # this package's own (non-demo) resolution. The PyPI release (0.22.0) still
+    # predates that migration and would drag pbg-emitters back in, so it is NOT
+    # used; declare BARE here + git `main` via [tool.uv.sources] (same
+    # keep-URL-out-of-published-metadata pattern as the deps below). Bump to a
+    # PyPI floor once viva-superpowers publishes a viva-emitters release.
+    "viva-superpowers>=0.22.0",
+    # viva-superpowers requires pbg-basic-processes, which is not yet on
     # PyPI. Declare it BARE here and supply the git URL via [tool.uv.sources]
     # below — NOT as an inline `pkg @ git+...` direct reference. A baked-in
     # branch URL becomes part of this package's published metadata, and uv
     # refuses to unify it with the bare `pbg-basic-processes` requirement coming
-    # from pbg-superpowers → "conflicting URLs" failures in any project that
+    # from viva-superpowers → "conflicting URLs" failures in any project that
     # depends on vivarium-dashboard transitively.
     "pbg-basic-processes",
     "investigation-contracts",
@@ -101,6 +127,16 @@ environments = ["python_full_version == '3.12.12'"]
 # the URL OUT of the published metadata so it never conflicts with the bare
 # requirement from pbg-superpowers.
 [tool.uv.sources]
+# viva-superpowers: sourced from git (NOT PyPI 0.22.0) because only main has
+# migrated off pbg-emitters onto viva-emitters>=0.2.3 — the whole point of this
+# change. Pinned to a REV, not `branch = "main"`, matching the deliberate choice
+# for investigation-contracts below: a floating branch ref lets `uv lock`
+# silently re-resolve to whatever main points at, so a breaking upstream change
+# lands here with no commit in this repo (the exact failure mode that hid a
+# pbg-superpowers break for ~3 weeks — issue #483). Bump this rev deliberately
+# when adopting upstream changes; drop the source and pin a PyPI floor once
+# viva-superpowers ships a release that requires viva-emitters.
+viva-superpowers = { git = "https://github.com/vivarium-collective/viva-superpowers.git", rev = "1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca" }
 pbg-basic-processes = { git = "https://github.com/vivarium-collective/pbg-basic-processes.git", branch = "main" }
 viva-marketplace = { git = "https://github.com/vivarium-collective/viva-marketplace.git", branch = "main" }
 viva-workspace = { git = "https://github.com/vivarium-collective/viva-workspace.git", branch = "main" }
