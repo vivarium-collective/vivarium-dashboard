@@ -11040,22 +11040,12 @@
   }
 
   function _dagTriggerControlsHtml(slug) {
-    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return '';
-    if ((window._uiConfig || {}).readonly) return '';
-    var st = _dagTriggerBySlug[slug];
-    var hasUpstream = !!(st && st.ancestors && st.ancestors.length);
-    var btn = 'font-size:0.66em;padding:2px 8px;border-radius:6px;cursor:pointer;' +
-      'border:1px solid #cbd5e1;background:#fff;color:#334155';
-    var out = '<div class="js-authoring dag-trigger-controls" ' +
-      'style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
-      '<button type="button" class="dag-trigger-run" data-slug="' + _esc(slug) + '" ' +
-      'style="' + btn + '">▷ Run this study</button>';
-    if (hasUpstream) {
-      out += '<button type="button" class="dag-trigger-continue" data-slug="' + _esc(slug) + '" ' +
-        'title="Reuse cached upstream results; recompute only this study" ' +
-        'style="' + btn + '">⏵ Continue from here</button>';
-    }
-    return out + '</div>';
+    // Launch actions (Run this study / Continue from here) intentionally do NOT
+    // appear on the graph study cards — running lives on the full study tab
+    // (▶ Run current spec / ↻ Reproduce), matching the download group below and
+    // the investigation card study rows. The cards stay a browse + download
+    // surface. (Kept as a no-op so existing call sites need no change.)
+    return '';
   }
 
   // Download affordances for a graph study card: ↓ figures (this study's own
