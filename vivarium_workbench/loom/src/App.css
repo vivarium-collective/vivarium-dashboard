@@ -2028,3 +2028,39 @@ textarea.sr-input {
   border: 1px solid #e2e8f0; border-radius: 4px;
   pointer-events: none; user-select: none;
 }
+
+/* ── Font scale ─────────────────────────────────────────────────────────────
+   One knob, --loom-fs (set on .loom-canvas from the toolbar Font control and
+   persisted in the saved view / forced via ?font=), multiplies every node text
+   size. Redefined here AFTER the base rules as calc(original * --loom-fs) so the
+   originals stay the default (1) and a saved view / headless render keeps the
+   chosen size. */
+.loom-canvas { --loom-fs: 1; }
+/* process titles (base + per-tier) */
+.process-node-title { font-size: calc(25px * var(--loom-fs, 1)); }
+.process-node-glyph  .process-node-title { font-size: calc(38px * var(--loom-fs, 1)); }
+.process-node-ports  .process-node-title { font-size: calc(31px * var(--loom-fs, 1)); }
+.process-node-types  .process-node-title { font-size: calc(28px * var(--loom-fs, 1)); }
+.process-node-config .process-node-title { font-size: calc(25px * var(--loom-fs, 1)); }
+.process-node-noports .process-node-title { font-size: calc(28px * var(--loom-fs, 1)) !important; }
+/* process meta / port labels / prose / equations */
+.process-node-meta { font-size: calc(17px * var(--loom-fs, 1)); }
+.process-node-config .process-node-meta { font-size: calc(26px * var(--loom-fs, 1)); }
+.port-in-name { font-size: calc(19px * var(--loom-fs, 1)); }
+.port-in-type { font-size: calc(15px * var(--loom-fs, 1)); }
+.process-node-config .port-in-name { font-size: calc(24px * var(--loom-fs, 1)); }
+.process-node-config .port-in-type { font-size: calc(17px * var(--loom-fs, 1)); }
+.contract-recital { font-size: calc(18px * var(--loom-fs, 1)); }
+.process-node-description { font-size: calc(15px * var(--loom-fs, 1)); }
+.process-node-symbols { font-size: calc(15px * var(--loom-fs, 1)); }
+.process-node-math .katex { font-size: calc(1.7em * var(--loom-fs, 1)); }
+/* store labels / values / types (base + per-tier) */
+.store-label { font-size: calc(15px * var(--loom-fs, 1)); }
+.store-node-value { font-size: calc(10px * var(--loom-fs, 1)); }
+.store-node-type  { font-size: calc(12px * var(--loom-fs, 1)); }
+.store-node-ports .store-label { font-size: calc(30px * var(--loom-fs, 1)); }
+.store-node-full  .store-label { font-size: calc(27px * var(--loom-fs, 1)); }
+.store-node-ports .store-node-type  { font-size: calc(21px * var(--loom-fs, 1)); }
+.store-node-ports .store-node-value { font-size: calc(19px * var(--loom-fs, 1)); }
+.store-node-full  .store-node-type  { font-size: calc(24px * var(--loom-fs, 1)); }
+.store-node-full  .store-node-value { font-size: calc(22px * var(--loom-fs, 1)); }

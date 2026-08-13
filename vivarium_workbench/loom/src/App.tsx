@@ -336,6 +336,12 @@ export default function App() {
   // Per-feature Detail overrides (the Detail menu) — each 'auto' follows the
   // zoom tier; anything forced layers on top of the node's tier-derived `show`.
   const [detailOverrides, setDetailOverrides] = useState<DetailOverrides>(DETAIL_AUTO);
+  // Node text scale (Font control). Multiplies every node font size via the
+  // --loom-fs CSS var on the canvas; saved in the view so a headless render of a
+  // default view keeps the chosen size. Clamped to a sane range.
+  const [fontScale, setFontScale] = useState<number>(1);
+  const bumpFont = useCallback((delta: number) =>
+    setFontScale((f) => Math.min(2, Math.max(0.6, Math.round((f + delta) * 20) / 20))), []);
   // Zoom-fight fix: applying a new tier resizes every card, and doing that on
   // EVERY wheel step mid-gesture makes React Flow re-measure growing nodes while
   // the user is still zooming — which reads as the canvas shoving back / zooming
@@ -927,7 +933,9 @@ export default function App() {
     hyperedges: hyperedgeMode,
     // Record the per-feature Detail overrides (Detail menu).
     detailOverrides,
-  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant, hyperedgeMode, detailOverrides]);
+    // Record the node text scale (Font control).
+    fontScale,
+  }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant, hyperedgeMode, detailOverrides, fontScale]);
 
   // Applying a view pins its positions (via the layout store, which the layout
   // effect reads) and sets collapsed/hidden — the existing effects re-lay-out
@@ -982,6 +990,8 @@ export default function App() {
       contract: (view.detailOverrides?.contract ?? 'auto') as ContractDetail,
       figures: ((view.detailOverrides as { figures?: string } | undefined)?.figures ?? 'auto') as TriDetail,
     });
+    // Restore the node text scale (absent = 1).
+    setFontScale((view as { fontScale?: number }).fontScale ?? 1);
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
   }, [compositeId, state, layoutMode.modeId, layoutMode.setModeId]);
 
@@ -1022,6 +1032,10 @@ export default function App() {
       if (params.get('collapse') === '1') setCollapseRedundant(true);
       const dParam = params.get('detail');
       if (dParam) setDetailFloor(dParam as ZoomTierId);
+      // Node text scale from the URL (?font=1.3) — a headless render can force a
+      // font size over the saved view, same as the Detail overrides above.
+      const pFont = parseFloat(params.get('font') || '');
+      if (pFont > 0) setFontScale(Math.min(2, Math.max(0.6, pFont)));
       // Per-feature Detail overrides from the URL (?ports= / ?config= / ?contract=)
       // so a headless render can force a specific detail mix over the saved view.
       const pPorts = params.get('ports');
@@ -1734,7 +1748,7 @@ export default function App() {
               <div
                 ref={canvasWrapRef}
                 className={`loom-canvas loom-mode-${layoutMode.modeId}`}
-                style={{ flex: 1, position: 'relative', minWidth: 0 }}
+                style={{ flex: 1, position: 'relative', minWidth: 0, ['--loom-fs' as string]: fontScale } as React.CSSProperties}
               >
                 {/* Modes that cull edges start with NO wires drawn, which without
                     a word of explanation reads as a broken canvas rather than a
@@ -1774,6 +1788,25 @@ export default function App() {
                   {/* Detail: per-feature toggles (ports / config / contract),
                       each Auto = follow the zoom-driven semantic tier. */}
                   <DetailMenu overrides={detailOverrides} setOverrides={setDetailOverrides} />
+                  {/* Font: scale all node text (saved in the view). A−/A+ stepper
+                      around the current multiplier; click the label to reset. */}
+                  <div
+                    title="Node text size — scales every card's text; saved with the view"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', height: 28,
+                      border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden',
+                      background: fontScale !== 1 ? '#eff6ff' : '#fff',
+                    }}
+                  >
+                    <button onClick={() => bumpFont(-0.1)} title="Smaller text"
+                      style={{ height: 28, width: 26, border: 0, borderRight: '1px solid #e5e7eb', background: 'transparent', cursor: 'pointer', color: '#374151', fontSize: 12, fontWeight: 700 }}>A−</button>
+                    <button onClick={() => setFontScale(1)} title="Reset text size"
+                      style={{ height: 28, minWidth: 40, border: 0, background: 'transparent', cursor: 'pointer', fontSize: 11, color: fontScale !== 1 ? '#2563eb' : '#6b7280', fontWeight: fontScale !== 1 ? 700 : 400 }}>
+                      {fontScale.toFixed(2)}×
+                    </button>
+                    <button onClick={() => bumpFont(0.1)} title="Larger text"
+                      style={{ height: 28, width: 26, border: 0, borderLeft: '1px solid #e5e7eb', background: 'transparent', cursor: 'pointer', color: '#374151', fontSize: 15, fontWeight: 700 }}>A+</button>
+                  </div>
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}
