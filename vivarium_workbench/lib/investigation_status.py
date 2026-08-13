@@ -248,11 +248,17 @@ def build_iset_summary(
         ]
         statuses = [s for s, _ in statuses_and_runs]
         has_runs = [r for _, r in statuses_and_runs]
-        # Number of post-study composite figures — gates the card's ↓ figures
-        # action (guarded; a resolver hiccup must never break the summaries).
+        # Number of downloadable figures — gates the card's ↓ figures action.
+        # Count ALL figure files (study panels + post-study composites), i.e.
+        # exactly what the figures.zip contains — not just the stitched
+        # composites. An investigation with panel figures but no stitched
+        # "final figures" (e.g. the test suite) still has a working figures.zip,
+        # so it must show the link. Guarded; a resolver hiccup never breaks the
+        # summaries.
         try:
             from vivarium_workbench.lib.investigation_figures import build_investigation_figures
-            n_figures = build_investigation_figures(ws_root, spec.get("name", d.name))["n_composites"]
+            _figs = build_investigation_figures(ws_root, spec.get("name", d.name))
+            n_figures = len(_figs.get("files") or []) or _figs.get("n_composites", 0)
         except Exception:
             n_figures = 0
         out.append({
