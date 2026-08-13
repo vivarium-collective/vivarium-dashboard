@@ -48,9 +48,12 @@ def test_v4_list_tests_still_read():
 # --- Honesty fix: unresolvable measure paths get a visible stub, not a ---
 # --- silent drop (see study_charts.py ~:630/643) --------------------------
 
-def test_unresolvable_measure_path_yields_unresolved_stub(tmp_path):
+def test_unresolvable_measure_path_yields_refusal(tmp_path):
     """A declared test whose path never resolves (in either source) must
-    still produce a card — a reviewer should see it flagged, not miss it."""
+    still produce a card — a reviewer should see it flagged, not miss it.
+    Since the P1 typed run→finding work, that card is a reason-bearing
+    ``Refusal`` (``status == "refused"``) naming the missing path, not a
+    silent drop."""
     runs_db = tmp_path / "runs.db"
     runs_db.touch()  # a real (if schema-less) db file → reaches the per-test loop
     spec = {
@@ -63,9 +66,10 @@ def test_unresolvable_measure_path_yields_unresolved_stub(tmp_path):
     charts = render_v4_test_charts(spec, runs_db, fallback_db=None)
     assert len(charts) == 1
     stub = charts[0]
-    assert stub["status"] == "unresolved"
+    assert stub["status"] == "refused"
     assert stub["key"] == "v4-ghost-test"
-    assert "no.such.observable" in stub["caption"]
+    assert stub["missing"] == ["no.such.observable"]
+    assert "no.such.observable" in stub["reason"]
     assert "svg" not in stub
 
 
