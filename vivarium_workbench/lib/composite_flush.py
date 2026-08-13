@@ -203,5 +203,30 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
         has_verdict = True
     except Exception:
         traceback.print_exc()
+
+    # Auto-refresh declared visualizations (self-driving fix): previously a
+    # study's `visualizations:` only got re-rendered via a manual "Refresh"
+    # button in the UI, so every study with declared viz went stale after
+    # each run unless someone remembered to click it. `db_file` is always
+    # `<study_dir>/runs.db` for a study-owned run (see study_runs.py), so its
+    # parent locates the study; a bare composite-test-run's db_file won't
+    # have a sibling study.yaml and is skipped. Best-effort, matching the
+    # has_* contract above — a refresh failure never fails the run.
+    has_viz_refresh = False
+    try:
+        study_dir = Path(db_file).parent
+        spec_path = study_dir / "study.yaml"
+        if spec_path.is_file():
+            import yaml
+            spec_data = yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
+            if isinstance(spec_data, dict) and spec_data.get("visualizations"):
+                from vivarium_workbench.lib.refresh_viz import refresh_study_viz
+                from vivarium_workbench.lib.study_charts import latest_run_row
+                latest = latest_run_row(study_dir / "runs.db")
+                refresh_study_viz(study_dir, spec_data, latest)
+                has_viz_refresh = True
+    except Exception:
+        traceback.print_exc()
+
     return {"has_analyses": has_analyses, "has_report": has_report,
-            "has_verdict": has_verdict}
+            "has_verdict": has_verdict, "has_viz_refresh": has_viz_refresh}

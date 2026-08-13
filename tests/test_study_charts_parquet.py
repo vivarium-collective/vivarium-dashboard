@@ -86,6 +86,7 @@ def test_latest_parquet_for_study_picks_most_recent(tmp_path: Path):
 
 
 def test_extract_paths_from_parquet_scalar_column(tmp_path: Path):
+    pytest.importorskip("duckdb")
     study_dir = tmp_path / "studies" / "demo"
     study_dir.mkdir(parents=True)
     hive = _write_hive(study_dir)
@@ -98,6 +99,7 @@ def test_extract_paths_from_parquet_scalar_column(tmp_path: Path):
 
 
 def test_extract_paths_from_parquet_array_column_index(tmp_path: Path):
+    pytest.importorskip("duckdb")
     study_dir = tmp_path / "studies" / "demo"
     study_dir.mkdir(parents=True)
     hive = _write_hive(study_dir)
@@ -107,6 +109,74 @@ def test_extract_paths_from_parquet_array_column_index(tmp_path: Path):
     xs, ys = out[("listeners.monomer_counts", 1)]
     assert xs == [0.0, 1.0, 2.0, 3.0, 4.0]
     assert ys == pytest.approx([20.0, 21.0, 22.0, 23.0, 24.0])
+
+
+def test_extract_paths_from_parquet_multiple_paths_in_one_call(tmp_path: Path):
+    """The rewritten extractor projects every requested path as a column in
+    ONE wide SELECT — verify multi-path extraction still resolves each
+    trace correctly (and on a shared, aligned time axis)."""
+    pytest.importorskip("duckdb")
+    study_dir = tmp_path / "studies" / "demo"
+    study_dir.mkdir(parents=True)
+    hive = _write_hive(study_dir)
+    specs = [
+        ("listeners.mass.cell_mass", None),
+        ("listeners.monomer_counts", 0),
+        ("listeners.monomer_counts", 2),
+    ]
+    out = _extract_paths_from_parquet(hive, specs)
+    xs0, ys0 = out[("listeners.mass.cell_mass", None)]
+    xs1, ys1 = out[("listeners.monomer_counts", 0)]
+    xs2, ys2 = out[("listeners.monomer_counts", 2)]
+    assert ys0 == pytest.approx([1.0, 1.1, 1.2, 1.3, 1.4])
+    assert ys1 == pytest.approx([10.0, 11.0, 12.0, 13.0, 14.0])
+    assert ys2 == pytest.approx([30.0, 31.0, 32.0, 33.0, 34.0])
+    assert xs0 == xs1 == xs2 == [0.0, 1.0, 2.0, 3.0, 4.0]
+
+
+def test_extract_paths_from_parquet_query_count_is_constant_in_path_count(
+    tmp_path: Path, monkeypatch
+):
+    """Perf regression guard: DuckDB round-trips must stay ~constant as the
+    number of requested paths grows, not scale ~2x per path (the bug this
+    rewrite fixes)."""
+    duckdb = pytest.importorskip("duckdb")
+    study_dir = tmp_path / "studies" / "demo"
+    study_dir.mkdir(parents=True)
+    hive = _write_hive(study_dir)
+
+    from vivarium_workbench.lib import study_charts as sc
+
+    def _count_queries(specs) -> int:
+        real_connect = duckdb.connect
+        counter = {"n": 0}
+
+        def _connect(*a, **k):
+            conn = real_connect(*a, **k)
+            real_execute = conn.execute
+
+            def _execute(*a2, **k2):
+                counter["n"] += 1
+                return real_execute(*a2, **k2)
+
+            conn.execute = _execute
+            return conn
+
+        monkeypatch.setattr(duckdb, "connect", _connect)
+        sc._extract_paths_from_parquet(hive, specs)
+        return counter["n"]
+
+    n_one = _count_queries([("listeners.mass.cell_mass", None)])
+    n_three = _count_queries([
+        ("listeners.mass.cell_mass", None),
+        ("listeners.monomer_counts", 0),
+        ("listeners.monomer_counts", 1),
+    ])
+    assert n_one == n_three, (
+        f"query count must not scale with path count: 1 path={n_one}, "
+        f"3 paths={n_three}"
+    )
+    assert n_one <= 3, f"expected a small fixed number of round trips, got {n_one}"
 
 
 def test_extract_paths_from_parquet_missing_column_empty(tmp_path: Path):
@@ -119,6 +189,7 @@ def test_extract_paths_from_parquet_missing_column_empty(tmp_path: Path):
 
 
 def test_extract_paths_from_parquet_subsamples_long_runs(tmp_path: Path):
+    pytest.importorskip("duckdb")
     study_dir = tmp_path / "studies" / "demo"
     study_dir.mkdir(parents=True)
     leaf = (

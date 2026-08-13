@@ -40,6 +40,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import ValidationError
+from starlette.middleware.gzip import GZipMiddleware
 
 from vivarium_workbench.lib.errors import APIError
 from vivarium_workbench.lib.request_logging import install_request_logging
@@ -539,6 +540,18 @@ def create_app() -> FastAPI:
         ),
         openapi_tags=_OPENAPI_TAGS,
     )
+
+    # Compress responses over 1000 bytes (perf): the SPA ships a ~1.2MB JS
+    # bundle, ~227KB CSS, and study/investigation JSON payloads up to ~1.4MB
+    # raw. Registered FIRST (innermost, right next to the router) so it sees
+    # the actual single-chunk response body — the `@app.middleware("http")`
+    # layers below are BaseHTTPMiddleware, which re-emits every response as a
+    # multi-message stream; GZipMiddleware placed *outside* those loses its
+    # `minimum_size` check (its streaming branch compresses unconditionally)
+    # and would gzip even a tiny `/health` reply. Additive/no-op for clients
+    # that don't send `Accept-Encoding: gzip` or for responses under the
+    # threshold.
+    app.add_middleware(GZipMiddleware, minimum_size=1000)
 
     @app.middleware("http")
     async def _csrf_mw(request: Request, call_next):
