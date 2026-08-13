@@ -720,6 +720,12 @@ body {
   background: #fff;
   padding: 0;
   overflow: hidden;
+  /* Fill the card's remaining height (below name/config) so the mini-map uses
+     the whole card instead of leaving white space, and re-fits on resize. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .inner-preview-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
@@ -728,7 +734,7 @@ body {
 .inner-preview-badge { font-size: 10px; font-weight: 700; color: #2563eb; }
 .inner-preview-count { font-size: 10px; color: #64748b; }
 .inner-preview-svg {
-  display: block; width: 100%; height: auto; max-height: 640px;
+  display: block; width: 100%; flex: 1 1 auto; min-height: 220px; max-height: 720px;
   background: #fff; border: 0;
 }
 /* Store labels are shown (small); process cards + stores highlight on hover.
@@ -746,7 +752,7 @@ body {
 .inner-preview-svg .mini-proc, .inner-preview-svg .mini-store { cursor: pointer; }
 /* A Composite Process card grows wider so its inner-composite mini-map has room
    to show labelled subprocesses (a wide, detailed figure — not a tall sliver). */
-.process-node:has(.inner-preview) { min-width: 860px; }
+.process-node:has(.inner-preview) { min-width: 860px; display: flex; flex-direction: column; }
 .inner-preview-hint { font-size: 10px; color: #64748b; font-style: italic; }
 .inner-preview-idle {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;

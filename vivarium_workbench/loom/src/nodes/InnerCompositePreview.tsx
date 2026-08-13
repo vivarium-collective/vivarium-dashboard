@@ -274,7 +274,10 @@ function MiniMap(props: {
         className="inner-preview-svg nodrag nowheel"
         viewBox={vb}
         preserveAspectRatio="xMidYMid meet"
-        style={{ aspectRatio: `${w} / ${h}`, cursor: 'grab' }}
+        /* No aspect-ratio lock: the svg fills the card's content box (flex), and
+           the graph scales to fit (meet) — so it uses the card's white space and
+           re-fits when the card is resized narrower/wider. */
+        style={{ cursor: 'grab' }}
         onWheel={onWheel}
         onMouseDown={onDown}
         onMouseMove={onMove}
