@@ -32,6 +32,8 @@ import hashlib
 import json
 from pathlib import Path
 
+from vivarium_workbench.lib.agents0 import resolve_agents0_fallback
+
 # Filename of the per-run canonical output snapshot written by
 # write_snapshot() and read by fingerprint_run(). Lives directly under the
 # run's own directory (``.pbg/runs/<run_id>/``), never the shared runs.db.
@@ -87,21 +89,12 @@ def _canonicalize(v):
     return v
 
 
-def _resolve_path(state: dict, parts: list[str]):
-    node = state
-    for p in parts:
-        if not isinstance(node, dict) or p not in node:
-            return None
-        node = node[p]
-    return node
-
-
 def _lookup_field(state: dict, field: str):
     """Resolve one declared field (a slash- or dot-joined path) against a
     composite's final state tree.
 
-    Mirrors ``composite_runs.collect_emit_paths_from_spec``'s ``agents/0/``
-    retry: v2ecoli single-cell composites scope biology under
+    Uses the same ``agents/0/`` retry as ``composite_runs``'s emit-path
+    collection: v2ecoli single-cell composites scope biology under
     ``agents.0....``, so a field declared at the bare biology path (e.g.
     ``listeners/mass/dry_mass``) still resolves. Returns ``None`` when the
     path resolves nowhere under either form — the caller records that as an
@@ -110,9 +103,7 @@ def _lookup_field(state: dict, field: str):
     parts = [p for p in str(field).replace(".", "/").split("/") if p]
     if not parts:
         return None
-    val = _resolve_path(state, parts)
-    if val is None and parts[:1] != ["agents"]:
-        val = _resolve_path(state, ["agents", "0"] + parts)
+    _, val = resolve_agents0_fallback(state, parts)
     return val
 
 

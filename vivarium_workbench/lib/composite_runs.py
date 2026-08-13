@@ -16,6 +16,7 @@ from pathlib import Path
 
 from vivarium_workbench.lib import run_log
 from vivarium_workbench.lib import env_fingerprint
+from vivarium_workbench.lib.agents0 import resolve_agents0_fallback
 
 
 _SCHEMA_RUNS_META = """
@@ -1115,16 +1116,11 @@ def _collect_emit_leaves(state: dict,
     leaves: list[list[str]] = []
     for raw in explicit_paths:
         parts = [p for p in raw.split("/") if p]
-        node = _resolve_path(state, parts)
         # v2ecoli single-cell composites scope every listener store under
         # agents/0/...; study observables are declared at the biology path
         # (e.g. listeners/dnaA_cycle/atp_fraction). If the literal path
         # doesn't resolve, retry under agents/0/.
-        if node is None and parts[:1] != ["agents"]:
-            ag_parts = ["agents", "0"] + parts
-            ag_node = _resolve_path(state, ag_parts)
-            if ag_node is not None:
-                parts, node = ag_parts, ag_node
+        parts, node = resolve_agents0_fallback(state, parts)
         if node is None:
             # Path resolves nowhere (neither literal nor agents/0/ scoped).
             # This happens for listener outputs materialised only during the
@@ -1146,15 +1142,6 @@ def _collect_emit_leaves(state: dict,
         seen.add(t)
         out.append(p)
     return out
-
-
-def _resolve_path(state: dict, parts: list[str]):
-    node = state
-    for p in parts:
-        if not isinstance(node, dict) or p not in node:
-            return None
-        node = node[p]
-    return node
 
 
 def _walk_collect(node, path: list[str], out: list[list[str]]) -> None:

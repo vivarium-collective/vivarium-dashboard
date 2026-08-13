@@ -12,6 +12,7 @@ from pathlib import Path
 
 from vivarium_workbench.lib import simulations_index
 from vivarium_workbench.lib import emitters
+from vivarium_workbench.lib.agents0 import agents0_json_extract_pair
 
 
 # Top-level store key -> friendly category. Order defines display order.
@@ -372,11 +373,12 @@ def _extract_bulk_trace(db_path, mol_id, subsample=400, run_id=None):
         stride = max(1, n_rows // subsample)
         # One row per step; json_each over the bulk array, match the id pair.
         # Try top-level bulk, then agents/0 bulk; whichever yields a value wins.
+        bulk_path, bulk_path_agent = agents0_json_extract_pair("bulk", None)
         sql = (
             "SELECT h.global_time, "
-            "  (SELECT json_extract(j.value,'$[1]') FROM json_each(h.state,'$.bulk') j "
+            f"  (SELECT json_extract(j.value,'$[1]') FROM json_each(h.state,'{bulk_path}') j "
             "     WHERE json_extract(j.value,'$[0]')=?), "
-            "  (SELECT json_extract(j.value,'$[1]') FROM json_each(h.state,'$.agents.0.bulk') j "
+            f"  (SELECT json_extract(j.value,'$[1]') FROM json_each(h.state,'{bulk_path_agent}') j "
             "     WHERE json_extract(j.value,'$[0]')=?) "
             "FROM history h WHERE h.simulation_id=? AND (h.step % ?)=0 ORDER BY h.step ASC"
         )

@@ -34,6 +34,25 @@ def _bucket(result: object) -> str:
     return "inconclusive"
 
 
+def tally_outcomes(runs: "list") -> "dict[str, int]":
+    """Bucket a study's ``runs[].outcomes`` report-card verdicts into a
+    pass/inconclusive/fail tally (see :func:`_bucket`).
+
+    Shared by this module (per-composite stats) and ``process_study_stats``
+    (per-process stats) — both attribute the same per-study outcome tally,
+    just to a different accumulator key.
+    """
+    tally = {"pass": 0, "inconclusive": 0, "fail": 0}
+    for r in runs or []:
+        oc = r.get("outcomes") if isinstance(r, dict) else None
+        if not isinstance(oc, dict):
+            continue
+        for v in oc.values():
+            res = v.get("result") if isinstance(v, dict) else v
+            tally[_bucket(res)] += 1
+    return tally
+
+
 def _iter_study_yamls(ws_root: Path):
     for p in ws_root.rglob("study.yaml"):
         if any(part in _SKIP_DIRS or part.endswith(".worktrees") for part in p.parts):
@@ -93,13 +112,8 @@ def composite_study_stats(ws_root: Path, known_ids: "list[str]") -> "dict[str, d
         e = acc.setdefault(
             cid, {"_studies": set(), "pass": 0, "inconclusive": 0, "fail": 0})
         e["_studies"].add(str(f.parent))
-        for r in runs:
-            oc = r.get("outcomes") if isinstance(r, dict) else None
-            if not isinstance(oc, dict):
-                continue
-            for v in oc.values():
-                res = v.get("result") if isinstance(v, dict) else v
-                e[_bucket(res)] += 1
+        for k, v in tally_outcomes(runs).items():
+            e[k] += v
 
     out: dict[str, dict] = {}
     for cid, e in acc.items():
