@@ -361,7 +361,11 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
       className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}`}
       style={{
         ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
-        ['--ports-min-h' as string]: `${portsMinH}px`,
+        // A hand-set / saved node height wins: cap the port-driven min-height to
+        // it so a committed default view renders at its saved box size instead of
+        // being stretched taller by the port rows (ports still show at the edges
+        // via overflow:visible). Without a saved size, keep the full ports room.
+        ['--ports-min-h' as string]: `${dims ? Math.min(portsMinH, dims.height) : portsMinH}px`,
         ['--port-col' as string]: `${portCol}px`,
       } as React.CSSProperties}
     >
