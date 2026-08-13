@@ -386,7 +386,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
       // Typed store leaf (bigraph-schema typed value). For a typed array/map,
       // fold the element type (`_data`) into the label — `array[concentration]`
       // reads more precisely than a bare `array`.
-      const _n = node as { _type?: unknown; _data?: unknown; _default?: unknown };
+      const _n = node as { _type?: unknown; _data?: unknown; _default?: unknown; _figure?: string };
       const _base = String(_n._type);
       const _elem = typeof _n._data === 'string' ? _n._data : undefined;
       const valueType = (_elem && (_base === 'array' || _base === 'map'))
@@ -400,6 +400,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           value: node._default != null ? (displayValue(node._default) ?? undefined) : undefined,
           valueType,
           path,
+          figure: _n._figure ?? undefined,
         } satisfies StoreNodeData,
         position: { x: 0, y: 0 },
       });
