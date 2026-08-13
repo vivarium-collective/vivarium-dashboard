@@ -580,7 +580,12 @@ export default function App() {
       // Prefer WORKSPACE-persisted positions (shared across sessions + used by
       // headless renders) over the local cache; merge so any local-only nodes
       // keep their spot. Best-effort — offline/static mode uses the local cache.
-      if (compositeId) {
+      // SKIP under nopersist: a headless render must be reproducible from its
+      // ?view= alone (applyView already seeded `saved`); merging the machine-local
+      // server layout here would let a STALE .pbg entry (e.g. an old generator-id
+      // layout) clobber a node's saved size — the "simulations kept the wrong
+      // size" bug. See render_loom_svgs' reproducibility note.
+      if (compositeId && !NO_PERSIST) {
         try {
           const r = await fetch(
             `/api/composite-layout?id=${encodeURIComponent(compositeId)}&mode=${encodeURIComponent(layoutMode.modeId)}`);
