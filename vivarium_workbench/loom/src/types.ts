@@ -5,6 +5,9 @@ export interface StoreNodeData {
   valueType?: string;
   isGroup?: boolean;
   path: string[];
+  /** Optional illustrative figure — a data-URI image or inline SVG string from
+   *  the spec's `_figure`. Rendered on the card when Detail → Figures allows. */
+  figure?: string;
 }
 
 export interface ProcessNodeData {
@@ -41,6 +44,10 @@ export interface ProcessNodeData {
   /** Structured contract, serialized as `_contract`. Absent means derive
    *  it from `description` (the process docstring). */
   contract?: Record<string, unknown>;
+  /** Optional illustrative figure — a data-URI image or inline SVG string from
+   *  the spec's `_figure` (or `config._figure`). Rendered on the card when
+   *  Detail → Figures allows. */
+  figure?: string;
   /** True when this process is itself a bigraph Composite (a "Composite
    *  Process", e.g. EcoliWCM): its inner model can be drilled into as another
    *  loom view. The backend sets `is_composite_process`; double-clicking such a

@@ -122,12 +122,15 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
   };
   // Stores Detail override (the Detail menu) controls how much of a store shows:
   //   'name'  → just the label   'value' → + value   'type' → + value + type
-  const _ov = (data as any)._detailOverrides as { stores?: string } | undefined;
+  const _ov = (data as any)._detailOverrides as { stores?: string; figures?: string } | undefined;
   if (_ov) {
     if (_ov.stores === "name")  { show.value = false; show.type = false; }
     else if (_ov.stores === "value") { show.value = true;  show.type = false; }
     else if (_ov.stores === "type")  { show.value = true;  show.type = true; }
   }
+  // Optional per-store illustration (Detail → Figures; 'auto' shows when present).
+  const showFigure = !!(data as any).figure && _ov?.figures !== "off";
+  const figure: string | undefined = (data as any).figure;
 
   return (
     <div
@@ -153,6 +156,13 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
       )}
       {show.type && rawType && (
         <div className="store-node-type" title={rawType}>{abbreviateType(rawType)}</div>
+      )}
+      {showFigure && (
+        <div className="node-figure">
+          {figure!.trimStart().startsWith("<svg")
+            ? <span className="node-figure-svg" dangerouslySetInnerHTML={{ __html: figure! }} />
+            : <img className="node-figure-img" src={figure} alt="" draggable={false} />}
+        </div>
       )}
       {show.wiring && (readers.length > 0 || writers.length > 0) && (
         <div className="store-node-wiring">

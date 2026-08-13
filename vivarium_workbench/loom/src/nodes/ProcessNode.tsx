@@ -161,7 +161,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // feature is 'auto' (keep the tier value) or forced. Never applied to a pinned-
   // open card (that always shows everything).
   const ov = (data as any)._detailOverrides as
-    { ports?: string; config?: string; contract?: string } | undefined;
+    { ports?: string; config?: string; contract?: string; figures?: string } | undefined;
   if (ov && !(data as any)._pinnedOpen) {
     if (ov.ports === 'none')  { show.ports = false; show.types = false; }
     else if (ov.ports === 'plain') { show.ports = true;  show.types = false; }
@@ -176,6 +176,9 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   const contract = show.contract ? deriveContract(data) : null;
   const completeness = show.full ? contractCompleteness(contract, data) : null;
+  // Optional per-node illustration: shown when the node carries a `_figure`
+  // and Detail → Figures isn't forced off ('auto' shows it when present).
+  const showFigure = !!data.figure && ov?.figures !== 'off';
   const inTypes = ((data as any).inputSchema ?? {}) as Record<string, unknown>;
   const outTypes = ((data as any).outputSchema ?? {}) as Record<string, unknown>;
   // Config comes from the declared schema (types + defaults), overlaid with any
@@ -454,6 +457,16 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
                 port columns already make the arity obvious. */}
             {(data as any).isDraft ? `draft ${data.processType}` : data.processType}
             {data.interval != null && <span> · every {data.interval}</span>}
+          </div>
+        )}
+
+        {/* Optional illustrative figure (Detail → Figures). Inline SVG string is
+            injected verbatim; anything else (data-URI / url) renders as <img>. */}
+        {showFigure && (
+          <div className="node-figure">
+            {data.figure!.trimStart().startsWith('<svg')
+              ? <span className="node-figure-svg" dangerouslySetInnerHTML={{ __html: data.figure! }} />
+              : <img className="node-figure-img" src={data.figure} alt="" draggable={false} />}
           </div>
         )}
 

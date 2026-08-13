@@ -753,6 +753,13 @@ body {
 /* A Composite Process card grows wider so its inner-composite mini-map has room
    to show labelled subprocesses (a wide, detailed figure — not a tall sliver). */
 .process-node:has(.inner-preview) { min-width: 860px; display: flex; flex-direction: column; }
+
+/* Optional per-node illustration (Detail → Figures). Kept inside the card and
+   scaled down so it never blows out the node. */
+.node-figure { display: flex; justify-content: center; align-items: center; margin: 7px 4px 3px; }
+.node-figure-img { max-width: 100%; max-height: 130px; height: auto; display: block; }
+.node-figure-svg { display: flex; justify-content: center; max-width: 100%; }
+.node-figure-svg svg { max-width: 100%; max-height: 130px; height: auto; display: block; }
 .inner-preview-hint { font-size: 10px; color: #64748b; font-style: italic; }
 .inner-preview-idle {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;

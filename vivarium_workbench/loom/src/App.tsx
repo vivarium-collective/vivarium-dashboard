@@ -73,8 +73,11 @@ export type TriDetail = 'auto' | 'on' | 'off';
 export type ContractDetail = 'auto' | 'on' | 'off' | 'full';
 export type DetailOverrides = {
   ports: PortsDetail; stores: StoresDetail; config: TriDetail; contract: ContractDetail;
+  // A per-node illustrative figure (data-URI / inline SVG on the spec's `_figure`).
+  // 'auto' = show when a node carries one; 'on'/'off' force it.
+  figures: TriDetail;
 };
-export const DETAIL_AUTO: DetailOverrides = { ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto' };
+export const DETAIL_AUTO: DetailOverrides = { ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto', figures: 'auto' };
 const NODE_TYPES = { process: ProcessNode, store: StoreNode };
 // `light` is the cheap default wire (straight, no floating anchors / labels);
 // `floating` is the rich labelled edge, used only for FOCUSED wires. Non-wire
@@ -977,6 +980,7 @@ export default function App() {
       stores: (view.detailOverrides?.stores ?? 'auto') as StoresDetail,
       config: (view.detailOverrides?.config ?? 'auto') as TriDetail,
       contract: (view.detailOverrides?.contract ?? 'auto') as ContractDetail,
+      figures: ((view.detailOverrides as { figures?: string } | undefined)?.figures ?? 'auto') as TriDetail,
     });
     window.setTimeout(() => rfRef.current?.fitView?.({ padding: 0.15, duration: 400 }), 240);
   }, [compositeId, state, layoutMode.modeId, layoutMode.setModeId]);
@@ -1024,12 +1028,14 @@ export default function App() {
       const pStores = params.get('stores');
       const pConfig = params.get('config');
       const pContract = params.get('contract');
-      if (pPorts || pStores || pConfig || pContract) {
+      const pFigures = params.get('figures');
+      if (pPorts || pStores || pConfig || pContract || pFigures) {
         setDetailOverrides((o) => ({
           ports: (['none', 'plain', 'types'].includes(pPorts || '') ? pPorts : o.ports) as PortsDetail,
           stores: (['name', 'value', 'type'].includes(pStores || '') ? pStores : o.stores) as StoresDetail,
           config: (['on', 'off'].includes(pConfig || '') ? pConfig : o.config) as TriDetail,
           contract: (['on', 'off', 'full'].includes(pContract || '') ? pContract : o.contract) as ContractDetail,
+          figures: (['on', 'off'].includes(pFigures || '') ? pFigures : o.figures) as TriDetail,
         }));
       }
     })();

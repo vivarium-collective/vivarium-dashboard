@@ -262,6 +262,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           value: displayValue(node),
           valueType: Array.isArray(node) ? 'array' : typeof node,
           path,
+          figure: (node as { _figure?: string } | null)?._figure ?? undefined,
         } satisfies StoreNodeData,
         position: { x: 0, y: 0 },
       });
@@ -324,6 +325,10 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           inputSchema: node._inputs ?? undefined,
           outputSchema: node._outputs ?? undefined,
           contract: node._contract ?? undefined,
+          // Optional illustrative figure for this node (data-URI image or inline
+          // SVG string on the spec's `_figure`, or config._figure). Shown when the
+          // Detail → Figures toggle allows it. See ProcessNode / StoreNode.
+          figure: (node as any)._figure ?? (node.config as { _figure?: string } | undefined)?._figure ?? undefined,
           // A Composite Process (its inner model is itself a composite) — the
           // card gets a drill-in affordance; double-click opens the inner view.
           isCompositeProcess: node.is_composite_process === true,
