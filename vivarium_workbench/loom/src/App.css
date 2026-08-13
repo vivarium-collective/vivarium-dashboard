@@ -242,7 +242,7 @@ body {
   box-sizing: border-box;
   overflow-wrap: anywhere;
   padding: 8px 10px;
-  border-radius: 14px;
+  border-radius: 28px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -720,6 +720,12 @@ body {
   background: #fff;
   padding: 0;
   overflow: hidden;
+  /* Fill the card's remaining height (below name/config) so the mini-map uses
+     the whole card instead of leaving white space, and re-fits on resize. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 .inner-preview-head {
   display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
@@ -728,7 +734,7 @@ body {
 .inner-preview-badge { font-size: 10px; font-weight: 700; color: #2563eb; }
 .inner-preview-count { font-size: 10px; color: #64748b; }
 .inner-preview-svg {
-  display: block; width: 100%; height: auto; max-height: 460px;
+  display: block; width: 100%; flex: 1 1 auto; min-height: 220px; max-height: 720px;
   background: #fff; border: 0;
 }
 /* Store labels are shown (small); process cards + stores highlight on hover.
@@ -745,8 +751,42 @@ body {
 .inner-preview-svg .mini-proc:hover rect { fill: #eff6ff; stroke: #2563eb; }
 .inner-preview-svg .mini-proc, .inner-preview-svg .mini-store { cursor: pointer; }
 /* A Composite Process card grows wider so its inner-composite mini-map has room
-   to show labelled subprocesses (a wide, detailed figure — not a tall sliver). */
-.process-node:has(.inner-preview) { min-width: 660px; }
+   to show labelled subprocesses (a wide, detailed figure — not a tall sliver).
+   That wide floor applies ONLY to an un-sized card: once the card has a hand-set
+   / saved size it is free to be narrower, and its content scrolls (below). */
+.process-node:has(.inner-preview) { display: flex; flex-direction: column; }
+.process-node:has(.inner-preview):not(.is-sized) { min-width: 860px; }
+
+/* A hand-sized card is a fixed viewport onto its content: when the content is
+   bigger than the box (a large inner composite, or a full contract in a small
+   card) the CENTER scrolls with a HIDDEN scrollbar instead of forcing the card
+   larger. Ports stay pinned on the border (they're siblings of the center). */
+.process-node.is-sized { display: flex; flex-direction: column; }
+.process-node.is-sized .process-node-center {
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  overflow: auto; scrollbar-width: none; -ms-overflow-style: none;
+}
+.process-node.is-sized .process-node-center::-webkit-scrollbar { width: 0; height: 0; }
+
+/* Optional per-node illustration (Detail → Figures). A fixed target height (not
+   just a cap) so small native icons render BIG; width scales to keep aspect. */
+.node-figure { display: flex; justify-content: center; align-items: center; margin: 7px 4px 3px; }
+.node-figure-img { width: auto; height: 90px; max-width: 100%; display: block; }
+.node-figure-svg { display: flex; justify-content: center; max-width: 100%; }
+.node-figure-svg svg { width: auto; height: 90px; max-width: 100%; display: block; }
+/* Contract showing → the figure is a small badge pinned to the card's top-left
+   corner (out of flow), so the prose + equations reclaim the vertical space. */
+.node-figure.is-corner { position: absolute; top: 7px; left: 9px; margin: 0; z-index: 1; pointer-events: none; }
+.node-figure.is-corner .node-figure-img,
+.node-figure.is-corner .node-figure-svg svg { height: 48px; max-width: 54px; }
+/* Keep the corner badge from colliding with the title: the title becomes a
+   left-aligned header sitting to the RIGHT of the icon (padding only on the
+   left, so it keeps full width and long names wrap on word boundaries), tall
+   enough that the meta + contract below start under the badge, never over it. */
+.process-node:has(.node-figure.is-corner) .process-node-title {
+  text-align: left; padding-left: 64px; min-height: 48px;
+  overflow-wrap: break-word;
+}
 .inner-preview-hint { font-size: 10px; color: #64748b; font-style: italic; }
 .inner-preview-idle {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1988,3 +2028,39 @@ textarea.sr-input {
   border: 1px solid #e2e8f0; border-radius: 4px;
   pointer-events: none; user-select: none;
 }
+
+/* ── Font scale ─────────────────────────────────────────────────────────────
+   One knob, --loom-fs (set on .loom-canvas from the toolbar Font control and
+   persisted in the saved view / forced via ?font=), multiplies every node text
+   size. Redefined here AFTER the base rules as calc(original * --loom-fs) so the
+   originals stay the default (1) and a saved view / headless render keeps the
+   chosen size. */
+.loom-canvas { --loom-fs: 1; }
+/* process titles (base + per-tier) */
+.process-node-title { font-size: calc(25px * var(--loom-fs, 1)); }
+.process-node-glyph  .process-node-title { font-size: calc(38px * var(--loom-fs, 1)); }
+.process-node-ports  .process-node-title { font-size: calc(31px * var(--loom-fs, 1)); }
+.process-node-types  .process-node-title { font-size: calc(28px * var(--loom-fs, 1)); }
+.process-node-config .process-node-title { font-size: calc(25px * var(--loom-fs, 1)); }
+.process-node-noports .process-node-title { font-size: calc(28px * var(--loom-fs, 1)) !important; }
+/* process meta / port labels / prose / equations */
+.process-node-meta { font-size: calc(17px * var(--loom-fs, 1)); }
+.process-node-config .process-node-meta { font-size: calc(26px * var(--loom-fs, 1)); }
+.port-in-name { font-size: calc(19px * var(--loom-fs, 1)); }
+.port-in-type { font-size: calc(15px * var(--loom-fs, 1)); }
+.process-node-config .port-in-name { font-size: calc(24px * var(--loom-fs, 1)); }
+.process-node-config .port-in-type { font-size: calc(17px * var(--loom-fs, 1)); }
+.contract-recital { font-size: calc(18px * var(--loom-fs, 1)); }
+.process-node-description { font-size: calc(15px * var(--loom-fs, 1)); }
+.process-node-symbols { font-size: calc(15px * var(--loom-fs, 1)); }
+.process-node-math .katex { font-size: calc(1.7em * var(--loom-fs, 1)); }
+/* store labels / values / types (base + per-tier) */
+.store-label { font-size: calc(15px * var(--loom-fs, 1)); }
+.store-node-value { font-size: calc(10px * var(--loom-fs, 1)); }
+.store-node-type  { font-size: calc(12px * var(--loom-fs, 1)); }
+.store-node-ports .store-label { font-size: calc(30px * var(--loom-fs, 1)); }
+.store-node-full  .store-label { font-size: calc(27px * var(--loom-fs, 1)); }
+.store-node-ports .store-node-type  { font-size: calc(21px * var(--loom-fs, 1)); }
+.store-node-ports .store-node-value { font-size: calc(19px * var(--loom-fs, 1)); }
+.store-node-full  .store-node-type  { font-size: calc(24px * var(--loom-fs, 1)); }
+.store-node-full  .store-node-value { font-size: calc(22px * var(--loom-fs, 1)); }

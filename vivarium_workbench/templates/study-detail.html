@@ -24,15 +24,11 @@
     {% endif %}
   </h1>
   <span class="study-header-actions" style="display:inline-flex; gap:6px; flex-shrink:0;">
-    {# Downloads first (↓), then the launch actions (▶ / ↻) — same iconography as
-       the investigation card / graph study card. Downloads are NOT hidden in the
-       snapshot; the launch buttons are (they need a live backend). #}
-    {% if study.visualizations %}
-    <button type="button" class="btn-mini" onclick="window._vivStudyFiguresFromCard(event, '{{ study.name }}')" title="Download this study's figures (panels + its composite) as a zip">↓ figures</button>
-    {% endif %}
-    {% if study.investigation %}
-    <button type="button" class="btn-mini" onclick="window._vivNotebookFromCard(event, '{{ study.investigation }}')" title="Download this study's investigation runnable notebook (includes this study)">↓ notebook</button>
-    {% endif %}
+    {# Launch actions only (▶ / ↻). The downloads live where they're used — the
+       ↓ figures button is at the top of the Visualizations tab, and ↓ notebook
+       is in the Model tab; the investigation card carries them too. Keeping the
+       header to the run/reproduce actions declutters it (they need a live
+       backend and are hidden in the snapshot). #}
     <button type="button" id="study-reproduce" class="btn-mini" title="Replay this study's most recent run's RECORDED manifest verbatim (POST /api/study-reproduce) — ignores any study.yaml edits made since">↻ Reproduce</button>
     <button type="button" id="study-run-current-spec" class="btn-mini" title="Run this study's CURRENT baseline spec (POST /api/study-run-baseline) as a brand-new run">▶ Run current spec</button>
   </span>
@@ -653,7 +649,13 @@
 
 {# ─── Compose tab: Build + Baseline + Variants + Interventions ── #}
 <section class="study-tab-panel" data-kind="compose" id="panel-compose" hidden>
-  <h2 class="overview-label" style="margin-bottom:8px">Model composition</h2>
+  <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
+    <h2 class="overview-label" style="margin:0">Model composition</h2>
+    {# Download the runnable notebook for this study's investigation (includes
+       this study, with its composite + exposed parameters). Lives in the Model
+       tab — where the composition/params are — rather than the header. #}
+    <button type="button" class="btn-mini" onclick="window._vivStudyNotebookFromCard(event, '{{ study.name }}', '{{ study.investigation }}')" title="Download a runnable Jupyter notebook for THIS study — its composite + editable parameters + figures">↓ notebook</button>
+  </div>
   {# Build-block visibility mirrors the pre-merge panel-build guard exactly (model_change/impl_reqs/conditions/baseline) so non-v3 studies keep their Model + Conditions sections. #}
   {% set _has_build = study.model_change or study.implementation_requirements or study.conditions or study.baseline %}
   {% if _has_build %}
@@ -1082,6 +1084,15 @@
 <section class="study-tab-panel" data-kind="visualize" id="panel-visualize" hidden>
 
   <div class="overview-section study-figures figure-gallery" id="visualize-section">
+
+    {# Quick download of this study's figures (panels + its stitched composite)
+       as a zip, right where the figures are viewed. Same handler as the
+       investigation card's ↓ figures. #}
+    {% if study.visualizations %}
+    <div class="viz-actions-row" style="display:flex; justify-content:flex-end; margin-bottom:10px;">
+      <button type="button" class="btn-mini" onclick="window._vivStudyFiguresFromCard(event, '{{ study.name }}')" title="Download this study's visualizations (figure panels + its composite) as a zip">↓ visualizations</button>
+    </div>
+    {% endif %}
 
     <div id="native-gallery-panel" class="figure-mount"><p class="empty-message">Loading figures…</p></div>
 

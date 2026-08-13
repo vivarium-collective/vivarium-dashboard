@@ -6,6 +6,7 @@ import { portInfo } from "../portInfo";
 import { KatexBlock } from "../Katex";
 import InnerCompositePreview from "./InnerCompositePreview";
 import { configParams } from "../configView";
+import { displayName } from "../labels";
 
 // Canvas text metrics — used to reserve exactly the room the widest port label
 // needs (see the adaptive port-column width below). A shared module-level context
@@ -85,7 +86,7 @@ function LegacyBody({ data, stepKind }: {
 
       <div className="process-body">
         <div className="process-label">
-          {data.label}
+          {displayName(data.label)}
           {(data as any).isDraft && (
             <span className="process-node-draft" title="Draft process — typed ports + contract, but NO update dynamics yet">
               DRAFT
@@ -161,7 +162,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // feature is 'auto' (keep the tier value) or forced. Never applied to a pinned-
   // open card (that always shows everything).
   const ov = (data as any)._detailOverrides as
-    { ports?: string; config?: string; contract?: string } | undefined;
+    { ports?: string; config?: string; contract?: string; figures?: string } | undefined;
   if (ov && !(data as any)._pinnedOpen) {
     if (ov.ports === 'none')  { show.ports = false; show.types = false; }
     else if (ov.ports === 'plain') { show.ports = true;  show.types = false; }
@@ -176,6 +177,9 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
   const contract = show.contract ? deriveContract(data) : null;
   const completeness = show.full ? contractCompleteness(contract, data) : null;
+  // Optional per-node illustration: shown when the node carries a `_figure`
+  // and Detail → Figures isn't forced off ('auto' shows it when present).
+  const showFigure = !!data.figure && ov?.figures !== 'off';
   const inTypes = ((data as any).inputSchema ?? {}) as Record<string, unknown>;
   const outTypes = ((data as any).outputSchema ?? {}) as Record<string, unknown>;
   // Config comes from the declared schema (types + defaults), overlaid with any
@@ -358,10 +362,14 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   return (
     <div
       ref={nodeRef}
-      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}`}
+      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}${dims ? ' is-sized' : ''}`}
       style={{
         ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
-        ['--ports-min-h' as string]: `${portsMinH}px`,
+        // A hand-set / saved node height wins: cap the port-driven min-height to
+        // it so a committed default view renders at its saved box size instead of
+        // being stretched taller by the port rows (ports still show at the edges
+        // via overflow:visible). Without a saved size, keep the full ports room.
+        ['--ports-min-h' as string]: `${dims ? Math.min(portsMinH, dims.height) : portsMinH}px`,
         ['--port-col' as string]: `${portCol}px`,
       } as React.CSSProperties}
     >
@@ -426,7 +434,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
 
         <div className="process-node-title">
           {locked && <span className="process-node-lock" title="Locked — click empty canvas to unlock">🔒</span>}
-          {data.label}
+          {displayName(data.label)}
           {/* Collapsed array of identical processes → how many this stands for. */}
           {(data as any)._collapsedCount > 1 && (
             <span className="process-node-count" title={`${(data as any)._collapsedCount} identical processes collapsed into this one`}>
@@ -450,6 +458,19 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
                 port columns already make the arity obvious. */}
             {(data as any).isDraft ? `draft ${data.processType}` : data.processType}
             {data.interval != null && <span> · every {data.interval}</span>}
+          </div>
+        )}
+
+        {/* Optional illustrative figure (Detail → Figures). Inline SVG string is
+            injected verbatim; anything else (data-URI / url) renders as <img>.
+            When the contract is showing the card is already tall with prose +
+            equations, so tuck the figure into the top-left corner (absolute, out
+            of flow) instead of a centered row that costs vertical space. */}
+        {showFigure && (
+          <div className={`node-figure${show.contract ? ' is-corner' : ''}`}>
+            {data.figure!.trimStart().startsWith('<svg')
+              ? <span className="node-figure-svg" dangerouslySetInnerHTML={{ __html: data.figure! }} />
+              : <img className="node-figure-img" src={data.figure} alt="" draggable={false} />}
           </div>
         )}
 

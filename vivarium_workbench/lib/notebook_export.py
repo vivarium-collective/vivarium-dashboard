@@ -144,6 +144,60 @@ def _run_recipes(runs_db: Path) -> list[dict]:
     return out
 
 
+def _baseline_recipes(study: dict) -> list[dict]:
+    """Reproduction recipes synthesized from ``study.yaml`` ``baseline[]`` — the
+    fallback when a study has no ``runs.db`` (figure / reference studies). Same
+    shape as :func:`_run_recipes`, so the parameters table + editable-composite
+    cells render from the study's declared composite + parameters instead of
+    being empty.
+    """
+    baseline = study.get("baseline")
+    if not baseline:
+        cond = study.get("conditions")
+        if isinstance(cond, dict):
+            baseline = cond.get("baseline")
+    if isinstance(baseline, dict):
+        baseline = [baseline]
+    if not isinstance(baseline, list):
+        return []
+    out: list[dict] = []
+    for b in baseline:
+        if not isinstance(b, dict):
+            continue
+        spec_id = b.get("composite") or b.get("base_model") or b.get("spec_id")
+        if not spec_id:
+            continue
+        params = b.get("params") if isinstance(b.get("params"), dict) else {}
+        out.append(
+            {
+                "sim": b.get("name") or str(spec_id).rsplit(".", 1)[-1],
+                "spec_id": str(spec_id),
+                "n_steps": int(params.get("n_steps") or params.get("steps") or 0),
+                "params": params,
+                "status": "baseline (study.yaml)",
+            }
+        )
+    return out
+
+
+def _resolve_composite_path(composites_dir: Path, spec_id: str):
+    """Locate a composite spec file for ``spec_id`` (a dotted id such as
+    ``pkg.composites.sub.name`` OR a bare ``name``). Searches ``composites/``
+    for ``<stem>.composite.{json,yaml,yml}``, flat first then recursively, so it
+    works for both the ``.composite.json`` figure specs and nested layouts."""
+    if not composites_dir.is_dir():
+        return None
+    stem = str(spec_id).rsplit(".", 1)[-1]
+    for ext in ("json", "yaml", "yml"):
+        flat = composites_dir / f"{stem}.composite.{ext}"
+        if flat.is_file():
+            return flat
+        matches = sorted(composites_dir.rglob(f"{stem}.composite.{ext}"))
+        if matches:
+            return matches[0]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Run / render strategy discovery
 # ---------------------------------------------------------------------------
@@ -214,16 +268,26 @@ def _truthy(v: Any) -> str:
 
 
 def _study_header_md(study: dict, slug: str) -> str:
-    # Design intent only — question / objective / hypothesis. Result-bearing
-    # fields (verdict, key_metrics, conclusion prose) are intentionally omitted:
-    # this notebook states *parameters* and lets the coder produce the results.
-    lines = [f"## Study: `{slug}`"]
+    # Design intent only — question / objective / hypothesis / purpose / claim.
+    # Result-bearing fields (verdict, key_metrics, conclusion prose) are
+    # intentionally omitted: this notebook states *parameters* and lets the
+    # coder produce the results.
+    title = _truthy(study.get("title"))
+    lines = [f"## Study: {title} (`{slug}`)" if title else f"## Study: `{slug}`"]
     if study.get("question"):
         lines += ["", f"**Question.** {_truthy(study['question'])}"]
     if study.get("objective"):
         lines += ["", f"**Objective.** {_truthy(study['objective'])}"]
     if study.get("hypothesis"):
         lines += ["", f"**Hypothesis.** {_truthy(study['hypothesis'])}"]
+    # v2 study schema: `purpose` (str or {mechanism,...}) and one-line `claim`.
+    purpose = study.get("purpose")
+    if isinstance(purpose, dict):
+        purpose = purpose.get("mechanism") or purpose.get("summary") or purpose.get("text")
+    if _truthy(purpose):
+        lines += ["", f"**Purpose.** {_truthy(purpose)}"]
+    if study.get("claim"):
+        lines += ["", f"**Claim.** {_truthy(study['claim'])}"]
     return "\n".join(lines)
 
 
@@ -308,8 +372,7 @@ def _spec_var(spec_id: str) -> str:
     return f"spec_{_py_ident(spec_id)}"
 
 
-def _load_inspect_code(package: str, spec_id: str, var: str) -> str:
-    comp_rel = f"{package}/composites/{spec_id}.composite.yaml"
+def _load_inspect_code(comp_rel: str, var: str) -> str:
     return (
         "from viva_superpowers.composite_spec import load_spec\n"
         f"{var} = load_spec(REPO / {comp_rel!r})\n"
@@ -534,6 +597,38 @@ RERUN = True
         '    print("\\nfull editable spec dict:")\n'
         "    print(_json.dumps(spec, indent=2, default=str))"
     )
+    # Generic figure renderer — used when the workspace ships no
+    # scripts/render_study_viz.py (so `render_import` is empty and nothing
+    # defines _render_one). Resolves an ``image:<relpath>`` visualization to
+    # displayable HTML relative to the study dir; other schemes degrade to a
+    # note instead of crashing the notebook.
+    if strat.get("render_kind") == "generic":
+        src += (
+            "\n\nimport base64 as _b64, pathlib as _pl\n"
+            "def _render_one(address, config, runs_db, study_yaml):\n"
+            '    """Generic figure renderer (no workspace render_study_viz.py):\n'
+            '    resolve an ``image:<relpath>`` visualization to displayable HTML,\n'
+            '    relative to the study directory."""\n'
+            "    addr = str(address or '')\n"
+            "    for _scheme in ('image:', 'file:', 'gif:', 'png:', 'svg:', 'jpg:', 'jpeg:'):\n"
+            "        if addr.startswith(_scheme):\n"
+            "            addr = addr[len(_scheme):]; break\n"
+            "    _p = _pl.Path(addr)\n"
+            "    if not _p.is_absolute():\n"
+            "        _p = _pl.Path(study_yaml).resolve().parent / _p\n"
+            "    if not _p.is_file():\n"
+            "        return f'<p style=\"color:#b91c1c\">figure not found: {address}</p>'\n"
+            "    _suffix = _p.suffix.lower()\n"
+            "    if _suffix == '.svg':\n"
+            "        return _p.read_text(encoding='utf-8', errors='replace')\n"
+            "    if _suffix in ('.png', '.jpg', '.jpeg', '.gif', '.webp'):\n"
+            "        _mime = 'jpeg' if _suffix in ('.jpg', '.jpeg') else _suffix[1:]\n"
+            "        _data = _b64.b64encode(_p.read_bytes()).decode('ascii')\n"
+            "        return f'<img src=\"data:image/{_mime};base64,{_data}\" style=\"max-width:100%\"/>'\n"
+            "    if _suffix in ('.html', '.htm'):\n"
+            "        return _p.read_text(encoding='utf-8', errors='replace')\n"
+            "    return f'<p style=\"color:#6b7280\">unsupported figure type: {address}</p>'"
+        )
     return [_code(src)]
 
 
@@ -545,16 +640,22 @@ def _study_blocks(ws_root: Path, layout: dict, slug: str, strat: dict) -> list[d
     studies_rel = layout.get("studies") or "studies"
     package = strat["package"]
     study_dir = _studies_dir(ws_root, layout) / slug
-    recipes = _run_recipes(study_dir / "runs.db")
+    run_recipes = _run_recipes(study_dir / "runs.db")
+    # Params + editable-composite cells fall back to the study.yaml `baseline`
+    # when there is no runs.db, so figure/reference studies still expose their
+    # composite + parameters. The Run cell keeps using `run_recipes` only (no
+    # recorded runs → nothing to reproduce), so exposing params never turns into
+    # an attempt to re-simulate a static figure.
+    display_recipes = run_recipes or _baseline_recipes(study)
 
     blocks: list[dict] = [_md(_study_header_md(study, slug))]
 
     # --- parameters (no results) ---
-    blocks.append(_md(_parameters_md(study, recipes, package)))
+    blocks.append(_md(_parameters_md(study, display_recipes, package)))
 
     # --- editable spec: one load/inspect + control-panel cell per composite ---
     seen_specs: list[str] = []
-    for r in recipes:
+    for r in display_recipes:
         if r["spec_id"] not in seen_specs:
             seen_specs.append(r["spec_id"])
     spec_vars = {sid: _spec_var(sid) for sid in seen_specs}
@@ -563,11 +664,17 @@ def _study_blocks(ws_root: Path, layout: dict, slug: str, strat: dict) -> list[d
         blocks.append(_md(_COMPOSITE_INTRO_MD))
         for spec_id in seen_specs:
             var = spec_vars[spec_id]
+            comp_path = _resolve_composite_path(composites_dir, spec_id)
             blocks.append(_md(f"**Composite `{spec_id}`** — `{var}` (a plain, editable dict)"))
-            blocks.append(_code(_load_inspect_code(package, spec_id, var)))
-            comp_path = composites_dir / f"{spec_id}.composite.yaml"
-            if comp_path.is_file():
+            if comp_path is not None:
+                comp_rel = comp_path.relative_to(ws_root).as_posix()
+                blocks.append(_code(_load_inspect_code(comp_rel, var)))
                 blocks.append(_code(_control_panel_code(var, _load_yaml(comp_path))))
+            else:
+                blocks.append(
+                    _md(f"_composite spec file for `{spec_id}` not found under "
+                        f"`{package}/composites/` — skipped._")
+                )
 
     # --- run section: editable runtime/interval, build & run the edited spec ---
     blocks.append(
@@ -577,7 +684,7 @@ def _study_blocks(ws_root: Path, layout: dict, slug: str, strat: dict) -> list[d
             "figures below read it. Set `RERUN = False` to skip re-simulating._"
         )
     )
-    blocks.append(_code(_run_code(slug, studies_rel, recipes, spec_vars, strat)))
+    blocks.append(_code(_run_code(slug, studies_rel, run_recipes, spec_vars, strat)))
 
     # --- per-visualization render blocks ---
     # The figures ARE the results — text stays parameter-only, so the authored
@@ -616,8 +723,13 @@ def _intro_blocks(inv: dict, slug: str) -> list[dict]:
     lines = [f"# {title}", "", f"_Investigation `{slug}` — coder reproduction notebook._"]
     if inv.get("question"):
         lines += ["", f"**Question.** {_truthy(inv['question'])}"]
-    execu = inv.get("executive") or {}
-    if execu.get("what_is_this"):
+    # `executive` may be a structured dict (v2 spine) OR a plain prose string
+    # (older investigations). Handle both — a string is the what-is-this blurb.
+    execu = inv.get("executive")
+    if isinstance(execu, str):
+        if _truthy(execu):
+            lines += ["", _truthy(execu)]
+    elif isinstance(execu, dict) and execu.get("what_is_this"):
         lines += ["", _truthy(execu["what_is_this"])]
     lines += [
         "",
@@ -633,7 +745,8 @@ def _intro_blocks(inv: dict, slug: str) -> list[dict]:
 
 
 def _outro_blocks(inv: dict) -> list[dict]:
-    execu = inv.get("executive") or {}
+    execu = inv.get("executive")
+    execu = execu if isinstance(execu, dict) else {}   # may be a prose string
     decisions = execu.get("decisions_needed") or []
     if not decisions:
         return []
@@ -652,6 +765,33 @@ def _build_blocks(ws_root: Path, layout: dict, inv: dict, slug: str, strat: dict
     for study_slug in investigation_member_slugs(inv):
         blocks += _study_blocks(ws_root, layout, study_slug, strat)
     blocks += _outro_blocks(inv)
+    return blocks
+
+
+def _study_intro_blocks(study: dict, slug: str, inv_slug: str) -> list[dict]:
+    """Front matter for a SINGLE-study notebook (vs the investigation intro)."""
+    title = _truthy(study.get("title")) or slug
+    origin = f" — investigation `{inv_slug}`" if inv_slug else ""
+    lines = [f"# {title}", "", f"_Study `{slug}`{origin} — coder reproduction notebook._"]
+    if study.get("question"):
+        lines += ["", f"**Question.** {_truthy(study['question'])}"]
+    lines += [
+        "",
+        "---",
+        "",
+        "This notebook reproduces a **single study**: it loads the study's "
+        "composite(s), exposes their parameters as editable cells, then renders "
+        "the study's figures. Set `RERUN = False` in the setup cell to render the "
+        "committed results without re-simulating.",
+    ]
+    return [_md("\n".join(lines))]
+
+
+def _build_study_blocks(ws_root: Path, layout: dict, study: dict, slug: str, strat: dict) -> list[dict]:
+    inv_slug = _truthy(study.get("investigation"))
+    blocks = _study_intro_blocks(study, slug, inv_slug)
+    blocks += _setup_blocks(ws_root, strat)
+    blocks += _study_blocks(ws_root, layout, slug, strat)
     return blocks
 
 
@@ -795,6 +935,44 @@ def export_investigation_notebook(
 
     ipynb_path = out_dir / f"{inv_slug}.ipynb"
     py_path = out_dir / f"{inv_slug}.py"
+
+    ipynb_path.write_text(json.dumps(_ipynb(blocks), indent=1) + "\n", encoding="utf-8")
+
+    try:
+        fig_dir_rel = str((out_dir / "figures").relative_to(ws_root))
+    except ValueError:
+        fig_dir_rel = "reports/notebooks/figures"
+    py_path.write_text(_py(blocks, fig_dir_rel, py_path.name), encoding="utf-8")
+
+    return {"ipynb": ipynb_path, "py": py_path}
+
+
+def export_study_notebook(
+    ws_root: Path | str, slug: str, *, out_dir: Path | str | None = None
+) -> dict:
+    """Generate ``<slug>.ipynb`` + ``<slug>.py`` for a SINGLE study.
+
+    Same setup/params/composite/visualization cells as the study's section in
+    its investigation notebook, but standalone (study intro instead of the
+    investigation intro; no sibling studies). Raises ``FileNotFoundError`` when
+    the study is absent. Returns ``{"ipynb": Path, "py": Path}``.
+    """
+    ws_root = Path(ws_root).resolve()
+    ws, layout, package = _workspace_layout(ws_root)
+    study = _load_study(ws_root, layout, slug)
+    if study is None:
+        raise FileNotFoundError(f"no study {slug!r}")
+    strat = _discover_strategy(ws_root, ws, package)
+
+    if out_dir is None:
+        out_dir = _reports_dir(ws_root, layout) / "notebooks"
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    blocks = _build_study_blocks(ws_root, layout, study, slug, strat)
+
+    ipynb_path = out_dir / f"{slug}.ipynb"
+    py_path = out_dir / f"{slug}.py"
 
     ipynb_path.write_text(json.dumps(_ipynb(blocks), indent=1) + "\n", encoding="utf-8")
 

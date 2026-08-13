@@ -262,6 +262,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           value: displayValue(node),
           valueType: Array.isArray(node) ? 'array' : typeof node,
           path,
+          figure: (node as { _figure?: string } | null)?._figure ?? undefined,
         } satisfies StoreNodeData,
         position: { x: 0, y: 0 },
       });
@@ -324,6 +325,10 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           inputSchema: node._inputs ?? undefined,
           outputSchema: node._outputs ?? undefined,
           contract: node._contract ?? undefined,
+          // Optional illustrative figure for this node (data-URI image or inline
+          // SVG string on the spec's `_figure`, or config._figure). Shown when the
+          // Detail → Figures toggle allows it. See ProcessNode / StoreNode.
+          figure: (node as any)._figure ?? (node.config as { _figure?: string } | undefined)?._figure ?? undefined,
           // A Composite Process (its inner model is itself a composite) — the
           // card gets a drill-in affordance; double-click opens the inner view.
           isCompositeProcess: node.is_composite_process === true,
@@ -381,7 +386,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
       // Typed store leaf (bigraph-schema typed value). For a typed array/map,
       // fold the element type (`_data`) into the label — `array[concentration]`
       // reads more precisely than a bare `array`.
-      const _n = node as { _type?: unknown; _data?: unknown; _default?: unknown };
+      const _n = node as { _type?: unknown; _data?: unknown; _default?: unknown; _figure?: string };
       const _base = String(_n._type);
       const _elem = typeof _n._data === 'string' ? _n._data : undefined;
       const valueType = (_elem && (_base === 'array' || _base === 'map'))
@@ -395,6 +400,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           value: node._default != null ? (displayValue(node._default) ?? undefined) : undefined,
           valueType,
           path,
+          figure: _n._figure ?? undefined,
         } satisfies StoreNodeData,
         position: { x: 0, y: 0 },
       });

@@ -14,6 +14,7 @@ import {
   stateToReactFlow, defaultCollapsedIds, defaultHiddenIds,
 } from '../convert';
 import { fetchInnerComposite } from '../api';
+import { displayName } from '../labels';
 
 type Graph = { nodes: any[]; edges: any[] };
 type CacheEntry = { status: 'loading' | 'ready' | 'error'; graph?: Graph; error?: string };
@@ -95,8 +96,8 @@ export function prefetchInner(rootId: string, hops: string[][]) {
   if (!_CACHE.has(_key(rootId, hops))) _load(rootId, hops);
 }
 
-const PROC = { w: 150, h: 52 };
-const STORE = { w: 112, h: 58 };
+const PROC = { w: 176, h: 64 };
+const STORE = { w: 132, h: 68 };
 
 /** Truncate a process label to fit inside the mini-card. */
 function _short(label: string, max = 13): string {
@@ -200,27 +201,37 @@ function MiniMap(props: {
   const sizeOf = (n: any) => (n.type === 'process' ? PROC : STORE);
   const centerById = new Map<string, { x: number; y: number }>();
 
+  const lbl = PROC.h * 0.5;
+  // A process box STRETCHES wider than PROC.w to fit its label (see the mini-proc
+  // render below), centred on the node — so measure the bounds with that stretched
+  // width, else a long-named process (e.g. "gene expression") gets clipped by the
+  // fit-to-box viewBox.
+  const procWidth = (n: any) =>
+    n.type === 'process'
+      ? Math.max(PROC.w, String(displayName(n.data?.label ?? '')).length * lbl * 0.6 + 26)
+      : STORE.w;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const n of nodes) {
     const p = posById.get(n.id);
     if (!p) continue;
     const s = sizeOf(n);
-    minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-    maxX = Math.max(maxX, p.x + s.w); maxY = Math.max(maxY, p.y + s.h);
+    const ew = procWidth(n);                 // effective (rendered) width
+    const left = p.x + (s.w - ew) / 2;        // process box is centred on the node
+    minX = Math.min(minX, left); minY = Math.min(minY, p.y);
+    maxX = Math.max(maxX, left + ew); maxY = Math.max(maxY, p.y + s.h);
     centerById.set(n.id, { x: p.x + s.w / 2, y: p.y + s.h / 2 });
   }
   if (!isFinite(minX)) return null;
-  const pad = 16;
+  const pad = 8;
   // Extra horizontal room for the composite-bridge connectors + their labels.
-  const bgap = props.bridge ? PROC.w * 0.9 : 0;      // connector length
-  const bmargin = props.bridge ? bgap + PROC.w : 0;   // + port + label room
+  const bgap = props.bridge ? PROC.w * 0.45 : 0;      // connector length
+  const bmargin = props.bridge ? bgap + PROC.w * 0.55 : 0;   // + port + label room
   const w = maxX - minX + pad * 2 + 2 * bmargin;
   const h = maxY - minY + pad * 2;
   const vbX = minX - pad - bmargin;
   const vb = `${vbX} ${minY - pad} ${w} ${h}`;
   const Cx = vbX + w / 2, Cy = minY - pad + h / 2;
   const sw = Math.max(1, Math.max(w, h) / 700);
-  const lbl = PROC.h * 0.42;
 
   const procCount = nodes.filter((n) => n.type === 'process').length;
   const storeCount = nodes.length - procCount;
@@ -274,7 +285,10 @@ function MiniMap(props: {
         className="inner-preview-svg nodrag nowheel"
         viewBox={vb}
         preserveAspectRatio="xMidYMid meet"
-        style={{ aspectRatio: `${w} / ${h}`, cursor: 'grab' }}
+        /* No aspect-ratio lock: the svg fills the card's content box (flex), and
+           the graph scales to fit (meet) — so it uses the card's white space and
+           re-fits when the card is resized narrower/wider. */
+        style={{ cursor: 'grab' }}
         onWheel={onWheel}
         onMouseDown={onDown}
         onMouseMove={onMove}
@@ -327,7 +341,7 @@ function MiniMap(props: {
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
                 className="mini-store-label"
               >
-                {_short(name, 12)}
+                {_short(displayName(name), 12)}
               </text>
               {vtype && (
                 <text
@@ -370,7 +384,7 @@ function MiniMap(props: {
                 dominantBaseline="central" fill="#1e293b" fontWeight={600}
                 fontFamily="ui-sans-serif, system-ui, sans-serif"
               >
-                {name}
+                {displayName(name)}
               </text>
               </>
               ); })()}

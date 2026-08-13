@@ -44,7 +44,7 @@ export default function DetailMenu(props: {
   }, [open]);
 
   const anyForced = overrides.ports !== 'auto' || overrides.stores !== 'auto'
-    || overrides.config !== 'auto' || overrides.contract !== 'auto';
+    || overrides.config !== 'auto' || overrides.contract !== 'auto' || overrides.figures !== 'auto';
 
   const seg = (opts: { id: string; label: string }[], value: string, onPick: (id: string) => void) => (
     <div style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 5, overflow: 'hidden' }}>
@@ -99,9 +99,10 @@ export default function DetailMenu(props: {
           <div style={row}><span style={rowLabel}>Stores</span>{seg(STORES, overrides.stores, (id) => setOverrides({ ...overrides, stores: id as StoresDetail }))}</div>
           <div style={row}><span style={rowLabel}>Config</span>{seg(TRI, overrides.config, (id) => setOverrides({ ...overrides, config: id as TriDetail }))}</div>
           <div style={row}><span style={rowLabel}>Contract</span>{seg(CONTRACT, overrides.contract, (id) => setOverrides({ ...overrides, contract: id as ContractDetail }))}</div>
+          <div style={row}><span style={rowLabel}>Figures</span>{seg(TRI, overrides.figures, (id) => setOverrides({ ...overrides, figures: id as TriDetail }))}</div>
           <div style={{ height: 1, background: '#e5e7eb', margin: '4px 0' }} />
           <button
-            onClick={() => setOverrides({ ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto' })}
+            onClick={() => setOverrides({ ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto', figures: 'auto' })}
             disabled={!anyForced}
             style={{
               display: 'flex', alignItems: 'center', gap: 8, width: '100%', textAlign: 'left',

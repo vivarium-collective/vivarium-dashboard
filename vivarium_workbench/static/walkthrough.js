@@ -9348,16 +9348,15 @@
         var obj = (s && (s.objective || s.description)) ? String(s.objective || s.description) : '';
         var objShort = obj ? (obj.length > 150 ? obj.slice(0, 150).replace(/\s+\S*$/, '') + '…' : obj) : '';
         var lnk = 'font-size:0.82em;color:#3b82f6;text-decoration:none;white-space:nowrap;cursor:pointer';
+        // Card rows carry the DOWNLOADS only (↓ figures / ↓ notebook). The
+        // run/reproduce launch actions live on the study tab's header
+        // (▶ Run current spec / ↻ Reproduce), not here — so a card stays a
+        // browse+download surface.
         var acts =
           '<a href="#" style="' + lnk + '" title="Download this study\'s figures (panels + its composite) as a zip" ' +
             'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ figures</a>' +
-          '<a href="#" style="' + lnk + '" title="Download this study\'s investigation runnable notebook" ' +
-            'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>' +
-          (_isSnap ? '' :
-            '<a href="#" style="' + lnk + '" title="Run this study\'s current baseline spec as a new run" ' +
-              'onclick="window._vivRunStudyFromRow(event,\'' + _esc(slug) + '\');return false;">▶ run</a>' +
-            '<a href="#" style="' + lnk + '" title="Reproduce this study\'s most recent run (replays its recorded manifest)" ' +
-              'onclick="window._vivReproduceStudyFromRow(event,\'' + _esc(slug) + '\');return false;">↻ reproduce</a>');
+          '<a href="#" style="' + lnk + '" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
+            'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>';
         return '<div class="iset-study-row" style="padding:6px;border-radius:5px" ' +
           'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
           '<div style="display:flex;align-items:center;gap:8px">' +
@@ -11041,22 +11040,12 @@
   }
 
   function _dagTriggerControlsHtml(slug) {
-    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return '';
-    if ((window._uiConfig || {}).readonly) return '';
-    var st = _dagTriggerBySlug[slug];
-    var hasUpstream = !!(st && st.ancestors && st.ancestors.length);
-    var btn = 'font-size:0.66em;padding:2px 8px;border-radius:6px;cursor:pointer;' +
-      'border:1px solid #cbd5e1;background:#fff;color:#334155';
-    var out = '<div class="js-authoring dag-trigger-controls" ' +
-      'style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">' +
-      '<button type="button" class="dag-trigger-run" data-slug="' + _esc(slug) + '" ' +
-      'style="' + btn + '">▷ Run this study</button>';
-    if (hasUpstream) {
-      out += '<button type="button" class="dag-trigger-continue" data-slug="' + _esc(slug) + '" ' +
-        'title="Reuse cached upstream results; recompute only this study" ' +
-        'style="' + btn + '">⏵ Continue from here</button>';
-    }
-    return out + '</div>';
+    // Launch actions (Run this study / Continue from here) intentionally do NOT
+    // appear on the graph study cards — running lives on the full study tab
+    // (▶ Run current spec / ↻ Reproduce), matching the download group below and
+    // the investigation card study rows. The cards stay a browse + download
+    // surface. (Kept as a no-op so existing call sites need no change.)
+    return '';
   }
 
   // Download affordances for a graph study card: ↓ figures (this study's own
@@ -11071,8 +11060,8 @@
       '<a href="#" title="Download this study\'s figures (panels + its composite) as a zip" ' +
         'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
         'style="' + lnk + '">↓ figures</a>' +
-      '<a href="#" title="Download this investigation\'s runnable notebook (includes this study)" ' +
-        'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
+      '<a href="#" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
+        'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(_dagInvSlug || '') + '\');return false;" ' +
         'style="' + lnk + '">↓ notebook</a>' +
       '</div>';
   }
@@ -12059,6 +12048,21 @@
       : '/api/investigation-notebook/' + encodeURIComponent(name);
     var a = document.createElement('a');
     a.href = url; a.download = name + '.ipynb';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // A SINGLE study's runnable notebook (just that study's cells). Live: the
+  // server generates it on demand at /api/study/<slug>/notebook. Snapshot: a
+  // static export has no per-study artifact, so fall back to the investigation
+  // notebook (which includes this study) via _vivNotebookFromCard.
+  window._vivStudyNotebookFromCard = function (ev, slug, invName) {
+    if (ev) ev.stopPropagation();
+    var c = window.__DASH_CONFIG__ || {};
+    if (c.mode === 'snapshot') {
+      return window._vivNotebookFromCard(ev, invName || slug);
+    }
+    var url = '/api/study/' + encodeURIComponent(slug) + '/notebook';
+    var a = document.createElement('a');
+    a.href = url; a.download = slug + '.ipynb';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
   // Download the FULL figure archive for an investigation (every study's figures

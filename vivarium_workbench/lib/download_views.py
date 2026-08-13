@@ -29,7 +29,10 @@ from pathlib import Path
 from typing import Optional
 
 from vivarium_workbench.lib import data_sources as _data_sources
-from vivarium_workbench.lib.notebook_export import export_investigation_notebook
+from vivarium_workbench.lib.notebook_export import (
+    export_investigation_notebook,
+    export_study_notebook,
+)
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
 
@@ -220,6 +223,35 @@ def build_investigation_notebook(
         paths = export_investigation_notebook(ws_root, slug)
     except FileNotFoundError:
         raise DownloadError({"error": f"no investigation {slug!r}"}, 404)
+    except Exception as exc:  # noqa: BLE001 — surface, don't crash the server
+        raise DownloadError({"error": f"notebook export failed: {exc}"}, 500)
+    path = paths["py"] if fmt == "py" else paths["ipynb"]
+    mime = "text/x-python" if fmt == "py" else "application/x-ipynb+json"
+    data = path.read_bytes()
+    return data, mime, path.name
+
+
+def build_study_notebook(
+    ws_root: Path, slug: str, fmt: str,
+) -> tuple[bytes, str, str]:
+    """Build the GET /api/study/<slug>/notebook download for *ws_root*.
+
+    Deterministically generates a SINGLE study's ``.ipynb`` + ``.py`` (just that
+    study's setup / params / composite / visualization cells) and returns
+    ``(data, content_type, filename)`` for the requested ``fmt`` (``"py"`` →
+    ``text/x-python``; anything else → ``application/x-ipynb+json``).
+
+    Raises ``DownloadError``: 400 when ``slug`` is empty; 404 when the study is
+    absent; 500 on any other export failure. Mirrors
+    :func:`build_investigation_notebook`.
+    """
+    slug = (slug or "").strip()
+    if not slug:
+        raise DownloadError({"error": "study slug required"}, 400)
+    try:
+        paths = export_study_notebook(ws_root, slug)
+    except FileNotFoundError:
+        raise DownloadError({"error": f"no study {slug!r}"}, 404)
     except Exception as exc:  # noqa: BLE001 — surface, don't crash the server
         raise DownloadError({"error": f"notebook export failed: {exc}"}, 500)
     path = paths["py"] if fmt == "py" else paths["ipynb"]

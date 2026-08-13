@@ -44,6 +44,10 @@ export type View = {
   /** Per-feature Detail overrides (the Detail menu) in effect when captured.
    *  Each field 'auto' (or absent) = follow the zoom tier. */
   detailOverrides?: { ports?: string; stores?: string; config?: string; contract?: string };
+  /** Node text scale (Font control) in effect when captured; 1 = default.
+   *  Multiplies every node font size, so a saved view / headless render keeps
+   *  the chosen size. */
+  fontScale?: number;
 };
 
 export type ViewStore = {
@@ -174,6 +178,8 @@ export function normalizeView(v: any): View {
           contract: typeof v.detailOverrides.contract === 'string' ? v.detailOverrides.contract : 'auto',
         }
       : { ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto' },
+    // Node text scale; absent/invalid → 1 (default).
+    fontScale: (typeof v?.fontScale === 'number' && v.fontScale > 0) ? v.fontScale : 1,
   };
 }
 
