@@ -751,20 +751,42 @@ body {
 .inner-preview-svg .mini-proc:hover rect { fill: #eff6ff; stroke: #2563eb; }
 .inner-preview-svg .mini-proc, .inner-preview-svg .mini-store { cursor: pointer; }
 /* A Composite Process card grows wider so its inner-composite mini-map has room
-   to show labelled subprocesses (a wide, detailed figure — not a tall sliver). */
-.process-node:has(.inner-preview) { min-width: 860px; display: flex; flex-direction: column; }
+   to show labelled subprocesses (a wide, detailed figure — not a tall sliver).
+   That wide floor applies ONLY to an un-sized card: once the card has a hand-set
+   / saved size it is free to be narrower, and its content scrolls (below). */
+.process-node:has(.inner-preview) { display: flex; flex-direction: column; }
+.process-node:has(.inner-preview):not(.is-sized) { min-width: 860px; }
 
-/* Optional per-node illustration (Detail → Figures). Kept inside the card and
-   scaled down so it never blows out the node. */
+/* A hand-sized card is a fixed viewport onto its content: when the content is
+   bigger than the box (a large inner composite, or a full contract in a small
+   card) the CENTER scrolls with a HIDDEN scrollbar instead of forcing the card
+   larger. Ports stay pinned on the border (they're siblings of the center). */
+.process-node.is-sized { display: flex; flex-direction: column; }
+.process-node.is-sized .process-node-center {
+  flex: 1 1 auto; min-height: 0; min-width: 0;
+  overflow: auto; scrollbar-width: none; -ms-overflow-style: none;
+}
+.process-node.is-sized .process-node-center::-webkit-scrollbar { width: 0; height: 0; }
+
+/* Optional per-node illustration (Detail → Figures). A fixed target height (not
+   just a cap) so small native icons render BIG; width scales to keep aspect. */
 .node-figure { display: flex; justify-content: center; align-items: center; margin: 7px 4px 3px; }
-.node-figure-img { max-width: 100%; max-height: 130px; height: auto; display: block; }
+.node-figure-img { width: auto; height: 90px; max-width: 100%; display: block; }
 .node-figure-svg { display: flex; justify-content: center; max-width: 100%; }
-.node-figure-svg svg { max-width: 100%; max-height: 130px; height: auto; display: block; }
+.node-figure-svg svg { width: auto; height: 90px; max-width: 100%; display: block; }
 /* Contract showing → the figure is a small badge pinned to the card's top-left
    corner (out of flow), so the prose + equations reclaim the vertical space. */
-.node-figure.is-corner { position: absolute; top: 8px; left: 10px; margin: 0; z-index: 1; pointer-events: none; }
+.node-figure.is-corner { position: absolute; top: 7px; left: 9px; margin: 0; z-index: 1; pointer-events: none; }
 .node-figure.is-corner .node-figure-img,
-.node-figure.is-corner .node-figure-svg svg { max-width: 40px; max-height: 40px; }
+.node-figure.is-corner .node-figure-svg svg { height: 48px; max-width: 54px; }
+/* Keep the corner badge from colliding with the title: the title becomes a
+   left-aligned header sitting to the RIGHT of the icon (padding only on the
+   left, so it keeps full width and long names wrap on word boundaries), tall
+   enough that the meta + contract below start under the badge, never over it. */
+.process-node:has(.node-figure.is-corner) .process-node-title {
+  text-align: left; padding-left: 64px; min-height: 48px;
+  overflow-wrap: break-word;
+}
 .inner-preview-hint { font-size: 10px; color: #64748b; font-style: italic; }
 .inner-preview-idle {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;

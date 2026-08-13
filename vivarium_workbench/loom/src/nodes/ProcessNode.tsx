@@ -361,7 +361,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   return (
     <div
       ref={nodeRef}
-      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}`}
+      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}${dims ? ' is-sized' : ''}`}
       style={{
         ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
         // A hand-set / saved node height wins: cap the port-driven min-height to
