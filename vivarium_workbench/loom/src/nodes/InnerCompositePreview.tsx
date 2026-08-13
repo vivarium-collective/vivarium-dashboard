@@ -95,8 +95,8 @@ export function prefetchInner(rootId: string, hops: string[][]) {
   if (!_CACHE.has(_key(rootId, hops))) _load(rootId, hops);
 }
 
-const PROC = { w: 150, h: 52 };
-const STORE = { w: 112, h: 58 };
+const PROC = { w: 176, h: 64 };
+const STORE = { w: 132, h: 68 };
 
 /** Truncate a process label to fit inside the mini-card. */
 function _short(label: string, max = 13): string {
@@ -210,17 +210,17 @@ function MiniMap(props: {
     centerById.set(n.id, { x: p.x + s.w / 2, y: p.y + s.h / 2 });
   }
   if (!isFinite(minX)) return null;
-  const pad = 16;
+  const pad = 8;
   // Extra horizontal room for the composite-bridge connectors + their labels.
-  const bgap = props.bridge ? PROC.w * 0.9 : 0;      // connector length
-  const bmargin = props.bridge ? bgap + PROC.w : 0;   // + port + label room
+  const bgap = props.bridge ? PROC.w * 0.45 : 0;      // connector length
+  const bmargin = props.bridge ? bgap + PROC.w * 0.55 : 0;   // + port + label room
   const w = maxX - minX + pad * 2 + 2 * bmargin;
   const h = maxY - minY + pad * 2;
   const vbX = minX - pad - bmargin;
   const vb = `${vbX} ${minY - pad} ${w} ${h}`;
   const Cx = vbX + w / 2, Cy = minY - pad + h / 2;
   const sw = Math.max(1, Math.max(w, h) / 700);
-  const lbl = PROC.h * 0.42;
+  const lbl = PROC.h * 0.5;
 
   const procCount = nodes.filter((n) => n.type === 'process').length;
   const storeCount = nodes.length - procCount;
