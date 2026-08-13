@@ -9355,8 +9355,8 @@
         var acts =
           '<a href="#" style="' + lnk + '" title="Download this study\'s figures (panels + its composite) as a zip" ' +
             'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ figures</a>' +
-          '<a href="#" style="' + lnk + '" title="Download this study\'s investigation runnable notebook" ' +
-            'onclick="window._vivNotebookFromCard(event,\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>';
+          '<a href="#" style="' + lnk + '" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
+            'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>';
         return '<div class="iset-study-row" style="padding:6px;border-radius:5px" ' +
           'onmouseover="this.style.background=\'#f8fafc\'" onmouseout="this.style.background=\'\'">' +
           '<div style="display:flex;align-items:center;gap:8px">' +
@@ -11060,8 +11060,8 @@
       '<a href="#" title="Download this study\'s figures (panels + its composite) as a zip" ' +
         'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
         'style="' + lnk + '">↓ figures</a>' +
-      '<a href="#" title="Download this investigation\'s runnable notebook (includes this study)" ' +
-        'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
+      '<a href="#" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
+        'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(_dagInvSlug || '') + '\');return false;" ' +
         'style="' + lnk + '">↓ notebook</a>' +
       '</div>';
   }
@@ -12048,6 +12048,21 @@
       : '/api/investigation-notebook/' + encodeURIComponent(name);
     var a = document.createElement('a');
     a.href = url; a.download = name + '.ipynb';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+  // A SINGLE study's runnable notebook (just that study's cells). Live: the
+  // server generates it on demand at /api/study/<slug>/notebook. Snapshot: a
+  // static export has no per-study artifact, so fall back to the investigation
+  // notebook (which includes this study) via _vivNotebookFromCard.
+  window._vivStudyNotebookFromCard = function (ev, slug, invName) {
+    if (ev) ev.stopPropagation();
+    var c = window.__DASH_CONFIG__ || {};
+    if (c.mode === 'snapshot') {
+      return window._vivNotebookFromCard(ev, invName || slug);
+    }
+    var url = '/api/study/' + encodeURIComponent(slug) + '/notebook';
+    var a = document.createElement('a');
+    a.href = url; a.download = slug + '.ipynb';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
   // Download the FULL figure archive for an investigation (every study's figures

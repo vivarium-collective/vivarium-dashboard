@@ -3471,6 +3471,45 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.get(
+        "/api/study/{slug}/notebook",
+        tags=["Downloads"],
+        summary="Download a single study's runnable notebook (.ipynb) or script (.py)",
+        response_class=Response,
+    )
+    def study_notebook_route(
+        slug: str,
+        format: str = "ipynb",
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Generate + download ONE study's notebook/script.
+
+        Standalone counterpart to ``/api/investigation-notebook/<slug>`` — just
+        that study's setup / parameters / composite / visualization cells (no
+        sibling studies). Deterministic export (no AI). ``?format=py`` →
+        ``text/x-python``; otherwise → ``application/x-ipynb+json``. Served as an
+        attachment with ``Cache-Control: no-store``.
+
+        HTTP 400 when ``slug`` is empty; HTTP 404 ``{"error": "no study
+        '<slug>'"}`` when absent; HTTP 500 on export failure.
+
+        Library-backed via ``lib.download_views.build_study_notebook``.
+        """
+        try:
+            data, mime, filename = _download_views.build_study_notebook(
+                ws, slug, format
+            )
+        except _download_views.DownloadError as exc:
+            return JSONResponse(status_code=exc.status, content=exc.body)
+        return Response(
+            content=data,
+            headers={
+                "Content-Type": mime,
+                "Cache-Control": "no-store",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
     # -----------------------------------------------------------------------
     # Events (Phase C, Batch 15): SSE workspace-state stream
     # -----------------------------------------------------------------------

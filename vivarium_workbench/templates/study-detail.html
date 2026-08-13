@@ -654,9 +654,7 @@
     {# Download the runnable notebook for this study's investigation (includes
        this study, with its composite + exposed parameters). Lives in the Model
        tab — where the composition/params are — rather than the header. #}
-    {% if study.investigation %}
-    <button type="button" class="btn-mini" onclick="window._vivNotebookFromCard(event, '{{ study.investigation }}')" title="Download a runnable Jupyter notebook for this study's investigation (includes this study's composite + parameters)">↓ notebook</button>
-    {% endif %}
+    <button type="button" class="btn-mini" onclick="window._vivStudyNotebookFromCard(event, '{{ study.name }}', '{{ study.investigation }}')" title="Download a runnable Jupyter notebook for THIS study — its composite + editable parameters + figures">↓ notebook</button>
   </div>
   {# Build-block visibility mirrors the pre-merge panel-build guard exactly (model_change/impl_reqs/conditions/baseline) so non-v3 studies keep their Model + Conditions sections. #}
   {% set _has_build = study.model_change or study.implementation_requirements or study.conditions or study.baseline %}

@@ -768,6 +768,33 @@ def _build_blocks(ws_root: Path, layout: dict, inv: dict, slug: str, strat: dict
     return blocks
 
 
+def _study_intro_blocks(study: dict, slug: str, inv_slug: str) -> list[dict]:
+    """Front matter for a SINGLE-study notebook (vs the investigation intro)."""
+    title = _truthy(study.get("title")) or slug
+    origin = f" — investigation `{inv_slug}`" if inv_slug else ""
+    lines = [f"# {title}", "", f"_Study `{slug}`{origin} — coder reproduction notebook._"]
+    if study.get("question"):
+        lines += ["", f"**Question.** {_truthy(study['question'])}"]
+    lines += [
+        "",
+        "---",
+        "",
+        "This notebook reproduces a **single study**: it loads the study's "
+        "composite(s), exposes their parameters as editable cells, then renders "
+        "the study's figures. Set `RERUN = False` in the setup cell to render the "
+        "committed results without re-simulating.",
+    ]
+    return [_md("\n".join(lines))]
+
+
+def _build_study_blocks(ws_root: Path, layout: dict, study: dict, slug: str, strat: dict) -> list[dict]:
+    inv_slug = _truthy(study.get("investigation"))
+    blocks = _study_intro_blocks(study, slug, inv_slug)
+    blocks += _setup_blocks(ws_root, strat)
+    blocks += _study_blocks(ws_root, layout, slug, strat)
+    return blocks
+
+
 # ---------------------------------------------------------------------------
 # Serializers
 # ---------------------------------------------------------------------------
@@ -908,6 +935,44 @@ def export_investigation_notebook(
 
     ipynb_path = out_dir / f"{inv_slug}.ipynb"
     py_path = out_dir / f"{inv_slug}.py"
+
+    ipynb_path.write_text(json.dumps(_ipynb(blocks), indent=1) + "\n", encoding="utf-8")
+
+    try:
+        fig_dir_rel = str((out_dir / "figures").relative_to(ws_root))
+    except ValueError:
+        fig_dir_rel = "reports/notebooks/figures"
+    py_path.write_text(_py(blocks, fig_dir_rel, py_path.name), encoding="utf-8")
+
+    return {"ipynb": ipynb_path, "py": py_path}
+
+
+def export_study_notebook(
+    ws_root: Path | str, slug: str, *, out_dir: Path | str | None = None
+) -> dict:
+    """Generate ``<slug>.ipynb`` + ``<slug>.py`` for a SINGLE study.
+
+    Same setup/params/composite/visualization cells as the study's section in
+    its investigation notebook, but standalone (study intro instead of the
+    investigation intro; no sibling studies). Raises ``FileNotFoundError`` when
+    the study is absent. Returns ``{"ipynb": Path, "py": Path}``.
+    """
+    ws_root = Path(ws_root).resolve()
+    ws, layout, package = _workspace_layout(ws_root)
+    study = _load_study(ws_root, layout, slug)
+    if study is None:
+        raise FileNotFoundError(f"no study {slug!r}")
+    strat = _discover_strategy(ws_root, ws, package)
+
+    if out_dir is None:
+        out_dir = _reports_dir(ws_root, layout) / "notebooks"
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    blocks = _build_study_blocks(ws_root, layout, study, slug, strat)
+
+    ipynb_path = out_dir / f"{slug}.ipynb"
+    py_path = out_dir / f"{slug}.py"
 
     ipynb_path.write_text(json.dumps(_ipynb(blocks), indent=1) + "\n", encoding="utf-8")
 
