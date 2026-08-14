@@ -2560,6 +2560,33 @@
     return '<button class="pcard-json-btn" type="button" title="View the full composite JSON spec" ' +
       'onclick="event.stopPropagation();_toggleCompositeJson(this)">{ } JSON</button>';
   }
+  // "🔗 Share" — copy an absolute link to THIS composite's interactive bigraph
+  // view (the loom, which applies the composite's saved default view). Sits next
+  // to { } JSON so it's easy to grab a shareable URL — works in the snapshot too.
+  function _shareCompositeBtn() {
+    return '<button class="pcard-json-btn" type="button" title="Copy a shareable link to this composite\'s view" ' +
+      'onclick="event.stopPropagation();_shareCompositeFromHeader(this)">🔗 Share</button>';
+  }
+  function _shareCompositeFromHeader(btn) {
+    var card = btn.closest('.registry-entry-full');
+    var id = card ? card.getAttribute('data-address') : null;
+    if (!id) return;
+    var apiUrl = (window.DataSource && window.DataSource.apiUrl)
+      ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    var rel = document.body.classList.contains('snapshot')
+      ? apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(_compositeStateUrl(id))
+      : apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id);
+    var url;
+    try { url = new URL(rel, window.location.href).href; } catch (e) { url = rel; }
+    var flash = function () {
+      var old = btn.textContent; btn.textContent = '✓ Link copied'; btn.classList.add('active');
+      setTimeout(function () { btn.textContent = old; btn.classList.remove('active'); }, 1600);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(flash).catch(function () { window.prompt('Copy this link:', url); });
+    } else { window.prompt('Copy this link:', url); }
+  }
+  window._shareCompositeFromHeader = _shareCompositeFromHeader;
   function _toggleCompositeJson(btn) {
     var card = btn.closest('.registry-entry-full'); if (!card) return;
     var panel = card.querySelector('[data-role="composite-json"]'); if (!panel) return;
@@ -3130,6 +3157,7 @@
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" ondblclick="event.stopPropagation();_maximizeCardFromHeader(this)" title="Click to pin to top · double-click to maximize">' +
             '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + wsPill + roPill +
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
+            _shareCompositeBtn() +
             _compositeJsonBtn() +
             _cardMaximizeBtn() +
             _cardPopoutBtn(c.id, 'composite') +
