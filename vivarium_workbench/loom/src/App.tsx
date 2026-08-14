@@ -36,7 +36,7 @@ import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './pan
 import ViewsMenu from './panels/ViewsMenu';
 import LayoutMenu from './panels/LayoutMenu';
 import DetailMenu from './panels/DetailMenu';
-import { getDefaultView, decodeView, fetchView, normalizeView, type View } from './viewStore';
+import { getDefaultView, decodeView, fetchView, normalizeView, shareableUrl, type View } from './viewStore';
 import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
 import { ProcessPanel } from './panels/ProcessPanel';
 import { NodesPanel } from './panels/NodesPanel';
@@ -942,6 +942,18 @@ export default function App() {
     fontScale,
   }), [nodes, collapsed, hidden, layoutMode.modeId, detailFloor, collapseRedundant, hyperedgeMode, detailOverrides, fontScale]);
 
+  // Copy a self-contained shareable link to the CURRENT view — the whole View
+  // (positions, detail mix, collapse, font) is lz-compressed into `?view=`, so
+  // the link reopens the exact arrangement anywhere, including the static
+  // read-only workbench (no server needed). Unmodified, this is the default view.
+  const [shareCopied, setShareCopied] = useState(false);
+  const onCopyViewLink = useCallback(() => {
+    const url = shareableUrl(captureCurrentView());
+    const done = () => { setShareCopied(true); window.setTimeout(() => setShareCopied(false), 1800); };
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(url).then(done).catch(() => window.prompt('Copy this view link:', url));
+    else window.prompt('Copy this view link:', url);
+  }, [captureCurrentView]);
+
   // Applying a view pins its positions (via the layout store, which the layout
   // effect reads) and sets collapsed/hidden — the existing effects re-lay-out
   // and toggle visibility. Then re-fit so the saved arrangement is framed.
@@ -1821,6 +1833,22 @@ export default function App() {
                     <button onClick={() => bumpFont(0.1)} title="Larger text"
                       style={{ height: 28, width: 26, border: 0, borderLeft: '1px solid #e5e7eb', background: 'transparent', cursor: 'pointer', color: '#374151', fontSize: 15, fontWeight: 700 }}>A+</button>
                   </div>
+                  {/* Share: copy a self-contained link to THIS view (works on the
+                      static read-only workbench too). */}
+                  <button
+                    onClick={onCopyViewLink}
+                    title="Copy a shareable link to this exact view — positions, detail, and font — that reopens anywhere"
+                    style={{
+                      height: 28, padding: '0 10px', fontSize: 12,
+                      display: 'inline-flex', alignItems: 'center', gap: 5,
+                      background: shareCopied ? '#ecfdf5' : '#fff',
+                      border: '1px solid ' + (shareCopied ? '#6ee7b7' : '#d1d5db'),
+                      borderRadius: 4, cursor: 'pointer',
+                      color: shareCopied ? '#047857' : '#374151', fontWeight: 600,
+                    }}
+                  >
+                    {shareCopied ? '✓ Link copied' : '🔗 Share'}
+                  </button>
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}
