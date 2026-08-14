@@ -69,7 +69,10 @@ def test_callers_repointed():
 
 def test_native_gallery_card_uses_figure_card_and_conditional_run_link():
     i = JS.index("function _loadNativeGallery")
-    block = JS[i:i + 2400]
+    # Window spans the whole _loadNativeGallery body (it ends where _loadRawData
+    # begins, ~offset 3031). Kept generous so a graceful-degradation guard added
+    # ahead of the card-building `.then` can't push the asserted markup out of view.
+    block = JS[i:JS.index("function _loadRawData", i)]
     assert '"figure-card"' in block
     assert 'font-weight:600;font-size:0.92em' not in block  # old bold native label gone
     assert 'figure-caption-row' in block and 'figure-source-chip' in block
