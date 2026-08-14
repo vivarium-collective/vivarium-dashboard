@@ -360,7 +360,8 @@
         + '></iframe>'
       : (c.img
         ? '<img class="chart-img figure-media" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
-        : (c.svg || ''));
+        // Inline SVGs are wrapped so _fitSvgScale can shrink them (see below).
+        : (c.svg ? '<div class="figure-svg-scale">' + c.svg + '</div>' : ''));
     var desc = c.caption ? '<div class="chart-caption">' + c.caption + '</div>' : '';
     var runLink = c.run_id
       ? '<a href="#" class="figure-run-link" data-run-id="' + escapeHtmlForTests(String(c.run_id)) + '">from run '
@@ -373,6 +374,78 @@
       + runLink
       + '</div></div>';
   }
+
+  // Shrink one inline-SVG figure to its card width via CSS transform. Needed
+  // because loom figure SVGs carry <foreignObject> HTML that WebKit renders at
+  // intrinsic size (the `svg{max-width:100%}` rule scales the box but not the
+  // HTML inside it), overflowing the card. transform:scale() scales the whole
+  // subtree — foreignObject included — in every browser. Only ever shrinks;
+  // small figures keep their native size, left-aligned.
+  function _fitSvgScale(wrap) {
+    var svg = wrap && wrap.querySelector('svg');
+    if (!svg) return;
+    var vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(parseFloat);
+    var iw = (vb.length === 4 && vb[2]) ? vb[2] : (parseFloat(svg.getAttribute('width')) || 0);
+    var ih = (vb.length === 4 && vb[3]) ? vb[3] : (parseFloat(svg.getAttribute('height')) || 0);
+    if (!iw || !ih) return;
+    // Pin the SVG to its intrinsic px size so the transform (not max-width) is
+    // the only thing scaling it — otherwise the two compound.
+    svg.style.width = iw + 'px';
+    svg.style.height = ih + 'px';
+    svg.style.maxWidth = 'none';
+    svg.style.transformOrigin = 'top left';
+    var cw = wrap.clientWidth || wrap.getBoundingClientRect().width || iw;
+    var scale = (cw > 0 && iw > cw) ? (cw / iw) : 1;
+    svg.style.transform = scale < 1 ? ('scale(' + scale + ')') : 'none';
+    // transform doesn't shrink the layout box, so reserve the scaled height
+    // explicitly (else the card leaves a full-height gap below the figure).
+    wrap.style.height = Math.ceil(ih * scale) + 'px';
+  }
+  function _fitAllSvgScales() {
+    var wraps = document.querySelectorAll('.figure-svg-scale');
+    for (var i = 0; i < wraps.length; i++) _fitSvgScale(wraps[i]);
+  }
+  window._fitAllSvgScales = _fitAllSvgScales;
+  // Re-fit on viewport resize (debounced); the card width tracks the window.
+  var _svgScaleRt;
+  window.addEventListener('resize', function () {
+    if (_svgScaleRt) window.clearTimeout(_svgScaleRt);
+    _svgScaleRt = window.setTimeout(_fitAllSvgScales, 120);
+  });
+
+  // "↓ visualizations" download. The button's markup lives in the study-detail
+  // shell but its handler was only defined in walkthrough.js — which the shell
+  // does NOT load — so the inline onclick threw ReferenceError and the button
+  // silently did nothing. Define it here (the shell loads study-detail.js).
+  // Probe first: the zip only holds declared IMAGE files, and in a snapshot an
+  // absent file 404s; a bare <a download> to a 404 reads as a broken button.
+  window._vivStudyFiguresFromCard = function (ev, slug) {
+    if (ev && ev.stopPropagation) ev.stopPropagation();
+    var c = window.__DASH_CONFIG__ || {};
+    var base = c.basePath || '';
+    var url = (c.mode === 'snapshot')
+      ? base + '/figures/studies/' + encodeURIComponent(slug) + '.zip'
+      : '/api/study/' + encodeURIComponent(slug) + '/figures.zip';
+    function _notify(msg) {
+      if (typeof window._showToast === 'function') window._showToast(msg);
+      else window.alert(msg);
+    }
+    fetch(url).then(function (r) {
+      if (!r.ok) {
+        _notify('No downloadable figure archive for "' + slug + '" '
+          + '(its visualizations have no exportable image files).');
+        return null;
+      }
+      return r.blob();
+    }).then(function (blob) {
+      if (!blob) return;
+      var href = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = href; a.download = slug + '-figures.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      window.setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
+    }).catch(function (e) { _notify('Figure download failed: ' + e); });
+  };
   // Figures tab (Fable A #3): the empty state is computed over the UNION of
   // the three figure sources — native gallery, embed_visualizations iframes
   // (server-rendered, present in the DOM from page load), and latest-run
@@ -873,6 +946,7 @@
         '<div style="margin-top:10px">' + sectionLabel('Results') + resultsHtml + '</div>' +
       '</div>';
     _wireFigureRunLinks(host);
+    window.requestAnimationFrame(_fitAllSvgScales);
     host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   window._showRunDetail = _showRunDetail;
@@ -927,6 +1001,8 @@
         }
         panel.innerHTML = html;
         _wireFigureRunLinks(panel);
+        // rAF: measure card width after layout so the transform scale is right.
+        window.requestAnimationFrame(_fitAllSvgScales);
         if (panelId === 'viz-charts-panel') {
           _figuresSourceState.charts = true;
           _updateFiguresEmptyState();
