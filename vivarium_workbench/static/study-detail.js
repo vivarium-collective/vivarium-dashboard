@@ -360,8 +360,8 @@
         + '></iframe>'
       : (c.img
         ? '<img class="chart-img figure-media" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
-        // Inline SVGs are wrapped so _fitSvgScale can shrink them (see below).
-        : (c.svg ? '<div class="figure-svg-scale">' + c.svg + '</div>' : ''));
+        // SVGs → <img> data-URI so WebKit scales foreignObject figures (_svgImg).
+        : (c.svg ? _svgImg(c) : ''));
     var desc = c.caption ? '<div class="chart-caption">' + c.caption + '</div>' : '';
     var runLink = c.run_id
       ? '<a href="#" class="figure-run-link" data-run-id="' + escapeHtmlForTests(String(c.run_id)) + '">from run '
@@ -375,47 +375,18 @@
       + '</div></div>';
   }
 
-  // Fit one inline-SVG figure to its card width via CSS transform. Needed
-  // because loom figure SVGs carry <foreignObject> HTML that WebKit renders at
-  // intrinsic size (the `svg{max-width:100%}` rule scales the box but not the
-  // HTML inside it), overflowing the card. transform:scale() scales the whole
-  // subtree — foreignObject included — in every browser.
-  //
-  // The transform must ALWAYS be applied, even when the figure is narrower than
-  // the card: WebKit only lays out foreignObject correctly once a transform
-  // establishes a scaling context. With `transform:none` it falls back to the
-  // buggy oversized render — so we fit-to-width (scale up OR down), never none.
-  function _fitSvgScale(wrap) {
-    var svg = wrap && wrap.querySelector('svg');
-    if (!svg) return;
-    var vb = (svg.getAttribute('viewBox') || '').split(/[\s,]+/).map(parseFloat);
-    var iw = (vb.length === 4 && vb[2]) ? vb[2] : (parseFloat(svg.getAttribute('width')) || 0);
-    var ih = (vb.length === 4 && vb[3]) ? vb[3] : (parseFloat(svg.getAttribute('height')) || 0);
-    if (!iw || !ih) return;
-    // Pin the SVG to its intrinsic px size so the transform (not max-width) is
-    // the only thing scaling it — otherwise the two compound.
-    svg.style.width = iw + 'px';
-    svg.style.height = ih + 'px';
-    svg.style.maxWidth = 'none';
-    svg.style.transformOrigin = 'top left';
-    var cw = wrap.clientWidth || wrap.getBoundingClientRect().width || iw;
-    var scale = cw > 0 ? (cw / iw) : 1;
-    svg.style.transform = 'scale(' + scale + ')';
-    // transform doesn't resize the layout box, so reserve the scaled height
-    // explicitly (else the card gaps below, or clips, the figure).
-    wrap.style.height = Math.ceil(ih * scale) + 'px';
+  // Render a chart SVG as an <img> data-URI rather than inline markup.
+  // Loom figure SVGs embed their nodes as <foreignObject> HTML; WebKit renders
+  // foreignObject at intrinsic size when the SVG is inlined (it ignores the
+  // viewBox→viewport scale for it), so the graph overflows its card. As an <img>
+  // the browser rasterizes the whole document (foreignObject included) and
+  // scales it with plain `max-width` — correct in every engine, shrink-only, so
+  // a small figure keeps its native size instead of being blown up to the card
+  // width. encodeURIComponent (not base64) keeps the UTF-8 math glyphs intact.
+  function _svgImg(c) {
+    return '<img class="figure-svg-img" alt="' + (c.key || 'figure') + '" loading="lazy" '
+      + 'src="data:image/svg+xml,' + encodeURIComponent(c.svg) + '">';
   }
-  function _fitAllSvgScales() {
-    var wraps = document.querySelectorAll('.figure-svg-scale');
-    for (var i = 0; i < wraps.length; i++) _fitSvgScale(wraps[i]);
-  }
-  window._fitAllSvgScales = _fitAllSvgScales;
-  // Re-fit on viewport resize (debounced); the card width tracks the window.
-  var _svgScaleRt;
-  window.addEventListener('resize', function () {
-    if (_svgScaleRt) window.clearTimeout(_svgScaleRt);
-    _svgScaleRt = window.setTimeout(_fitAllSvgScales, 120);
-  });
 
   // "↓ visualizations" download. The button's markup lives in the study-detail
   // shell but its handler was only defined in walkthrough.js — which the shell
@@ -950,7 +921,6 @@
         '<div style="margin-top:10px">' + sectionLabel('Results') + resultsHtml + '</div>' +
       '</div>';
     _wireFigureRunLinks(host);
-    window.requestAnimationFrame(_fitAllSvgScales);
     host.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
   window._showRunDetail = _showRunDetail;
@@ -1005,8 +975,6 @@
         }
         panel.innerHTML = html;
         _wireFigureRunLinks(panel);
-        // rAF: measure card width after layout so the transform scale is right.
-        window.requestAnimationFrame(_fitAllSvgScales);
         if (panelId === 'viz-charts-panel') {
           _figuresSourceState.charts = true;
           _updateFiguresEmptyState();
