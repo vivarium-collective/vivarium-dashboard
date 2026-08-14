@@ -375,12 +375,16 @@
       + '</div></div>';
   }
 
-  // Shrink one inline-SVG figure to its card width via CSS transform. Needed
+  // Fit one inline-SVG figure to its card width via CSS transform. Needed
   // because loom figure SVGs carry <foreignObject> HTML that WebKit renders at
   // intrinsic size (the `svg{max-width:100%}` rule scales the box but not the
   // HTML inside it), overflowing the card. transform:scale() scales the whole
-  // subtree — foreignObject included — in every browser. Only ever shrinks;
-  // small figures keep their native size, left-aligned.
+  // subtree — foreignObject included — in every browser.
+  //
+  // The transform must ALWAYS be applied, even when the figure is narrower than
+  // the card: WebKit only lays out foreignObject correctly once a transform
+  // establishes a scaling context. With `transform:none` it falls back to the
+  // buggy oversized render — so we fit-to-width (scale up OR down), never none.
   function _fitSvgScale(wrap) {
     var svg = wrap && wrap.querySelector('svg');
     if (!svg) return;
@@ -395,10 +399,10 @@
     svg.style.maxWidth = 'none';
     svg.style.transformOrigin = 'top left';
     var cw = wrap.clientWidth || wrap.getBoundingClientRect().width || iw;
-    var scale = (cw > 0 && iw > cw) ? (cw / iw) : 1;
-    svg.style.transform = scale < 1 ? ('scale(' + scale + ')') : 'none';
-    // transform doesn't shrink the layout box, so reserve the scaled height
-    // explicitly (else the card leaves a full-height gap below the figure).
+    var scale = cw > 0 ? (cw / iw) : 1;
+    svg.style.transform = 'scale(' + scale + ')';
+    // transform doesn't resize the layout box, so reserve the scaled height
+    // explicitly (else the card gaps below, or clips, the figure).
     wrap.style.height = Math.ceil(ih * scale) + 'px';
   }
   function _fitAllSvgScales() {
