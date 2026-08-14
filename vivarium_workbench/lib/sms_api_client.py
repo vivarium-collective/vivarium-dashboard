@@ -19,6 +19,58 @@ class SmsApiError(Exception):
     """Raised when an sms-api call fails (non-200 or connection error)."""
 
 
+# ── Chain-dispatch timeout scaling (backlog item 51) ─────────────────────────
+#
+# viva-api's submit_chain_dispatch_job (viva_api/simulation/simulation_service_ray.py)
+# submits num_seeds * num_generations individual AWS Batch jobs SYNCHRONOUSLY,
+# inside the same POST /api/v1/simulations request run_simulation() makes
+# below, paced by viva-api's own _SUBMIT_JOB_SAFE_RATE (40.0 jobs/sec --
+# "headroom below the 50 TPS account cap", see that file). The two repos are
+# HTTP-only decoupled (no shared import), so _CHAIN_DISPATCH_SAFE_RATE below
+# is a deliberately-documented mirror of that constant, not an import -- keep
+# it in sync by hand if viva-api's own value ever changes.
+#
+# A real production 1000-seed x 10-generation dispatch (10,000 jobs) on
+# 2026-08-14 took ~15 minutes (~900s) to finish submitting -- ~3.6x the pure
+# pacing floor (10_000 jobs / 40 jobs/sec = 250s), because every individual
+# AWS Batch SubmitJob call carries its own real network/API latency (plus any
+# retry-on-throttle backoff) ON TOP OF the pacer's floor, not instead of it.
+# The prior flat 30s constructor timeout was ~30x too short: the client gave
+# up and raised SmsApiError, but viva-api was never told to stop -- the
+# submission loop kept running server-side to completion regardless, so the
+# UI reported "failed" for a request that actually succeeded. A user retrying
+# on that false "failed" would fire a second, real, duplicate, PAID campaign
+# on top of the first (this nearly happened for real, the same day).
+#
+# _CHAIN_DISPATCH_SAFETY_MARGIN (5x the pure pacing floor) is sized from that
+# real ~3.6x observation plus headroom for a worse day (more concurrent Batch
+# traffic sharing the account-wide 50 TPS cap, more throttle-retry backoff).
+# The cost of the margin is asymmetric: a timeout that fires too LATE just
+# delays an already-succeeding request's HTTP response by a few extra
+# minutes; one that fires too EARLY reproduces this exact bug -- so the
+# margin errs generous, not tight.
+#
+# _CHAIN_DISPATCH_BASE_TIMEOUT reuses SmsApiClient's own prior flat default
+# (30.0s) as the floor, so a small request's effective timeout is unchanged
+# from today's behavior -- only large chain-dispatch requests scale up.
+_CHAIN_DISPATCH_SAFE_RATE = 40.0  # jobs/sec; mirrors viva-api's _SUBMIT_JOB_SAFE_RATE
+_CHAIN_DISPATCH_SAFETY_MARGIN = 5.0
+_CHAIN_DISPATCH_BASE_TIMEOUT = 30.0  # seconds
+
+
+def chain_dispatch_timeout(num_seeds: int, num_generations: int) -> float:
+    """Real, deterministic HTTP timeout for a run_simulation() call.
+
+    ``num_seeds * num_generations`` is the exact job count viva-api's
+    submit_chain_dispatch_job submits synchronously inside the request this
+    times (see the module comment above for the full derivation). A pure
+    function of its two inputs -- no SmsApiClient/network state -- so it is
+    directly unit-testable without a live server.
+    """
+    jobs = max(int(num_seeds), 1) * max(int(num_generations), 1)
+    return _CHAIN_DISPATCH_BASE_TIMEOUT + (jobs / _CHAIN_DISPATCH_SAFE_RATE) * _CHAIN_DISPATCH_SAFETY_MARGIN
+
+
 class SmsApiClient:
     def __init__(self, base_url: str = "http://localhost:8080", timeout: float = 30.0) -> None:
         self.base_url = base_url.rstrip("/")
@@ -129,7 +181,8 @@ class SmsApiClient:
             params["names"] = ",".join(names)
         return self._get(f"/api/v1/simulations/{simulation_id}/observables", params)
 
-    def _post(self, path: str, params: dict | None = None, json_body: dict | None = None) -> dict:
+    def _post(self, path: str, params: dict | None = None, json_body: dict | None = None,
+              timeout: float | None = None) -> dict:
         # doseq=True so list-valued params become repeated keys (?observables=a&observables=b)
         url = self.base_url + path
         if params:
@@ -139,13 +192,21 @@ class SmsApiClient:
         if data is not None:
             headers["Content-Type"] = "application/json"
         req = Request(url, data=data, method="POST", headers=headers)
+        to = timeout if timeout is not None else self.timeout
         try:
-            with urlopen(req, timeout=self.timeout) as r:  # noqa: S310
+            with urlopen(req, timeout=to) as r:  # noqa: S310
                 return json.loads(r.read().decode())
         except HTTPError as e:
             raise SmsApiError(f"POST {url} -> {e.code}") from e
         except (URLError, OSError) as e:
-            raise SmsApiError(f"POST {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
+            # NOT necessarily a tunnel: this same client also serves in-cluster
+            # callers (e.g. run_simulation() called from the workbench pod
+            # straight to viva-api's ClusterIP service, http://api:8000) where
+            # no SSM tunnel is involved at all -- backlog item 51, found live
+            # 2026-08-14 (the message used to flatly assert "is the tunnel
+            # up?", copy-pasted from the genuinely tunnel-based local-CLI
+            # context elsewhere in this file).
+            raise SmsApiError(f"POST {url} failed (sms-api unreachable): {e}") from e
 
     def upload_simulator(self, simulator: dict, force: bool = False) -> dict:
         params = {"force": "true"} if force else None
@@ -180,7 +241,13 @@ class SmsApiClient:
         # JSON request body, not the query string, so it goes in json_body
         # rather than alongside the other params above.
         json_body = {"analysis_options": analysis_options} if analysis_options else None
-        return self._post("/api/v1/simulations", params=params, json_body=json_body)
+        # A chain-dispatch request (num_generations > 1) submits num_seeds *
+        # num_generations individual AWS Batch jobs SYNCHRONOUSLY inside this
+        # one HTTP request -- the flat constructor timeout is nowhere near
+        # enough for a large campaign. See chain_dispatch_timeout's derivation
+        # above (backlog item 51).
+        timeout = chain_dispatch_timeout(num_seeds, num_generations)
+        return self._post("/api/v1/simulations", params=params, json_body=json_body, timeout=timeout)
 
     def run_analysis(self, simulation_id: int, modules: dict) -> dict:
         """POST /api/v1/simulations/{id}/analysis — trigger standalone analysis on

@@ -2,11 +2,16 @@ import io
 import json
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.error import URLError
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+from vivarium_workbench.lib.sms_api_client import (
+    SmsApiClient,
+    SmsApiError,
+    chain_dispatch_timeout,
+)
 
 
 class _Resp(io.BytesIO):
@@ -29,6 +34,7 @@ def _patch_urlopen(monkeypatch, capture, payload, status=200):
         capture["url"] = req.full_url
         capture["method"] = req.get_method()
         capture["body"] = req.data
+        capture["timeout"] = timeout
         if status != 200:
             from urllib.error import HTTPError
 
@@ -116,6 +122,82 @@ def test_run_simulation_omits_json_body_when_no_analysis_options(monkeypatch):
             observables=["mass"],
         )
     assert cap["body"] is None
+
+
+# ---------------------------------------------------------------------------
+# Backlog item 51: chain-dispatch timeout scaling
+#
+# A canonical 1000-seed x 10-generation dispatch submits 10,000 individual AWS
+# Batch jobs synchronously inside ONE run_simulation() call (real production
+# incident, 2026-08-14) -- the flat 30s constructor timeout fires long before
+# that finishes, even though the request is actually succeeding server-side.
+# ---------------------------------------------------------------------------
+
+def test_chain_dispatch_timeout_scales_with_job_count():
+    """The real derivation, called directly (not hand-duplicated arithmetic):
+    a large campaign must get a materially larger timeout than a tiny one, and
+    the large value must comfortably clear the real ~900s (~15 min) wall-clock
+    time the 2026-08-14 production 1000x10 dispatch actually took -- otherwise
+    this exact bug reproduces."""
+    small = chain_dispatch_timeout(num_seeds=1, num_generations=1)
+    large = chain_dispatch_timeout(num_seeds=1000, num_generations=10)
+    assert large > small
+    assert large - small > 300.0  # "materially larger", not a rounding-error bump
+    assert large > 900.0  # clears the real observed wall-clock time with margin
+    assert small < 31.0  # a single-job request keeps ~today's flat 30s behavior
+
+
+def test_chain_dispatch_timeout_is_monotonic_in_job_count():
+    """More jobs never yields a smaller timeout, across a spread of sizes."""
+    sizes = [(1, 1), (10, 1), (10, 5), (100, 5), (500, 10), (1000, 10)]
+    timeouts = [chain_dispatch_timeout(s, g) for s, g in sizes]
+    assert timeouts == sorted(timeouts)
+
+
+def test_run_simulation_threads_scaled_timeout_into_real_urlopen_call(monkeypatch):
+    """run_simulation() must actually PASS the scaled value down to the real
+    HTTP call, not just compute and discard it. Only urlopen -- the actual
+    socket/network boundary -- is faked here; run_simulation(), _post(), and
+    chain_dispatch_timeout() all execute for real, so this proves the real
+    plumbing rather than asserting against a mock of the layer in doubt."""
+    cap_small: dict = {}
+    with _patch_urlopen(monkeypatch, cap_small, {"database_id": 60}):
+        c = SmsApiClient("http://api:8000")  # constructor default timeout=30.0
+        c.run_simulation(
+            simulator_id=1, num_generations=1, num_seeds=1, run_parca=True,
+            observables=["mass"],
+        )
+    cap_large: dict = {}
+    with _patch_urlopen(monkeypatch, cap_large, {"database_id": 61}):
+        c = SmsApiClient("http://api:8000")
+        c.run_simulation(
+            simulator_id=1, num_generations=10, num_seeds=1000, run_parca=True,
+            observables=["mass"],
+        )
+    assert cap_large["timeout"] > cap_small["timeout"]
+    # Exactly what the real function computes -- not an approximation.
+    assert cap_small["timeout"] == chain_dispatch_timeout(num_seeds=1, num_generations=1)
+    assert cap_large["timeout"] == chain_dispatch_timeout(num_seeds=1000, num_generations=10)
+
+
+def test_post_connection_failure_message_has_no_tunnel_claim(monkeypatch):
+    """Regression: workbench -> viva-api is a plain in-cluster ClusterIP call
+    (http://api:8000) with no SSM tunnel involved at all, so a connection
+    failure from run_simulation() must not claim one exists (real bug found
+    live during the 2026-08-14 incident that motivated this whole fix)."""
+    def fake_urlopen(req, timeout=None):
+        raise URLError("Connection refused")
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://api:8000")
+    with pytest.raises(SmsApiError) as exc_info:
+        c.run_simulation(
+            simulator_id=1, num_generations=1, num_seeds=1, run_parca=True,
+            observables=["mass"],
+        )
+    msg = str(exc_info.value)
+    assert "unreachable" in msg  # keeps working with existing "unreachable" classifiers
+    assert "tunnel" not in msg.lower()  # the specific wrong claim this fixes
 
 
 def test_upload_simulator_sends_json_body(monkeypatch):
