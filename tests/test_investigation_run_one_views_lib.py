@@ -27,6 +27,7 @@ import pytest
 from vivarium_workbench.lib import composite_runs as cr
 from vivarium_workbench.lib import composite_lookup
 from vivarium_workbench.lib import investigations
+from vivarium_workbench.lib import study_run_state
 from vivarium_workbench.lib import study_spec
 from vivarium_workbench.lib import investigation_run_one_views as views
 
@@ -310,3 +311,110 @@ def test_unparseable_results_falls_back_to_empty_viz(tmp_path, monkeypatch,
     assert status == 200
     assert body["ok"] is True
     assert body["viz_html"] == {}
+
+
+# ---------------------------------------------------------------------------
+# v3/v4 conditions resolution (issue #751) — `baseline` is a list of
+# {name, composite (dotted generator), params}; no sidecar files. Resolution
+# goes through study_run_state.resolve_study_baseline_state.
+# ---------------------------------------------------------------------------
+
+def _v4_spec():
+    """A down-converted v4 study: list baseline + synthesised variants."""
+    return {
+        "name": "mbp-03",
+        "baseline": [{
+            "name": "bird-coupled-baseline",
+            "composite": "v2ecoli.composites.reactor_bird_coupled",
+            "params": {"seed": 0, "cache_dir": "out/cache"},
+        }],
+        "variants": [
+            {"name": "kla-sweep-coupled", "composite": None,
+             "base_composite": "bird-coupled-baseline",
+             "parameter_overrides": {"kla": 120}},
+        ],
+    }
+
+
+def test_v4_conditions_happy_200(tmp_path, monkeypatch, fixed_run_id):
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    inv_dir = study_spec.study_dir(ws, "inv-x")
+    monkeypatch.setattr(investigations, "load_spec", lambda p: _v4_spec())
+
+    captured = {}
+
+    def _resolve(ws_root, pkg, spec_id, params):
+        captured["spec_id"] = spec_id
+        captured["params"] = params
+        return {"foo": {"bar": 1}}, None
+
+    monkeypatch.setattr(study_run_state, "resolve_study_baseline_state", _resolve)
+    monkeypatch.setattr(views.subprocess, "run",
+                        _fake_subprocess(_results_stdout({})))
+
+    body, status = views.investigation_run_one(
+        ws, {"investigation": "inv-x", "steps": 12,
+             "overrides": {"seed": 3}})
+
+    assert status == 200
+    assert body["ok"] is True
+    # baseline[0] resolved; body overrides win over authored params; n_steps
+    # is NOT passed as a generator param (run length comes from `steps`).
+    assert captured["spec_id"] == "v2ecoli.composites.reactor_bird_coupled"
+    assert captured["params"] == {"seed": 3, "cache_dir": "out/cache"}
+    conn = sqlite3.connect(inv_dir / "runs.db")
+    try:
+        row = conn.execute(
+            "SELECT spec_id, status, n_steps FROM runs_meta WHERE run_id=?",
+            (RID,)).fetchone()
+    finally:
+        conn.close()
+    assert row == ("v2ecoli.composites.reactor_bird_coupled", "completed", 12)
+
+
+def test_v4_composite_selector_picks_named_entry(tmp_path, monkeypatch,
+                                                 fixed_run_id):
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    spec = _v4_spec()
+    spec["baseline"].append({
+        "name": "henry-equilibrium",
+        "composite": "v2ecoli.composites.henry",
+        "params": {"seed": 7},
+    })
+    monkeypatch.setattr(investigations, "load_spec", lambda p: spec)
+    captured = {}
+    monkeypatch.setattr(
+        study_run_state, "resolve_study_baseline_state",
+        lambda ws_root, pkg, spec_id, params: (captured.update(spec_id=spec_id)
+                                                or ({"s": {}}, None)))
+    monkeypatch.setattr(views.subprocess, "run",
+                        _fake_subprocess(_results_stdout({})))
+
+    body, status = views.investigation_run_one(
+        ws, {"investigation": "inv-x", "composite": "henry-equilibrium"})
+    assert status == 200
+    assert captured["spec_id"] == "v2ecoli.composites.henry"
+
+
+def test_v4_composite_selector_not_found_404(tmp_path, monkeypatch):
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    monkeypatch.setattr(investigations, "load_spec", lambda p: _v4_spec())
+    body, status = views.investigation_run_one(
+        ws, {"investigation": "inv-x", "composite": "nope"})
+    assert status == 404
+    assert body == {"error": "baseline composite 'nope' not found"}
+
+
+def test_v4_resolver_error_404(tmp_path, monkeypatch):
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    monkeypatch.setattr(investigations, "load_spec", lambda p: _v4_spec())
+    monkeypatch.setattr(
+        study_run_state, "resolve_study_baseline_state",
+        lambda *a, **k: (None, {"error": "generator build failed: boom"}))
+    body, status = views.investigation_run_one(ws, {"investigation": "inv-x"})
+    assert status == 404
+    assert body == {"error": "generator build failed: boom"}

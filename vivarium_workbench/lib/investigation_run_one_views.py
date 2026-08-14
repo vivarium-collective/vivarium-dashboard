@@ -60,6 +60,9 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
       * missing investigation         → ``({"error": "investigation required"}, 400)``
       * spec.yaml missing             → ``({"error": "spec.yaml not found"}, 404)``
       * InvestigationSpecError        → ``({"error": str(e)}, 400)``
+      * v3/v4 composite name missing  → ``({"error": "baseline composite … not
+        found"}, 404)``
+      * v3/v4 generator unresolved    → ``(resolver_error_dict, 404)``
       * v2 baseline variant missing   → ``({"error": "baseline variant not
         found: …"}, 404)``
       * v2 sidecar missing            → ``({"error": "composite sidecar not
@@ -94,15 +97,49 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
     ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8"))
     pkg = ws_data.get("package_path") or ("pbg_" + ws_data.get("name", "").replace("-", "_"))
 
-    # Resolve which composite to run. v2 studies have `baseline` + `variants[]`
-    # with each variant carrying a `document: ./composites/<name>.yaml`
-    # sidecar that is the single source of truth (already merged + frozen
-    # at create time). Legacy specs use a single top-level `composite` key
-    # and resolve via the workspace registry.
+    # Resolve which composite to run. Three shapes coexist:
+    #   * v3/v4 (`conditions:` studies, down-converted by `load_spec`): a LIST
+    #     `baseline` of {name, composite, params} generator entries — resolved
+    #     through the generator registry (no sidecar files). Handled first.
+    #   * v2: `baseline` (a STRING name) + `variants[]`, each variant carrying a
+    #     `document: ./composites/<name>.yaml` sidecar that is the single source
+    #     of truth (already merged + frozen at create time).
+    #   * legacy: a single top-level `composite` key, resolved via the registry.
     composite_name = None
     composite_doc = None  # raw {state, parameters, ...} dict OR a flat state dict
+    state = None          # v3/v4 path resolves a runnable state dict directly
     inv_dir = study_spec.study_dir(ws_root, inv)
-    if "variants" in spec:
+    baseline_list = spec.get("baseline")
+    if (isinstance(baseline_list, list) and baseline_list
+            and all(isinstance(b, dict) and b.get("composite")
+                    for b in baseline_list)):
+        # v3/v4 study shape — what ``load_spec`` down-converts a ``conditions:``
+        # study to: ``baseline`` is a NON-EMPTY LIST of
+        # ``{name, composite, params}`` entries whose ``composite`` is a dotted
+        # GENERATOR path (e.g. ``pkg.composites.foo``). There are NO
+        # ``composites/*.yaml`` sidecars to read, so resolve the chosen entry
+        # through the workspace generator registry — mirroring
+        # ``run_study_baseline`` / ``study_run_state.resolve_study_baseline_state``.
+        # (Genuine v2 studies keep a STRING ``baseline`` naming a variant and
+        # fall through to the sidecar branch below, so they are unaffected.)
+        from vivarium_workbench.lib import study_run_state
+        requested = (body.get("composite") or "").strip()
+        if requested:
+            entry = next((b for b in baseline_list
+                          if b.get("name") == requested), None)
+            if entry is None:
+                return {"error": f"baseline composite {requested!r} not found"}, 404
+        else:
+            entry = baseline_list[0]
+        composite_name = entry.get("composite")
+        params = dict(entry.get("params") or {})
+        params.update(overrides or {})  # request-body overrides win (Configure & Run)
+        params.pop("n_steps", None)     # run length comes from ``steps``, not params
+        state, err = study_run_state.resolve_study_baseline_state(
+            ws_root, pkg, composite_name, params)
+        if err is not None:
+            return err, 404
+    elif "variants" in spec:
         # v2 study shape: prefer baseline; if absent, the first declared variant.
         variants = spec.get("variants") or []
         baseline_name = spec.get("baseline") or (variants[0].get("name") if variants else None)
@@ -140,18 +177,21 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
     #   1. `{state: {...}, parameters: {...}}`  — file-spec composites
     #   2. `{...}`  — flat state dict from @composite_generator outputs
     # composite-test-run handles both (see line ~4775); mirror that here.
-    if isinstance(composite_doc, dict) and "state" in composite_doc \
-            and isinstance(composite_doc["state"], dict):
-        state = substitute_parameters(composite_doc.get("state") or {},
-                                       composite_doc.get("parameters") or {},
-                                       overrides)
-    else:
-        # Flat state dict: no parameter substitution layer to apply,
-        # overrides are best-effort applied at the top level only.
-        state = dict(composite_doc) if isinstance(composite_doc, dict) else {}
-        for k, v in (overrides or {}).items():
-            if k in state:
-                state[k] = v
+    if state is None:
+        # v2 sidecar / legacy branches: derive ``state`` from the loaded
+        # ``composite_doc`` (the v3/v4 branch above already resolved ``state``).
+        if isinstance(composite_doc, dict) and "state" in composite_doc \
+                and isinstance(composite_doc["state"], dict):
+            state = substitute_parameters(composite_doc.get("state") or {},
+                                           composite_doc.get("parameters") or {},
+                                           overrides)
+        else:
+            # Flat state dict: no parameter substitution layer to apply,
+            # overrides are best-effort applied at the top level only.
+            state = dict(composite_doc) if isinstance(composite_doc, dict) else {}
+            for k, v in (overrides or {}).items():
+                if k in state:
+                    state[k] = v
     db_file = str(study_spec.study_dir(ws_root, inv) / "runs.db")
     run_id = cr.generate_run_id(composite_name, overrides)
     state = cr.inject_sqlite_emitter(state, run_id=run_id, db_file=db_file)
