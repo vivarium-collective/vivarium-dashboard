@@ -12213,9 +12213,33 @@
     var url = (c.mode === 'snapshot')
       ? base + '/figures/studies/' + encodeURIComponent(slug) + '.zip'
       : '/api/study/' + encodeURIComponent(slug) + '/figures.zip';
-    var a = document.createElement('a');
-    a.href = url; a.download = slug + '-figures.zip';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    // Probe before downloading. The ↓ visualizations button renders whenever a
+    // study declares any `visualizations`, but the figures zip only contains
+    // declared IMAGE files (svg/png/gif). A study whose visualizations are all
+    // native/embed panels therefore has no zip — and in a snapshot the file is
+    // simply absent (404). A bare `<a download>` to a 404 silently does nothing,
+    // which reads as a broken button. Fetch first: download the blob when it
+    // exists, otherwise tell the user why there's nothing to grab.
+    function _notify(msg) {
+      if (typeof _showToast === 'function') _showToast(msg); else window.alert(msg);
+    }
+    fetch(url).then(function (r) {
+      if (!r.ok) {
+        _notify('No downloadable figure archive for "' + slug + '" '
+          + '(its visualizations have no exportable image files).');
+        return null;
+      }
+      return r.blob();
+    }).then(function (blob) {
+      if (!blob) return;
+      var href = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = href; a.download = slug + '-figures.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      window.setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
+    }).catch(function (e) {
+      _notify('Figure download failed: ' + e);
+    });
   };
   // A study's ↓ notebook is its parent investigation's runnable notebook (there
   // is no per-study notebook). In the graph the parent is the open investigation.
