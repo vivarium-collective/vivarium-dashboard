@@ -454,9 +454,12 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
         </div>
         {show.ports && (
           <div className="process-node-meta" title={SECTION_HINT.meta}>
-            {/* "draft process" / "process" — the in/out counts are omitted: the
-                port columns already make the arity obvious. */}
-            {(data as any).isDraft ? `draft ${data.processType}` : data.processType}
+            {/* The simulation method / model type (e.g. "Agent-Based Model") when
+                the process declares one, else "draft process" / "process". The
+                in/out counts are omitted — the port columns show the arity. */}
+            {(data as any).method
+              ? (data as any).method
+              : ((data as any).isDraft ? `draft ${data.processType}` : data.processType)}
             {data.interval != null && <span> · every {data.interval}</span>}
           </div>
         )}

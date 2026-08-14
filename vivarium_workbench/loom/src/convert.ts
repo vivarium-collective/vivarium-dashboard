@@ -153,7 +153,9 @@ export function defaultHiddenIds(state: any): Set<string> {
     if (path.length > 0 && isNoiseStore(name, path)) { out.add(path.join('.')); return; }
     if (!node || typeof node !== 'object' || Array.isArray(node)) return;
     if (node._type === 'process' || node._type === 'step') {
-      if (isNoise(name) || isEmitter(name)) out.add(path.join('.'));
+      // Hide auto-materialized emitter plumbing, but NOT a draft emitter authored
+      // as part of a (conceptual) figure — that one is meant to be shown.
+      if (isNoise(name) || (isEmitter(name) && node._draft !== true)) out.add(path.join('.'));
       return;
     }
     if ('_type' in node) return;  // other typed leaf store
@@ -325,6 +327,12 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           inputSchema: node._inputs ?? undefined,
           outputSchema: node._outputs ?? undefined,
           contract: node._contract ?? undefined,
+          // Simulation method / model type (e.g. "Agent-Based Model", "ODE").
+          // When set, ProcessNode shows it in place of the "draft process" line.
+          method: (node as { _method?: string })._method
+            ?? (node._contract as { method?: string } | undefined)?.method
+            ?? (node.config as { method?: string } | undefined)?.method
+            ?? undefined,
           // Optional illustrative figure for this node (data-URI image or inline
           // SVG string on the spec's `_figure`, or config._figure). Shown when the
           // Detail → Figures toggle allows it. See ProcessNode / StoreNode.
@@ -418,20 +426,24 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           nodeType: 'store',
           isGroup: true,
           path,
+          // An optional illustration for the container itself (e.g. a `cell` /
+          // `tissue` group). `_figure` is metadata, NOT a child store.
+          figure: (node as { _figure?: string })._figure ?? undefined,
         } satisfies StoreNodeData,
         position: { x: 0, y: 0 },
       });
     }
 
     for (const [key, child] of Object.entries(node)) {
-      if (key === DECLARED_EMIT_PATHS_KEY) continue;  // metadata, not a store
+      // `_`-prefixed keys are metadata (_figure, _contract, …), not child stores.
+      if (key === DECLARED_EMIT_PATHS_KEY || key.startsWith('_')) continue;
       walk(child, [...path, key]);
     }
 
     // Add place edges from parent to each immediate child store
     if (path.length > 0) {
       for (const key of Object.keys(node)) {
-        if (key === DECLARED_EMIT_PATHS_KEY) continue;
+        if (key === DECLARED_EMIT_PATHS_KEY || key.startsWith('_')) continue;
         const childId = pathKey([...path, key]);
         edges.push({
           id: `place--${id}--${childId}`,
