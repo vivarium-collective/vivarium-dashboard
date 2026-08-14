@@ -777,6 +777,7 @@ def _do_build(
     from vivarium_workbench.lib.static_serving import STATIC_DIR
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     from vivarium_workbench.lib.study_charts import build_study_charts_payload
+    from vivarium_workbench.lib.study_native_gallery import build_study_native_gallery
     from vivarium_workbench.lib.system_info import build_workspace_home
     from vivarium_workbench.lib.study_page import render_study_detail_html
     from vivarium_workbench.lib.investigation_status import (
@@ -1199,6 +1200,24 @@ def _do_build(
             print(f"  warn: study-charts export failed for {slug!r}: {exc}")
             continue
         _write_json(charts_api_dir / f"{slug}.json", payload)
+
+    # api/study-native-gallery/<slug>.json — the Visualizations-tab native figure
+    # gallery (the study's latest completed run's viz.json panels), byte-parity
+    # with GET /api/study-native-gallery/<slug>. Without this the snapshot SPA's
+    # _loadNativeGallery() fetch 404s and shows "Failed to load baseline figures.";
+    # emitting {"run_id": null, "panels": {}} for a gallery-less study instead lets
+    # the client render its clean empty state. One study's failure must not abort
+    # the whole publish, so guard per study and always write a file so the client
+    # never hits a 404.
+    native_gallery_api_dir = api_dir / "study-native-gallery"
+    native_gallery_api_dir.mkdir(parents=True, exist_ok=True)
+    for slug in studies:
+        try:
+            gallery = build_study_native_gallery(ws_root, slug)
+        except Exception as exc:  # noqa: BLE001 — never abort a publish on one study
+            print(f"  warn: study-native-gallery export failed for {slug!r}: {exc}")
+            gallery = {"run_id": None, "panels": {}}
+        _write_json(native_gallery_api_dir / f"{slug}.json", gallery)
 
     # api/saved-visualizations.json + parsimony-viewer/ + copied packs/meshes —
     # the Analyses-tab gallery. Feature-detected on pbg_parsimony; no-op when the

@@ -526,7 +526,16 @@
     _nativeGalleryLoaded = true;
     var slug = studyName();
     fetch('/api/study-native-gallery/' + encodeURIComponent(slug))
-      .then(function (r) { return r.json(); })
+      .then(function (r) {
+        // In a static snapshot this live-only endpoint may be absent (404), and
+        // an errored live route may 5xx. Treat ANY non-OK response as "no panels"
+        // (the clean empty state below), not the hard "Failed to load baseline
+        // figures." error. Only a genuine network/JSON-parse failure falls
+        // through to .catch. Guarding r.ok before r.json() also avoids parsing
+        // an SPA HTML 404 body as JSON.
+        if (!r.ok) return { run_id: null, panels: {} };
+        return r.json();
+      })
       .then(function (d) {
         var panels = (d && d.panels) || {};
         var names = Object.keys(panels);

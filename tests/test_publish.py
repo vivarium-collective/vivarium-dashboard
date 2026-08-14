@@ -388,6 +388,28 @@ def test_bundle_exports_kept_tab_reads(tmp_workspace, tmp_path):
     assert "beta" in names, "api/investigations.json missing study 'beta'"
 
 
+def test_bundle_exports_study_native_gallery(tmp_workspace, tmp_path):
+    """build_bundle writes api/study-native-gallery/<slug>.json for every study
+    so the snapshot Visualizations tab never 404s _loadNativeGallery(). A study
+    with no completed run must still get a file with the empty-state shape
+    ({"run_id": null, "panels": {}}) rather than a missing file."""
+    from vivarium_workbench import publish
+
+    out = tmp_path / "bundle"
+    publish.build_bundle(tmp_workspace, out)
+
+    gallery_dir = out / "api" / "study-native-gallery"
+    assert gallery_dir.is_dir(), "api/study-native-gallery/ missing"
+    for slug in ("alpha", "beta"):
+        f = gallery_dir / f"{slug}.json"
+        assert f.is_file(), f"api/study-native-gallery/{slug}.json missing"
+        data = json.loads(f.read_text())
+        assert "panels" in data and isinstance(data["panels"], dict), \
+            f"study-native-gallery/{slug}.json missing dict 'panels'"
+        assert "run_id" in data, \
+            f"study-native-gallery/{slug}.json missing 'run_id'"
+
+
 # ---------------------------------------------------------------------------
 # Task 3 (read-only viewer): snapshot read-only mode
 # ---------------------------------------------------------------------------
