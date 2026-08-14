@@ -779,6 +779,9 @@ body {
 .node-figure.is-corner { position: absolute; top: 7px; left: 9px; margin: 0; z-index: 1; pointer-events: none; }
 .node-figure.is-corner .node-figure-img,
 .node-figure.is-corner .node-figure-svg svg { height: 48px; max-width: 54px; }
+/* When a config band sits above the title, the top-left corner badge would
+   overlap it — drop the badge down so it rides with the name instead. */
+.process-node:has(.process-node-config-band) .node-figure.is-corner { top: 52px; }
 /* Keep the corner badge from colliding with the title: the title becomes a
    left-aligned header sitting to the RIGHT of the icon (padding only on the
    left, so it keeps full width and long names wrap on word boundaries), tall
