@@ -965,6 +965,20 @@ def _do_build(
             except Exception:
                 pass
 
+    # api/composite-default-view/<id>.json — the git-tracked default loom view
+    # (positions + detail mix + fontScale) for each composite, so the static
+    # read-only loom applies the SAME arrangement the author saved instead of a
+    # fresh auto-layout. The loom derives this URL from its stateUrl on ?static=1
+    # (…/composite-state/<id>.json → …/composite-default-view/<id>.json).
+    dview_dir = api_dir / "composite-default-view"
+    dview_dir.mkdir(parents=True, exist_ok=True)
+    for views_dir in sorted((ws_root / "investigations").glob("*/loom-views")):
+        for vf in sorted(views_dir.glob("*.json")):
+            try:
+                (dview_dir / vf.name).write_bytes(vf.read_bytes())
+            except Exception:
+                pass
+
     # api/composite-inner-state/<key>.json — pre-built inner-composite states so
     # the loom's drill-in mini-map works in ?static=1 (read-only) mode, where the
     # live /api/composite-inner-state endpoint is unavailable. Two sources, in

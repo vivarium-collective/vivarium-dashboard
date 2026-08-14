@@ -1017,6 +1017,15 @@ export default function App() {
       const viewUrl = params.get('viewUrl');
       if (!view && viewUrl) view = await fetchView(viewUrl);
       if (!view) view = getDefaultView(compositeId);
+      // Static snapshot (?static=1&stateUrl=…/composite-state/<id>.json): derive
+      // the committed default view URL from the state URL so the read-only loom
+      // applies the author's saved positions instead of a fresh auto-layout.
+      if (!view) {
+        const stateUrl = params.get('stateUrl');
+        if (stateUrl && stateUrl.includes('/composite-state/')) {
+          view = await fetchView(stateUrl.replace('/composite-state/', '/composite-default-view/'));
+        }
+      }
       if (!view) {
         try {
           const r = await fetch(
