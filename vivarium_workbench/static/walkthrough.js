@@ -754,6 +754,13 @@
       _enterPopcardMode(_qsPop, new URLSearchParams(window.location.search).get('kind') || 'process');
       return;   // skip normal hash routing in a pop-out window
     }
+    // ?maxcard=<address>&kind=<kind> → the FULL workbench (with the side rail)
+    // showing this composite maximized + Explore open. The "pop back in" target.
+    var _qsMax = new URLSearchParams(window.location.search).get('maxcard');
+    if (_qsMax) {
+      _enterMaxcardMode(_qsMax, new URLSearchParams(window.location.search).get('kind') || 'composite');
+      return;
+    }
 
     if (!focusedPage) {
       function fromHash() {
@@ -2635,6 +2642,18 @@
     // focus-mode strips the rail/topbar (content-only window); popcard-mode
     // additionally hides the registry tabs + toolbar to leave just the card.
     document.body.classList.add('focus-mode', 'popcard-mode');
+    // Floating "pop back in" control (top-left) — return to the full workbench
+    // (with the side rail) showing this composite maximized.
+    if (!document.getElementById('popcard-backin')) {
+      var _bi = document.createElement('button');
+      _bi.id = 'popcard-backin'; _bi.type = 'button'; _bi.textContent = '◀ Pop back in';
+      _bi.title = 'Return to the workbench (with the side menu) and show this composite here';
+      _bi.style.cssText = 'position:fixed;top:9px;left:10px;z-index:100000;height:30px;' +
+        'padding:0 12px;font-size:13px;font-weight:600;background:#fff;border:1px solid #d1d5db;' +
+        'border-radius:6px;cursor:pointer;color:#374151;box-shadow:0 1px 4px rgba(0,0,0,0.14)';
+      _bi.onclick = function () { _popCardBackIn(address, kind); };
+      document.body.appendChild(_bi);
+    }
     var isComposite = (kind === 'composite');
     if (typeof _switchPage === 'function') _switchPage('modules');
     window._registryZoom = 'full';
@@ -2672,6 +2691,55 @@
     })();
   }
   window._enterPopcardMode = _enterPopcardMode;
+
+  // Open a composite in the FULL workbench (rail visible), maximized with Explore
+  // open — shared by the card-grid "Explore" button and the "pop back in" target.
+  function _enterMaxcardMode(address, kind) {
+    var isComposite = (kind !== 'process');
+    if (typeof _switchPage === 'function') _switchPage('modules');
+    window._registryZoom = 'full';
+    try { localStorage.setItem('viv.registryZoom', 'full'); } catch (e) { /* private mode */ }
+    if (typeof _setRegistryTab === 'function') _setRegistryTab(isComposite ? 'composite' : 'process');
+    var tries = 0;
+    (function attempt() {
+      var host = null, html = null;
+      if (isComposite) {
+        var c = (window._compositesById || {})[address];
+        if (c) { host = document.getElementById('registry-composites-container'); html = _renderCompositeCardFull(c); }
+      } else {
+        var e = _registryEntryByAddress(address);
+        if (e) { host = document.getElementById('registry-processes-container'); html = _renderRegistryEntryFull(e); }
+      }
+      if (host && html) {
+        host.innerHTML = '<div class="reg-cards reg-cards-full popcard-single">' + html + '</div>';
+        if (typeof _observeRunnableCards === 'function') _observeRunnableCards(host);
+        // Maximize (fills the pane, pins to top, and auto-opens Explore/loom).
+        var card = host.querySelector('.registry-entry-full');
+        var maxBtn = card && card.querySelector('.pcard-maximize');
+        if (maxBtn) setTimeout(function () { _toggleCardMaximize(maxBtn); }, 60);
+        return;
+      }
+      if (tries % 6 === 0) {
+        if (isComposite) { if (typeof _loadComposites === 'function') _loadComposites(); }
+        else { window._registryLoaded = false; if (typeof _loadRegistry === 'function') _loadRegistry(false); }
+      }
+      if (tries++ < 120) setTimeout(attempt, 200);
+    })();
+  }
+  window._enterMaxcardMode = _enterMaxcardMode;
+
+  // "Pop back in" from a pop-out window: return to the full workbench (rail
+  // visible) with this composite maximized. Prefer navigating the opener so the
+  // pop-out closes; fall back to navigating this window.
+  function _popCardBackIn(address, kind) {
+    var url = location.origin + location.pathname +
+      '?maxcard=' + encodeURIComponent(address) + '&kind=' + encodeURIComponent(kind || 'composite');
+    if (window.opener && !window.opener.closed) {
+      try { window.opener.location.href = url; window.opener.focus(); window.close(); return; } catch (e) { /* fall through */ }
+    }
+    window.location.href = url;
+  }
+  window._popCardBackIn = _popCardBackIn;
 
   // The unified ProcessCard renderer (§ unified-process-card design):
   //   header: name + kind badge + address
@@ -2891,15 +2959,43 @@
     var wsPill = c.workspace_local ? '<span class="composite-ws-tag">📦 workspace</span>' : '';
     var stats = _regStatsHtml(c);
     var selCls = (window._registrySelected && window._registrySelected === c.id) ? ' reg-selected' : '';
-    return '<div class="registry-card' + selCls + '" data-address="' + _esc(c.id) + '" data-kind="composite"' +
-        ' onclick="_selectRegistryEntry(\'' + _esc(c.id) + '\')" ondblclick="_setRegistryZoom(\'full\')"' +
-        ' title="Double-click to open the full card">' +
+    var idA = _esc(c.id);
+    // A little more info on the card: process + parameter counts, and tags.
+    var np = (c.parameters && typeof c.parameters === 'object') ? Object.keys(c.parameters).length : 0;
+    var nproc = (c.requires && c.requires.processes) ? c.requires.processes.length : 0;
+    var metaBits = [];
+    if (nproc) metaBits.push(nproc + ' process' + (nproc === 1 ? '' : 'es'));
+    if (np) metaBits.push(np + ' param' + (np === 1 ? '' : 's'));
+    var meta = metaBits.length
+      ? '<div class="reg-card-meta" style="font-size:11px;color:#6b7280;margin:2px 0 4px">' + metaBits.join(' · ') + '</div>' : '';
+    var tags = Array.isArray(c.tags) ? c.tags.slice(0, 3) : [];
+    var tagHtml = tags.length
+      ? '<div class="reg-card-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">' +
+          tags.map(function (t) { return '<span style="font-size:10px;color:#6d28d9;background:#f5f3ff;border:1px solid #e9d5ff;border-radius:4px;padding:1px 6px">' + _esc(t) + '</span>'; }).join('') +
+        '</div>' : '';
+    var actions = '<div class="reg-card-actions" style="display:flex;gap:6px;margin-top:9px;flex-wrap:wrap">' +
+      '<button type="button" onclick="event.stopPropagation();_enterMaxcardMode(\'' + idA + '\',\'composite\')" ' +
+        'title="Open maximized with the interactive bigraph (Explore) pinned at the top" ' +
+        'style="height:26px;padding:0 11px;font-size:12px;font-weight:600;background:#2563eb;color:#fff;border:1px solid #2563eb;border-radius:5px;cursor:pointer">🔍 Explore</button>' +
+      '<button type="button" onclick="event.stopPropagation();_popoutCard(\'' + idA + '\',\'composite\')" ' +
+        'title="Pop out into its own window" ' +
+        'style="height:26px;padding:0 9px;font-size:12px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">⤢ Pop out</button>' +
+      '<button type="button" onclick="event.stopPropagation();_setRegistryZoom(\'full\')" ' +
+        'title="Open the full card (Configure · Inputs · Run)" ' +
+        'style="height:26px;padding:0 9px;font-size:12px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:5px;cursor:pointer">Full card</button>' +
+    '</div>';
+    return '<div class="registry-card' + selCls + '" data-address="' + idA + '" data-kind="composite"' +
+        ' onclick="_selectRegistryEntry(\'' + idA + '\')" ondblclick="_enterMaxcardMode(\'' + idA + '\',\'composite\')"' +
+        ' title="Double-click to Explore (maximized bigraph)">' +
       '<div class="reg-card-row">' +
         '<div class="reg-card-main">' +
           '<div class="reg-card-head"><strong class="reg-card-name">' + _esc(c.name) + '</strong>' + _compositeBadge() + wsPill + '</div>' +
           '<code class="reg-card-addr">' + _esc(addr) + '</code>' +
+          meta +
           (short ? '<p class="reg-card-desc">' + _esc(short) + '</p>' : '') +
+          tagHtml +
           _runCmdChip(c.run_command) +
+          actions +
         '</div>' +
         '<div class="reg-card-stats">' + stats + '</div>' +
       '</div>' +
