@@ -18,6 +18,7 @@ run-FAILURE 200 (``ok: False``) — only validation is non-200.
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 import types
 from pathlib import Path
@@ -418,3 +419,138 @@ def test_v4_resolver_error_404(tmp_path, monkeypatch):
     body, status = views.investigation_run_one(ws, {"investigation": "inv-x"})
     assert status == 404
     assert body == {"error": "generator build failed: boom"}
+
+
+# ---------------------------------------------------------------------------
+# state handoff (issue #751, defect 3) — the state must NOT be inlined into
+# the `python -c` source: a real composite state is megabytes, and embedding
+# it in argv raises OSError(E2BIG, "Argument list too long") before the child
+# starts. A registered v4 generator baseline ships only its ref + params (the
+# child builds — a generator document holds live edge objects that do not
+# survive a JSON round-trip); parent-resolved states travel via
+# .pbg/runs/<run_id>/state.json.
+# ---------------------------------------------------------------------------
+
+def _capture_script(monkeypatch, stdout):
+    """Monkeypatch subprocess.run, capturing the `python -c` script text."""
+    captured = {}
+
+    def _run(cmd, *a, **k):
+        captured["script"] = cmd[2]
+        return types.SimpleNamespace(stdout=stdout, stderr="", returncode=0)
+
+    monkeypatch.setattr(views.subprocess, "run", _run)
+    return captured
+
+
+def _fake_entry(ref: str, declared: dict):
+    return types.SimpleNamespace(id=ref, name=ref.rsplit(".", 1)[-1],
+                                 parameters=declared)
+
+
+def test_v4_registered_generator_builds_in_child(tmp_path, monkeypatch,
+                                                 fixed_run_id):
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    ref = "v2ecoli.composites.reactor_bird_coupled"
+    monkeypatch.setattr(investigations, "load_spec", lambda p: _v4_spec())
+    monkeypatch.setattr(views, "_generator_entry",
+                        lambda r: _fake_entry(r, {"seed": {"type": "integer"}}))
+    captured = _capture_script(monkeypatch, _results_stdout({}))
+
+    body, status = views.investigation_run_one(
+        ws, {"investigation": "inv-x", "steps": 3})
+
+    assert status == 200
+    assert body["ok"] is True
+    # The CHILD builds the composite from the ref; the parent serialized no
+    # state for this path.
+    assert "build_generator" in captured["script"]
+    assert ref in captured["script"]
+    assert "state.json" not in captured["script"]
+
+
+def test_v4_effective_params_reach_the_child(tmp_path, monkeypatch,
+                                             fixed_run_id):
+    """Baseline params + request overrides (overrides win), filtered to the
+    generator's declared set — mirroring resolve_study_baseline_state."""
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    # cache_dir survives the dead-cache drop only if the ParCa cache exists.
+    (ws / "out" / "cache").mkdir(parents=True)
+    (ws / "out" / "cache" / "initial_state.json").write_text("{}",
+                                                             encoding="utf-8")
+    monkeypatch.setattr(investigations, "load_spec", lambda p: _v4_spec())
+    monkeypatch.setattr(
+        views, "_generator_entry",
+        lambda r: _fake_entry(r, {"seed": {"type": "integer"},
+                                  "cache_dir": {"type": "string"}}))
+    captured = _capture_script(monkeypatch, _results_stdout({}))
+
+    body, status = views.investigation_run_one(
+        ws, {"investigation": "inv-x", "overrides": {"seed": 7, "bogus": 1},
+             "steps": 2})
+
+    assert status == 200
+    # The effective config is embedded double-JSON-encoded; assert on the
+    # decoded payload rather than the escaped source text. `bogus` is not
+    # declared, so it is filtered rather than sent to build_generator (whose
+    # ValueError would fire only after minutes of building).
+    embedded = re.search(r'build_generator\(.*?json\.loads\((".*?")\)',
+                         captured["script"], re.S)
+    assert embedded, captured["script"]
+    assert json.loads(json.loads(embedded.group(1))) == {
+        "seed": 7, "cache_dir": "out/cache"}
+
+
+def test_sidecar_state_hands_over_via_file_not_argv(tmp_path, monkeypatch,
+                                                    fixed_run_id):
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    inv_dir = study_spec.study_dir(ws, "inv-x")
+    (inv_dir / "composites").mkdir(parents=True, exist_ok=True)
+    marker = "DISTINCTIVE_STATE_VALUE_9c41"
+    (inv_dir / "composites" / "baseline.yaml").write_text(
+        f"foo: {marker}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        investigations, "load_spec",
+        lambda p: {"variants": [{"name": "baseline",
+                                 "document": "./composites/baseline.yaml"}],
+                   "baseline": "baseline"})
+    captured = _capture_script(monkeypatch, _results_stdout({}))
+
+    body, status = views.investigation_run_one(ws, {"investigation": "inv-x"})
+
+    assert status == 200
+    assert body["ok"] is True
+    # The state travels via file: the script loads state.json and does NOT
+    # carry the state content itself.
+    assert "state.json" in captured["script"]
+    assert marker not in captured["script"]
+    state_path = views.WorkspacePaths.load(ws).pbg / "runs" / RID / "state.json"
+    assert state_path.is_file()
+    written = json.loads(state_path.read_text(encoding="utf-8"))
+    assert written["foo"] == marker  # emitter-injected copy of the state
+
+
+def test_large_state_does_not_grow_argv(tmp_path, monkeypatch, fixed_run_id):
+    """Regression for E2BIG: a multi-MB state must not inflate the argv."""
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    inv_dir = study_spec.study_dir(ws, "inv-x")
+    (inv_dir / "composites").mkdir(parents=True, exist_ok=True)
+    big = {"blob": "x" * 3_000_000}  # ~3 MB — over common ARG_MAX limits
+    (inv_dir / "composites" / "baseline.json").write_text(
+        json.dumps(big), encoding="utf-8")
+    monkeypatch.setattr(
+        investigations, "load_spec",
+        lambda p: {"variants": [{"name": "baseline",
+                                 "document": "./composites/baseline.json"}],
+                   "baseline": "baseline"})
+    captured = _capture_script(monkeypatch, _results_stdout({}))
+
+    body, status = views.investigation_run_one(ws, {"investigation": "inv-x"})
+
+    assert status == 200
+    assert len(captured["script"]) < 20_000, \
+        "state leaked into the python -c source"
