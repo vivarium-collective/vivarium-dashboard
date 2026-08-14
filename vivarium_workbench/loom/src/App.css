@@ -623,7 +623,12 @@ body {
 .process-node-config-band {
   display: flex; flex-wrap: wrap; align-items: center;
   justify-content: flex-start; gap: 5px 9px;
-  margin: 0 -106px 12px; padding-bottom: 9px;
+  /* Stay INSIDE the center channel. A negative side margin used to widen the
+     band under the port columns, but on sized cards `.process-node-center` has
+     `overflow: auto`, which CLIPPED the escaped left edge — hiding the `config`
+     caret + the start of the first chip's name (e.g. "interval" → "…val"), and
+     colliding with the top-left corner figure. Inset with the title instead. */
+  margin: 0 0 12px; padding-bottom: 9px;
   border-bottom: 1px solid #e5e7eb;
 }
 .config-band-caret { font-size: 15px; color: #a855f7; font-weight: 700; letter-spacing: 0.02em; flex: 0 0 auto; }
