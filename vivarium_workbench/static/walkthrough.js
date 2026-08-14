@@ -2580,9 +2580,11 @@
     if (!id) return;
     var apiUrl = (window.DataSource && window.DataSource.apiUrl)
       ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    // chrome=off → a view-only share: just the bigraph graph + toolbar, no tab
+    // strip / left Config panel / bottom run bar (matches the loom Share button).
     var rel = document.body.classList.contains('snapshot')
-      ? apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' + encodeURIComponent(_compositeStateUrl(id))
-      : apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id);
+      ? apiUrl('/bigraph-loom/index.html') + '?static=1&chrome=off&stateUrl=' + encodeURIComponent(_compositeStateUrl(id))
+      : apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) + '&chrome=off';
     var url;
     try { url = new URL(rel, window.location.href).href; } catch (e) { url = rel; }
     var flash = function () {

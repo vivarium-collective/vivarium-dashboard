@@ -202,11 +202,15 @@ export function decodeView(encoded: string | null | undefined): View | null {
   }
 }
 
-/** Build a shareable URL for the current page that opens with `view` applied. */
+/** Build a shareable URL for the current page that opens with `view` applied.
+ * A shared link is meant to be looked at, not driven, so it opens view-only
+ * (`chrome=off`): just the bigraph graph + its toolbar, no tab strip, no left
+ * Config panel, no bottom run bar. */
 export function shareableUrl(view: View): string {
   const url = new URL(window.location.href);
   url.searchParams.delete('viewUrl');
   url.searchParams.set('view', encodeView(view));
+  url.searchParams.set('chrome', 'off');
   return url.toString();
 }
 
