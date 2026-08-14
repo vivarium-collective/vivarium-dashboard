@@ -336,11 +336,11 @@
 /* SVGs/PNGs scale to fit their card; preserves aspect ratio so a 1400×484
    chart shrinks instead of overflowing horizontally + clipping. */
 .figure-card svg,.figure-card img.chart-img{display:block;width:100%;max-width:100%;height:auto}
-/* Inline SVGs with <foreignObject> HTML (loom figure exports) don't scale via
-   max-width in WebKit; study-detail.js _fitSvgScale shrinks them with a
-   transform inside this wrapper. overflow:hidden clips sub-pixel spill. */
-.figure-svg-scale{display:block;width:100%;overflow:hidden}
-.figure-svg-scale svg{display:block;max-width:none}
+/* Loom figure SVGs (with <foreignObject> HTML that WebKit won't scale when
+   inlined) are rendered as <img> data-URIs by study-detail.js so the browser
+   rasterizes + scales the whole figure. max-width shrinks a too-wide figure;
+   no width:100%, so small figures keep their native size instead of upscaling. */
+.figure-card img.figure-svg-img{display:block;max-width:100%;height:auto}
 .figure-desc{margin:8px 12px 0;font-size:0.85em;color:#475569}
 .figure-caption-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:6px 12px;font-size:0.85em;color:#475569;border-top:1px solid #f1f5f9;background:#f8fafc}
 .figure-source-chip{font-size:0.68em;text-transform:uppercase;letter-spacing:0.05em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#64748b;flex-shrink:0}
