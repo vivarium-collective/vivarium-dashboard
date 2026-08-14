@@ -306,6 +306,18 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
     sim_id = body.get("simulator_id")
     if not sim_id:
         return {"error": "simulator_id is required"}, 400
+    # num_generations/num_seeds directly size a real AWS Batch job -- unlike
+    # ordinary composite params, an unset value must never be silently
+    # defaulted to 1 (matching the client-side guard in
+    # study-detail.js:_dispatchRemotePinned, which blocks the dispatch before
+    # this route is ever called; this is the defense-in-depth twin for any
+    # OTHER caller of this route). No default applies to these two fields.
+    num_generations = body.get("num_generations")
+    if not num_generations:
+        return {"error": "num_generations is required"}, 400
+    num_seeds = body.get("num_seeds")
+    if not num_seeds:
+        return {"error": "num_seeds is required"}, 400
     spec_path = study_spec.study_spec_path(ws_root, study)
     if spec_path is None or not spec_path.is_file():
         return {"error": f"study {study!r} not found"}, 404
@@ -328,8 +340,8 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
     client = SmsApiClient(_sms_api_base())
     sim = client.run_simulation(
         simulator_id=int(sim_id),
-        num_generations=int(body.get("num_generations") or 1),
-        num_seeds=int(body.get("num_seeds") or 1),
+        num_generations=int(num_generations),
+        num_seeds=int(num_seeds),
         run_parca=bool(body.get("run_parca", True)),
         observables=observables,
         analysis_options=analysis_options or None,

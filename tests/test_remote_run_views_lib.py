@@ -266,7 +266,8 @@ def test_build_start_missing_study_400(monkeypatch, tmp_path):
 def test_submit_issues_run_and_returns_simulation_id(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
     monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
-    body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 1, "num_seeds": 1})
     assert status == 202
     assert body["simulation_id"] == 199
     assert body["phase"] == "running"
@@ -276,6 +277,56 @@ def test_submit_missing_simulator_id_400(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
     monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
     assert rrv.remote_run_submit(tmp_path, {"study": "s"})[1] == 400
+
+
+# ---------------------------------------------------------------------------
+# num_generations/num_seeds: no silent default (mirrors the client-side guard
+# in study-detail.js:_dispatchRemotePinned -- these two size a real AWS Batch
+# job, so an unset value must 400 here rather than quietly becoming 1x1).
+# ---------------------------------------------------------------------------
+
+def test_submit_missing_num_generations_400(monkeypatch, tmp_path):
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_seeds": 3})
+    assert status == 400
+    assert "num_generations" in body["error"]
+
+
+def test_submit_missing_num_seeds_400(monkeypatch, tmp_path):
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 5})
+    assert status == 400
+    assert "num_seeds" in body["error"]
+
+
+def test_submit_zero_num_generations_treated_as_unset_400(monkeypatch, tmp_path):
+    """0 is falsy but numerically distinct from "missing" — still must block:
+    a real dispatch can never run zero generations, and `not x` is the same
+    truthiness check already used for simulator_id/study in this ladder."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 0, "num_seeds": 3})
+    assert status == 400
+    assert "num_generations" in body["error"]
+
+
+def test_submit_forwards_explicit_num_generations_and_num_seeds(monkeypatch, tmp_path):
+    """When num_generations/num_seeds ARE set, the exact submitted values —
+    never a coerced-from-missing default — must reach
+    SmsApiClient.run_simulation()."""
+    _wire_thin(monkeypatch, tmp_path)
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 7, "num_seeds": 3})
+    assert status == 202
+    assert client.ran["num_generations"] == 7
+    assert client.ran["num_seeds"] == 3
 
 
 def test_submit_threads_analysis_options_from_spec(monkeypatch, tmp_path):
@@ -295,7 +346,8 @@ def test_submit_threads_analysis_options_from_spec(monkeypatch, tmp_path):
     )
     client = _FakeThinClient()
     monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
-    body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 1, "num_seeds": 1})
     assert status == 202
     assert client.ran["analysis_options"] == {"multiseed": {"ecocyc_table": {}}}
 
@@ -306,7 +358,8 @@ def test_submit_analysis_options_none_when_spec_has_no_analyses(monkeypatch, tmp
     _wire_thin(monkeypatch, tmp_path)
     client = _FakeThinClient()
     monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
-    body, status = rrv.remote_run_submit(tmp_path, {"simulator_id": 66, "study": "s"})
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 1, "num_seeds": 1})
     assert status == 202
     assert client.ran["analysis_options"] is None
 
