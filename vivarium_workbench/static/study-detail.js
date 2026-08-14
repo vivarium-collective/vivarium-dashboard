@@ -656,6 +656,13 @@
       var composite = block.getAttribute('data-model-composite');
       var overridesJson = block.getAttribute('data-model-overrides') || '{}';
       if (!composite) { mount.innerHTML = ''; return; }
+      // Editing is only possible for a real study.baseline[] entry (the
+      // add-then-remove save below replaces THAT entry) -- the conditions-only
+      // fallback card (no .baseline-composite-input, see study-detail.html)
+      // has no baseline[] entry to replace, so it stays read-only, exactly
+      // like its existing "Set composite" control already does.
+      var baselineInput = block.querySelector('.baseline-composite-input');
+      var baselineName = baselineInput ? baselineInput.getAttribute('data-baseline-name') : '';
       fetch('/api/composite-resolve?id=' + encodeURIComponent(composite) + '&overrides=' + encodeURIComponent(overridesJson))
         .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
         .then(function (res) {
@@ -664,18 +671,73 @@
             return;
           }
           var overrides = {}; try { overrides = JSON.parse(overridesJson); } catch (e) {}
-          _renderModelConfig(mount, res.body.parameters, overrides, esc);
+          _renderModelConfig(mount, res.body.parameters, overrides, esc, composite, baselineName);
         }).catch(function () { mount.innerHTML = ''; });
     });
   }
   window._loadModelConfig = _loadModelConfig;
 
-  function _renderModelConfig(mount, params, overrides, esc) {
+  // Coerce a raw <input> string to the composite's declared parameter type —
+  // mirrors process_bigraph.composite_spec._cast's canonical type vocabulary
+  // (integer/float/string/boolean; list/map are JSON-parsed best-effort) so a
+  // saved override behaves the same as a composite-authored default of the
+  // same declared type instead of always landing as a raw string.
+  function _coerceParamValue(raw, type) {
+    switch (type) {
+      case 'integer': { var i = parseInt(raw, 10); return isNaN(i) ? raw : i; }
+      case 'float': { var f = parseFloat(raw); return isNaN(f) ? raw : f; }
+      case 'boolean': return /^(true|1|yes)$/i.test(String(raw).trim());
+      case 'list': case 'map':
+        try { return JSON.parse(raw); } catch (e) { return raw; }
+      default: return raw;
+    }
+  }
+
+  // Save edited baseline params via the SAME add-then-remove sequence
+  // .baseline-composite-set already uses (there is no single "update in
+  // place" endpoint — see that handler's own comment). Only params the user
+  // actually EDITED this session (input.dataset.edited) are merged into a
+  // COPY of the study's current full params (`overrides`) — an untouched
+  // param must never be silently promoted from "composite default" to a
+  // frozen explicit override just because a sibling field was edited, and an
+  // edited param must never wipe every other already-authored override.
+  function _saveModelParams(mount, overrides, btn, status) {
+    var merged = Object.assign({}, overrides || {});
+    var editedKeys = [];
+    mount.querySelectorAll('.model-param-input').forEach(function (input) {
+      if (input.dataset.edited !== '1') return;
+      merged[input.dataset.paramKey] = _coerceParamValue(input.value, input.dataset.paramType);
+      editedKeys.push(input.dataset.paramKey);
+    });
+    if (!editedKeys.length) { status.textContent = 'No changes to save.'; return; }
+    var composite = btn.dataset.composite;
+    var oldName = btn.dataset.baselineName;
+    var newName = oldName + '-' + Date.now().toString(36);
+    btn.disabled = true;
+    status.textContent = 'Saving…';
+    api('POST', '/api/study-baseline-add', {study: studyName(), name: newName, composite: composite, params: merged})
+      .then(function (addResult) {
+        if (addResult.status !== 200) throw addResult;
+        return api('POST', '/api/study-baseline-remove', {study: studyName(), name: oldName});
+      })
+      .then(function (r) {
+        if (r.status === 200) { location.reload(); return; }
+        btn.disabled = false;
+        status.textContent = 'Error: ' + (r.body && r.body.error || r.status);
+      })
+      .catch(function (addResult) {
+        btn.disabled = false;
+        status.textContent = 'Error: ' + (addResult.body && addResult.body.error || addResult.status);
+      });
+  }
+
+  function _renderModelConfig(mount, params, overrides, esc, composite, baselineName) {
     var keys = Object.keys(params);
     if (!keys.length) {
       mount.innerHTML = '<p class="muted" style="font-size:0.85em;margin:0">This composite takes no configurable parameters.</p>';
       return;
     }
+    var editable = !!baselineName;
     var effective = {};
     var rows = keys.map(function (k) {
       var def = params[k] || {};
@@ -683,10 +745,15 @@
       var val = overridden ? overrides[k] : def.default;
       effective[k] = val;
       var shown = (val === undefined || val === null) ? '—' : val;
+      var valueCell = editable
+        ? '<input type="text" class="model-param-input" data-param-key="' + esc(k) + '" ' +
+          'data-param-type="' + esc(def.type || '') + '" value="' + esc(shown === '—' ? '' : shown) + '" ' +
+          'style="width:100%;min-width:80px;font-family:monospace;font-size:0.85em;padding:2px 4px;box-sizing:border-box" />'
+        : '<code>' + esc(shown) + '</code>';
       return '<tr' + (overridden ? ' style="background:#eff6ff"' : '') + '>' +
         '<td style="padding:3px 8px"><code>' + esc(k) + '</code></td>' +
         '<td style="padding:3px 8px;color:#6b7280">' + esc(def.type || '') + '</td>' +
-        '<td style="padding:3px 8px"><code>' + esc(shown) + '</code>' +
+        '<td style="padding:3px 8px">' + valueCell +
         (overridden ? ' <span style="color:#2563eb;font-size:0.72em;font-weight:600">override</span>' : '') + '</td>' +
         '<td style="padding:3px 8px;color:#6b7280">' + esc(def.description || '') + '</td></tr>';
     }).join('');
@@ -697,9 +764,25 @@
       '<thead><tr>' + ['Parameter', 'Type', 'Value', 'Description'].map(function (h) {
         return '<th style="text-align:left;padding:3px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280;">' + h + '</th>';
       }).join('') + '</tr></thead><tbody>' + rows + '</tbody></table></div>' +
+      (editable
+        ? '<div style="display:flex;align-items:center;gap:8px;margin-top:6px">' +
+          '<button type="button" class="action-btn model-config-save" style="font-size:0.8em">Save parameter changes</button>' +
+          '<span class="model-config-status muted" style="font-size:0.8em"></span></div>'
+        : '') +
       '<details style="margin-top:6px"><summary class="muted" style="cursor:pointer;font-size:0.82em">Full resolved config (JSON)</summary>' +
       '<pre style="font-size:0.78em;background:#f8fafc;padding:8px;border-radius:4px;overflow-x:auto;margin:4px 0 0">' +
       esc(JSON.stringify(effective, null, 2)) + '</pre></details>';
+    if (!editable) return;
+    mount.querySelectorAll('.model-param-input').forEach(function (input) {
+      input.addEventListener('input', function () { input.dataset.edited = '1'; });
+    });
+    var saveBtn = mount.querySelector('.model-config-save');
+    var status = mount.querySelector('.model-config-status');
+    saveBtn.dataset.composite = composite || '';
+    saveBtn.dataset.baselineName = baselineName;
+    saveBtn.addEventListener('click', function () {
+      _saveModelParams(mount, overrides, saveBtn, status);
+    });
   }
 
   // Simulations tab: the study's runs rendered with the SHARED Simulations-DB
@@ -1133,21 +1216,58 @@
   // function fired the actual AWS Batch dispatch. Show it and require an
   // explicit confirm, so a workspace-identity mismatch is caught here, before
   // money gets spent, not discovered afterward via aws batch describe-jobs.
+  //
+  // Deliberate addition beyond the || 1 removal below: window._study can be a
+  // STALE in-memory copy fetched before a param edit landed server-side (a
+  // confirmed real failure mode, not theoretical -- a tab left open across a
+  // baseline-param save re-dispatched the OLD 1x1 params from memory even
+  // though study.yaml on disk was already correct). Re-fetching via
+  // window.DataSource.loadStudy immediately before reading params closes that
+  // gap; window._study is refreshed too so the rest of the page stops reading
+  // stale state from this point on as well.
   function _dispatchRemotePinned(cfg) {
-    var msg = 'Dispatch to AWS Batch:\n\n' +
-      '  repo:    ' + (cfg.repo_url || '(unknown)') + '\n' +
-      '  branch:  ' + (cfg.branch || '(unknown)') + '\n' +
-      '  commit:  ' + ((cfg.commit || '(unknown)').slice(0, 12)) + '\n' +
-      '  simulator id: ' + cfg.simulator_id + '\n\n' +
-      'Proceed?';
-    if (!confirm(msg)) return _CANCELLED;
-    var baseline = (window._study && window._study.baseline) || [];
-    var params = (baseline[0] && baseline[0].params) || {};
-    return api('POST', '/api/remote-run-submit', {
-      study: studyName(),
-      simulator_id: cfg.simulator_id,
-      num_generations: params.n_generations || 1,
-      num_seeds: params.n_seeds || 1,
+    var slug = studyName();
+    var refetch = (window.DataSource && window.DataSource.loadStudy)
+      ? window.DataSource.loadStudy(slug).catch(function () { return null; })
+      : Promise.resolve(null);
+    return refetch.then(function (freshStudy) {
+      if (freshStudy) window._study = freshStudy;
+      var baseline = (window._study && window._study.baseline) || [];
+      var params = (baseline[0] && baseline[0].params) || {};
+      var numGenerations = params.n_generations;
+      var numSeeds = params.n_seeds;
+      // n_generations/n_seeds directly size a real AWS Batch job -- unlike
+      // ordinary composite params (already correctly default-backed via
+      // /api/composite-resolve, untouched here), an explicit value the user
+      // set must NEVER be silently replaced by a default. An unset value
+      // blocks the dispatch outright rather than falling back to 1x1.
+      var missing = [];
+      if (!numGenerations) missing.push('n_generations');
+      if (!numSeeds) missing.push('n_seeds');
+      if (missing.length) {
+        alert(
+          'Cannot dispatch: ' + missing.join(' and ') +
+          (missing.length > 1 ? ' are' : ' is') + ' not set.\n\n' +
+          'Set ' + (missing.length > 1 ? 'both' : 'it') + ' in the Model tab ' +
+          '(Runnable models → edit ' + missing.join(' / ') + ' → Save parameter changes) before running.'
+        );
+        return _CANCELLED;
+      }
+      var msg = 'Dispatch to AWS Batch:\n\n' +
+        '  repo:    ' + (cfg.repo_url || '(unknown)') + '\n' +
+        '  branch:  ' + (cfg.branch || '(unknown)') + '\n' +
+        '  commit:  ' + ((cfg.commit || '(unknown)').slice(0, 12)) + '\n' +
+        '  simulator id: ' + cfg.simulator_id + '\n' +
+        '  generations:  ' + numGenerations + '\n' +
+        '  seeds:        ' + numSeeds + '\n\n' +
+        'Proceed?';
+      if (!confirm(msg)) return _CANCELLED;
+      return api('POST', '/api/remote-run-submit', {
+        study: slug,
+        simulator_id: cfg.simulator_id,
+        num_generations: numGenerations,
+        num_seeds: numSeeds,
+      });
     });
   }
   window._dispatchCurrentSpecBaseline = _dispatchCurrentSpecBaseline;
