@@ -274,6 +274,33 @@ export default function App() {
     const timers = [120, 500, 1200, 2400, 4000].map((d) => window.setTimeout(fit, d));
     return () => timers.forEach(clearTimeout);
   }, [fitTab, haveNodes, compositeId]);
+
+  // Refit when the canvas transitions from zero size to visible. When the loom
+  // is embedded (iframe) inside a hidden / display:none container — e.g. the
+  // study Visualizations tab, which is `hidden` until selected — the ReactFlow
+  // viewport is 0×0 for the entire timed-fit window above, so every fitView is a
+  // no-op and the nodes render stacked at the origin (the "overlapping / broken"
+  // symptom). A ResizeObserver catches the 0→non-zero transition when the tab is
+  // finally shown and lands one more fit then. Respects userMovedRef so it never
+  // fights a user who has already panned/zoomed.
+  useEffect(() => {
+    if (!haveNodes || typeof ResizeObserver === 'undefined') return;
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    let wasZero = el.clientWidth === 0 || el.clientHeight === 0;
+    const ro = new ResizeObserver(() => {
+      const isZero = el.clientWidth === 0 || el.clientHeight === 0;
+      if (wasZero && !isZero && !userMovedRef.current) {
+        // Let layout settle a frame, then frame the graph once.
+        window.setTimeout(() => {
+          if (!userMovedRef.current) rfRef.current?.fitView?.({ padding: 0.2, duration: 300 });
+        }, 60);
+      }
+      wasZero = isZero;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [haveNodes, compositeId]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   // Mirror `nodes` for the edge-visibility seam below (same reason hiddenRef
   // exists): dragging a node rewrites `nodes` on every animation frame, and a
