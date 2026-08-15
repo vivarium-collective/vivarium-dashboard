@@ -122,7 +122,7 @@ def _parquet_spec():
 
 def _register_parquet(core):
     try:
-        from pbg_emitters.parquet_emitter import ParquetEmitter
+        from viva_emitters.parquet_emitter import ParquetEmitter
     except ImportError:  # process-bigraph < 1.4.17 legacy location
         from process_bigraph.emitter import ParquetEmitter
     core.register_link("ParquetEmitter", ParquetEmitter)
@@ -134,7 +134,7 @@ def test_run_with_emitter_parquet_also_sqlite_injects_history(tmp_path):
     pytest.importorskip("polars")
     pytest.importorskip("duckdb")
     pytest.importorskip("pyarrow")
-    import pbg_emitters
+    import viva_emitters
 
     core = _core()
     _register_parquet(core)
@@ -153,7 +153,7 @@ def test_run_with_emitter_parquet_also_sqlite_injects_history(tmp_path):
     assert "sqlite_emitter" in st
     assert "user_emitter" in st
     # And the history table is actually populated so Results renders live.
-    rows = pbg_emitters.load_history(db_file, "r-explorer")
+    rows = viva_emitters.load_history(db_file, "r-explorer")
     assert len(rows) >= 4
 
 

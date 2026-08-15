@@ -165,7 +165,7 @@ def _evaluator_test_runner(
     store = _resolve_run_store(run, study_dir, ws_root)
     if store is None:
         raise StoreUnresolved(f"no openable store for run {run.get('name')!r}")
-    from pbg_emitters import RunReader  # noqa: PLC0415  (evaluator extra)
+    from viva_emitters import RunReader  # noqa: PLC0415  (evaluator extra)
 
     reader = RunReader.open(store)
     return evaluate_study(spec, reader, ws_root=ws_root)

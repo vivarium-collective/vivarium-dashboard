@@ -49,11 +49,11 @@ def _core():
 
 
 # ---------------------------------------------------------------------------
-# sqlite — the default; history reads back via pbg_emitters.load_history
+# sqlite — the default; history reads back via viva_emitters.load_history
 # ---------------------------------------------------------------------------
 
 def test_run_with_emitter_sqlite_writes_history(tmp_path):
-    import pbg_emitters
+    import viva_emitters
 
     db_file = str(tmp_path / "runs.db")
     steps = 5
@@ -69,7 +69,7 @@ def test_run_with_emitter_sqlite_writes_history(tmp_path):
     # progress_cb saw exactly [1..steps].
     assert seen == list(range(1, steps + 1))
 
-    rows = pbg_emitters.load_history(db_file, "r-sqlite")
+    rows = viva_emitters.load_history(db_file, "r-sqlite")
     assert len(rows) >= steps
 
 
@@ -130,8 +130,8 @@ def test_run_with_emitter_short_run_does_not_silently_empty(tmp_path):
     assert "warning" in prov and prov["warning"]
 
     # The fall-back store holds the run's data (so the run is NOT empty).
-    import pbg_emitters
-    rows = pbg_emitters.load_history(db_file, "r-short")
+    import viva_emitters
+    rows = viva_emitters.load_history(db_file, "r-short")
     series = [r.get("counter_store_value") for r in rows]
     assert len(rows) >= 1
     assert any((v or 0) > 0 for v in series)
@@ -196,8 +196,8 @@ def test_run_with_emitter_zarr_fallback_uses_fresh_state(tmp_path):
     # sqlite re-drive (1 tick each).
     assert seen == [1, 1]
     # The fall-back sqlite store holds the run's (clean) data.
-    import pbg_emitters
-    rows = pbg_emitters.load_history(db_file, "r-fresh")
+    import viva_emitters
+    rows = viva_emitters.load_history(db_file, "r-fresh")
     assert len(rows) >= 1
 
 
@@ -233,7 +233,7 @@ def test_run_with_emitter_parquet_writes_store(tmp_path):
     }
     core = _core()
     try:
-        from pbg_emitters.parquet_emitter import ParquetEmitter
+        from viva_emitters.parquet_emitter import ParquetEmitter
     except ImportError:  # process-bigraph < 1.4.17 (legacy location)
         from process_bigraph.emitter import ParquetEmitter
     core.register_link("ParquetEmitter", ParquetEmitter)

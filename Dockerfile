@@ -135,8 +135,8 @@ ENV PATH="/app/v2ecoli/.venv/bin:${PATH}"
 # if either ever needs to change.
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps \
-        "process-bigraph @ git+https://github.com/vivarium-collective/process-bigraph.git@0e65c0c2539dc0a9b594e40e7849b85b6b5f19a7" \
-        "bigraph-schema @ git+https://github.com/vivarium-collective/bigraph-schema.git@cf7514659a9272d4b63217f8be6aeeaa96cbc3fc"
+        "process-bigraph @ git+https://github.com/vivarium-collective/process-bigraph.git@8b9830f9128b0506d72c0ab2e2f885654efd9d21" \
+        "bigraph-schema @ git+https://github.com/vivarium-collective/bigraph-schema.git@c45cd66e76472fe3f61664d350dc6caf92a6db99"
 
 # ─── overlay THIS repo's workbench code ───────────────────────────────────────
 # `--no-deps`: PyPI-published dependencies were already resolved by the sync
