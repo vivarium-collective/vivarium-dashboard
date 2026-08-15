@@ -2107,6 +2107,26 @@
       summary.textContent = '— no test results yet — click "Run tests" to execute them or check the runs[] section in study.yaml';
     }
 
+    // Severity-aware study gate (spec.gate from run_dir/report.json): a single
+    // pass/fail/warn badge over the graded report-card AXES — only hard-severity
+    // mismatches fail; soft/drift warn; directional never gates. Distinct from
+    // the per-test-outcome rollup above.
+    var _gate = spec && spec.gate;
+    if (_gate && _gate.status) {
+      var _gc = {pass: ['#16a34a', '✓ gate: pass'],
+                 warn: ['#d97706', '≈ gate: warn'],
+                 fail: ['#dc2626', '✗ gate: fail']}[_gate.status] ||
+                ['#64748b', 'gate: ' + _gate.status];
+      var _nhard = (_gate.gated_by || []).length;
+      var _glabel = _gc[1] + (_gate.status === 'fail' && _nhard
+        ? ' (' + _nhard + ' hard axis' + (_nhard === 1 ? '' : 'es') + ')' : '');
+      summary.insertAdjacentHTML('beforeend',
+        ' <span class="study-gate-badge" data-gate="' + _gate.status +
+        '" title="severity-aware gate: only hard-severity axis mismatches fail"' +
+        ' style="margin-left:8px;padding:1px 7px;border-radius:9px;font-weight:600;' +
+        'color:#fff;background:' + _gc[0] + '">' + _glabel + '</span>');
+    }
+
     // --- Per-test code-computed outcomes (spine B3) ---------------------
     // Render each test's LATEST code-computed outcome (measured_value /
     // result / operator / evaluated_by) connected to the run that produced

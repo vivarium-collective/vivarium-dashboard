@@ -11,7 +11,8 @@ import sqlite3
 import traceback
 from pathlib import Path
 
-from viva_superpowers import diff_reports
+from viva_superpowers import diff_reports, build_report
+from viva_superpowers.study_verdict import severity_gate
 from vivarium_workbench.lib.conclusion_card import _CANON_SEVERITY
 
 _RUN_VERDICT_SCHEMA = "run_verdict/v1"
@@ -131,6 +132,31 @@ def _write_test_diff(run_dir, prev_run_dir, *, diff_fn=diff_reports) -> bool:
     except Exception:  # noqa: BLE001 — best-effort, never raises into the run loop
         traceback.print_exc()
         return False
+
+
+def _write_report_gate(run_dir, study_name, run_id, *,
+                       build_fn=build_report, gate_fn=severity_gate):
+    """Write ``run_dir/report.json`` = ``build_fn(cards)`` with a severity-aware
+    ``gate`` injected, and return the gate status (``pass``/``fail``/``warn``) or
+    ``None`` on failure.
+
+    Aggregates this run's per-card verdicts (``_load_verdict_cards``) into a
+    ``test_report/v1`` and gates it on axis severity: only ``hard``-severity axis
+    mismatches FAIL; a soft mismatch or drift WARNs; directional axes never gate
+    (see ``viva_superpowers.study_verdict.severity_gate``). Pure + best-effort in
+    the same style as ``_write_test_diff`` — never raises into the run loop.
+    """
+    run_dir = Path(run_dir)
+    try:
+        cards = _load_verdict_cards(run_dir)
+        report = build_fn(study_name or "", run_id, cards)
+        report["gate"] = gate_fn(report)
+        (run_dir / "report.json").write_text(
+            json.dumps(report, allow_nan=False), encoding="utf-8")
+        return report["gate"]["status"]
+    except Exception:  # noqa: BLE001 — best-effort, never raises into the run loop
+        traceback.print_exc()
+        return None
 
 
 def _composite_analyses(spec_id: str, core) -> list:
@@ -310,6 +336,15 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
     except Exception:
         traceback.print_exc()
 
+    # Severity-aware study gate over this run's graded cards -> run_dir/report.json.
+    # Only hard-severity axis mismatches fail; soft/drift warn; directional never
+    # gates. Best-effort, same has_* contract — never fails the run.
+    gate_status = None
+    try:
+        gate_status = _write_report_gate(run_dir, spec_id, run_id)
+    except Exception:
+        traceback.print_exc()
+
     # Auto-refresh declared visualizations (self-driving fix): previously a
     # study's `visualizations:` only got re-rendered via a manual "Refresh"
     # button in the UI, so every study with declared viz went stale after
@@ -336,4 +371,4 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
 
     return {"has_analyses": has_analyses, "has_report": has_report,
             "has_verdict": has_verdict, "has_viz_refresh": has_viz_refresh,
-            "has_diff": has_diff}
+            "has_diff": has_diff, "gate": gate_status}
