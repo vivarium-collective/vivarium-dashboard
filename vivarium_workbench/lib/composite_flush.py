@@ -121,7 +121,12 @@ def _write_test_diff(run_dir, prev_run_dir, *, diff_fn=diff_reports) -> bool:
         curr_cards = _load_verdict_cards(run_dir)
         prev_cards = _load_verdict_cards(prev_run_dir) if prev_run_dir else {}
         diff = diff_fn(prev_cards, curr_cards)
-        (run_dir / "test_diff.json").write_text(json.dumps(diff), encoding="utf-8")
+        # allow_nan=False matches repo convention (_write_json/verdict writes) —
+        # browser JSON.parse rejects NaN/Infinity; margins are sanitized
+        # upstream so this is a belt-and-suspenders tightening, not a fix for
+        # an observed failure.
+        (run_dir / "test_diff.json").write_text(
+            json.dumps(diff, allow_nan=False), encoding="utf-8")
         return True
     except Exception:  # noqa: BLE001 — best-effort, never raises into the run loop
         traceback.print_exc()
@@ -295,9 +300,12 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
         prev_run_id = _find_prev_run_id(db_file, run_id)
         prev_run_dir = None
         if prev_run_id:
-            # run_dir is <ws>/.pbg/runs/<run_id> (see run_runner._resolve_sim_data_path).
-            ws_root = run_dir.parents[2]
-            prev_run_dir = ws_root / ".pbg" / "runs" / prev_run_id
+            # The prev run shares the CURRENT run's runs-root — layout-agnostic
+            # (no hardcoded ".pbg"/"runs": a layout:-remapped workspace resolves
+            # run paths differently, e.g. via WorkspacePaths.load(ws_root).pbg
+            # as study_spec.py does; run_dir.parent already IS that runs-root
+            # for this run, whatever it's named).
+            prev_run_dir = run_dir.parent / prev_run_id
         has_diff = _write_test_diff(run_dir, prev_run_dir)
     except Exception:
         traceback.print_exc()
