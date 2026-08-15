@@ -306,10 +306,43 @@ async function treeLanesLayout(nodes: Node[], edges: Edge[], gaps: Gaps): Promis
 
 interface Block { w: number; h: number; place: (ox: number, oy: number, pos: Map<string, XY>) => void; }
 
-/** Compact org-chart block for a store subtree: the node sits centered on top,
- *  and its children's blocks FLOW-PACK into a wrapped grid beneath it (area-based
- *  budget → roughly square), so a wide sibling level (e.g. 16 stores) wraps into
- *  a block (~4×4) instead of one very wide row. Overlap-free by construction. */
+/** Flow-pack sub-blocks into wrapped rows (area-based budget → roughly square),
+ *  centering each row. Returns a container Block (no node of its own). */
+function packBlocksGrid(blocks: Block[], hGap: number, vGap: number): Block {
+  if (blocks.length === 0) return { w: 0, h: 0, place: () => {} };
+  const area = blocks.reduce((a, b) => a + b.w * b.h, 0);
+  const budget = Math.max(...blocks.map((b) => b.w), Math.sqrt(area * 1.4));
+  const rows: Block[][] = [];
+  let cur: Block[] = [], curW = 0;
+  for (const b of blocks) {
+    if (cur.length && curW + b.w > budget) { rows.push(cur); cur = []; curW = 0; }
+    cur.push(b); curW += b.w + hGap;
+  }
+  if (cur.length) rows.push(cur);
+  const rowW = rows.map((r) => r.reduce((a, b) => a + b.w + hGap, 0) - hGap);
+  const rowH = rows.map((r) => Math.max(...r.map((b) => b.h)));
+  const w = Math.max(...rowW);
+  const h = rowH.reduce((a, x) => a + x + vGap, 0) - vGap;
+  return {
+    w, h,
+    place: (ox, oy, pos) => {
+      let cy = oy;
+      rows.forEach((r, ri) => {
+        let cx = ox + (w - rowW[ri]) / 2;
+        for (const b of r) { b.place(cx, cy, pos); cx += b.w + hGap; }
+        cy += rowH[ri] + vGap;
+      });
+    },
+  };
+}
+
+/** Compact org-chart block for a store subtree, laid out to keep place edges
+ *  legible. The node sits centered on top; beneath it, its LEAF children wrap
+ *  into one compact grid while each SUBTREE child keeps its own coherent column.
+ *  Separating the two means a tall subtree (e.g. `unique`) no longer packs inline
+ *  among leaf siblings — so edges from the parent to later siblings stop crossing
+ *  that subtree, and nested-subtree edges stay untangled. Overlap-free by
+ *  construction; a wide leaf level still wraps (~4×4) rather than sprawling. */
 function storeBlock(
   id: string, children: Map<string, string[]>, foot: (id: string) => Foot,
   hGap: number, vGap: number, seen: Set<string>,
@@ -320,34 +353,22 @@ function storeBlock(
   if (kids.length === 0) {
     return { w: f.w, h: f.h, place: (ox, oy, pos) => pos.set(id, { x: ox, y: oy }) };
   }
-  const kb = kids.map((k) => storeBlock(k, children, foot, hGap, vGap, seen));
-  const area = kb.reduce((a, b) => a + b.w * b.h, 0);
-  const budget = Math.max(...kb.map((b) => b.w), Math.sqrt(area * 1.4));
-  // Flow-pack children into rows no wider than the budget.
-  const rows: Block[][] = [];
-  let cur: Block[] = [], curW = 0;
-  for (const b of kb) {
-    if (cur.length && curW + b.w > budget) { rows.push(cur); cur = []; curW = 0; }
-    cur.push(b); curW += b.w + hGap;
+  const isLeaf = (k: string) => (children.get(k)?.length ?? 0) === 0;
+  const leafKids = kids.filter(isLeaf);
+  const subKids = kids.filter((k) => !isLeaf(k));
+  const items: Block[] = [];
+  if (leafKids.length) {
+    items.push(packBlocksGrid(leafKids.map((k) => storeBlock(k, children, foot, hGap, vGap, seen)), hGap, vGap));
   }
-  if (cur.length) rows.push(cur);
-  const rowW = rows.map((r) => r.reduce((a, b) => a + b.w + hGap, 0) - hGap);
-  const rowH = rows.map((r) => Math.max(...r.map((b) => b.h)));
-  const contW = Math.max(...rowW);
-  const contH = rowH.reduce((a, h) => a + h + vGap, 0) - vGap;
-  const blockW = Math.max(f.w, contW);
-  const blockH = f.h + vGap + contH;
+  for (const k of subKids) items.push(storeBlock(k, children, foot, hGap, vGap, seen));
+  const cont = packBlocksGrid(items, hGap, vGap);
+  const blockW = Math.max(f.w, cont.w);
+  const blockH = f.h + vGap + cont.h;
   return {
     w: blockW, h: blockH,
     place: (ox, oy, pos) => {
       pos.set(id, { x: ox + (blockW - f.w) / 2, y: oy });   // parent centered on top
-      let cy = oy + f.h + vGap;
-      const contOx = ox + (blockW - contW) / 2;
-      rows.forEach((r, ri) => {
-        let cx = contOx + (contW - rowW[ri]) / 2;            // center each row
-        for (const b of r) { b.place(cx, cy, pos); cx += b.w + hGap; }
-        cy += rowH[ri] + vGap;
-      });
+      cont.place(ox + (blockW - cont.w) / 2, oy + f.h + vGap, pos);
     },
   };
 }
