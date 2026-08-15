@@ -1113,7 +1113,14 @@ def _do_build(
                 continue
             for f in figdata.get("files", []):
                 studies_with_figures.add(f["study"])
-            if figdata.get("n_composites"):
+            # Emit the investigation figures.zip whenever the investigation has
+            # ANY figures — either composite-level figures (n_composites) or
+            # study-level ones from studies' visualizations/ (files). Gating on
+            # n_composites alone dropped the aggregate zip for investigations
+            # whose figures come only from study visualizations, leaving the
+            # card's `↓ figures` link 404ing. `build_figures_zip` already returns
+            # None when there is genuinely nothing, so `if blob` is the real gate.
+            if figdata.get("n_composites") or figdata.get("files"):
                 blob = _figs.build_figures_zip(ws_root, inv_name)
                 if blob:
                     dst = figures_root / inv_name / "figures.zip"
