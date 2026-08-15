@@ -4521,22 +4521,6 @@ dependencies = [
     { name = "process-bigraph" },
 ]
 
-[package.optional-dependencies]
-parquet = [
-    { name = "duckdb" },
-    { name = "fsspec" },
-    { name = "polars" },
-    { name = "pyarrow" },
-    { name = "tqdm" },
-]
-xarray = [
-    { name = "pint" },
-    { name = "unum" },
-    { name = "xarray" },
-    { name = "zarr" },
-    { name = "zarrs" },
-]
-
 [[package]]
 name = "pbg-ketchup"
 version = "0.1.0"
@@ -7249,7 +7233,6 @@ dependencies = [
     { name = "pandas" },
     { name = "pbg-bioreactordesign" },
     { name = "pbg-copasi" },
-    { name = "pbg-emitters", extra = ["parquet", "xarray"] },
     { name = "pbg-ketchup" },
     { name = "pbg-parsimony" },
     { name = "pbg-torch" },
@@ -7264,6 +7247,7 @@ dependencies = [
     { name = "sympy" },
     { name = "unum" },
     { name = "vecoli", extra = ["dev"] },
+    { name = "viva-emitters", extra = ["parquet", "xarray"] },
     { name = "viva-munk" },
     { name = "viva-superpowers" },
     { name = "viva-workspace" },
@@ -7282,8 +7266,6 @@ requires-dist = [
     { name = "pandas" },
     { name = "pbg-bioreactordesign", git = "https://github.com/vivarium-collective/pbg-bioreactordesign.git?branch=main" },
     { name = "pbg-copasi", git = "https://github.com/vivarium-collective/pbg-copasi.git?branch=main" },
-    { name = "pbg-emitters", extras = ["parquet"], git = "https://github.com/vivarium-collective/pbg-emitters.git?branch=main" },
-    { name = "pbg-emitters", extras = ["xarray"], git = "https://github.com/vivarium-collective/pbg-emitters.git?branch=main" },
     { name = "pbg-ketchup", git = "https://github.com/vivarium-collective/pbg-ketchup.git?branch=main" },
     { name = "pbg-openmm", marker = "extra == 'relax'", git = "https://github.com/vivarium-collective/pbg-openmm.git?branch=main" },
     { name = "pbg-parsimony", git = "https://github.com/vivarium-collective/pbg-parsimony.git?branch=main" },
@@ -7303,6 +7285,7 @@ requires-dist = [
     { name = "unum" },
     { name = "v2ecoli", extras = ["parquet", "xarray"], marker = "extra == 'emitters'" },
     { name = "vecoli", extras = ["dev"], specifier = ">=1.1.0" },
+    { name = "viva-emitters", extras = ["parquet", "xarray"], specifier = ">=0.2.3" },
     { name = "viva-munk", git = "https://github.com/vivarium-collective/Viva-munk.git?branch=main" },
     { name = "viva-superpowers", git = "https://github.com/vivarium-collective/viva-superpowers.git?branch=main" },
     { name = "viva-workspace", git = "https://github.com/vivarium-collective/viva-workspace.git?branch=main" },
@@ -7400,6 +7383,13 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+parquet = [
+    { name = "duckdb" },
+    { name = "fsspec" },
+    { name = "polars" },
+    { name = "pyarrow" },
+    { name = "tqdm" },
+]
 xarray = [
     { name = "pint" },
     { name = "unum" },
@@ -7432,7 +7422,7 @@ dependencies = [
 [[package]]
 name = "viva-superpowers"
 version = "0.22.0"
-source = { git = "https://github.com/vivarium-collective/viva-superpowers.git?rev=2992c004437b0d2532c1a22438208180d5399814#2992c004437b0d2532c1a22438208180d5399814" }
+source = { git = "https://github.com/vivarium-collective/viva-superpowers.git?rev=cf6a45164cc786506512c8617119d3fbad031a22#cf6a45164cc786506512c8617119d3fbad031a22" }
 dependencies = [
     { name = "bigraph-schema" },
     { name = "click" },
@@ -7473,7 +7463,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/3e/87/794e0b4c5dccbca30
 
 [[package]]
 name = "vivarium-workbench"
-version = "0.3.43"
+version = "0.3.44"
 source = { editable = "." }
 dependencies = [
     { name = "bigraph-schema" },
@@ -7554,7 +7544,7 @@ requires-dist = [
     { name = "v2ecoli", marker = "extra == 'demo'", editable = "../v2ecoli" },
     { name = "viva-emitters", extras = ["sqlite", "xarray"], specifier = ">=0.2.3" },
     { name = "viva-marketplace", git = "https://github.com/vivarium-collective/viva-marketplace.git?branch=main" },
-    { name = "viva-superpowers", git = "https://github.com/vivarium-collective/viva-superpowers.git?rev=2992c004437b0d2532c1a22438208180d5399814" },
+    { name = "viva-superpowers", git = "https://github.com/vivarium-collective/viva-superpowers.git?rev=cf6a45164cc786506512c8617119d3fbad031a22" },
     { name = "viva-workspace", git = "https://github.com/vivarium-collective/viva-workspace.git?branch=main" },
     { name = "xarray", specifier = ">=2026.4" },
     { name = "xarray", marker = "extra == 'test'" },

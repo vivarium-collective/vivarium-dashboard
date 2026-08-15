@@ -895,6 +895,25 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
                                  "verdict": verdict, "groups": groups,
                                  "html_stub": html_stub}
         spec["report_card_urls"] = rc_urls
+        # Cross-iteration diff (Slice 3, §10): surface the latest run's
+        # run_dir/test_diff.json (written by composite_flush._write_test_diff
+        # via viva_superpowers.diff_reports) so the Tests panel can render
+        # fixed/broke/improved/regressed change badges beside each axis. The
+        # `report_card_verdict/v2` axis extras (margin/severity/knob/citation)
+        # already pass through report_card_urls[card].groups verbatim above
+        # (groups = _vj.get("groups")) — this only adds the separate
+        # since-last-run diff. Best-effort: no runs yet / no diff written
+        # (first run) -> leave spec["test_diff"] unset.
+        try:
+            from vivarium_workbench.lib.study_charts import latest_run_row
+            _latest = latest_run_row(study_dir(ws_root, name) / "runs.db")
+            if _latest and _latest.get("run_id"):
+                _tdf = (WorkspacePaths.load(ws_root).pbg / "runs"
+                        / _latest["run_id"] / "test_diff.json")
+                if _tdf.is_file():
+                    spec["test_diff"] = _json.loads(_tdf.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            pass
         # A rich report card (docs/report_cards/<set>/<card>/report_card.html)
         # belongs on the Report Cards tab, not embedded in Visualizations. Promote
         # any such embed into report_card_urls (preferring its richer render + its

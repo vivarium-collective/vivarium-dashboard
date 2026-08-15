@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import html as _html
 import json
+import sqlite3
 import traceback
 from pathlib import Path
 
+from viva_superpowers import diff_reports
 from vivarium_workbench.lib.conclusion_card import _CANON_SEVERITY
 
 _RUN_VERDICT_SCHEMA = "run_verdict/v1"
@@ -48,6 +50,87 @@ def rollup_run_verdict(verdict_json_paths) -> dict:
         default="ungraded",
     )
     return {"schema": _RUN_VERDICT_SCHEMA, "overall": overall, "cards": cards}
+
+
+def _load_verdict_cards(run_dir) -> dict:
+    """``{card_name: full verdict doc}`` for every ``*.verdict.json`` under
+    ``run_dir``. Same name-recovery as ``rollup_run_verdict`` (:30-38), but
+    keeps the FULL parsed doc (not just ``overall``) since ``diff_reports``
+    needs each axis's ``groups[...].axes[...]`` detail. A missing/unreadable
+    file is skipped, not fatal — mirrors ``rollup_run_verdict``'s tolerance."""
+    cards: dict = {}
+    run_dir = Path(run_dir)
+    if not run_dir.is_dir():
+        return cards
+    for p in run_dir.glob("**/*.verdict.json"):
+        name = p.name[: -len(".verdict.json")] if p.name.endswith(
+            ".verdict.json") else p.stem
+        try:
+            cards[name] = json.loads(p.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 — unreadable/invalid -> skip this card
+            continue
+    return cards
+
+
+def _find_prev_run_id(db_file, run_id: str) -> str | None:
+    """Newest ``runs_meta`` row that is NOT ``run_id``, or ``None``.
+
+    Read-only + tolerant: missing db file / table / columns all yield
+    ``None`` rather than raising (matches ``study_charts.latest_run_row``'s
+    contract) so a first run or a bare composite-test-run (no runs.db row
+    yet) degrades to "no prev run" instead of erroring. Excludes ``run_id``
+    directly in SQL rather than via a post-hoc guard, since the CURRENT run's
+    row is typically already present (inserted at run start, before this
+    flush stage runs) with the most recent ``started_at``.
+    """
+    db_file = Path(db_file)
+    if not db_file.is_file():
+        return None
+    try:
+        conn = sqlite3.connect(f"file:{db_file}?mode=ro", uri=True, timeout=1.0)
+        try:
+            have = {r[1] for r in conn.execute("PRAGMA table_info(runs_meta)")}
+            if "run_id" not in have:
+                return None
+            order_col = ("COALESCE(completed_at, started_at)"
+                         if {"completed_at", "started_at"} & have else "run_id")
+            row = conn.execute(
+                f"SELECT run_id FROM runs_meta WHERE run_id != ? "
+                f"ORDER BY {order_col} DESC LIMIT 1", (run_id,)
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0] if row else None
+    except sqlite3.Error:
+        return None
+
+
+def _write_test_diff(run_dir, prev_run_dir, *, diff_fn=diff_reports) -> bool:
+    """Write ``run_dir/test_diff.json = diff_fn(prev_cards, curr_cards)``.
+
+    ``prev_run_dir`` may be ``None`` or non-existent (first run / prev run's
+    cards missing) — ``prev_cards`` then degrades to ``{}`` and every axis in
+    ``curr_cards`` diffs as ``"new"``, which is still a useful signal. Pure
+    and best-effort in the same style as the rest of this module: on ANY
+    failure (bad ``diff_fn``, unwritable ``run_dir``, ...) this returns
+    ``False`` and leaves no partial ``test_diff.json`` behind, rather than
+    raising into the run loop.
+    """
+    run_dir = Path(run_dir)
+    try:
+        curr_cards = _load_verdict_cards(run_dir)
+        prev_cards = _load_verdict_cards(prev_run_dir) if prev_run_dir else {}
+        diff = diff_fn(prev_cards, curr_cards)
+        # allow_nan=False matches repo convention (_write_json/verdict writes) —
+        # browser JSON.parse rejects NaN/Infinity; margins are sanitized
+        # upstream so this is a belt-and-suspenders tightening, not a fix for
+        # an observed failure.
+        (run_dir / "test_diff.json").write_text(
+            json.dumps(diff, allow_nan=False), encoding="utf-8")
+        return True
+    except Exception:  # noqa: BLE001 — best-effort, never raises into the run loop
+        traceback.print_exc()
+        return False
 
 
 def _composite_analyses(spec_id: str, core) -> list:
@@ -204,6 +287,29 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
     except Exception:
         traceback.print_exc()
 
+    # Cross-iteration diff (Slice 3, §8/§9): test_diff.json = diff_reports
+    # (prev_cards, curr_cards) vs the run immediately before this one — the
+    # agent-feedback signal a model-building agent reads between iterations.
+    # There is no history/ in the workbench (study-level
+    # viz/report_card/*.verdict.json is overwritten each run), so prev_cards
+    # is read from the PRIOR run's own run_dir. Best-effort — first run / no
+    # runs.db row yet -> _find_prev_run_id returns None -> an all-"new" diff
+    # is still written (still useful), never a hard failure.
+    has_diff = False
+    try:
+        prev_run_id = _find_prev_run_id(db_file, run_id)
+        prev_run_dir = None
+        if prev_run_id:
+            # The prev run shares the CURRENT run's runs-root — layout-agnostic
+            # (no hardcoded ".pbg"/"runs": a layout:-remapped workspace resolves
+            # run paths differently, e.g. via WorkspacePaths.load(ws_root).pbg
+            # as study_spec.py does; run_dir.parent already IS that runs-root
+            # for this run, whatever it's named).
+            prev_run_dir = run_dir.parent / prev_run_id
+        has_diff = _write_test_diff(run_dir, prev_run_dir)
+    except Exception:
+        traceback.print_exc()
+
     # Auto-refresh declared visualizations (self-driving fix): previously a
     # study's `visualizations:` only got re-rendered via a manual "Refresh"
     # button in the UI, so every study with declared viz went stale after
@@ -229,4 +335,5 @@ def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
         traceback.print_exc()
 
     return {"has_analyses": has_analyses, "has_report": has_report,
-            "has_verdict": has_verdict, "has_viz_refresh": has_viz_refresh}
+            "has_verdict": has_verdict, "has_viz_refresh": has_viz_refresh,
+            "has_diff": has_diff}

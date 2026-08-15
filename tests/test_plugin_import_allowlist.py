@@ -38,6 +38,7 @@ ALLOWED: dict[str, str] = {
     "study_status": "core: study test bucketing/status",
     "workspace_paths": "core: canonical workspace layout resolution",
     "run_params": "core: run-params sync (also read by the workbench's study_runs)",
+    "diff_reports": "core: cross-iteration test diff (pure stdlib; the agent-feedback signal the flush writes + the Tests panel renders)",
     # --- STAY science modules (external-repo-imported) ---
     "feedback_tracking": "external-imported; deterministic feedback ledger",
     "hypotheses": "external-imported; hypothesis support log",
