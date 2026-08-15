@@ -47,9 +47,9 @@ def test_output_kind_unknown_falls_back_to_lowercased_name():
     assert emitters.output_kind("RABBIT") == "rabbit"
 
 
-def test_resolve_contract_returns_pbg_emitters_contract():
-    import pbg_emitters
-    assert emitters.resolve_contract("ram") == pbg_emitters.contract_for("ram")
+def test_resolve_contract_returns_viva_emitters_contract():
+    import viva_emitters
+    assert emitters.resolve_contract("ram") == viva_emitters.contract_for("ram")
     assert emitters.resolve_contract("ram").output_kind == "ram"
 
 

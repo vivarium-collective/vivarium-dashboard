@@ -73,7 +73,7 @@ def _skip_if_unavailable(kind: str):
 
 def _register_parquet(core):
     try:
-        from pbg_emitters.parquet_emitter import ParquetEmitter
+        from viva_emitters.parquet_emitter import ParquetEmitter
     except ImportError:  # process-bigraph < 1.4.17 (legacy location)
         from process_bigraph.emitter import ParquetEmitter
     core.register_link("ParquetEmitter", ParquetEmitter)
@@ -124,8 +124,8 @@ def test_emitter_roundtrips_through_broker(kind, tmp_path):
         assert emitters.reader_for("sqlite") is comparative_viz._extract_trace
         # The flat-key minimal store reads back via load_history (the emitter's
         # own canonical reader — the appropriate read for this store shape).
-        import pbg_emitters
-        rows = pbg_emitters.load_history(db_file, "e2e")
+        import viva_emitters
+        rows = viva_emitters.load_history(db_file, "e2e")
         series = [r["counter_store_value"] for r in rows]
         assert len(series) >= STEPS
         assert any(v > 0 for v in series)  # the counter actually advanced
