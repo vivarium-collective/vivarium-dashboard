@@ -296,7 +296,20 @@ def remote_run_config(ws_root: Path) -> tuple[dict, int]:
 
 def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
     """Phase 2: issue the run for a COMPLETED build. Returns
-    ``({simulation_id, phase:"running"}, 202)``."""
+    ``({simulation_id, phase:"running"}, 202)``, or ``({error, reachable:
+    false}, 502)`` if the upstream sms-api/viva-api call itself fails.
+
+    The 202 means what it says: this call returns as soon as sms-api hands
+    back a ``database_id`` for the new simulation, NOT once the underlying
+    compute is fully dispatched. For a canonical chain-dispatch request
+    (many seeds x many generations), viva-api tracks the campaign's ongoing
+    submission server-side and this call returns in seconds regardless of
+    campaign size (backlog item 51 -- viva-api's own fix moves the slow
+    per-seed submission loop off this request's response path, the same way
+    ``remote_run_build_start`` already returns before a build finishes).
+    The JS panel polls ``GET /api/remote-run-poll?simulation_id=<id>`` (->
+    :func:`remote_run_status`) for real progress, exactly like every other
+    phase in this module."""
     body = body or {}
     if not _run_auth_ok():
         return {"error": "not authenticated"}, 401
@@ -338,14 +351,31 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
             f"remote_run_submit: {study!r} analysis config: {err.get('error')}"
         )
     client = SmsApiClient(_sms_api_base())
-    sim = client.run_simulation(
-        simulator_id=int(sim_id),
-        num_generations=int(num_generations),
-        num_seeds=int(num_seeds),
-        run_parca=bool(body.get("run_parca", True)),
-        observables=observables,
-        analysis_options=analysis_options or None,
-    )
+    try:
+        sim = client.run_simulation(
+            simulator_id=int(sim_id),
+            num_generations=int(num_generations),
+            num_seeds=int(num_seeds),
+            run_parca=bool(body.get("run_parca", True)),
+            observables=observables,
+            analysis_options=analysis_options or None,
+        )
+    except SmsApiError as e:
+        # backlog item 51: this call used to be left unguarded, so ANY
+        # SmsApiError (a real timeout, a 5xx, a dropped connection) fell
+        # through to api/app.py's generic Exception handler, which replaces
+        # the real message with a bare "internal server error" 500 -- hiding
+        # exactly the information that distinguishes "sms-api is genuinely
+        # down" from "sms-api is fine, this one call just failed" (the
+        # observed incident: viva-api's chain-dispatch submission loop kept
+        # running server-side to completion after this client gave up, but
+        # the opaque 500 gave the UI no hint of that, inviting a duplicate
+        # retry of a real, expensive campaign). Mirrors the SAME
+        # except-SmsApiError -> 502 pattern already used by
+        # remote_run_pinned_build_start / remote_run_analysis in this file,
+        # so the caller gets the actual upstream error message instead of a
+        # generic crash, on this path too.
+        return {"error": str(e), "reachable": False}, 502
     return {"simulation_id": sim["database_id"], "phase": "running"}, 202
 
 
