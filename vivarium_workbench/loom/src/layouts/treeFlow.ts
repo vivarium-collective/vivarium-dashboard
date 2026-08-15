@@ -294,26 +294,90 @@ async function treeLanesLayout(nodes: Node[], edges: Edge[], gaps: Gaps): Promis
   return finalize(nodes, pos, foot, Math.min(gaps.procGapX, gaps.colGap));
 }
 
+interface Block { w: number; h: number; place: (ox: number, oy: number, pos: Map<string, XY>) => void; }
+
+/** Compact org-chart block for a store subtree: the node sits centered on top,
+ *  and its children's blocks FLOW-PACK into a wrapped grid beneath it (area-based
+ *  budget → roughly square), so a wide sibling level (e.g. 16 stores) wraps into
+ *  a block (~4×4) instead of one very wide row. Overlap-free by construction. */
+function storeBlock(
+  id: string, children: Map<string, string[]>, foot: (id: string) => Foot,
+  hGap: number, vGap: number, seen: Set<string>,
+): Block {
+  const f = foot(id);
+  const kids = seen.has(id) ? [] : (children.get(id) ?? []);
+  seen.add(id);
+  if (kids.length === 0) {
+    return { w: f.w, h: f.h, place: (ox, oy, pos) => pos.set(id, { x: ox, y: oy }) };
+  }
+  const kb = kids.map((k) => storeBlock(k, children, foot, hGap, vGap, seen));
+  const area = kb.reduce((a, b) => a + b.w * b.h, 0);
+  const budget = Math.max(...kb.map((b) => b.w), Math.sqrt(area * 1.4));
+  // Flow-pack children into rows no wider than the budget.
+  const rows: Block[][] = [];
+  let cur: Block[] = [], curW = 0;
+  for (const b of kb) {
+    if (cur.length && curW + b.w > budget) { rows.push(cur); cur = []; curW = 0; }
+    cur.push(b); curW += b.w + hGap;
+  }
+  if (cur.length) rows.push(cur);
+  const rowW = rows.map((r) => r.reduce((a, b) => a + b.w + hGap, 0) - hGap);
+  const rowH = rows.map((r) => Math.max(...r.map((b) => b.h)));
+  const contW = Math.max(...rowW);
+  const contH = rowH.reduce((a, h) => a + h + vGap, 0) - vGap;
+  const blockW = Math.max(f.w, contW);
+  const blockH = f.h + vGap + contH;
+  return {
+    w: blockW, h: blockH,
+    place: (ox, oy, pos) => {
+      pos.set(id, { x: ox + (blockW - f.w) / 2, y: oy });   // parent centered on top
+      let cy = oy + f.h + vGap;
+      const contOx = ox + (blockW - contW) / 2;
+      rows.forEach((r, ri) => {
+        let cx = contOx + (contW - rowW[ri]) / 2;            // center each row
+        for (const b of r) { b.place(cx, cy, pos); cx += b.w + hGap; }
+        cy += rowH[ri] + vGap;
+      });
+    },
+  };
+}
+
+/** Lay out a store forest as compact wrapped blocks, roots flowed left→right. */
+function compactStoreForest(
+  roots: string[], children: Map<string, string[]>, foot: (id: string) => Foot,
+  hGap: number, vGap: number,
+): Map<string, XY> {
+  const pos = new Map<string, XY>();
+  const seen = new Set<string>();
+  let x = 0;
+  for (const r of roots) {
+    const b = storeBlock(r, children, foot, hGap, vGap, seen);
+    b.place(x, 0, pos);
+    x += b.w + hGap * 2;
+  }
+  return pos;
+}
+
 // ── Grid: store org-chart on the left, ALL processes pulled right into a grid ──
 async function treeGridLayout(nodes: Node[], edges: Edge[], gaps: Gaps): Promise<LayoutResult> {
   if (nodes.length === 0) return { nodes };
   const footById = new Map(nodes.map((n) => [n.id, treeFootprint(n)] as const));
   const foot = (id: string) => footById.get(id) ?? { w: 120, h: 80 };
-  const { stores, procs, depth, centerX, maxDepth, rowH } = storeSpine(nodes, edges, foot, gaps.colGap);
+  const stores = nodes.filter((n) => n.type === 'store');
+  const procs = nodes.filter((n) => n.type === 'process');
+  const placeEdges = edges.filter((e) => (e.data as { edgeType?: string } | undefined)?.edgeType === 'place');
+  const { children, roots } = storeForest(stores, placeEdges);
 
-  // Store org-chart with CONTIGUOUS rows (no lanes) on the left.
-  const pos = new Map<string, XY>();
-  const rowY: number[] = new Array(maxDepth + 1).fill(0);
-  let y = 0;
-  for (let dp = 0; dp <= maxDepth; dp++) { rowY[dp] = y; y += rowH[dp] + gaps.rowGap; }
+  // Compact store org-chart: wide sibling levels WRAP into blocks (a 16-store
+  // level becomes ~4×4, not one ~2850px row) so the tree groups closely on the
+  // left instead of sprawling across the canvas.
+  const pos = compactStoreForest(roots, children, foot, gaps.colGap, gaps.rowGap);
   let treeRight = 0, treeTop = Infinity;
   for (const s of stores) {
-    const f = foot(s.id);
-    const x = centerX.get(s.id)! - f.w / 2;
-    const yy = rowY[depth.get(s.id) ?? 0];
-    pos.set(s.id, { x, y: yy });
-    treeRight = Math.max(treeRight, x + f.w);
-    treeTop = Math.min(treeTop, yy);
+    const p = pos.get(s.id);
+    if (!p) continue;
+    treeRight = Math.max(treeRight, p.x + foot(s.id).w);
+    treeTop = Math.min(treeTop, p.y);
   }
   if (!Number.isFinite(treeTop)) treeTop = 0;
 
