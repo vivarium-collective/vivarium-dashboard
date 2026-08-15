@@ -9479,8 +9479,8 @@
         // (▶ Run current spec / ↻ Reproduce), not here — so a card stays a
         // browse+download surface.
         var acts =
-          '<a href="#" style="' + lnk + '" title="Download this study\'s figures (panels + its composite) as a zip" ' +
-            'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ figures</a>' +
+          '<a href="#" style="' + lnk + '" title="Download this study\'s outputs (figures + embedded HTML reports) as a zip" ' +
+            'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ outputs</a>' +
           '<a href="#" style="' + lnk + '" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
             'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>';
         return '<div class="iset-study-row" style="padding:6px;border-radius:5px" ' +
@@ -11183,9 +11183,9 @@
   function _dagDownloadControlsHtml(slug) {
     var lnk = 'font-size:0.66em;color:#3b82f6;text-decoration:none;white-space:nowrap';
     return '<div class="dag-download-controls" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">' +
-      '<a href="#" title="Download this study\'s figures (panels + its composite) as a zip" ' +
+      '<a href="#" title="Download this study\'s outputs (figures + embedded HTML reports) as a zip" ' +
         'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
-        'style="' + lnk + '">↓ figures</a>' +
+        'style="' + lnk + '">↓ outputs</a>' +
       '<a href="#" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
         'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(_dagInvSlug || '') + '\');return false;" ' +
         'style="' + lnk + '">↓ notebook</a>' +
@@ -12205,14 +12205,15 @@
     a.href = url; a.download = name + '-figures.zip';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
   };
-  // A single study's figures (its panels + its own composite) as a zip.
+  // A single study's OUTPUTS (its image figures + any embedded HTML report /
+  // dashboard and its viz assets) as a zip.
   window._vivStudyFiguresFromCard = function (ev, slug) {
     if (ev) ev.stopPropagation();
     var c = window.__DASH_CONFIG__ || {};
     var base = c.basePath || '';
     var url = (c.mode === 'snapshot')
       ? base + '/figures/studies/' + encodeURIComponent(slug) + '.zip'
-      : '/api/study/' + encodeURIComponent(slug) + '/figures.zip';
+      : '/api/study/' + encodeURIComponent(slug) + '/outputs.zip';
     // Probe before downloading. The ↓ visualizations button renders whenever a
     // study declares any `visualizations`, but the figures zip only contains
     // declared IMAGE files (svg/png/gif). A study whose visualizations are all
@@ -12225,8 +12226,8 @@
     }
     fetch(url).then(function (r) {
       if (!r.ok) {
-        _notify('No downloadable figure archive for "' + slug + '" '
-          + '(its visualizations have no exportable image files).');
+        _notify('No downloadable outputs for "' + slug + '" '
+          + '(no figures or embedded HTML reports).');
         return null;
       }
       return r.blob();
@@ -12234,11 +12235,11 @@
       if (!blob) return;
       var href = URL.createObjectURL(blob);
       var a = document.createElement('a');
-      a.href = href; a.download = slug + '-figures.zip';
+      a.href = href; a.download = slug + '-outputs.zip';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       window.setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
     }).catch(function (e) {
-      _notify('Figure download failed: ' + e);
+      _notify('Outputs download failed: ' + e);
     });
   };
   // A study's ↓ notebook is its parent investigation's runnable notebook (there

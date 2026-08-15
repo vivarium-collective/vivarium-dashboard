@@ -107,6 +107,35 @@ def test_study_zip_contents(tmp_path):
     assert figs.build_study_figures_zip(ws, "no-such-study") is None
 
 
+def test_study_outputs_zip_includes_html_report(tmp_path):
+    # A study whose output is an HTML dashboard (declared via embed_visualizations),
+    # with a sibling asset in its viz/ dir. `↓ outputs` must bundle both.
+    _write(tmp_path / "studies" / "dash-01" / "study.yaml", yaml.safe_dump({
+        "name": "dash-01", "title": "Dashboard study",
+        "embed_visualizations": [{"name": "dash", "url": "/studies/dash-01/viz/index.html"}],
+    }))
+    _write(tmp_path / "studies" / "dash-01" / "viz" / "index.html", "<html>dashboard</html>")
+    _write(tmp_path / "studies" / "dash-01" / "viz" / "data.json", "{}")
+    blob = figs.build_study_outputs_zip(tmp_path, "dash-01")
+    assert blob is not None
+    names = set(zipfile.ZipFile(io.BytesIO(blob)).namelist())
+    assert "viz/index.html" in names           # the HTML report itself
+    assert "viz/data.json" in names            # sibling assets travel with it
+    # a study with neither figures nor embedded HTML → None
+    _write(tmp_path / "studies" / "empty-01" / "study.yaml", yaml.safe_dump({"name": "empty-01"}))
+    assert figs.build_study_outputs_zip(tmp_path, "empty-01") is None
+
+
+def test_study_outputs_zip_includes_figures_too(tmp_path):
+    # An image-figure study: outputs.zip is a superset of figures.zip, images
+    # organized under figures/.
+    ws = _make_ws(tmp_path)
+    blob = figs.build_study_outputs_zip(ws, "fig-07")
+    assert blob is not None
+    names = set(zipfile.ZipFile(io.BytesIO(blob)).namelist())
+    assert {"figures/panel-a.svg", "figures/figure_7.svg"} <= names
+
+
 def test_resolve_figure_file(tmp_path):
     ws = _make_ws(tmp_path)
     assert figs.resolve_figure_file(ws, "inv", 7, "svg").name == "figure_7.svg"
