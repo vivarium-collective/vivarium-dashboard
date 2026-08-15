@@ -49,8 +49,8 @@ interface Gaps {
 // Gaps are kept tight so processes sit close to each other and close to the
 // store rows they wire — the card footprints (full tier, 620×320) already force
 // generous spacing, so small gaps read as compact, not cramped.
-const TREE_GAPS: Gaps = { rowGap: 34, colGap: 36, procGapX: 26, procGapY: 22, bandGap: 48 };
-const GRID_GAPS: Gaps = { rowGap: 30, colGap: 32, procGapX: 24, procGapY: 20, bandGap: 64 };
+const TREE_GAPS: Gaps = { rowGap: 34, colGap: 22, procGapX: 26, procGapY: 22, bandGap: 48 };
+const GRID_GAPS: Gaps = { rowGap: 30, colGap: 12, procGapX: 24, procGapY: 20, bandGap: 40 };
 
 /** Footprint of a node, sized for the LARGEST (full) tier so positions are
  *  identical at every zoom (persistent placement). Honors a hand-set `_size`
@@ -239,12 +239,17 @@ async function treeLanesLayout(nodes: Node[], edges: Edge[], gaps: Gaps): Promis
   const { stores, procs, storeIds, depth, centerX, maxDepth, rowH, hubs } =
     storeSpine(nodes, edges, foot, gaps.colGap);
 
-  // Home each process to a lane = shallowest depth among its non-hub stores.
+  // Home each process to a lane = shallowest depth among its stores. Prefer
+  // NON-hub stores (so a process isn't dragged toward a `bulk`-style hub), but
+  // a process that wires ONLY hub stores still homes near those hubs rather than
+  // being banished to a far-below band — only truly UNWIRED processes band.
+  const noHubs = new Set<string>();
   const laneMembers = new Map<number, Array<{ id: string; f: Foot; key: number }>>();
   const bandProcs: Node[] = [];
   for (const p of procs) {
-    const homes = processHomes(p.id, edges, storeIds, hubs);
-    if (homes.length === 0) { bandProcs.push(p); continue; }
+    let homes = processHomes(p.id, edges, storeIds, hubs);
+    if (homes.length === 0) homes = processHomes(p.id, edges, storeIds, noHubs); // hub-only fallback
+    if (homes.length === 0) { bandProcs.push(p); continue; }                     // truly unwired
     const lane = Math.min(...homes.map((h) => depth.get(h) ?? 0));
     const key = homes.reduce((a, h) => a + (centerX.get(h) ?? 0), 0) / homes.length;
     let arr = laneMembers.get(lane);
