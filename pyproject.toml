@@ -136,7 +136,7 @@ environments = ["python_full_version == '3.12.12'"]
 # pbg-superpowers break for ~3 weeks — issue #483). Bump this rev deliberately
 # when adopting upstream changes; drop the source and pin a PyPI floor once
 # viva-superpowers ships a release that requires viva-emitters.
-viva-superpowers = { git = "https://github.com/vivarium-collective/viva-superpowers.git", rev = "2992c004437b0d2532c1a22438208180d5399814" }
+viva-superpowers = { git = "https://github.com/vivarium-collective/viva-superpowers.git", rev = "cf6a45164cc786506512c8617119d3fbad031a22" }
 pbg-basic-processes = { git = "https://github.com/vivarium-collective/pbg-basic-processes.git", branch = "main" }
 viva-marketplace = { git = "https://github.com/vivarium-collective/viva-marketplace.git", branch = "main" }
 viva-workspace = { git = "https://github.com/vivarium-collective/viva-workspace.git", branch = "main" }
