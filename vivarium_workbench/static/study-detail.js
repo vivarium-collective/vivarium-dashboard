@@ -1590,6 +1590,65 @@
       + p[0] + ';color:#fff;font-size:0.72em;margin-left:5px">' + p[1] + ' ' + n + ' ' + p[2] + '</span>';
   }
 
+  // Cross-iteration diff (Slice 3): the since-last-run change for one axis,
+  // matched on (card, group, id) against window._study.test_diff.per[]
+  // (written by composite_flush._write_test_diff via
+  // viva_superpowers.diff_reports, surfaced into the payload by study_spec).
+  // Returns null when there's no diff yet (first run, or a stale/snapshot
+  // payload with no test_diff at all) or no matching entry — callers must
+  // guard for null and render nothing.
+  function _axisChange(card, group, id) {
+    var td = window._study && window._study.test_diff;
+    var per = td && td.per;
+    if (!per) return null;
+    for (var i = 0; i < per.length; i++) {
+      var r = per[i];
+      if (r.card === card && r.group === group && r.id === id) return r;
+    }
+    return null;
+  }
+
+  // change -> [colour, label] for the small badge beside the verdict pill.
+  // Only the four "something happened" changes get a badge — new/gone/
+  // unchanged are not surfaced here (unchanged is the common case and would
+  // just be noise; new/gone axes already read clearly from the table itself).
+  var _CHANGE_GL = {
+    fixed:     ['#16a34a', 'fixed'],
+    broke:     ['#dc2626', 'broke'],
+    improved:  ['#0284c7', 'improved'],
+    regressed: ['#d97706', 'regressed']
+  };
+
+  function _changeBadge(change) {
+    var g = _CHANGE_GL[change];
+    if (!g) return '';
+    return '<span class="axis-change-badge axis-change-' + change + '" style="margin-left:6px;'
+      + 'font-size:0.68em;font-family:monospace;padding:1px 7px;border-radius:9999px;'
+      + 'background:' + g[0] + ';color:#fff">' + g[1] + '</span>';
+  }
+
+  // Signed margin bar: a.margin (a report_card_verdict/v2 axis extra, in
+  // roughly [-1,1]) rendered as a horizontal bar growing from centre,
+  // coloured by the axis's own verdict (matches its pill). a.severity
+  // 'directional'/'soft' thins + greys the bar since those axes are
+  // informational signals, not hard pass/fail gates. Returns '' when the
+  // axis carries no numeric margin (v1 cards, or an ungraded axis).
+  function _marginBar(a) {
+    if (a.margin == null || typeof a.margin !== 'number') return '';
+    var m = Math.max(-1, Math.min(1, a.margin));
+    var pct = Math.abs(m) * 50;                    // half-width max, centred
+    var soft = (a.severity === 'directional' || a.severity === 'soft');
+    var color = soft ? '#94a3b8' : (_RC_GL[a.verdict] || _RC_GL.ungraded)[0];
+    var barStyle = 'position:absolute;top:0;bottom:0;background:' + color + ';'
+      + (m >= 0 ? 'left:50%;width:' + pct + '%' : 'right:50%;width:' + pct + '%');
+    return '<div class="axis-margin-bar-track" style="position:relative;width:100%;'
+      + 'height:' + (soft ? '4px' : '8px') + ';background:#eef2f7;border-radius:3px;overflow:hidden">'
+      + '<div class="axis-margin-bar" style="' + barStyle + '"></div>'
+      + '<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:#cbd5e1"></div>'
+      + '</div>'
+      + '<div style="font-size:0.72em;color:#94a3b8;margin-top:2px">' + m.toFixed(2) + '</div>';
+  }
+
   // The graded-scorecard look (dark header + overall pill w/ tally + per-group
   // count chips + per-axis tables) rendered from the study's verdict.json, PLUS
   // the rendered comparison trajectories (and an interactive plotly overlay when
@@ -1620,12 +1679,15 @@
       var rows = axes.map(function (a) {
         var meter = a.meter || (a.value != null ? String(a.value) : '');
         var val = (a.value != null && typeof a.value === 'number') ? a.value.toPrecision(4) : '';
+        var chg = _axisChange(card, gname, a.id);
         return '<tr class="rc-row-' + (a.verdict || 'ungraded') + '">'
           + '<td style="padding:7px 10px;border-bottom:1px solid #eef2f7;border-left:3px solid ' + (_RC_GL[a.verdict] || _RC_GL.ungraded)[0] + '">'
           + '<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600;color:#1f2937">'
-          + e(String(a.label || a.id || '')) + '</span>' + _rcPill(a.verdict) + '</div></td>'
+          + e(String(a.label || a.id || '')) + '</span>' + _rcPill(a.verdict)
+          + (chg ? _changeBadge(chg.change) : '') + '</div></td>'
           + '<td style="padding:7px 10px;border-bottom:1px solid #eef2f7;font-variant-numeric:tabular-nums;color:#334155">' + e(val) + '</td>'
           + '<td style="padding:7px 10px;border-bottom:1px solid #eef2f7;color:#475569;font-size:0.9em">' + e(String(meter)) + '</td>'
+          + '<td style="padding:7px 10px;border-bottom:1px solid #eef2f7;min-width:90px">' + _marginBar(a) + '</td>'
           + '</tr>';
       }).join('');
       return '<section style="background:#fff;border:1px solid #e5e7eb;border-top:0;padding:12px 14px">'
@@ -1637,7 +1699,8 @@
           ? '<table style="width:100%;border-collapse:collapse;font-size:0.9em">'
             + '<thead><tr style="text-align:left;color:#94a3b8;font-size:0.78em">'
             + '<th style="padding:4px 10px">Axis</th><th style="padding:4px 10px">Value</th>'
-            + '<th style="padding:4px 10px">Summary</th></tr></thead><tbody>' + rows + '</tbody></table>'
+            + '<th style="padding:4px 10px">Summary</th><th style="padding:4px 10px">Δ / Margin</th>'
+            + '</tr></thead><tbody>' + rows + '</tbody></table>'
           : '<div class="muted" style="padding:4px 10px">no axes recorded</div>')
         + '</section>';
     }).join('');
