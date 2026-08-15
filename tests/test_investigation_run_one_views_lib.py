@@ -554,3 +554,28 @@ def test_large_state_does_not_grow_argv(tmp_path, monkeypatch, fixed_run_id):
     assert status == 200
     assert len(captured["script"]) < 20_000, \
         "state leaked into the python -c source"
+
+
+def test_v4_local_shorthand_ships_resolved_id_to_child(tmp_path, monkeypatch,
+                                                       fixed_run_id):
+    """A `local:<name>` baseline must ship entry.id to the child — _REGISTRY
+    is keyed by the dotted id, never the shorthand, so shipping the raw ref
+    raises KeyError in the child."""
+    ws = _make_ws(tmp_path)
+    _write_spec(ws, "inv-x")
+    spec = _v4_spec()
+    spec["baseline"][0]["composite"] = "local:reactor_bird_coupled"
+    resolved_id = "v2ecoli.composites.reactor_bird_coupled"
+    monkeypatch.setattr(investigations, "load_spec", lambda p: spec)
+    monkeypatch.setattr(
+        views, "_generator_entry",
+        lambda r: _fake_entry(resolved_id, {"seed": {"type": "integer"}}))
+    captured = _capture_script(monkeypatch, _results_stdout({}))
+
+    body, status = views.investigation_run_one(
+        ws, {"investigation": "inv-x", "steps": 2})
+
+    assert status == 200
+    assert body["ok"] is True
+    assert f'_REGISTRY[{json.dumps(resolved_id)}]' in captured["script"]
+    assert "local:" not in captured["script"]

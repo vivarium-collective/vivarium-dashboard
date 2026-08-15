@@ -184,7 +184,9 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
             if cdir and not ((ws_root / cdir / "initial_state.json").exists()
                              or (Path(cdir) / "initial_state.json").exists()):
                 params.pop("cache_dir", None)
-            generator_ref = composite_name
+            # The child indexes _REGISTRY by entry.id — never by a `local:`
+            # shorthand — so ship the resolved id, not the raw ref.
+            generator_ref = getattr(gen_entry, "id", composite_name)
             gen_params = params
         else:
             # Everything else — ``step:<address>`` baselines, ``local:``
