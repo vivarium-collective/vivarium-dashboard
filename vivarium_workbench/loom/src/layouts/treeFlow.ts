@@ -46,8 +46,11 @@ interface Gaps {
   procGapY: number; // vertical gap between packed process rows
   bandGap: number;  // gap before the process block (right grid / trailing band)
 }
-const TREE_GAPS: Gaps = { rowGap: 96, colGap: 72, procGapX: 52, procGapY: 44, bandGap: 110 };
-const GRID_GAPS: Gaps = { rowGap: 64, colGap: 56, procGapX: 40, procGapY: 36, bandGap: 140 };
+// Gaps are kept tight so processes sit close to each other and close to the
+// store rows they wire — the card footprints (full tier, 620×320) already force
+// generous spacing, so small gaps read as compact, not cramped.
+const TREE_GAPS: Gaps = { rowGap: 34, colGap: 36, procGapX: 26, procGapY: 22, bandGap: 48 };
+const GRID_GAPS: Gaps = { rowGap: 30, colGap: 32, procGapX: 24, procGapY: 20, bandGap: 64 };
 
 /** Footprint of a node, sized for the LARGEST (full) tier so positions are
  *  identical at every zoom (persistent placement). Honors a hand-set `_size`
