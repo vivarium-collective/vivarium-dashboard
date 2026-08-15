@@ -302,6 +302,44 @@ export default function App() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [haveNodes, compositeId]);
+
+  // Scroll-to-zoom, handled ourselves instead of React Flow's `zoomOnScroll`
+  // (disabled below). React Flow's pane-level wheel handler proved flaky in
+  // some embeds/browsers (e.g. Safari in the read-only workbench iframe: the
+  // wheel zoomed over a node but not over the empty pane between nodes). A
+  // single non-passive listener on the canvas WRAPPER catches the wheel wherever
+  // it lands — pane, edge, or node — via bubbling, so zoom is uniform and
+  // standard. Zooms about the cursor (keep the point under the pointer fixed),
+  // normalizes deltaMode across mouse/trackpad, and skips ctrl-wheel so pinch
+  // still goes to React Flow's `zoomOnPinch`. The inner-composite mini-map stops
+  // propagation + carries `nowheel`, so its own zoom is untouched.
+  useEffect(() => {
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey) return;                                   // pinch → React Flow
+      if (!(e.target as Element)?.closest?.('.react-flow')) return; // toolbar/hint: ignore
+      const inst = rfRef.current;
+      if (!inst?.getViewport || !inst.setViewport) return;
+      e.preventDefault();
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 16;                         // lines → px
+      else if (e.deltaMode === 2) dy *= el.clientHeight;       // pages → px
+      const { x, y, zoom } = inst.getViewport();
+      const next = Math.min(12, Math.max(0.02, zoom * Math.exp(-dy * 0.0015)));
+      if (next === zoom) return;
+      const rect = el.getBoundingClientRect();
+      const px = e.clientX - rect.left;
+      const py = e.clientY - rect.top;
+      const k = next / zoom;                                   // zoom about the cursor
+      inst.setViewport({ x: px - (px - x) * k, y: py - (py - y) * k, zoom: next });
+      userMovedRef.current = true;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+    // Re-attach once the canvas is actually mounted (the wrapper renders after
+    // state loads; a mount-only effect would bind to a null ref and never zoom).
+  }, [haveNodes, compositeId]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<any>([]);
   // Mirror `nodes` for the edge-visibility seam below (same reason hiddenRef
   // exists): dragging a node rewrites `nodes` on every animation frame, and a
@@ -1953,6 +1991,11 @@ export default function App() {
                   /* Big composites have hundreds of nodes + custom floating edges;
                      only render what's in the viewport so pan/zoom stays smooth. */
                   onlyRenderVisibleElements={!exporting && !STATIC}
+                  /* Scroll-to-zoom is handled by our own wheel listener on the
+                     canvas wrapper (see the effect above) — more reliable across
+                     embeds/browsers than the pane-level handler. Pinch + double-
+                     click zoom stay with React Flow. */
+                  zoomOnScroll={false}
                   minZoom={0.02}
                   /* Allow zooming right in on a card / its inner-composite
                      mini-map, almost to a full-screen view of one process. */
