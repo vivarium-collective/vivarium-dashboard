@@ -451,8 +451,11 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           target: childId,
           sourceHandle: 'bottom-place',  // parent store's bottom handle
           targetHandle: 'top-place',     // child store's top handle
+          type: 'place',                 // org-chart elbow (edges/PlaceEdge)
           animated: false,
-          style: { stroke: '#64748b', strokeWidth: 3.6 },  // place convention: thick solid (inline stroke for export)
+          // Containment convention: a firm slate connector, a touch thinner than
+          // the old 3.6 bezier so the orthogonal bracket reads clean, not heavy.
+          style: { stroke: '#475569', strokeWidth: 2.6 },  // inline stroke for SVG export
           data: { edgeType: 'place' },
         });
       }

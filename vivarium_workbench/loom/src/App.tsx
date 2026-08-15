@@ -11,6 +11,7 @@ import ProcessNode from './nodes/ProcessNode';
 import StoreNode from './nodes/StoreNode';
 import FloatingStoreEdge from './edges/FloatingStoreEdge';
 import LightWireEdge from './edges/LightWireEdge';
+import PlaceEdge from './edges/PlaceEdge';
 import BoundaryLabels from './edges/BoundaryLabels';
 import { useLayoutMode } from './hooks/useLayoutMode';
 import { useFocus } from './hooks/useFocus';
@@ -82,7 +83,7 @@ const NODE_TYPES = { process: ProcessNode, store: StoreNode };
 // `light` is the cheap default wire (straight, no floating anchors / labels);
 // `floating` is the rich labelled edge, used only for FOCUSED wires. Non-wire
 // place edges keep React Flow's default renderer.
-const EDGE_TYPES = { floating: FloatingStoreEdge, light: LightWireEdge };
+const EDGE_TYPES = { floating: FloatingStoreEdge, light: LightWireEdge, place: PlaceEdge };
 
 /** Bounding rect of laid-out nodes, using known node sizes (process 140×60,
  *  store 80×80) so we can frame the graph without waiting for DOM measurement. */
