@@ -12,14 +12,19 @@
 
 import type { LayoutMode } from './types';
 import { clusterGridMode } from './clusterGrid';
-import { flowElkDownMode, flowElkRightMode } from './flow';
+import { flowElkRightMode } from './flow';
+import { treeMode, gridMode } from './treeFlow';
 
 export const DEFAULT_MODE_ID = 'hierarchy';
 
-// hierarchy = the non-directional relationship packing (default). flow-down /
-// flow-right = ELK layered DAG, oriented top-to-bottom ("hierarchy") and
-// left-to-right ("flow").
-export const LAYOUT_MODES: LayoutMode[] = [clusterGridMode, flowElkDownMode, flowElkRightMode];
+// hierarchy = the non-directional relationship packing (default). flow-down =
+// "Tree": the place-graph org-chart with processes docked into swimlanes.
+// tree-grid = "Grid": the same org-chart with every process pulled right into a
+// scannable grid. flow-right = "Flow": ELK layered left→right DAG. (The former
+// ELK flow-down mode is replaced by treeMode, which reuses its 'flow-down' id so
+// saved top-to-bottom layouts keep resolving; flowElkDownMode stays in flow.ts
+// for its unit tests.)
+export const LAYOUT_MODES: LayoutMode[] = [clusterGridMode, treeMode, gridMode, flowElkRightMode];
 
 export function getMode(id: string | null | undefined): LayoutMode {
   return LAYOUT_MODES.find((m) => m.id === id)
