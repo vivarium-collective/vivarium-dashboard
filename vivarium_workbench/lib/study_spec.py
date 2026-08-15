@@ -914,6 +914,24 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
                     spec["test_diff"] = _json.loads(_tdf.read_text(encoding="utf-8"))
         except Exception:  # noqa: BLE001
             pass
+
+        # spec["gate"]: the run's SEVERITY-AWARE study gate — {status:
+        # pass|fail|warn, hard_mismatch, gated_by:[{card,group,id}]} — from
+        # run_dir/report.json (written by composite_flush._write_report_gate via
+        # viva_superpowers.severity_gate). Only hard-severity axis mismatches
+        # fail; soft/drift warn; directional never gates. Best-effort.
+        try:
+            from vivarium_workbench.lib.study_charts import latest_run_row
+            _latest = latest_run_row(study_dir(ws_root, name) / "runs.db")
+            if _latest and _latest.get("run_id"):
+                _rf = (WorkspacePaths.load(ws_root).pbg / "runs"
+                       / _latest["run_id"] / "report.json")
+                if _rf.is_file():
+                    _rep = _json.loads(_rf.read_text(encoding="utf-8"))
+                    if isinstance(_rep.get("gate"), dict):
+                        spec["gate"] = _rep["gate"]
+        except Exception:  # noqa: BLE001
+            pass
         # A rich report card (docs/report_cards/<set>/<card>/report_card.html)
         # belongs on the Report Cards tab, not embedded in Visualizations. Promote
         # any such embed into report_card_urls (preferring its richer render + its
