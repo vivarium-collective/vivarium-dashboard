@@ -341,3 +341,67 @@ def build_study_figures_zip(ws_root, slug: str) -> Optional[bytes]:
             except OSError:
                 continue
     return buf.getvalue()
+
+
+def study_output_files(ws_root, slug: str) -> list[tuple[Path, str]]:
+    """``(abs_path, arcname)`` for a study's downloadable OUTPUTS: image figures
+    (under ``figures/``) plus its embedded HTML report pages and the sibling
+    assets in their ``viz/`` directory (under ``viz/…``). Backs the study-scoped
+    ``↓ outputs`` — a superset of ``study_figure_files``.
+
+    HTML outputs come from the study's ``embed_visualizations[].url`` entries
+    that point at this study's own ``/studies/<slug>/viz/…`` (a self-contained
+    dashboard is just its ``index.html``; an asset-referencing viewer travels
+    with the other files in its ``viz/`` directory). Never raises."""
+    ws_root = Path(ws_root).resolve()
+    sdir, spec = _load_study(ws_root, slug)
+    if sdir is None:
+        return []
+    out: list[tuple[Path, str]] = []
+    seen: set[str] = set()
+    for p in _image_files(sdir, spec):
+        arc = f"figures/{p.name}"
+        if arc not in seen and p.is_file():
+            seen.add(arc)
+            out.append((p, arc))
+    prefix = f"/studies/{slug}/"
+    for entry in (spec.get("embed_visualizations") or []):
+        if not isinstance(entry, dict):
+            continue
+        url = str(entry.get("url") or "").strip()
+        if not url.startswith(prefix):
+            continue  # only this study's local viz outputs (skip remote/other-study URLs)
+        html_path = (ws_root / url[1:]).resolve()
+        try:
+            html_path.relative_to(sdir)  # containment guard: never escape the study dir
+        except ValueError:
+            continue
+        if not html_path.is_file():
+            continue
+        for f in sorted(html_path.parent.iterdir()):
+            if not f.is_file():
+                continue
+            arc = str(f.relative_to(sdir))
+            if arc not in seen:
+                seen.add(arc)
+                out.append((f, arc))
+    return out
+
+
+def build_study_outputs_zip(ws_root, slug: str) -> Optional[bytes]:
+    """Zip a single study's downloadable outputs (image figures under
+    ``figures/`` + embedded HTML reports and their ``viz/`` assets), or ``None``
+    when the study has none. Backs ``GET /api/study/<slug>/outputs.zip``."""
+    items = study_output_files(ws_root, slug)
+    if not items:
+        return None
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for p, arc in items:
+            if not p.is_file():
+                continue
+            try:
+                zf.write(p, arc)
+            except OSError:
+                continue
+    return buf.getvalue()

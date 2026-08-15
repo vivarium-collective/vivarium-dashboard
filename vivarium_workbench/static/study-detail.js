@@ -400,15 +400,15 @@
     var base = c.basePath || '';
     var url = (c.mode === 'snapshot')
       ? base + '/figures/studies/' + encodeURIComponent(slug) + '.zip'
-      : '/api/study/' + encodeURIComponent(slug) + '/figures.zip';
+      : '/api/study/' + encodeURIComponent(slug) + '/outputs.zip';
     function _notify(msg) {
       if (typeof window._showToast === 'function') window._showToast(msg);
       else window.alert(msg);
     }
     fetch(url).then(function (r) {
       if (!r.ok) {
-        _notify('No downloadable figure archive for "' + slug + '" '
-          + '(its visualizations have no exportable image files).');
+        _notify('No downloadable outputs for "' + slug + '" '
+          + '(no figures or embedded HTML reports).');
         return null;
       }
       return r.blob();
@@ -416,10 +416,10 @@
       if (!blob) return;
       var href = URL.createObjectURL(blob);
       var a = document.createElement('a');
-      a.href = href; a.download = slug + '-figures.zip';
+      a.href = href; a.download = slug + '-outputs.zip';
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       window.setTimeout(function () { URL.revokeObjectURL(href); }, 1000);
-    }).catch(function (e) { _notify('Figure download failed: ' + e); });
+    }).catch(function (e) { _notify('Outputs download failed: ' + e); });
   };
   // Figures tab (Fable A #3): the empty state is computed over the UNION of
   // the three figure sources — native gallery, embed_visualizations iframes

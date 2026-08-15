@@ -1119,8 +1119,19 @@ def _do_build(
                     dst = figures_root / inv_name / "figures.zip"
                     dst.parent.mkdir(parents=True, exist_ok=True)
                     dst.write_bytes(blob)
-        for slug in sorted(studies_with_figures):
-            blob = _figs.build_study_figures_zip(ws_root, slug)
+        # Per-study OUTPUTS zips (image figures + embedded HTML reports/dashboards)
+        # backing the study-scoped `↓ outputs`. Cover every study that produces
+        # one — figure studies AND dashboard-only studies (embed_visualizations
+        # HTML with no image figures), so `<base>/figures/studies/<slug>.zip`
+        # exists in the snapshot for either.
+        out_slugs = set(studies_with_figures)
+        try:
+            for sy in (ws_root / "studies").glob("*/study.yaml"):
+                out_slugs.add(sy.parent.name)
+        except OSError:
+            pass
+        for slug in sorted(out_slugs):
+            blob = _figs.build_study_outputs_zip(ws_root, slug)
             if blob:
                 dst = figures_root / "studies" / f"{slug}.zip"
                 dst.parent.mkdir(parents=True, exist_ok=True)

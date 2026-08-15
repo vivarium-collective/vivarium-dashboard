@@ -3420,6 +3420,39 @@ def create_app() -> FastAPI:
         )
 
     @app.get(
+        "/api/study/{slug}/outputs.zip",
+        tags=["Downloads"],
+        summary="Zip of a single study's outputs (figures + embedded HTML reports)",
+        response_class=Response,
+    )
+    def study_outputs_zip_route(
+        slug: str,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Serve one study's output archive as ``<slug>-outputs.zip`` — its image
+        figures (under ``figures/``) plus any embedded HTML report/dashboard and
+        the sibling assets in its ``viz/`` directory.
+
+        404 ``{"error": …}`` when the study has no outputs.
+        Library-backed via ``lib.investigation_figures.build_study_outputs_zip``.
+        """
+        from vivarium_workbench.lib import investigation_figures as _figs
+        blob = _figs.build_study_outputs_zip(ws, slug)
+        if blob is None:
+            return JSONResponse(
+                status_code=404,
+                content={"error": f"no outputs for study {slug!r}"},
+            )
+        return Response(
+            content=blob,
+            headers={
+                "Content-Type": "application/zip",
+                "Content-Disposition": f'attachment; filename="{slug}-outputs.zip"',
+                "Cache-Control": "no-store",
+            },
+        )
+
+    @app.get(
         "/api/guidance",
         tags=["Downloads"],
         summary="Latest guidance HTML (204 when none)",
