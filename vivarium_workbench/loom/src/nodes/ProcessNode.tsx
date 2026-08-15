@@ -277,6 +277,11 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   };
 
   const locked = (data as any)._locked === true;
+  // Lineage spotlight (see StoreNode): highlighted on / dimmed off the selected
+  // node's place-graph containment path.
+  const isLineage = (data as any)._lineage === true;
+  const isWired = (data as any)._wired === true;   // wire-connected to the selection
+  const isDim = (data as any)._dim === true;
 
   // Manual resize: drag a corner to pull the card bigger. In-session inline
   // override of the tier size. The corner handles are HIDDEN by default and
@@ -362,7 +367,7 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   return (
     <div
       ref={nodeRef}
-      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${!show.ports ? ' process-node-noports' : ''}${dims ? ' is-sized' : ''}`}
+      className={`process-node process-node-${stepKind} process-node-${t}${locked ? ' is-locked' : ''}${isLineage ? ' is-lineage' : ''}${isWired ? ' is-wired' : ''}${isDim ? ' is-dim' : ''}${!show.ports ? ' process-node-noports' : ''}${dims ? ' is-sized' : ''}`}
       style={{
         ...(dims ? { width: dims.width, height: dims.height, overflow: 'visible' } : {}),
         // A hand-set / saved node height wins: cap the port-driven min-height to

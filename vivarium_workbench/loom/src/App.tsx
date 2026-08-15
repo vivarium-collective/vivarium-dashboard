@@ -802,18 +802,87 @@ export default function App() {
     [layoutMode.mode.edgeVisibility, showHubWires, edges],
   );
 
+  // Lineage spotlight: when a node is selected (plain click → focus.locked), walk
+  // the PLACE graph to its containment path UP to the root plus its immediate
+  // children, so selecting a node reveals "where it sits in the hierarchy and
+  // what's inside it." Returns the node ids + place-edge ids on that lineage;
+  // `active` is false when nothing is selected (no spotlight, nothing dimmed).
+  const lineage = useMemo(() => {
+    const sel = focus.locked;
+    const empty = { active: false, nodes: null as Set<string> | null, edges: null as Set<string> | null, wired: null as Set<string> | null };
+    if (!sel) return empty;
+    const parentOf = new Map<string, string>();
+    const childrenOf = new Map<string, string[]>();
+    const edgeIdOf = new Map<string, string>();       // `${source}>${target}` → edge id
+    const wired = new Set<string>();                  // WIRE-connected neighbours (reads/writes)
+    for (const e of edges as any[]) {
+      const kind = (e.data as any)?.edgeType;
+      if (kind === 'place') {
+        parentOf.set(e.target, e.source);
+        let ch = childrenOf.get(e.source);
+        if (!ch) { ch = []; childrenOf.set(e.source, ch); }
+        ch.push(e.target);
+        edgeIdOf.set(`${e.source}>${e.target}`, e.id);
+      } else if (kind === 'input' || kind === 'output') {
+        // Directly wired to the selection → its other endpoint is a neighbour.
+        if (e.source === sel) wired.add(e.target);
+        else if (e.target === sel) wired.add(e.source);
+      }
+    }
+    if (!parentOf.has(sel) && !childrenOf.has(sel) && wired.size === 0) {
+      return empty;                                   // nothing connected — no spotlight
+    }
+    const nodes = new Set<string>([sel]);
+    const edgeIds = new Set<string>();
+    // Ancestors: chain to the root.
+    let cur = sel;
+    for (let guard = 0; guard < 500 && parentOf.has(cur); guard++) {
+      const p = parentOf.get(cur)!;
+      if (nodes.has(p)) break;                         // cycle guard
+      nodes.add(p);
+      const eid = edgeIdOf.get(`${p}>${cur}`);
+      if (eid) edgeIds.add(eid);
+      cur = p;
+    }
+    // Immediate children.
+    for (const c of childrenOf.get(sel) ?? []) {
+      nodes.add(c);
+      const eid = edgeIdOf.get(`${sel}>${c}`);
+      if (eid) edgeIds.add(eid);
+    }
+    // A node that is BOTH contained-lineage and wired reads as lineage (blue).
+    for (const id of nodes) wired.delete(id);
+    return { active: true, nodes, edges: edgeIds, wired };
+  }, [focus.locked, edges]);
+
   const tieredNodes = useMemo(() => {
     if (!layoutMode.mode.tiers) return nodes;
     // Reader/writer facts are only surfaced from the 'contract' tier up;
     // computing them for every store at every tier would be wasted work — EXCEPT
     // for hub stores, whose hidden fan must show its count at any tier.
     const wiringTier = effTier === 'contract' || effTier === 'full';
+    // Lineage spotlight stamps: keep the selected node's CONTAINMENT lineage
+    // (blue) and its WIRE-connected neighbours (teal) lit + raised, dim the rest.
+    const lin = (id: string) => {
+      if (!lineage.active) return { _dim: false, _lineage: false, _wired: false, z: undefined as number | undefined };
+      const on = lineage.nodes!.has(id);
+      const wired = !on && lineage.wired!.has(id);
+      return {
+        _dim: !on && !wired,
+        _lineage: on && focus.locked !== id,
+        _wired: wired,
+        z: (on || wired) ? 10 : undefined,
+      };
+    };
     return (nodes as any[]).map((n) => {
+      const L = lin(n.id);
       if (n.type === 'process') {
         return {
           ...n,
+          zIndex: L.z,
           data: {
             ...n.data, _tier: effTier, _detailOverrides: detailOverrides,
+            _dim: L._dim, _lineage: L._lineage, _wired: L._wired,
             // Full-detail ("open") card = explicitly kept-open ONLY. A plain
             // single click just SELECTS (drives the Inspector + wire highlight)
             // and must NOT change the card's size/detail — so the user can drag
@@ -837,13 +906,15 @@ export default function App() {
         : { readers: [], writers: [] };
       return {
         ...n,
+        zIndex: L.z,
         data: {
           ...n.data, _tier: effTier, _detailOverrides: detailOverrides, _isHub: isHub,
+          _dim: L._dim, _lineage: L._lineage, _wired: L._wired,
           _readers: wiring.readers, _writers: wiring.writers, _commitSize: commitNodeSize,
         },
       };
     });
-  }, [nodes, edges, effTier, detailOverrides, focus.keptOpen, focus.selected, focus.locked, layoutMode.modeId, hubIds, drillHops, commitNodeSize]);
+  }, [nodes, edges, effTier, detailOverrides, focus.keptOpen, focus.selected, focus.locked, lineage, layoutMode.modeId, hubIds, drillHops, commitNodeSize]);
 
   // Map from node id to node, for the edge stamp below (which needs the process
   // end's port-type schema and derived contract). Rebuilt only when `nodes`
@@ -876,7 +947,12 @@ export default function App() {
     const routeAroundAll = wireCount <= 120;
     return (drawnEdges as any[]).map((e) => {
       const kind = (e.data as any)?.edgeType;
-      if (kind !== 'input' && kind !== 'output') return e;  // place edge: default renderer
+      if (kind !== 'input' && kind !== 'output') {          // place edge: default renderer
+        if (!lineage.active) return e;
+        const on = lineage.edges!.has(e.id);
+        // Bold + raise the selected lineage's containment edges; fade the rest.
+        return { ...e, zIndex: on ? 11 : undefined, data: { ...e.data, _lineage: on, _dim: !on } };
+      }
       const focused = (e.data as any)?._focused === true;
       // Non-focused wire → straight `light` edge in big graphs (perf); in small
       // graphs, route it around the cards like the focused wires do.
@@ -900,7 +976,7 @@ export default function App() {
         },
       };
     });
-  }, [drawnEdges, nodeById, effTier, layoutMode.modeId]);
+  }, [drawnEdges, nodeById, effTier, lineage, layoutMode.modeId]);
 
   // Persist node positions on every change. The layout effect itself sets
   // node positions; we save those too so the layout is "pinned" the first

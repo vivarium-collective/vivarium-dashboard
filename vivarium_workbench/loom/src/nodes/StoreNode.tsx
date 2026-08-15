@@ -113,6 +113,12 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
   // reader/writer count can stand in for the wires at EVERY tier, not just
   // contract+ (where ordinary stores surface their wiring).
   const isHub: boolean = (data as any)._isHub === true;
+  // Lineage spotlight: App flags a store on the selected node's containment path
+  // (`is-lineage`, highlighted) or off it (`is-dim`, faded) so the hierarchy
+  // around a selection stands out.
+  const isLineage: boolean = (data as any)._lineage === true;
+  const isWired: boolean = (data as any)._wired === true;   // wire-connected to the selection
+  const isDim: boolean = (data as any)._dim === true;
   const rawType = typeof (data as any).valueType === "string" ? (data as any).valueType : "";
 
   const show = {
@@ -135,7 +141,7 @@ function StoreNode({ data }: NodeProps & { data: StoreNodeData }) {
 
   return (
     <div
-      className={`store-node store-node-${tier} ${isCollapsed ? "store-node-collapsed" : ""} ${isHub ? "store-node-hub" : ""}`}
+      className={`store-node store-node-${tier} ${isCollapsed ? "store-node-collapsed" : ""} ${isHub ? "store-node-hub" : ""} ${isLineage ? "is-lineage" : ""} ${isWired ? "is-wired" : ""} ${isDim ? "is-dim" : ""}`}
       style={sizeStyle}
     >
       {resizer}
