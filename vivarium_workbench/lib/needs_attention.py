@@ -429,6 +429,67 @@ def _phantom_observable_items(
 # The aggregator
 # ---------------------------------------------------------------------------
 
+def _latest_run_json(ws_root, wp: WorkspacePaths, slug: str, filename: str):
+    """Read ``<latest run_dir>/<filename>`` for a study, or ``None``. The run
+    artifacts (report.json = severity gate, test_diff.json = cross-iteration diff)
+    live under the runs-root, keyed by the study's latest run. Best-effort."""
+    try:
+        import json as _json
+        from vivarium_workbench.lib.study_charts import latest_run_row
+        from vivarium_workbench.lib.study_spec import study_dir
+        latest = latest_run_row(study_dir(ws_root, slug) / "runs.db")
+        if latest and latest.get("run_id"):
+            f = wp.pbg / "runs" / latest["run_id"] / filename
+            if f.is_file():
+                return _json.loads(f.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _hard_gate_items(ws_root, wp: WorkspacePaths, slug: str) -> list[dict]:
+    """One HIGH item per HARD gate axis (report.json ``gate.gated_by``): the exact
+    hard-severity report-card axes making the study's severity gate FAIL — the
+    actionable worklist an agent works first."""
+    items: list[dict] = []
+    rep = _latest_run_json(ws_root, wp, slug, "report.json")
+    gate = rep.get("gate") if isinstance(rep, dict) else None
+    if isinstance(gate, dict) and gate.get("status") == "fail":
+        for gb in (gate.get("gated_by") or []):
+            card, axid = gb.get("card"), gb.get("id")
+            items.append(_item(
+                "hard_gate", "high", slug, f"{card}:{axid}",
+                f"Study '{slug}' hard gate axis {card}/{axid} mismatches",
+                "A hard-severity report-card axis is a mismatch — the study's "
+                "severity gate FAILS on it.",
+                "root-cause the hard axis (fix the model or the cited band)"))
+    return items
+
+
+def _test_regression_items(ws_root, wp: WorkspacePaths, slug: str) -> list[dict]:
+    """Items for axes that BROKE (pass→fail, HIGH) or REGRESSED (margin fell,
+    MEDIUM) since the last run (test_diff.json ``per``) — what the last model
+    edit moved the wrong way."""
+    items: list[dict] = []
+    diff = _latest_run_json(ws_root, wp, slug, "test_diff.json")
+    for p in ((diff or {}).get("per") or []):
+        change = p.get("change")
+        if change == "broke":
+            sev = "high"
+        elif change == "regressed":
+            sev = "medium"
+        else:
+            continue
+        card, axid, md = p.get("card"), p.get("id"), p.get("margin_delta")
+        items.append(_item(
+            "test_regression", sev, slug, f"{card}:{axid}",
+            f"Study '{slug}' axis {card}/{axid} {change} since the last run",
+            (f"margin_delta={md}." if md is not None
+             else f"axis {change} vs the previous run."),
+            "investigate the regression (what did the last edit change?)"))
+    return items
+
+
 def _member_studies(wp: WorkspacePaths, inv_spec: dict) -> list[tuple[str, dict]]:
     """Resolve the investigation's member studies (slug, spec), filtered to its
     ``studies:`` list. Best-effort — unparseable studies are silently skipped."""
@@ -485,6 +546,14 @@ def scan_investigation(
     for slug, spec in _member_studies(wp, inv_spec):
         try:
             items.extend(_verdict_divergence_items(slug, spec))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            items.extend(_hard_gate_items(ws_root, wp, slug))
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            items.extend(_test_regression_items(ws_root, wp, slug))
         except Exception:  # noqa: BLE001
             pass
         try:
