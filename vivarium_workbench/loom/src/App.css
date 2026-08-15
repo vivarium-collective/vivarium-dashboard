@@ -964,6 +964,21 @@ body {
 }
 .process-node-lock { margin-right: 5px; font-size: 0.8em; }
 
+/* Lineage spotlight — selecting a node highlights its place-graph containment
+   path (parents up to root) + its children, and dims everything else, so you
+   can navigate the hierarchy at a glance. `is-lineage` = on the path (bright
+   blue ring, raised); `is-dim` = off it (faded, but still legible for context). */
+.store-node.is-lineage,
+.process-node.is-lineage {
+  outline: 2.5px solid #2563eb;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 5px rgba(37,99,235,0.18);
+}
+.store-node.is-dim,
+.process-node.is-dim { opacity: 0.28; }
+/* The selected node itself keeps its own locked ring and full opacity. */
+.process-node.is-locked.is-dim { opacity: 1; }
+
 /* (Removed the legacy bare `.process-node-config` inner-section rule: it is no
    longer emitted, and it COLLIDED with the config-TIER card class
    `process-node process-node-config`, overriding the card's 2px top border with
