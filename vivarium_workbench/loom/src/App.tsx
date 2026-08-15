@@ -809,20 +809,28 @@ export default function App() {
   // `active` is false when nothing is selected (no spotlight, nothing dimmed).
   const lineage = useMemo(() => {
     const sel = focus.locked;
-    if (!sel) return { active: false, nodes: null as Set<string> | null, edges: null as Set<string> | null };
+    const empty = { active: false, nodes: null as Set<string> | null, edges: null as Set<string> | null, wired: null as Set<string> | null };
+    if (!sel) return empty;
     const parentOf = new Map<string, string>();
     const childrenOf = new Map<string, string[]>();
     const edgeIdOf = new Map<string, string>();       // `${source}>${target}` → edge id
+    const wired = new Set<string>();                  // WIRE-connected neighbours (reads/writes)
     for (const e of edges as any[]) {
-      if ((e.data as any)?.edgeType !== 'place') continue;
-      parentOf.set(e.target, e.source);
-      let ch = childrenOf.get(e.source);
-      if (!ch) { ch = []; childrenOf.set(e.source, ch); }
-      ch.push(e.target);
-      edgeIdOf.set(`${e.source}>${e.target}`, e.id);
+      const kind = (e.data as any)?.edgeType;
+      if (kind === 'place') {
+        parentOf.set(e.target, e.source);
+        let ch = childrenOf.get(e.source);
+        if (!ch) { ch = []; childrenOf.set(e.source, ch); }
+        ch.push(e.target);
+        edgeIdOf.set(`${e.source}>${e.target}`, e.id);
+      } else if (kind === 'input' || kind === 'output') {
+        // Directly wired to the selection → its other endpoint is a neighbour.
+        if (e.source === sel) wired.add(e.target);
+        else if (e.target === sel) wired.add(e.source);
+      }
     }
-    if (!parentOf.has(sel) && !childrenOf.has(sel)) {
-      return { active: false, nodes: null, edges: null };   // not a place-graph node
+    if (!parentOf.has(sel) && !childrenOf.has(sel) && wired.size === 0) {
+      return empty;                                   // nothing connected — no spotlight
     }
     const nodes = new Set<string>([sel]);
     const edgeIds = new Set<string>();
@@ -842,7 +850,9 @@ export default function App() {
       const eid = edgeIdOf.get(`${sel}>${c}`);
       if (eid) edgeIds.add(eid);
     }
-    return { active: true, nodes, edges: edgeIds };
+    // A node that is BOTH contained-lineage and wired reads as lineage (blue).
+    for (const id of nodes) wired.delete(id);
+    return { active: true, nodes, edges: edgeIds, wired };
   }, [focus.locked, edges]);
 
   const tieredNodes = useMemo(() => {
@@ -851,12 +861,18 @@ export default function App() {
     // computing them for every store at every tier would be wasted work — EXCEPT
     // for hub stores, whose hidden fan must show its count at any tier.
     const wiringTier = effTier === 'contract' || effTier === 'full';
-    // Lineage spotlight stamps: dim off-lineage nodes, flag on-lineage ones, and
-    // raise the lineage above the rest (React Flow honors node.zIndex).
+    // Lineage spotlight stamps: keep the selected node's CONTAINMENT lineage
+    // (blue) and its WIRE-connected neighbours (teal) lit + raised, dim the rest.
     const lin = (id: string) => {
-      if (!lineage.active) return { _dim: false, _lineage: false, z: undefined as number | undefined };
+      if (!lineage.active) return { _dim: false, _lineage: false, _wired: false, z: undefined as number | undefined };
       const on = lineage.nodes!.has(id);
-      return { _dim: !on, _lineage: on && focus.locked !== id, z: on ? 10 : undefined };
+      const wired = !on && lineage.wired!.has(id);
+      return {
+        _dim: !on && !wired,
+        _lineage: on && focus.locked !== id,
+        _wired: wired,
+        z: (on || wired) ? 10 : undefined,
+      };
     };
     return (nodes as any[]).map((n) => {
       const L = lin(n.id);
@@ -866,7 +882,7 @@ export default function App() {
           zIndex: L.z,
           data: {
             ...n.data, _tier: effTier, _detailOverrides: detailOverrides,
-            _dim: L._dim, _lineage: L._lineage,
+            _dim: L._dim, _lineage: L._lineage, _wired: L._wired,
             // Full-detail ("open") card = explicitly kept-open ONLY. A plain
             // single click just SELECTS (drives the Inspector + wire highlight)
             // and must NOT change the card's size/detail — so the user can drag
@@ -893,7 +909,7 @@ export default function App() {
         zIndex: L.z,
         data: {
           ...n.data, _tier: effTier, _detailOverrides: detailOverrides, _isHub: isHub,
-          _dim: L._dim, _lineage: L._lineage,
+          _dim: L._dim, _lineage: L._lineage, _wired: L._wired,
           _readers: wiring.readers, _writers: wiring.writers, _commitSize: commitNodeSize,
         },
       };

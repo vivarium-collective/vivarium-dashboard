@@ -974,6 +974,14 @@ body {
   outline-offset: 1px;
   box-shadow: 0 0 0 5px rgba(37,99,235,0.18);
 }
+/* `is-wired` = a node that READS/WRITES the selection (wire-connected, not
+   contained). A distinct teal ring so wiring reads apart from containment. */
+.store-node.is-wired,
+.process-node.is-wired {
+  outline: 2.5px solid #0d9488;
+  outline-offset: 1px;
+  box-shadow: 0 0 0 5px rgba(13,148,136,0.16);
+}
 .store-node.is-dim,
 .process-node.is-dim { opacity: 0.28; }
 /* The selected node itself keeps its own locked ring and full opacity. */
