@@ -31,6 +31,7 @@ import type { Node, Edge } from '@xyflow/react';
 import { TIERS } from './tiers';
 import { wireStoreEndpoint, hubStoreIds } from '../storeFacts';
 import { fullFootprint, removeOverlaps, clusterGridEdgeVisibility, type Box } from './clusterGrid';
+import { deriveContract } from '../contract';
 import type { LayoutMode, LayoutResult, FocusContext } from './types';
 
 type XY = { x: number; y: number };
@@ -77,9 +78,18 @@ export function treeFootprint(n: Node): Foot {
   const nCfg = d?.configSchema ? Object.keys(d.configSchema).length
     : (d?.config ? Object.keys(d.config).length : 0);
   const cfgH = nCfg > 0 ? Math.min(nCfg, 8) * 26 : 0;
-  const hasMath = d?.math != null || d?.equation != null || d?.equations != null;
-  const mathH = hasMath ? 150 : 0;
-  const contentH = FULL.cardHeight + cfgH + mathH;
+  // Governing-equation / symbol-legend / description blocks: the card typesets
+  // these from the CONTRACT, which parses the process docstring (`data.doc`) —
+  // not any top-level `math` field. Miss them and an equation-heavy card (e.g.
+  // ecoli-protein-degradation, ~470px) under-reserves and overflows its lane into
+  // the store row. Derive the same contract the card renders and reserve per its
+  // real content. Generous per-block heights + a buffer keep the estimate safe.
+  const contract = deriveContract(d as never);
+  const mathH = contract && contract.math.length ? contract.math.length * 46 + 30 : 0;
+  const nSym = contract ? Object.keys(contract.symbols).length : 0;
+  const symH = nSym ? nSym * 24 + 20 : 0;
+  const descH = contract && contract.description ? 100 : 0;
+  const contentH = FULL.cardHeight + cfgH + mathH + symH + descH + 24;
   return { w: FULL.cardWidth, h: Math.max(contentH, portH) };
 }
 
