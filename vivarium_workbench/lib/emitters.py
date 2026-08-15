@@ -50,7 +50,7 @@ def resolve_contract(name) -> "object":
     Thin delegate to ``pbg_emitters.contract_for`` (Task 1). Raises whatever
     that raises (``KeyError`` for an unregistered name).
     """
-    from pbg_emitters import contract_for
+    from viva_emitters import contract_for
     return contract_for(name)
 
 
