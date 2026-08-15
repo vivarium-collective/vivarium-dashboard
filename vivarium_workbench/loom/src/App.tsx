@@ -754,10 +754,14 @@ export default function App() {
   // write" instead of vanishing. Only meaningful in hierarchy mode with the
   // toggle off; empty otherwise so process-column is untouched.
   const hubIds = useMemo(
-    () => (layoutMode.modeId === 'hierarchy' && !showHubWires
+    // Any mode that culls edges (defines edgeVisibility — Packing / Tree / Grid)
+    // hides hub-store wire fans; those stores must surface their read/write count
+    // at every tier so the hidden fan reads as a count, not a vanished wire. Flow
+    // draws every wire (no edgeVisibility) → no hub hiding, empty set.
+    () => (layoutMode.mode.edgeVisibility != null && !showHubWires
       ? hubStoreIds(edges as any[])
       : new Set<string>()),
-    [layoutMode.modeId, showHubWires, edges],
+    [layoutMode.mode.edgeVisibility, showHubWires, edges],
   );
 
   const tieredNodes = useMemo(() => {

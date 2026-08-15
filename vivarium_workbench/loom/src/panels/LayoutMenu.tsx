@@ -8,9 +8,10 @@
 import { useEffect, useRef, useState } from 'react';
 
 const MODES = [
-  { id: 'hierarchy',  glyph: '○', label: 'Packing',           t: 'Relationship layout, no enforced direction' },
-  { id: 'flow-down',  glyph: '↓', label: 'Top → bottom',      t: 'Hierarchy — store dependency, top → bottom' },
-  { id: 'flow-right', glyph: '→', label: 'Left → right',      t: 'Flow — workflow DAG: stores → processes → stores, left → right' },
+  { id: 'flow-down',  glyph: '↧', label: 'Tree',    t: 'Store place-graph as a vertical org-chart; processes packed into the hierarchy, in swimlanes between the store rows they bridge' },
+  { id: 'tree-grid',  glyph: '▦', label: 'Grid',    t: 'Store org-chart on the left; every process pulled to the right in a scannable grid' },
+  { id: 'hierarchy',  glyph: '○', label: 'Packing', t: 'Relationship packing — stores nestle among the processes that read/write them, no enforced direction' },
+  { id: 'flow-right', glyph: '→', label: 'Flow',    t: 'Workflow DAG: stores → processes → stores, ranked left → right (ELK)' },
 ] as const;
 
 export default function LayoutMenu(props: {
@@ -82,7 +83,7 @@ export default function LayoutMenu(props: {
           </button>
           <div style={{ height: 1, background: '#e5e7eb', margin: '4px 0' }} />
           <div style={{ padding: '6px 12px 2px', fontSize: 10.5, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-            Direction
+            Arrange
           </div>
           {MODES.map((m) => (
             <button
