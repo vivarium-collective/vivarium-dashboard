@@ -244,8 +244,9 @@ def test_overview_biological_summary_renders_for_legacy_schema_too(tmp_path, das
     assert "Derived from findings" not in html
     assert "study-counts-strip" not in html
 
+    # biological_summary now renders as ctr-context under the Claim (not a Summary. card)
     assert "Legacy-schema plain-English mechanism narrative." in html
-    assert "<strong>Summary.</strong>" in html
+    assert 'class="ctr-context"' in html
 
 
 # ---------------------------------------------------------------------------
@@ -897,12 +898,12 @@ def test_overview_deleted_blocks_absent_core_content_kept(tmp_path, dashboard_cl
     assert 'View follow-ups on the' not in overview
     assert 'canonical surface is the' not in overview
 
-    # Findings / Question & approach / Conclusion still render on Overview.
-    assert 'Question &amp; approach' in overview
+    # Overview is now Claim -> Test -> Result; findings still render, the
+    # Conclusion editor moved to the Decide tab.
+    assert '>Claim</h2>' in overview and '>Test</h2>' in overview and '>Result</h2>' in overview
     assert 'Findings' in overview
     assert 'Daughter cells hydrate within one tick.' in overview
-    assert '<h2 class="overview-label">Conclusion</h2>' in overview
-    assert 'The model reproduces the expected behavior.' in overview
+    assert 'Question &amp; approach' not in overview
 
 
 # ---------------------------------------------------------------------------
