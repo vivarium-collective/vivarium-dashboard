@@ -103,6 +103,11 @@
     if (kind === 'simulate') { _loadStudySims(); }
     if (kind === 'analyses') { _loadAnalyses(); }
     if (kind === 'results') { _loadResults(); }
+    // Study-spine reorg (spec §1, §3.7/§3.8): Audit + Build complete the
+    // Assurance trio — dispatched the same way as the other lazy-loaded
+    // panels above.
+    if (kind === 'audit') { _loadAudit(window._study); }
+    if (kind === 'build') { _loadBuild(window._study); }
     // Textareas measured 0 while their tab was hidden; re-fit the now-visible
     // panel's auto-grow boxes so they show all content without a scrollbar.
     if (window._autoGrowTextareas) window._autoGrowTextareas();
@@ -1804,8 +1809,6 @@
     _renderTestsGateSummary(spec);
     _fillReportCardsTab(spec);
     loadTestsTab(spec);
-    _loadQualityChecks(spec);
-    _loadReproducibilityChecks(spec);
   }
   window._loadTestsPanel = _loadTestsPanel;
 
@@ -1813,8 +1816,9 @@
   // GET /api/study-rigor?study=<slug> → viva_superpowers.rigor.study_rigor,
   // already computed in CI but never rendered on the page until now. Fetched
   // client-side (same pattern as _loadReadouts / _loadAnalyses above)
-  // into #check-group-quality, the mount templates/study-detail.html adds to
-  // the Tests panel right after the gate summary.
+  // into #check-group-quality. Study-spine reorg (spec §3.7): this mount
+  // MOVED from the Tests panel into Assurance › Audit's Checks band,
+  // dispatched by _loadAudit below — the fetch/render logic is unchanged.
   //
   // Rigor's own severity vocabulary (ok/warn/gap/not_applicable) is NOT the
   // G3 outcome-token vocabulary — in particular rigor's "gap" means "this
@@ -1932,6 +1936,8 @@
   // (audit_workspace, filtered to this slug) — already computed in CI as the
   // reproducibility gate, never rendered on the page until now. Same fetch
   // pattern as _loadQualityChecks, into #check-group-reproducibility.
+  // Study-spine reorg (spec §3.7): this mount also MOVED from the Tests
+  // panel into Assurance › Audit — dispatched by _loadAudit below.
   //
   // Unlike rigor's ok/warn/gap/not_applicable (G5's severity proxy had to
   // dodge a real name collision with the pre-existing G3 'GAP' token —
@@ -2099,6 +2105,218 @@
       });
   }
   window._loadReproducibilityChecks = _loadReproducibilityChecks;
+
+  // ── Audit tab (Assurance) — Sufficiency group ────────────────────────────
+  // GET /api/study-test-audit?study=<slug> →
+  // viva_superpowers.test_audit.build_audit_report + audit_gate (spec §3.7,
+  // lib.audit_panel_views.build_study_test_audit). Is the study's OWN Test
+  // set rigorous enough that passing it means something — reuses the
+  // report_card_verdict/v2 axis vocabulary (within_tol/drift/mismatch),
+  // which the shared outcomeClass/_label/_glyph map already covers, so this
+  // renders in the same visual language as the Quality/Reproducibility
+  // groups alongside it.
+  function _renderAuditSufficiencyAxis(ax) {
+    var e = escapeHtmlForTests;
+    var cls = outcomeClass(ax && ax.verdict);
+    var glyph = outcomeGlyph(ax && ax.verdict);
+    var label = outcomeLabel(ax && ax.verdict);
+    var oc = _RIGOR_OUTCOME_COLORS[cls] || _RIGOR_OUTCOME_COLORS['not-assessable'];
+    var detail = (ax && ax.detail) || null;
+    var bits = [];
+    if (detail && typeof detail === 'object') {
+      Object.keys(detail).forEach(function(k) {
+        var v = detail[k];
+        if (Array.isArray(v) && v.length) bits.push(k + ': ' + v.length);
+      });
+    }
+    return '<li class="audit-axis-item outcome-' + cls + '" data-axis="' + e((ax && ax.id) || '') + '" '
+      + 'style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid #f1f5f9">'
+      + '<span class="outcome-chip outcome-' + cls + '" title="verdict: ' + e((ax && ax.verdict) || 'unknown') + '" '
+      + 'style="font-size:0.75em;font-weight:600;padding:2px 9px;border-radius:9999px;flex-shrink:0;'
+      + 'background:' + oc.bg + ';color:' + oc.fg + '">' + glyph + '&nbsp;' + e(label) + '</span>'
+      + '<div><strong>' + e((ax && (ax.label || ax.id)) || '') + '</strong>'
+      + (bits.length ? '<div class="muted" style="font-size:0.85em;margin-top:2px">' + e(bits.join(' · ')) + '</div>' : '')
+      + '</div></li>';
+  }
+
+  var _AUDIT_GATE_COLORS = {
+    pass: { bg: '#d1fae5', fg: '#065f46' },
+    warn: { bg: '#fef3c7', fg: '#92400e' },
+    fail: { bg: '#fee2e2', fg: '#991b1b' }
+  };
+
+  // Returns {state, html} for the #audit-sufficiency mount's INNER content —
+  // same {state, html} contract as _qualityCheckGroupHtml /
+  // _reproducibilityCheckGroupHtml.
+  function _sufficiencyCheckGroupHtml(report) {
+    var e = escapeHtmlForTests;
+    var header = '<div class="check-group-header" style="display:flex;align-items:center;'
+      + 'gap:8px;flex-wrap:wrap"><strong>Sufficiency</strong> '
+      + '<span class="muted" style="font-size:0.85em">is the Test set itself rigorous &mdash; '
+      + '<code>viva_superpowers.test_audit</code></span>';
+    if (!report || report.unavailable) {
+      var reason = (report && report.reason) || 'could not be computed';
+      return {
+        state: 'unavailable',
+        html: header + '</div><p class="empty-message">unavailable(' + e(reason) + ')</p>'
+      };
+    }
+    var gate = String(report.gate || 'pass').toLowerCase();
+    var gc = _AUDIT_GATE_COLORS[gate] || _AUDIT_GATE_COLORS.pass;
+    header += ' <span class="outcome-chip" style="margin-left:auto;font-size:0.78em;font-weight:600;'
+      + 'padding:2px 9px;border-radius:9999px;background:' + gc.bg + ';color:' + gc.fg + '">gate: '
+      + e(gate) + '</span></div>';
+    var groups = report.groups || {};
+    var axes = [];
+    Object.keys(groups).forEach(function(g) {
+      ((groups[g] && groups[g].axes) || []).forEach(function(ax) { axes.push(ax); });
+    });
+    if (!axes.length) {
+      return {
+        state: 'empty',
+        html: header + '<p class="empty-message">No sufficiency axes computed for this study.</p>'
+      };
+    }
+    return {
+      state: 'ready',
+      html: header + '<ul class="audit-axis-list" style="list-style:none;padding-left:0;margin:8px 0 0 0">'
+        + axes.map(_renderAuditSufficiencyAxis).join('') + '</ul>'
+    };
+  }
+
+  var _auditSufficiencyLoaded = false;
+  function _loadAuditSufficiency(spec) {
+    var host = document.getElementById('audit-sufficiency');
+    if (!host) return;
+    if (_auditSufficiencyLoaded) return;
+    _auditSufficiencyLoaded = true;
+    var slug = (spec && spec.name) || studyName();
+    if (!slug) {
+      host.dataset.state = 'unavailable';
+      host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
+      return;
+    }
+    fetch('/api/study-test-audit?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
+          .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
+      })
+      .then(function(res) {
+        var payload = res.json;
+        if (!res.ok) {
+          payload = { unavailable: true, reason: (payload && payload.error) || ('HTTP ' + res.status) };
+        }
+        var built = _sufficiencyCheckGroupHtml(payload);
+        host.dataset.state = built.state;
+        host.innerHTML = built.html;
+      })
+      .catch(function() {
+        host.dataset.state = 'unavailable';
+        host.innerHTML = '<p class="empty-message">unavailable(request failed)</p>';
+      });
+  }
+  window._loadAuditSufficiency = _loadAuditSufficiency;
+
+  // Audit tab entry point — fills all three Checks-band groups (Sufficiency,
+  // Quality, Reproducibility). Quality/Reproducibility MOVED here from the
+  // Tests panel's old _loadTestsPanel (spec §3.6/§3.7); their loaders are
+  // unchanged, just dispatched from here instead.
+  function _loadAudit(spec) {
+    _loadAuditSufficiency(spec);
+    _loadQualityChecks(spec);
+    _loadReproducibilityChecks(spec);
+  }
+  window._loadAudit = _loadAudit;
+
+  // ── Build tab (Assurance) — model-build loop provenance ──────────────────
+  // GET /api/study-loop-state?study=<slug> → viva_superpowers.loop_state
+  // reading .pbg/loop/<study>.json (spec §3.8,
+  // lib.loop_provenance_views.build_study_loop_state). Was the pass earned
+  // honestly? Locked-tests hash, the reopen trail, iteration history,
+  // current state. GRACEFUL empty state (`present: false`) when a study was
+  // never run through /viva-model-build — the common case, not an error.
+  var _BUILD_STATE_COLORS = {
+    DONE: { bg: '#d1fae5', fg: '#065f46' },
+    GIVE_UP: { bg: '#fee2e2', fg: '#991b1b' }
+  };
+
+  function _renderLoopHistoryRow(h) {
+    var e = escapeHtmlForTests;
+    var md = (h && h.margin_deltas) || {};
+    var mdKeys = Object.keys(md);
+    return '<li style="padding:5px 0;border-top:1px solid #f8fafc;font-size:0.85em">'
+      + '<strong>#' + e((h && h.iteration) != null ? h.iteration : '') + '</strong> '
+      + e((h && h.edit) || '') + ' &rarr; <code>' + e((h && h.target) || '') + '</code>'
+      + ' <span class="muted">gate: ' + e((h && h.gate) || '') + '</span>'
+      + (mdKeys.length ? ' <span class="muted">(' + mdKeys.length + ' margin delta' + (mdKeys.length === 1 ? '' : 's') + ')</span>' : '')
+      + '</li>';
+  }
+
+  function _buildPanelHtml(state) {
+    var e = escapeHtmlForTests;
+    if (!state || !state.present) {
+      var reason = (state && state.reason)
+        || 'This study was not built via the agentic model-building loop (/viva-model-build).';
+      return '<p class="empty-message">' + e(reason) + '</p>';
+    }
+    var budget = state.budget || {};
+    var prereg = state.prereg_record || {};
+    var priorHashes = prereg.prior_hashes || [];
+    var history = state.history || [];
+    var sc = _BUILD_STATE_COLORS[state.state] || { bg: '#f1f5f9', fg: '#475569' };
+    var html = '<div class="check-group-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      + '<strong>Loop provenance</strong> <span class="muted" style="font-size:0.85em">'
+      + '<code>viva_superpowers.loop_state</code></span>'
+      + '<span class="outcome-chip" style="margin-left:auto;font-size:0.78em;font-weight:600;padding:2px 9px;'
+      + 'border-radius:9999px;background:' + sc.bg + ';color:' + sc.fg + '">' + e(state.state || '?') + '</span></div>';
+    html += '<div style="margin-top:8px;font-size:0.9em">'
+      + '<div><strong>Question:</strong> ' + e(state.question || '—') + '</div>'
+      + '<div><strong>Iteration:</strong> ' + e(state.iteration != null ? state.iteration : '—')
+      + ' / ' + e(budget.max_iterations != null ? budget.max_iterations : '—')
+      + ' <span class="muted">(' + e(budget.spent != null ? budget.spent : 0) + ' spent)</span></div>'
+      + '<div><strong>Locked tests hash:</strong> <code style="font-size:0.85em">'
+      + e(state.locked_tests_hash || 'not locked') + '</code></div>'
+      + '<div><strong>Reopen count:</strong> ' + e(state.reopen_count != null ? state.reopen_count : 0)
+      + (priorHashes.length
+          ? ' <span class="muted">(' + priorHashes.length + ' prior hash' + (priorHashes.length === 1 ? '' : 'es') + ' retained)</span>'
+          : '')
+      + '</div></div>';
+    if (history.length) {
+      html += '<div style="margin-top:12px"><strong style="font-size:0.9em">Iteration history</strong>'
+        + '<ul style="list-style:none;padding-left:0;margin:6px 0 0 0">'
+        + history.map(_renderLoopHistoryRow).join('') + '</ul></div>';
+    }
+    return html;
+  }
+
+  var _buildLoaded = false;
+  function _loadBuild(spec) {
+    var host = document.getElementById('build-loop-state');
+    if (!host) return;
+    if (_buildLoaded) return;
+    _buildLoaded = true;
+    var slug = (spec && spec.name) || studyName();
+    if (!slug) {
+      host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
+      return;
+    }
+    fetch('/api/study-loop-state?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
+          .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
+      })
+      .then(function(res) {
+        var payload = res.json;
+        if (!res.ok) {
+          payload = { present: false, reason: (payload && payload.error) || ('HTTP ' + res.status) };
+        }
+        host.innerHTML = _buildPanelHtml(payload);
+      })
+      .catch(function() {
+        host.innerHTML = '<p class="empty-message">unavailable(request failed)</p>';
+      });
+  }
+  window._loadBuild = _loadBuild;
 
   // "N/M gates passed" score line ONLY. Every declared behavior test (kind:
   // behavioral or report_card) is a gate; the aggregate count comes from

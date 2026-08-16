@@ -135,6 +135,8 @@ from vivarium_workbench.lib.catalog_uninstall_impact import module_uninstall_imp
 from vivarium_workbench.lib import finding_views as _finding_views
 from vivarium_workbench.lib import investigation_graph_views as _ig_views
 from vivarium_workbench.lib import audit_views as _audit_views
+from vivarium_workbench.lib import audit_panel_views as _audit_panel_views
+from vivarium_workbench.lib import loop_provenance_views as _loop_provenance_views
 from vivarium_workbench.lib import chain_views as _chain_views
 from vivarium_workbench.lib import study_variants as _study_variants
 from vivarium_workbench.lib.composite_resolve import resolve_composite_for_request, _degraded_result
@@ -1986,6 +1988,62 @@ def create_app() -> FastAPI:
         except _audit_views.StudyAuditViewError as exc:
             return JSONResponse(status_code=exc.status, content=exc.body)
         return JSONResponse(status_code=200, content=body)
+
+    @app.get(
+        "/api/study-test-audit",
+        tags=["Rigor & jobs"],
+        summary="Test-sufficiency axes + gate (Assurance › Audit)",
+    )
+    def study_test_audit_route(
+        study: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Deterministic test-sufficiency report backing Assurance › Audit's
+        "Sufficiency" group: is the study's OWN Test set rigorous enough
+        that passing it means something?
+
+        Runs ``viva_superpowers.test_audit.build_audit_report`` (discrimination,
+        objective_coverage, redundancy, discriminating_control, band_provenance
+        axes) over the study's run-merged spec, plus ``audit_gate`` (a top-level
+        ``gate``: pass/warn/fail).
+
+        HTTP 400 when ``?study=`` is missing (``{"error": "missing ?study="}``);
+        HTTP 404 when no study.yaml/spec.yaml exists for the slug
+        (``{"error": "study not found"}``). Never HTTP 500: an unimportable
+        ``viva_superpowers.test_audit`` or any scoring failure degrades to a
+        200 body ``{"unavailable": true, "reason": "..."}``.
+
+        Library-backed via ``lib.audit_panel_views.build_study_test_audit``.
+        """
+        body, status = _audit_panel_views.build_study_test_audit(ws, study)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
+        "/api/study-loop-state",
+        tags=["Rigor & jobs"],
+        summary="Agentic model-build loop provenance (Assurance › Build)",
+    )
+    def study_loop_state_route(
+        study: Optional[str] = None,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Model-build loop provenance backing Assurance › Build: "was the
+        pass earned honestly?"
+
+        Reads ``.pbg/loop/<study>.json`` via ``viva_superpowers.loop_state``:
+        locked-tests hash, the reopen trail (``reopen_count`` +
+        ``prior_hashes``), iteration history, and current state/outcome.
+
+        HTTP 400 when ``?study=`` is missing. Never HTTP 500 and never 404:
+        a study not built via ``/viva-model-build`` (no loop file) — the
+        common case — degrades to a 200 body ``{"present": false, "study",
+        "reason"}`` so the panel renders a graceful one-line note instead of
+        an error.
+
+        Library-backed via ``lib.loop_provenance_views.build_study_loop_state``.
+        """
+        body, status = _loop_provenance_views.build_study_loop_state(ws, study)
+        return JSONResponse(status_code=status, content=body)
 
     # -----------------------------------------------------------------------
     # Studies detail routes

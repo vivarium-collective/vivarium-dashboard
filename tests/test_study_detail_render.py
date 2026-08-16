@@ -673,7 +673,7 @@ def test_tests_merged_single_concept(tmp_path, dashboard_client):
     assert 'id="panel-report-cards"' not in html
     assert '_setStudyTab(\'report-cards\')' not in html
     # The report-cards mount now lives INSIDE the tests panel (one concept).
-    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-audit"')]
     assert 'id="report-cards-panel"' in tests_panel
     assert '<h2>Tests</h2>' in tests_panel
     assert 'Audit —' in tests_panel
@@ -720,7 +720,7 @@ def test_tests_gate_summary_not_duplicated_by_behavioral_list(tmp_path, dashboar
     assert resp.status_code == 200
     html = resp.text
 
-    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-audit"')]
 
     # Exactly one score-line mount and one per-gate detail list in the
     # server-rendered markup — no second copy of either.
@@ -917,12 +917,13 @@ def test_overview_deleted_blocks_absent_core_content_kept(tmp_path, dashboard_cl
 
 def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
     """Real served-HTML assertion (not just static grep): the second tab
-    row (#study-subnav) must be entirely absent, all 9 `.study-pillar`
+    row (#study-subnav) must be entirely absent, all 11 `.study-pillar`
     buttons must be present and wired to call `_setStudyTab(<kind>)`
     directly, and the deleted pillar/member-indirection JS functions must
     not appear anywhere in the served page or its JS asset. (Task E4 dropped
     the Exports/data pillar; the study-spine reorg then added Results +
-    Analyses, spec §1/§3.3/§3.4, so the count is 9, not 7.)
+    Analyses (spec §1/§3.3/§3.4) and Audit + Build (spec §3.7/§3.8), so the
+    count is 11, not 7.)
     """
     ws = tmp_path / "ws"
     sd = ws / "studies" / "pillars-direct-study"
@@ -947,20 +948,22 @@ def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
     assert 'id="study-subnav"' not in html
     assert 'study-subnav' not in html
 
-    # All 9 pillar buttons present, each carrying data-kind and calling
+    # All 11 pillar buttons present, each carrying data-kind and calling
     # _setStudyTab(kind) directly (pillar name == kind, except
     # "decide" -> "conclusions"). Exports/data pillar was deleted (Task E4);
-    # Results + Analyses added by the study-spine reorg (spec §1/§3.3/§3.4).
+    # Results + Analyses added by the study-spine reorg (spec §1/§3.3/§3.4);
+    # Audit + Build added by the same reorg (spec §3.7/§3.8).
     pillar_to_kind = {
         "understand": "overview", "compose": "compose", "readouts": "readouts",
         "simulate": "simulate", "results": "results", "analyses": "analyses",
-        "visualize": "visualize", "tests": "tests", "decide": "conclusions",
+        "visualize": "visualize", "tests": "tests", "audit": "audit",
+        "build": "build", "decide": "conclusions",
     }
     for pillar, kind in pillar_to_kind.items():
         assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html, \
             f"pillar {pillar!r} not wired to _setStudyTab('{kind}')"
     import re
-    assert len(re.findall(r'<button class="study-pillar[^"]*"', html)) == 9
+    assert len(re.findall(r'<button class="study-pillar[^"]*"', html)) == 11
     assert 'data-kind="data"' not in html
 
     # No pillar/member indirection left anywhere (grep-proven, both served
@@ -1081,13 +1084,14 @@ def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
 
     # Task E4 deleted the sixth "record" cluster (Exports) — five narrative
     # acts remain, each with a gate dot. Study-spine reorg (spec §1): the
-    # `simulate` pillar moved Evidence -> Design (after readouts), and
-    # Evidence gained `results` + `analyses` ahead of `visualize`.
+    # `simulate` pillar moved Evidence -> Design (after readouts), Evidence
+    # gained `results` + `analyses` ahead of `visualize`, and Assurance
+    # gained `audit` + `build` alongside `tests` (spec §3.7/§3.8).
     expected = {
         "study": {"label": "The Study", "kinds": ["overview"]},
         "design": {"label": "Design", "kinds": ["compose", "readouts", "simulate"]},
         "evidence": {"label": "Evidence", "kinds": ["results", "analyses", "visualize"]},
-        "assurance": {"label": "Assurance", "kinds": ["tests"]},
+        "assurance": {"label": "Assurance", "kinds": ["tests", "audit", "build"]},
         "decision": {"label": "Decision", "kinds": ["conclusions"]},
     }
     assert set(clusters) == set(expected), clusters.keys()
@@ -1103,13 +1107,13 @@ def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
         assert re.search(r'<span class="act-gate-dot" data-gate="%s" data-gate-state="[a-z-]+">' % act, seg), \
             f"{act} cluster missing its act-gate-dot with data-gate-state"
 
-    # All 9 `.study-pillar` buttons are present in the nav (Exports/data
-    # pillar was deleted — Task E4; Results + Analyses added by the
-    # study-spine reorg).
+    # All 11 `.study-pillar` buttons are present in the nav (Exports/data
+    # pillar was deleted — Task E4; Results + Analyses, then Audit + Build,
+    # added by the study-spine reorg).
     all_kinds = ["overview", "compose", "readouts", "simulate", "results",
-                 "analyses", "visualize", "tests", "conclusions"]
+                 "analyses", "visualize", "tests", "audit", "build", "conclusions"]
     btns = re.findall(r'<button class="study-pillar[^"]*"[^>]*>', nav)
-    assert len(btns) == 9, f"expected 9 pillar buttons, got {len(btns)}"
+    assert len(btns) == 11, f"expected 11 pillar buttons, got {len(btns)}"
     for kind in all_kinds:
         assert f'data-kind="{kind}"' in nav and f"_setStudyTab('{kind}')" in nav
     assert 'data-kind="data"' not in nav
@@ -1117,12 +1121,13 @@ def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
 
 def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     """Tab order is now Overview, Model, Readouts, Simulations, Results,
-    Analyses, Visualizations, Tests, Decide — Readouts moves so Design
-    (Model+Readouts+Simulations) and Evidence (Results+Analyses+
+    Analyses, Visualizations, Tests, Audit, Build, Decide — Readouts moves
+    so Design (Model+Readouts+Simulations) and Evidence (Results+Analyses+
     Visualizations) each group contiguously per act. Panel switching is
     unaffected (`_setStudyTab` selects by `data-kind`, not position). Task
     E4 later dropped the trailing Exports tab; the study-spine reorg moved
-    Simulations into Design and added Results + Analyses to Evidence."""
+    Simulations into Design, added Results + Analyses to Evidence, and added
+    Audit + Build to Assurance."""
     ws = tmp_path / "ws"
     sd = ws / "studies" / "readouts-order-study"
     sd.mkdir(parents=True)
@@ -1144,7 +1149,7 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
 
     kinds_in_order = [
         "overview", "compose", "readouts", "simulate", "results",
-        "analyses", "visualize", "tests", "conclusions",
+        "analyses", "visualize", "tests", "audit", "build", "conclusions",
     ]
     positions = [html.index(f'data-kind="{k}"') for k in kinds_in_order]
     assert positions == sorted(positions), (
@@ -1155,9 +1160,9 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     # Simulations (Design) still precedes Results (Evidence).
     assert html.index('data-kind="simulate"') < html.index('data-kind="results"')
 
-    # All 9 pillars still present and wired to _setStudyTab (Exports/data
-    # pillar was deleted — Task E4; Results + Analyses added by the
-    # study-spine reorg).
+    # All 11 pillars still present and wired to _setStudyTab (Exports/data
+    # pillar was deleted — Task E4; Results + Analyses, then Audit + Build,
+    # added by the study-spine reorg).
     for kind in kinds_in_order:
         assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html
     assert 'data-kind="data"' not in html
@@ -1621,7 +1626,7 @@ def test_acceptance_criteria_band_renders_with_spine_acceptance(tmp_path, dashbo
     assert resp.status_code == 200
     html = resp.text
 
-    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-audit"')]
 
     # The band renders, ABOVE the existing gate summary (the bar comes before
     # the outcome, per §10.1's ordering).
@@ -1672,17 +1677,19 @@ def test_acceptance_criteria_band_absent_without_spine_acceptance(tmp_path, dash
 
 
 # ---------------------------------------------------------------------------
-# Fable G5: Tests -> Quality check group (rigor scorecard, §10.1 band 2
-# "Checks", automated group). Server-rendered mount only — the scorecard
-# itself is fetched client-side from GET /api/study-rigor?study=<slug>
-# (JS-rendered content is out of scope for a served-HTML assertion; see
-# test_rigor_views_lib.py / test_api_app.py for the route + wrapper behavior).
+# Fable G5: Quality check group (rigor scorecard, §10.1 band 2 "Checks",
+# automated group). Server-rendered mount only — the scorecard itself is
+# fetched client-side from GET /api/study-rigor?study=<slug> (JS-rendered
+# content is out of scope for a served-HTML assertion; see
+# test_rigor_views_lib.py / test_api_app.py for the route + wrapper
+# behavior). Study-spine reorg (spec §3.6/§3.7, plan Task 3): this mount
+# MOVED from the Tests panel to the new Assurance › Audit panel.
 # ---------------------------------------------------------------------------
 
-def test_quality_check_group_mount_renders_in_tests_panel(tmp_path, dashboard_client):
-    """The #check-group-quality mount is always present in the Tests panel
-    (below the gate summary) so client-side JS has somewhere to fill in the
-    rigor scorecard -- present regardless of whether rigor can compute."""
+def test_quality_check_group_mount_renders_in_audit_panel(tmp_path, dashboard_client):
+    """The #check-group-quality mount lives in the Audit panel (not Tests),
+    so client-side JS has somewhere to fill in the rigor scorecard --
+    present regardless of whether rigor can compute."""
     ws = tmp_path / "ws"
     sd = ws / "studies" / "g5-study"
     sd.mkdir(parents=True)
@@ -1702,20 +1709,18 @@ def test_quality_check_group_mount_renders_in_tests_panel(tmp_path, dashboard_cl
     assert resp.status_code == 200
     html = resp.text
 
-    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
-    assert 'id="check-group-quality"' in tests_panel
-    assert 'data-check-group="quality"' in tests_panel
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-audit"')]
+    audit_panel = html[html.index('id="panel-audit"'):html.index('id="panel-build"')]
 
-    # Mount sits below the gate summary (Checks band follows the score line).
-    quality_i = tests_panel.index('id="check-group-quality"')
-    gate_i = tests_panel.index('id="tests-gate-summary"')
-    assert gate_i < quality_i
+    assert 'id="check-group-quality"' not in tests_panel
+    assert 'id="check-group-quality"' in audit_panel
+    assert 'data-check-group="quality"' in audit_panel
 
 
-def test_reproducibility_check_group_mount_renders_in_tests_panel(tmp_path, dashboard_client):
-    """The #check-group-reproducibility mount (Fable G6) is always present in
-    the Tests panel, alongside #check-group-quality (G5), inside the shared
-    "Checks" band -- present regardless of whether study_audit can compute."""
+def test_reproducibility_check_group_mount_renders_in_audit_panel(tmp_path, dashboard_client):
+    """The #check-group-reproducibility mount (Fable G6) lives in the Audit
+    panel, alongside #check-group-quality (G5) and the sufficiency group --
+    present regardless of whether study_audit can compute."""
     ws = tmp_path / "ws"
     sd = ws / "studies" / "g6-study"
     sd.mkdir(parents=True)
@@ -1735,15 +1740,106 @@ def test_reproducibility_check_group_mount_renders_in_tests_panel(tmp_path, dash
     assert resp.status_code == 200
     html = resp.text
 
-    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-conclusions"')]
-    assert 'id="check-group-reproducibility"' in tests_panel
-    assert 'data-check-group="reproducibility"' in tests_panel
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-audit"')]
+    audit_panel = html[html.index('id="panel-audit"'):html.index('id="panel-build"')]
 
-    # Both check groups sit below the gate summary, in the shared Checks band.
-    quality_i = tests_panel.index('id="check-group-quality"')
-    repro_i = tests_panel.index('id="check-group-reproducibility"')
-    gate_i = tests_panel.index('id="tests-gate-summary"')
-    assert gate_i < quality_i < repro_i
+    assert 'id="check-group-reproducibility"' not in tests_panel
+    assert 'id="check-group-reproducibility"' in audit_panel
+    assert 'data-check-group="reproducibility"' in audit_panel
+
+    # All three Checks-band groups (Sufficiency, Quality, Reproducibility)
+    # sit together in the Audit panel.
+    sufficiency_i = audit_panel.index('id="audit-sufficiency"')
+    quality_i = audit_panel.index('id="check-group-quality"')
+    repro_i = audit_panel.index('id="check-group-reproducibility"')
+    assert sufficiency_i < quality_i < repro_i
+
+
+# ---------------------------------------------------------------------------
+# Study-spine reorg (spec §3.7/§3.8, plan Task 3): the Assurance trio is
+# complete — Audit (sufficiency + rigor + reproducibility) and Build (loop
+# provenance) are new pillars + panels alongside Tests.
+# ---------------------------------------------------------------------------
+
+def test_audit_and_build_pillars_under_assurance_act(tmp_path):
+    from vivarium_workbench.lib.study_page import render_study_detail_html
+    html = render_study_detail_html(tmp_path, "spine-study", {"name": "spine-study"})
+
+    i = html.index('data-act="assurance"')
+    j = html.index('data-act="decision"', i)
+    assurance = html[i:j]
+    assert 'data-kind="tests"' in assurance
+    assert 'data-kind="audit"' in assurance
+    assert 'data-kind="build"' in assurance
+    # Order: Tests, Audit, Build.
+    order = [assurance.index('data-kind="%s"' % k) for k in ("tests", "audit", "build")]
+    assert order == sorted(order)
+
+
+def test_panel_audit_and_panel_build_sections_exist(tmp_path):
+    from vivarium_workbench.lib.study_page import render_study_detail_html
+    html = render_study_detail_html(tmp_path, "spine-study", {"name": "spine-study"})
+
+    assert 'data-kind="audit" id="panel-audit"' in html
+    assert 'data-kind="build" id="panel-build"' in html
+    assert 'id="audit-sufficiency"' in html
+    assert 'id="build-loop-state"' in html
+
+
+# ---------------------------------------------------------------------------
+# REQUIREMENT (study-spine reorg, plan Task 3): the Tests panel must show
+# the COMPLETE set of a study's report cards — every card under
+# `viz/report_card/`, each with its verdict — even when moving rigor/repro
+# out to Audit. A multi-card fixture proves none are dropped.
+# ---------------------------------------------------------------------------
+
+def test_tests_panel_renders_every_report_card_from_multi_card_fixture(tmp_path, dashboard_client):
+    import json
+
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "multi-card-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "multi-card-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+        # Only ONE of the three cards below is wired to a behavior_tests
+        # entry — the other two exist only as files under viz/report_card/.
+        # The old per-row expander mechanism alone would drop them; the
+        # complete-set section must still render all three.
+        "behavior_tests": [
+            {"name": "card-alpha-test", "kind": "report_card", "card": "card-alpha",
+             "classification": "primary"},
+        ],
+    }))
+
+    rc_dir = sd / "viz" / "report_card"
+    rc_dir.mkdir(parents=True)
+    for card in ("card-alpha", "card-beta", "card-gamma"):
+        (rc_dir / f"{card}.html").write_text(
+            f"<div>{card} rendered content</div>", encoding="utf-8")
+        (rc_dir / f"{card}.verdict.json").write_text(json.dumps({
+            "overall": "within_tol",
+            "groups": {"g1": {"verdict": "within_tol", "axes": [
+                {"id": "ax1", "label": f"{card} axis", "verdict": "within_tol", "meter": 0.9},
+            ]}},
+        }), encoding="utf-8")
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/multi-card-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-audit"')]
+    # All three cards appear in the Tests panel, including the two with no
+    # matching behavior_tests entry.
+    for card in ("card-alpha", "card-beta", "card-gamma"):
+        assert card in tests_panel, f"report card {card!r} missing from Tests panel"
 
 
 # ---------------------------------------------------------------------------

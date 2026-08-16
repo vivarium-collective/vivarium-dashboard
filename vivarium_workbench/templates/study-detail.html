@@ -216,6 +216,13 @@
     </div>
     <div class="act-tabs">
       <button class="study-pillar" data-kind="tests" onclick="_setStudyTab('tests')">Tests</button>
+      {# Study-spine reorg (spec §1, §3.7/§3.8): Audit ("is the bar high
+         enough to trust?") and Build ("was the pass earned honestly?") are
+         new pillars completing the Assurance trio. Rigor scorecard + L0-L5
+         reproducibility move here from Tests; sufficiency + loop provenance
+         are new. #}
+      <button class="study-pillar" data-kind="audit" onclick="_setStudyTab('audit')">Audit</button>
+      <button class="study-pillar" data-kind="build" onclick="_setStudyTab('build')">Build</button>
     </div>
   </div>
   <div class="act-cluster" data-act="decision">
@@ -1314,33 +1321,24 @@
      (Fable §4.6: one score line + one list, not the gate set twice). #}
   <div class="tests-gate-summary" id="tests-gate-summary"><p class="empty-message">Loading gate summary…</p></div>
 
-  {# Fable §10.1 band 2 "Checks", automated group: the Quality (G5) and
-     Reproducibility (G6) check groups share one "Checks" band heading per the
-     §10.1 mockup ("CHECKS  automated 12 · human 1"). Both mounts are filled
-     client-side (rigor and study_audit are live computes, not fields already
-     sitting on `study` like G4's acceptance criteria), and both degrade to an
-     explicit unavailable(reason) message rather than an empty box (§2 R2). #}
-  <div class="checks-band" style="margin-top:22px">
-    <h3 class="section-title" style="margin-bottom:8px">Checks</h3>
+  {# Study-spine reorg (spec §3.6): the rigor scorecard (Fable G5) and L0-L5
+     reproducibility audit (Fable G6) check groups MOVED out of Tests into
+     Assurance › Audit (`panel-audit`, below) — Tests grades the study's own
+     Test bar; Audit judges whether that bar is trustworthy. #}
 
-    {# Fable G5: the deterministic evidence & rigor scorecard
-       (viva_superpowers.rigor.study_rigor) — already computed in CI, never
-       rendered on the page until now. Filled client-side by
-       _loadQualityChecks from GET /api/study-rigor?study=<slug>
-       (lib.rigor_views.build_study_rigor). #}
-    <div class="check-group check-group-quality" id="check-group-quality" data-check-group="quality">
-      <p class="empty-message">Loading quality checks…</p>
-    </div>
-
-    {# Fable G6: the L0-L5 reproducibility audit
-       (viva_superpowers.study_audit.audit_workspace) — already run in CI as
-       the reproducibility gate, never rendered on the page until now. Filled
-       client-side by _loadReproducibilityChecks from GET
-       /api/study-audit?study=<slug> (lib.audit_views.build_study_audit). #}
-    <div class="check-group check-group-reproducibility" id="check-group-reproducibility" data-check-group="reproducibility" style="margin-top:16px">
-      <p class="empty-message">Loading reproducibility checks…</p>
-    </div>
+  {# REQUIREMENT (study-spine reorg, plan Task 3): the Tests panel must show
+     the COMPLETE set of this study's report cards — every card under
+     `viz/report_card/`, not just the ones wired to a `behavior_tests` /
+     `expected_behavior` entry below. `render_report_cards_section` scans the
+     directory directly (the same source `report_card_urls` feeds), so a
+     card with no matching Test entry still renders here. Server-rendered
+     (best-effort — a study with no report cards emits "" and this section
+     drops, §2 R2 absent != empty). #}
+  {% if report_cards_html %}
+  <div class="report-cards-full-section" id="report-cards-full-section" style="margin-top:22px">
+    {{ report_cards_html | safe }}
   </div>
+  {% endif %}
 
   {# C6: each report_card-kind row (below, in Behavioral tests) now carries
      its own inline expander rendering the FULL card in place — so this top
@@ -1471,6 +1469,52 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
   </ul>
   {% endif %}
   </div>
+</section>
+
+{# ─── Audit tab (Assurance) — NEW: "is the bar high enough to trust?" ──────
+   Study-spine reorg (spec §3.7): three groups, all filled client-side by
+   _loadAudit (dispatched from _setStudyTab('audit')) — none are fields
+   already sitting on `study`, all are live computes:
+     1. Sufficiency — viva_superpowers.test_audit.build_audit_report + gate,
+        via GET /api/study-test-audit (lib.audit_panel_views).
+     2. Quality (rigor scorecard) — MOVED here from Tests (Fable G5),
+        unchanged GET /api/study-rigor / _loadQualityChecks.
+     3. Reproducibility (L0-L5) — MOVED here from Tests (Fable G6),
+        unchanged GET /api/study-audit / _loadReproducibilityChecks.
+   Each mount degrades to an explicit unavailable(reason) message rather
+   than an empty box (§2 R2). #}
+<section class="study-tab-panel" data-kind="audit" id="panel-audit" hidden>
+  <h2>Audit</h2>
+  <p class="muted" style="margin:0 0 12px 0">Is the bar high enough to trust? Sufficiency of the Test set, plus the rigor and reproducibility scorecards.</p>
+
+  <div class="checks-band">
+    <div class="check-group check-group-sufficiency" id="audit-sufficiency" data-check-group="sufficiency">
+      <p class="empty-message">Loading sufficiency checks…</p>
+    </div>
+
+    <div class="check-group check-group-quality" id="check-group-quality" data-check-group="quality" style="margin-top:16px">
+      <p class="empty-message">Loading quality checks…</p>
+    </div>
+
+    <div class="check-group check-group-reproducibility" id="check-group-reproducibility" data-check-group="reproducibility" style="margin-top:16px">
+      <p class="empty-message">Loading reproducibility checks…</p>
+    </div>
+  </div>
+</section>
+
+{# ─── Build tab (Assurance) — NEW: "was the pass earned honestly?" ─────────
+   Study-spine reorg (spec §3.8): model-build loop provenance from
+   `.pbg/loop/<study>.json` (viva_superpowers.loop_state) — locked-tests
+   hash, reopen trail, iteration history, state/outcome. Filled client-side
+   by _loadBuild (dispatched from _setStudyTab('build')) via GET
+   /api/study-loop-state (lib.loop_provenance_views). GRACEFUL empty state
+   when a study was never run through /viva-model-build — a one-line note,
+   never an error. #}
+<section class="study-tab-panel" data-kind="build" id="panel-build" hidden>
+  <h2>Build</h2>
+  <p class="muted" style="margin:0 0 12px 0">Was the pass earned honestly? Provenance from the agentic model-building loop, if this study was built through it.</p>
+
+  <div id="build-loop-state"><p class="empty-message">Loading loop provenance…</p></div>
 </section>
 
 <section class="study-tab-panel" data-kind="conclusions" id="panel-conclusions" hidden>
