@@ -414,13 +414,15 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     client = SmsApiClient(_sms_api_base())
 
     analyses = spec.get("analyses") or []
+    analysis_errors: list[dict] = []
     if analyses:
         from vivarium_workbench.lib.study_run_post import build_analysis_options
 
-        # errors (unresolvable analysis names) are intentionally not surfaced here:
-        # this trigger is best-effort and must never block landing the simulation
-        # itself, which is the primary, always-must-succeed action of this route.
-        analysis_options, _errors = build_analysis_options(analyses, ws_root)
+        # backlog item 39: unresolvable analysis names are surfaced in the
+        # response below (informational) but never block landing -- this
+        # trigger is best-effort, and landing the simulation itself is the
+        # primary, always-must-succeed action of this route.
+        analysis_options, analysis_errors = build_analysis_options(analyses, ws_root)
         if analysis_options:
             try:
                 triggered = client.run_analysis(int(sim_id), analysis_options)
@@ -448,7 +450,14 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
             ws_root=ws_root,
             s3_uri=body.get("s3_uri"),
         )
-    return {"run_id": run_id}, 200
+    response: dict = {"run_id": run_id}
+    if analysis_errors:
+        # backlog item 39: surface which requested analyses couldn't be
+        # resolved (e.g. a stale workspace PVC missing a newer v2ecoli
+        # analysis) instead of silently dropping them -- landing itself
+        # still succeeds, this is informational.
+        response["analysis_errors"] = analysis_errors
+    return response, 200
 
 
 def remote_run_analysis(ws_root: Path, body: dict) -> tuple[dict, int]:
@@ -486,14 +495,15 @@ def remote_run_analysis(ws_root: Path, body: dict) -> tuple[dict, int]:
 
     modules = body.get("modules") or {}
     study = (body.get("study") or "").strip()
+    analysis_errors: list[dict] = []
     if not modules and study:
         spec_path = study_spec.study_spec_path(ws_root, study)
         if spec_path is None or not spec_path.is_file():
             return {"error": f"study {study!r} not found"}, 404
         from vivarium_workbench.lib.study_run_post import build_analysis_options
 
-        modules, errors = build_analysis_options(load_spec(spec_path).get("analyses") or [], ws_root)
-        for err in errors:
+        modules, analysis_errors = build_analysis_options(load_spec(spec_path).get("analyses") or [], ws_root)
+        for err in analysis_errors:
             warnings.warn(f"remote_run_analysis: {study!r} analysis config: {err.get('error')}")
 
     client = SmsApiClient(_sms_api_base())
@@ -504,12 +514,20 @@ def remote_run_analysis(ws_root: Path, body: dict) -> tuple[dict, int]:
         # this IS the requested action — a failure has to reach the operator.
         status = 401 if getattr(e, "status", None) == 401 else 502
         return {"error": str(e), "simulation_id": int(sim_id)}, status
-    return {
+    response: dict = {
         "analysis_id": triggered.get("database_id"),
         "analysis_name": triggered.get("analysis_name"),
         "simulation_id": int(sim_id),
         "phase": "analyzing",
-    }, 202
+    }
+    if analysis_errors:
+        # backlog item 39: surface which requested analyses couldn't be
+        # resolved (e.g. a stale workspace PVC missing a newer v2ecoli
+        # analysis) instead of silently dropping them -- the analysis trigger
+        # itself still proceeds (via whatever modules DID resolve), this is
+        # informational.
+        response["analysis_errors"] = analysis_errors
+    return response, 202
 
 
 def remote_run_status(params: dict) -> tuple[dict, int]:

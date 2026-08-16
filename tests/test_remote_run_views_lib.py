@@ -565,6 +565,54 @@ def test_land_analysis_trigger_failure_does_not_block_landing(monkeypatch, tmp_p
     assert slept == []  # never waits if the trigger itself failed
 
 
+def test_land_surfaces_analysis_errors_in_response(monkeypatch, tmp_path):
+    """A study whose spec.analyses includes an unresolvable name must still
+    land normally (the errors are informational, not blocking) but the
+    response must surface which names failed, instead of silently dropping
+    them with no trace anywhere (backlog item 39 continued -- mirrors
+    remote_run_submit's own analysis_errors field)."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"baseline": [{"composite": "my-comp"}],
+                   "analyses": [{"name": "doubling_time_distribution"}, {"name": "totally_unknown"}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries, ws_root: (
+            {"multiseed": {"doubling_time_distribution": {}}},
+            [{"analysis": "totally_unknown", "error": "unknown analysis 'totally_unknown'"}],
+        ),
+    )
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+
+    assert status == 200
+    assert body["run_id"] == "run-xyz"
+    assert body["analysis_errors"] == [
+        {"analysis": "totally_unknown", "error": "unknown analysis 'totally_unknown'"}
+    ]
+    # landing itself still proceeded, and the trigger still fired with
+    # whatever DID resolve
+    assert client.analyzed == (199, {"multiseed": {"doubling_time_distribution": {}}})
+
+
+def test_land_omits_analysis_errors_key_when_none(monkeypatch, tmp_path):
+    """No analysis errors (including the common case: a study with no
+    spec.analyses at all) -> no analysis_errors key, not an empty list --
+    matching remote_run_submit's own convention."""
+    _wire_thin(monkeypatch, tmp_path)
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+
+    assert status == 200
+    assert "analysis_errors" not in body
+
+
 def test_land_missing_simulation_id_400(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
     monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
@@ -673,6 +721,44 @@ def test_run_analysis_surfaces_a_backend_failure(monkeypatch, tmp_path):
     body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199})
     assert status == 502
     assert "tunnel down" in body["error"]
+
+
+def test_run_analysis_surfaces_analysis_errors_in_response(monkeypatch, tmp_path):
+    """A study whose spec.analyses includes an unresolvable name must still
+    fire the trigger (the errors are informational, not blocking) but the
+    response must surface which names failed, instead of silently dropping
+    them with no trace anywhere (backlog item 39 continued -- mirrors
+    remote_run_submit's own analysis_errors field)."""
+    _wire_thin(monkeypatch, tmp_path)
+    client = _bind_analysis_client(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"analyses": [{"name": "cd1_fluxomics"}, {"name": "totally_unknown"}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries, ws_root: (
+            {"multiseed": {"cd1_fluxomics": {}}},
+            [{"analysis": "totally_unknown", "error": "unknown analysis 'totally_unknown'"}],
+        ),
+    )
+    body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199, "study": "s"})
+    assert status == 202
+    assert body["analysis_errors"] == [
+        {"analysis": "totally_unknown", "error": "unknown analysis 'totally_unknown'"}
+    ]
+    # the trigger itself still fired with whatever DID resolve
+    assert client.analyzed == (199, {"multiseed": {"cd1_fluxomics": {}}})
+
+
+def test_run_analysis_omits_analysis_errors_key_when_none(monkeypatch, tmp_path):
+    """No analysis errors (including the common no-study/explicit-modules
+    case) -> no analysis_errors key, not an empty list -- matching
+    remote_run_submit's own convention."""
+    _bind_analysis_client(monkeypatch, tmp_path)
+    body, status = rrv.remote_run_analysis(tmp_path, {"simulation_id": 199})
+    assert status == 202
+    assert "analysis_errors" not in body
 
 
 class _AnalysisStatusClient:
