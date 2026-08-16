@@ -1314,6 +1314,12 @@ a.viv-bs-commit:hover { text-decoration: underline; }
                oninput="window._setAigBand(parseInt(this.value,10))" style="width:110px" aria-label="Graph zoom / detail level">
         <span title="Zoom in — full detail">🔍+</span>
       </span>
+      <span class="aig-view-ctl" style="float:right;display:inline-flex;align-items:center;gap:3px;font-size:0.9em;color:#64748b;margin-right:14px" role="group" aria-label="Graph view">
+        <button type="button" title="Zoom out" onclick="window._aigZoomBy(0.8)" style="border:1px solid #e2e8f0;background:transparent;border-radius:5px 0 0 5px;padding:2px 9px;cursor:pointer;font-size:1em;line-height:1.3">−</button>
+        <button type="button" title="Zoom in" onclick="window._aigZoomBy(1.25)" style="border:1px solid #e2e8f0;border-left:none;background:transparent;padding:2px 9px;cursor:pointer;font-size:1em;line-height:1.3">+</button>
+        <button type="button" title="Fit to view" onclick="window._aigFit()" style="border:1px solid #e2e8f0;border-left:none;background:transparent;padding:2px 7px;cursor:pointer;font-size:0.95em;line-height:1.3">⤢</button>
+        <button type="button" title="Fullscreen" onclick="window._aigFullscreen()" style="border:1px solid #e2e8f0;border-left:none;background:transparent;border-radius:0 5px 5px 0;padding:2px 7px;cursor:pointer;font-size:0.95em;line-height:1.3">⛶</button>
+      </span>
       <span class="aig-orient-ctl" style="float:right;display:inline-flex;align-items:center;gap:2px;font-size:0.9em;color:#64748b;margin-right:14px" role="group" aria-label="Graph orientation">
         <button id="aig-orient-lr" type="button" title="Left → Right" aria-label="Left to right"
                 onclick="window._setGraphOrientation('LR')"
@@ -1328,7 +1334,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
     </div>
     <div id="investigation-dag-shell"
          style="position: relative; border: 1px solid #e2e8f0; border-radius: 6px; background: #fafafa;
-                overflow-x: auto; overflow-y: hidden;">
+                overflow: auto; resize: vertical; height: 460px; min-height: 240px; max-height: 88vh; cursor: grab;">
       <!-- overflow-y must be hidden (not visible): per CSS spec, when one axis
            is `visible` and the other isn't, `visible` gets promoted to `auto`,
            which gives this shell its own vertical scrollbar in addition to
