@@ -27,6 +27,7 @@ from typing import Optional
 import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+from vivarium_workbench.lib.report_card_section import render_report_cards_section
 from vivarium_workbench.lib import study_derivations as _D
 from vivarium_workbench.lib.conclusion_card import _TRACK_COLORS
 
@@ -1866,6 +1867,7 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
                  *, investigation_slug: Optional[str], generated_at: str,
                  composite_doc: Optional[dict] = None,
                  skeptic: bool = False,
+                 report_cards_html: str = "",
                  # Each entry is either a bare ref string (legacy — no
                  # suggestion to offer) or a {"ref": ..., "suggestion": ...}
                  # dict (see unresolved_study_composite_refs callers below).
@@ -2013,6 +2015,7 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             ("limitations", "Limitations", limitations_html, bool(limitations_html)),
             ("epistemic-debts", "Open debts", debts_html, bool(debts_html)),
             ("verdicts", "Verdicts", verdicts_html, bool(verdicts_html)),
+            ("report-cards", "Report cards", report_cards_html, bool(report_cards_html)),
             ("synthesis", "Synthesis", synthesis_html, bool(synthesis_html)),
             ("biology", "Biology", biology_section, bool(biology_html)),
             ("model-card", "Model card", model_card_html, bool(model_card_html)),
@@ -2031,6 +2034,8 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             nav_chips.append(_chip("invariants", "Invariants"))
         if verdicts_html:
             nav_chips.append(_chip("verdicts", "Verdicts"))
+        if report_cards_html:
+            nav_chips.append(_chip("report-cards", "Report cards"))
         if synthesis_html:
             nav_chips.append(_chip("synthesis", "Synthesis"))
         if biology_html:
@@ -2057,6 +2062,7 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             commitment_html,
             invariants_html,
             verdicts_html,
+            report_cards_html,
             synthesis_html,
             biology_section,
             alternatives_html,
@@ -2239,12 +2245,20 @@ def render_single_study_report(
             unresolved_composites.append({"ref": ref, "suggestion": suggestion})
     except Exception:
         unresolved_composites = []
+    # Report cards — the compiled output of the study's Tests (reuses the same
+    # viz/report_card/<card>.html + verdict.json that feed the SPA "Tests" tab).
+    # Best-effort: a study with no report cards renders "" and the section drops.
+    try:
+        report_cards_html = render_report_cards_section(ws_root, study_slug)
+    except Exception:
+        report_cards_html = ""
     html = _render_html(
         study_spec, viz_entries,
         investigation_slug=investigation_slug,
         generated_at=generated_at,
         composite_doc=composite_doc,
         skeptic=skeptic,
+        report_cards_html=report_cards_html,
         unresolved_composites=unresolved_composites,
     )
 
