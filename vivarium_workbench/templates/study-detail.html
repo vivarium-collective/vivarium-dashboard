@@ -1344,7 +1344,7 @@
       {% if (b.kind or 'behavioral') == 'report_card' %}
         {# C6: the card expands INLINE at this row via a native <details> —
            reveals the same rich content _renderRichReportCard(card) renders
-           on the Report Cards tab, mounted lazily on first expand (JS binds
+           on the Tests tab, mounted lazily on first expand (JS binds
            a `toggle` listener; avoids paying for hidden Plotly/markup for
            cards nobody opens). The verdict pill stays on the summary
            (recoloured by the existing _fillReportCardModules); there is no
