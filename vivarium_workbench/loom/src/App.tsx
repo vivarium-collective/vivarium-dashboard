@@ -241,6 +241,55 @@ export default function App() {
   // Latest run id + downloadable flag, lifted from SetupRunPanel via onRunState.
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [downloadable, setDownloadable] = useState(false);
+
+  // ── Topology playback (loom-live-play) ───────────────────────────────────
+  // When a run's trajectory carries a place-graph that CHANGES over steps
+  // (cell division, aggregation), step the graph itself through the frames.
+  // Gated to topology runs so ordinary scalar runs leave the canvas alone.
+  const [frameIdx, setFrameIdx] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const baseStateRef = useRef<any>(null);
+  const isTopoTraj = useMemo(() => !!trajectory && trajectory.length >= 2 &&
+    trajectory.some((r) => Object.values(r.state || {}).some(
+      (v) => v && typeof v === 'object' && !Array.isArray(v))), [trajectory]);
+  // A new topology trajectory arms the transport at frame 0 (pristine state
+  // captured so we can restore it on exit).
+  useEffect(() => {
+    if (isTopoTraj) {
+      baseStateRef.current = state; setFrameIdx(0); setPlaying(false);
+      setTab('wiring');   // stay on the graph so the topology is watchable
+    } else { setFrameIdx(null); setPlaying(false); baseStateRef.current = null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [trajectory, isTopoTraj]);
+  // Apply the current frame: overlay its emitted stores onto the pristine
+  // composite (so processes/other stores persist), preserving each store's
+  // _type so a tree[node] still renders as one.
+  useEffect(() => {
+    if (frameIdx === null || !trajectory || !trajectory[frameIdx]) return;
+    const base = baseStateRef.current || {};
+    const emitted = trajectory[frameIdx].state || {};
+    const frame: any = { ...base };
+    for (const k of Object.keys(emitted)) {
+      if (k === 'time' || k === 'global_time') continue;
+      const b = (base as any)[k];
+      const bt = (b && typeof b === 'object' && b._type) ? b._type : undefined;
+      frame[k] = bt ? { _type: bt, ...(emitted[k] as object) } : emitted[k];
+    }
+    setState(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [frameIdx, trajectory]);
+  // Playback timer.
+  useEffect(() => {
+    if (!playing || frameIdx === null || !trajectory) return;
+    if (frameIdx >= trajectory.length - 1) { setPlaying(false); return; }
+    const id = setTimeout(() => setFrameIdx((i) => (i === null ? 0 : i + 1)), 700);
+    return () => clearTimeout(id);
+  }, [playing, frameIdx, trajectory]);
+  const exitPlayback = useCallback(() => {
+    if (baseStateRef.current !== null) setState(baseStateRef.current);
+    setFrameIdx(null); setPlaying(false); baseStateRef.current = null;
+  }, []);
+
   const readyFiredRef = useRef(false);
   // React Flow instance, captured via onInit, so Re-layout can frame the
   // freshly-consolidated set (App is the ReactFlowProvider's PARENT, so it can't
@@ -2120,6 +2169,27 @@ export default function App() {
                 onCompleted={() => setTab('results')}
                 onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
               />
+              )}
+              {/* Topology playback transport — appears when a run's place graph
+                  changes across steps (division, aggregation, …). */}
+              {frameIdx !== null && trajectory && (
+                <div className="topo-transport">
+                  <span className="topo-transport-title">Topology</span>
+                  <button onClick={() => { setPlaying(false); setFrameIdx((i) => Math.max(0, (i ?? 0) - 1)); }}
+                    disabled={frameIdx <= 0} title="Previous frame">◀</button>
+                  <button className="topo-transport-play" onClick={() => setPlaying((p) => !p)}
+                    title={playing ? 'Pause' : 'Play'}>{playing ? '⏸' : '▶'}</button>
+                  <button onClick={() => { setPlaying(false); setFrameIdx((i) => Math.min(trajectory.length - 1, (i ?? 0) + 1)); }}
+                    disabled={frameIdx >= trajectory.length - 1} title="Next frame">▶❘</button>
+                  <input type="range" min={0} max={trajectory.length - 1} value={frameIdx}
+                    onChange={(e) => { setPlaying(false); setFrameIdx(parseInt(e.target.value, 10)); }} />
+                  <span className="topo-transport-frame">
+                    frame {frameIdx + 1}/{trajectory.length}
+                    {trajectory[frameIdx]?.time !== undefined ? ` · t=${trajectory[frameIdx]!.time}` : ''}
+                  </span>
+                  <button className="topo-transport-exit" onClick={exitPlayback}
+                    title="Exit playback (restore composite)">✕</button>
+                </div>
               )}
             </EmitContext.Provider>
           </div>

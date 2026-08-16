@@ -2095,3 +2095,26 @@ textarea.sr-input {
 .store-node-ports .store-node-value { font-size: calc(19px * var(--loom-fs, 1)); }
 .store-node-full  .store-node-type  { font-size: calc(24px * var(--loom-fs, 1)); }
 .store-node-full  .store-node-value { font-size: calc(22px * var(--loom-fs, 1)); }
+
+/* Topology playback transport (loom-live-play) */
+.topo-transport {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; font-size: 13px;
+  background: #16211f; color: #e9ece9;
+  border-top: 1px solid rgba(255,255,255,.12);
+}
+.topo-transport-title {
+  font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+  font-size: 11px; color: #4bb3ae;
+}
+.topo-transport button {
+  background: rgba(255,255,255,.08); color: inherit;
+  border: 1px solid rgba(255,255,255,.16); border-radius: 5px;
+  padding: 2px 9px; cursor: pointer; line-height: 1.4;
+}
+.topo-transport button:hover:not(:disabled) { background: rgba(75,179,174,.25); }
+.topo-transport button:disabled { opacity: .4; cursor: default; }
+.topo-transport-play { min-width: 34px; font-weight: 700; }
+.topo-transport input[type=range] { flex: 1; max-width: 340px; accent-color: #4bb3ae; }
+.topo-transport-frame { font-variant-numeric: tabular-nums; color: #b7c1bd; white-space: nowrap; }
+.topo-transport-exit { margin-left: auto; }
