@@ -545,7 +545,7 @@
     }
     return '<p class="muted" style="margin:0;font-size:0.85em">' + n + ' report card'
       + (n === 1 ? '' : 's') + ' for this study — '
-      + '<a href="#" onclick="_gotoStudyTab(\'tests\');return false;">Report cards → Tests</a></p>';
+      + '<a href="#" onclick="_gotoStudyTab(\'tests\');return false;">view on the Tests tab</a></p>';
   }
 
   // Task E3: compact results/analysis line — surfaces values already known
@@ -1499,7 +1499,7 @@
       var v = (rc.verdict || 'ungraded');
       var p = _RC_PILL[v] || _RC_PILL.ungraded;
       pill.style.background = p[0]; pill.style.color = p[1]; pill.textContent = p[2];
-      pill.title = 'report card verdict: ' + p[2] + ' — view the full card on the Report Cards tab';
+      pill.title = 'report card verdict: ' + p[2] + ' — view the full card on the Tests tab';
       pill.dataset.filled = '1';
     });
   }
