@@ -167,14 +167,15 @@ def set_investigation_overview(ws_root: Path, body: dict) -> tuple[dict, int]:
         return {
             "error": f"status must be one of {sorted(_VALID_OVERVIEW_STATUSES)}"
         }, 400
-    for key in ("question", "hypothesis", "topic"):
+    # claim/experiment/result are the study Overview's Claim→Test→Result spine.
+    for key in ("question", "hypothesis", "topic", "claim", "experiment", "result"):
         if key in fields and not isinstance(fields[key], str):
             return {"error": f"{key} must be a string"}, 400
     spec_path = _investigation_spec_path(ws_root, inv_name)
     if not spec_path.is_file():
         return {"error": "investigation not found"}, 404
     spec: dict = yaml.safe_load(spec_path.read_text(encoding="utf-8")) or {}
-    for key in ("question", "hypothesis", "status", "topic"):
+    for key in ("question", "hypothesis", "status", "topic", "claim", "experiment", "result"):
         if key in fields:
             spec[key] = fields[key]
     spec_path.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")

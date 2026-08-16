@@ -460,56 +460,36 @@
     </div>
     {% endmacro %}
 
-    {# ─── Question & approach — the framing comes first ───────────────── #}
-    {% set _has_purpose = study.purpose and (study.purpose.question or study.purpose.expected_outcome or study.purpose.mechanism) %}
-    <h2 class="overview-label">Question &amp; approach</h2>
-    {% if _has_purpose %}
-    <div class="overview-section">
-      {% if study.purpose.question %}
-      <div class="purpose-callout" style="background:#eff6ff;border-left:4px solid #3b82f6">
-        <strong>Question.</strong> {{ study.purpose.question }}
-      </div>
-      {% endif %}
-      {% if study.purpose.expected_outcome %}
-      <div class="purpose-callout" style="background:#f0fdf4;border-left:4px solid #10b981">
-        <strong>Hypothesis / Expected outcome.</strong> {{ study.purpose.expected_outcome }}
-      </div>
-      {% endif %}
-      {% if study.purpose.mechanism %}
-      <div class="purpose-callout" style="background:#fefce8;border-left:4px solid #facc15">
-        <strong>Mechanism / Model change.</strong> {{ study.purpose.mechanism }}
-      </div>
-      {% endif %}
-    </div>
-    {% else %}
-    {# Legacy narrative fields — each id rendered exactly once; empty ones show
-       their placeholder (contenteditable) so they double as "+ Add" affordances. #}
-    <div class="overview-section">
-      <div id="question-text" class="overview-prose" data-editable="true" data-field="question"
-           data-placeholder="+ Add the research question this study asks">{{ study.question or '' }}</div>
-      <div id="hypothesis-text" class="overview-prose" data-editable="true" data-field="hypothesis"
-           data-placeholder="(predicted outcome)">{{ study.hypothesis or '' }}</div>
-      <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective or '' }}</div>
-    </div>
-    {% endif %}
+    {# ─── Claim → Test → Result: the three-step spine of every study. ───── #}
+    {% set _bl = study.baseline or [] %}
+    {% set _bt = study.behavior_tests or study.expected_behavior or [] %}
 
-    {% if study.biological_summary %}
-    <div class="overview-section">
-      <div class="purpose-callout" style="background:#f8fafc;border-left:4px solid #94a3b8">
-        <strong>Summary.</strong> {{ study.biological_summary }}
-      </div>
+    <div class="ctr-block">
+      <h2 class="overview-label ctr-h">Claim</h2>
+      <p class="ctr-text">{{ study.claim or study.question or '' }}</p>
+      {% if study.biological_summary %}
+      <div class="ctr-context">{{ study.biological_summary }}</div>
+      {% endif %}
     </div>
-    {% endif %}
 
-    {# ─── Group 3: Findings & open debts ─────────────────────────────── #}
-    {# C2: a compact LEDGER — one row per finding (glyph · claim · evidence
-       chip), each opening a native <details> drawer for the fuller detail.
-       Nothing from the old always-expanded card was dropped, only
-       relocated into the drawer — see task-C2-brief.md's "preserve every
-       existing detail" list. Dict-shaped assertion values (evidence.observed,
-       the cited test's pass_if/expect band) are routed through
-       humanize_assertion so a dict never renders as a Python repr. #}
-    {% if study.findings %}
+    <div class="ctr-block">
+      <h2 class="overview-label ctr-h">Test</h2>
+      <p class="ctr-text">{{ study.experiment or study.objective or '' }}</p>
+      {% if _bl or _bt %}
+      <div class="ctr-meta">
+        {% if _bl %}<div class="ctr-meta-row"><span class="ctr-meta-k">Model</span> {% for b in _bl %}<code>{{ b.name or b.composite }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+        {% if _bt %}<div class="ctr-meta-row"><span class="ctr-meta-k">Measures</span> {% for tt in _bt %}<span class="ctr-meta-item">{{ (tt.description if (tt is mapping and tt.description) else (tt.name if tt is mapping else tt)) }}</span>{% if not loop.last %}<span class="ctr-dot">·</span>{% endif %}{% endfor %}</div>{% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="ctr-block">
+      <h2 class="overview-label ctr-h">Result</h2>
+      <p class="ctr-text">{{ study.result or _report.main_insight or (_f0.statement if _f0 else '') or '' }}</p>
+      {% if result_figure %}
+      <figure class="ctr-figure">{{ result_figure | safe }}</figure>
+      {% endif %}
+      {% if study.findings %}
     <div class="overview-section findings-section">
       <h2 class="overview-label">🔬 Findings — what this study taught us</h2>
       {% for f in study.findings %}
@@ -586,66 +566,24 @@
       {% endfor %}
     </div>
     {% endif %}
-
-    {# W15 — Open epistemic debts. Server-computed by the deterministic
-       pbg_superpowers.needs_attention.open_epistemic_debts collector (derived
-       from rigor + freshness signals so it can't drift). Rendered read-only;
-       absent when the collector is unavailable or there are no debts. #}
-    {% if epistemic_debts %}
-    <div class="overview-section" id="epistemic-debts-panel">
-      <h2 class="overview-label">🧾 Open epistemic debts
-        <span class="narrative-card-hint">(what this study has not yet established)</span>
-      </h2>
-      <div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
-        {% for d in epistemic_debts %}
-        {% set _sev = (d.severity or 'low')|string %}
-        {% set _bg = '#fee2e2' if _sev == 'high' else ('#fef9c3' if _sev == 'medium' else '#f1f5f9') %}
-        {% set _fg = '#991b1b' if _sev == 'high' else ('#854d0e' if _sev == 'medium' else '#475569') %}
-        <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-top:1px solid #f1f5f9">
-          <span style="padding:1px 8px;border-radius:9999px;background:{{ _bg }};color:{{ _fg }};font-weight:600;font-size:0.72em;white-space:nowrap">{{ _sev }}</span>
-          <div>
-            <strong style="color:#1e293b">{{ d.kind }}</strong>
-            {% if d.ref %}<code style="font-size:0.82em">{{ d.ref }}</code>{% endif %}
-            <div style="color:#475569;font-size:0.9em;margin-top:1px">{{ d.note }}</div>
-          </div>
+      {% set _cv = study.conclusion_verdicts or {} %}
+      {% set _lim = study.limitations or [] %}
+      {% if study.confidence or _cv or _lim or study.falsifiability %}
+      <div class="ctr-meta ctr-assess">
+        {% if study.confidence or _cv %}
+        <div class="ctr-meta-row"><span class="ctr-meta-k">Confidence</span>
+          {% if study.confidence %}<span class="ctr-badge ctr-badge-{{ study.confidence|lower }}">{{ study.confidence }}</span>{% endif %}
+          {% if _cv.biological_validation and _cv.biological_validation.result %}<span class="ctr-vch">biology&nbsp;{{ _cv.biological_validation.result }}</span>{% endif %}
+          {% if _cv.explanatory_gain and _cv.explanatory_gain.result %}<span class="ctr-vch">insight&nbsp;{{ _cv.explanatory_gain.result }}</span>{% endif %}
         </div>
-        {% endfor %}
+        {% endif %}
+        {% if _lim or study.falsifiability %}
+        <div class="ctr-meta-row"><span class="ctr-meta-k">Caveat</span> <span class="ctr-meta-item">{{ _lim[0] if _lim else study.falsifiability }}</span></div>
+        {% endif %}
       </div>
-    </div>
-    {% endif %}
-
-    {# ─── Conclusion — headline insight, caveat, calibration (at the end) ─ #}
-    {% set _insight = _report.main_insight or (_f0.statement if _f0 else '') %}
-    <div class="overview-section conclusion-block">
-      <h2 class="overview-label">Conclusion</h2>
-      {% if _insight %}
-      <p class="conclusion-insight">{{ _insight }}<span class="computed-tag">computed from findings</span></p>
       {% endif %}
-      {{ edit_field('Conclusion', 'report.conclusion', _report.conclusion, 3, 'What the runs + tests demonstrated.') }}
-      {{ edit_field('Caveat', 'report.caveat', _report.caveat, 2, 'The headline limitation a reviewer needs to know.') }}
-      <div class="conclusion-tags">
-        <label class="tag-control"><span class="tag-k">confidence</span>
-          <select class="narrative-input tag-select" data-narrative-path="report.confidence">
-            <option value="">—</option>
-            <option value="high" {% if _report.confidence == 'high' %}selected{% endif %}>high</option>
-            <option value="medium" {% if _report.confidence == 'medium' %}selected{% endif %}>medium</option>
-            <option value="low" {% if _report.confidence == 'low' %}selected{% endif %}>low</option>
-          </select></label>
-        <label class="tag-control"><span class="tag-k">evidence</span>
-          <input type="text" class="narrative-input tag-input" data-narrative-path="report.evidence_quality"
-                 value="{{ _report.evidence_quality or '' }}" placeholder="calibrated | literature-matched | …"></label>
-      </div>
     </div>
 
-    {# ─── C5: the old Overview "Plan & provenance" grab-bag was DISSOLVED here.
-       Its five sub-blocks were relocated to the act each belongs to:
-       pipeline_gate / key_assumptions / limitations → Decide (conclusions)
-       panel as supporting context; expert_decisions_needed → Decide under an
-       "Open debts" heading; literature_anchors → Tests panel. Overview now
-       ends at the Conclusion block above + the feedback panel below. #}
-
-    {# Stage-3c: feedback panel — populated by JS from window._study.feedback_tracked.
-       Rendered nothing when there is no feedback (JS checks items.length). #}
     <div id="feedback-tracked-panel"></div>
 
   </div>
@@ -983,20 +921,6 @@
   <p class="empty-message">Nothing to compose yet.</p>
   {% endif %}
 
-  {# Analyses — post-run analysis modules this study's dispatch should compute.
-     Task E1: relocated here (near Conditions) from the Exports tab — it is
-     study setup ("what to compute"), not an export artifact. Rendered
-     unconditionally (outside the _has_build guard) so a brand-new blank
-     study can still have its analyses configured. Reuses the existing
-     /api/study-set-analyses endpoint + _saveStudyAnalyses() handler
-     unchanged. #}
-  <div class="overview-section" id="analyses-section" style="margin-top:22px">
-    <h3 class="section-title">Analyses <span class="muted" style="font-size:0.85em;font-weight:normal">— post-run analysis modules to compute on dispatch</span></h3>
-    <textarea id="study-analyses-list" rows="3" style="width:100%;font-family:monospace;font-size:0.88em" placeholder="doubling_time_distribution">{% if study.analyses %}{% for a in study.analyses %}{{ a.name if a is mapping else a }}
-{% endfor %}{% endif %}</textarea>
-    <button type="button" class="action-btn" style="margin-top:6px" onclick="_saveStudyAnalyses()">Save analyses</button>
-    <div id="study-analyses-status" class="muted" style="font-size:0.85em;margin-top:4px"></div>
-  </div>
 
 </section>
 

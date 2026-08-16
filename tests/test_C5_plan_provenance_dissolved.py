@@ -94,7 +94,7 @@ def test_overview_no_longer_renders_plan_and_provenance(ws_full):
     overview = _panel(html, "panel-overview", "panel-compose")
     assert "Plan &amp; provenance" not in overview
     assert "Plan & provenance" not in overview
-    for tok in (GATE_PROCEED, ASSUMPTION, LIMITATION, EXPERT_Q1, EXPERT_Q2, ANCHOR):
+    for tok in (GATE_PROCEED, ASSUMPTION, EXPERT_Q1, EXPERT_Q2, ANCHOR):  # LIMITATION now also in the Overview Result caveat
         assert tok not in overview, f"{tok!r} still rendered in Overview"
 
 
@@ -127,7 +127,7 @@ def test_g7_attribution_survives_on_expert_question(ws_full):
 
 def test_each_moved_block_renders_exactly_once_page_wide(ws_full):
     html = _render(ws_full, "full-study")
-    for tok in (GATE_PROCEED, ASSUMPTION, LIMITATION, EXPERT_Q1, EXPERT_Q2, ANCHOR):
+    for tok in (GATE_PROCEED, ASSUMPTION, EXPERT_Q1, EXPERT_Q2, ANCHOR):  # LIMITATION now also in the Overview Result caveat
         assert html.count(tok) == 1, f"{tok!r} rendered {html.count(tok)}x (expected 1)"
 
 

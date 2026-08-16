@@ -10505,6 +10505,7 @@
     function inline(s) {
       s = _escInv(s);
       s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');   // *italic* (after **bold**)
       s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
       return s;
     }
@@ -10624,29 +10625,40 @@
       var m = t.match(/^.*?[.!](?=\s)/);
       return m ? m[0] : t;
     };
-    var primary  = whatIs || q;
-    var headline = primary ? headlineOf(primary) : (d.title || d.name || '');
-    var framing  = primary ? oneline(primary).slice(headlineOf(primary).length).trim() : '';
+    var _invInline = function(s) {
+      s = _escInv(s);
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      return s;
+    };
+    // Headline = the investigation title (falls back to the driving question);
+    // the full what_is_this renders below as markdown prose (the introduction).
+    var headline = (d.title && d.title !== d.name) ? d.title
+                   : (q ? headlineOf(q) : (d.name || ''));
 
     var H = [];
     H.push('<div class="inv-brief inv-vs-' + vsClass + '">');
 
-    // Headline — the driving question, kept to one line.
-    if (headline) H.push('<h2 class="inv-brief-q">' + _esc(headline) + '</h2>');
+    // Headline.
+    if (headline) H.push('<h2 class="inv-brief-q">' + _invInline(headline) + '</h2>');
 
-    // Verdict — answers the question, as a colored status line.
+    // Verdict — a colored status line.
     if (verdict) {
       H.push('<div class="inv-brief-verdict">' +
         '<span class="inv-vs-pill">' + _esc(vs.toUpperCase()) + '</span>' +
         '<span class="inv-brief-verdict-label">Current verdict</span> ' +
-        '<span class="inv-brief-verdict-text">' + _esc(verdict) + '</span></div>');
+        '<span class="inv-brief-verdict-text">' + _invInline(verdict) + '</span></div>');
     }
 
-    // Framing — the rest of the opening sentence(s), muted.
-    if (framing) H.push('<p class="inv-brief-framing">' + _esc(framing) + '</p>');
+    // Introduction — the full what_is_this rendered as markdown prose.
+    if (whatIs) H.push('<div class="inv-brief-prose inv-brief-intro">' + _renderInvLeadMarkdown(whatIs) + '</div>');
 
-    // Meta — hypothesis.
-    if (hyp) H.push('<div class="inv-brief-meta"><span class="inv-brief-meta-item"><em>Hypothesis</em> ' + _esc(hyp) + '</span></div>');
+    // Meta — the driving question + hypothesis, one muted line each.
+    var _meta = [];
+    if (q) _meta.push('<span class="inv-brief-meta-item"><em>Question</em> ' + _invInline(oneline(q)) + '</span>');
+    if (hyp) _meta.push('<span class="inv-brief-meta-item"><em>Hypothesis</em> ' + _invInline(hyp) + '</span>');
+    if (_meta.length) H.push('<div class="inv-brief-meta">' + _meta.join('') + '</div>');
 
     // Depth — one flat tab strip; only tabs with content are shown.
     var tabs = [];
@@ -11595,8 +11607,12 @@
     edgesSvg.setAttribute('height', canvasH);
     edgesSvg.style.width = canvasW + 'px';
     edgesSvg.style.height = canvasH + 'px';
+    // Loom-like viewport: remember the canvas dims and apply the current zoom.
+    // The shell keeps its CSS/user height (resize:vertical) instead of being
+    // forced to fit — content scrolls/zooms inside it.
     var shellSize = document.getElementById('investigation-dag-shell');
-    if (shellSize) shellSize.style.height = canvasH + 'px';
+    if (shellSize) { shellSize.dataset.canvasW = canvasW; shellSize.dataset.canvasH = canvasH; }
+    _applyAigZoom();
 
     // Edges (drawn after positions are known), using measured heights.
     edgesSvg.innerHTML =
@@ -11709,6 +11725,67 @@
     }
   }
   window._renderInvestigationDag = _renderInvestigationDag;
+
+  // ── Investigation-graph viewport: continuous zoom / pan / fit / fullscreen ──
+  var aigZoom = 1;
+  function _applyAigZoom() {
+    var shell = document.getElementById('investigation-dag-shell');
+    var nodes = document.getElementById('investigation-dag-nodes');
+    var edges = document.getElementById('investigation-dag-edges');
+    if (!shell || !nodes || !edges) return;
+    var z = aigZoom;
+    var cw = parseFloat(shell.dataset.canvasW) || nodes.offsetWidth || 0;
+    var ch = parseFloat(shell.dataset.canvasH) || nodes.offsetHeight || 0;
+    [nodes, edges].forEach(function (el) {
+      el.style.transformOrigin = '0 0';
+      el.style.transform = 'scale(' + z + ')';
+    });
+    // A spacer sized to the SCALED content so the shell's scroll extent matches
+    // (transforms don't affect scrollWidth/Height on their own).
+    var spacer = shell.querySelector('.aig-spacer');
+    if (!spacer) {
+      spacer = document.createElement('div');
+      spacer.className = 'aig-spacer';
+      spacer.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none';
+      shell.appendChild(spacer);
+    }
+    spacer.style.width = (cw * z) + 'px';
+    spacer.style.height = (ch * z) + 'px';
+  }
+  function _aigZoomBy(f) { aigZoom = Math.max(0.3, Math.min(2.2, aigZoom * f)); _applyAigZoom(); }
+  function _aigFit() {
+    var shell = document.getElementById('investigation-dag-shell');
+    if (!shell) return;
+    var cw = parseFloat(shell.dataset.canvasW) || 1, ch = parseFloat(shell.dataset.canvasH) || 1;
+    var z = Math.min((shell.clientWidth - 10) / cw, (shell.clientHeight - 10) / ch);
+    aigZoom = Math.max(0.3, Math.min(1.5, z || 1));
+    _applyAigZoom();
+    shell.scrollLeft = 0; shell.scrollTop = 0;
+  }
+  function _aigFullscreen() {
+    var shell = document.getElementById('investigation-dag-shell');
+    if (!shell) return;
+    if (document.fullscreenElement) { document.exitFullscreen(); }
+    else if (shell.requestFullscreen) { shell.requestFullscreen().then(function () { setTimeout(_aigFit, 150); }); }
+  }
+  window._aigZoomBy = _aigZoomBy;
+  window._aigFit = _aigFit;
+  window._aigFullscreen = _aigFullscreen;
+  // Drag anywhere on the shell background to pan (card clicks still work).
+  document.addEventListener('pointerdown', function (e) {
+    var shell = e.target.closest && e.target.closest('#investigation-dag-shell');
+    if (!shell || (e.target.closest && e.target.closest('.iset-dag-node'))) return;
+    var sx = e.clientX, sy = e.clientY, sl = shell.scrollLeft, st0 = shell.scrollTop, moved = false;
+    shell.style.cursor = 'grabbing';
+    function mv(ev) { moved = true; shell.scrollLeft = sl - (ev.clientX - sx); shell.scrollTop = st0 - (ev.clientY - sy); }
+    function up() {
+      document.removeEventListener('pointermove', mv);
+      document.removeEventListener('pointerup', up);
+      shell.style.cursor = '';
+    }
+    document.addEventListener('pointermove', mv);
+    document.addEventListener('pointerup', up);
+  });
 
   function _setAigBand(b) {
     var nb = Math.max(0, Math.min(2, b | 0));
