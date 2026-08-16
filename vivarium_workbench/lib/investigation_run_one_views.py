@@ -11,6 +11,12 @@ markers, persists each rendered viz HTML under
 ``<inv>/viz/<run_id>/<safe>.html``, and appends to the investigation's
 ``runs.db``.
 
+State crosses the process boundary WITHOUT being inlined into the ``python -c``
+source (a real composite state is megabytes; argv-embedding it raises
+``OSError(E2BIG)``): a registered v4 generator baseline ships only its ref +
+params and the child builds, while parent-resolved states are written to
+``.pbg/runs/<run_id>/state.json`` and the child loads the file.
+
 The builder returns ``(body, status)`` so the FastAPI route wraps every path in
 ``JSONResponse``.  Only validation failures are 400 / 404; a composite that
 FAILS to run still returns **200** with ``{"ok": False, ...}`` (the run row is
@@ -36,6 +42,28 @@ import yaml
 from vivarium_workbench.lib import study_crud_mutations
 from vivarium_workbench.lib import study_spec
 from vivarium_workbench.lib.json_serialize import _json_default
+from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+
+def _generator_entry(ref: str):
+    """The registered ``GeneratorEntry`` for ``ref``, or ``None``.
+
+    Mirrors the registry half of ``study_run_state.resolve_study_baseline_state``
+    (including the ``local:<name>`` shorthand). Never raises: an unimportable
+    process-bigraph or an unregistered ref both yield ``None`` so the caller
+    falls back to the full resolver.
+    """
+    try:
+        from process_bigraph.composite_generator import _REGISTRY, discover_generators
+    except Exception:  # pragma: no cover - process-bigraph unavailable
+        return None
+    if not _REGISTRY:
+        discover_generators()
+    entry = _REGISTRY.get(ref)
+    if entry is None and ref.startswith("local:"):
+        short_name = ref[len("local:"):]
+        entry = next((e for e in _REGISTRY.values() if e.name == short_name), None)
+    return entry
 
 
 def _ws_add_to_sys_path(ws_root: Path) -> None:
@@ -108,6 +136,8 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
     composite_name = None
     composite_doc = None  # raw {state, parameters, ...} dict OR a flat state dict
     state = None          # v3/v4 path resolves a runnable state dict directly
+    generator_ref = None  # set instead of ``state`` when the CHILD builds (see below)
+    gen_params = None     # the effective build params for that child-side build
     inv_dir = study_spec.study_dir(ws_root, inv)
     baseline_list = spec.get("baseline")
     if (isinstance(baseline_list, list) and baseline_list
@@ -135,10 +165,39 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
         params = dict(entry.get("params") or {})
         params.update(overrides or {})  # request-body overrides win (Configure & Run)
         params.pop("n_steps", None)     # run length comes from ``steps``, not params
-        state, err = study_run_state.resolve_study_baseline_state(
-            ws_root, pkg, composite_name, params)
-        if err is not None:
-            return err, 404
+        gen_entry = _generator_entry(composite_name)
+        if gen_entry is not None:
+            # Registered generator: build in the CHILD, not here. A generator
+            # document holds live edge objects that do not survive a JSON
+            # round-trip (they stringify, and realize_link then fails with
+            # "'str' object has no attribute 'interface'"), so the parent
+            # passes only the ref + params and the child builds. Param
+            # semantics mirror ``resolve_study_baseline_state``: filter to the
+            # declared set (study baselines also store run-time params that are
+            # not composite-build parameters), and drop a ``cache_dir`` whose
+            # ParCa cache is absent so the run falls back to the generator's
+            # default cache instead of FileNotFoundError.
+            declared = getattr(gen_entry, "parameters", None)
+            if isinstance(declared, dict):
+                params = {k: v for k, v in params.items() if k in declared}
+            cdir = params.get("cache_dir")
+            if cdir and not ((ws_root / cdir / "initial_state.json").exists()
+                             or (Path(cdir) / "initial_state.json").exists()):
+                params.pop("cache_dir", None)
+            # The child indexes _REGISTRY by entry.id — never by a `local:`
+            # shorthand — so ship the resolved id, not the raw ref.
+            generator_ref = getattr(gen_entry, "id", composite_name)
+            gen_params = params
+        else:
+            # Everything else — ``step:<address>`` baselines, ``local:``
+            # shorthand needing a registry reload, file-discovered YAML
+            # composites — resolves through the full resolver. These return
+            # plain JSON-safe state dicts, which the file handoff below
+            # carries to the child.
+            state, err = study_run_state.resolve_study_baseline_state(
+                ws_root, pkg, composite_name, params)
+            if err is not None:
+                return err, 404
     elif "variants" in spec:
         # v2 study shape: prefer baseline; if absent, the first declared variant.
         variants = spec.get("variants") or []
@@ -177,9 +236,10 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
     #   1. `{state: {...}, parameters: {...}}`  — file-spec composites
     #   2. `{...}`  — flat state dict from @composite_generator outputs
     # composite-test-run handles both (see line ~4775); mirror that here.
-    if state is None:
+    if state is None and generator_ref is None:
         # v2 sidecar / legacy branches: derive ``state`` from the loaded
-        # ``composite_doc`` (the v3/v4 branch above already resolved ``state``).
+        # ``composite_doc`` (the v3/v4 branch above already resolved ``state``
+        # or deferred the build to the child via ``generator_ref``).
         if isinstance(composite_doc, dict) and "state" in composite_doc \
                 and isinstance(composite_doc["state"], dict):
             state = substitute_parameters(composite_doc.get("state") or {},
@@ -194,7 +254,8 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
                     state[k] = v
     db_file = str(study_spec.study_dir(ws_root, inv) / "runs.db")
     run_id = cr.generate_run_id(composite_name, overrides)
-    state = cr.inject_sqlite_emitter(state, run_id=run_id, db_file=db_file)
+    if state is not None:
+        state = cr.inject_sqlite_emitter(state, run_id=run_id, db_file=db_file)
 
     # Ensure the DB exists + the runs_meta table has sim_name column
     import sqlite3 as _sql
@@ -215,6 +276,41 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
     conn.close()
 
     py = sys.executable
+
+    if generator_ref is not None:
+        # v4 registered generator: the child resolves the generator and builds
+        # the composite itself. Only the ref, the params and the run identity
+        # cross the process boundary — all small — so neither the argv limit
+        # nor JSON round-tripping applies.
+        build_src = textwrap.dedent(f"""
+            from process_bigraph.composite_generator import (
+                _REGISTRY, build_generator, discover_generators,
+            )
+            from vivarium_workbench.lib import composite_runs as _cr
+            if not _REGISTRY:
+                discover_generators()
+            _doc = build_generator(_REGISTRY[{json.dumps(generator_ref)}],
+                                   json.loads({json.dumps(json.dumps(gen_params))}) or None)
+            _state = _doc.get('state') if isinstance(_doc.get('state'), dict) else _doc
+            _state = _cr.inject_sqlite_emitter(
+                _state, run_id={json.dumps(run_id)}, db_file={json.dumps(db_file)})
+        """).strip()
+    else:
+        # The state was resolved here (v2 sidecar / legacy / resolver
+        # fallback). Hand it over through a FILE rather than inlining it into
+        # the `python -c` source — a real composite state is megabytes and
+        # embedding it in argv raises OSError(E2BIG, "Argument list too long")
+        # before the child ever starts. Mirrors the detached runner, which
+        # also ships a document on disk.
+        run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
+        run_dir.mkdir(parents=True, exist_ok=True)
+        state_path = run_dir / "state.json"
+        state_path.write_text(json.dumps(state, default=_json_default), encoding="utf-8")
+        build_src = textwrap.dedent(f"""
+            with open({json.dumps(str(state_path))}, encoding='utf-8') as _f:
+                _state = json.load(_f)
+        """).strip()
+
     script = textwrap.dedent(f"""
         import json, sys, traceback
         try:
@@ -226,7 +322,8 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
                 from process_bigraph.emitter import SQLiteEmitter
             core = build_core()
             core.register_link('SQLiteEmitter', SQLiteEmitter)
-            composite = Composite({{'state': __import__('json').loads({json.dumps(json.dumps(state, default=_json_default))})}}, core=core)
+{textwrap.indent(build_src, ' ' * 12)}
+            composite = Composite({{'state': _state}}, core=core)
             composite.run({steps})
             # Gather rendered viz HTML, if viva_superpowers is importable.
             viz_html = {{}}
