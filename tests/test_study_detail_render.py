@@ -1893,3 +1893,86 @@ def test_analyses_and_raw_data_markup_no_longer_inside_panel_simulate(tmp_path):
     assert 'id="study-artifacts-section"' not in sim_panel
     assert 'id="study-sim-table"' in sim_panel
     assert 'id="study-run-detail"' in sim_panel
+
+
+# ---------------------------------------------------------------------------
+# Study-spine reorg, Task 6 (plan Task 6): the Model (compose) tab shows the
+# study's ACTUAL composite(s) as the same rich card the Modules/Composites
+# view uses (full semantic detail — config schema, declared observables — at
+# the "Full" loom zoom level), not just a bare composite name + button.
+# _loadModelCards() (static/study-detail.js) reads the data-model-composite /
+# data-model-overrides attributes off the existing .cond-block / variant-row
+# markup and renders via the shared static/composite-card.js renderer
+# (_renderCompositeCardFull) client-side — these are server-render (markup
+# wiring) assertions; the client-side fetch/render itself is covered by the
+# composite-card.js `node --check` syntax gate plus manual verification (see
+# the Task 6 report).
+# ---------------------------------------------------------------------------
+
+def test_compose_panel_has_model_composite_cards_mount(tmp_path):
+    html = _render_minimal(tmp_path)
+    compose = html[html.index('id="panel-compose"'):html.index('id="panel-simulate"')]
+    assert 'id="model-composite-cards"' in compose
+    assert 'class="model-composite-cards"' in compose
+    assert 'data-study="spine-study"' in compose
+    # Mount sits OUTSIDE the `_has_build` guard so a study with none of
+    # model_change/implementation_requirements/conditions/baseline still
+    # gets the mount (and _loadModelCards() renders its own empty note),
+    # never a silently-missing panel.
+    assert 'Nothing to compose yet.' in compose or 'model-composite-cards' in compose
+
+
+def test_compose_panel_keeps_notebook_and_explore_actions(tmp_path):
+    from vivarium_workbench.lib.study_page import render_study_detail_html
+
+    spec = {
+        "name": "model-cards-study",
+        "schema_version": 3,
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+    }
+    html = render_study_detail_html(tmp_path, "model-cards-study", spec)
+    compose = html[html.index('id="panel-compose"'):html.index('id="panel-simulate"')]
+
+    # The mount is present and carries this study's name.
+    assert 'id="model-composite-cards"' in compose
+    assert 'data-study="model-cards-study"' in compose
+
+    # Existing actions are UNCHANGED (Task 6 keeps them, doesn't fork them):
+    # the notebook download button and, per baseline entry, the "explore &
+    # run" loom action.
+    assert '_vivStudyNotebookFromCard' in compose
+    assert '↓ notebook' in compose
+    assert "_openCompositeLoom('pkg.composites.core')" in compose
+    assert '🧬 explore &amp; run ↗' in compose
+
+    # The per-entry block still carries the same data-model-composite /
+    # data-model-overrides attributes _loadModelConfig already used —
+    # _loadModelCards() reads the SAME attributes (no new data threading).
+    assert 'data-model-composite="pkg.composites.core"' in compose
+
+
+def test_compose_panel_variant_rows_carry_model_composite_attrs(tmp_path):
+    from vivarium_workbench.lib.study_page import render_study_detail_html
+
+    spec = {
+        "name": "variant-cards-study",
+        "schema_version": 3,
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "conditions": {
+            "baseline": {"composite": "pkg.composites.core"},
+            "variants": [
+                {"name": "hot", "base_composite": "pkg.composites.core", "params": {"temp": 42}},
+                {"name": "inherits", "params": {}},
+            ],
+        },
+    }
+    html = render_study_detail_html(tmp_path, "variant-cards-study", spec)
+    compose = html[html.index('id="panel-compose"'):html.index('id="panel-simulate"')]
+
+    # The "hot" variant declares its own base_composite -> carries the
+    # attribute so _loadModelCards() picks it up alongside the baseline.
+    assert 'data-model-composite="pkg.composites.core"' in compose
+    assert 'data-model-overrides=\'{&#34;temp&#34;: 42}\'' in compose or '"temp": 42' in compose
+    # The "inherits" variant declares no composite of its own -> an empty
+    # attribute the JS skips (never a stray undefined-id fetch).
+    assert 'data-model-composite=""' in compose

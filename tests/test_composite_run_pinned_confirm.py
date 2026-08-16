@@ -49,7 +49,13 @@ def test_run_composite_routes_through_confirm_gate_before_dispatch():
     js = _js("walkthrough.js")
     fn = _function_body(js, "_runComposite")
     assert "_confirmRemoteDispatchThen(" in fn
-    assert "onclick=\"_runComposite(this)\"" in js
+    # The ▶ Run button markup itself (_renderCompositeCardFull's runBar) moved
+    # to static/composite-card.js in the study-spine-reorg Task 6 extraction
+    # (shared verbatim with the Study Detail Model tab); composite-card.js
+    # loads BEFORE walkthrough.js wherever both are used, so the two files
+    # form one runtime system — the gate handler stays in _runComposite
+    # (checked above) regardless of which file renders the button markup.
+    assert "onclick=\"_runComposite(this)\"" in (js + _js("composite-card.js"))
     # the actual dispatch must be INSIDE the gate's fire callback, not fired
     # unconditionally before it. rindex (not index): an existing explanatory
     # comment earlier in this function also mentions the endpoint string —

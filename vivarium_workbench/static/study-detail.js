@@ -96,7 +96,7 @@
     if (kind === 'tests') { _loadTestsPanel(window._study); }
     if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownloadPointer(); }
     if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
-    if (kind === 'compose') { _loadModelConfig(); }
+    if (kind === 'compose') { _loadModelConfig(); _loadModelCards(); }
     // Study-spine reorg (spec §1, §3.2/3.3/3.4): Simulations keeps only the
     // runs table now; the analysis-files zip + raw-data bulk that used to
     // trigger here moved onto their own Evidence panels (Analyses/Results).
@@ -809,6 +809,95 @@
     });
   }
   window._loadModelConfig = _loadModelConfig;
+
+  // Model tab (study-spine reorg Task 6): the study's ACTUAL composite(s),
+  // shown as the SAME rich card the Modules/Composites view uses — full
+  // semantic detail (description, config schema, declared observables) at
+  // the "Full" loom zoom level, via the shared static/composite-card.js
+  // renderer (_renderCompositeCardFull, extracted from walkthrough.js).
+  // Collects unique composite ids from the same data-model-composite /
+  // data-model-overrides attributes _loadModelConfig already reads — the
+  // per-baseline .cond-block entries plus the Conditions › Variants table
+  // rows (both carry the attribute; see study-detail.html) — dedupes by
+  // composite id, and fetches /api/composite-resolve for each (existing
+  // route, no new endpoint). One card per unique composite; a study with no
+  // declared composite gets a clear empty note instead of a blank panel.
+  var _modelCardsLoaded = false;
+  function _loadModelCards(force) {
+    var mount = document.getElementById('model-composite-cards');
+    if (!mount) return;
+    if (_modelCardsLoaded && !force) return;
+    _modelCardsLoaded = true;
+    var panel = document.getElementById('panel-compose');
+    if (!panel || typeof window._renderCompositeCardFull !== 'function') {
+      // composite-card.js failed to load (asset error) — degrade to a note
+      // rather than leaving "Loading…" stuck forever.
+      mount.innerHTML = typeof window._renderCompositeCardFull !== 'function'
+        ? '<p class="empty-message">Composite card renderer unavailable.</p>'
+        : '';
+      return;
+    }
+    // Ordered de-dupe by composite id: first entry's overrides + label win;
+    // later entries referencing the SAME id just add to its label list (e.g.
+    // a variant that inherits the baseline composite unchanged).
+    var order = [], byId = {};
+    panel.querySelectorAll('[data-model-composite]').forEach(function (el) {
+      var id = (el.getAttribute('data-model-composite') || '').trim();
+      if (!id) return;   // "(inherits baseline)" / no composite declared
+      var label = el.classList.contains('cond-block')
+        ? ((el.querySelector('.cond-block-title strong') || {}).textContent || 'baseline')
+        : ((el.querySelector('code') || {}).textContent || 'variant');
+      if (!byId[id]) {
+        byId[id] = { id: id, overridesJson: el.getAttribute('data-model-overrides') || '{}', labels: [label] };
+        order.push(id);
+      } else if (byId[id].labels.indexOf(label) === -1) {
+        byId[id].labels.push(label);
+      }
+    });
+    if (!order.length) {
+      mount.innerHTML = '<p class="empty-message">No composite declared for this study yet.</p>';
+      return;
+    }
+    mount.innerHTML = '';
+    order.forEach(function (id) {
+      var entry = byId[id];
+      var wrap = document.createElement('div');
+      wrap.className = 'model-composite-card-wrap';
+      wrap.style.marginBottom = '12px';
+      var esc = window.SimTable ? window.SimTable.esc : function (s) { return String(s == null ? '' : s); };
+      wrap.innerHTML = '<div class="muted" style="font-size:0.78em;font-weight:600;margin:0 0 4px 2px;text-transform:uppercase;letter-spacing:0.02em">' +
+        entry.labels.map(esc).join(' · ') + '</div>' +
+        '<p class="muted" style="font-size:0.85em;margin:0">Resolving composite…</p>';
+      mount.appendChild(wrap);
+      fetch('/api/composite-resolve?id=' + encodeURIComponent(entry.id) + '&overrides=' + encodeURIComponent(entry.overridesJson))
+        .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+        .then(function (res) {
+          var body = res.body;
+          // A genuine miss (404 / non-JSON / no id) — the composite-resolve
+          // route couldn't even identify the spec. A degraded-but-resolved
+          // composite (wiring_status:"unavailable", parameters:{}) still has
+          // an id/name/parameters shape and renders as the card's own
+          // degraded state (never a 500) — same behavior as the Modules view.
+          if (res.status !== 200 || !body || !body.id) {
+            var note = document.createElement('p');
+            note.className = 'muted'; note.style.cssText = 'font-size:0.85em;margin:0';
+            note.textContent = 'No resolvable composite for "' + entry.id + '".';
+            wrap.querySelector('p').replaceWith(note);
+            return;
+          }
+          var cardHost = document.createElement('div');
+          cardHost.innerHTML = window._renderCompositeCardFull(body);
+          wrap.querySelector('p').replaceWith(cardHost.firstElementChild);
+        })
+        .catch(function () {
+          var note = document.createElement('p');
+          note.className = 'muted'; note.style.cssText = 'font-size:0.85em;margin:0';
+          note.textContent = 'Could not resolve "' + entry.id + '".';
+          var p = wrap.querySelector('p'); if (p) p.replaceWith(note);
+        });
+    });
+  }
+  window._loadModelCards = _loadModelCards;
 
   // Coerce a raw <input> string to the composite's declared parameter type —
   // mirrors process_bigraph.composite_spec._cast's canonical type vocabulary
