@@ -125,30 +125,98 @@
   }
   window._gotoStudyTab = _gotoStudyTab;
 
-  // ── Readouts table (emit plan + authored annotations) ───────────────────────
-  // Fetch /api/study-readouts and render the table async (the composite build is
-  // ~3s, TTL-cached). Tolerates failure (leaves the loading message).
+  // ── Readouts panel (Design's emit CONTRACT) ──────────────────────────────
+  // Fetch /api/study-readouts ONCE and render its three blocks (spec §3.1):
+  // Emitter & config (#readouts-emitter), Emitted paths (#readouts-table,
+  // unchanged id for test-compat), Outputs & shapes (#readouts-shapes). The
+  // composite build backing `rows` is ~3s (TTL-cached); the emitter block
+  // itself is cheap (spec-only, no build) but rides the same single fetch —
+  // no new route. Tolerates failure (leaves a clear empty state, never a
+  // silent blank panel).
   var _readoutsLoaded = false;
   function _loadReadouts() {
     if (_readoutsLoaded) return;
     _readoutsLoaded = true;
     var host = document.getElementById('readouts-table');
+    var emitterHost = document.getElementById('readouts-emitter');
+    var shapesHost = document.getElementById('readouts-shapes');
     if (!host) return;
     var slug = host.getAttribute('data-study') || studyName();
     if (!slug) return;
     fetch('/api/study-readouts?study=' + encodeURIComponent(slug),
           {headers: {Accept: 'application/json'}})
-      .then(function(r) { return r.ok || r.status === 422 ? r.json() : null; })
+      .then(function(r) { return r.ok || r.status === 422 || r.status === 501 ? r.json() : null; })
       .then(function(j) {
+        if (emitterHost) emitterHost.innerHTML = _renderEmitterBlock(j && j.emitter);
         if (!j || !Array.isArray(j.rows)) {
           host.innerHTML = '<p class="empty-message">Readouts unavailable.</p>';
+          if (shapesHost) shapesHost.innerHTML = '<p class="empty-message">Output shapes unavailable.</p>';
           return;
         }
         host.innerHTML = _renderReadoutsTable(j);
+        if (shapesHost) shapesHost.innerHTML = _renderReadoutsShapesTable(j.rows);
       })
       .catch(function() {
         host.innerHTML = '<p class="empty-message">Readouts unavailable.</p>';
+        if (emitterHost) emitterHost.innerHTML = '<p class="empty-message">Emitter configuration unavailable.</p>';
+        if (shapesHost) shapesHost.innerHTML = '<p class="empty-message">Output shapes unavailable.</p>';
       });
+  }
+
+  // Block 1: Emitter & config — class/module, interval, buffer, output dir,
+  // emit scope. `em` may be absent/partial (a study spec that failed to
+  // parse never reaches the emitter block) — degrade to an empty note rather
+  // than throw.
+  function _renderEmitterBlock(em) {
+    var e = escapeHtmlForTests;
+    var dash = '<span class="muted">—</span>';
+    if (!em || !em.name) {
+      return '<p class="empty-message">No emitter configuration declared.</p>';
+    }
+    var errNote = em.error ? '<p class="muted" style="color:#92400e">' + e(em.error) + '</p>' : '';
+    var rows = [
+      ['Emitter', (em.class_name ? '<code>' + e(em.class_name) + '</code> (' + e(em.name) + ')' : '<code>' + e(em.name) + '</code>')],
+      ['Module', em.module ? '<code style="font-size:0.85em;">' + e(em.module) + '</code>' : dash],
+      ['Output kind', em.output_kind ? e(em.output_kind) : dash],
+      ['Emit interval', (em.interval === null || em.interval === undefined) ? dash : (e(String(em.interval)) + ' tick(s)')],
+      ['Buffer', (em.buffer === null || em.buffer === undefined) ? dash : (e(String(em.buffer)) + ' emits')],
+      ['Output dir', em.output_dir ? '<code style="font-size:0.85em;">' + e(em.output_dir) + '</code>' : dash],
+      ['Emit scope', em.scope ? e(em.scope) : dash],
+    ];
+    var body = rows.map(function (r) {
+      return '<tr style="border-bottom:1px solid #f1f5f9;">'
+        + '<td style="padding:6px; font-weight:600; width:140px; vertical-align:top;">' + r[0] + '</td>'
+        + '<td style="padding:6px; vertical-align:top;">' + r[1] + '</td></tr>';
+    }).join('');
+    return errNote + '<table class="observables-table" style="width:100%; border-collapse: collapse;"><tbody>' + body + '</tbody></table>';
+  }
+
+  // Block 3: Outputs & shapes — store path / dtype / shape / units / bytes,
+  // one row per confirmed emit leaf (rows without a `shape` — derived /
+  // not-in-plan / unverified — are omitted; they have no verified structure
+  // to describe, and already show up flagged in the Emitted paths block).
+  function _renderReadoutsShapesTable(rows) {
+    var e = escapeHtmlForTests;
+    var shaped = (rows || []).filter(function (o) { return o.store_path && Array.isArray(o.shape); });
+    if (!shaped.length) {
+      return '<p class="empty-message">No output shapes available (composite unbuilt, or no emitted paths).</p>';
+    }
+    var head = '<table class="observables-table" style="width:100%; border-collapse: collapse;"><thead><tr>'
+      + ['Store path', 'dtype', 'Shape', 'Units', 'Bytes'].map(function (h) {
+          return '<th style="text-align:left; padding:6px; border-bottom:1px solid #e2e8f0;">' + h + '</th>';
+        }).join('') + '</tr></thead><tbody>';
+    var body = shaped.map(function (o) {
+      var dims = o.shape.map(function (d) { return String(d); });
+      var shapeStr = '(' + dims.join(', ') + (dims.length === 1 ? ',' : '') + ')';
+      return '<tr style="border-bottom:1px solid #f1f5f9;">'
+        + '<td style="padding:6px;"><code style="font-size:0.85em;">' + e(o.store_path) + '</code></td>'
+        + '<td style="padding:6px;">' + e(o.dtype || '') + '</td>'
+        + '<td style="padding:6px;"><code style="font-size:0.85em;">' + e(shapeStr) + '</code></td>'
+        + '<td style="padding:6px;">' + e(o.units || '') + '</td>'
+        + '<td style="padding:6px;">' + (o.bytes != null ? e(_fmtBytes(o.bytes)) : '<span class="muted">—</span>') + '</td>'
+        + '</tr>';
+    }).join('');
+    return head + body + '</tbody></table>';
   }
 
   // ── Readouts tab: pointer to the raw-data downloads that live under Results ──

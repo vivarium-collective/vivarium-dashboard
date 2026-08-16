@@ -1163,6 +1163,41 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     assert 'data-kind="data"' not in html
 
 
+def test_readouts_panel_renders_three_contract_blocks(tmp_path, dashboard_client):
+    """Task 2 (readouts rebuild, spec §3.1): the Readouts panel markup carries
+    all three emit-contract blocks — Emitter & config, Emitted paths, Outputs
+    & shapes — each with a stable mount point the JS loader targets."""
+    ws = tmp_path / "ws"
+    sd = ws / "studies" / "readouts-blocks-study"
+    sd.mkdir(parents=True)
+    (ws / "workspace.yaml").write_text("name: ws\n")
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 3,
+        "name": "readouts-blocks-study",
+        "kind": "biological",
+        "baseline": [{"name": "core", "composite": "pkg.composites.core"}],
+        "variants": [],
+        "purpose": {"question": "Does the demo composite run correctly?"},
+        "status": "in_progress",
+    }))
+
+    client = dashboard_client(ws)
+    resp = client.get("/studies/readouts-blocks-study")
+    assert resp.status_code == 200
+    html = resp.text
+
+    ro_start = html.index('id="panel-readouts"')
+    ro_end = html.find('class="study-tab-panel"', ro_start + 10)
+    panel = html[ro_start: ro_end if ro_end != -1 else len(html)]
+
+    assert "Emitter" in panel and 'id="readouts-emitter"' in panel
+    assert "Emitted paths" in panel and 'id="readouts-table"' in panel
+    assert "Outputs" in panel and "shapes" in panel.lower() and 'id="readouts-shapes"' in panel
+    # Block order: emitter config, then emitted paths, then outputs & shapes.
+    assert panel.index('id="readouts-emitter"') < panel.index('id="readouts-table"')
+    assert panel.index('id="readouts-table"') < panel.index('id="readouts-shapes"')
+
+
 # ---------------------------------------------------------------------------
 # Fable G2: six status axes → six gates in `status ▾`, computed-vs-authored,
 # and feeding the act-rail gate dots (G1). Spec: 2026-08-01-study-design-

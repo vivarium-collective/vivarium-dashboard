@@ -1087,7 +1087,23 @@
     <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
       <h3 class="section-title" style="margin-right:auto">Readouts</h3>
     </div>
-    <p class="muted">Quantities collected from each simulation run. Each row is an emitter <code>store_path</code> the composite will save; authored entries in <code>study.yaml</code> add names, descriptions, and units on top.</p>
+    <p class="muted">The Design-time emit <strong>contract</strong>: what the emitter is
+    configured to persist, which store paths it declares, and the shape of what lands on
+    disk. No observed values here — see Results for what actually came back from a run.</p>
+
+    <h4>Emitter &amp; config</h4>
+    <p class="muted" style="font-size:0.9em">The emitter class, its write-path module, emit
+    interval/buffer, output location, and emit scope — from
+    <code>lib/emitters.py</code> and this study's (or the workspace's)
+    <code>runtime.default_emitter</code>.</p>
+    <div id="readouts-emitter" data-study="{{ name }}">
+      <p class="empty-message">Loading emitter configuration…</p>
+    </div>
+
+    <h4>Emitted paths</h4>
+    <p class="muted" style="font-size:0.9em">Each row is an emitter <code>store_path</code>
+    the composite will save; authored entries in <code>study.yaml</code> add names,
+    descriptions, and units on top.</p>
 
     {# Points at Simulations' raw-data downloads (Study artifacts strip)
        rather than duplicating them (Task C4, repointed by Task E2 when
@@ -1099,6 +1115,14 @@
 
     <div id="readouts-table" data-study="{{ name }}">
       <p class="empty-message">Loading readouts from the composite emit plan…</p>
+    </div>
+
+    <h4>Outputs &amp; shapes</h4>
+    <p class="muted" style="font-size:0.9em">Store path, dtype, shape
+    <code>(n_steps, …)</code>, units, and a best-effort byte estimate for each emitted
+    leaf.</p>
+    <div id="readouts-shapes" data-study="{{ name }}">
+      <p class="empty-message">Loading output shapes…</p>
     </div>
 
     {% if study.expected_behavior %}
