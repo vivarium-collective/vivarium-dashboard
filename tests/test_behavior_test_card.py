@@ -154,3 +154,31 @@ def test_saved_viz_no_synth_when_artifact_present():
         assert len(bt) == 1
         assert bt[0].get("synthesized") is not True   # the real artifact, not a synth
         assert bt[0]["url"] == "/studies/s1/viz/report_card/behavior-tests.html"
+
+
+# --- /v2 axis (signed margin) surfaced on the behavior-tests card ---
+
+def test_verdict_carries_axis_margin():
+    v = btc.build_behavior_tests_verdict(_spec(
+        ["a"], {"a": {"result": "FAIL", "measured_value": 0.54,
+                      "axis": {"verdict": "mismatch", "margin": -0.06,
+                               "severity": "hard", "meter": 0.35}}}))
+    row = v["tests"][0]
+    assert row["margin"] == -0.06 and row["severity"] == "hard"
+    assert row["meter"] == 0.35 and row["verdict"] == "mismatch"
+
+
+def test_render_draws_margin_bar_when_meter_present():
+    v = btc.build_behavior_tests_verdict(_spec(
+        ["a"], {"a": {"result": "FAIL",
+                      "axis": {"verdict": "mismatch", "margin": -0.06,
+                               "severity": "hard", "meter": 0.35}}}))
+    html = btc.render_behavior_tests_html(v, {"name": "s"})
+    assert "pass boundary at centre" in html          # the margin-bar track
+    assert "Δ-to-pass -0.06" in html and "hard" in html
+
+
+def test_render_omits_bar_without_axis():
+    v = btc.build_behavior_tests_verdict(_spec(["a"], {"a": {"result": "PASS"}}))
+    html = btc.render_behavior_tests_html(v, {"name": "s"})
+    assert "pass boundary at centre" not in html

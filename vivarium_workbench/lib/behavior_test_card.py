@@ -62,12 +62,20 @@ def build_behavior_tests_verdict(spec: dict) -> dict:
         name = str(t.get("name") or "")
         o = outcomes.get(name) or {}
         result = str(o.get("result") or "PENDING").upper()
+        # The /v2 axis (signed margin + severity + meter) study_evaluator now
+        # attaches to a graded outcome — carry it so the card can draw a margin
+        # bar. Absent for agent/needs_rerun/pending buckets.
+        ax = o.get("axis") if isinstance(o.get("axis"), dict) else {}
         rows.append({
             "name": name,
             "en": str(t.get("en") or t.get("description") or "").strip(),
             "result": result,
             "detail": str(o.get("detail") or o.get("note") or "").strip(),
             "measured_value": o.get("measured_value"),
+            "margin": ax.get("margin"),
+            "severity": ax.get("severity"),
+            "meter": ax.get("meter"),
+            "verdict": ax.get("verdict"),
         })
 
     results = [r["result"] for r in rows]
@@ -88,6 +96,39 @@ def build_behavior_tests_verdict(spec: dict) -> dict:
         "n_fail": sum(1 for r in results if r == "FAIL"),
         "n_total": len(rows),
     }
+
+
+_VERDICT_COLOR = {"within_tol": "#16a34a", "drift": "#d97706",
+                  "mismatch": "#dc2626", "ungraded": "#6b7280"}
+
+
+def _margin_bar_html(row: dict) -> str:
+    """A track with a pass-boundary at 50% and a fill to the axis `meter` (0..1,
+    boundary at 0.5) — right of centre = passing margin, left = failing. Colored
+    by the axis verdict. '' when the row carries no graded meter."""
+    meter = row.get("meter")
+    if not isinstance(meter, (int, float)):
+        return ""
+    color = _VERDICT_COLOR.get(str(row.get("verdict") or ""), "#6b7280")
+    pct = max(0.0, min(1.0, float(meter))) * 100.0
+    left, width = (50.0, pct - 50.0) if pct >= 50.0 else (pct, 50.0 - pct)
+    margin = row.get("margin")
+    sev = row.get("severity")
+    label = ""
+    if isinstance(margin, (int, float)):
+        label = (f'<span style="color:#475569;font-size:0.82em;'
+                 f'font-variant-numeric:tabular-nums">Δ-to-pass {margin:+.3g}'
+                 + (f' · {_html.escape(str(sev))}' if sev else "") + '</span>')
+    return (
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:4px">'
+        '<div style="position:relative;height:9px;flex:1;max-width:220px;'
+        'background:#eef2f7;border-radius:5px" title="pass boundary at centre">'
+        '<div style="position:absolute;left:50%;top:-2px;bottom:-2px;width:1px;'
+        'background:#94a3b8"></div>'
+        f'<div style="position:absolute;left:{left:.1f}%;width:{max(width, 1.5):.1f}%;'
+        f'top:0;bottom:0;background:{color};border-radius:5px;opacity:0.85"></div>'
+        f'</div>{label}</div>'
+    )
 
 
 def render_behavior_tests_html(verdict: dict, spec: dict) -> str:
@@ -127,7 +168,7 @@ def render_behavior_tests_html(verdict: dict, spec: dict) -> str:
             f'background:{bg};color:{fg};font-weight:700;font-size:0.82em">{_html.escape(res)}</span>'
             '<span style="font-weight:600;color:#1e293b">'
             f'{_html.escape(str(r.get("name") or ""))}</span>'
-            "</div>" + en_html + meta_html + "</div>"
+            "</div>" + en_html + meta_html + _margin_bar_html(r) + "</div>"
         )
 
     if not rows:
