@@ -813,15 +813,26 @@ def inject_emitter_for_paths(state: dict, explicit_paths: list[str]) -> dict:
     if not leaves:
         return state
 
+    def _resolve(parts):
+        node = state
+        for p in parts:
+            if not isinstance(node, dict):
+                return None
+            node = node.get(p)
+        return node
+
     emit_schema: dict = {}
     inputs: dict = {}
     for path_parts in sorted(leaves, key=lambda p: tuple(p)):
         # Slug-safe port name from the path
         key = "_".join(path_parts) if path_parts else "root"
-        # process-bigraph's emitter convention uses "node" as the permissive
-        # leaf type (see emitter.anyize_paths). "any" trips a bigraph-schema
-        # bug in append_link_path that assumes the schema is a dict.
-        emit_schema[key] = "node"
+        # A place-graph subtree keeps its tree[node] type so the emitter
+        # tree_copies the WHOLE structure each tick (topology preserved for a
+        # stepping viewer). Everything else uses process-bigraph's permissive
+        # "node" leaf type (see emitter.anyize_paths); "any" trips a
+        # bigraph-schema bug in append_link_path that assumes a dict schema.
+        node = _resolve(path_parts)
+        emit_schema[key] = "tree[node]" if _is_node_tree(node) else "node"
         inputs[key] = list(path_parts)
 
     new_state = dict(state)
@@ -1144,9 +1155,32 @@ def _collect_emit_leaves(state: dict,
     return out
 
 
+def _is_node_tree(node) -> bool:
+    """True for a store that holds a place-graph SUBTREE whose structure can
+    change at runtime (division, aggregation) — a ``tree[node]`` / ``node`` /
+    ``map[node]`` store, or any dict carrying a Milner ``_control`` tag. Such a
+    store must be emitted WHOLE (topology preserved) rather than flattened to
+    scalar leaves, so a viewer can step the changing structure."""
+    if not isinstance(node, dict):
+        return False
+    t = str(node.get("_type", ""))
+    if t.startswith("tree[node") or t == "node" or t.startswith("map[node"):
+        return True
+    # a dict tagged with _control (or whose children are) is a topology subtree
+    if "_control" in node:
+        return True
+    return any(isinstance(v, dict) and "_control" in v
+               for k, v in node.items() if not k.startswith("_"))
+
+
 def _walk_collect(node, path: list[str], out: list[list[str]]) -> None:
     # If node is a process or step, skip — we only emit store values.
     if isinstance(node, dict) and node.get("_type") in ("process", "step"):
+        return
+    # A place-graph subtree (tree[node] / _control-tagged) is emitted WHOLE so
+    # its runtime topology changes survive — do NOT descend into it.
+    if _is_node_tree(node):
+        out.append(path)
         return
     # If node is a dict, treat its non-meta keys as child store paths and
     # recurse into each. Each key becomes its own leaf or sub-walk.
