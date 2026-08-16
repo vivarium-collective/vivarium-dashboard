@@ -865,7 +865,32 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
         report_cards_html = render_report_cards_section(ws_root, name)
     except Exception:  # noqa: BLE001
         report_cards_html = ""
-    html = tpl.render(study=spec, name=name,
+    # Result figure: inline the study's primary dynamics SVG so the Overview shows
+    # the visual result, not just prose. Prefer the closed-loop "*-dynamics.svg";
+    # degrade silently to no figure. Trusted (workspace-authored) SVG.
+    result_figure = ""
+    try:
+        import re as _re
+        sdir = next((b / name for b in (ws_root / "workspace" / "studies",
+                                        ws_root / "studies") if (b / name).is_dir()), None)
+        vizzes = spec.get("visualizations") or []
+        addr = lambda v: (str(v.get("address", "")).split(":", 1)[-1]
+                          if isinstance(v, dict) else "")
+        pick = next((v for v in vizzes if addr(v).endswith("-dynamics.svg")),
+                    next((v for v in vizzes if addr(v).endswith(".svg")), None))
+        if sdir and pick:
+            f = sdir / addr(pick)
+            if f.is_file():
+                svg = _re.sub(r"<\?xml.*?\?>\s*|<!DOCTYPE.*?>\s*", "",
+                              f.read_text(encoding="utf-8", errors="replace"), flags=_re.S).lstrip()
+                svg = _re.sub(r"<svg\b[^>]*>",
+                              lambda m: _re.sub(r'\s(width|height)="[^"]*"', "", m.group(0))[:-1]
+                              + ' style="max-width:100%;height:auto" preserveAspectRatio="xMidYMid meet">',
+                              svg, count=1)
+                result_figure = svg
+    except Exception:
+        result_figure = ""
+    html = tpl.render(study=spec, name=name, result_figure=result_figure,
                       display_name=spec.get("title") or _hn["title"],
                       name_chip=_hn["chip"],
                       epistemic_debts=epistemic_debts,

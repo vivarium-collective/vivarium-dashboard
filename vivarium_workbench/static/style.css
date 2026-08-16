@@ -4885,3 +4885,83 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
 :root[data-theme="dark"] .about-block h2{ color:#93c5fd; }
 :root[data-theme="dark"] .about-link-ghost{ color:#93c5fd; }
 :root[data-theme="dark"] .about-link-ghost:hover{ background:rgba(59,130,246,.12); }
+
+/* Study Overview — Claim / Test / Result spine (study-ui) */
+.study-overview .ctr-block { margin: 0 0 30px; }
+.study-overview .ctr-h { margin: 0 0 9px; }
+.study-overview .ctr-text {
+  font-size: 1.06em; line-height: 1.68; color: var(--ink, #1e293b);
+  max-width: none; margin: 0;
+}
+.study-overview .ctr-result {
+  border-left: 3px solid var(--accent, #10b981);
+  padding-left: 16px; margin-left: -1px;
+}
+.study-overview .ctr-evidence { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.study-overview .ctr-chip {
+  display: inline-flex; flex-direction: column; gap: 1px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 11px;
+}
+.study-overview .ctr-chip-k {
+  font-size: 0.64em; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--gray, #64748b); font-weight: 700;
+}
+.study-overview .ctr-chip-v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82em; color: #1e293b; }
+:root[data-theme="dark"] .study-overview .ctr-chip,
+.theme-dark .study-overview .ctr-chip { background: #1a2433; border-color: #2b3a4f; }
+:root[data-theme="dark"] .study-overview .ctr-chip-v,
+.theme-dark .study-overview .ctr-chip-v { color: #e2e8f0; }
+
+/* Overview enrich: context / meta / findings (study-ui) */
+.study-overview .ctr-context {
+  margin-top: 12px; font-size: 0.95em; line-height: 1.62;
+  color: var(--gray, #64748b); padding-left: 14px; border-left: 2px solid var(--line, #e5e7eb);
+}
+.study-overview .ctr-meta { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+.study-overview .ctr-meta-row { font-size: 0.9em; color: var(--ink-2, #475569); }
+.study-overview .ctr-meta-k {
+  display: inline-block; min-width: 74px; font-size: 0.72em; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--gray, #94a3b8); font-weight: 700;
+}
+.study-overview .ctr-meta-item { color: var(--ink-2, #475569); }
+.study-overview .ctr-dot { color: var(--line, #cbd5e1); margin: 0 6px; }
+.study-overview .ctr-findings { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.study-overview .ctr-find {
+  position: relative; padding-left: 22px; font-size: 0.98em; line-height: 1.55; color: var(--ink, #1e293b);
+}
+.study-overview .ctr-find::before {
+  content: "✓"; position: absolute; left: 0; top: 0; font-weight: 700; color: var(--accent, #10b981);
+}
+.study-overview .ctr-find-contradicts::before { content: "✗"; color: #dc2626; }
+.study-overview .ctr-find-partial::before { content: "◐"; color: #d97706; }
+.study-overview .ctr-find-novel::before { content: "◆"; color: #6366f1; }
+
+/* Overview: assessment badges (study-ui) */
+.study-overview .ctr-assess { margin-top: 16px; }
+.study-overview .ctr-badge {
+  display: inline-block; padding: 1px 9px; border-radius: 9999px; font-size: 0.74em;
+  font-weight: 700; letter-spacing: 0.02em; background: #e2e8f0; color: #475569; margin-right: 6px;
+}
+.study-overview .ctr-badge-accepted { background: #dcfce7; color: #166534; }
+.study-overview .ctr-badge-investigating { background: #fef9c3; color: #854d0e; }
+.study-overview .ctr-badge-refuted { background: #fee2e2; color: #991b1b; }
+.study-overview .ctr-vch {
+  display: inline-block; font-size: 0.76em; color: var(--gray, #64748b); font-family: ui-monospace, monospace;
+  background: #f1f5f9; border-radius: 5px; padding: 1px 7px; margin-right: 5px;
+}
+
+/* Overview: result figure (study-ui) */
+.study-overview .ctr-figure {
+  margin: 16px 0 4px; padding: 14px; background: #fff;
+  border: 1px solid var(--line, #e5e7eb); border-radius: 12px; max-width: 720px;
+}
+.study-overview .ctr-figure svg { display: block; width: 100%; height: auto; }
+:root[data-theme="dark"] .study-overview .ctr-figure,
+.theme-dark .study-overview .ctr-figure { background: #0f1720; border-color: #2b3a4f; }
+
+/* Investigation intro — full what_is_this as prose (study-ui) */
+.inv-brief-intro { margin: 14px 0 6px; max-width: 80ch; }
+.inv-brief-intro p { margin: 0 0 0.92em; line-height: 1.66; color: var(--ink-2, #334155); }
+.inv-brief-intro p:last-child { margin-bottom: 0; }
+.inv-brief-meta { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.inv-brief-meta .inv-brief-meta-item { font-size: 0.9em; color: var(--gray, #64748b); }

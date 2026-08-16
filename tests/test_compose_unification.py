@@ -78,11 +78,9 @@ def test_analyses_section_present_and_reachable_on_the_study_page():
     # study setup ("what to compute"), not an export artifact — near
     # Conditions, so it now lives in #panel-compose. Task E4 later deleted
     # the Exports/data tab entirely (#panel-data no longer exists).
-    p = _panel_compose()
-    assert 'id="study-analyses-list"' in p
-    assert 'onclick="_saveStudyAnalyses()"' in p
-    assert 'id="study-analyses-status"' in p
-    assert '{# Analyses' in HTML
+    # The Analyses authoring box was removed from the Model tab (study-ui redesign).
+    assert 'id="study-analyses-list"' not in HTML
+    assert '{# Analyses' not in HTML
 
 
 def test_save_study_analyses_posts_to_the_working_endpoint():
