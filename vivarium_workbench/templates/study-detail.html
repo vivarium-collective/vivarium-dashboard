@@ -460,192 +460,58 @@
     </div>
     {% endmacro %}
 
-    {# ─── Question & approach — the framing comes first ───────────────── #}
-    {% set _has_purpose = study.purpose and (study.purpose.question or study.purpose.expected_outcome or study.purpose.mechanism) %}
-    <h2 class="overview-label">Question &amp; approach</h2>
-    {% if _has_purpose %}
-    <div class="overview-section">
-      {% if study.purpose.question %}
-      <div class="purpose-callout" style="background:#eff6ff;border-left:4px solid #3b82f6">
-        <strong>Question.</strong> {{ study.purpose.question }}
-      </div>
-      {% endif %}
-      {% if study.purpose.expected_outcome %}
-      <div class="purpose-callout" style="background:#f0fdf4;border-left:4px solid #10b981">
-        <strong>Hypothesis / Expected outcome.</strong> {{ study.purpose.expected_outcome }}
-      </div>
-      {% endif %}
-      {% if study.purpose.mechanism %}
-      <div class="purpose-callout" style="background:#fefce8;border-left:4px solid #facc15">
-        <strong>Mechanism / Model change.</strong> {{ study.purpose.mechanism }}
-      </div>
+    {# ─── Claim → Test → Result: the three-step spine of every study. ───── #}
+    {% set _bl = study.baseline or [] %}
+    {% set _bt = study.behavior_tests or study.expected_behavior or [] %}
+
+    <div class="ctr-block">
+      <h2 class="overview-label ctr-h">Claim</h2>
+      <p class="ctr-text">{{ study.claim or study.question or '' }}</p>
+      {% if study.biological_summary %}
+      <div class="ctr-context">{{ study.biological_summary }}</div>
       {% endif %}
     </div>
-    {% else %}
-    {# Legacy narrative fields — each id rendered exactly once; empty ones show
-       their placeholder (contenteditable) so they double as "+ Add" affordances. #}
-    <div class="overview-section">
-      <div id="question-text" class="overview-prose" data-editable="true" data-field="question"
-           data-placeholder="+ Add the research question this study asks">{{ study.question or '' }}</div>
-      <div id="hypothesis-text" class="overview-prose" data-editable="true" data-field="hypothesis"
-           data-placeholder="(predicted outcome)">{{ study.hypothesis or '' }}</div>
-      <div id="objective-text" class="overview-prose" data-editable="true" data-field="objective">{{ study.objective or '' }}</div>
-    </div>
-    {% endif %}
 
-    {% if study.biological_summary %}
-    <div class="overview-section">
-      <div class="purpose-callout" style="background:#f8fafc;border-left:4px solid #94a3b8">
-        <strong>Summary.</strong> {{ study.biological_summary }}
+    <div class="ctr-block">
+      <h2 class="overview-label ctr-h">Test</h2>
+      <p class="ctr-text">{{ study.experiment or study.objective or '' }}</p>
+      {% if _bl or _bt %}
+      <div class="ctr-meta">
+        {% if _bl %}<div class="ctr-meta-row"><span class="ctr-meta-k">Model</span> {% for b in _bl %}<code>{{ b.name or b.composite }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+        {% if _bt %}<div class="ctr-meta-row"><span class="ctr-meta-k">Measures</span> {% for tt in _bt %}<span class="ctr-meta-item">{{ (tt.description if (tt is mapping and tt.description) else (tt.name if tt is mapping else tt)) }}</span>{% if not loop.last %}<span class="ctr-dot">·</span>{% endif %}{% endfor %}</div>{% endif %}
       </div>
+      {% endif %}
     </div>
-    {% endif %}
 
-    {# ─── Group 3: Findings & open debts ─────────────────────────────── #}
-    {# C2: a compact LEDGER — one row per finding (glyph · claim · evidence
-       chip), each opening a native <details> drawer for the fuller detail.
-       Nothing from the old always-expanded card was dropped, only
-       relocated into the drawer — see task-C2-brief.md's "preserve every
-       existing detail" list. Dict-shaped assertion values (evidence.observed,
-       the cited test's pass_if/expect band) are routed through
-       humanize_assertion so a dict never renders as a Python repr. #}
-    {% if study.findings %}
-    <div class="overview-section findings-section">
-      <h2 class="overview-label">🔬 Findings — what this study taught us</h2>
-      {% for f in study.findings %}
-      {% set _status = f.status or 'novel' %}
-      {% set _glyph = {'confirms': '✓', 'partial': '◐', 'contradicts': '✗', 'novel': '◆'}.get(_status, '◆') %}
-      {% set _ftok = (f.evidence.from_test or '').split(' ')[0] if f.evidence else '' %}
-      {% set _rtok = (f.evidence.from_run or '').split(' ')[0] if f.evidence else '' %}
-      <div class="finding-card finding-kind-{{ f.kind or 'other' }} finding-status-{{ _status }}">
-        <details class="finding-details">
-          <summary class="finding-row">
-            <span class="finding-status-glyph">{{ _glyph }}</span>
-            <span class="finding-claim finding-statement">{{ f.statement }}</span>
-            {% if f.evidence and f.evidence.from_test %}
-            <span class="finding-chip">via <code>{{ f.evidence.from_test }}</code></span>
-            {% elif f.evidence and f.evidence.from_run %}
-            <span class="finding-chip">in run <code>{{ f.evidence.from_run }}</code></span>
-            {% endif %}
-          </summary>
-          <div class="finding-drawer">
-            <div class="finding-header">
-              <span class="finding-id">{{ f.id or '' }}</span>
-              <span class="finding-kind">{{ f.kind or 'other' }}</span>
-              <span class="finding-status-text">{{ _status }} literature</span>
-            </div>
-            {% if f.evidence %}
-            {# Spine B1: the cited test/run are CLICKABLE (anchor to its #test-/#run-
-               card), the headline computed number divergence_factor is surfaced,
-               provenance.run_ids are linked, and the cited test's pass_if band is
-               inlined so "passing" is legible without hunting. #}
-            <div class="finding-evidence">
-              {% if f.evidence.observed is defined %}<strong>observed:</strong> {{ f.evidence.observed | humanize_assertion }}{% if f.evidence.units %} {{ f.evidence.units }}{% endif %} · {% endif %}
-              {# C1: from_test cites a #bt-<id> row that lives in the (currently
-                 hidden) Tests panel — _gotoStudyTab switches to it via the
-                 existing _setStudyTab path, then scrolls, instead of a plain
-                 href="#anchor" that silently fails on a display:none panel. #}
-              {% if f.evidence.from_test %}via test <a href="#bt-{{ _ftok }}" onclick="_gotoStudyTab('tests','bt-{{ _ftok }}');return false;"><code>{{ f.evidence.from_test }}</code></a> · {% endif %}
-              {% if f.evidence.from_run %}in run <a href="#run-{{ _rtok }}"><code>{{ f.evidence.from_run }}</code></a>{% endif %}
-              {% if f.evidence.window %} ({{ f.evidence.window }}){% endif %}
-              {% if f.evidence.smoking_gun %}<details style="display:inline-block;margin-left:4px"><summary>smoking gun</summary><pre style="white-space:pre-wrap;margin:4px 0 0 0;padding:6px 8px;background:#fff;border-radius:3px;font-size:0.85em;font-family:inherit">{{ f.evidence.smoking_gun }}</pre></details>{% endif %}
-            </div>
-            {% set _runids = (f.provenance or {}).run_ids %}
-            {% if f.evidence.divergence_factor is defined or _runids %}
-            <div class="finding-traceability" style="font-size:0.84em;color:#475569;padding:4px 10px;margin:4px 0">
-              {% if f.evidence.divergence_factor is defined %}<span class="finding-divergence" style="font-weight:600">×{{ f.evidence.divergence_factor }} vs expected</span>{% endif %}
-              {% if f.evidence.divergence_factor is defined and _runids %} · {% endif %}
-              {% if _runids %}runs: {% for rid in _runids %}<a href="#run-{{ rid }}"><code>{{ rid }}</code></a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-            </div>
-            {% endif %}
-            {% set _citedtest = (study.behavior_tests or study.expected_behavior or [])|selectattr('name','equalto', _ftok)|first %}
-            {% if _citedtest and (_citedtest.pass_if or _citedtest.expect) %}
-            <div class="pass_if-band muted small" style="font-size:0.82em;padding:2px 10px">judged against <code>pass_if: {{ (_citedtest.pass_if or _citedtest.expect) | humanize_assertion }}</code></div>
-            {% endif %}
-            {% endif %}
-            {% if f.expected %}
-            <div class="finding-expected">
-              {% if f.expected.range %}<strong>expected:</strong> {{ f.expected.range }} · {% endif %}
-              {% if f.expected.threshold is defined %}<strong>threshold:</strong> {{ f.expected.threshold | humanize_assertion }} · {% endif %}
-              {% if f.expected.cites %}cites: {% for c in f.expected.cites %}<code>{{ c }}</code>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}
-            </div>
-            {% if f.expected.summary %}<div class="finding-exp-summary"><em>Reference says:</em> {{ f.expected.summary }}</div>{% endif %}
-            {% endif %}
-            {% if f.explanation %}<div class="finding-explanation"><em>Why:</em> {{ f.explanation }}</div>{% endif %}
-            {% if f.expert_reference %}
-            <details class="finding-expert">
-              <summary>Expert ref: <code>{{ f.expert_reference.doc }}</code>{% if f.expert_reference.section %} ({{ f.expert_reference.section }}){% endif %}</summary>
-              {% if f.expert_reference.quote %}<blockquote class="finding-expert-quote">{{ f.expert_reference.quote }}</blockquote>{% endif %}
-              {% if f.expert_reference.note %}<div class="finding-expert-note">{{ f.expert_reference.note }}</div>{% endif %}
-            </details>
-            {% endif %}
-            {% if f.next_action %}<div class="finding-next"><strong>→ Next:</strong> {{ f.next_action }}</div>{% endif %}
-          </div>
-        </details>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    {# W15 — Open epistemic debts. Server-computed by the deterministic
-       pbg_superpowers.needs_attention.open_epistemic_debts collector (derived
-       from rigor + freshness signals so it can't drift). Rendered read-only;
-       absent when the collector is unavailable or there are no debts. #}
-    {% if epistemic_debts %}
-    <div class="overview-section" id="epistemic-debts-panel">
-      <h2 class="overview-label">🧾 Open epistemic debts
-        <span class="narrative-card-hint">(what this study has not yet established)</span>
-      </h2>
-      <div style="border:1px solid #e2e8f0;border-radius:6px;overflow:hidden">
-        {% for d in epistemic_debts %}
-        {% set _sev = (d.severity or 'low')|string %}
-        {% set _bg = '#fee2e2' if _sev == 'high' else ('#fef9c3' if _sev == 'medium' else '#f1f5f9') %}
-        {% set _fg = '#991b1b' if _sev == 'high' else ('#854d0e' if _sev == 'medium' else '#475569') %}
-        <div style="display:flex;gap:10px;align-items:flex-start;padding:8px 12px;border-top:1px solid #f1f5f9">
-          <span style="padding:1px 8px;border-radius:9999px;background:{{ _bg }};color:{{ _fg }};font-weight:600;font-size:0.72em;white-space:nowrap">{{ _sev }}</span>
-          <div>
-            <strong style="color:#1e293b">{{ d.kind }}</strong>
-            {% if d.ref %}<code style="font-size:0.82em">{{ d.ref }}</code>{% endif %}
-            <div style="color:#475569;font-size:0.9em;margin-top:1px">{{ d.note }}</div>
-          </div>
+    <div class="ctr-block">
+      <h2 class="overview-label ctr-h">Result</h2>
+      <p class="ctr-text">{{ study.result or _report.main_insight or (_f0.statement if _f0 else '') or '' }}</p>
+      {% if result_figure %}
+      <figure class="ctr-figure">{{ result_figure | safe }}</figure>
+      {% endif %}
+      {% if study.findings %}
+      <ul class="ctr-findings">
+        {% for f in study.findings %}{% set _st = f.status or 'confirms' %}<li class="ctr-find ctr-find-{{ _st }}">{{ f.statement }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% set _cv = study.conclusion_verdicts or {} %}
+      {% set _lim = study.limitations or [] %}
+      {% if study.confidence or _cv or _lim or study.falsifiability %}
+      <div class="ctr-meta ctr-assess">
+        {% if study.confidence or _cv %}
+        <div class="ctr-meta-row"><span class="ctr-meta-k">Confidence</span>
+          {% if study.confidence %}<span class="ctr-badge ctr-badge-{{ study.confidence|lower }}">{{ study.confidence }}</span>{% endif %}
+          {% if _cv.biological_validation and _cv.biological_validation.result %}<span class="ctr-vch">biology&nbsp;{{ _cv.biological_validation.result }}</span>{% endif %}
+          {% if _cv.explanatory_gain and _cv.explanatory_gain.result %}<span class="ctr-vch">insight&nbsp;{{ _cv.explanatory_gain.result }}</span>{% endif %}
         </div>
-        {% endfor %}
+        {% endif %}
+        {% if _lim or study.falsifiability %}
+        <div class="ctr-meta-row"><span class="ctr-meta-k">Caveat</span> <span class="ctr-meta-item">{{ _lim[0] if _lim else study.falsifiability }}</span></div>
+        {% endif %}
       </div>
-    </div>
-    {% endif %}
-
-    {# ─── Conclusion — headline insight, caveat, calibration (at the end) ─ #}
-    {% set _insight = _report.main_insight or (_f0.statement if _f0 else '') %}
-    <div class="overview-section conclusion-block">
-      <h2 class="overview-label">Conclusion</h2>
-      {% if _insight %}
-      <p class="conclusion-insight">{{ _insight }}<span class="computed-tag">computed from findings</span></p>
       {% endif %}
-      {{ edit_field('Conclusion', 'report.conclusion', _report.conclusion, 3, 'What the runs + tests demonstrated.') }}
-      {{ edit_field('Caveat', 'report.caveat', _report.caveat, 2, 'The headline limitation a reviewer needs to know.') }}
-      <div class="conclusion-tags">
-        <label class="tag-control"><span class="tag-k">confidence</span>
-          <select class="narrative-input tag-select" data-narrative-path="report.confidence">
-            <option value="">—</option>
-            <option value="high" {% if _report.confidence == 'high' %}selected{% endif %}>high</option>
-            <option value="medium" {% if _report.confidence == 'medium' %}selected{% endif %}>medium</option>
-            <option value="low" {% if _report.confidence == 'low' %}selected{% endif %}>low</option>
-          </select></label>
-        <label class="tag-control"><span class="tag-k">evidence</span>
-          <input type="text" class="narrative-input tag-input" data-narrative-path="report.evidence_quality"
-                 value="{{ _report.evidence_quality or '' }}" placeholder="calibrated | literature-matched | …"></label>
-      </div>
     </div>
 
-    {# ─── C5: the old Overview "Plan & provenance" grab-bag was DISSOLVED here.
-       Its five sub-blocks were relocated to the act each belongs to:
-       pipeline_gate / key_assumptions / limitations → Decide (conclusions)
-       panel as supporting context; expert_decisions_needed → Decide under an
-       "Open debts" heading; literature_anchors → Tests panel. Overview now
-       ends at the Conclusion block above + the feedback panel below. #}
-
-    {# Stage-3c: feedback panel — populated by JS from window._study.feedback_tracked.
-       Rendered nothing when there is no feedback (JS checks items.length). #}
     <div id="feedback-tracked-panel"></div>
 
   </div>
@@ -983,20 +849,6 @@
   <p class="empty-message">Nothing to compose yet.</p>
   {% endif %}
 
-  {# Analyses — post-run analysis modules this study's dispatch should compute.
-     Task E1: relocated here (near Conditions) from the Exports tab — it is
-     study setup ("what to compute"), not an export artifact. Rendered
-     unconditionally (outside the _has_build guard) so a brand-new blank
-     study can still have its analyses configured. Reuses the existing
-     /api/study-set-analyses endpoint + _saveStudyAnalyses() handler
-     unchanged. #}
-  <div class="overview-section" id="analyses-section" style="margin-top:22px">
-    <h3 class="section-title">Analyses <span class="muted" style="font-size:0.85em;font-weight:normal">— post-run analysis modules to compute on dispatch</span></h3>
-    <textarea id="study-analyses-list" rows="3" style="width:100%;font-family:monospace;font-size:0.88em" placeholder="doubling_time_distribution">{% if study.analyses %}{% for a in study.analyses %}{{ a.name if a is mapping else a }}
-{% endfor %}{% endif %}</textarea>
-    <button type="button" class="action-btn" style="margin-top:6px" onclick="_saveStudyAnalyses()">Save analyses</button>
-    <div id="study-analyses-status" class="muted" style="font-size:0.85em;margin-top:4px"></div>
-  </div>
 
 </section>
 

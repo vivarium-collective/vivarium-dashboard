@@ -1,71 +1,47 @@
+"""The study Overview tab is a Claim → Test → Result spine (study-ui redesign).
+
+Replaces the old Question&approach / Findings / Conclusion / epistemic-debts
+layout. Asserts the three sections are present, the noisy blocks are gone, and
+the feedback panel + tab wrapper survive.
+"""
 from pathlib import Path
 
-TPL = Path("vivarium_workbench/templates/study-detail.html").read_text(encoding="utf-8")
+TEMPLATE = (Path(__file__).parent.parent / "vivarium_workbench" / "templates" / "study-detail.html").read_text()
 
 
-def test_group_headers_present():
-    # Redesign: narrative order Question & approach -> Findings -> Debts ->
-    # Conclusion. The old "Summary" card was removed (verdict is shown once, in
-    # the header pill + spine-at-a-glance), and a Conclusion block closes it out.
-    assert "Question &amp; approach" in TPL or "Question & approach" in TPL
-    assert "Findings" in TPL
-    assert ">Conclusion</h2>" in TPL
+def _overview():
+    start = TEMPLATE.index('id="panel-overview"')
+    end = TEMPLATE.index('id="panel-compose"')
+    return TEMPLATE[start:end]
 
 
-def test_plan_and_provenance_group_dissolved_from_overview():
-    # C5: the Overview "Plan & provenance" grab-bag was dissolved — its
-    # sub-blocks moved to the acts they belong to (Decide / Tests). The
-    # heading markup no longer exists (a matching comment may still mention
-    # the name, so assert on the exact heading tag, not the phrase).
-    assert '<h2 class="overview-label">Plan &amp; provenance</h2>' not in TPL
+def test_overview_is_claim_test_result():
+    ov = _overview()
+    assert '>Claim</h2>' in ov
+    assert '>Test</h2>' in ov
+    assert '>Result</h2>' in ov
+    # driven by the study's direct fields
+    assert 'study.claim' in ov
+    assert 'study.experiment' in ov
+    assert 'study.result' in ov
 
 
-def test_study_card_cut():
-    assert 'data-narrative-path="study_card.' not in TPL
+def test_overview_drops_the_old_noise():
+    ov = _overview()
+    assert 'Question &amp; approach' not in ov
+    assert 'Open epistemic debts' not in ov
+    assert 'id="question-text"' not in ov
+    assert 'id="hypothesis-text"' not in ov
+    assert 'id="objective-text"' not in ov
+    assert '<strong>Summary.</strong>' not in ov
 
 
-def test_status_select_retired():
-    # The legacy single-axis status <select> was retired; the header status pill
-    # (derived from the multi-axis fields) is canonical.
-    assert TPL.count('id="status-select"') == 0
+def test_feedback_panel_and_wrapper_survive():
+    ov = _overview()
+    assert 'id="feedback-tracked-panel"' in ov
+    assert 'class="study-overview"' in ov
 
 
-def test_question_text_exactly_once():
-    assert TPL.count('id="question-text"') == 1
-
-
-def test_hypothesis_text_exactly_once():
-    assert TPL.count('id="hypothesis-text"') == 1
-
-
-def test_objective_text_exactly_once():
-    assert TPL.count('id="objective-text"') == 1
-
-
-def test_epistemic_debts_panel_present():
-    assert 'id="epistemic-debts-panel"' in TPL
-
-
-def test_feedback_tracked_panel_present():
-    assert 'id="feedback-tracked-panel"' in TPL
-
-
-def test_report_conclusion_present():
-    # The conclusion field is wired through the progressive-disclosure edit_field
-    # macro (data-narrative-path="{{ path }}"), so assert the path is referenced.
-    assert "report.conclusion" in TPL
-
-
-def test_biological_summary_present():
-    # The editable data-narrative-path="biological_summary" field was replaced
-    # by a read-only "Summary." purpose-callout card (editability intentionally
-    # dropped per spec); pin that study.biological_summary still renders there.
-    assert '<strong>Summary.</strong> {{ study.biological_summary }}' in TPL
-
-
-def test_set_study_tab_tests_present():
-    assert "_setStudyTab('tests')" in TPL
-
-
-def test_set_study_tab_conclusions_present():
-    assert "_setStudyTab('conclusions')" in TPL
+def test_analyses_box_removed_from_model_tab():
+    assert 'id="analyses-section"' not in TEMPLATE
+    assert 'Save analyses' not in TEMPLATE

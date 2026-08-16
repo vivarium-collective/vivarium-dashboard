@@ -166,9 +166,9 @@ def test_overview_panel_has_objective_editable(_ws):
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert 'id="objective-text"' in html
-    assert 'data-editable="true"' in html
-    # conclusion-text is no longer in the Overview; it now lives in the Conclusions tab
+    # Overview is now a Claim -> Test -> Result spine (objective/conclusion editors removed).
+    assert 'id="objective-text"' not in html
+    assert '>Claim</h2>' in html and '>Test</h2>' in html and '>Result</h2>' in html
     assert 'id="conclusion-text"' not in html
     assert 'id="panel-conclusions"' in html
 
@@ -612,5 +612,7 @@ def test_study_detail_renders_epistemic_debts_panel(_ws):
     from vivarium_workbench.lib.study_spec import load_study_detail_spec as _study_detail_spec
     spec = _study_detail_spec(_ws, "study-monod_kinetics-096184")
     html = _render_study_detail_html(_ws, "study-monod_kinetics-096184", spec)
-    assert "Open epistemic debts" in html
-    assert 'id="epistemic-debts-panel"' in html
+    # Epistemic debts moved off the Overview; the readiness signal now lives in the
+    # header readiness panel (populated client-side).
+    assert 'id="readiness-panel"' in html
+    assert 'id="epistemic-debts-panel"' not in html
