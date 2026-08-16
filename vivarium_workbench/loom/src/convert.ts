@@ -390,7 +390,17 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
       return;
     }
 
-    if ('_type' in node) {
+    // A place-graph subtree — a `tree[node]` / `node` / `map[node]` store, or any
+    // node carrying a Milner `_control` tag (or whose children do) — is NOT a
+    // leaf: recurse into its child nodes so its (possibly runtime-changing)
+    // topology renders. Falls through to the container logic below.
+    const _tt = String((node as { _type?: unknown })._type ?? '');
+    const isNodeTree = _tt.startsWith('tree[node') || _tt === 'node' || _tt.startsWith('map[node')
+      || '_control' in node
+      || Object.entries(node).some(([k, v]) => !k.startsWith('_')
+           && v && typeof v === 'object' && '_control' in (v as object));
+
+    if ('_type' in node && !isNodeTree) {
       // Typed store leaf (bigraph-schema typed value). For a typed array/map,
       // fold the element type (`_data`) into the label — `array[concentration]`
       // reads more precisely than a bare `array`.
