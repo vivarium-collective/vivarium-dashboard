@@ -364,6 +364,52 @@ def test_submit_analysis_options_none_when_spec_has_no_analyses(monkeypatch, tmp
     assert client.ran["analysis_options"] is None
 
 
+def test_submit_surfaces_analysis_errors_in_response(monkeypatch, tmp_path):
+    """A study whose spec.analyses includes an unresolvable name must still
+    dispatch (the errors are informational, not blocking) but the response
+    must surface which names failed, instead of silently dropping them from
+    analysis_options with no trace anywhere (backlog item 39 continued)."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        rrv, "load_spec",
+        lambda p: {"baseline": [{"composite": "my-comp"}],
+                   "analyses": [{"name": "ecocyc_table"}, {"name": "totally_unknown"}]},
+    )
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries, ws_root: (
+            {"multiseed": {"ecocyc_table": {}}},
+            [{"analysis": "totally_unknown", "error": "unknown analysis 'totally_unknown'"}],
+        ),
+    )
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 1, "num_seeds": 1})
+    assert status == 202
+    assert body["analysis_errors"] == [
+        {"analysis": "totally_unknown", "error": "unknown analysis 'totally_unknown'"}
+    ]
+    # the dispatch itself still proceeded with whatever DID resolve
+    assert client.ran["analysis_options"] == {"multiseed": {"ecocyc_table": {}}}
+
+
+def test_submit_omits_analysis_errors_key_when_none(monkeypatch, tmp_path):
+    """No analysis errors -> no analysis_errors key at all, not an empty
+    list, matching every other optional-field convention in this module."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.study_run_post.build_analysis_options",
+        lambda entries, ws_root: ({}, []),
+    )
+    client = _FakeThinClient()
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: client)
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 1, "num_seeds": 1})
+    assert status == 202
+    assert "analysis_errors" not in body
+
+
 def test_land_downloads_and_lands(monkeypatch, tmp_path):
     captured = _wire_thin(monkeypatch, tmp_path)
     monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)

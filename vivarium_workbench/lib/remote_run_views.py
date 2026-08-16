@@ -376,7 +376,14 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
         # so the caller gets the actual upstream error message instead of a
         # generic crash, on this path too.
         return {"error": str(e), "reachable": False}, 502
-    return {"simulation_id": sim["database_id"], "phase": "running"}, 202
+    response = {"simulation_id": sim["database_id"], "phase": "running"}
+    if analysis_errors:
+        # backlog item 39: surface which requested analyses couldn't be
+        # resolved (e.g. a stale workspace PVC missing a newer v2ecoli
+        # analysis) instead of silently dropping them from analysis_options
+        # -- the dispatch itself still proceeds, this is informational.
+        response["analysis_errors"] = analysis_errors
+    return response, 202
 
 
 def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:

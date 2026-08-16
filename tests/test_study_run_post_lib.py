@@ -261,6 +261,70 @@ def test_build_analysis_options_real_import_chain_registers_plural_package(tmp_p
     assert payload["opts"]["multiseed"]["cd1_fake"] == {}
 
 
+def _evict_v2ecoli_modules() -> None:
+    for name in [m for m in list(sys.modules) if m == "v2ecoli" or m.startswith("v2ecoli.")]:
+        del sys.modules[name]
+
+
+def test_image_analysis_registry_resolves_against_boot_path(tmp_path, monkeypatch):
+    """_image_analysis_registry must import v2ecoli from _BOOT_SYS_PATH (the
+    image's own baked-in install), not whatever a workspace has since
+    prepended to sys.path (backlog item 39 continued -- the PVC-staleness
+    fallback)."""
+    _write_real_v2ecoli_fixture(tmp_path)
+    monkeypatch.setattr(srp, "_BOOT_SYS_PATH", [str(tmp_path), *sys.path])
+    _evict_v2ecoli_modules()
+    try:
+        registry = srp._image_analysis_registry()
+        assert "cd1_fake" in registry
+    finally:
+        _evict_v2ecoli_modules()
+
+
+def test_build_analysis_options_falls_back_to_image_registry_when_workspace_stale(
+    tmp_path, monkeypatch
+):
+    """A name missing from the (possibly stale, PVC-seeded) workspace
+    registry must still resolve against the image's own boot-time registry
+    instead of being recorded as an error (backlog item 39 continued)."""
+    _inject_analysis_registry({"ptools_rna": "single"})  # the "stale workspace" registry
+    image_root = tmp_path / "image_root"
+    image_root.mkdir()
+    _write_real_v2ecoli_fixture(image_root)
+    monkeypatch.setattr(srp, "_BOOT_SYS_PATH", [str(image_root), *sys.path])
+    ws_root = tmp_path / "workspace"
+    ws_root.mkdir()
+    try:
+        opts, errors = srp.build_analysis_options(
+            [{"name": "ptools_rna"}, {"name": "cd1_fake"}], ws_root
+        )
+        assert errors == [], f"expected both names to resolve: {errors}"
+        assert opts["single"]["ptools_rna"] == {}
+        assert opts["multiseed"]["cd1_fake"] == {}
+    finally:
+        _evict_v2ecoli_modules()
+
+
+def test_build_analysis_options_still_errors_when_truly_unknown_everywhere(
+    tmp_path, monkeypatch
+):
+    """A name absent from BOTH the workspace and the image registry is a
+    real error, not silently swallowed by the fallback."""
+    _inject_analysis_registry({"ptools_rna": "single"})
+    image_root = tmp_path / "image_root"
+    image_root.mkdir()
+    _write_real_v2ecoli_fixture(image_root)
+    monkeypatch.setattr(srp, "_BOOT_SYS_PATH", [str(image_root), *sys.path])
+    ws_root = tmp_path / "workspace"
+    ws_root.mkdir()
+    try:
+        opts, errors = srp.build_analysis_options([{"name": "totally_unknown"}], ws_root)
+        assert len(errors) == 1
+        assert errors[0]["analysis"] == "totally_unknown"
+    finally:
+        _evict_v2ecoli_modules()
+
+
 # ---------------------------------------------------------------------------
 # run_post_run_scripts
 # ---------------------------------------------------------------------------

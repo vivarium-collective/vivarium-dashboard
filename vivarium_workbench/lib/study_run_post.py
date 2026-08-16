@@ -30,9 +30,17 @@ from __future__ import annotations
 
 import sqlite3
 import sys
+import threading
 from pathlib import Path
 
 import yaml
+
+_BOOT_SYS_PATH = list(sys.path)
+"""``sys.path`` captured at module import time, before any request has had a
+chance to call ``_ws_add_to_sys_path`` and inject a workspace onto it. Used by
+``build_analysis_options``'s image-registry fallback (backlog item 39)."""
+
+_analysis_registry_lock = threading.Lock()
 
 
 def latest_run_timestamp(runs_db: Path) -> float | None:
@@ -159,6 +167,47 @@ def _ws_add_to_sys_path(ws_root: Path) -> None:
         sys.path.insert(0, ws)
 
 
+def _evict_v2ecoli_modules() -> None:
+    for name in [m for m in sys.modules if m == "v2ecoli" or m.startswith("v2ecoli.")]:
+        del sys.modules[name]
+
+
+def _image_analysis_registry() -> dict:
+    """Resolve ``ANALYSIS_REGISTRY`` against ``sys.path`` as it was at process
+    boot -- i.e. the image's own baked-in v2ecoli, never shadowed by a
+    workspace PVC.
+
+    ``ws_root`` (see ``_ws_add_to_sys_path``) is a PersistentVolumeClaim
+    seeded ONCE, on a pod's first boot, and never refreshed after that --
+    confirmed live 2026-08-13 on the real smscdk deployment: its checked-out
+    v2ecoli hadn't moved since a June 12 commit, silently missing every
+    analysis added to v2ecoli after that date (the whole ``cd1_*`` suite),
+    while workspace-preference (``_ws_add_to_sys_path``) is a real,
+    legitimate feature for a workspace a user IS actively live-editing. A
+    workspace nobody is editing just goes stale forever, and a stale one
+    should never permanently hide an analysis the image genuinely has --
+    this is the fallback used for exactly that case (backlog item 39).
+    """
+    with _analysis_registry_lock:
+        saved_path = list(sys.path)
+        saved_modules = {
+            name: mod for name, mod in sys.modules.items()
+            if name == "v2ecoli" or name.startswith("v2ecoli.")
+        }
+        try:
+            sys.path[:] = _BOOT_SYS_PATH
+            _evict_v2ecoli_modules()
+            import v2ecoli.workflow.analyses  # type: ignore[import]  # noqa: F401
+            from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY as image_registry  # type: ignore[import]
+            return dict(image_registry)
+        except ImportError:
+            return {}
+        finally:
+            sys.path[:] = saved_path
+            _evict_v2ecoli_modules()
+            sys.modules.update(saved_modules)
+
+
 def build_analysis_options(entries: list[dict], ws_root: Path) -> tuple[dict, list[dict]]:
     """Translate ``spec.analyses`` entries into v2ecoli ``analysis_options``.
 
@@ -188,6 +237,11 @@ def build_analysis_options(entries: list[dict], ws_root: Path) -> tuple[dict, li
     freshly-built ``v2ecoli`` install still only exposed 6 of 45 real
     entries).
 
+    Any name still unresolved after that falls back to
+    ``_image_analysis_registry()`` — ``ws_root`` is a PVC seeded once at pod
+    first-boot and never refreshed, so it silently drifts behind the image
+    forever; see that function's docstring.
+
     Returns ``(analysis_options, errors)`` where ``errors`` lists dicts for
     unknown analysis names.
     """
@@ -200,11 +254,16 @@ def build_analysis_options(entries: list[dict], ws_root: Path) -> tuple[dict, li
 
     analysis_options: dict[str, dict] = {}
     errors: list[dict] = []
+    image_registry: dict | None = None
     for entry in entries:
         name = entry.get("name")
         if not name:
             continue
         step_cls = ANALYSIS_REGISTRY.get(name)
+        if step_cls is None:
+            if image_registry is None:
+                image_registry = _image_analysis_registry()
+            step_cls = image_registry.get(name)
         if step_cls is None:
             errors.append({"analysis": name, "error": f"unknown analysis {name!r} (not in ANALYSIS_REGISTRY)"})
             continue

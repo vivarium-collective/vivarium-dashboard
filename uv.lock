@@ -7463,7 +7463,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/3e/87/794e0b4c5dccbca30
 
 [[package]]
 name = "vivarium-workbench"
-version = "0.3.44"
+version = "0.3.45"
 source = { editable = "." }
 dependencies = [
     { name = "bigraph-schema" },
