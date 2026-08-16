@@ -102,7 +102,10 @@ def _build_outcome_entry(raw: Mapping | str | None, existing: Mapping | None):
     entry["result"] = _normalize_result(raw)
 
     raw_map: Mapping = raw if isinstance(raw, Mapping) else {}
-    for key in ("measured_value", "detail", "operator", "evaluated_by"):
+    # ``axis`` is the report_card_verdict/v2 axis study_evaluator now attaches
+    # to a code outcome (signed margin + severity); carry it through so the
+    # margin survives into runs[].outcomes for the report-card render.
+    for key in ("measured_value", "detail", "operator", "evaluated_by", "axis"):
         if raw_map.get(key) is not None:
             entry[key] = raw_map[key]
 
