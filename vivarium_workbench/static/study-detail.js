@@ -97,10 +97,12 @@
     if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownloadPointer(); }
     if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
     if (kind === 'compose') { _loadModelConfig(); }
-    // Task E2: the study-artifacts strip (analysis-files zip + raw-data
-    // bulk) moved from the Exports (data) tab onto Simulations, so its
-    // loaders now trigger here instead.
-    if (kind === 'simulate') { _loadStudySims(); _loadAnalysisOutputs(); _loadRawData(); }
+    // Study-spine reorg (spec §1, §3.2/3.3/3.4): Simulations keeps only the
+    // runs table now; the analysis-files zip + raw-data bulk that used to
+    // trigger here moved onto their own Evidence panels (Analyses/Results).
+    if (kind === 'simulate') { _loadStudySims(); }
+    if (kind === 'analyses') { _loadAnalyses(); }
+    if (kind === 'results') { _loadResults(); }
     // Textareas measured 0 while their tab was hidden; re-fit the now-visible
     // panel's auto-grow boxes so they show all content without a scrollbar.
     if (window._autoGrowTextareas) window._autoGrowTextareas();
@@ -149,16 +151,17 @@
       });
   }
 
-  // ── Readouts tab: pointer to the raw-data downloads that live under Simulations ──
-  // Simulations (data-kind="simulate") is the single "get the data" tab — it
-  // folds in every run's raw emitter store (see _loadRawData below) plus the
-  // analysis result files (Task E2 moved both off the old Exports tab).
-  // Readouts used to render its OWN full download widget here (every run's
-  // raw store, one ⬇ each), duplicating those same links. Task C4 replaced
-  // that widget with one pointer that jumps to the raw-data group via C1's
-  // _gotoStudyTab (E2 repointed it from the 'data' tab to 'simulate'). Uses
-  // the SAME /api/simulations fetch + (store_path || db_path) filter
-  // _loadRawData uses, so the pointer only shows up when there's actually
+  // ── Readouts tab: pointer to the raw-data downloads that live under Results ──
+  // Results (data-kind="results") is the "get the raw data" tab — it holds
+  // every run's raw emitter store (see _loadResults below). Analysis result
+  // files live on the separate Analyses tab (study-spine reorg, spec
+  // §1/§3.3/§3.4). Readouts used to render its OWN full download widget
+  // here (every run's raw store, one ⬇ each), duplicating those same links.
+  // Task C4 replaced that widget with one pointer that jumps to the
+  // raw-data group via C1's _gotoStudyTab (E2 repointed it from the 'data'
+  // tab to 'simulate'; the spine reorg repoints it again, to 'results').
+  // Uses the SAME /api/simulations fetch + (store_path || db_path) filter
+  // _loadResults uses, so the pointer only shows up when there's actually
   // something to show — never pointing at an empty tab.
   var _readoutsDownloadPointerLoaded = false;
   function _loadReadoutsDownloadPointer(force) {
@@ -175,14 +178,14 @@
         var withData = sims.filter(function (s) { return s.run_id && (s.store_path || s.db_path); });
         host.innerHTML = withData.length
           ? '<p class="muted">⬇ Download this study\'s raw run data → '
-            + '<a href="#" onclick="_gotoStudyTab(\'simulate\',\'exports-downloads\');return false;">Simulations</a></p>'
+            + '<a href="#" onclick="_gotoStudyTab(\'results\',\'exports-downloads\');return false;">Results</a></p>'
           : '';
       })
       .catch(function () { host.innerHTML = ''; });
   }
   window._loadReadoutsDownloadPointer = _loadReadoutsDownloadPointer;
 
-  // --- Data tab: downloadable Analysis result files (CSV/TSV) ---
+  // --- Analyses tab (Evidence): downloadable Analysis result files (CSV/TSV) ---
   var _analysisOutputsLoaded = false;
   function _fmtBytes(n) {
     if (!n && n !== 0) return '';
@@ -222,7 +225,7 @@
     });
     return html;
   }
-  function _loadAnalysisOutputs() {
+  function _loadAnalyses() {
     if (_analysisOutputsLoaded) return;
     _analysisOutputsLoaded = true;
     var host = document.getElementById('data-files');
@@ -245,6 +248,7 @@
         host.innerHTML = '<p class="empty-message">Result files unavailable.</p>';
       });
   }
+  window._loadAnalyses = _loadAnalyses;
 
   function _emitStatusBadge(status) {
     var e = escapeHtmlForTests;
@@ -631,10 +635,11 @@
       });
   }
 
-  // Exports tab: per-run raw emitter store downloads, folded in from the
-  // Simulations DB so Exports is the single "get the data" tab.
+  // Results tab (Evidence): per-run raw emitter store downloads. Slice 1
+  // (study-spine reorg, spec §3.3) is downloads-only — per-store preview
+  // (sparkline + first/last/min/max) is a later task.
   var _rawDataLoaded = false;
-  function _loadRawData(force) {
+  function _loadResults(force) {
     var mount = document.getElementById('raw-data-list');
     if (!mount) return;
     if (_rawDataLoaded && !force) return;
@@ -673,15 +678,16 @@
       if (bulkBtn) bulkBtn.style.display = 'none';
     });
   }
-  window._loadRawData = _loadRawData;
+  window._loadResults = _loadResults;
 
   // One-click "download all raw data": trigger every run's raw-emitter-store
   // download in sequence (browsers serialise multiple download navigations
   // from one user gesture). Restores the bulk convenience the old Readouts
-  // widget's _downloadAllRawData offered — scoped here to Exports' raw-run
-  // group (#raw-data-list a[download], the per-run links _loadRawData just
-  // rendered); the analysis-file zip (#data-download-all) is untouched, it
-  // already has its own single-click server-side zip download.
+  // widget's _downloadAllRawData offered — scoped here to Results' raw-run
+  // group (#raw-data-list a[download], the per-run links _loadResults just
+  // rendered); the analysis-file zip (#data-download-all, on the Analyses
+  // tab) is untouched, it already has its own single-click server-side zip
+  // download.
   function _downloadAllRawExports() {
     var mount = document.getElementById('raw-data-list');
     if (!mount) return;
@@ -1738,7 +1744,7 @@
   // ── G5: Quality check group (rigor scorecard) ───────────────────────────
   // GET /api/study-rigor?study=<slug> → viva_superpowers.rigor.study_rigor,
   // already computed in CI but never rendered on the page until now. Fetched
-  // client-side (same pattern as _loadReadouts / _loadAnalysisOutputs above)
+  // client-side (same pattern as _loadReadouts / _loadAnalyses above)
   // into #check-group-quality, the mount templates/study-detail.html adds to
   // the Tests panel right after the gate summary.
   //

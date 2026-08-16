@@ -782,7 +782,9 @@ def test_exports_tab_and_panel_removed(tmp_path, dashboard_client):
     assert resp.status_code == 200
     html = resp.text
 
-    # Functional bits still present — now under Simulations (Task E2).
+    # Functional bits still present — now under the Analyses/Results Evidence
+    # panels (study-spine reorg, spec §3.3/3.4; previously under
+    # Simulations, Task E2).
     assert 'id="data-files"' in html
     assert 'id="raw-data-list"' in html
     assert 'id="data-download-all"' in html
@@ -915,11 +917,12 @@ def test_overview_deleted_blocks_absent_core_content_kept(tmp_path, dashboard_cl
 
 def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
     """Real served-HTML assertion (not just static grep): the second tab
-    row (#study-subnav) must be entirely absent, all 7 `.study-pillar`
+    row (#study-subnav) must be entirely absent, all 9 `.study-pillar`
     buttons must be present and wired to call `_setStudyTab(<kind>)`
     directly, and the deleted pillar/member-indirection JS functions must
-    not appear anywhere in the served page or its JS asset. (Task E4 later
-    dropped the Exports/data pillar, so the count is 7, not 8.)
+    not appear anywhere in the served page or its JS asset. (Task E4 dropped
+    the Exports/data pillar; the study-spine reorg then added Results +
+    Analyses, spec §1/§3.3/§3.4, so the count is 9, not 7.)
     """
     ws = tmp_path / "ws"
     sd = ws / "studies" / "pillars-direct-study"
@@ -944,19 +947,20 @@ def test_pillars_drive_tabs_directly_no_subnav(tmp_path, dashboard_client):
     assert 'id="study-subnav"' not in html
     assert 'study-subnav' not in html
 
-    # All 7 pillar buttons present, each carrying data-kind and calling
+    # All 9 pillar buttons present, each carrying data-kind and calling
     # _setStudyTab(kind) directly (pillar name == kind, except
-    # "decide" -> "conclusions"). Exports/data pillar was deleted (Task E4).
+    # "decide" -> "conclusions"). Exports/data pillar was deleted (Task E4);
+    # Results + Analyses added by the study-spine reorg (spec §1/§3.3/§3.4).
     pillar_to_kind = {
-        "understand": "overview", "compose": "compose", "simulate": "simulate",
-        "readouts": "readouts", "visualize": "visualize", "tests": "tests",
-        "decide": "conclusions",
+        "understand": "overview", "compose": "compose", "readouts": "readouts",
+        "simulate": "simulate", "results": "results", "analyses": "analyses",
+        "visualize": "visualize", "tests": "tests", "decide": "conclusions",
     }
     for pillar, kind in pillar_to_kind.items():
         assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html, \
             f"pillar {pillar!r} not wired to _setStudyTab('{kind}')"
     import re
-    assert len(re.findall(r'<button class="study-pillar[^"]*"', html)) == 7
+    assert len(re.findall(r'<button class="study-pillar[^"]*"', html)) == 9
     assert 'data-kind="data"' not in html
 
     # No pillar/member indirection left anywhere (grep-proven, both served
@@ -1076,11 +1080,13 @@ def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
         clusters[m.group(1)] = seg
 
     # Task E4 deleted the sixth "record" cluster (Exports) — five narrative
-    # acts remain, each with a gate dot.
+    # acts remain, each with a gate dot. Study-spine reorg (spec §1): the
+    # `simulate` pillar moved Evidence -> Design (after readouts), and
+    # Evidence gained `results` + `analyses` ahead of `visualize`.
     expected = {
         "study": {"label": "The Study", "kinds": ["overview"]},
-        "design": {"label": "Design", "kinds": ["compose", "readouts"]},
-        "evidence": {"label": "Evidence", "kinds": ["simulate", "visualize"]},
+        "design": {"label": "Design", "kinds": ["compose", "readouts", "simulate"]},
+        "evidence": {"label": "Evidence", "kinds": ["results", "analyses", "visualize"]},
         "assurance": {"label": "Assurance", "kinds": ["tests"]},
         "decision": {"label": "Decision", "kinds": ["conclusions"]},
     }
@@ -1097,24 +1103,26 @@ def test_act_clusters_group_label_with_own_tabs(tmp_path, dashboard_client):
         assert re.search(r'<span class="act-gate-dot" data-gate="%s" data-gate-state="[a-z-]+">' % act, seg), \
             f"{act} cluster missing its act-gate-dot with data-gate-state"
 
-    # All 7 `.study-pillar` buttons are present in the nav (Exports/data
-    # pillar was deleted — Task E4).
-    all_kinds = ["overview", "compose", "readouts", "simulate", "visualize",
-                 "tests", "conclusions"]
+    # All 9 `.study-pillar` buttons are present in the nav (Exports/data
+    # pillar was deleted — Task E4; Results + Analyses added by the
+    # study-spine reorg).
+    all_kinds = ["overview", "compose", "readouts", "simulate", "results",
+                 "analyses", "visualize", "tests", "conclusions"]
     btns = re.findall(r'<button class="study-pillar[^"]*"[^>]*>', nav)
-    assert len(btns) == 7, f"expected 7 pillar buttons, got {len(btns)}"
+    assert len(btns) == 9, f"expected 9 pillar buttons, got {len(btns)}"
     for kind in all_kinds:
         assert f'data-kind="{kind}"' in nav and f"_setStudyTab('{kind}')" in nav
     assert 'data-kind="data"' not in nav
 
 
 def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
-    """Tab order is now Overview, Model, Readouts, Simulations,
-    Visualizations, Tests, Decide — Readouts moves so Design (Model+Readouts)
-    and Evidence (Simulations+Visualizations) each group contiguously per
-    act. Panel switching is unaffected (`_setStudyTab` selects by
-    `data-kind`, not position). Task E4 later dropped the trailing Exports
-    tab."""
+    """Tab order is now Overview, Model, Readouts, Simulations, Results,
+    Analyses, Visualizations, Tests, Decide — Readouts moves so Design
+    (Model+Readouts+Simulations) and Evidence (Results+Analyses+
+    Visualizations) each group contiguously per act. Panel switching is
+    unaffected (`_setStudyTab` selects by `data-kind`, not position). Task
+    E4 later dropped the trailing Exports tab; the study-spine reorg moved
+    Simulations into Design and added Results + Analyses to Evidence."""
     ws = tmp_path / "ws"
     sd = ws / "studies" / "readouts-order-study"
     sd.mkdir(parents=True)
@@ -1135,8 +1143,8 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     html = resp.text
 
     kinds_in_order = [
-        "overview", "compose", "readouts", "simulate", "visualize",
-        "tests", "conclusions",
+        "overview", "compose", "readouts", "simulate", "results",
+        "analyses", "visualize", "tests", "conclusions",
     ]
     positions = [html.index(f'data-kind="{k}"') for k in kinds_in_order]
     assert positions == sorted(positions), (
@@ -1144,9 +1152,12 @@ def test_readouts_repositioned_to_slot_three(tmp_path, dashboard_client):
     )
     # Readouts now precedes Simulations in the pillar row.
     assert html.index('data-kind="readouts"') < html.index('data-kind="simulate"')
+    # Simulations (Design) still precedes Results (Evidence).
+    assert html.index('data-kind="simulate"') < html.index('data-kind="results"')
 
-    # All 7 pillars still present and wired to _setStudyTab (Exports/data
-    # pillar was deleted — Task E4).
+    # All 9 pillars still present and wired to _setStudyTab (Exports/data
+    # pillar was deleted — Task E4; Results + Analyses added by the
+    # study-spine reorg).
     for kind in kinds_in_order:
         assert f'data-kind="{kind}"' in html and f"_setStudyTab('{kind}')" in html
     assert 'data-kind="data"' not in html
@@ -1698,3 +1709,58 @@ def test_reproducibility_check_group_mount_renders_in_tests_panel(tmp_path, dash
     repro_i = tests_panel.index('id="check-group-reproducibility"')
     gate_i = tests_panel.index('id="tests-gate-summary"')
     assert gate_i < quality_i < repro_i
+
+
+# ---------------------------------------------------------------------------
+# Study-spine reorg, Task 1 (spec §1, §3.2/3.3/3.4; plan Task 1): the
+# `simulate` pillar moves Evidence -> Design; Results + Analyses panels are
+# added to Evidence, ahead of Visualizations. See also
+# tests/test_study_artifacts_on_simulate.py for the loader/markup-relocation
+# assertions.
+# ---------------------------------------------------------------------------
+
+def _render_minimal(tmp_path, name="spine-study"):
+    from vivarium_workbench.lib.study_page import render_study_detail_html
+    return render_study_detail_html(tmp_path, name, {"name": name})
+
+
+def test_simulate_pillar_is_under_design_act(tmp_path):
+    html = _render_minimal(tmp_path)
+    i = html.index('data-act="design"')
+    j = html.index('data-act="evidence"', i)
+    design = html[i:j]
+    assert 'data-kind="simulate"' in design
+    k = html.index('data-act="assurance"', j)
+    evidence = html[j:k]
+    assert 'data-kind="simulate"' not in evidence
+
+
+def test_results_and_analyses_pillars_are_under_evidence_act(tmp_path):
+    html = _render_minimal(tmp_path)
+    i = html.index('data-act="evidence"')
+    j = html.index('data-act="assurance"', i)
+    evidence = html[i:j]
+    assert 'data-kind="results"' in evidence
+    assert 'data-kind="analyses"' in evidence
+    assert 'data-kind="visualize"' in evidence, "Visualizations pillar must still be present"
+
+
+def test_panel_results_and_panel_analyses_sections_exist(tmp_path):
+    html = _render_minimal(tmp_path)
+    assert 'class="study-tab-panel" data-kind="results" id="panel-results"' in html
+    assert 'class="study-tab-panel" data-kind="analyses" id="panel-analyses"' in html
+    assert 'id="panel-visualize"' in html, "Visualizations panel must still be present"
+
+
+def test_analyses_and_raw_data_markup_no_longer_inside_panel_simulate(tmp_path):
+    html = _render_minimal(tmp_path)
+    i = html.index('id="panel-simulate"')
+    nxt = html.find('class="study-tab-panel"', i + 10)
+    sim_panel = html[i: nxt if nxt != -1 else len(html)]
+    # Study artifacts strip (analysis result files + raw simulation data)
+    # relocated out; only the runs table + run-detail mount remain.
+    assert 'id="data-files"' not in sim_panel
+    assert 'id="raw-data-list"' not in sim_panel
+    assert 'id="study-artifacts-section"' not in sim_panel
+    assert 'id="study-sim-table"' in sim_panel
+    assert 'id="study-run-detail"' in sim_panel
