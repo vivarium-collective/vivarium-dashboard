@@ -10505,6 +10505,7 @@
     function inline(s) {
       s = _escInv(s);
       s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');   // *italic* (after **bold**)
       s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
       return s;
     }
@@ -10624,29 +10625,40 @@
       var m = t.match(/^.*?[.!](?=\s)/);
       return m ? m[0] : t;
     };
-    var primary  = whatIs || q;
-    var headline = primary ? headlineOf(primary) : (d.title || d.name || '');
-    var framing  = primary ? oneline(primary).slice(headlineOf(primary).length).trim() : '';
+    var _invInline = function(s) {
+      s = _escInv(s);
+      s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+      s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+      return s;
+    };
+    // Headline = the investigation title (falls back to the driving question);
+    // the full what_is_this renders below as markdown prose (the introduction).
+    var headline = (d.title && d.title !== d.name) ? d.title
+                   : (q ? headlineOf(q) : (d.name || ''));
 
     var H = [];
     H.push('<div class="inv-brief inv-vs-' + vsClass + '">');
 
-    // Headline — the driving question, kept to one line.
-    if (headline) H.push('<h2 class="inv-brief-q">' + _esc(headline) + '</h2>');
+    // Headline.
+    if (headline) H.push('<h2 class="inv-brief-q">' + _invInline(headline) + '</h2>');
 
-    // Verdict — answers the question, as a colored status line.
+    // Verdict — a colored status line.
     if (verdict) {
       H.push('<div class="inv-brief-verdict">' +
         '<span class="inv-vs-pill">' + _esc(vs.toUpperCase()) + '</span>' +
         '<span class="inv-brief-verdict-label">Current verdict</span> ' +
-        '<span class="inv-brief-verdict-text">' + _esc(verdict) + '</span></div>');
+        '<span class="inv-brief-verdict-text">' + _invInline(verdict) + '</span></div>');
     }
 
-    // Framing — the rest of the opening sentence(s), muted.
-    if (framing) H.push('<p class="inv-brief-framing">' + _esc(framing) + '</p>');
+    // Introduction — the full what_is_this rendered as markdown prose.
+    if (whatIs) H.push('<div class="inv-brief-prose inv-brief-intro">' + _renderInvLeadMarkdown(whatIs) + '</div>');
 
-    // Meta — hypothesis.
-    if (hyp) H.push('<div class="inv-brief-meta"><span class="inv-brief-meta-item"><em>Hypothesis</em> ' + _esc(hyp) + '</span></div>');
+    // Meta — the driving question + hypothesis, one muted line each.
+    var _meta = [];
+    if (q) _meta.push('<span class="inv-brief-meta-item"><em>Question</em> ' + _invInline(oneline(q)) + '</span>');
+    if (hyp) _meta.push('<span class="inv-brief-meta-item"><em>Hypothesis</em> ' + _invInline(hyp) + '</span>');
+    if (_meta.length) H.push('<div class="inv-brief-meta">' + _meta.join('') + '</div>');
 
     // Depth — one flat tab strip; only tabs with content are shown.
     var tabs = [];
