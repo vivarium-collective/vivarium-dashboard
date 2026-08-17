@@ -739,9 +739,9 @@
   // emitted scalar store, each with a sparkline + first/last/min/max + a
   // per-store download link. Preview only — full arrays stay in the
   // downloads (this endpoint only ever returns a bounded, downsampled
-  // slice), so the per-store link reuses the SAME whole-run download
-  // (/api/simulation-run-download) the raw-data-list below already offers;
-  // there is no separate per-store extraction endpoint.
+  // slice), so the per-store link reuses the SAME base-path-prefixed
+  // whole-run download link the raw-data-list below already offers (the
+  // run-download endpoint); there is no separate per-store extraction endpoint.
   var _resultsPreviewLoaded = false;
   function _loadResultsPreview(force) {
     var mount = document.getElementById('results-preview');

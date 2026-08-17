@@ -39,6 +39,8 @@ ALLOWED: dict[str, str] = {
     "workspace_paths": "core: canonical workspace layout resolution",
     "run_params": "core: run-params sync (also read by the workbench's study_runs)",
     "diff_reports": "core: cross-iteration test diff (pure stdlib; the agent-feedback signal the flush writes + the Tests panel renders)",
+    "test_audit": "core: deterministic test-sufficiency scoring rendered read-only by the Assurance>Audit panel (workbench-free; also run by /viva-audit-tests)",
+    "loop_state": "core: model-build loop-state reader for the Assurance>Build panel (workbench-free; pure JSON at .pbg/loop/<study>.json)",
     "build_report": "core: aggregate a run's graded cards into a test_report/v1 (pure stdlib; the flush gates it via study_verdict.severity_gate)",
     # --- STAY science modules (external-repo-imported) ---
     "feedback_tracking": "external-imported; deterministic feedback ledger",
