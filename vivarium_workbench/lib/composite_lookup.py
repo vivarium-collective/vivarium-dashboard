@@ -257,11 +257,26 @@ def find_composite_path(ws_root: Path, package_path: str, spec_id: str) -> Path 
     if len(parts) != 2:
         return None
     pkg, stem = parts
-    # Workspace package first
+    comp_dir = ws_root / pkg / "composites"
+    # Workspace package first — the id's last segment as a filename stem.
     for suffix in (".composite.yaml", ".composite.yml", ".composite.json"):
-        candidate = ws_root / pkg / "composites" / f"{stem}{suffix}"
+        candidate = comp_dir / f"{stem}{suffix}"
         if candidate.is_file():
             return candidate
+    # Fallback: the id's last segment may be the composite's `name` (with spaces
+    # — e.g. "Interaction Modalities") rather than the filename stem
+    # ("fig04a-interaction-modalities"). Scan for a spec whose name matches, so a
+    # name-derived id still resolves to run (matches how resolve found it).
+    if comp_dir.is_dir():
+        for f in sorted(comp_dir.glob("*.composite.*")):
+            try:
+                text = f.read_text(encoding="utf-8")
+                doc = (json.loads(text) if f.suffix.lower() == ".json"
+                       else __import__("yaml").safe_load(text))
+            except Exception:
+                continue
+            if isinstance(doc, dict) and doc.get("name") == stem:
+                return f
     # Installed packages
     specs = discover_installed_pbg_composites()
     rec = specs.get(spec_id)
