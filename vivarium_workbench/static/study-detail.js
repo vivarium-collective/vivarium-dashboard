@@ -96,11 +96,18 @@
     if (kind === 'tests') { _loadTestsPanel(window._study); }
     if (kind === 'readouts') { _loadReadouts(); _loadReadoutsDownloadPointer(); }
     if (kind === 'visualize') { _loadCharts('viz-charts-panel'); _loadNativeGallery(); }
-    if (kind === 'compose') { _loadModelConfig(); }
-    // Task E2: the study-artifacts strip (analysis-files zip + raw-data
-    // bulk) moved from the Exports (data) tab onto Simulations, so its
-    // loaders now trigger here instead.
-    if (kind === 'simulate') { _loadStudySims(); _loadAnalysisOutputs(); _loadRawData(); }
+    if (kind === 'compose') { _loadModelConfig(); _loadModelCards(); }
+    // Study-spine reorg (spec §1, §3.2/3.3/3.4): Simulations keeps only the
+    // runs table now; the analysis-files zip + raw-data bulk that used to
+    // trigger here moved onto their own Evidence panels (Analyses/Results).
+    if (kind === 'simulate') { _loadStudySims(); }
+    if (kind === 'analyses') { _loadAnalyses(); }
+    if (kind === 'results') { _loadResults(); }
+    // Study-spine reorg (spec §1, §3.7/§3.8): Audit + Build complete the
+    // Assurance trio — dispatched the same way as the other lazy-loaded
+    // panels above.
+    if (kind === 'audit') { _loadAudit(window._study); }
+    if (kind === 'build') { _loadBuild(window._study); }
     // Textareas measured 0 while their tab was hidden; re-fit the now-visible
     // panel's auto-grow boxes so they show all content without a scrollbar.
     if (window._autoGrowTextareas) window._autoGrowTextareas();
@@ -123,42 +130,111 @@
   }
   window._gotoStudyTab = _gotoStudyTab;
 
-  // ── Readouts table (emit plan + authored annotations) ───────────────────────
-  // Fetch /api/study-readouts and render the table async (the composite build is
-  // ~3s, TTL-cached). Tolerates failure (leaves the loading message).
+  // ── Readouts panel (Design's emit CONTRACT) ──────────────────────────────
+  // Fetch /api/study-readouts ONCE and render its three blocks (spec §3.1):
+  // Emitter & config (#readouts-emitter), Emitted paths (#readouts-table,
+  // unchanged id for test-compat), Outputs & shapes (#readouts-shapes). The
+  // composite build backing `rows` is ~3s (TTL-cached); the emitter block
+  // itself is cheap (spec-only, no build) but rides the same single fetch —
+  // no new route. Tolerates failure (leaves a clear empty state, never a
+  // silent blank panel).
   var _readoutsLoaded = false;
   function _loadReadouts() {
     if (_readoutsLoaded) return;
     _readoutsLoaded = true;
     var host = document.getElementById('readouts-table');
+    var emitterHost = document.getElementById('readouts-emitter');
+    var shapesHost = document.getElementById('readouts-shapes');
     if (!host) return;
     var slug = host.getAttribute('data-study') || studyName();
     if (!slug) return;
     fetch('/api/study-readouts?study=' + encodeURIComponent(slug),
           {headers: {Accept: 'application/json'}})
-      .then(function(r) { return r.ok || r.status === 422 ? r.json() : null; })
+      .then(function(r) { return r.ok || r.status === 422 || r.status === 501 ? r.json() : null; })
       .then(function(j) {
+        if (emitterHost) emitterHost.innerHTML = _renderEmitterBlock(j && j.emitter);
         if (!j || !Array.isArray(j.rows)) {
           host.innerHTML = '<p class="empty-message">Readouts unavailable.</p>';
+          if (shapesHost) shapesHost.innerHTML = '<p class="empty-message">Output shapes unavailable.</p>';
           return;
         }
         host.innerHTML = _renderReadoutsTable(j);
+        if (shapesHost) shapesHost.innerHTML = _renderReadoutsShapesTable(j.rows);
       })
       .catch(function() {
         host.innerHTML = '<p class="empty-message">Readouts unavailable.</p>';
+        if (emitterHost) emitterHost.innerHTML = '<p class="empty-message">Emitter configuration unavailable.</p>';
+        if (shapesHost) shapesHost.innerHTML = '<p class="empty-message">Output shapes unavailable.</p>';
       });
   }
 
-  // ── Readouts tab: pointer to the raw-data downloads that live under Simulations ──
-  // Simulations (data-kind="simulate") is the single "get the data" tab — it
-  // folds in every run's raw emitter store (see _loadRawData below) plus the
-  // analysis result files (Task E2 moved both off the old Exports tab).
-  // Readouts used to render its OWN full download widget here (every run's
-  // raw store, one ⬇ each), duplicating those same links. Task C4 replaced
-  // that widget with one pointer that jumps to the raw-data group via C1's
-  // _gotoStudyTab (E2 repointed it from the 'data' tab to 'simulate'). Uses
-  // the SAME /api/simulations fetch + (store_path || db_path) filter
-  // _loadRawData uses, so the pointer only shows up when there's actually
+  // Block 1: Emitter & config — class/module, interval, buffer, output dir,
+  // emit scope. `em` may be absent/partial (a study spec that failed to
+  // parse never reaches the emitter block) — degrade to an empty note rather
+  // than throw.
+  function _renderEmitterBlock(em) {
+    var e = escapeHtmlForTests;
+    var dash = '<span class="muted">—</span>';
+    if (!em || !em.name) {
+      return '<p class="empty-message">No emitter configuration declared.</p>';
+    }
+    var errNote = em.error ? '<p class="muted" style="color:#92400e">' + e(em.error) + '</p>' : '';
+    var rows = [
+      ['Emitter', (em.class_name ? '<code>' + e(em.class_name) + '</code> (' + e(em.name) + ')' : '<code>' + e(em.name) + '</code>')],
+      ['Module', em.module ? '<code style="font-size:0.85em;">' + e(em.module) + '</code>' : dash],
+      ['Output kind', em.output_kind ? e(em.output_kind) : dash],
+      ['Emit interval', (em.interval === null || em.interval === undefined) ? dash : (e(String(em.interval)) + ' tick(s)')],
+      ['Buffer', (em.buffer === null || em.buffer === undefined) ? dash : (e(String(em.buffer)) + ' emits')],
+      ['Output dir', em.output_dir ? '<code style="font-size:0.85em;">' + e(em.output_dir) + '</code>' : dash],
+      ['Emit scope', em.scope ? e(em.scope) : dash],
+    ];
+    var body = rows.map(function (r) {
+      return '<tr style="border-bottom:1px solid #f1f5f9;">'
+        + '<td style="padding:6px; font-weight:600; width:140px; vertical-align:top;">' + r[0] + '</td>'
+        + '<td style="padding:6px; vertical-align:top;">' + r[1] + '</td></tr>';
+    }).join('');
+    return errNote + '<table class="observables-table" style="width:100%; border-collapse: collapse;"><tbody>' + body + '</tbody></table>';
+  }
+
+  // Block 3: Outputs & shapes — store path / dtype / shape / units / bytes,
+  // one row per confirmed emit leaf (rows without a `shape` — derived /
+  // not-in-plan / unverified — are omitted; they have no verified structure
+  // to describe, and already show up flagged in the Emitted paths block).
+  function _renderReadoutsShapesTable(rows) {
+    var e = escapeHtmlForTests;
+    var shaped = (rows || []).filter(function (o) { return o.store_path && Array.isArray(o.shape); });
+    if (!shaped.length) {
+      return '<p class="empty-message">No output shapes available (composite unbuilt, or no emitted paths).</p>';
+    }
+    var head = '<table class="observables-table" style="width:100%; border-collapse: collapse;"><thead><tr>'
+      + ['Store path', 'dtype', 'Shape', 'Units', 'Bytes'].map(function (h) {
+          return '<th style="text-align:left; padding:6px; border-bottom:1px solid #e2e8f0;">' + h + '</th>';
+        }).join('') + '</tr></thead><tbody>';
+    var body = shaped.map(function (o) {
+      var dims = o.shape.map(function (d) { return String(d); });
+      var shapeStr = '(' + dims.join(', ') + (dims.length === 1 ? ',' : '') + ')';
+      return '<tr style="border-bottom:1px solid #f1f5f9;">'
+        + '<td style="padding:6px;"><code style="font-size:0.85em;">' + e(o.store_path) + '</code></td>'
+        + '<td style="padding:6px;">' + e(o.dtype || '') + '</td>'
+        + '<td style="padding:6px;"><code style="font-size:0.85em;">' + e(shapeStr) + '</code></td>'
+        + '<td style="padding:6px;">' + e(o.units || '') + '</td>'
+        + '<td style="padding:6px;">' + (o.bytes != null ? e(_fmtBytes(o.bytes)) : '<span class="muted">—</span>') + '</td>'
+        + '</tr>';
+    }).join('');
+    return head + body + '</tbody></table>';
+  }
+
+  // ── Readouts tab: pointer to the raw-data downloads that live under Results ──
+  // Results (data-kind="results") is the "get the raw data" tab — it holds
+  // every run's raw emitter store (see _loadResults below). Analysis result
+  // files live on the separate Analyses tab (study-spine reorg, spec
+  // §1/§3.3/§3.4). Readouts used to render its OWN full download widget
+  // here (every run's raw store, one ⬇ each), duplicating those same links.
+  // Task C4 replaced that widget with one pointer that jumps to the
+  // raw-data group via C1's _gotoStudyTab (E2 repointed it from the 'data'
+  // tab to 'simulate'; the spine reorg repoints it again, to 'results').
+  // Uses the SAME /api/simulations fetch + (store_path || db_path) filter
+  // _loadResults uses, so the pointer only shows up when there's actually
   // something to show — never pointing at an empty tab.
   var _readoutsDownloadPointerLoaded = false;
   function _loadReadoutsDownloadPointer(force) {
@@ -175,14 +251,14 @@
         var withData = sims.filter(function (s) { return s.run_id && (s.store_path || s.db_path); });
         host.innerHTML = withData.length
           ? '<p class="muted">⬇ Download this study\'s raw run data → '
-            + '<a href="#" onclick="_gotoStudyTab(\'simulate\',\'exports-downloads\');return false;">Simulations</a></p>'
+            + '<a href="#" onclick="_gotoStudyTab(\'results\',\'exports-downloads\');return false;">Results</a></p>'
           : '';
       })
       .catch(function () { host.innerHTML = ''; });
   }
   window._loadReadoutsDownloadPointer = _loadReadoutsDownloadPointer;
 
-  // --- Data tab: downloadable Analysis result files (CSV/TSV) ---
+  // --- Analyses tab (Evidence): downloadable Analysis result files (CSV/TSV) ---
   var _analysisOutputsLoaded = false;
   function _fmtBytes(n) {
     if (!n && n !== 0) return '';
@@ -222,7 +298,7 @@
     });
     return html;
   }
-  function _loadAnalysisOutputs() {
+  function _loadAnalyses() {
     if (_analysisOutputsLoaded) return;
     _analysisOutputsLoaded = true;
     var host = document.getElementById('data-files');
@@ -245,6 +321,7 @@
         host.innerHTML = '<p class="empty-message">Result files unavailable.</p>';
       });
   }
+  window._loadAnalyses = _loadAnalyses;
 
   function _emitStatusBadge(status) {
     var e = escapeHtmlForTests;
@@ -631,10 +708,101 @@
       });
   }
 
-  // Exports tab: per-run raw emitter store downloads, folded in from the
-  // Simulations DB so Exports is the single "get the data" tab.
+  // Results tab (Evidence) — per-store preview of the study's LATEST run
+  // (study-spine reorg, plan Task 4): a compact inline-SVG sparkline + a
+  // formatted number, shared by the preview table below.
+  function _resultsSparklineSvg(values) {
+    values = (values || []).filter(function (v) { return typeof v === 'number' && isFinite(v); });
+    if (!values.length) return '<span class="muted" style="font-size:0.8em">—</span>';
+    var w = 90, h = 22;
+    var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+    var range = (max - min) || 1;
+    var pts = values.map(function (v, i) {
+      var x = values.length > 1 ? (i / (values.length - 1)) * w : w / 2;
+      var y = h - ((v - min) / range) * h;
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" ' +
+      'style="display:block" aria-hidden="true"><polyline points="' + pts +
+      '" fill="none" stroke="#6366f1" stroke-width="1.5"/></svg>';
+  }
+
+  function _resultsFmtNum(v) {
+    if (v === null || v === undefined || typeof v !== 'number' || !isFinite(v)) return '—';
+    var a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e6)) return v.toExponential(2);
+    return String(Math.round(v * 1000) / 1000);
+  }
+
+  // Fetches /api/study-results (lib/results_views.build_study_results) and
+  // renders the "Latest run preview" table (#results-preview): one row per
+  // emitted scalar store, each with a sparkline + first/last/min/max + a
+  // per-store download link. Preview only — full arrays stay in the
+  // downloads (this endpoint only ever returns a bounded, downsampled
+  // slice), so the per-store link reuses the SAME base-path-prefixed
+  // whole-run download link the raw-data-list below already offers (the
+  // run-download endpoint); there is no separate per-store extraction endpoint.
+  var _resultsPreviewLoaded = false;
+  function _loadResultsPreview(force) {
+    var mount = document.getElementById('results-preview');
+    if (!mount) return;
+    if (_resultsPreviewLoaded && !force) return;
+    _resultsPreviewLoaded = true;
+    var slug = studyName();
+    var path = '/api/study-results?study=' + encodeURIComponent(slug);
+    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+      var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) {}
+      if (!d.present) {
+        mount.innerHTML = '<p class="empty-message">' +
+          escapeHtmlForTests(d.reason || 'No run data to preview yet.') + '</p>';
+        return;
+      }
+      var stores = d.stores || [];
+      if (!stores.length) {
+        mount.innerHTML = '<p class="empty-message">The latest run (' +
+          escapeHtmlForTests(String(d.run_label || d.run_id || '')) +
+          ') emitted no scalar observables to preview.</p>';
+        return;
+      }
+      var dlHref = (window.__BASE_PATH__ || "") + '/api/simulation-run-download?run_id=' + encodeURIComponent(d.run_id || '');
+      mount.innerHTML =
+        '<p class="muted" style="font-size:0.85em;margin:0 0 8px">From run <code>' +
+        escapeHtmlForTests(String(d.run_label || d.run_id || '')) + '</code></p>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:0.86em">' +
+        '<thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">' +
+        '<th style="padding:5px 8px">Path</th><th style="padding:5px 8px">dtype</th>' +
+        '<th style="padding:5px 8px">Sparkline</th>' +
+        '<th style="padding:5px 8px;text-align:right">First</th>' +
+        '<th style="padding:5px 8px;text-align:right">Last</th>' +
+        '<th style="padding:5px 8px;text-align:right">Min</th>' +
+        '<th style="padding:5px 8px;text-align:right">Max</th>' +
+        '<th style="padding:5px 8px"></th></tr></thead><tbody>' +
+        stores.map(function (s) {
+          return '<tr style="border-bottom:1px solid #f3f4f6">' +
+            '<td style="padding:5px 8px"><code style="font-size:0.85em">' + escapeHtmlForTests(s.path) + '</code></td>' +
+            '<td style="padding:5px 8px">' + escapeHtmlForTests(s.dtype || '') + '</td>' +
+            '<td style="padding:5px 8px">' + _resultsSparklineSvg(s.sparkline) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.first) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.last) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.min) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.max) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right"><a class="action-btn" download href="' + dlHref + '">⬇</a></td>' +
+            '</tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function () {
+      mount.innerHTML = '<p class="empty-message">Could not load the results preview.</p>';
+    });
+  }
+  window._loadResultsPreview = _loadResultsPreview;
+
+  // Results tab (Evidence): per-run raw emitter store downloads — the
+  // complete list of runs (not just the latest), each downloadable in full.
+  // The per-store PREVIEW of the latest run (sparkline + first/last/min/max)
+  // is _loadResultsPreview above; _loadResults triggers both.
   var _rawDataLoaded = false;
-  function _loadRawData(force) {
+  function _loadResults(force) {
+    _loadResultsPreview(force);
     var mount = document.getElementById('raw-data-list');
     if (!mount) return;
     if (_rawDataLoaded && !force) return;
@@ -673,15 +841,16 @@
       if (bulkBtn) bulkBtn.style.display = 'none';
     });
   }
-  window._loadRawData = _loadRawData;
+  window._loadResults = _loadResults;
 
   // One-click "download all raw data": trigger every run's raw-emitter-store
   // download in sequence (browsers serialise multiple download navigations
   // from one user gesture). Restores the bulk convenience the old Readouts
-  // widget's _downloadAllRawData offered — scoped here to Exports' raw-run
-  // group (#raw-data-list a[download], the per-run links _loadRawData just
-  // rendered); the analysis-file zip (#data-download-all) is untouched, it
-  // already has its own single-click server-side zip download.
+  // widget's _downloadAllRawData offered — scoped here to Results' raw-run
+  // group (#raw-data-list a[download], the per-run links _loadResults just
+  // rendered); the analysis-file zip (#data-download-all, on the Analyses
+  // tab) is untouched, it already has its own single-click server-side zip
+  // download.
   function _downloadAllRawExports() {
     var mount = document.getElementById('raw-data-list');
     if (!mount) return;
@@ -730,6 +899,95 @@
     });
   }
   window._loadModelConfig = _loadModelConfig;
+
+  // Model tab (study-spine reorg Task 6): the study's ACTUAL composite(s),
+  // shown as the SAME rich card the Modules/Composites view uses — full
+  // semantic detail (description, config schema, declared observables) at
+  // the "Full" loom zoom level, via the shared static/composite-card.js
+  // renderer (_renderCompositeCardFull, extracted from walkthrough.js).
+  // Collects unique composite ids from the same data-model-composite /
+  // data-model-overrides attributes _loadModelConfig already reads — the
+  // per-baseline .cond-block entries plus the Conditions › Variants table
+  // rows (both carry the attribute; see study-detail.html) — dedupes by
+  // composite id, and fetches /api/composite-resolve for each (existing
+  // route, no new endpoint). One card per unique composite; a study with no
+  // declared composite gets a clear empty note instead of a blank panel.
+  var _modelCardsLoaded = false;
+  function _loadModelCards(force) {
+    var mount = document.getElementById('model-composite-cards');
+    if (!mount) return;
+    if (_modelCardsLoaded && !force) return;
+    _modelCardsLoaded = true;
+    var panel = document.getElementById('panel-compose');
+    if (!panel || typeof window._renderCompositeCardFull !== 'function') {
+      // composite-card.js failed to load (asset error) — degrade to a note
+      // rather than leaving "Loading…" stuck forever.
+      mount.innerHTML = typeof window._renderCompositeCardFull !== 'function'
+        ? '<p class="empty-message">Composite card renderer unavailable.</p>'
+        : '';
+      return;
+    }
+    // Ordered de-dupe by composite id: first entry's overrides + label win;
+    // later entries referencing the SAME id just add to its label list (e.g.
+    // a variant that inherits the baseline composite unchanged).
+    var order = [], byId = {};
+    panel.querySelectorAll('[data-model-composite]').forEach(function (el) {
+      var id = (el.getAttribute('data-model-composite') || '').trim();
+      if (!id) return;   // "(inherits baseline)" / no composite declared
+      var label = el.classList.contains('cond-block')
+        ? ((el.querySelector('.cond-block-title strong') || {}).textContent || 'baseline')
+        : ((el.querySelector('code') || {}).textContent || 'variant');
+      if (!byId[id]) {
+        byId[id] = { id: id, overridesJson: el.getAttribute('data-model-overrides') || '{}', labels: [label] };
+        order.push(id);
+      } else if (byId[id].labels.indexOf(label) === -1) {
+        byId[id].labels.push(label);
+      }
+    });
+    if (!order.length) {
+      mount.innerHTML = '<p class="empty-message">No composite declared for this study yet.</p>';
+      return;
+    }
+    mount.innerHTML = '';
+    order.forEach(function (id) {
+      var entry = byId[id];
+      var wrap = document.createElement('div');
+      wrap.className = 'model-composite-card-wrap';
+      wrap.style.marginBottom = '12px';
+      var esc = window.SimTable ? window.SimTable.esc : function (s) { return String(s == null ? '' : s); };
+      wrap.innerHTML = '<div class="muted" style="font-size:0.78em;font-weight:600;margin:0 0 4px 2px;text-transform:uppercase;letter-spacing:0.02em">' +
+        entry.labels.map(esc).join(' · ') + '</div>' +
+        '<p class="muted" style="font-size:0.85em;margin:0">Resolving composite…</p>';
+      mount.appendChild(wrap);
+      fetch('/api/composite-resolve?id=' + encodeURIComponent(entry.id) + '&overrides=' + encodeURIComponent(entry.overridesJson))
+        .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
+        .then(function (res) {
+          var body = res.body;
+          // A genuine miss (404 / non-JSON / no id) — the composite-resolve
+          // route couldn't even identify the spec. A degraded-but-resolved
+          // composite (wiring_status:"unavailable", parameters:{}) still has
+          // an id/name/parameters shape and renders as the card's own
+          // degraded state (never a 500) — same behavior as the Modules view.
+          if (res.status !== 200 || !body || !body.id) {
+            var note = document.createElement('p');
+            note.className = 'muted'; note.style.cssText = 'font-size:0.85em;margin:0';
+            note.textContent = 'No resolvable composite for "' + entry.id + '".';
+            wrap.querySelector('p').replaceWith(note);
+            return;
+          }
+          var cardHost = document.createElement('div');
+          cardHost.innerHTML = window._renderCompositeCardFull(body);
+          wrap.querySelector('p').replaceWith(cardHost.firstElementChild);
+        })
+        .catch(function () {
+          var note = document.createElement('p');
+          note.className = 'muted'; note.style.cssText = 'font-size:0.85em;margin:0';
+          note.textContent = 'Could not resolve "' + entry.id + '".';
+          var p = wrap.querySelector('p'); if (p) p.replaceWith(note);
+        });
+    });
+  }
+  window._loadModelCards = _loadModelCards;
 
   // Coerce a raw <input> string to the composite's declared parameter type —
   // mirrors process_bigraph.composite_spec._cast's canonical type vocabulary
@@ -1730,17 +1988,16 @@
     _renderTestsGateSummary(spec);
     _fillReportCardsTab(spec);
     loadTestsTab(spec);
-    _loadQualityChecks(spec);
-    _loadReproducibilityChecks(spec);
   }
   window._loadTestsPanel = _loadTestsPanel;
 
   // ── G5: Quality check group (rigor scorecard) ───────────────────────────
   // GET /api/study-rigor?study=<slug> → viva_superpowers.rigor.study_rigor,
   // already computed in CI but never rendered on the page until now. Fetched
-  // client-side (same pattern as _loadReadouts / _loadAnalysisOutputs above)
-  // into #check-group-quality, the mount templates/study-detail.html adds to
-  // the Tests panel right after the gate summary.
+  // client-side (same pattern as _loadReadouts / _loadAnalyses above)
+  // into #check-group-quality. Study-spine reorg (spec §3.7): this mount
+  // MOVED from the Tests panel into Assurance › Audit's Checks band,
+  // dispatched by _loadAudit below — the fetch/render logic is unchanged.
   //
   // Rigor's own severity vocabulary (ok/warn/gap/not_applicable) is NOT the
   // G3 outcome-token vocabulary — in particular rigor's "gap" means "this
@@ -1858,6 +2115,8 @@
   // (audit_workspace, filtered to this slug) — already computed in CI as the
   // reproducibility gate, never rendered on the page until now. Same fetch
   // pattern as _loadQualityChecks, into #check-group-reproducibility.
+  // Study-spine reorg (spec §3.7): this mount also MOVED from the Tests
+  // panel into Assurance › Audit — dispatched by _loadAudit below.
   //
   // Unlike rigor's ok/warn/gap/not_applicable (G5's severity proxy had to
   // dodge a real name collision with the pre-existing G3 'GAP' token —
@@ -2025,6 +2284,218 @@
       });
   }
   window._loadReproducibilityChecks = _loadReproducibilityChecks;
+
+  // ── Audit tab (Assurance) — Sufficiency group ────────────────────────────
+  // GET /api/study-test-audit?study=<slug> →
+  // viva_superpowers.test_audit.build_audit_report + audit_gate (spec §3.7,
+  // lib.audit_panel_views.build_study_test_audit). Is the study's OWN Test
+  // set rigorous enough that passing it means something — reuses the
+  // report_card_verdict/v2 axis vocabulary (within_tol/drift/mismatch),
+  // which the shared outcomeClass/_label/_glyph map already covers, so this
+  // renders in the same visual language as the Quality/Reproducibility
+  // groups alongside it.
+  function _renderAuditSufficiencyAxis(ax) {
+    var e = escapeHtmlForTests;
+    var cls = outcomeClass(ax && ax.verdict);
+    var glyph = outcomeGlyph(ax && ax.verdict);
+    var label = outcomeLabel(ax && ax.verdict);
+    var oc = _RIGOR_OUTCOME_COLORS[cls] || _RIGOR_OUTCOME_COLORS['not-assessable'];
+    var detail = (ax && ax.detail) || null;
+    var bits = [];
+    if (detail && typeof detail === 'object') {
+      Object.keys(detail).forEach(function(k) {
+        var v = detail[k];
+        if (Array.isArray(v) && v.length) bits.push(k + ': ' + v.length);
+      });
+    }
+    return '<li class="audit-axis-item outcome-' + cls + '" data-axis="' + e((ax && ax.id) || '') + '" '
+      + 'style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-top:1px solid #f1f5f9">'
+      + '<span class="outcome-chip outcome-' + cls + '" title="verdict: ' + e((ax && ax.verdict) || 'unknown') + '" '
+      + 'style="font-size:0.75em;font-weight:600;padding:2px 9px;border-radius:9999px;flex-shrink:0;'
+      + 'background:' + oc.bg + ';color:' + oc.fg + '">' + glyph + '&nbsp;' + e(label) + '</span>'
+      + '<div><strong>' + e((ax && (ax.label || ax.id)) || '') + '</strong>'
+      + (bits.length ? '<div class="muted" style="font-size:0.85em;margin-top:2px">' + e(bits.join(' · ')) + '</div>' : '')
+      + '</div></li>';
+  }
+
+  var _AUDIT_GATE_COLORS = {
+    pass: { bg: '#d1fae5', fg: '#065f46' },
+    warn: { bg: '#fef3c7', fg: '#92400e' },
+    fail: { bg: '#fee2e2', fg: '#991b1b' }
+  };
+
+  // Returns {state, html} for the #audit-sufficiency mount's INNER content —
+  // same {state, html} contract as _qualityCheckGroupHtml /
+  // _reproducibilityCheckGroupHtml.
+  function _sufficiencyCheckGroupHtml(report) {
+    var e = escapeHtmlForTests;
+    var header = '<div class="check-group-header" style="display:flex;align-items:center;'
+      + 'gap:8px;flex-wrap:wrap"><strong>Sufficiency</strong> '
+      + '<span class="muted" style="font-size:0.85em">is the Test set itself rigorous &mdash; '
+      + '<code>viva_superpowers.test_audit</code></span>';
+    if (!report || report.unavailable) {
+      var reason = (report && report.reason) || 'could not be computed';
+      return {
+        state: 'unavailable',
+        html: header + '</div><p class="empty-message">unavailable(' + e(reason) + ')</p>'
+      };
+    }
+    var gate = String(report.gate || 'pass').toLowerCase();
+    var gc = _AUDIT_GATE_COLORS[gate] || _AUDIT_GATE_COLORS.pass;
+    header += ' <span class="outcome-chip" style="margin-left:auto;font-size:0.78em;font-weight:600;'
+      + 'padding:2px 9px;border-radius:9999px;background:' + gc.bg + ';color:' + gc.fg + '">gate: '
+      + e(gate) + '</span></div>';
+    var groups = report.groups || {};
+    var axes = [];
+    Object.keys(groups).forEach(function(g) {
+      ((groups[g] && groups[g].axes) || []).forEach(function(ax) { axes.push(ax); });
+    });
+    if (!axes.length) {
+      return {
+        state: 'empty',
+        html: header + '<p class="empty-message">No sufficiency axes computed for this study.</p>'
+      };
+    }
+    return {
+      state: 'ready',
+      html: header + '<ul class="audit-axis-list" style="list-style:none;padding-left:0;margin:8px 0 0 0">'
+        + axes.map(_renderAuditSufficiencyAxis).join('') + '</ul>'
+    };
+  }
+
+  var _auditSufficiencyLoaded = false;
+  function _loadAuditSufficiency(spec) {
+    var host = document.getElementById('audit-sufficiency');
+    if (!host) return;
+    if (_auditSufficiencyLoaded) return;
+    _auditSufficiencyLoaded = true;
+    var slug = (spec && spec.name) || studyName();
+    if (!slug) {
+      host.dataset.state = 'unavailable';
+      host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
+      return;
+    }
+    fetch('/api/study-test-audit?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
+          .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
+      })
+      .then(function(res) {
+        var payload = res.json;
+        if (!res.ok) {
+          payload = { unavailable: true, reason: (payload && payload.error) || ('HTTP ' + res.status) };
+        }
+        var built = _sufficiencyCheckGroupHtml(payload);
+        host.dataset.state = built.state;
+        host.innerHTML = built.html;
+      })
+      .catch(function() {
+        host.dataset.state = 'unavailable';
+        host.innerHTML = '<p class="empty-message">unavailable(request failed)</p>';
+      });
+  }
+  window._loadAuditSufficiency = _loadAuditSufficiency;
+
+  // Audit tab entry point — fills all three Checks-band groups (Sufficiency,
+  // Quality, Reproducibility). Quality/Reproducibility MOVED here from the
+  // Tests panel's old _loadTestsPanel (spec §3.6/§3.7); their loaders are
+  // unchanged, just dispatched from here instead.
+  function _loadAudit(spec) {
+    _loadAuditSufficiency(spec);
+    _loadQualityChecks(spec);
+    _loadReproducibilityChecks(spec);
+  }
+  window._loadAudit = _loadAudit;
+
+  // ── Build tab (Assurance) — model-build loop provenance ──────────────────
+  // GET /api/study-loop-state?study=<slug> → viva_superpowers.loop_state
+  // reading .pbg/loop/<study>.json (spec §3.8,
+  // lib.loop_provenance_views.build_study_loop_state). Was the pass earned
+  // honestly? Locked-tests hash, the reopen trail, iteration history,
+  // current state. GRACEFUL empty state (`present: false`) when a study was
+  // never run through /viva-model-build — the common case, not an error.
+  var _BUILD_STATE_COLORS = {
+    DONE: { bg: '#d1fae5', fg: '#065f46' },
+    GIVE_UP: { bg: '#fee2e2', fg: '#991b1b' }
+  };
+
+  function _renderLoopHistoryRow(h) {
+    var e = escapeHtmlForTests;
+    var md = (h && h.margin_deltas) || {};
+    var mdKeys = Object.keys(md);
+    return '<li style="padding:5px 0;border-top:1px solid #f8fafc;font-size:0.85em">'
+      + '<strong>#' + e((h && h.iteration) != null ? h.iteration : '') + '</strong> '
+      + e((h && h.edit) || '') + ' &rarr; <code>' + e((h && h.target) || '') + '</code>'
+      + ' <span class="muted">gate: ' + e((h && h.gate) || '') + '</span>'
+      + (mdKeys.length ? ' <span class="muted">(' + mdKeys.length + ' margin delta' + (mdKeys.length === 1 ? '' : 's') + ')</span>' : '')
+      + '</li>';
+  }
+
+  function _buildPanelHtml(state) {
+    var e = escapeHtmlForTests;
+    if (!state || !state.present) {
+      var reason = (state && state.reason)
+        || 'This study was not built via the agentic model-building loop (/viva-model-build).';
+      return '<p class="empty-message">' + e(reason) + '</p>';
+    }
+    var budget = state.budget || {};
+    var prereg = state.prereg_record || {};
+    var priorHashes = prereg.prior_hashes || [];
+    var history = state.history || [];
+    var sc = _BUILD_STATE_COLORS[state.state] || { bg: '#f1f5f9', fg: '#475569' };
+    var html = '<div class="check-group-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+      + '<strong>Loop provenance</strong> <span class="muted" style="font-size:0.85em">'
+      + '<code>viva_superpowers.loop_state</code></span>'
+      + '<span class="outcome-chip" style="margin-left:auto;font-size:0.78em;font-weight:600;padding:2px 9px;'
+      + 'border-radius:9999px;background:' + sc.bg + ';color:' + sc.fg + '">' + e(state.state || '?') + '</span></div>';
+    html += '<div style="margin-top:8px;font-size:0.9em">'
+      + '<div><strong>Question:</strong> ' + e(state.question || '—') + '</div>'
+      + '<div><strong>Iteration:</strong> ' + e(state.iteration != null ? state.iteration : '—')
+      + ' / ' + e(budget.max_iterations != null ? budget.max_iterations : '—')
+      + ' <span class="muted">(' + e(budget.spent != null ? budget.spent : 0) + ' spent)</span></div>'
+      + '<div><strong>Locked tests hash:</strong> <code style="font-size:0.85em">'
+      + e(state.locked_tests_hash || 'not locked') + '</code></div>'
+      + '<div><strong>Reopen count:</strong> ' + e(state.reopen_count != null ? state.reopen_count : 0)
+      + (priorHashes.length
+          ? ' <span class="muted">(' + priorHashes.length + ' prior hash' + (priorHashes.length === 1 ? '' : 'es') + ' retained)</span>'
+          : '')
+      + '</div></div>';
+    if (history.length) {
+      html += '<div style="margin-top:12px"><strong style="font-size:0.9em">Iteration history</strong>'
+        + '<ul style="list-style:none;padding-left:0;margin:6px 0 0 0">'
+        + history.map(_renderLoopHistoryRow).join('') + '</ul></div>';
+    }
+    return html;
+  }
+
+  var _buildLoaded = false;
+  function _loadBuild(spec) {
+    var host = document.getElementById('build-loop-state');
+    if (!host) return;
+    if (_buildLoaded) return;
+    _buildLoaded = true;
+    var slug = (spec && spec.name) || studyName();
+    if (!slug) {
+      host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
+      return;
+    }
+    fetch('/api/study-loop-state?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+      .then(function(r) {
+        return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
+          .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
+      })
+      .then(function(res) {
+        var payload = res.json;
+        if (!res.ok) {
+          payload = { present: false, reason: (payload && payload.error) || ('HTTP ' + res.status) };
+        }
+        host.innerHTML = _buildPanelHtml(payload);
+      })
+      .catch(function() {
+        host.innerHTML = '<p class="empty-message">unavailable(request failed)</p>';
+      });
+  }
+  window._loadBuild = _loadBuild;
 
   // "N/M gates passed" score line ONLY. Every declared behavior test (kind:
   // behavioral or report_card) is a gate; the aggregate count comes from

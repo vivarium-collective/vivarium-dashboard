@@ -27,7 +27,9 @@ def test_no_bare_api_hrefs_or_navigations():
     bare_re = re.compile(
         r"""(?:href=["']/api|window\.open\(\s*["']/api|window\.location\s*=\s*["']/api)"""
     )
-    for fname in ("sim-table.js", "study-detail.js", "walkthrough.js"):
+    # composite-card.js (study-spine-reorg Task 6): shared composite-card
+    # renderer extracted out of walkthrough.js — same guard applies.
+    for fname in ("sim-table.js", "study-detail.js", "walkthrough.js", "composite-card.js"):
         js = _txt(fname)
         for lineno, line in enumerate(js.splitlines(), start=1):
             assert not bare_re.search(line), (

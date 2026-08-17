@@ -151,15 +151,16 @@ class TestBuildStudyDetailPage:
 
 class TestRenderStudyDetailHtml:
     def test_render_produces_html_with_tab_scaffold(self, ws: Path):
-        """The real Jinja render includes the 8-tab scaffold."""
+        """The real Jinja render includes the study-spine 11-tab scaffold."""
         from vivarium_workbench.lib.study_page import render_study_detail_html
         from vivarium_workbench.lib.study_spec import load_study_detail_spec
         spec = load_study_detail_spec(ws, "dnaa-01-binding")
         assert spec is not None
         html = render_study_detail_html(ws, "dnaa-01-binding", spec)
-        # All 8 base tabs present
-        for kind in ("overview", "baseline", "variants", "interventions",
-                     "tests", "runs", "visualizations", "conclusions"):
+        # All 11 spine tabs present (Design: compose/readouts/simulate; Evidence:
+        # results/analyses/visualize; Assurance: tests/audit/build; + overview/conclusions).
+        for kind in ("overview", "compose", "readouts", "simulate", "results",
+                     "analyses", "visualize", "tests", "audit", "build", "conclusions"):
             assert f'data-kind="{kind}"' in html, f"tab {kind!r} missing from render"
 
     def test_render_includes_study_name_in_js(self, ws: Path):

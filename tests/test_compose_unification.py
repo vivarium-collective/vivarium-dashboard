@@ -6,7 +6,12 @@ HTML = (ROOT / "vivarium_workbench/templates/study-detail.html").read_text()
 
 def test_panel_compose_exists_and_old_wrappers_gone():
     assert 'data-kind="compose" id="panel-compose"' in HTML
-    for old in ['id="panel-build"', 'id="panel-baseline"', 'id="panel-variants"', 'id="panel-interventions"']:
+    # NB: `panel-build` is NOT listed here anymore. The study-spine reorg
+    # introduces a top-level Assurance `Build` tab (loop provenance) that
+    # legitimately owns `id="panel-build"`; it is unrelated to the retired
+    # legacy compose `build` sub-member. The genuinely-retired compose CRUD
+    # wrappers (baseline/variants/interventions) must still be absent.
+    for old in ['id="panel-baseline"', 'id="panel-variants"', 'id="panel-interventions"']:
         assert old not in HTML, f"old wrapper still present: {old}"
 
 
@@ -18,7 +23,10 @@ def test_single_compose_member_button():
     compose_btns = re.findall(r'<button class="study-pillar"[^>]*data-kind="compose"[^>]*>', HTML)
     assert len(compose_btns) == 1, f"expected 1 compose pillar button, got {len(compose_btns)}"
     assert "_setStudyTab('compose')" in HTML
-    for old in ["_setStudyTab('build')", "_setStudyTab('baseline')", "_setStudyTab('variants')", "_setStudyTab('interventions')"]:
+    # `_setStudyTab('build')` is NOT forbidden here anymore: the reorg's
+    # top-level Assurance `Build` pillar legitimately calls it. What must stay
+    # gone is the legacy compose SUBNAV (baseline/variants/interventions).
+    for old in ["_setStudyTab('baseline')", "_setStudyTab('variants')", "_setStudyTab('interventions')"]:
         assert old not in HTML, f"old compose tab button call still present: {old}"
 
 

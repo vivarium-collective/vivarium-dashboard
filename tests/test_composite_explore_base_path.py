@@ -39,7 +39,9 @@ def test_composite_explore_calls_are_base_path_routed():
     ]
     # Only inspect actual call expressions (fetch/_post/_poll), not comment prose.
     call_re = re.compile(r"(?:fetch|_post|_poll)\([^\n]*?(/api/(?:composite|remote-run-config)[-A-Za-z/?]*)")
-    for fname in ("walkthrough.js", "configure-run.js"):
+    # composite-card.js (study-spine-reorg Task 6): _loadCompositeObservables's
+    # /api/composite-resolve fetch moved here out of walkthrough.js.
+    for fname in ("walkthrough.js", "configure-run.js", "composite-card.js"):
         js = _txt(fname)
         for line in js.splitlines():
             m = call_re.search(line)

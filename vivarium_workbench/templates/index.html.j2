@@ -2119,6 +2119,12 @@ Nothing on <code id="pr-base-display-2">main</code> changes until someone presse
 <script src="assets/aig-graph.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* aig-graph unavailable */"></script>
 <script src="assets/audit.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* audit view unavailable */"></script>
 <script src="assets/sim-table.js{% if asset_version %}?v={{ asset_version }}{% endif %}"></script>
+<!-- composite-card.js: the shared composite-card renderer (extracted from
+     walkthrough.js, study-spine-reorg Task 6) — MUST load before
+     walkthrough.js, which now calls these functions as globals rather than
+     defining them itself. Also loaded on study-detail.html so the Model tab
+     renders the identical Full/Grid composite card. -->
+<script src="assets/composite-card.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* composite-card unavailable */"></script>
 <script src="assets/walkthrough.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* walkthrough unavailable */"></script>
 <script src="assets/explorer.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* explorer unavailable */"></script>
 <script src="assets/explorer-views.js{% if asset_version %}?v={{ asset_version }}{% endif %}" onerror="/* explorer views unavailable */"></script>
