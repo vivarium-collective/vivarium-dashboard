@@ -29,6 +29,7 @@ import {
   applySavedPositions, positionsFromNodes, debounce,
 } from './layoutStore';
 import { stateToReactFlow, defaultCollapsedIds, defaultHiddenIds, initialEmitSet } from './convert';
+import { placeNewNodesNoOverlap } from './layouts/incremental';
 import {
   collapseRedundantProcesses, collapseRedundantStores, processesToHyperedges, relaxHyperedgePositions,
 } from './collapseRedundant';
@@ -268,6 +269,13 @@ export default function App() {
   const isTopoTraj = useMemo(() => !!trajectory && trajectory.length >= 2 &&
     trajectory.some((r) => Object.values(r.state || {}).some(
       (v) => v && typeof v === 'object' && !Array.isArray(v))), [trajectory]);
+  // Refs so the (state-driven) graph-build effect can tell it's rebuilding for a
+  // HISTORY frame step — then it keeps existing node positions and only places
+  // NEW nodes (incremental, overlap-free) instead of re-laying out everything.
+  const isTopoTrajRef = useRef(isTopoTraj);
+  const frameIdxRef = useRef(frameIdx);
+  useEffect(() => { isTopoTrajRef.current = isTopoTraj; }, [isTopoTraj]);
+  useEffect(() => { frameIdxRef.current = frameIdx; }, [frameIdx]);
   // A new topology trajectory arms the transport at frame 0 (pristine state
   // captured so we can restore it on exit).
   useEffect(() => {
@@ -814,6 +822,20 @@ export default function App() {
       // state) so React Flow does NOT unmount+remount them on collapse/expand.
       setNodes((prev: any[]) => {
         const prevById = new Map(prev.map((n) => [n.id, n]));
+        // HISTORY frame step (topology playback): keep every node already on
+        // screen exactly where it is, and place ONLY the new nodes into free
+        // space (no overlap). A full re-layout here would jitter stable cards
+        // and, mixed with saved/dragged positions, stack cards on top of each
+        // other — the overlap the user sees while stepping through a run.
+        if (isTopoTrajRef.current && frameIdxRef.current !== null && prev.length > 0) {
+          const merged = withSaved.map((n) => {
+            const p = prevById.get(n.id);
+            const h = hiddenIds.has(n.id);
+            return p ? { ...p, data: n.data, hidden: h } : { ...n, hidden: h };
+          });
+          placeNewNodesNoOverlap(merged, new Set(prev.map((n) => n.id)));
+          return merged;
+        }
         return withSaved.map((n) => {
           const h = hiddenIds.has(n.id);
           const p = prevById.get(n.id);
