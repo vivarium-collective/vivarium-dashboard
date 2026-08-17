@@ -102,8 +102,9 @@ def test_happy_path_202(tmp_path, monkeypatch, fixed_run_id):
     req = json.loads(req_path.read_text())
     assert set(req) == {
         "run_id", "spec_id", "pkg", "workspace", "overrides",
-        "steps", "emit_paths", "db_file", "log_path", "target",
+        "steps", "emit_paths", "seed_state", "db_file", "log_path", "target",
     }
+    assert req["seed_state"] == {}  # no save-point fork → empty
     assert req["target"] == "local"  # no .viv-build.json → local target
     assert req["run_id"] == fixed_run_id
     assert req["spec_id"] == "demo.spec"
