@@ -20,7 +20,7 @@
 import { memo } from 'react';
 import { BaseEdge, getSmoothStepPath, Position, type EdgeProps } from '@xyflow/react';
 
-const PLACE_RADIUS = 4;
+const PLACE_RADIUS = 12;
 const LINEAGE_COLOR = '#2563eb';   // focus blue, matches the selection ring
 
 function PlaceEdge({
@@ -55,8 +55,8 @@ function PlaceEdge({
     // Idle place edges recede a touch so dense hierarchies read calm; the
     // selected lineage overrides this with bold accent + full opacity.
     ...(lineage
-      ? { stroke: LINEAGE_COLOR, strokeWidth: 4.5, opacity: 1 }
-      : dim ? { opacity: 0.1 } : { opacity: 0.6 }),
+      ? { stroke: LINEAGE_COLOR, strokeWidth: 3.5, opacity: 1 }
+      : dim ? { opacity: 0.12 } : { opacity: 1 }),
   };
   return <BaseEdge path={path} markerEnd={markerEnd} style={edgeStyle} />;
 }

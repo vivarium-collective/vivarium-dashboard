@@ -2907,10 +2907,11 @@
   // composite is mostly top-level, so Inputs/Outputs are informational; the
   // value is Configure (its parameters) + Explore (its internal wiring).
   function _compositeLoomExplore(c) {
-    // The loom is a read-only VIEWER: config is edited in the Configure section
-    // and running is the ▶ RUN bar below — so no "Enable running" / live toggle.
-    return '<div class="ccard-loom-embed pcard-loom" data-id="' + _esc(c.id) + '">' +
-      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the bigraph…</p></div>' +
+    // The card body IS the full stacked loom surface — Configure/Inputs, bigraph,
+    // Run/Step, and Outputs all live inside the loom now (data-surface="full").
+    // The card no longer re-implements those sections around it.
+    return '<div class="ccard-loom-embed pcard-loom" data-surface="full" data-id="' + _esc(c.id) + '">' +
+      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the surface…</p></div>' +
     '</div>';
   }
 
@@ -3257,7 +3258,6 @@
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
             _shareCompositeBtn() +
             _compositeJsonBtn() +
-            _cardMaximizeBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
           '<div class="pcard-summary">' +
@@ -3272,11 +3272,10 @@
           '</div>' +
         '</div>' +
         '<div class="pcard-acc">' +
-          _pcardSection('explore', 'Explore', '<span class="pcard-sec-hint">◆ Interactive bigraph — click to open</span>', _compositeLoomExplore(c), { wide: true, feature: true }) +
-          _pcardSection('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { resizable: true }) +
-          _pcardSection('inputs', 'Inputs', '<span class="pcard-sec-count">0</span>', topNote) +
-          runBar +
-          _pcardSection('outputs', 'Outputs', '', outputsBody) +
+          // The card body is now the FULL stacked loom surface — Configure/Inputs,
+          // the bigraph, Run/Step, and Outputs all live inside it. No more card
+          // re-implementations of those sections (which had diverging semantics).
+          _pcardSection('explore', 'Open composite', '<span class="pcard-sec-hint">◆ Configure · run · outputs — click to open</span>', _compositeLoomExplore(c), { wide: true, feature: true }) +
         '</div>' +
       '</div>' +
     '</div>';
@@ -5156,20 +5155,30 @@
     // only a snapshot ships. Omit both under body.snapshot (truly no server).
     var liveInner = document.body.classList.contains('snapshot')
       ? '' : '&id=' + encodeURIComponent(id) + '&live=1';
-    var loomUrl = det._loomLive
+    // `data-surface="full"` → the WHOLE stacked loom surface (Configure/Inputs +
+    // bigraph + Run/Step + Outputs), header hidden (the card names the composite).
+    // It runs LIVE (id-based) so Run + Apply work; the card no longer wraps its
+    // own Configure/Run/Outputs. Everything else keeps the chrome=off bigraph-only
+    // preview.
+    var fullSurface = det.getAttribute('data-surface') === 'full';
+    var isSnapshot = document.body.classList.contains('snapshot');
+    var chromeParam = fullSurface ? '&header=off' : '&chrome=off';
+    var loomUrl = (det._loomLive || (fullSurface && !isSnapshot))
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
-          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off' + tabParam
+          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + chromeParam + tabParam
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + liveInner + '&chrome=off' + tabParam;
+          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + liveInner + chromeParam + tabParam;
     var f = document.createElement('iframe');
-    f.className = 'ccard-loom-iframe';
+    f.className = 'ccard-loom-iframe' + (fullSurface ? ' ccard-loom-iframe-full' : '');
     f.setAttribute('title', 'Loom — ' + id);
     f.src = loomUrl;
     host.innerHTML = '';
-    // Restore a previously dragged height (shared across all loom embeds).
+    // Restore a previously dragged height (shared across all loom embeds); the
+    // full surface needs more room by default (four stacked zones).
     var savedH = 0;
     try { savedH = parseInt(localStorage.getItem('viv.loomFrameH') || '', 10) || 0; } catch (e) { /* private mode */ }
-    if (savedH) host.style.height = Math.max(220, Math.min(Math.round(window.innerHeight * 0.92), savedH)) + 'px';
+    if (!savedH && fullSurface) savedH = Math.round(window.innerHeight * 0.72);
+    if (savedH) host.style.height = Math.max(fullSurface ? 480 : 220, Math.min(Math.round(window.innerHeight * 0.92), savedH)) + 'px';
     host.appendChild(f);
     _wireLoomResize(host, f);
   }

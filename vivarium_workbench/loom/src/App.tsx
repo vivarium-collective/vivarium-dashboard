@@ -42,12 +42,10 @@ import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
 import { ProcessPanel } from './panels/ProcessPanel';
 import { NodesPanel } from './panels/NodesPanel';
 import { InspectorPanel } from './panels/InspectorPanel';
-import { SetupRunPanel } from './panels/SetupRunPanel';
 import { ConfigPanel } from './panels/ConfigPanel';
 import { ExploreRunBar } from './panels/ExploreRunBar';
-import { ResultsPanel } from './panels/ResultsPanel';
-import { VisualizationsPanel } from './panels/VisualizationsPanel';
-import { DocumentPanel } from './panels/DocumentPanel';
+import { TopoTransport } from './panels/TopoTransport';
+import { OutputsPanel } from './panels/OutputsPanel';
 import { EmitContext } from './EmitContext';
 import {
   postReady, postInspect, postEmitChanged, onCompositeLoad, decodeUrlComposite,
@@ -87,7 +85,7 @@ const EDGE_TYPES = { floating: FloatingStoreEdge, light: LightWireEdge, place: P
 
 /** Bounding rect of laid-out nodes, using known node sizes (process 140×60,
  *  store 80×80) so we can frame the graph without waiting for DOM measurement. */
-type TabId = 'setup' | 'results' | 'visualizations' | 'wiring' | 'document';
+type TabId = 'setup' | 'outputs' | 'wiring' | 'document';
 
 type TrajectoryRow = { step: number; time?: number; state: Record<string, unknown> };
 
@@ -153,32 +151,22 @@ export default function App() {
   const showHubWires = false;
   // Initial tab honours ?tab=<id> (used by the workbench to embed a single
   // view — e.g. the Visualizations/Results panel inside the card's Outputs).
-  const [tab, setTab] = useState<TabId>(() => {
-    const valid: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const t = params.get('tab');
-      if (t && (valid as string[]).includes(t)) return t as TabId;
-      // Honor ?tabs= so the default landing tab is one that is actually visible.
-      const raw = params.get('tabs');
-      if (raw) {
-        const alias: Record<string, TabId> = {
-          explore: 'wiring', wiring: 'wiring', configure: 'setup', setup: 'setup',
-          results: 'results', visualizations: 'visualizations', document: 'document',
-        };
-        const allowed = raw.split(',')
-          .map((s) => alias[s.trim().toLowerCase()])
-          .filter(Boolean) as TabId[];
-        if (allowed.length && !allowed.includes('wiring')) return allowed[0];
-      }
-    } catch { /* no-op */ }
-    return 'wiring';
-  });
+  // The surface has no tab chrome anymore — the bigraph is always shown, so `tab`
+  // is pinned to 'wiring'. Kept as state only because a few internal effects still
+  // reference it (fit-on-mount, topology arm). The old ?tab=/?tabs= deep-link
+  // plumbing is gone with the tabs.
+  const [tab, setTab] = useState<TabId>('wiring');
   // Chromeless embed mode (?chrome=off): the workbench ProcessCard already
   // provides Configure/Run/Outputs, so when embedded we hide the loom's own
   // breadcrumb + tab strip and show only the Explore (wiring) graph.
   const chromeless = (() => {
     try { return new URLSearchParams(window.location.search).get('chrome') === 'off'; } catch { return false; }
+  })();
+  // Embedded FULL surface (in a workbench card): show the whole stacked surface
+  // but hide the loom's own breadcrumb — the card header already names the
+  // composite (avoids a double header). `?header=off`.
+  const hideHeader = (() => {
+    try { return new URLSearchParams(window.location.search).get('header') === 'off'; } catch { return false; }
   })();
   const [compositeId, setCompositeId] = useState<string | null>(() => {
     // Bootstrap from URL query if present (for popups deep-linked with ?id=)
@@ -241,6 +229,12 @@ export default function App() {
   // Latest run id + downloadable flag, lifted from SetupRunPanel via onRunState.
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [downloadable, setDownloadable] = useState(false);
+  // The docked Outputs panel starts collapsed (just its tab strip) so the empty
+  // dock doesn't eat vertical space before a run; it auto-expands on completion.
+  const [outputsOpen, setOutputsOpen] = useState(false);
+  useEffect(() => {
+    if (trajectory !== null || vizHtml !== null) setOutputsOpen(true);
+  }, [trajectory, vizHtml]);
 
   // ── Topology playback (loom-live-play) ───────────────────────────────────
   // When a run's trajectory carries a place-graph that CHANGES over steps
@@ -740,7 +734,14 @@ export default function App() {
             && p.position?.y === n.position?.y
             && (p.hidden ?? false) === h
             && (p.data?.isCollapsed ?? false) === (n.data?.isCollapsed ?? false)) {
-            return p;
+            // Same slot — but the node's DATA can still change (e.g. an Apply
+            // Inputs edits a store value without moving anything). Keep identity
+            // only when data is unchanged too; otherwise refresh data in place
+            // (same id+position → React Flow updates content, no remount).
+            let sameData = false;
+            try { sameData = JSON.stringify(p.data) === JSON.stringify(n.data); } catch { sameData = false; }
+            if (sameData) return p;
+            return { ...p, data: n.data };
           }
           return { ...(p ?? n), position: n.position, data: n.data, hidden: h };
         });
@@ -1635,6 +1636,21 @@ export default function App() {
   // hidden nodes can still be listed and re-shown. The graph itself renders the
   // filtered `nodes` array. Derived from the single `raw` walk above.
   const allNodes = raw.nodes;
+  // Top-level store nodes are the emit candidates the run-bar's emit chip toggles.
+  const emitCandidates = useMemo(
+    () => (allNodes as any[])
+      .filter((n) => n.type === 'store' && Array.isArray(n.data?.path) && n.data.path.length === 1)
+      .map((n) => n.id as string),
+    [allNodes],
+  );
+  const toggleEmit = useCallback((key: string) => {
+    setEmitSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      postEmitChanged([...next].sort());
+      return next;
+    });
+  }, [setEmitSet]);
 
   // Run kind: a TEMPORAL composite has ≥1 time-driven Process (runs forward over
   // time on its own timestep) → Setup&Run offers a Duration. A WORKFLOW composite
@@ -1729,17 +1745,8 @@ export default function App() {
   const dockPanels: DockPanelSpec[] = useMemo(() => ([
     {
       id: 'config',
-      title: 'Config',
+      title: 'Configure & Inputs',
       defaultSide: 'left',
-      headerAction: (
-        <button
-          type="button"
-          className="loom-dock-btn cfg-full-btn"
-          title="Open the full-window Setup & Run view"
-          aria-label="Expand config to full window"
-          onClick={() => setTab('setup')}
-        >⤢ Full</button>
-      ),
       render: () => (
         <ConfigPanel
           compositeId={compositeId}
@@ -1747,6 +1754,8 @@ export default function App() {
           overrides={overrides}
           readOnly={STATIC}
           onApplied={handleApplied}
+          state={state}
+          onInputsApplied={(s) => setState(s)}
         />
       ),
     },
@@ -1802,7 +1811,7 @@ export default function App() {
       ),
     },
   ] as DockPanelSpec[]).filter((p) => !(chromeless && p.id === 'config')), [allNodes, focus, handleRailNavigate, hidden, toggleHidden, showAll, collapsed, setNodeCollapsed, revealPath, selection, inspectorReveal,
-      compositeId, parameters, overrides, handleApplied, STATIC, chromeless]);
+      compositeId, parameters, overrides, handleApplied, STATIC, chromeless, state, setState]);
 
   if (!state) {
     return (
@@ -1830,39 +1839,16 @@ export default function App() {
   // All tabs are available in static mode too. Setup & Run renders read-only
   // (form visible, Run/Preview disabled); Results/Visualizations show a
   // read-only empty state (no run data in the snapshot).
-  // Explore (the interactive graph) leads and is the default landing tab.
-  // Full tab set. A ?tabs= query param (comma list of ids or friendly labels,
-  // e.g. ?tabs=explore,document) trims the bar for "basic use" / standalone
-  // embeds; absent, all tabs show. 'explore'→wiring, 'configure'→setup.
-  const ALL_TABS: TabId[] = ['wiring', 'setup', 'results', 'visualizations', 'document'];
-  const TAB_ALIAS: Record<string, TabId> = {
-    explore: 'wiring', wiring: 'wiring',
-    configure: 'setup', setup: 'setup',
-    results: 'results', visualizations: 'visualizations', document: 'document',
-  };
-  let tabs: TabId[] = ALL_TABS;
-  try {
-    const raw = new URLSearchParams(window.location.search).get('tabs');
-    if (raw) {
-      const want = new Set(
-        raw.split(',')
-          .map((s) => TAB_ALIAS[s.trim().toLowerCase()])
-          .filter(Boolean) as TabId[],
-      );
-      if (want.size) tabs = ALL_TABS.filter((t) => want.has(t));
-    }
-  } catch { /* no-op */ }
-
-  // Display label map: ids that need a human-readable label different from the
-  // capitalized id. E.g. 'setup' → 'Configure', 'wiring' → 'Explore'.
-  const TAB_LABELS: Partial<Record<TabId, string>> = { setup: 'Configure', wiring: 'Explore' };
-
+  // The loom is a self-contained, pop-out-able STACKED SURFACE — no workbench
+  // tab chrome. The bigraph leads (always visible); Configure/Inputs is the side
+  // panel, Run/Step the bottom bar, and Outputs a docked panel below. Other apps
+  // can embed this same surface standalone. (`tab` stays 'wiring' internally.)
   return (
     <ReactFlowProvider>
       <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
         {/* Thin breadcrumb header: composite name + library.
             One layer up from the tabs so the tab strip stays compact. */}
-        {!chromeless && (name || compositeId) && (
+        {!chromeless && !hideHeader && (name || compositeId) && (
           <div style={{
             display: 'flex', alignItems: 'baseline', gap: 6,
             padding: '4px 16px',
@@ -1871,12 +1857,16 @@ export default function App() {
             background: '#fff',
             flex: '0 0 auto',
           }}>
-            {/* Navigation between composite levels is handled by the drill tabs
-                (see the tab strip above the graph); the header just names the
-                current composite. */}
-            <span style={{ fontWeight: 600, color: '#111827' }}>
-              {name || compositeId}
+            {/* The header names the current composite: the human name leads,
+                the dotted registry id trails as quiet secondary (full id on hover). */}
+            <span style={{ fontWeight: 700, color: '#111827' }} title={compositeId || undefined}>
+              {name || (compositeId ? compositeId.split('.').pop()!.replace(/[-_]/g, ' ') : '')}
             </span>
+            {compositeId && compositeId !== name && (
+              <span style={{ color: '#9ca3af', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
+                {compositeId}
+              </span>
+            )}
             {library && (
               <>
                 <span style={{ color: '#d1d5db' }}>·</span>
@@ -1885,37 +1875,11 @@ export default function App() {
             )}
           </div>
         )}
-        <nav style={{
-          display: chromeless ? 'none' : 'flex', gap: 24, alignItems: 'center',
-          padding: '4px 16px',
-          borderBottom: '1px solid #e5e7eb',
-          background: '#fff',
-          flex: '0 0 auto',
-        }}>
-          {tabs.map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                background: 'transparent', border: 0,
-                padding: '6px 0', fontSize: 14,
-                borderBottom: '2px solid ' + (tab === t ? '#2563eb' : 'transparent'),
-                color: tab === t ? '#2563eb' : '#6b7280',
-                fontWeight: tab === t ? 600 : 400,
-                cursor: 'pointer', textTransform: 'capitalize',
-              }}
-            >
-              {TAB_LABELS[t] ?? t}
-            </button>
-          ))}
-        </nav>
-
-        <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
-          {/* The Wiring tab must always be rendered so ReactFlow doesn't lose
-              its node-position state on tab switches; we hide it instead. */}
+        <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
+          {/* The bigraph surface — always rendered (no tab chrome). */}
           <div style={{
             position: 'absolute', inset: 0,
-            display: tab === 'wiring' ? 'flex' : 'none',
+            display: 'flex',
             flexDirection: 'column',
           }}>
             {/* Drill tabs: Super-sim + each opened inner composite (× to close).
@@ -2008,28 +1972,14 @@ export default function App() {
                   />
                   {/* Detail: per-feature toggles (ports / config / contract),
                       each Auto = follow the zoom-driven semantic tier. */}
-                  <DetailMenu overrides={detailOverrides} setOverrides={setDetailOverrides} />
-                  {/* Font: scale all node text (saved in the view). A−/A+ stepper
-                      around the current multiplier; click the label to reset. */}
-                  <div
-                    title="Node text size — scales every card's text; saved with the view"
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', height: 28,
-                      border: '1px solid #d1d5db', borderRadius: 4, overflow: 'hidden',
-                      background: fontScale !== 1 ? '#eff6ff' : '#fff',
-                    }}
-                  >
-                    <button onClick={() => bumpFont(-0.1)} title="Smaller text"
-                      style={{ height: 28, width: 26, border: 0, borderRight: '1px solid #e5e7eb', background: 'transparent', cursor: 'pointer', color: '#374151', fontSize: 12, fontWeight: 700 }}>A−</button>
-                    <button onClick={() => setFontScale(1)} title="Reset text size"
-                      style={{ height: 28, minWidth: 40, border: 0, background: 'transparent', cursor: 'pointer', fontSize: 11, color: fontScale !== 1 ? '#2563eb' : '#6b7280', fontWeight: fontScale !== 1 ? 700 : 400 }}>
-                      {fontScale.toFixed(2)}×
-                    </button>
-                    <button onClick={() => bumpFont(0.1)} title="Larger text"
-                      style={{ height: 28, width: 26, border: 0, borderLeft: '1px solid #e5e7eb', background: 'transparent', cursor: 'pointer', color: '#374151', fontSize: 15, fontWeight: 700 }}>A+</button>
-                  </div>
+                  {/* Detail: per-feature card toggles + text size (folded in to
+                      keep the toolbar to Layout · Detail · Share · Views · Download). */}
+                  <DetailMenu overrides={detailOverrides} setOverrides={setDetailOverrides}
+                    fontScale={fontScale} bumpFont={bumpFont} setFontScale={setFontScale} />
                   {/* Share: copy a self-contained link to THIS view (works on the
-                      static read-only workbench too). */}
+                      static read-only workbench too). Hidden when embedded in a
+                      workbench card — the card header owns Share there. */}
+                  {!chromeless && (
                   <button
                     onClick={onCopyViewLink}
                     title="Copy a shareable link to this exact view — positions, detail, and font — that reopens anywhere"
@@ -2044,6 +1994,7 @@ export default function App() {
                   >
                     {shareCopied ? '✓ Link copied' : '🔗 Share'}
                   </button>
+                  )}
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}
@@ -2154,81 +2105,72 @@ export default function App() {
               </div>
               </DockContainer>
               </div>
-              {/* Run is provided by the workbench card in chromeless embeds. */}
+              {/* Run + step are ONE unified control (the transport folds into the
+                  run bar). Run itself is provided by the workbench card in
+                  chromeless embeds, but the transport still shows there. */}
+              {(() => {
+                const transport = (frameIdx !== null && trajectory && trajectory.length > 1) ? {
+                  frameIdx,
+                  frameCount: trajectory.length,
+                  frameTime: trajectory[frameIdx]?.time,
+                  playing,
+                  onPrev: () => { setPlaying(false); setFrameIdx((i) => Math.max(0, (i ?? 0) - 1)); },
+                  onNext: () => { setPlaying(false); setFrameIdx((i) => Math.min(trajectory.length - 1, (i ?? 0) + 1)); },
+                  onToggle: () => setPlaying((p) => !p),
+                  onScrub: (i: number) => { setPlaying(false); setFrameIdx(i); },
+                  onExit: exitPlayback,
+                } : null;
+                return (
+                  <>
+                    {!chromeless && (
+                      <ExploreRunBar
+                        compositeId={compositeId}
+                        overrides={overrides}
+                        emitSet={emitSet}
+                        runContext={runContext}
+                        defaultSteps={defaultSteps}
+                        runKind={runKind}
+                        readOnly={STATIC}
+                        onTrajectory={setTrajectory}
+                        onVizHtml={setVizHtml}
+                        onCompleted={() => { /* Outputs is docked below — always visible */ }}
+                        onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
+                        transport={transport}
+                        emitCandidates={emitCandidates}
+                        onToggleEmit={toggleEmit}
+                      />
+                    )}
+                    {chromeless && transport && (
+                      <div className="explore-runbar"><TopoTransport {...transport} /></div>
+                    )}
+                  </>
+                );
+              })()}
+              {/* Docked OUTPUTS below the run/step bar — always part of the
+                  stacked surface (drag its top edge to resize). In chromeless
+                  embeds the workbench card owns Outputs, so it is hidden here. */}
               {!chromeless && (
-              <ExploreRunBar
-                compositeId={compositeId}
-                overrides={overrides}
-                emitSet={emitSet}
-                runContext={runContext}
-                defaultSteps={defaultSteps}
-                runKind={runKind}
-                readOnly={STATIC}
-                onTrajectory={setTrajectory}
-                onVizHtml={setVizHtml}
-                onCompleted={() => setTab('results')}
-                onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
-              />
-              )}
-              {/* Topology playback transport — appears when a run's place graph
-                  changes across steps (division, aggregation, …). */}
-              {frameIdx !== null && trajectory && (
-                <div className="topo-transport">
-                  <span className="topo-transport-title">Topology</span>
-                  <button onClick={() => { setPlaying(false); setFrameIdx((i) => Math.max(0, (i ?? 0) - 1)); }}
-                    disabled={frameIdx <= 0} title="Previous frame">◀</button>
-                  <button className="topo-transport-play" onClick={() => setPlaying((p) => !p)}
-                    title={playing ? 'Pause' : 'Play'}>{playing ? '⏸' : '▶'}</button>
-                  <button onClick={() => { setPlaying(false); setFrameIdx((i) => Math.min(trajectory.length - 1, (i ?? 0) + 1)); }}
-                    disabled={frameIdx >= trajectory.length - 1} title="Next frame">▶❘</button>
-                  <input type="range" min={0} max={trajectory.length - 1} value={frameIdx}
-                    onChange={(e) => { setPlaying(false); setFrameIdx(parseInt(e.target.value, 10)); }} />
-                  <span className="topo-transport-frame">
-                    frame {frameIdx + 1}/{trajectory.length}
-                    {trajectory[frameIdx]?.time !== undefined ? ` · t=${trajectory[frameIdx]!.time}` : ''}
-                  </span>
-                  <button className="topo-transport-exit" onClick={exitPlayback}
-                    title="Exit playback (restore composite)">✕</button>
+                <div className={'loom-outputs-dock' + (outputsOpen ? '' : ' collapsed')}>
+                  <button className="loom-outputs-toggle" onClick={() => setOutputsOpen((o) => !o)}
+                    title={outputsOpen ? 'Collapse outputs' : 'Expand outputs'}>
+                    <span className="loom-outputs-chevron">{outputsOpen ? '▾' : '▸'}</span>
+                    Outputs
+                    {(trajectory !== null || vizHtml !== null) && !outputsOpen && (
+                      <span className="loom-outputs-badge">run ready</span>
+                    )}
+                  </button>
+                  <OutputsPanel
+                    trajectory={trajectory}
+                    vizHtml={vizHtml}
+                    hasRun={trajectory !== null || vizHtml !== null}
+                    runId={activeRunId}
+                    downloadable={downloadable}
+                    readOnly={STATIC}
+                  />
                 </div>
               )}
             </EmitContext.Provider>
           </div>
-          {tab === 'setup' && (
-            <SetupRunPanel
-              compositeId={compositeId}
-              parameters={parameters}
-              overrides={overrides}
-              emitSet={emitSet}
-              runContext={runContext}
-              defaultSteps={defaultSteps}
-              onApplied={handleApplied}
-              onTrajectory={setTrajectory}
-              onVizHtml={setVizHtml}
-              onCompleted={() => setTab('results')}
-              onRunState={(s) => { setActiveRunId(s.runId); setDownloadable(s.downloadable); }}
-              readOnly={STATIC}
-              runKind={runKind}
-            />
-          )}
-          {tab === 'results' && (
-            <ResultsPanel
-              trajectory={trajectory}
-              hasRun={trajectory !== null || vizHtml !== null}
-              runId={activeRunId}
-              downloadable={downloadable}
-              readOnly={STATIC}
-            />
-          )}
-          {tab === 'visualizations' && (
-            <VisualizationsPanel
-              vizHtml={vizHtml}
-              hasRun={trajectory !== null || vizHtml !== null}
-              readOnly={STATIC}
-            />
-          )}
-          {tab === 'document' && (
-            <DocumentPanel state={state} compositeId={compositeId} />
-          )}
         </div>
       </div>
     </ReactFlowProvider>

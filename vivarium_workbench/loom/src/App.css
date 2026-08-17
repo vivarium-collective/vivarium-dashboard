@@ -93,7 +93,7 @@ body {
 
 .panel-tabs button:last-child { border-right: none; }
 .panel-tabs button:hover { background: #45475a; }
-.panel-tab-active { background: #6366f1 !important; color: white !important; }
+.panel-tab-active { background: #0d6e6b !important; color: white !important; }
 
 .app-body {
   display: flex;
@@ -117,7 +117,7 @@ body {
 }
 
 .sidebar-resize-handle:hover {
-  background: #6366f1;
+  background: #0d6e6b;
 }
 
 .sidebar {
@@ -194,7 +194,12 @@ body {
   background: #fffbeb;
 }
 
-.store-label { font-weight: 600; color: #1e293b; font-size: 15px; }
+.store-label {
+  font-weight: 600; color: #1e293b; font-size: 15px; text-align: center;
+  /* Never break a term mid-word ("chromoso me"); keep it whole and hyphenate
+     only if it genuinely must wrap. */
+  overflow-wrap: normal; word-break: keep-all; hyphens: auto; text-wrap: balance;
+}
 
 .store-value {
   color: #64748b;
@@ -1781,14 +1786,15 @@ textarea.sr-input {
   padding: 8px 20px;
   font-size: 14px;
   font-weight: 600;
-  background: #6366f1;
+  /* Teal = interactive/brand (Run, Apply). Node identity keeps its own hues. */
+  background: #0d6e6b;
   color: #ffffff;
   border: none;
   border-radius: 6px;
   cursor: pointer;
 }
 
-.sr-run-btn:hover { background: #4f46e5; }
+.sr-run-btn:hover { background: #0a5754; }
 
 .sr-run-btn:disabled {
   opacity: 0.6;
@@ -1796,11 +1802,49 @@ textarea.sr-input {
 }
 
 /* ---- Explore: Config sidebar (left dock panel) --------------------------- */
-.cfg-panel { display: flex; flex-direction: column; height: 100%; overflow: auto; padding: 6px 2px 8px; }
+/* Same wash as the run bar so the side panel + bar + dock read as one chrome
+   frame around the canvas, not three disconnected surfaces. */
+.cfg-panel { display: flex; flex-direction: column; height: 100%; overflow: auto; padding: 8px 10px 10px; background: #f8fafc; }
 /* "⤢ Full" lives in the dock header's button bar (headerAction) — keep it in
    line with the ⇄ / ‹ dock buttons but a touch wider for its label. */
 .cfg-full-btn { width: auto; padding: 0 7px; font-size: 11px; white-space: nowrap; }
 .cfg-note { color: #6b7280; font-size: 12px; padding: 2px 4px 6px; margin: 0; }
+/* Section headers for the two groups in the Configure & Inputs panel. */
+.cfg-group-h {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 11px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
+  color: #0d6e6b; padding: 2px 4px; margin: 4px 0 6px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.cfg-group-h-inputs { margin-top: 18px; }
+.cfg-json-toggle {
+  border: 1px solid #d1d5db; background: #fff; border-radius: 4px; cursor: pointer;
+  font-size: 10px; font-weight: 700; letter-spacing: 0; text-transform: none;
+  color: #475569; padding: 2px 7px;
+}
+.cfg-json-toggle:hover { border-color: #4bb3ae; color: #0d6e6b; }
+.cfg-inputs-hint { font-style: italic; }
+/* Structured input-store editor: indented name→value rows. */
+.cfg-in-tree { display: flex; flex-direction: column; gap: 5px; padding: 2px 4px; }
+.cfg-in-group { display: flex; flex-direction: column; gap: 4px; }
+.cfg-in-group-h {
+  font-size: 11px; font-weight: 700; color: #334155; padding: 2px 0;
+}
+.cfg-in-children {
+  display: flex; flex-direction: column; gap: 5px;
+  margin-left: 8px; padding-left: 9px; border-left: 2px solid #e8edf1;
+}
+.cfg-in-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cfg-in-name { font-size: 12px; color: #475569; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cfg-in-input {
+  flex: 0 1 120px; min-width: 0; font-size: 12px; padding: 3px 7px;
+  border: 1px solid #d1d5db; border-radius: 5px; background: #fff;
+}
+.cfg-in-input:focus { outline: none; border-color: #4bb3ae; box-shadow: 0 0 0 2px rgba(75,179,174,.18); }
+.cfg-inputs-json {
+  width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px; line-height: 1.5; resize: vertical; white-space: pre;
+}
 .cfg-fields { display: flex; flex-direction: column; gap: 9px; padding: 0 4px; }
 /* Compact field: a "name (type) ⓘ" head row over the value input. The verbose
    description is hidden by default (hover title + click ⓘ to expand). */
@@ -1839,11 +1883,17 @@ textarea.sr-input {
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05); font-size: 13px; z-index: 5;
 }
 .explore-runbar-dur input { width: 64px; margin-left: 2px; }
+.explore-runbar-kind {
+  font-size: 11px; font-weight: 700; letter-spacing: .03em;
+  padding: 2px 8px; border-radius: 999px; white-space: nowrap; cursor: help;
+}
+.explore-runbar-kind.is-steps { color: #7c3aed; background: #f3effe; border: 1px solid #ddd0fb; }
+.explore-runbar-kind.is-time { color: #0d6e6b; background: #ecfdf9; border: 1px solid #b7ebe3; }
 .explore-run-btn { padding: 6px 16px; font-size: 13px; }
 .explore-runbar-status { color: #6b7280; display: inline-flex; align-items: center; gap: 6px; }
 .explore-runbar-progress { display: inline-flex; align-items: center; gap: 8px; }
 .explore-runbar-track { width: 120px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
-.explore-runbar-fill { display: block; height: 100%; background: #3b82f6; }
+.explore-runbar-fill { display: block; height: 100%; background: #0d6e6b; }
 .explore-runbar-emit { color: #6b7280; }
 .explore-runbar-done { color: #047857; }
 .explore-runbar-fail { color: #b91c1c; display: inline-flex; align-items: center; gap: 6px; }
@@ -2118,3 +2168,111 @@ textarea.sr-input {
 .topo-transport input[type=range] { flex: 1; max-width: 340px; accent-color: #4bb3ae; }
 .topo-transport-frame { font-variant-numeric: tabular-nums; color: #b7c1bd; white-space: nowrap; }
 .topo-transport-exit { margin-left: auto; }
+
+/* Folded INTO the run bar: run + step are one unified control. Re-theme the
+   transport light so it reads as part of the (light) run bar, not a dark strip. */
+.explore-runbar-div { width: 1px; align-self: stretch; background: #e2e8f0; margin: 2px 0; }
+.explore-runbar .topo-transport {
+  flex: 1 1 260px; background: transparent; color: #374151;
+  border-top: 0; padding: 0; gap: 7px;
+}
+.explore-runbar .topo-transport-title { color: #0d6e6b; }
+.explore-runbar .topo-transport button {
+  background: #fff; color: #374151; border: 1px solid #d1d5db;
+}
+.explore-runbar .topo-transport button:hover:not(:disabled) { background: #f0fdfa; border-color: #4bb3ae; }
+.explore-runbar .topo-transport input[type=range] { accent-color: #0d6e6b; max-width: 260px; }
+.explore-runbar .topo-transport-frame { color: #6b7280; }
+.explore-runbar .topo-transport-exit { margin-left: 2px; }
+
+/* ── Unified Outputs area (Results · Visualizations · Report Cards · Analyses) ── */
+.outputs-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.outputs-tabs {
+  display: flex; gap: 4px; flex: 0 0 auto; padding: 8px 12px 0;
+  border-bottom: 1px solid #e5e7eb; background: #fff;
+}
+.outputs-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 0; background: transparent; cursor: pointer;
+  padding: 7px 12px; font-size: 13px; color: #6b7280; font-weight: 500;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.outputs-tab:hover { color: #374151; }
+.outputs-tab.active { color: #0d6e6b; border-bottom-color: #0d6e6b; font-weight: 700; }
+.outputs-tab-count {
+  font-size: 11px; font-weight: 700; color: #0d6e6b;
+  background: #ecfdf9; border: 1px solid #b7ebe3; border-radius: 999px; padding: 0 6px;
+}
+.outputs-body { flex: 1; min-height: 0; overflow: auto; }
+.outputs-empty { color: #6b7280; font-size: 13px; font-style: italic; padding: 24px 16px; }
+.outputs-artifacts { display: flex; flex-direction: column; gap: 20px; padding: 16px; }
+.outputs-artifact { border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; background: #fff; }
+.outputs-artifact-h {
+  margin: 0; padding: 8px 12px; font-size: 12px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; color: #374151;
+  background: #f8fafc; border-bottom: 1px solid #e5e7eb;
+}
+.outputs-artifact-frame { width: 100%; height: 420px; border: 0; display: block; background: #fff; }
+
+/* Docked Outputs panel — sits below the bigraph + run/step bar in the stacked
+   surface. Starts collapsed (just the toggle strip); expands on run. Drag its
+   top edge to resize when open. */
+.loom-outputs-dock {
+  flex: 0 0 auto;
+  border-top: 2px solid #e5e7eb; background: #fff;
+  display: flex; flex-direction: column;
+}
+.loom-outputs-dock:not(.collapsed) {
+  height: 300px; min-height: 140px; max-height: 78vh; resize: vertical; overflow: hidden;
+}
+.loom-outputs-dock.collapsed { height: auto; }
+.loom-outputs-dock.collapsed .outputs-panel { display: none; }
+.loom-outputs-dock .outputs-panel { flex: 1; min-height: 0; }
+.loom-outputs-toggle {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+  border: 0; background: #f8fafc; cursor: pointer; text-align: left;
+  padding: 8px 14px; font-size: 12px; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: #0d6e6b; border-bottom: 1px solid #eef1f4;
+}
+.loom-outputs-toggle:hover { background: #eef6f4; }
+.loom-outputs-chevron { color: #94a3b8; font-size: 11px; }
+.loom-outputs-badge {
+  margin-left: 6px; font-size: 10px; font-weight: 700; letter-spacing: .02em;
+  text-transform: none; color: #0d6e6b; background: #ecfdf9;
+  border: 1px solid #b7ebe3; border-radius: 999px; padding: 1px 7px;
+}
+
+/* Inline run-error detail (replaces the old alert() "why?" popup). */
+.explore-runbar-why-detail {
+  flex-basis: 100%; margin-top: 2px; padding: 8px 10px;
+  background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px;
+  color: #991b1b; font-size: 12px; line-height: 1.5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: auto;
+}
+
+/* Emit chip → click for a store checklist (what a run records). */
+.explore-runbar-emit-wrap { position: relative; display: inline-flex; }
+.explore-runbar-emit-btn {
+  border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer;
+  font-size: 12px; color: #475569; padding: 3px 9px;
+}
+.explore-runbar-emit-btn:hover:not(:disabled) { border-color: #4bb3ae; color: #0d6e6b; }
+.explore-runbar-emit-btn:disabled { opacity: .6; cursor: default; }
+.explore-runbar-emit-pop {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 30;
+  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.14); padding: 6px; min-width: 170px;
+  max-height: 260px; overflow: auto;
+}
+.explore-runbar-emit-pop-h {
+  font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  color: #94a3b8; padding: 2px 8px 6px;
+}
+.explore-runbar-emit-opt {
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 5px;
+  font-size: 13px; color: #334155; cursor: pointer;
+}
+.explore-runbar-emit-opt:hover { background: #f1f5f9; }
+.explore-runbar-emit-opt input { accent-color: #0d6e6b; }
+.explore-runbar-emit-empty { font-size: 12px; color: #94a3b8; padding: 4px 8px; font-style: italic; }

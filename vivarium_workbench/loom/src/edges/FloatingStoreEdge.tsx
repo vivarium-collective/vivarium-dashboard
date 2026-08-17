@@ -45,6 +45,25 @@ function boxAnchor(center: Point, hw: number, hh: number, toward: Point): Point 
   return { x: center.x + dx * s, y: center.y + dy * s };
 }
 
+// Place (containment) edges attach at the store's TOP-CENTER and BOTTOM-CENTER
+// handles. Wires must stay out of that central column on the top/bottom faces,
+// otherwise a wire's arrowhead lands right on the place edge and reads as an
+// arrow *on* the containment line. This is the half-width of the reserved column.
+const PLACE_KEEPOUT = 22;
+
+/** If `anchor` sits on the top or bottom face inside the place-edge column,
+ *  slide it sideways (toward `biasX`) so the wire clears the containment edge.
+ *  Side-face (left/right) anchors are returned unchanged. */
+function keepOutOfPlaceColumn(
+  center: Point, hw: number, hh: number, anchor: Point, biasX: number,
+): Point {
+  const onVertFace = Math.abs(Math.abs(anchor.y - center.y) - hh) < 0.5;
+  if (!onVertFace || Math.abs(anchor.x - center.x) >= PLACE_KEEPOUT) return anchor;
+  const dir = biasX >= center.x ? 1 : -1;
+  const x = Math.max(center.x - hw + 8, Math.min(center.x + hw - 8, center.x + dir * PLACE_KEEPOUT));
+  return { x, y: anchor.y };
+}
+
 /** A point just outside `anchor` along the OUTWARD normal of the box face it
  *  sits on, so the wire enters that face perpendicular. */
 function boxApproach(center: Point, hw: number, hh: number, anchor: Point, gap: number): Point {
@@ -254,15 +273,21 @@ function FloatingStoreEdge({
   // box face is nearest the approach (boxAnchor), entered perpendicular.
   let way: Point[];
   if (storeInFront) {
-    const anchor = boxAnchor(center, shw, shh, stub);
+    const anchor = keepOutOfPlaceColumn(center, shw, shh, boxAnchor(center, shw, shh, stub), stub.x);
     const ap = boxApproach(center, shw, shh, anchor, APPROACH);
     way = [procPoint, stub, ap, anchor];
   } else {
+    // Store sits behind the port: run out to a lane above/below the card, then
+    // drop into the store's near (top/bottom) face. Offset that drop OUT of the
+    // place-edge column so the wire's arrow never lands on the containment line.
     const overTop = center.y < boxCy;
     const laneY = overTop ? box.y0 - LANE_GAP : box.y1 + LANE_GAP;
-    const anchor = boxAnchor(center, shw, shh, { x: center.x, y: laneY });
-    const ap = boxApproach(center, shw, shh, anchor, APPROACH);
-    way = [procPoint, stub, { x: stub.x, y: laneY }, { x: ap.x, y: laneY }, ap, anchor];
+    const faceY = overTop ? center.y - shh : center.y + shh;
+    const dir = stub.x >= center.x ? 1 : -1;
+    const anchorX = Math.max(center.x - shw + 8, Math.min(center.x + shw - 8, center.x + dir * PLACE_KEEPOUT));
+    const anchor = { x: anchorX, y: faceY };
+    const ap = { x: anchorX, y: overTop ? faceY - APPROACH : faceY + APPROACH };
+    way = [procPoint, stub, { x: stub.x, y: laneY }, { x: anchorX, y: laneY }, ap, anchor];
   }
   const pts = storeIsSource ? [...way].reverse() : way;
   const path = roundedPath(pts, CORNER);

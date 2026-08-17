@@ -29,8 +29,11 @@ const CONTRACT: { id: ContractDetail; label: string }[] = [
 export default function DetailMenu(props: {
   overrides: DetailOverrides;
   setOverrides: (o: DetailOverrides) => void;
+  fontScale: number;
+  bumpFont: (d: number) => void;
+  setFontScale: (v: number) => void;
 }) {
-  const { overrides, setOverrides } = props;
+  const { overrides, setOverrides, fontScale, bumpFont, setFontScale } = props;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
@@ -55,7 +58,7 @@ export default function DetailMenu(props: {
           style={{
             padding: '3px 8px', fontSize: 11, border: 0, cursor: 'pointer', whiteSpace: 'nowrap',
             borderLeft: i === 0 ? 0 : '1px solid #e5e7eb',
-            background: value === o.id ? '#2563eb' : '#fff',
+            background: value === o.id ? '#0d6e6b' : '#fff',
             color: value === o.id ? '#fff' : '#374151',
             fontWeight: value === o.id ? 600 : 400,
           }}
@@ -75,10 +78,10 @@ export default function DetailMenu(props: {
         onClick={() => setOpen((v) => !v)}
         title="Card detail — toggle ports / stores / config / contract independently, or follow the zoom (Auto)"
         style={{
-          height: 28, padding: '0 10px', fontSize: 12, background: (open || anyForced) ? '#eff6ff' : '#fff',
+          height: 28, padding: '0 10px', fontSize: 12, background: (open || anyForced) ? '#ecfdf9' : '#fff',
           display: 'inline-flex', alignItems: 'center', gap: 5,
           border: '1px solid #d1d5db', borderRadius: 4, cursor: 'pointer',
-          color: (open || anyForced) ? '#2563eb' : '#374151', fontWeight: anyForced ? 600 : 400,
+          color: (open || anyForced) ? '#0d6e6b' : '#374151', fontWeight: anyForced ? 600 : 400,
         }}
       >
         Detail ▾
@@ -100,6 +103,18 @@ export default function DetailMenu(props: {
           <div style={row}><span style={rowLabel}>Config</span>{seg(TRI, overrides.config, (id) => setOverrides({ ...overrides, config: id as TriDetail }))}</div>
           <div style={row}><span style={rowLabel}>Contract</span>{seg(CONTRACT, overrides.contract, (id) => setOverrides({ ...overrides, contract: id as ContractDetail }))}</div>
           <div style={row}><span style={rowLabel}>Figures</span>{seg(TRI, overrides.figures, (id) => setOverrides({ ...overrides, figures: id as TriDetail }))}</div>
+          <div style={{ height: 1, background: '#e5e7eb', margin: '4px 0' }} />
+          <div style={row}>
+            <span style={rowLabel}>Text size</span>
+            <div style={{ display: 'inline-flex', border: '1px solid #d1d5db', borderRadius: 5, overflow: 'hidden' }}>
+              <button onClick={() => bumpFont(-0.1)} title="Smaller text"
+                style={{ padding: '3px 9px', fontSize: 12, fontWeight: 700, border: 0, borderRight: '1px solid #e5e7eb', background: '#fff', color: '#374151', cursor: 'pointer' }}>A−</button>
+              <button onClick={() => setFontScale(1)} title="Reset text size"
+                style={{ padding: '3px 9px', fontSize: 11, minWidth: 46, border: 0, background: '#fff', color: fontScale !== 1 ? '#0d6e6b' : '#6b7280', fontWeight: fontScale !== 1 ? 700 : 400, cursor: 'pointer' }}>{fontScale.toFixed(2)}×</button>
+              <button onClick={() => bumpFont(0.1)} title="Larger text"
+                style={{ padding: '3px 9px', fontSize: 15, fontWeight: 700, border: 0, borderLeft: '1px solid #e5e7eb', background: '#fff', color: '#374151', cursor: 'pointer' }}>A+</button>
+            </div>
+          </div>
           <div style={{ height: 1, background: '#e5e7eb', margin: '4px 0' }} />
           <button
             onClick={() => setOverrides({ ports: 'auto', stores: 'auto', config: 'auto', contract: 'auto', figures: 'auto' })}
