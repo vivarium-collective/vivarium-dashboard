@@ -4755,6 +4755,28 @@ class TestSourceSwitchBuildRoute:
             return cache
 
         monkeypatch.setattr(sbv, "materialize_session_build", _materialize_session)
+
+        # item 63: a materialized remote build is a bare tarball extraction with
+        # no `.venv` of its own — the route must prepare it via the MANAGED (uv
+        # sync) path, not the in-place fast path, or `env_resolver` silently
+        # falls back to the workbench's own interpreter/deps instead of this
+        # commit's, and composite-parameter discovery degrades to empty. This
+        # test mocks `session_env.prepare` itself (its own managed=True mechanics
+        # are already covered by test_session_env.py) to assert the WIRING: the
+        # route must actually pass managed=True, not just call prepare() at all.
+        from vivarium_workbench.lib import session_env
+        prepare_calls = []
+
+        def _fake_prepare(session_key, source, *, managed=False, timeout=None):
+            prepare_calls.append({
+                "session_key": session_key, "source": source,
+                "managed": managed, "timeout": timeout,
+            })
+            return {"status": "materializing", "managed": managed,
+                    "source": str(source), "phase": "syncing", "elapsed_s": 0.1}
+
+        monkeypatch.setattr(session_env, "prepare", _fake_prepare)
+
         from vivarium_workbench.lib import session_registry
         session_registry.clear()
         before = _root.get_workspace_root()
@@ -4763,8 +4785,11 @@ class TestSourceSwitchBuildRoute:
         body = r.json()
         assert body["ok"] is True
         assert body["source"] == {"path": str(cache), "name": "y @ deadbeef (build #5)"}
-        # Eager-on-switch: the materialized build workspace is prepared → ready.
-        assert body["materialization"]["status"] == "ready"
+        # The real regression assertion: managed=True, not the default False.
+        assert len(prepare_calls) == 1
+        assert prepare_calls[0]["managed"] is True
+        assert prepare_calls[0]["source"] == str(cache)
+        assert body["materialization"]["status"] == "materializing"
         # Per-session (slice 4/5): the global root is NOT re-pointed; the caller's
         # session is bound to the materialized cache dir.
         assert _root.get_workspace_root() == before
@@ -4775,6 +4800,7 @@ class TestSourceSwitchBuildRoute:
         # shared build cache directly.
         assert seen["session_key"] == key
         assert seen["args"] == (5, "deadbeef")
+        assert prepare_calls[0]["session_key"] == key
 
     def test_route_in_openapi(self, client):
         paths = client.get("/openapi.json").json()["paths"]

@@ -24,6 +24,117 @@ def test_dispatch_deployment_when_viv_build(tmp_path, monkeypatch):
     assert captured == {"sid": 66, "ref": "pkg.x", "ov": {"k": 2}}
 
 
+def test_dispatch_deployment_prefers_local_when_generator_found(tmp_path, monkeypatch):
+    """item 63: a session-bound materialized build (.viv-build.json present)
+    has real files on disk — resolve via the same safe env-worker discovery
+    discover_all_composites already uses, INSTEAD of the sms-api route (which
+    was added speculatively and never built server-side). The remote client
+    must never even be constructed when local discovery finds the id."""
+    (tmp_path / ".viv-build.json").write_text('{"simulator_id": 66}')
+
+    def _boom_client(*a, **k):
+        raise AssertionError("remote SmsApiClient must not be called when local resolution hits")
+
+    monkeypatch.setattr(cr, "SmsApiClient", _boom_client)
+    monkeypatch.setattr(
+        cr, "_local_generator_payload",
+        lambda ws, sid: {"id": sid, "kind": "generator",
+                          "parameters": {"n_seeds": {"type": "integer", "default": 1}}}
+        if sid == "v2ecoli.composites.ecoli_baseline.ecoli_baseline" else None,
+    )
+    out = cr.resolve_composite_for_request(
+        tmp_path, "v2ecoli.composites.ecoli_baseline.ecoli_baseline", {})
+    assert out["kind"] == "generator"
+    assert out["parameters"]["n_seeds"]["default"] == 1
+
+
+def test_dispatch_deployment_resolves_static_spec_locally_no_generator_helper_needed(tmp_path, monkeypatch):
+    """item 63, the generalization gap: a STATIC `.composite.yaml` composite
+    under a session-bound materialized build needs no environment/interpreter
+    at all (pure file read) — it must resolve via the SAME general
+    resolve_composite path any local workspace uses, without ever reaching
+    for the generator-specific env-worker helper. Proves the fix isn't
+    generator-only / MVP-composite-only."""
+    (tmp_path / ".viv-build.json").write_text('{"simulator_id": 66}')
+    (tmp_path / "workspace.yaml").write_text("name: demo-ws\npackage_path: pbg_demo\n", encoding="utf-8")
+    comp = tmp_path / "pbg_demo" / "composites"
+    comp.mkdir(parents=True)
+    (comp / "c.composite.yaml").write_text(
+        "name: c\nschema:\n  v: float\nstate:\n  v: 1\n", encoding="utf-8")
+
+    def _boom(*a, **k):
+        raise AssertionError("neither the generator helper nor sms-api should be reached")
+
+    monkeypatch.setattr(cr, "_local_generator_payload", _boom)
+    monkeypatch.setattr(cr, "SmsApiClient", _boom)
+    monkeypatch.setattr(cr, "_prime_registry", lambda: None)
+    out = cr.resolve_composite_for_request(tmp_path, "pbg_demo.composites.c", {})
+    assert out is not None and out["id"] == "pbg_demo.composites.c"
+    assert out["wiring_status"] == "ready" and out["state"] == {"v": 1}
+    assert out["kind"] == "spec"
+
+
+def test_dispatch_deployment_falls_back_to_remote_when_local_misses(tmp_path, monkeypatch):
+    """The bare deployment-wide-pin case (or any id local discovery genuinely
+    doesn't know) must still reach the existing remote sms-api attempt —
+    the local-first check is additive, not a replacement."""
+    (tmp_path / ".viv-build.json").write_text('{"simulator_id": 66}')
+    captured = {}
+
+    class _FakeClient:
+        def __init__(self, base=None): pass
+        def composite_resolve(self, sid, ref, ov=None):
+            captured.update(sid=sid, ref=ref, ov=ov); return {"name": "remote"}
+
+    monkeypatch.setattr(cr, "SmsApiClient", _FakeClient)
+    monkeypatch.setattr(cr, "_sms_api_base", lambda: "http://sms")
+    monkeypatch.setattr(cr, "_local_generator_payload", lambda ws, sid: None)
+    out = cr.resolve_composite_for_request(tmp_path, "pkg.x", {"k": 2})
+    assert out == {"name": "remote"}
+    assert captured == {"sid": 66, "ref": "pkg.x", "ov": {"k": 2}}
+
+
+def test_local_generator_payload_returns_none_for_non_generator(tmp_path, monkeypatch):
+    """A static spec (kind != 'generator') isn't this helper's job — None lets
+    the caller fall through to whatever it would otherwise do."""
+    from vivarium_workbench.lib import composite_lookup
+    (tmp_path / "workspace.yaml").write_text("name: demo-ws\npackage_path: pbg_demo\n", encoding="utf-8")
+    monkeypatch.setattr(
+        composite_lookup, "discover_all_composites",
+        lambda ws, pkg: {"pbg_demo.composites.c": {"kind": "spec", "parameters": {}}},
+    )
+    assert cr._local_generator_payload(tmp_path, "pbg_demo.composites.c") is None
+    assert cr._local_generator_payload(tmp_path, "pbg_demo.composites.absent") is None
+
+
+def test_local_generator_payload_returns_real_parameters(tmp_path, monkeypatch):
+    """The happy path: a generator entry discovered locally surfaces its real
+    declared parameters (e.g. n_seeds/n_generations) — the actual item 63
+    fix — with an honest notice that only the wiring/state preview, not the
+    parameters, is unavailable for a materialized session build."""
+    from vivarium_workbench.lib import composite_lookup
+    (tmp_path / "workspace.yaml").write_text("name: v2ecoli\npackage_path: v2ecoli\n", encoding="utf-8")
+    rec = {
+        "kind": "generator", "name": "ecoli_baseline", "description": "desc",
+        "parameters": {"n_seeds": {"type": "integer", "default": 1},
+                        "n_generations": {"type": "integer", "default": 1}},
+        "module": "v2ecoli.composites.ecoli_baseline", "default_n_steps": 2700,
+        "visualizations": [{"name": "cell_mass"}],
+    }
+    monkeypatch.setattr(
+        composite_lookup, "discover_all_composites",
+        lambda ws, pkg: {"v2ecoli.composites.ecoli_baseline.ecoli_baseline": rec}
+        if pkg == "v2ecoli" else {},
+    )
+    out = cr._local_generator_payload(tmp_path, "v2ecoli.composites.ecoli_baseline.ecoli_baseline")
+    assert out is not None
+    assert out["kind"] == "generator"
+    assert out["parameters"]["n_seeds"]["default"] == 1
+    assert out["parameters"]["n_generations"]["default"] == 1
+    assert out["state"] is None and out["svg"] is None  # honest: no live build here
+    assert "not available" in out["notice"] and "parameters" in out["notice"].lower()
+
+
 def test_dispatch_deployment_degrades_when_sms_api_route_missing(tmp_path, monkeypatch):
     """sms-api has no POST /core/v1/simulator/{id}/composite-resolve route --
     SmsApiClient.composite_resolve was added speculatively and the server side
