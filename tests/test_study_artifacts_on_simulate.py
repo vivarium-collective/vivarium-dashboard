@@ -1,14 +1,18 @@
-"""Task E2: fold the two study-level bulk-download groups (analysis result
-files `#data-files` + the raw-simulation-data bulk `#raw-data-list` /
-`#exports-downloads`) out of the Exports tab (`data-kind="data"`) and onto
-the Simulations tab (`data-kind="simulate"`) as a compact "Study artifacts"
-strip. Same element ids so the existing loaders (`_loadAnalysisOutputs`,
-`_loadRawData`, `_downloadAllRawExports`) bind unchanged; the loader triggers
-move from the `data` tab-activation branch to the `simulate` one; the C4
-Readouts pointer repoints from `_gotoStudyTab('data', 'exports-downloads')`
-to `_gotoStudyTab('simulate', 'exports-downloads')`.
+"""Study-spine reorg (Slice 1, spec §1/§3.2/§3.3/§3.4): the two study-level
+bulk-download groups that Task E2 previously folded onto the Simulations tab
+(analysis result files `#data-files` + the raw-simulation-data bulk
+`#raw-data-list` / `#exports-downloads`) split into their own Evidence
+panels: analysis result files -> Analyses (`data-kind="analyses"`), raw
+simulation data -> Results (`data-kind="results"`). Same element ids so the
+existing loaders (now `_loadAnalyses`, `_loadResults`, and unchanged
+`_downloadAllRawExports`) bind unchanged; the loader triggers move from the
+`simulate` tab-activation branch onto their own `analyses`/`results`
+branches. The Readouts pointer repoints from
+`_gotoStudyTab('simulate', 'exports-downloads')` to
+`_gotoStudyTab('results', 'exports-downloads')`.
 
-See .superpowers/sdd/fable-increment-a/task-E2-brief.md.
+See docs/superpowers/specs/2026-08-16-study-spine-reorg-design.md (§3.2-3.4)
+and docs/superpowers/plans/2026-08-16-study-spine-reorg.md (Task 1).
 """
 from __future__ import annotations
 
@@ -39,43 +43,67 @@ def _panel(html: str, kind: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Template: both groups render under Simulations, not under Exports.
+# Template: each group renders under its own Evidence panel, not Simulations.
 # ---------------------------------------------------------------------------
 
-def test_analysis_files_group_moved_to_simulate_panel():
+def test_analysis_files_group_moved_to_analyses_panel():
     html = _render()
+    analyses_panel = _panel(html, "analyses")
+    assert 'id="data-files"' in analyses_panel
+    assert 'id="data-download-all"' in analyses_panel
+    assert '/api/study-analysis-zip?study=s1' in analyses_panel
     sim_panel = _panel(html, "simulate")
-    assert 'id="data-files"' in sim_panel
-    assert 'id="data-download-all"' in sim_panel
-    assert '/api/study-analysis-zip?study=s1' in sim_panel
-    # Task E4 deleted the Exports/data tab entirely — nothing to check it
-    # against anymore; the group now has exactly one home (Simulations).
-    assert 'id="panel-data"' not in html
+    assert 'id="data-files"' not in sim_panel
+    assert 'id="data-download-all"' not in sim_panel
 
 
-def test_raw_data_bulk_group_moved_to_simulate_panel():
+def test_raw_data_bulk_group_moved_to_results_panel():
     html = _render()
+    results_panel = _panel(html, "results")
+    assert 'id="raw-data-list"' in results_panel
+    assert 'id="exports-downloads"' in results_panel
+    assert 'id="raw-data-download-all"' in results_panel
+    assert 'onclick="_downloadAllRawExports()"' in results_panel
     sim_panel = _panel(html, "simulate")
-    assert 'id="raw-data-list"' in sim_panel
-    assert 'id="exports-downloads"' in sim_panel
-    assert 'id="raw-data-download-all"' in sim_panel
-    assert 'onclick="_downloadAllRawExports()"' in sim_panel
-    # Task E4 deleted the Exports/data tab entirely — nothing to check it
-    # against anymore; the group now has exactly one home (Simulations).
-    assert 'id="panel-data"' not in html
+    assert 'id="raw-data-list"' not in sim_panel
+    assert 'id="exports-downloads"' not in sim_panel
 
 
 def test_simulate_panel_still_has_runs_table_and_run_detail():
-    """Sanity: the strip is additive — the existing runs UI is untouched."""
+    """Sanity: relocation is subtractive on Simulations only for the
+    artifacts strip — the existing runs UI is untouched."""
     html = _render()
     sim_panel = _panel(html, "simulate")
     assert 'id="study-sim-table"' in sim_panel
     assert 'id="study-run-detail"' in sim_panel
 
 
+def test_results_and_analyses_pillars_under_evidence_cluster():
+    html = _render()
+    i = html.index('data-act="evidence"')
+    j = html.index('data-act="assurance"', i)
+    evidence = html[i:j]
+    assert 'data-kind="results"' in evidence
+    assert 'data-kind="analyses"' in evidence
+    assert 'data-kind="visualize"' in evidence
+    # Order: Results, Analyses, Visualizations.
+    assert evidence.index('data-kind="results"') < evidence.index('data-kind="analyses"') < evidence.index('data-kind="visualize"')
+
+
+def test_simulate_pillar_moved_under_design_cluster():
+    html = _render()
+    i = html.index('data-act="design"')
+    j = html.index('data-act="evidence"', i)
+    design = html[i:j]
+    assert 'data-kind="simulate"' in design
+    i2 = html.index('data-act="evidence"')
+    j2 = html.index('data-act="assurance"', i2)
+    evidence = html[i2:j2]
+    assert 'data-kind="simulate"' not in evidence
+
+
 # ---------------------------------------------------------------------------
-# JS: loader triggers move from the 'data' tab-activation branch to
-# 'simulate'.
+# JS: loader triggers fire on their own tab-activation branches.
 # ---------------------------------------------------------------------------
 
 def _set_study_tab_body(js: str) -> str:
@@ -84,13 +112,17 @@ def _set_study_tab_body(js: str) -> str:
     return js[i:j]
 
 
-def test_loaders_trigger_on_simulate_tab_activation():
+def test_loaders_trigger_on_their_own_tab_activation():
     js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
     body = _set_study_tab_body(js)
-    i = body.index("kind === 'simulate'")
-    line = body[i - 10: i + 120]
-    assert "_loadAnalysisOutputs()" in line
-    assert "_loadRawData()" in line
+    i = body.index("kind === 'analyses'")
+    assert "_loadAnalyses()" in body[i - 10: i + 60]
+    j = body.index("kind === 'results'")
+    assert "_loadResults()" in body[j - 10: j + 60]
+    k = body.index("kind === 'simulate'")
+    line = body[k - 10: k + 60]
+    assert "_loadAnalyses()" not in line
+    assert "_loadResults()" not in line
 
 
 def test_loaders_no_longer_trigger_on_data_tab_activation():
@@ -100,18 +132,18 @@ def test_loaders_no_longer_trigger_on_data_tab_activation():
 
 
 # ---------------------------------------------------------------------------
-# The C4 Readouts pointer now targets the simulate tab, not the (soon-dead)
-# data tab.
+# The C4 Readouts pointer now targets the results tab.
 # ---------------------------------------------------------------------------
 
-def test_readouts_pointer_targets_simulate_tab_not_data_tab():
+def test_readouts_pointer_targets_results_tab():
     js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
     i = js.index("function _loadReadoutsDownloadPointer(")
     j = js.index("window._loadReadoutsDownloadPointer", i)
     body = js[i:j]
-    assert "_gotoStudyTab(\\'simulate\\'" in body
+    assert "_gotoStudyTab(\\'results\\'" in body
     assert "exports-downloads" in body
     assert "_gotoStudyTab(\\'data\\'" not in body
+    assert "_gotoStudyTab(\\'simulate\\'" not in body
 
 
 def test_no_remaining_jump_targets_data_tab_for_downloads():
@@ -121,7 +153,7 @@ def test_no_remaining_jump_targets_data_tab_for_downloads():
 
 
 # ---------------------------------------------------------------------------
-# Out of scope (E3): per-row run "Data" links + _showRunDetail untouched.
+# Out of scope: per-row run "Data" links + _showRunDetail untouched.
 # ---------------------------------------------------------------------------
 
 def test_per_row_data_links_and_show_run_detail_untouched():

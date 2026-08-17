@@ -55,9 +55,123 @@ def _available_observables_for_ref(ws_root: Path, ref: str) -> dict:
 _LINEAGE_RE = re.compile(r"^agents\.\d+\.")
 _GENERIC_LEAF = {"count", "id", "value"}
 
+# ---------------------------------------------------------------------------
+# Emitter & config block (spec §3.1 block 1)
+# ---------------------------------------------------------------------------
+#
+# Static class/module map mirroring the ACTUAL imports in ``lib/emitters.py``
+# (``_run_xarray`` / ``run_with_emitter``) — never fabricated, just named
+# after where the dashboard's own write path imports each emitter from.
+_EMITTER_CLASS_MODULE = {
+    "xarray": ("XArrayEmitter", "pbg_emitters.xarray_emitter"),
+    "sqlite": ("SQLiteEmitter", "pbg_emitters.sqlite_emitter"),
+    "parquet": ("ParquetEmitter", "pbg_emitters.parquet_emitter"),
+    "ram": ("RAMEmitter", "process_bigraph.emitter"),
+}
+
+# Where each output_kind's store lands, as the dashboard's own naming
+# convention (``lib/emitters.py``: ``_run_xarray``'s ``<out_dir>/<run_id>.zarr``
+# / study-convention ``runs.<run_id>.zarr``; ``composite_runs.inject_sqlite_emitter``'s
+# ``runs.db``; the parquet hive root). Not a filesystem probe — a declared
+# convention, consistent with this block describing the PLAN, not an observed run.
+_EMITTER_OUTPUT_DIR_TEMPLATE = {
+    "zarr": "<study>/runs.<run_id>.zarr",
+    "sqlite": "<study>/runs.db",
+    "parquet": "<study>/parquet/",
+    "ram": "(in-memory — no on-disk store)",
+}
+
+# The flat-Step XArrayEmitter's transducer flush buffer (``lib/emitters.py``
+# ``_xarray_emitter_config``: ``transducer.buffer.size``). Other emitters in
+# this dashboard's write path don't buffer the same way, so they carry no
+# declared buffer size (``None`` — the JS renders that as "—", never a
+# fabricated number).
+_EMITTER_BUFFER = {"xarray": 3}
+
+# Declared numeric dtype for an emitted leaf. This is the CONTRACT dtype the
+# xarray write path commits to (``view_from_emit_paths(..., dtype="<f8")``,
+# ``lib/emitters.py``) — a best-effort default applied to every emitted leaf
+# regardless of the workspace's chosen emitter, since the dashboard doesn't
+# introspect per-column runtime types at design time (that's Results, not
+# Readouts).
+_LEAF_DTYPE = "float64"
+_LEAF_ITEMSIZE = 8  # bytes per float64 element
+
 
 def clear_cache() -> None:
     _READOUTS_CACHE.clear()
+
+
+def _emitter_block(spec: dict, study_dir: Path) -> dict:
+    """Design-time emitter & config block (spec §3.1 block 1): ``{name,
+    class_name, module, output_kind, interval, buffer, output_dir, scope}``.
+
+    Sourced entirely from ``lib/emitters.py`` (``default_emitter``/
+    ``output_kind``) plus the study/workspace ``runtime.default_emitter``
+    override ``default_emitter`` already resolves — never builds the
+    composite or touches a run store, so this never blocks on a slow build.
+    Always computable from a parsed study spec, so callers can attach it to
+    every payload (including soft-degrade / error paths).
+    """
+    from . import emitters as em
+
+    runs_db = Path(study_dir) / "runs.db"
+    name = em.default_emitter(spec, runs_db)
+    kind = em.output_kind(name)
+    class_name, module = _EMITTER_CLASS_MODULE.get(name, (None, None))
+    return {
+        "name": name,
+        "class_name": class_name,
+        "module": module,
+        "output_kind": kind,
+        "interval": 1,
+        "buffer": _EMITTER_BUFFER.get(name),
+        "output_dir": _EMITTER_OUTPUT_DIR_TEMPLATE.get(kind, str(study_dir)),
+        # The emit surface this panel describes is the DECLARED store-leaf
+        # set (``observables_views.build_observables`` leaves), never an
+        # incidental full-state dump — spec §3.1 "emit scope (declared)".
+        "scope": "declared",
+    }
+
+
+def _declared_n_steps(spec: dict) -> "int | None":
+    """The study's declared step count, from ``baseline[0].params.n_steps``
+    (the same field ``study_runs.run_study_baseline`` pops before launch).
+    ``None`` when not declared — callers render a symbolic ``n_steps`` dim
+    rather than fabricate a number."""
+    baseline = spec.get("baseline") or []
+    if isinstance(baseline, list) and baseline and isinstance(baseline[0], dict):
+        params = baseline[0].get("params")
+        if isinstance(params, dict):
+            n = params.get("n_steps")
+            if isinstance(n, (int, float)) and not isinstance(n, bool):
+                return int(n)
+    return None
+
+
+def _leaf_shape(leaf: str, catalogs: dict, n_steps: "int | None") -> list:
+    """``[n_steps_or_symbol]`` for a scalar leaf, ``[n_steps_or_symbol,
+    catalog_len]`` for a leaf backed by a static ``_labels`` catalog
+    (``available_observables``'s ``catalogs`` — e.g. a per-monomer vector)."""
+    shape: list = [n_steps if isinstance(n_steps, int) else "n_steps"]
+    cat = catalogs.get(_strip_lineage(leaf))
+    if cat is None:
+        cat = catalogs.get(leaf)
+    if isinstance(cat, list):
+        shape.append(len(cat))
+    return shape
+
+
+def _shape_bytes(shape: list) -> "int | None":
+    """Best-effort total byte count for ``shape`` at ``_LEAF_DTYPE`` width, or
+    ``None`` when a dimension is symbolic (unknown ``n_steps``) — never
+    fabricate a byte count for an unresolved dimension."""
+    if any(not isinstance(d, int) for d in shape):
+        return None
+    count = 1
+    for d in shape:
+        count *= d
+    return count * _LEAF_ITEMSIZE
 
 
 def _strip_lineage(path: str) -> str:
@@ -145,7 +259,8 @@ def _compute_excluded(spec: dict, available: dict) -> dict:
             "emit_is_total": False}
 
 
-def _merge_readouts(spec: dict, available: dict, *, plan_available: bool = True) -> list[dict]:
+def _merge_readouts(spec: dict, available: dict, *, plan_available: bool = True,
+                     n_steps: "int | None" = None) -> list[dict]:
     """Pure merge of emit-plan leaves + authored readouts → ordered row dicts.
 
     Headless-friendly (no composite build): pass ``available={"leaves": [...]}``.
@@ -155,8 +270,15 @@ def _merge_readouts(spec: dict, available: dict, *, plan_available: bool = True)
     the emit plan, so nothing is verified" (→ ``unverified``). The latter happens
     on a remote build (no local ParCa cache); flagging those rows
     ``not_in_emit_plan`` would falsely imply they were checked and found missing.
+
+    ``n_steps`` (spec §3.1 block 3, "Outputs & shapes") is the study's declared
+    step count (``_declared_n_steps``); emitted-leaf rows get a ``dtype``/
+    ``shape``/(best-effort)``bytes`` triple. Rows that aren't a confirmed emit
+    leaf (derived / not_in_emit_plan / unverified) carry no shape — there's no
+    verified structure to describe.
     """
     leaves = list(available.get("leaves") or [])
+    catalogs = dict(available.get("catalogs") or {})
     # Index authored readouts by lineage-stripped store_path for overlay match.
     # Fix 3: honour the legacy ``observables:`` key as an annotation source.
     authored = [r for r in (spec.get("readouts") or spec.get("observables") or []) if isinstance(r, dict)]
@@ -174,7 +296,8 @@ def _merge_readouts(spec: dict, available: dict, *, plan_available: bool = True)
         ann = overlay.get(key)
         if ann is not None:
             matched_ids.add(id(ann))
-        rows.append({
+        shape = _leaf_shape(leaf, catalogs, n_steps)
+        row = {
             "store_path": leaf,
             "name": (ann or {}).get("name") or _short_name(leaf),
             "description": (ann or {}).get("description", "") or "",
@@ -183,7 +306,13 @@ def _merge_readouts(spec: dict, available: dict, *, plan_available: bool = True)
             "notes": (ann or {}).get("notes", "") or "",
             "annotated": ann is not None,
             "emit_status": "emitted",
-        })
+            "dtype": _LEAF_DTYPE,
+            "shape": shape,
+        }
+        nbytes = _shape_bytes(shape)
+        if nbytes is not None:
+            row["bytes"] = nbytes
+        rows.append(row)
 
     # Fix 4: for orphan detection, build a set of all stripped leaf keys so that
     # a duplicate authored store_path (last-wins in overlay) doesn't false-flag
@@ -259,12 +388,24 @@ def build_study_readouts(ws_root: Path, slug: str) -> tuple[dict, int]:
     except Exception as e:  # noqa: BLE001
         return {"error": f"study spec parse failed: {e}"}, 400
 
+    # Emitter identity/config is computable from the parsed spec alone (never
+    # builds the composite) — attach it to EVERY payload from here on,
+    # including the soft-degrade / error paths below, per spec §3.1.
+    try:
+        emitter_block = _emitter_block(spec, study_dir)
+    except Exception as e:  # noqa: BLE001 — emitter identity must never 500 the panel
+        emitter_block = {
+            "name": None, "class_name": None, "module": None, "output_kind": None,
+            "interval": None, "buffer": None, "output_dir": None, "scope": "declared",
+            "error": f"emitter block unavailable: {e}",
+        }
+
     baseline = spec.get("baseline") or []
     if not (isinstance(baseline, list) and baseline and isinstance(baseline[0], dict)):
-        return {"error": "study has no baseline composite", "rows": []}, 422
+        return {"error": "study has no baseline composite", "rows": [], "emitter": emitter_block}, 422
     ref = baseline[0].get("composite")
     if not ref:
-        return {"error": "baseline entry has no composite ref", "rows": []}, 422
+        return {"error": "baseline entry has no composite ref", "rows": [], "emitter": emitter_block}, 422
 
     ckey = ("readouts", str(ws_root), slug)
     hit = _READOUTS_CACHE.get(ckey)
@@ -274,7 +415,7 @@ def build_study_readouts(ws_root: Path, slug: str) -> tuple[dict, int]:
     try:
         available = _available_observables_for_ref(ws_root, ref)
     except _ValidatorUnavailable as e:
-        return {"error": f"readout_validation unavailable: {e}"}, 501
+        return {"error": f"readout_validation unavailable: {e}", "emitter": emitter_block}, 501
     except Exception as e:  # noqa: BLE001
         rows = _merge_readouts(spec, {"leaves": []}, plan_available=False)
         reason = f"composite {ref!r} could not be built: {e}"
@@ -284,16 +425,19 @@ def build_study_readouts(ws_root: Path, slug: str) -> tuple[dict, int]:
         # note instead of a 422 + a raw filesystem traceback.
         if (ws_root / ".viv-build.json").is_file():
             return {"composite": ref, "rows": rows, "excluded": [], "excluded_state": "unavailable",
+                    "emitter": emitter_block,
                     "reason": "Emit-plan verification is unavailable on a remote build "
                               "(no local ParCa cache); showing authored readouts.",
                     "degraded": True, "remote_build": True,
                     "note": "Emit-plan verification is unavailable on a remote build "
                             "(no local ParCa cache); showing authored readouts."}, 200
         return {"composite": ref, "rows": rows, "excluded": [], "excluded_state": "unavailable",
-                "reason": reason, "degraded": True,
+                "emitter": emitter_block, "reason": reason, "degraded": True,
                 "note": f"composite {ref!r} could not be built — rows unverified: {e}"}, 422
 
-    payload = {"composite": ref, "rows": _merge_readouts(spec, available), "excluded": [], "note": ""}
+    n_steps = _declared_n_steps(spec)
+    payload = {"composite": ref, "rows": _merge_readouts(spec, available, n_steps=n_steps),
+               "excluded": [], "note": "", "emitter": emitter_block}
     try:
         payload.update(_compute_excluded(spec, available))
     except Exception as e:  # noqa: BLE001 — degrade, never 500

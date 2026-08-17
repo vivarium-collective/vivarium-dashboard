@@ -851,6 +851,20 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
     # status_disagreements) — never modifies study.yaml.
     gate_ladder = build_gate_ladder(spec, ws_root=ws_root, slug=name)
     gate_states = act_gate_states(gate_ladder)
+    # Study-spine reorg (spec §3.6, plan Task 3): the Tests panel must show
+    # the COMPLETE set of this study's report cards — every card under
+    # `viz/report_card/`, not only the ones wired to a behavior_tests /
+    # expected_behavior entry. render_report_cards_section scans the
+    # directory directly (same source study_spec.report_card_urls feeds), so
+    # it renders cards the per-row expander below would otherwise miss.
+    # Best-effort: a study with no report cards renders "" and the section
+    # drops (§2 R2 absent != empty), same contract single_study_report.py
+    # already uses for the static published report.
+    try:
+        from vivarium_workbench.lib.report_card_section import render_report_cards_section
+        report_cards_html = render_report_cards_section(ws_root, name)
+    except Exception:  # noqa: BLE001
+        report_cards_html = ""
     # Result figure: inline the study's primary dynamics SVG so the Overview shows
     # the visual result, not just prose. Prefer the closed-loop "*-dynamics.svg";
     # degrade silently to no figure. Trusted (workspace-authored) SVG.
@@ -883,6 +897,7 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
                       unresolved_composites=unresolved_composites,
                       gate_ladder=gate_ladder,
                       gate_states=gate_states,
+                      report_cards_html=report_cards_html,
                       base_path=base_path)
     from vivarium_workbench.lib.report import _apply_live_base_path, _normalize_asset_urls
     html = _normalize_asset_urls(html)

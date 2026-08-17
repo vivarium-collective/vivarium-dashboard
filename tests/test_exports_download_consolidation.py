@@ -112,15 +112,17 @@ def test_pointer_function_jumps_to_exports_via_gotostudytab():
     body = js[i:j]
     # Reuses C1's cross-tab helper — no bespoke tab-switch logic. (The call
     # is embedded in an onclick="..." HTML-attribute string, so its quotes
-    # are backslash-escaped in the JS source: _gotoStudyTab(\'simulate\',...).)
+    # are backslash-escaped in the JS source: _gotoStudyTab(\'results\',...).)
     # Task E2 moved the raw-data-downloads group off Exports ('data') onto
-    # Simulations ('simulate'), and repointed this pointer to match.
+    # Simulations ('simulate'); the study-spine reorg (spec §3.3) moved it
+    # again, onto its own Results panel ('results'), and repointed this
+    # pointer to match.
     assert "_gotoStudyTab(" in body
-    assert "gotoStudyTab(\\'simulate\\'" in body
-    # Lands on the anchor the Simulations template now carries.
+    assert "gotoStudyTab(\\'results\\'" in body
+    # Lands on the anchor the Results template now carries.
     assert "exports-downloads" in body
-    # Same data source + filter predicate _loadRawData (Exports) uses, so the
-    # pointer only appears when Exports actually has something to show —
+    # Same data source + filter predicate _loadResults (Results) uses, so the
+    # pointer only appears when Results actually has something to show —
     # never pointing at an empty tab (brief: "prefer omitting the pointer
     # when there are no runs with data").
     assert "/api/simulations" in body
@@ -138,25 +140,26 @@ def test_pointer_omits_itself_when_no_downloadable_data():
 
 
 def test_exports_raw_data_loader_unchanged_still_present():
-    """Regression guard: Exports' own per-run download loader (_loadRawData)
-    — the thing that makes Exports a superset of the old Readouts widget —
-    must still exist, still mount #raw-data-list, and still build real
+    """Regression guard: Results' own per-run download loader (_loadResults,
+    renamed from _loadRawData by the study-spine reorg, spec §3.3) — the
+    thing that makes Results a superset of the old Readouts widget — must
+    still exist, still mount #raw-data-list, and still build real
     /api/simulation-run-download links."""
     js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
-    assert "function _loadRawData(" in js
-    assert "window._loadRawData = _loadRawData;" in js
+    assert "function _loadResults(" in js
+    assert "window._loadResults = _loadResults;" in js
     assert "getElementById('raw-data-list')" in js
     assert "/api/simulation-run-download?run_id=" in js
 
 
 def test_loadrawdata_reveals_and_labels_the_bulk_button():
-    """_loadRawData is what knows N (runs with store_path/db_path) — it must
+    """_loadResults is what knows N (runs with store_path/db_path) — it must
     reveal #raw-data-download-all with that count when N > 0, and keep it
     hidden for a study with zero downloadable runs (no bulk button pointing
     at nothing)."""
     js = (_PKG / "static" / "study-detail.js").read_text(encoding="utf-8")
-    i = js.index("function _loadRawData(")
-    j = js.index("window._loadRawData = _loadRawData;", i)
+    i = js.index("function _loadResults(")
+    j = js.index("window._loadResults = _loadResults;", i)
     body = js[i:j]
     assert "getElementById('raw-data-download-all')" in body
     assert "withDataCount" in body

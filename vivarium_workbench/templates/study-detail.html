@@ -188,6 +188,10 @@
     <div class="act-tabs">
       <button class="study-pillar" data-kind="compose"  onclick="_setStudyTab('compose')">Model</button>
       <button class="study-pillar" data-kind="readouts" onclick="_setStudyTab('readouts')">Readouts</button>
+      {# Study-spine reorg (spec §1, §3.2): Simulations moves here from
+         Evidence — Design holds everything you author before a run
+         (model, emit plan, the runs themselves). #}
+      <button class="study-pillar" data-kind="simulate"  onclick="_setStudyTab('simulate')">Simulations</button>
     </div>
   </div>
   <div class="act-cluster" data-act="evidence">
@@ -196,7 +200,12 @@
       <span class="act-label">Evidence</span>
     </div>
     <div class="act-tabs">
-      <button class="study-pillar" data-kind="simulate"  onclick="_setStudyTab('simulate')">Simulations</button>
+      {# Study-spine reorg (spec §1, §3.3/3.4): Evidence holds everything
+         that came back — Results (raw run downloads) and Analyses
+         (analysis-step outputs) are new/promoted panels ahead of the
+         existing Visualizations pillar. #}
+      <button class="study-pillar" data-kind="results"   onclick="_setStudyTab('results')">Results</button>
+      <button class="study-pillar" data-kind="analyses"  onclick="_setStudyTab('analyses')">Analyses</button>
       <button class="study-pillar" data-kind="visualize" onclick="_setStudyTab('visualize')">Visualizations</button>
     </div>
   </div>
@@ -207,6 +216,13 @@
     </div>
     <div class="act-tabs">
       <button class="study-pillar" data-kind="tests" onclick="_setStudyTab('tests')">Tests</button>
+      {# Study-spine reorg (spec §1, §3.7/§3.8): Audit ("is the bar high
+         enough to trust?") and Build ("was the pass earned honestly?") are
+         new pillars completing the Assurance trio. Rigor scorecard + L0-L5
+         reproducibility move here from Tests; sufficiency + loop provenance
+         are new. #}
+      <button class="study-pillar" data-kind="audit" onclick="_setStudyTab('audit')">Audit</button>
+      <button class="study-pillar" data-kind="build" onclick="_setStudyTab('build')">Build</button>
     </div>
   </div>
   <div class="act-cluster" data-act="decision">
@@ -599,6 +615,22 @@
        tab — where the composition/params are — rather than the header. #}
     <button type="button" class="btn-mini" onclick="window._vivStudyNotebookFromCard(event, '{{ study.name }}', '{{ study.investigation }}')" title="Download a runnable Jupyter notebook for THIS study — its composite + editable parameters + figures">↓ notebook</button>
   </div>
+
+  {# Study-spine reorg (spec/plan Task 6): the study's ACTUAL composite(s),
+     rendered as the SAME rich card the Modules/Composites view uses — full
+     semantic detail (description, config schema, declared observables) at
+     the "Full" loom zoom level. Populated by _loadModelCards() (dispatched
+     from _setStudyTab('compose')) via /api/composite-resolve, using
+     _renderCompositeCardFull from static/composite-card.js (shared with
+     walkthrough.js — see that file for the extraction). Sits above the
+     per-entry editing blocks below (composite id, override params, "Set
+     composite") which remain the authoring surface; this mount is the
+     read-rich view. Independent of `_has_build` so it still renders (or
+     shows a clear empty note) for a study with no build-shaped fields. #}
+  <div id="model-composite-cards" class="model-composite-cards" data-study="{{ study.name }}">
+    <p class="muted" style="font-size:0.85em;margin:0">Loading composite card(s)…</p>
+  </div>
+
   {# Build-block visibility mirrors the pre-merge panel-build guard exactly (model_change/impl_reqs/conditions/baseline) so non-v3 studies keep their Model + Conditions sections. #}
   {% set _has_build = study.model_change or study.implementation_requirements or study.conditions or study.baseline %}
   {% if _has_build %}
@@ -742,7 +774,14 @@
         <thead><tr><th>Variant</th><th>Composite / base</th><th>Parameter overrides</th><th>Notes</th></tr></thead>
         <tbody>
           {% for v in _cond.variants %}
-          <tr>
+          {# data-model-composite/-overrides let _loadModelCards() (study-spine
+             reorg Task 6) pick up variant composites too, alongside the
+             baseline .cond-block entries above — same attribute convention,
+             so one JS scan covers baseline + variants. Empty
+             data-model-composite (inherits baseline) is skipped by the JS. #}
+          {% set _vcomposite = v.composite or v.base_composite or '' %}
+          {% set _ovr = v.parameter_overrides or v.params or {} %}
+          <tr data-model-composite="{{ _vcomposite }}" data-model-overrides='{{ _ovr | tojson }}'>
             <td><code>{{ v.name or '?' }}</code></td>
             <td>
               {% if v.composite %}<code>{{ v.composite }}</code>
@@ -750,7 +789,6 @@
               {% else %}<em class="muted">(inherits baseline)</em>{% endif %}
             </td>
             <td>
-              {% set _ovr = v.parameter_overrides or v.params or {} %}
               {% if _ovr %}
                 {% for k, val in _ovr.items() %}
                 <div><span class="cond-pill-k">{{ k }}</span>=<code>{{ val }}</code></div>
@@ -930,7 +968,12 @@
    spec) now — this panel is ONLY the Simulations-DB table (sim-table.js),
    filtered to this study via /api/simulations?study=<slug>, populated by
    _loadStudySims(). No reproduce-card, no simulation_set cards, no
-   Configure & Run mount, no remote-run form. #}
+   Configure & Run mount, no remote-run form.
+   Study-spine reorg (spec §1, §3.2): panel `data-kind` stays "simulate"
+   (only its act-cluster membership moved, Evidence→Design) and the old
+   "Study artifacts" strip (analysis result files + raw-data downloads)
+   split out into the new Results/Analyses panels below — see
+   panel-results / panel-analyses. #}
 <section class="study-tab-panel" data-kind="simulate" id="panel-simulate" hidden>
 
 <div class="overview-section" id="simulations-section">
@@ -939,36 +982,34 @@
   <div id="study-run-detail" style="margin-top:14px"></div>
 </div>
 
-{# Study artifacts strip (Task E2): the two study-LEVEL bulk-download groups
-   that used to live on the Exports tab, folded in here so Simulations is the
-   runs + study-wide-artifacts hub (Exports tab is being retired — Task E4).
-   Same element ids as before so the existing loaders (_loadAnalysisOutputs /
-   _loadRawData / _downloadAllRawExports) bind unchanged; only the markup
-   moved, and the loaders now trigger on the `simulate` tab activation
-   instead of `data`. Per-row run "⬇ Data" links (sim-table.js) and
-   _showRunDetail are untouched — this strip only carries the two
-   STUDY-level bulk groups. #}
-<div class="overview-section" id="study-artifacts-section" style="margin-top:18px">
-  <h3 class="section-title" style="margin:0 0 10px 0">Study artifacts</h3>
+</section>
 
-  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
-    <span class="muted" style="margin-right:auto;font-weight:600">Analysis result files</span>
-    <a id="data-download-all" class="btn-mini" style="display:none"
-       href="{{ base_path }}/api/study-analysis-zip?study={{ name }}">Download all (.zip)</a>
-  </div>
-  <div id="data-files" data-study="{{ name }}">
-    <p class="empty-message">Loading result files…</p>
+{# ─── Results tab (Evidence): latest-run preview + raw simulation data
+   downloads ────────────────────────────────────────────────────────────
+   Study-spine reorg (spec §1, §3.3; plan Task 4): relocated out of the
+   Simulations panel's old "Study artifacts" strip (downloads-only, Task 1),
+   then upgraded with a per-store PREVIEW of the study's latest run —
+   sparkline + first/last/min/max per emitted store path, via
+   /api/study-results -> lib/results_views.build_study_results. Full arrays
+   stay in the downloads below (never fetched into this preview).
+   `id="exports-downloads"` stays the jump target for the Readouts tab's
+   pointer link (`_gotoStudyTab('results', 'exports-downloads')`).
+   `#raw-data-download-all` is a client-side sequential-download button
+   (populated/shown by _loadResults, triggered by _downloadAllRawExports) —
+   same element ids as before so those loaders bind unchanged. #}
+<section class="study-tab-panel" data-kind="results" id="panel-results" hidden>
+
+<div class="overview-section" id="results-section">
+  <h2>Results</h2>
+  <p class="muted">What came back from this study's runs — a per-store preview of the latest run, plus the raw emitter store (zarr/parquet/runs.db) for every run.</p>
+
+  <h4>Latest run preview</h4>
+  <p class="muted" style="font-size:0.9em">Per-store sparkline + first/last/min/max from the most recent run's emitted trajectory. This is a downsampled PREVIEW, not the full data — use the per-store or Download-all links for the complete arrays.</p>
+  <div id="results-preview" data-study="{{ name }}">
+    <p class="empty-message">Loading results preview…</p>
   </div>
 
-  {# Raw simulation data — the per-run emitter stores (zarr/parquet/runs.db).
-     `id="exports-downloads"` stays the jump target for the Readouts tab's
-     pointer link (Task C4/E2, now `_gotoStudyTab('simulate', 'exports-
-     downloads')`). `#raw-data-download-all` is the bulk "download all raw
-     runs" convenience — no backend zip endpoint for raw stores exists, so
-     it's a client-side sequential-download button (populated/shown by
-     _loadRawData, triggered by _downloadAllRawExports) scoped to THIS
-     group; the analysis-file zip button above is untouched. #}
-  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:18px">
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:22px">
     <span class="muted" id="exports-downloads" style="margin-right:auto;font-weight:600">Raw simulation data</span>
     <button type="button" id="raw-data-download-all" class="btn-mini" style="display:none"
             onclick="_downloadAllRawExports()">⬇ Download all raw data</button>
@@ -978,12 +1019,52 @@
 
 </section>
 
+{# ─── Analyses tab (Evidence): analysis-step result files ─────────────────
+   Study-spine reorg (spec §1, §3.4): promoted out of the Simulations
+   panel's old "Study artifacts" strip into its own Evidence panel. Reuses
+   /api/study-analysis-outputs / -file / -zip unchanged — same element ids
+   as before so the existing loader (_loadAnalyses, was
+   _loadAnalysisOutputs) binds unchanged; only the markup + panel moved. #}
+<section class="study-tab-panel" data-kind="analyses" id="panel-analyses" hidden>
+
+<div class="overview-section" id="analyses-results-section">
+  <h2>Analyses</h2>
+  <p class="muted">Result files written by this study's analysis steps.</p>
+
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+    <span class="muted" style="margin-right:auto;font-weight:600">Analysis result files</span>
+    <a id="data-download-all" class="btn-mini" style="display:none"
+       href="{{ base_path }}/api/study-analysis-zip?study={{ name }}">Download all (.zip)</a>
+  </div>
+  <div id="data-files" data-study="{{ name }}">
+    <p class="empty-message">Loading result files…</p>
+  </div>
+</div>
+
+</section>
+
 <section class="study-tab-panel" data-kind="readouts" id="panel-readouts" hidden>
   <div class="observables-section">
     <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
       <h3 class="section-title" style="margin-right:auto">Readouts</h3>
     </div>
-    <p class="muted">Quantities collected from each simulation run. Each row is an emitter <code>store_path</code> the composite will save; authored entries in <code>study.yaml</code> add names, descriptions, and units on top.</p>
+    <p class="muted">The Design-time emit <strong>contract</strong>: what the emitter is
+    configured to persist, which store paths it declares, and the shape of what lands on
+    disk. No observed values here — see Results for what actually came back from a run.</p>
+
+    <h4>Emitter &amp; config</h4>
+    <p class="muted" style="font-size:0.9em">The emitter class, its write-path module, emit
+    interval/buffer, output location, and emit scope — from
+    <code>lib/emitters.py</code> and this study's (or the workspace's)
+    <code>runtime.default_emitter</code>.</p>
+    <div id="readouts-emitter" data-study="{{ name }}">
+      <p class="empty-message">Loading emitter configuration…</p>
+    </div>
+
+    <h4>Emitted paths</h4>
+    <p class="muted" style="font-size:0.9em">Each row is an emitter <code>store_path</code>
+    the composite will save; authored entries in <code>study.yaml</code> add names,
+    descriptions, and units on top.</p>
 
     {# Points at Simulations' raw-data downloads (Study artifacts strip)
        rather than duplicating them (Task C4, repointed by Task E2 when
@@ -995,6 +1076,14 @@
 
     <div id="readouts-table" data-study="{{ name }}">
       <p class="empty-message">Loading readouts from the composite emit plan…</p>
+    </div>
+
+    <h4>Outputs &amp; shapes</h4>
+    <p class="muted" style="font-size:0.9em">Store path, dtype, shape
+    <code>(n_steps, …)</code>, units, and a best-effort byte estimate for each emitted
+    leaf.</p>
+    <div id="readouts-shapes" data-study="{{ name }}">
+      <p class="empty-message">Loading output shapes…</p>
     </div>
 
     {% if study.expected_behavior %}
@@ -1186,33 +1275,24 @@
      (Fable §4.6: one score line + one list, not the gate set twice). #}
   <div class="tests-gate-summary" id="tests-gate-summary"><p class="empty-message">Loading gate summary…</p></div>
 
-  {# Fable §10.1 band 2 "Checks", automated group: the Quality (G5) and
-     Reproducibility (G6) check groups share one "Checks" band heading per the
-     §10.1 mockup ("CHECKS  automated 12 · human 1"). Both mounts are filled
-     client-side (rigor and study_audit are live computes, not fields already
-     sitting on `study` like G4's acceptance criteria), and both degrade to an
-     explicit unavailable(reason) message rather than an empty box (§2 R2). #}
-  <div class="checks-band" style="margin-top:22px">
-    <h3 class="section-title" style="margin-bottom:8px">Checks</h3>
+  {# Study-spine reorg (spec §3.6): the rigor scorecard (Fable G5) and L0-L5
+     reproducibility audit (Fable G6) check groups MOVED out of Tests into
+     Assurance › Audit (`panel-audit`, below) — Tests grades the study's own
+     Test bar; Audit judges whether that bar is trustworthy. #}
 
-    {# Fable G5: the deterministic evidence & rigor scorecard
-       (viva_superpowers.rigor.study_rigor) — already computed in CI, never
-       rendered on the page until now. Filled client-side by
-       _loadQualityChecks from GET /api/study-rigor?study=<slug>
-       (lib.rigor_views.build_study_rigor). #}
-    <div class="check-group check-group-quality" id="check-group-quality" data-check-group="quality">
-      <p class="empty-message">Loading quality checks…</p>
-    </div>
-
-    {# Fable G6: the L0-L5 reproducibility audit
-       (viva_superpowers.study_audit.audit_workspace) — already run in CI as
-       the reproducibility gate, never rendered on the page until now. Filled
-       client-side by _loadReproducibilityChecks from GET
-       /api/study-audit?study=<slug> (lib.audit_views.build_study_audit). #}
-    <div class="check-group check-group-reproducibility" id="check-group-reproducibility" data-check-group="reproducibility" style="margin-top:16px">
-      <p class="empty-message">Loading reproducibility checks…</p>
-    </div>
+  {# REQUIREMENT (study-spine reorg, plan Task 3): the Tests panel must show
+     the COMPLETE set of this study's report cards — every card under
+     `viz/report_card/`, not just the ones wired to a `behavior_tests` /
+     `expected_behavior` entry below. `render_report_cards_section` scans the
+     directory directly (the same source `report_card_urls` feeds), so a
+     card with no matching Test entry still renders here. Server-rendered
+     (best-effort — a study with no report cards emits "" and this section
+     drops, §2 R2 absent != empty). #}
+  {% if report_cards_html %}
+  <div class="report-cards-full-section" id="report-cards-full-section" style="margin-top:22px">
+    {{ report_cards_html | safe }}
   </div>
+  {% endif %}
 
   {# C6: each report_card-kind row (below, in Behavioral tests) now carries
      its own inline expander rendering the FULL card in place — so this top
@@ -1343,6 +1423,52 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
   </ul>
   {% endif %}
   </div>
+</section>
+
+{# ─── Audit tab (Assurance) — NEW: "is the bar high enough to trust?" ──────
+   Study-spine reorg (spec §3.7): three groups, all filled client-side by
+   _loadAudit (dispatched from _setStudyTab('audit')) — none are fields
+   already sitting on `study`, all are live computes:
+     1. Sufficiency — viva_superpowers.test_audit.build_audit_report + gate,
+        via GET /api/study-test-audit (lib.audit_panel_views).
+     2. Quality (rigor scorecard) — MOVED here from Tests (Fable G5),
+        unchanged GET /api/study-rigor / _loadQualityChecks.
+     3. Reproducibility (L0-L5) — MOVED here from Tests (Fable G6),
+        unchanged GET /api/study-audit / _loadReproducibilityChecks.
+   Each mount degrades to an explicit unavailable(reason) message rather
+   than an empty box (§2 R2). #}
+<section class="study-tab-panel" data-kind="audit" id="panel-audit" hidden>
+  <h2>Audit</h2>
+  <p class="muted" style="margin:0 0 12px 0">Is the bar high enough to trust? Sufficiency of the Test set, plus the rigor and reproducibility scorecards.</p>
+
+  <div class="checks-band">
+    <div class="check-group check-group-sufficiency" id="audit-sufficiency" data-check-group="sufficiency">
+      <p class="empty-message">Loading sufficiency checks…</p>
+    </div>
+
+    <div class="check-group check-group-quality" id="check-group-quality" data-check-group="quality" style="margin-top:16px">
+      <p class="empty-message">Loading quality checks…</p>
+    </div>
+
+    <div class="check-group check-group-reproducibility" id="check-group-reproducibility" data-check-group="reproducibility" style="margin-top:16px">
+      <p class="empty-message">Loading reproducibility checks…</p>
+    </div>
+  </div>
+</section>
+
+{# ─── Build tab (Assurance) — NEW: "was the pass earned honestly?" ─────────
+   Study-spine reorg (spec §3.8): model-build loop provenance from
+   `.pbg/loop/<study>.json` (viva_superpowers.loop_state) — locked-tests
+   hash, reopen trail, iteration history, state/outcome. Filled client-side
+   by _loadBuild (dispatched from _setStudyTab('build')) via GET
+   /api/study-loop-state (lib.loop_provenance_views). GRACEFUL empty state
+   when a study was never run through /viva-model-build — a one-line note,
+   never an error. #}
+<section class="study-tab-panel" data-kind="build" id="panel-build" hidden>
+  <h2>Build</h2>
+  <p class="muted" style="margin:0 0 12px 0">Was the pass earned honestly? Provenance from the agentic model-building loop, if this study was built through it.</p>
+
+  <div id="build-loop-state"><p class="empty-message">Loading loop provenance…</p></div>
 </section>
 
 <section class="study-tab-panel" data-kind="conclusions" id="panel-conclusions" hidden>
@@ -1979,6 +2105,12 @@ window._seedFollowupProposal = _seedFollowupProposal;
 </script>
 <script src="/configure-run.js"></script>
 <script src="/sim-table.js"></script>
+<!-- composite-card.js: shared composite-card renderer (extracted from
+     walkthrough.js, study-spine-reorg Task 6) — the Model tab uses
+     _renderCompositeCardFull to show the SAME rich card the Modules/
+     Composites view uses, with full semantic detail (config schema +
+     declared observables). Loaded before study-detail.js, which calls it. -->
+<script src="/composite-card.js"></script>
 <script src="/study-detail.js"></script>
 <script>
 // Re-assert the refresh-aware seed handlers AFTER study-detail.js (which

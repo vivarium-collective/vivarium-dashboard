@@ -174,6 +174,124 @@ def test_readouts_remote_build_degrades_softly(tmp_path, monkeypatch):
     assert panel["emit_status"] == "unverified"
 
 
+# ---------------------------------------------------------------------------
+# Readouts rebuild (Task 2, study-spine-reorg spec §3.1): emitter block +
+# per-path dtype/shape/bytes.
+# ---------------------------------------------------------------------------
+
+def test_merge_readouts_emitted_rows_carry_dtype_and_shape():
+    rows = _merge_readouts({"readouts": []}, AVAIL, n_steps=42)
+    r = _row_by_path(rows, "agents.0.listeners.mass.cell_mass")
+    assert r["dtype"] == "float64"
+    assert r["shape"] == [42]
+    assert r["bytes"] == 42 * 8
+
+
+def test_merge_readouts_shape_symbolic_when_n_steps_unknown():
+    rows = _merge_readouts({"readouts": []}, AVAIL)  # no n_steps passed
+    r = _row_by_path(rows, "agents.0.listeners.mass.cell_mass")
+    assert r["shape"] == ["n_steps"]
+    assert "bytes" not in r  # unresolved dim -> best-effort bytes omitted
+
+
+def test_merge_readouts_array_leaf_shape_from_catalog():
+    avail = {
+        "leaves": ["agents.0.listeners.mass.cell_mass"],
+        "catalogs": {"listeners.mass.cell_mass": ["a", "b", "c"]},
+    }
+    rows = _merge_readouts({"readouts": []}, avail, n_steps=10)
+    r = _row_by_path(rows, "agents.0.listeners.mass.cell_mass")
+    assert r["shape"] == [10, 3]
+    assert r["bytes"] == 10 * 3 * 8
+
+
+def test_merge_readouts_derived_row_has_no_shape():
+    spec = {"readouts": [{
+        "name": "effective_knob_count", "status": "derived-needed",
+    }]}
+    rows = _merge_readouts(spec, AVAIL, n_steps=10)
+    r = next(r for r in rows if r["name"] == "effective_knob_count")
+    assert "shape" not in r
+    assert "dtype" not in r
+
+
+def _write_readouts_study(root, slug, extra_spec, ws_extra=None):
+    import yaml as _yaml
+    if ws_extra:
+        (root / "workspace.yaml").write_text(_yaml.safe_dump({"name": "ws", **ws_extra}))
+    sd = root / "studies" / slug
+    sd.mkdir(parents=True)
+    spec = {"name": slug, "readouts": []}
+    spec.update(extra_spec)
+    (sd / "study.yaml").write_text(_yaml.safe_dump(spec))
+    return sd
+
+
+def test_build_study_readouts_emitter_block_default_present(tmp_path):
+    """Even a bare (no baseline) study gets an `emitter` block — the identity
+    is computable from the spec/workspace alone, never gated on the composite
+    build succeeding."""
+    from vivarium_workbench.lib.readouts_views import build_study_readouts
+
+    _write_readouts_study(tmp_path, "no-baseline", {})
+    body, status = build_study_readouts(tmp_path, "no-baseline")
+    assert status == 422, body
+    em = body.get("emitter")
+    assert isinstance(em, dict), body
+    assert em.get("name")  # default emitter name present
+    assert em.get("module")  # module path present
+    assert em.get("scope") == "declared"
+
+
+def test_build_study_readouts_emitter_honors_runtime_default_emitter(tmp_path):
+    """A study's runtime.default_emitter overrides the workspace default —
+    the emitter block must reflect the STUDY's declared choice."""
+    from vivarium_workbench.lib.readouts_views import build_study_readouts
+
+    _write_readouts_study(tmp_path, "sqlite-study",
+                           {"runtime": {"default_emitter": "sqlite"}})
+    body, status = build_study_readouts(tmp_path, "sqlite-study")
+    assert status == 422, body
+    em = body["emitter"]
+    assert em["name"] == "sqlite"
+    assert em["class_name"] == "SQLiteEmitter"
+    assert em["output_kind"] == "sqlite"
+
+
+def test_build_study_readouts_emitter_present_on_remote_degrade(tmp_path, monkeypatch):
+    """The remote-build soft-degrade (200, .viv-build.json present) still
+    carries the emitter block — spec §3.1 says ALWAYS render it."""
+    from vivarium_workbench.lib import readouts_views as rv
+
+    sd = _write_readouts_study(tmp_path, "remote-study", {
+        "baseline": [{"composite": "nonexistent.composite"}],
+    })
+    (tmp_path / ".viv-build.json").write_text('{"simulator_id": 1, "commit": "abc"}')
+    monkeypatch.setattr(
+        rv, "_available_observables_for_ref",
+        lambda ws, ref: (_ for _ in ()).throw(FileNotFoundError("no cache")),
+    )
+    body, status = rv.build_study_readouts(tmp_path, "remote-study")
+    assert status == 200, body
+    assert isinstance(body.get("emitter"), dict), body
+    assert body["emitter"].get("name")
+
+
+def test_build_study_readouts_local_degrade_still_carries_emitter(tmp_path, monkeypatch):
+    from vivarium_workbench.lib import readouts_views as rv
+
+    sd = _write_readouts_study(tmp_path, "local-study", {
+        "baseline": [{"composite": "nonexistent.composite"}],
+    })
+    monkeypatch.setattr(
+        rv, "_available_observables_for_ref",
+        lambda ws, ref: (_ for _ in ()).throw(FileNotFoundError("no cache")),
+    )
+    body, status = rv.build_study_readouts(tmp_path, "local-study")
+    assert status == 422, body
+    assert isinstance(body.get("emitter"), dict), body
+
+
 def test_readouts_local_build_failure_still_422_but_unverified(tmp_path, monkeypatch):
     """A LOCAL workspace (no .viv-build.json) where the composite fails to build
     keeps the hard 422 (a real problem to fix), but the authored row is tagged
