@@ -480,6 +480,19 @@ def _render_viz(composite, run_dir: Path, *,
         except Exception:
             traceback.print_exc()
 
+    # 2b. Topology trajectory figure: any run whose emitter captured a
+    #     tree[node] store whose child nodes change over steps (cell division,
+    #     biofilm colonization, lineage evolution) gets a saved "place-graph
+    #     forming" figure — node count over time + a frame-by-frame filmstrip.
+    #     No-op for runs without a topology-changing tree[node].
+    if db_file and run_id:
+        try:
+            from vivarium_workbench.lib.topology_viz import render_topology_viz
+            for name, html in render_topology_viz(db_file=db_file, run_id=run_id).items():
+                viz_html.setdefault(name, html)
+        except Exception:
+            traceback.print_exc()
+
     # 3. Default figure ONLY when a composite declares no visualizations at all.
     #    A canonical-viz *failure* also leaves viz_html empty, but a whole-cell
     #    composite that DECLARES panels must not silently route into the generic
