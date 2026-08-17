@@ -640,6 +640,7 @@
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
             _shareCompositeBtn() +
             _compositeJsonBtn() +
+            _cardMaximizeBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
           '<div class="pcard-summary">' +
@@ -657,7 +658,7 @@
           // The card body is now the FULL stacked loom surface — Configure/Inputs,
           // the bigraph, Run/Step, and Outputs all live inside it. No more card
           // re-implementations of those sections (which had diverging semantics).
-          _pcardSection('explore', 'Open composite', '<span class="pcard-sec-hint">◆ Configure · run · outputs — click to open</span>', _compositeLoomExplore(c), { wide: true, feature: true }) +
+          _pcardSection('explore', 'Explore', '<span class="pcard-sec-hint">◆ Configure · run · outputs — click to open</span>', _compositeLoomExplore(c), { wide: true, feature: true }) +
         '</div>' +
       '</div>' +
     '</div>';
