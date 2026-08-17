@@ -846,3 +846,72 @@ def test_status_sms_api_unreachable_is_502_not_crash(monkeypatch):
     _bind_status_client(monkeypatch, raise_err=rrv.SmsApiError("tunnel down"))
     body, status = rrv.remote_run_status({"simulation_id": 199})
     assert status == 502 and body["reachable"] is False and "unreachable" in body["reason"]
+
+
+# ─── remote_run_chain_progress (backlog item 6) ─────────────────────────────
+
+
+class _ChainProgressClient:
+    """Fake for remote_run_chain_progress: returns a canned chain-progress dict
+    (or raises SmsApiError with a message ending in the real HTTP code, matching
+    how SmsApiClient._get actually raises: f"GET {url} -> {e.code}")."""
+    def __init__(self, base=None, *, progress=None, raise_err=None):
+        self._progress = progress
+        self._raise = raise_err
+
+    def simulation_chain_progress(self, sid):
+        if self._raise:
+            raise self._raise
+        return self._progress
+
+
+def _bind_chain_progress_client(monkeypatch, **kw):
+    monkeypatch.setattr(rrv, "_sms_api_base", lambda: "http://sms.local")
+    monkeypatch.setattr(rrv, "SmsApiClient", lambda base=None: _ChainProgressClient(base, **kw))
+
+
+def test_chain_progress_in_progress_split(monkeypatch):
+    _bind_chain_progress_client(monkeypatch, progress={
+        "status": "running", "terminal": False,
+        "seeds_total": 10, "seeds_succeeded": 5, "seeds_failed": 1, "seeds_in_progress": 4,
+    })
+    body, status = rrv.remote_run_chain_progress({"simulation_id": 163})
+    assert status == 200
+    assert body["kind"] == "chain_progress" and body["phase"] == "running"
+    assert body["seeds_total"] == 10 and body["seeds_succeeded"] == 5
+    assert body["seeds_failed"] == 1 and body["seeds_in_progress"] == 4
+    assert body["terminal"] is False
+
+
+def test_chain_progress_terminal_maps_to_done(monkeypatch):
+    _bind_chain_progress_client(monkeypatch, progress={
+        "status": "completed", "terminal": True,
+        "seeds_total": 2, "seeds_succeeded": 2, "seeds_failed": 0, "seeds_in_progress": 0,
+    })
+    body, status = rrv.remote_run_chain_progress({"simulation_id": 163})
+    assert status == 200 and body["phase"] == "done" and body["terminal"] is True
+
+
+def test_chain_progress_requires_simulation_id(monkeypatch):
+    _bind_chain_progress_client(monkeypatch)
+    assert rrv.remote_run_chain_progress({})[1] == 400
+
+
+def test_chain_progress_unknown_simulation_is_404(monkeypatch):
+    _bind_chain_progress_client(monkeypatch, raise_err=rrv.SmsApiError("GET http://x -> 404"))
+    body, status = rrv.remote_run_chain_progress({"simulation_id": 9999})
+    assert status == 404 and body["phase"] == "not_found"
+
+
+def test_chain_progress_non_chain_run_is_200_not_a_campaign(monkeypatch):
+    """A plain (non-chain-dispatch) run has nothing to aggregate -- this is a
+    real, expected case, not an error the panel should alarm on."""
+    _bind_chain_progress_client(monkeypatch, raise_err=rrv.SmsApiError("GET http://x -> 409"))
+    body, status = rrv.remote_run_chain_progress({"simulation_id": 42})
+    assert status == 200 and body["phase"] == "not_a_campaign"
+
+
+def test_chain_progress_sms_api_unreachable_is_502_not_crash(monkeypatch):
+    _bind_chain_progress_client(monkeypatch, raise_err=rrv.SmsApiError("tunnel down"))
+    body, status = rrv.remote_run_chain_progress({"simulation_id": 163})
+    assert status == 502 and body["reachable"] is False

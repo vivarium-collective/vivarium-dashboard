@@ -6997,6 +6997,20 @@ def create_app() -> FastAPI:
         body, status = _remote_run_views.remote_run_status(params)
         return JSONResponse(status_code=status, content=body)
 
+    @app.get("/api/remote-run-chain-progress", tags=["Runs"],
+             summary="Real per-seed aggregate progress for a chain-dispatch campaign")
+    def remote_run_chain_progress(simulation_id: int = 0) -> JSONResponse:
+        """Backlog item 6: proxies viva-api's ``GET /simulations/{id}/chain-
+        progress`` (real seed succeeded/failed/in-progress counts, PR #257) the
+        same way ``/api/remote-run-poll`` proxies plain status. The JS panel
+        polls this on a session-status.js-style interval — see
+        ``lib.remote_run_views.remote_run_chain_progress`` for the full
+        rationale (polling, not SSE)."""
+        if not simulation_id:
+            return JSONResponse(status_code=400, content={"error": "simulation_id required"})
+        body, status = _remote_run_views.remote_run_chain_progress({"simulation_id": simulation_id})
+        return JSONResponse(status_code=status, content=body)
+
     @app.post("/api/remote-run-pinned-build", tags=["Runs"], status_code=202,
               summary="Pinned phase 1: resolve the latest built simulator (no push/login)")
     def remote_run_pinned_build(
