@@ -2110,6 +2110,11 @@ window._seedFollowupProposal = _seedFollowupProposal;
      _renderCompositeCardFull to show the SAME rich card the Modules/
      Composites view uses, with full semantic detail (config schema +
      declared observables). Loaded before study-detail.js, which calls it. -->
+<!-- loom-embed.js: _openCompositeLoomInline + helpers (from walkthrough.js,
+     which this iframe does NOT load). composite-card.js's _pcardToggleSec needs
+     it to MOUNT a composite's loom — without it, opening a composite from a
+     Model card stays stuck on "Resolving composite…". -->
+<script src="/loom-embed.js"></script>
 <script src="/composite-card.js"></script>
 <script src="/study-detail.js"></script>
 <script>
