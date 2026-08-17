@@ -1998,6 +1998,15 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 .pcard-sec-feature > .pcard-sec-head:hover{ background:#f4efff; }
 .pcard-sec-feature > .pcard-sec-head .pcard-sec-caret{ color:#7c3aed; }
 .pcard-sec-feature > .pcard-sec-head .pcard-sec-name{ color:#6d28d9; }
+/* Unified composite header IS the single loom toggle: hide the separate
+   "Explore" accordion strip on composite cards; the header caret drives it. */
+.pcard-composite .pcard-sec-explore > .pcard-sec-head{ display:none; }
+.pcard-composite .pcard-sec-feature{ background:transparent; }
+.pcard-collapse{
+  border:none; background:none; cursor:pointer; color:#94a3b8;
+  font-size:12px; line-height:1; padding:0 2px 0 0; flex:none; align-self:center;
+}
+.pcard-collapse:hover{ color:#0d6e6b; }
 .pcard-sec-hint{
   font-size:0.78em; font-weight:600; color:#7c3aed;
   background:#f1e9ff; border:1px solid #e2d3ff; border-radius:999px;

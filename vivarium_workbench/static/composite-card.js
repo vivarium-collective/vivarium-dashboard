@@ -361,6 +361,21 @@
   }
   window._pcardToggleSec = _pcardToggleSec;
 
+  // Collapse/expand a composite card's loom from the HEADER caret (the unified
+  // header is the single toggle — the separate "Explore" accordion strip is
+  // hidden). Reuses _pcardToggleSec so the loom lazy-mounts on first open, then
+  // syncs the header caret + a card-level class for styling.
+  function _toggleLoomCard(caret) {
+    var card = caret.closest('.registry-entry-full'); if (!card) return;
+    var sec = card.querySelector('.pcard-sec-explore'); if (!sec) return;
+    var head = sec.querySelector('.pcard-sec-head'); if (!head) return;
+    _pcardToggleSec(head);
+    var open = sec.classList.contains('pcard-sec-open');
+    caret.textContent = open ? '▾' : '▸';
+    card.classList.toggle('pcard-loom-open', open);
+  }
+  window._toggleLoomCard = _toggleLoomCard;
+
   // Info-panel click → open the matching section and scroll it into view.
   function _pcardJumpSec(btn) {
     var target = btn.getAttribute('data-target');
@@ -669,6 +684,7 @@
       '<div class="loom-card loom-card-stack loom-card-composite">' +
         '<div class="pcard-top">' +
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" ondblclick="event.stopPropagation();_maximizeCardFromHeader(this)" title="Click to pin to top · double-click to maximize">' +
+            '<button class="pcard-collapse" type="button" onclick="event.stopPropagation();_toggleLoomCard(this)" title="Show / hide this composite\'s loom">▸</button>' +
             '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + _compositeTierBadge(c) + wsPill + roPill +
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
             _shareCompositeBtn() +
