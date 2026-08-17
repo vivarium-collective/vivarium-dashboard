@@ -7,12 +7,33 @@
 // the composite's declared defaults. The "⤢ Full" hand-off to the full-window
 // Setup & Run tab lives in the dock panel header (headerAction), not here. The
 // bottom run bar runs with whatever config was last Applied.
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ParameterDecl } from '../api';
 import { resolveComposite } from '../api';
 import { _initialValue, _castFormValue } from './SetupRunPanel';
 
 type FormValue = string | number | boolean;
+
+/** A process/step/emitter node (has an address or a process-y _type) — NOT an
+ *  editable input store. */
+function _isProcessLike(v: unknown): boolean {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as { _type?: unknown; address?: unknown };
+  return o._type === 'process' || o._type === 'step'
+    || typeof o.address === 'string';
+}
+
+/** The composite's editable INPUT stores: top-level state entries that are data
+ *  (not processes/steps/emitters). These are what a run reads — the "Inputs". */
+function _extractInputStores(state: unknown): Record<string, unknown> {
+  if (!state || typeof state !== 'object') return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(state as Record<string, unknown>)) {
+    if (k.startsWith('_') || _isProcessLike(v)) continue;
+    out[k] = v;
+  }
+  return out;
+}
 
 function _normType(t: string): 'int' | 'float' | 'bool' | 'list' | 'map' | 'string' {
   switch (t) {
@@ -25,6 +46,91 @@ function _normType(t: string): 'int' | 'float' | 'bool' | 'list' | 'map' | 'stri
   }
 }
 
+// Structural markers hidden from the field editor (shown only in JSON mode).
+// `_value` is edited via the typed-leaf path, not as a standalone row.
+const HIDDEN_KEYS = new Set(['_type', '_control', '_figure', '_value']);
+
+/** A typed-leaf store — `{ _type, _value, _figure }` — has a single editable
+ *  value at `_value`, not a subtree. */
+function _isTypedLeaf(v: unknown): v is Record<string, unknown> {
+  return !!v && typeof v === 'object' && '_value' in (v as object);
+}
+
+function _setNested(obj: unknown, path: string[], value: unknown): unknown {
+  if (path.length === 0) return value;
+  const [head, ...rest] = path;
+  const src = (obj && typeof obj === 'object') ? obj as Record<string, unknown> : {};
+  return { ...src, [head]: _setNested(src[head], rest, value) };
+}
+
+function _coerce(prev: unknown, next: string): unknown {
+  if (typeof prev === 'number') { const n = Number(next); return Number.isFinite(n) ? n : prev; }
+  if (typeof prev === 'boolean') return next === 'true';
+  return next;
+}
+
+/** Structured, marker-free editor for the input-store tree: name→value rows for
+ *  leaves, indented groups for nested nodes, with `_type`/`_control` hidden and
+ *  the `contents` wrapper unwrapped — so a user edits "dna = 1", not plumbing. */
+function InputTree({ node, path, onEdit, readOnly }: {
+  node: unknown; path: string[];
+  onEdit: (p: string[], v: unknown) => void; readOnly?: boolean;
+}) {
+  if (!node || typeof node !== 'object') return null;
+  const entries = Object.entries(node as Record<string, unknown>).filter(([k]) => !HIDDEN_KEYS.has(k));
+  return (
+    <>
+      {entries.map(([k, v]) => {
+        if (k === 'contents' && v && typeof v === 'object') {
+          return <InputTree key={k} node={v} path={[...path, k]} onEdit={onEdit} readOnly={readOnly} />;
+        }
+        // Typed-leaf store → one editable value at `_value` (hide _type/_figure).
+        if (_isTypedLeaf(v)) {
+          const lv = v._value;
+          return (
+            <label className="cfg-in-row" key={k}>
+              <span className="cfg-in-name">{k}</span>
+              <input className="cfg-in-input"
+                type={typeof lv === 'number' ? 'number' : 'text'}
+                step={typeof lv === 'number' ? 'any' : undefined}
+                value={String(lv)} disabled={readOnly}
+                onChange={(e) => onEdit([...path, k, '_value'], _coerce(lv, e.target.value))} />
+            </label>
+          );
+        }
+        if (v !== null && typeof v === 'object') {
+          if (Object.keys(v as object).filter((ck) => !HIDDEN_KEYS.has(ck)).length === 0) return null;
+          return (
+            <div className="cfg-in-group" key={k}>
+              <div className="cfg-in-group-h">{k}</div>
+              <div className="cfg-in-children">
+                <InputTree node={v} path={[...path, k]} onEdit={onEdit} readOnly={readOnly} />
+              </div>
+            </div>
+          );
+        }
+        return (
+          <label className="cfg-in-row" key={k}>
+            <span className="cfg-in-name">{k}</span>
+            {typeof v === 'boolean' ? (
+              <select className="cfg-in-input" value={String(v)} disabled={readOnly}
+                onChange={(e) => onEdit([...path, k], e.target.value === 'true')}>
+                <option value="true">true</option><option value="false">false</option>
+              </select>
+            ) : (
+              <input className="cfg-in-input"
+                type={typeof v === 'number' ? 'number' : 'text'}
+                step={typeof v === 'number' ? 'any' : undefined}
+                value={String(v)} disabled={readOnly}
+                onChange={(e) => onEdit([...path, k], _coerce(v, e.target.value))} />
+            )}
+          </label>
+        );
+      })}
+    </>
+  );
+}
+
 export interface ConfigPanelProps {
   compositeId: string | null;
   parameters: Record<string, ParameterDecl>;
@@ -33,6 +139,11 @@ export interface ConfigPanelProps {
   /** Apply: hand back the new overrides + resolved state so App re-renders the
    *  graph and remembers the overrides (the run bar runs with them). */
   onApplied: (overrides: Record<string, unknown>, state: unknown) => void;
+  /** The current composite state — its input stores seed the Inputs editor. */
+  state?: unknown;
+  /** Apply Inputs: hand back the full state with edited input stores merged in,
+   *  so App re-renders the graph (values manifest) and the JSON reflects it. */
+  onInputsApplied?: (state: unknown) => void;
 }
 
 export function ConfigPanel(props: ConfigPanelProps) {
@@ -92,15 +203,53 @@ export function ConfigPanel(props: ConfigPanelProps) {
     setError(null);
   }
 
+  // ---- Inputs (editable input-store state) --------------------------------
+  const inputStores = useMemo(() => _extractInputStores(props.state), [props.state]);
+  const inputKeys = Object.keys(inputStores);
+  const [inputsText, setInputsText] = useState<string>(() => JSON.stringify(inputStores, null, 2));
+  const [inputsErr, setInputsErr] = useState<string | null>(null);
+  const [inputsApplied, setInputsApplied] = useState(false);
+  const [inputsMode, setInputsMode] = useState<'fields' | 'json'>('fields');
+  // Parsed view of the current inputs text for the structured field editor.
+  let inputsObj: unknown = {};
+  try { inputsObj = JSON.parse(inputsText); } catch { /* JSON mode shows the error */ }
+  const handleTreeEdit = (p: string[], v: unknown) => {
+    setInputsText(JSON.stringify(_setNested(inputsObj, p, v), null, 2));
+    setInputsApplied(false); setInputsErr(null);
+  };
+  // Re-seed the Inputs editor whenever the input stores change (new composite,
+  // or a config Apply that reshaped the state — inputs follow config).
+  useEffect(() => {
+    setInputsText(JSON.stringify(inputStores, null, 2));
+    setInputsErr(null);
+    setInputsApplied(false);
+  }, [inputStores]);
+
+  function handleApplyInputs() {
+    try {
+      const parsed = JSON.parse(inputsText) as Record<string, unknown>;
+      const base = (props.state && typeof props.state === 'object')
+        ? { ...(props.state as Record<string, unknown>) } : {};
+      for (const k of Object.keys(parsed)) base[k] = parsed[k];
+      props.onInputsApplied?.(base);
+      setInputsErr(null);
+      setInputsApplied(true);
+    } catch (e) {
+      setInputsErr(String(e instanceof Error ? e.message : e));
+    }
+  }
+
   return (
     <div className="cfg-panel">
       {props.readOnly && (
         <p className="cfg-note">Read-only preview — editing config requires a live dashboard.</p>
       )}
 
-      {paramKeys.length === 0 ? (
-        <p className="cfg-note">This composite declares no config parameters.</p>
-      ) : (
+      {/* Configure — only when the composite actually declares parameters, so a
+          zero-param composite opens straight on Inputs (no dead header/note). */}
+      {paramKeys.length > 0 && (
+        <>
+        <div className="cfg-group-h">Configure</div>
         <div className="cfg-fields">
           {paramKeys.map((k) => {
             const pdef = props.parameters[k];
@@ -150,12 +299,8 @@ export function ConfigPanel(props: ConfigPanelProps) {
             );
           })}
         </div>
-      )}
-
-      {error && <div className="cfg-error">Could not apply: {error}</div>}
-      {applied && !error && <div className="cfg-applied">✓ Graph rebuilt with this config.</div>}
-
-      {paramKeys.length > 0 && (
+        {error && <div className="cfg-error">Could not apply: {error}</div>}
+        {applied && !error && <div className="cfg-applied">✓ Graph rebuilt with this config.</div>}
         <div className="cfg-actionbar">
           <button className="sr-run-btn cfg-apply-btn" onClick={handleApply}
             disabled={applying || props.readOnly || !props.compositeId}>
@@ -166,6 +311,57 @@ export function ConfigPanel(props: ConfigPanelProps) {
             Reset
           </button>
         </div>
+        </>
+      )}
+
+      {/* ---- Inputs: the composite's editable input-store state, as a
+           marker-free field editor (JSON toggle for power users). Applied
+           SEPARATELY (inputs can follow config); re-renders Explore live. */}
+      <div className="cfg-group-h cfg-group-h-inputs">
+        <span>Inputs</span>
+        {inputKeys.length > 0 && (
+          <button type="button" className="cfg-json-toggle"
+            onClick={() => setInputsMode((m) => (m === 'fields' ? 'json' : 'fields'))}
+            title={inputsMode === 'fields' ? 'Edit as raw JSON' : 'Edit as fields'}>
+            {inputsMode === 'fields' ? '{ } JSON' : '▤ Fields'}
+          </button>
+        )}
+      </div>
+      {inputKeys.length === 0 ? (
+        <p className="cfg-note">This composite has no editable input stores.</p>
+      ) : (
+        <>
+          <p className="cfg-note cfg-inputs-hint">
+            Input-store values a run reads — edit and Apply to see them on the graph.
+          </p>
+          {inputsMode === 'fields' ? (
+            <div className="cfg-in-tree">
+              <InputTree node={inputsObj} path={[]} onEdit={handleTreeEdit} readOnly={props.readOnly} />
+            </div>
+          ) : (
+            <textarea
+              className="sr-input cfg-input cfg-inputs-json"
+              spellCheck={false}
+              rows={Math.min(18, Math.max(4, inputsText.split('\n').length))}
+              value={inputsText}
+              disabled={props.readOnly}
+              onChange={(e) => { setInputsText(e.target.value); setInputsApplied(false); setInputsErr(null); }}
+            />
+          )}
+          {inputsErr && <div className="cfg-error">Invalid JSON: {inputsErr}</div>}
+          {inputsApplied && !inputsErr && <div className="cfg-applied">✓ Graph updated with these inputs.</div>}
+          <div className="cfg-actionbar">
+            <button className="sr-run-btn cfg-apply-btn" onClick={handleApplyInputs}
+              disabled={props.readOnly || !props.onInputsApplied}>
+              Apply Inputs
+            </button>
+            <button className="cfg-reset-btn"
+              onClick={() => { setInputsText(JSON.stringify(inputStores, null, 2)); setInputsApplied(false); setInputsErr(null); }}
+              title="Revert the input stores to their current values">
+              Reset
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

@@ -494,10 +494,11 @@
   // composite is mostly top-level, so Inputs/Outputs are informational; the
   // value is Configure (its parameters) + Explore (its internal wiring).
   function _compositeLoomExplore(c) {
-    // The loom is a read-only VIEWER: config is edited in the Configure section
-    // and running is the ▶ RUN bar below — so no "Enable running" / live toggle.
-    return '<div class="ccard-loom-embed pcard-loom" data-id="' + _esc(c.id) + '">' +
-      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the bigraph…</p></div>' +
+    // The card body IS the full stacked loom surface — Configure/Inputs, bigraph,
+    // Run/Step, and Outputs all live inside the loom now (data-surface="full").
+    // The card no longer re-implements those sections around it.
+    return '<div class="ccard-loom-embed pcard-loom" data-surface="full" data-id="' + _esc(c.id) + '">' +
+      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Resolving composite &amp; rendering the surface…</p></div>' +
     '</div>';
   }
   window._compositeLoomExplore = _compositeLoomExplore;
@@ -639,7 +640,6 @@
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
             _shareCompositeBtn() +
             _compositeJsonBtn() +
-            _cardMaximizeBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
           '<div class="pcard-summary">' +
@@ -654,11 +654,10 @@
           '</div>' +
         '</div>' +
         '<div class="pcard-acc">' +
-          _pcardSection('explore', 'Explore', '<span class="pcard-sec-hint">◆ Interactive bigraph — click to open</span>', _compositeLoomExplore(c), { wide: true, feature: true }) +
-          _pcardSection('configure', 'Configure', '<span class="pcard-sec-count">' + nCfg + '</span><span class="pcard-config-chips" data-role="config-chips" hidden></span>', configBody, { resizable: true }) +
-          _pcardSection('inputs', 'Inputs', '<span class="pcard-sec-count">0</span>', topNote) +
-          runBar +
-          _pcardSection('outputs', 'Outputs', '', outputsBody) +
+          // The card body is now the FULL stacked loom surface — Configure/Inputs,
+          // the bigraph, Run/Step, and Outputs all live inside it. No more card
+          // re-implementations of those sections (which had diverging semantics).
+          _pcardSection('explore', 'Open composite', '<span class="pcard-sec-hint">◆ Configure · run · outputs — click to open</span>', _compositeLoomExplore(c), { wide: true, feature: true }) +
         '</div>' +
       '</div>' +
     '</div>';

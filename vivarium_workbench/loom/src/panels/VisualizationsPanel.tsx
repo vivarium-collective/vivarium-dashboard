@@ -24,7 +24,7 @@ export function VisualizationsPanel({ vizHtml, hasRun, readOnly }: Visualization
         <p style={{ color: '#6b7280' }}>
           {readOnly
             ? 'The read-only mirror does not include run data — run this composite in a live dashboard to see visualizations.'
-            : hasRun ? 'Loading visualizations…' : 'No run yet. Go to the Run tab to start one.'}
+            : hasRun ? 'Loading visualizations…' : 'No run yet — press ▶ Run above.'}
         </p>
       </div>
     );

@@ -364,7 +364,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: port,          // process's left input port
           label: port,
           animated: false,
-          style: { stroke: '#94a3b8', strokeDasharray: '6,4', strokeWidth: 2.6 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
+          style: { stroke: '#aeb8c4', strokeDasharray: '5,4', strokeWidth: 1.75 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the process's input port
           data: { edgeType: 'input' },
         });
@@ -382,7 +382,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: 'right-in',    // store's right handle
           label: port,
           animated: false,
-          style: { stroke: '#94a3b8', strokeDasharray: '6,4', strokeWidth: 2.6 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
+          style: { stroke: '#aeb8c4', strokeDasharray: '5,4', strokeWidth: 1.75 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the store's incoming side
           data: { edgeType: 'output' },
         });
@@ -444,7 +444,21 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
       });
     }
 
-    for (const [key, child] of Object.entries(node)) {
+    // Milner `_control` nodes wrap their children in a `contents` region. Render
+    // that wrapper TRANSPARENTLY — the children hang directly off this node (a
+    // `cell` shows its `chromosome`, not a `contents` box), matching the logical
+    // paths wires use. Any stray direct children are still kept.
+    const _contents = (node as { contents?: unknown }).contents;
+    const _hoist = '_control' in node && _contents
+      && typeof _contents === 'object' && !Array.isArray(_contents);
+    const childEntries: Array<[string, unknown]> = _hoist
+      ? [
+          ...Object.entries(_contents as Record<string, unknown>),
+          ...Object.entries(node).filter(([k]) => k !== 'contents'),
+        ]
+      : Object.entries(node);
+
+    for (const [key, child] of childEntries) {
       // `_`-prefixed keys are metadata (_figure, _contract, …), not child stores.
       if (key === DECLARED_EMIT_PATHS_KEY || key.startsWith('_')) continue;
       walk(child, [...path, key]);
@@ -452,7 +466,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
 
     // Add place edges from parent to each immediate child store
     if (path.length > 0) {
-      for (const key of Object.keys(node)) {
+      for (const [key] of childEntries) {
         if (key === DECLARED_EMIT_PATHS_KEY || key.startsWith('_')) continue;
         const childId = pathKey([...path, key]);
         edges.push({
@@ -463,9 +477,10 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: 'top-place',     // child store's top handle
           type: 'place',                 // org-chart elbow (edges/PlaceEdge)
           animated: false,
-          // Containment convention: a firm slate connector, a touch thinner than
-          // the old 3.6 bezier so the orthogonal bracket reads clean, not heavy.
-          style: { stroke: '#475569', strokeWidth: 2.6 },  // inline stroke for SVG export
+          // Containment convention: a light, thin slate connector that reads as
+          // structural scaffolding and recedes behind the node cards, rather than
+          // a heavy dark bracket that competes with the node borders.
+          style: { stroke: '#c2cbd6', strokeWidth: 1.5 },  // inline stroke for SVG export
           data: { edgeType: 'place' },
         });
       }

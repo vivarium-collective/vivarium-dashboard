@@ -38,10 +38,14 @@ export interface UseCompositeRunArgs {
 }
 
 export function useCompositeRun(args: UseCompositeRunArgs) {
-  const [steps, setSteps] = useState(args.defaultSteps ?? 5);
+  // Step networks default to a single discrete step (advance one at a time);
+  // temporal composites default to a short continuous run.
+  const kindDefault = args.runKind === 'workflow' ? 1 : 5;
+  const [steps, setSteps] = useState(args.defaultSteps ?? kindDefault);
   useEffect(() => {
-    if (args.defaultSteps != null) setSteps(args.defaultSteps);
-  }, [args.compositeId, args.defaultSteps]);
+    setSteps(args.defaultSteps ?? kindDefault);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [args.compositeId, args.defaultSteps, args.runKind]);
 
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatus | null>(null);
@@ -140,7 +144,10 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
     try {
       const res = await startRun({
         id: args.compositeId,
-        steps: isWorkflow ? 1 : steps,
+        // Step network → an integer number of discrete steps (steppable one at a
+        // time); temporal → the continuous run length. Both ride the `steps`
+        // field; a step network just constrains it to a whole number.
+        steps: isWorkflow ? Math.max(1, Math.floor(steps)) : steps,
         emit_paths: Array.from(args.emitSet),
         overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
       });
@@ -161,5 +168,7 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
   return {
     steps, setSteps, runId, status, startError,
     isRunning, isWorkflow, canRun, inInvestigation, pct, handleRun,
+    // 'steps' = discrete step network (integer, steppable); 'duration' = temporal.
+    stepMode: (isWorkflow ? 'steps' : 'duration') as 'steps' | 'duration',
   };
 }

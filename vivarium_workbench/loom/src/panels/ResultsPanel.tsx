@@ -111,12 +111,19 @@ export function ResultsPanel({ trajectory, hasRun, runId, downloadable, readOnly
       download
       style={{
         display: 'inline-block', margin: '4px 0 12px', padding: '6px 14px',
-        fontSize: 13, fontWeight: 600, background: '#6366f1', color: '#fff',
+        fontSize: 13, fontWeight: 600, background: '#0d6e6b', color: '#fff',
         borderRadius: 6, textDecoration: 'none',
       }}
     >
       ⬇ Download results
     </a>
+  ) : null;
+
+  // Provenance line: which run produced these results (+ download).
+  const runLine = runId ? (
+    <div style={{ fontSize: 12, color: '#6b7280', margin: '0 0 10px', fontFamily: 'ui-monospace, monospace' }}>
+      run <span style={{ color: '#334155' }}>{runId.length > 12 ? runId.slice(0, 12) + '…' : runId}</span>
+    </div>
   ) : null;
 
   if (!trajectory) {
@@ -127,7 +134,7 @@ export function ResultsPanel({ trajectory, hasRun, runId, downloadable, readOnly
         <p style={{ color: '#6b7280' }}>
           {readOnly
             ? 'The read-only mirror does not include run data — run this composite in a live dashboard to see results.'
-            : hasRun ? 'Loading trajectory…' : 'No run yet. Go to the Run tab to start one.'}
+            : hasRun ? 'Loading trajectory…' : 'No run yet — press ▶ Run above.'}
         </p>
       </div>
     );
@@ -138,7 +145,8 @@ export function ResultsPanel({ trajectory, hasRun, runId, downloadable, readOnly
 
   return (
     <div style={wrap}>
-      <h3 style={{ marginTop: 0 }}>Results</h3>
+      <h3 style={{ marginTop: 0, marginBottom: 6 }}>Results</h3>
+      {runLine}
       {downloadLink}
       {keys.length === 0 ? (
         <p style={{ color: '#6b7280' }}>

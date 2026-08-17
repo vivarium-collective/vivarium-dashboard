@@ -4616,20 +4616,30 @@
     // only a snapshot ships. Omit both under body.snapshot (truly no server).
     var liveInner = document.body.classList.contains('snapshot')
       ? '' : '&id=' + encodeURIComponent(id) + '&live=1';
-    var loomUrl = det._loomLive
+    // `data-surface="full"` → the WHOLE stacked loom surface (Configure/Inputs +
+    // bigraph + Run/Step + Outputs), header hidden (the card names the composite).
+    // It runs LIVE (id-based) so Run + Apply work; the card no longer wraps its
+    // own Configure/Run/Outputs. Everything else keeps the chrome=off bigraph-only
+    // preview.
+    var fullSurface = det.getAttribute('data-surface') === 'full';
+    var isSnapshot = document.body.classList.contains('snapshot');
+    var chromeParam = fullSurface ? '&header=off' : '&chrome=off';
+    var loomUrl = (det._loomLive || (fullSurface && !isSnapshot))
       ? apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id) +
-          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + '&chrome=off' + tabParam
+          (det._overrides ? '&overrides=' + encodeURIComponent(det._overrides) : '') + chromeParam + tabParam
       : apiUrl('/bigraph-loom/index.html') + '?static=1&stateUrl=' +
-          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + liveInner + '&chrome=off' + tabParam;
+          encodeURIComponent(_compositeStateUrl(id, det._overrides)) + liveInner + chromeParam + tabParam;
     var f = document.createElement('iframe');
-    f.className = 'ccard-loom-iframe';
+    f.className = 'ccard-loom-iframe' + (fullSurface ? ' ccard-loom-iframe-full' : '');
     f.setAttribute('title', 'Loom — ' + id);
     f.src = loomUrl;
     host.innerHTML = '';
-    // Restore a previously dragged height (shared across all loom embeds).
+    // Restore a previously dragged height (shared across all loom embeds); the
+    // full surface needs more room by default (four stacked zones).
     var savedH = 0;
     try { savedH = parseInt(localStorage.getItem('viv.loomFrameH') || '', 10) || 0; } catch (e) { /* private mode */ }
-    if (savedH) host.style.height = Math.max(220, Math.min(Math.round(window.innerHeight * 0.92), savedH)) + 'px';
+    if (!savedH && fullSurface) savedH = Math.round(window.innerHeight * 0.72);
+    if (savedH) host.style.height = Math.max(fullSurface ? 480 : 220, Math.min(Math.round(window.innerHeight * 0.92), savedH)) + 'px';
     host.appendChild(f);
     _wireLoomResize(host, f);
   }
