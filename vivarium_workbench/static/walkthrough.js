@@ -166,6 +166,17 @@
           Object.keys(props).forEach(function (p) { f.style.setProperty(p, props[p], 'important'); });
         } else {
           Object.keys(props).forEach(function (p) { f.style.removeProperty(p); });
+          // Taking the iframe OUT of position:fixed collapses its old slot; the
+          // parent panel + the iframe's own content need a reflow or the page
+          // is left with a narrow column + white gap. Re-fit + fire resize.
+          var panel = f.closest('.panel, [id$="-panel"]') || f.parentElement;
+          if (typeof _fitEmbedToViewport === 'function') {
+            try { _fitEmbedToViewport(f, panel, 560); } catch (e) { /* ignore */ }
+          }
+          setTimeout(function () {
+            window.dispatchEvent(new Event('resize'));
+            try { if (f.contentWindow) f.contentWindow.dispatchEvent(new Event('resize')); } catch (e) { /* cross-origin */ }
+          }, 30);
         }
         break;
       }
