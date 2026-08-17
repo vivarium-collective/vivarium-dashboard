@@ -2470,14 +2470,106 @@
   }
   window._loadAuditSufficiency = _loadAuditSufficiency;
 
+  // ── Sourcing sub-panel (Slice 3) ─────────────────────────────────────────
+  // viva_superpowers.module_sourcing.build_sourcing_report + sourcing_gate.
+  // "Where did this model come from — reuse / compose / build-new — and was
+  // that choice sound?" Reads the study spec's own `sourcing:`/`requires:`
+  // blocks straight off window._study (a pass-through spec via
+  // /api/study/{slug}, StudyDetail extra="allow") — NO server fetch, unlike
+  // Sufficiency. Reuses _renderAuditSufficiencyAxis + the gate-chip pattern,
+  // so the source_fit/reinvention/novelty_justified/survey_recorded axes
+  // render in the same within_tol/drift/mismatch visual language. The mount
+  // hides itself for the common case of a study with no sourcing decision.
+  var _SOURCING_AXIS_ORDER = ['source_fit', 'reinvention', 'novelty_justified', 'survey_recorded'];
+  var _SOURCING_AXIS_LABELS = {
+    source_fit: 'Source fit', reinvention: 'Reinvention',
+    novelty_justified: 'Novelty justified', survey_recorded: 'Survey recorded'
+  };
+  var _SOURCING_AXIS_KIND = {
+    source_fit: 'hard', reinvention: 'hard',
+    novelty_justified: 'soft', survey_recorded: 'soft'
+  };
+
+  // Returns {state, html} — state 'absent' (no sourcing block) → mount hidden.
+  function _sourcingCheckGroupHtml(sourcing, requires) {
+    var e = escapeHtmlForTests;
+    if (!sourcing || typeof sourcing !== 'object') return { state: 'absent', html: '' };
+    var audit = sourcing.audit || {};
+    var header = '<div class="check-group-header" style="display:flex;align-items:center;'
+      + 'gap:8px;flex-wrap:wrap"><strong>Sourcing</strong> '
+      + '<span class="muted" style="font-size:0.85em">where the model came from &mdash; '
+      + '<code>viva_superpowers.module_sourcing</code></span>';
+    var gate = String(audit.gate || 'pass').toLowerCase();
+    var gc = _AUDIT_GATE_COLORS[gate] || _AUDIT_GATE_COLORS.pass;
+    header += ' <span class="outcome-chip" style="margin-left:auto;font-size:0.78em;font-weight:600;'
+      + 'padding:2px 9px;border-radius:9999px;background:' + gc.bg + ';color:' + gc.fg + '">gate: '
+      + e(gate) + '</span></div>';
+    var decision = sourcing.decision || '—';
+    var modules = Array.isArray(sourcing.modules) ? sourcing.modules : [];
+    var reqs = Array.isArray(requires) ? requires : [];
+    var summary = '<div class="sourcing-decision muted" style="font-size:0.9em;margin:6px 0 2px 0">'
+      + '<strong style="color:#334155">' + e(decision) + '</strong>'
+      + (modules.length ? ' &middot; ' + e(modules.join(', ')) : '')
+      + (reqs.length ? ' &nbsp;<span title="required capabilities">requires: ' + e(reqs.join(', ')) + '</span>' : '')
+      + '</div>';
+    if (sourcing.rationale) {
+      summary += '<div class="muted" style="font-size:0.85em;font-style:italic;margin-bottom:4px">&ldquo;'
+        + e(sourcing.rationale) + '&rdquo;</div>';
+    }
+    var axesDict = audit.axes || {};
+    var keys = _SOURCING_AXIS_ORDER.filter(function(k) { return k in axesDict; });
+    Object.keys(axesDict).forEach(function(k) { if (keys.indexOf(k) < 0) keys.push(k); });
+    if (!keys.length) {
+      return { state: 'empty', html: header + summary
+        + '<p class="empty-message">No sourcing axes computed for this study.</p>' };
+    }
+    var axes = keys.map(function(k) {
+      var kind = _SOURCING_AXIS_KIND[k];
+      return {
+        id: k, verdict: axesDict[k],
+        label: (_SOURCING_AXIS_LABELS[k] || k.replace(/_/g, ' ')) + (kind ? ' · ' + kind : '')
+      };
+    });
+    var footer = '';
+    if (audit.catches_if_wrong) {
+      footer = '<p class="muted" style="font-size:0.82em;margin:8px 0 0 0">Catches if wrong: '
+        + e(audit.catches_if_wrong) + '</p>';
+    }
+    return {
+      state: 'ready',
+      html: header + summary
+        + '<ul class="audit-axis-list" style="list-style:none;padding-left:0;margin:8px 0 0 0">'
+        + axes.map(_renderAuditSufficiencyAxis).join('') + '</ul>' + footer
+    };
+  }
+
+  function _loadAuditSourcing(spec) {
+    var host = document.getElementById('audit-sourcing');
+    if (!host) return;
+    var src = (spec && spec.sourcing) || (window._study && window._study.sourcing) || null;
+    var reqs = (spec && spec.requires) || (window._study && window._study.requires) || [];
+    var built = _sourcingCheckGroupHtml(src, reqs);
+    if (built.state === 'absent') {
+      host.style.display = 'none';
+      host.dataset.state = 'absent';
+      host.innerHTML = '';
+      return;
+    }
+    host.style.display = '';
+    host.dataset.state = built.state;
+    host.innerHTML = built.html;
+  }
+  window._loadAuditSourcing = _loadAuditSourcing;
+
   // Audit tab entry point — fills all three Checks-band groups (Sufficiency,
-  // Quality, Reproducibility). Quality/Reproducibility MOVED here from the
-  // Tests panel's old _loadTestsPanel (spec §3.6/§3.7); their loaders are
-  // unchanged, just dispatched from here instead.
+  // Quality, Reproducibility) plus the Sourcing sub-panel. Quality/
+  // Reproducibility MOVED here from the Tests panel's old _loadTestsPanel
+  // (spec §3.6/§3.7); their loaders are unchanged, just dispatched from here.
   function _loadAudit(spec) {
     _loadAuditSufficiency(spec);
     _loadQualityChecks(spec);
     _loadReproducibilityChecks(spec);
+    _loadAuditSourcing(spec);
   }
   window._loadAudit = _loadAudit;
 
