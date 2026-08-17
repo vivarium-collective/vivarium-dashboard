@@ -2460,6 +2460,11 @@
           ? ' <span class="muted">(' + priorHashes.length + ' prior hash' + (priorHashes.length === 1 ? '' : 'es') + ' retained)</span>'
           : '')
       + '</div></div>';
+    if (state.state === 'GIVE_UP' && state.give_up_reason) {
+      html += '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:' + sc.bg
+        + ';color:' + sc.fg + ';border:1px solid rgba(153,27,27,0.25);font-size:0.9em">'
+        + '<strong>Why the loop gave up:</strong> ' + e(state.give_up_reason) + '</div>';
+    }
     if (history.length) {
       html += '<div style="margin-top:12px"><strong style="font-size:0.9em">Iteration history</strong>'
         + '<ul style="list-style:none;padding-left:0;margin:6px 0 0 0">'
