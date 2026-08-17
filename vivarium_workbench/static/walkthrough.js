@@ -146,6 +146,31 @@
 
   // Global listener for postMessage events from bigraph-loom iframes.
   window.addEventListener('message', function(ev) {
+    // A composite card maximized inside an embed iframe (e.g. Study→Model):
+    // expand THAT iframe to full-window so "maximize" fills the whole screen,
+    // not just the iframe's slot. Matched by message source → its iframe.
+    if (ev.data && ev.data.type === 'pcard-maximize') {
+      var frames = document.getElementsByTagName('iframe');
+      for (var fi = 0; fi < frames.length; fi++) {
+        if (frames[fi].contentWindow !== ev.source) continue;
+        var f = frames[fi];
+        // Inline !important — the study iframe's own #id rule sets width/height
+        // with !important, which an iframe.class rule can't beat; inline
+        // !important wins over any stylesheet !important.
+        var props = {
+          position: 'fixed', top: '0', left: '0', right: '0', bottom: '0',
+          width: '100vw', height: '100vh', 'max-height': '100vh',
+          'z-index': '2147483000', margin: '0', border: '0',
+        };
+        if (ev.data.on) {
+          Object.keys(props).forEach(function (p) { f.style.setProperty(p, props[p], 'important'); });
+        } else {
+          Object.keys(props).forEach(function (p) { f.style.removeProperty(p); });
+        }
+        break;
+      }
+      return;
+    }
     if (ev.data && ev.data.type === 'explore:ready') {
       // Mark the source iframe as ready so callers can post immediately.
       var ids = ['composite-explore-frame', 'inv-composite-explore-frame'];

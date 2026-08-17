@@ -2039,6 +2039,10 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
   margin-left:8px; flex:none; white-space:nowrap;
 }
 .popcard-backin-hdr:hover{ background:#d5f2ee; border-color:#4bb3ae; }
+/* (Study→Model maximize fills the whole window by setting the embed iframe's
+   geometry via INLINE !important in walkthrough.js's pcard-maximize handler —
+   an id-selector !important rule on #study-detail-frame can't be beaten from a
+   class rule, so this is done inline rather than in CSS.) */
 .pcard-sec-hint{
   font-size:0.78em; font-weight:600; color:#7c3aed;
   background:#f1e9ff; border:1px solid #e2d3ff; border-radius:999px;

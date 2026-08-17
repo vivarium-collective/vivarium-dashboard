@@ -113,8 +113,11 @@
     // CSS var so a card re-render can't strip inline positioning. Here we only
     // (a) publish the rail's right edge so the card clears the menu bar, and
     // (b) grow the embedded loom to fill from its top to the bottom of the pane.
+    // In an embed IFRAME (Study→Model) there is no rail (it's in the parent,
+    // covered by the full-window iframe), so the card fills from the left edge.
+    var inIframe = !!(window.parent && window.parent !== window);
     var rail = document.querySelector('.viv-rail');
-    var railRight = rail ? rail.getBoundingClientRect().right : 240;
+    var railRight = inIframe ? 0 : (rail ? rail.getBoundingClientRect().right : 240);
     document.documentElement.style.setProperty('--vw-rail-right', railRight + 'px');
     var frame = card.querySelector('.ccard-loom-frame');
     if (frame) {
@@ -128,6 +131,14 @@
     if (!card) return;
     var on = card.classList.toggle('pcard-maximized');
     document.body.classList.toggle('pcard-maximized', on);
+    // When this card lives in an embed IFRAME (e.g. the Study→Model page), a
+    // position:fixed maximize only fills the IFRAME, not the window. Ask the
+    // parent to expand THIS iframe to full-window so "maximize" is truly full.
+    try {
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: 'pcard-maximize', on: on }, '*');
+      }
+    } catch (e) { /* cross-origin parent — ignore */ }
     if (on) {
       btn.title = 'Restore (Esc)';
       // Make sure the Explore section is open so the loom is actually visible.
