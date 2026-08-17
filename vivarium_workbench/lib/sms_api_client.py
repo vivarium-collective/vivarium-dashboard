@@ -120,6 +120,14 @@ class SmsApiClient:
     def simulation_status(self, simulation_id: int) -> dict:
         return self._get(f"/api/v1/simulations/{simulation_id}/status")
 
+    def simulation_chain_progress(self, simulation_id: int) -> dict:
+        """Backlog item 6: real per-seed aggregate progress for a chain-dispatch
+        campaign (viva-api PR #257) — {seeds_total, seeds_succeeded, seeds_failed,
+        seeds_in_progress, terminal, status}. 404 unknown simulation, 409 when the
+        simulation exists but isn't a chain-dispatch campaign (nothing to
+        aggregate — callers should use ``simulation_status`` for those)."""
+        return self._get(f"/api/v1/simulations/{simulation_id}/chain-progress")
+
     def observables_index(self, simulation_id: int, seed: int = 0) -> dict:
         return self._get(f"/api/v1/simulations/{simulation_id}/observables/index", {"seed": seed})
 

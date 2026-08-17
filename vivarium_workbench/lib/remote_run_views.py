@@ -609,3 +609,57 @@ def remote_run_status(params: dict) -> tuple[dict, int]:
             "status": getattr(e, "status", None),
             "error": str(e),
         }, 502
+
+
+def remote_run_chain_progress(params: dict) -> tuple[dict, int]:
+    """Backlog item 6: real per-seed aggregate progress for a chain-dispatch
+    campaign, proxying viva-api's ``GET /simulations/{id}/chain-progress``
+    (PR #257) the same way ``remote_run_status`` proxies ``/status`` — on-demand,
+    no in-process state, the JS panel polls this per phase (session-status.js's
+    proven interval pattern, not SSE — see item 6's own backlog note on why).
+
+    ``simulation_id`` required. 404 (unknown simulation) and 409 (exists but
+    isn't a chain-dispatch campaign — nothing to aggregate, the caller should
+    fall back to plain ``remote_run_status`` for those) pass through as
+    distinct, meaningful phases rather than collapsing into one generic error,
+    so the frontend can tell "not a campaign" apart from "genuinely broken"."""
+    params = params or {}
+    sim_id = params.get("simulation_id")
+    if not sim_id:
+        return {"error": "simulation_id required"}, 400
+    client = SmsApiClient(_sms_api_base())
+    try:
+        cp = client.simulation_chain_progress(int(sim_id))
+        raw = str(cp.get("status", "")).lower()
+        phase = (
+            "done"
+            if raw in _TERMINAL_OK
+            else "failed"
+            if raw in _TERMINAL_BAD
+            else "running"
+        )
+        return {
+            "kind": "chain_progress",
+            "phase": phase,
+            "terminal": bool(cp.get("terminal")),
+            "seeds_total": cp.get("seeds_total"),
+            "seeds_succeeded": cp.get("seeds_succeeded"),
+            "seeds_failed": cp.get("seeds_failed"),
+            "seeds_in_progress": cp.get("seeds_in_progress"),
+            "simulation_id": int(sim_id),
+        }, 200
+    except SmsApiError as e:
+        msg = str(e)
+        if msg.endswith("-> 404"):
+            return {"kind": "chain_progress", "phase": "not_found", "error": msg,
+                     "simulation_id": int(sim_id)}, 404
+        if msg.endswith("-> 409"):
+            # Real, expected case for a plain (non-chain-dispatch) run — not an
+            # error the panel should alarm on, just "nothing to aggregate here."
+            return {"kind": "chain_progress", "phase": "not_a_campaign", "error": msg,
+                     "simulation_id": int(sim_id)}, 200
+        return {
+            "kind": "chain_progress", "phase": "unreachable", "reachable": False,
+            "reason": "sms-api unreachable (is the tunnel up?)", "error": msg,
+            "simulation_id": int(sim_id),
+        }, 502
