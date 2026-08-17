@@ -1893,34 +1893,23 @@ export default function App() {
   return (
     <ReactFlowProvider>
       <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
-        {/* Thin breadcrumb header: composite name + library.
-            One layer up from the tabs so the tab strip stays compact. */}
+        {/* Composite top bar: name · id · library · counts, with an expandable
+            description and a minimize toggle. The full workbench card supplies
+            its own header, so the card embed (header=off) hides this one. */}
         {!chromeless && !hideHeader && (name || compositeId) && (
-          <div style={{
-            display: 'flex', alignItems: 'baseline', gap: 6,
-            padding: '4px 16px',
-            fontSize: 12,
-            borderBottom: '1px solid #f3f4f6',
-            background: '#fff',
-            flex: '0 0 auto',
-          }}>
-            {/* The header names the current composite: the human name leads,
-                the dotted registry id trails as quiet secondary (full id on hover). */}
-            <span style={{ fontWeight: 700, color: '#111827' }} title={compositeId || undefined}>
-              {name || (compositeId ? compositeId.split('.').pop()!.replace(/[-_]/g, ' ') : '')}
-            </span>
-            {compositeId && compositeId !== name && (
-              <span style={{ color: '#9ca3af', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
-                {compositeId}
-              </span>
-            )}
-            {library && (
-              <>
-                <span style={{ color: '#d1d5db' }}>·</span>
-                <span style={{ color: '#6b7280' }}>{library}</span>
-              </>
-            )}
-          </div>
+          <CompositeInfo
+            name={name}
+            description={description}
+            compositeId={compositeId}
+            library={library}
+            nProcesses={state && typeof state === 'object'
+              ? Object.values(state as Record<string, unknown>).filter(
+                (v) => v && typeof v === 'object'
+                  && ((v as { _type?: string })._type === 'process'
+                    || (v as { _type?: string })._type === 'step')).length
+              : undefined}
+            nParams={Object.keys(parameters).length || undefined}
+          />
         )}
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
           {/* The bigraph surface — always rendered (no tab chrome). */}
@@ -1982,9 +1971,6 @@ export default function App() {
                 className={`loom-canvas loom-mode-${layoutMode.modeId}`}
                 style={{ flex: 1, position: 'relative', minWidth: 0, ['--loom-fs' as string]: fontScale } as React.CSSProperties}
               >
-                {/* Composite info (name + description), collapsible — available
-                    even in the chromeless / header=off embed. */}
-                <CompositeInfo name={name} description={description} library={library} />
 
                 {/* Modes that cull edges start with NO wires drawn, which without
                     a word of explanation reads as a broken canvas rather than a

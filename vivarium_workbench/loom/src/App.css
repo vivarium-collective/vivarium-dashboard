@@ -2277,33 +2277,45 @@ textarea.sr-input {
 .explore-runbar-emit-opt input { accent-color: #0d6e6b; }
 .explore-runbar-emit-empty { font-size: 12px; color: #94a3b8; padding: 4px 8px; font-style: italic; }
 
-/* ---- Composite info panel (collapsible, top-left of the graph) ---- */
-.cinfo {
-  position: absolute; top: 10px; left: 10px; z-index: 20;
-  max-width: min(460px, calc(100% - 90px));
-  background: rgba(255,255,255,.96); border: 1px solid #e2e8f0; border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0,0,0,.08); backdrop-filter: blur(2px);
+/* ---- Composite top bar (name · id · counts + expandable description) ---- */
+.cinfobar {
+  flex: 0 0 auto; background: #fff; border-bottom: 1px solid #e5e7eb;
 }
-.cinfo-bar {
-  display: flex; align-items: center; gap: 7px; width: 100%;
-  background: none; border: none; cursor: pointer; padding: 7px 10px;
-  text-align: left; font: inherit;
+.cinfobar-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px; min-width: 0;
 }
-.cinfo-i { color: #0d6e6b; font-size: 13px; flex: none; }
-.cinfo-title {
-  font-size: 13px; font-weight: 700; color: #1e293b;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.cinfobar-i { color: #0d6e6b; font-size: 13px; flex: none; }
+.cinfobar-name {
+  font-size: 13px; font-weight: 700; color: #111827; flex: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%;
 }
-.cinfo-lib {
+.cinfobar-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+  color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.cinfobar-lib {
   font-size: 10px; color: #64748b; background: #f1f5f9; border-radius: 999px;
-  padding: 1px 7px; flex: none;
+  padding: 1px 8px; flex: none;
 }
-.cinfo-chevron { margin-left: auto; color: #94a3b8; font-size: 11px; flex: none; }
-.cinfo-bar:hover .cinfo-title { color: #0d6e6b; }
-.cinfo-body {
-  padding: 0 12px 10px; font-size: 12.5px; line-height: 1.55; color: #475569;
-  max-height: 40vh; overflow: auto; border-top: 1px solid #f1f5f9; padding-top: 8px;
+.cinfobar-counts { font-size: 11px; color: #94a3b8; flex: none; }
+.cinfobar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+.cinfobar-btn {
+  border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer;
+  font-size: 11px; color: #475569; padding: 2px 8px; white-space: nowrap;
 }
+.cinfobar-btn:hover { border-color: #4bb3ae; color: #0d6e6b; }
+.cinfobar-min { font-weight: 700; line-height: 1; padding: 2px 9px; }
+.cinfobar-desc {
+  padding: 2px 14px 10px 34px; font-size: 12.5px; line-height: 1.55; color: #475569;
+  max-height: 32vh; overflow: auto;
+}
+/* Minimized → a hairline strip with a restore chip. */
+.cinfobar-hidden { padding: 0; }
+.cinfobar-restore {
+  border: none; background: none; cursor: pointer; font: inherit;
+  font-size: 11px; color: #64748b; padding: 3px 14px; width: 100%; text-align: left;
+}
+.cinfobar-restore:hover { color: #0d6e6b; background: #f8fafc; }
 
 /* ---- Save-points (run-bar): capture a frame, browse/View/Rerun history ---- */
 .sp-menu { position: relative; display: inline-flex; gap: 4px; }
