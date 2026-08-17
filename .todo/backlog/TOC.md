@@ -38,3 +38,4 @@
 - [x] [65: Chain-dispatch MNP Placement-group Concurrency Bottleneck](./65.md#goal)
 - [ ] [66: Sms-pipeline-progress Skill: Support Chain-dispatch (mnp), Retire Array-job Shape](./66.md#goal)
 - [ ] [67: Remote-scope Branch Dropdown Only Lists Built Branches](./67.md#goal) — critical (cplong feedback), PR #861 open, not merged
+- [ ] [68: AWS Batch Scaling Stall Root-cause](./68.md#goal) — critical, blocks item 1's real re-fire
