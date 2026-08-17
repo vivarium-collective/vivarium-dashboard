@@ -1584,6 +1584,70 @@
   }
   window._dispatchCurrentSpecBaseline = _dispatchCurrentSpecBaseline;
 
+  // ─── item 6: real dispatch progress, polling not SSE ───────────────────
+  // Alex, 2026-08-17: dispatch a sim, get a toast, then total silence -- the
+  // only way to know a campaign is alive was querying AWS Batch directly.
+  // Polls GET /api/remote-run-chain-progress (viva-api PR #257's real
+  // per-seed counts) on a session-status.js-style interval -- SSE was
+  // considered and rejected: the Stanford ALB already flakes to
+  // Target.Timeout on long-lived connections (viva-api/CLAUDE.md Pitfall 4),
+  // and a campaign runs minutes-to-hours, so nobody needs sub-second push.
+  var CHAIN_PROGRESS_POLL_MS = 8000;
+  var _chainProgressTimer = null;
+
+  function _chainProgressEl() {
+    var el = document.getElementById('study-chain-progress');
+    if (!el) {
+      var btn = document.getElementById('study-run-current-spec');
+      var host = btn && btn.parentNode;
+      if (!host) return null;
+      el = document.createElement('div');
+      el.id = 'study-chain-progress';
+      el.style.cssText = 'margin-top:8px; font:12px/1.5 system-ui,-apple-system,sans-serif; color:var(--muted,#8a8fa3)';
+      host.insertBefore(el, btn.nextSibling);
+    }
+    return el;
+  }
+
+  function _renderChainProgress(d) {
+    var el = _chainProgressEl();
+    if (!el) return;
+    if (!d || d.phase === 'not_a_campaign' || d.phase === 'not_found') {
+      el.textContent = '';
+      return;
+    }
+    if (d.phase === 'unreachable') {
+      el.textContent = '⚠ progress unavailable (sms-api unreachable)';
+      return;
+    }
+    var total = d.seeds_total, done = d.seeds_succeeded, failed = d.seeds_failed,
+        inProgress = d.seeds_in_progress;
+    if (total == null) { el.textContent = 'run ' + d.simulation_id + ': ' + d.phase; return; }
+    var pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    var bar = '';
+    var filled = Math.round((pct / 100) * 20);
+    for (var i = 0; i < 20; i++) bar += (i < filled ? '█' : '░');
+    var failedTxt = failed ? (', ' + failed + ' failed') : '';
+    el.textContent = '[' + bar + '] ' + pct + '%  ' + done + '/' + total + ' seeds' + failedTxt +
+      (d.terminal ? ' — done' : ' — ' + inProgress + ' in progress');
+  }
+
+  function _pollChainProgress(runId) {
+    if (_chainProgressTimer) { clearTimeout(_chainProgressTimer); _chainProgressTimer = null; }
+    api('GET', '/api/remote-run-chain-progress?simulation_id=' + encodeURIComponent(runId))
+      .then(function (res) {
+        var d = res.body || {};
+        _renderChainProgress(d);
+        if (!d.terminal && d.phase !== 'not_a_campaign' && d.phase !== 'not_found') {
+          _chainProgressTimer = setTimeout(function () { _pollChainProgress(runId); }, CHAIN_PROGRESS_POLL_MS);
+        }
+      })
+      .catch(function () {
+        // Transient network hiccup -- keep polling, don't give up on one miss.
+        _chainProgressTimer = setTimeout(function () { _pollChainProgress(runId); }, CHAIN_PROGRESS_POLL_MS);
+      });
+  }
+
   bindAll('#study-run-current-spec', function(btn) {
     var orig = btn.textContent;
     btn.disabled = true;
@@ -1598,6 +1662,7 @@
           var msg = 'Run launched' + (runId ? ' — new run ' + runId : '');
           if (typeof _showToast === 'function') _showToast(msg); else alert(msg);
           if (typeof _loadStudySims === 'function') _loadStudySims(true);
+          if (runId) _pollChainProgress(runId);
         } else {
           alert('Run failed: ' + (res.body && res.body.error || res.status));
         }
