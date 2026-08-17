@@ -10,7 +10,7 @@
 - [ ] [15: Cross-ecosystem security updates](./15.md#goal)
 - [ ] [35: Depth only validation pilot](./35.md#goal)
 - [ ] [39: Workbench pod analyses drop mitigation](./39.md#goal)
-- [ ] [40: Job Status DB Enum Fix](./40.md#goal)
+- [ ] [40: Job Status DB Enum Fix](./40.md#goal) — merged to viva-api main (PR #250), not yet deployed
 - [ ] [41: Workspace Loading UX](./41.md#goal)
 - [ ] [42: Row Builders Scale Expansion](./42.md#goal)
 - [ ] [43: Decouple Analysis Validation From Client-Side Registry Copy](./43.md#goal)
@@ -23,7 +23,7 @@
 - [ ] [50: The /compose/v1/* Redesign as Comprehensively Recorded](./50.md#goal)
 - [x] [51: remote-run-submit client timeout too short for large dispatch](./51.md#goal)
 - [x] [52: V2 Chain-dispatch Lineage Wall Time Under 5min](./52.md#goal)
-- [ ] [53: Streamline Chain-dispatch Job Cancellation](./53.md#goal)
+- [ ] [53: Streamline Chain-dispatch Job Cancellation](./53.md#goal) — design complete, zero open questions, not implemented (needs a real viva-api PR)
 - [ ] [54: Workspace Build-switch Session Identity Mismatch](./54.md#goal) — REOPENED, critical (cplong feedback), PR #863 open, not merged
 - [x] [55: Stale batch_baseline Composite ID After v2ecoli Refactor](./55.md#goal)
 - [x] [56: Quantity._serialize_state Missing Float Branch](./56.md#goal)
