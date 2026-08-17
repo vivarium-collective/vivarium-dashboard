@@ -394,12 +394,64 @@ def resolve_composite(
         return _degraded_result(spec_id, e)
 
 
+def _local_generator_payload(ws_root: Path, spec_id: str) -> "dict | None":
+    """item 63: resolve a generator's real declared parameters via the same
+    safe, out-of-process env-worker discovery ``discover_all_composites``
+    already uses for the registry-validation surface.
+
+    ``resolve_composite``'s own generator lookup (``process_bigraph.
+    composite_spec.get``, primed by an IN-PROCESS ``discover_generators()``
+    import) structurally can't see a session-bound materialized build's
+    composites: the generator module (e.g. ``v2ecoli.composites.
+    ecoli_baseline``) is a pip/uv-installed DEPENDENCY of that session's own
+    venv, never on the workbench SERVER's own ``sys.path``/site-packages —
+    exactly the reason the rest of this codebase deliberately never imports
+    ``@composite_generator`` modules in-process (see
+    ``discover_all_composites``/``_discover_generators_via_worker``).
+
+    Only returns the DECLARED shape (parameters, name, description, ...) —
+    real and immediately useful for a config form. Does not attempt a live
+    wiring/state build (``_live_generator_build``/``_live_generator_state``
+    have the same in-process-import problem and aren't needed for a
+    parameter form); ``state``/``svg`` stay ``None`` with an honest notice,
+    same as this function's existing degraded-result shape elsewhere.
+    Returns ``None`` when the id isn't a known generator here, so callers can
+    fall back to whatever they'd otherwise do on a miss.
+    """
+    from vivarium_workbench.lib.composite_lookup import discover_all_composites
+    ws_yaml = ws_root / "workspace.yaml"
+    ws_data = yaml.safe_load(ws_yaml.read_text(encoding="utf-8")) if ws_yaml.is_file() else {}
+    pkg = ws_data.get("package_path") or ("pbg_" + str(ws_data.get("name", "")).replace("-", "_"))
+    rec = discover_all_composites(ws_root, pkg).get(spec_id)
+    if rec is None or rec.get("kind") != "generator":
+        return None
+    return {
+        "id": spec_id, "name": rec.get("name") or spec_id.rsplit(".", 1)[-1],
+        "description": rec.get("description", ""), "state": None,
+        "parameters": rec.get("parameters") or {}, "schema": {},
+        "requires": rec.get("requires") or {}, "tags": rec.get("tags") or [],
+        "visualizations": rec.get("visualizations") or [],
+        "analyses": rec.get("analyses") or [], "emitters": rec.get("emitters") or [],
+        "kind": "generator", "module": rec.get("module") or "",
+        "default_n_steps": rec.get("default_n_steps"), "svg": None,
+        "wiring_status": "unavailable", "run_kind": "unknown",
+        "notice": ("composite wiring preview is not available for remote-pinned "
+                   "deployments yet (parameters above are real; the state/SVG "
+                   "preview needs a live build, not supported for a materialized "
+                   "session build)"),
+    }
+
+
 def resolve_composite_for_request(
     ws_root: "Path | str", spec_id: str, overrides: "dict | None" = None
 ) -> "dict | None":
-    """Resolve a composite for a UI request, routing by source: a remote build
-    (.viv-build.json) resolves on the deployment via sms-api; a local workspace
-    resolves locally. Returns the resolve payload dict (or None on a local miss)."""
+    """Resolve a composite for a UI request, routing by source: a session-bound
+    materialized build (.viv-build.json — real files on disk, same dir the env
+    worker provisions a venv for, item 63) resolves LOCALLY, through the same
+    general resolution any local workspace uses; a bare deployment-wide pin
+    with no materialized clone resolves on the deployment via sms-api; a local
+    workspace resolves locally. Returns the resolve payload dict (or None on
+    a local miss)."""
     from vivarium_workbench.lib.run_core import run_target_for
     from vivarium_workbench.lib.remote_simulations import _read_build_meta
 
@@ -409,6 +461,33 @@ def resolve_composite_for_request(
         sim_id = meta.get("simulator_id")
         if sim_id is None:
             return {"error": "remote build has no simulator_id stamp"}
+        # item 63: `.viv-build.json` only ever gets stamped into a materialized
+        # session clone (source_build_views.switch_build) — its presence means
+        # ws_root has real source files on disk. Not special-cased to any one
+        # composite kind or workspace: try the SAME general local resolution
+        # ANY local (non-remote-pinned) workspace already uses below.
+        #   1. resolve_composite — the canonical path. A static `.composite.
+        #      yaml` spec resolves here natively (pure file read, no import,
+        #      works regardless of which venv this process happens to run
+        #      under). A generator resolves here too whenever this process's
+        #      own environment happens to satisfy it.
+        #   2. _local_generator_payload — a generator whose module needs THIS
+        #      session's own materialized deps (not the workbench server's
+        #      own) is invisible to step 1's in-process import; re-check via
+        #      the same safe, out-of-process env-worker discovery
+        #      discover_all_composites already uses elsewhere (and which the
+        #      managed materialization path now provisions a real venv for).
+        # Only when NEITHER general path can see it does this fall back to
+        # sms-api — the one case with nothing local to introspect at all is a
+        # bare deployment-wide pin (VIVARIUM_WORKBENCH_REMOTE_PINNED, no
+        # materialized clone), which the same waterfall degrades through
+        # cleanly (both local attempts miss, unconditionally, for any id).
+        local = resolve_composite(ws_root, spec_id, overrides)
+        if local is not None:
+            return local
+        local = _local_generator_payload(ws_root, spec_id)
+        if local is not None:
+            return local
         try:
             return SmsApiClient(_sms_api_base()).composite_resolve(int(sim_id), spec_id, overrides or {})
         except SmsApiError as e:

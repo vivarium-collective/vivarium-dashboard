@@ -6251,8 +6251,18 @@ def create_app() -> FastAPI:
         source_path = (body.get("source") or {}).get("path")
         if session_key and source_path:
             session_registry.rebind(session_key, source_path)
-            # The downloaded build workspace is on disk → in-place (§2a) today.
-            body["materialization"] = session_env.prepare(session_key, source_path)
+            # managed=True (item 63): the materialized build is a bare tarball
+            # extraction with no `.venv` of its own — the in-place fast path
+            # left `env_resolver.resolve_interpreter` falling through to
+            # `sys.executable` (the WORKBENCH's own interpreter/deps, not this
+            # commit's), so the env-worker silently imported composite modules
+            # under the wrong dependency versions and composite-parameter
+            # discovery degraded to empty. Routing through the managed path
+            # provisions a real `.venv` via `uv sync` against this commit's own
+            # lock file (coordinate-keyed, cached across sessions on the same
+            # commit) before anything trusts this session's environment.
+            body["materialization"] = session_env.prepare(
+                session_key, source_path, managed=True)
         return SourceSwitchResponse.model_validate(body)
 
     @app.post(
