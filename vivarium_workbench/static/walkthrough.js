@@ -2490,18 +2490,8 @@
     // focus-mode strips the rail/topbar (content-only window); popcard-mode
     // additionally hides the registry tabs + toolbar to leave just the card.
     document.body.classList.add('focus-mode', 'popcard-mode');
-    // Floating "pop back in" control (top-left) — return to the full workbench
-    // (with the side rail) showing this composite maximized.
-    if (!document.getElementById('popcard-backin')) {
-      var _bi = document.createElement('button');
-      _bi.id = 'popcard-backin'; _bi.type = 'button'; _bi.textContent = '◀ Pop back in';
-      _bi.title = 'Return to the workbench (with the side menu) and show this composite here';
-      _bi.style.cssText = 'position:fixed;top:9px;left:10px;z-index:100000;height:30px;' +
-        'padding:0 12px;font-size:13px;font-weight:600;background:#fff;border:1px solid #d1d5db;' +
-        'border-radius:6px;cursor:pointer;color:#374151;box-shadow:0 1px 4px rgba(0,0,0,0.14)';
-      _bi.onclick = function () { _popCardBackIn(address, kind); };
-      document.body.appendChild(_bi);
-    }
+    // "Pop back in" is injected into the card HEADER's action row (top-right,
+    // where the pop-out button was) after the card renders — see below.
     var isComposite = (kind === 'composite');
     if (typeof _switchPage === 'function') _switchPage('modules');
     window._registryZoom = 'full';
@@ -2521,10 +2511,22 @@
       if (host && html) {
         host.innerHTML = '<div class="reg-cards reg-cards-full popcard-single">' + html + '</div>';
         if (typeof _observeRunnableCards === 'function') _observeRunnableCards(host);
-        // For composites, auto-open Explore so the loom is visible immediately.
+        // "Pop back in" in the header action row (top-right, replacing the now-
+        // redundant ↗ pop-out button — hidden via .popcard-mode CSS).
+        var _hdr = host.querySelector('.pcard-header');
+        if (_hdr && !_hdr.querySelector('.popcard-backin-hdr')) {
+          var _bi = document.createElement('button');
+          _bi.className = 'popcard-backin-hdr'; _bi.type = 'button';
+          _bi.textContent = '◀ Pop back in';
+          _bi.title = 'Return to the workbench (with the side menu) and show this composite here';
+          _bi.onclick = function (ev) { ev.stopPropagation(); _popCardBackIn(address, kind); };
+          _hdr.appendChild(_bi);
+        }
+        // For composites, auto-open Explore so the loom is visible immediately
+        // (via the header Explore button so its label stays in sync).
         if (isComposite) {
-          var sec = host.querySelector('.pcard-sec-explore .pcard-sec-head');
-          if (sec) _pcardToggleSec(sec);
+          var expBtn = host.querySelector('.pcard-explore-btn');
+          if (expBtn && typeof _toggleLoomCard === 'function') _toggleLoomCard(expBtn);
         }
         return;
       }

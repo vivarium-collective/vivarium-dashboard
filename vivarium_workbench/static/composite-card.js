@@ -365,16 +365,32 @@
   // header is the single toggle — the separate "Explore" accordion strip is
   // hidden). Reuses _pcardToggleSec so the loom lazy-mounts on first open, then
   // syncs the header caret + a card-level class for styling.
-  function _toggleLoomCard(caret) {
-    var card = caret.closest('.registry-entry-full'); if (!card) return;
+  function _toggleLoomCard(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
     var sec = card.querySelector('.pcard-sec-explore'); if (!sec) return;
     var head = sec.querySelector('.pcard-sec-head'); if (!head) return;
     _pcardToggleSec(head);
     var open = sec.classList.contains('pcard-sec-open');
-    caret.textContent = open ? '▾' : '▸';
+    btn.textContent = open ? '▾ Collapse' : '▶ Explore';
     card.classList.toggle('pcard-loom-open', open);
+    // Collapsing the loom also restores the header (no orphaned max-view state).
+    if (!open) card.classList.remove('pcard-hdr-hidden');
   }
   window._toggleLoomCard = _toggleLoomCard;
+
+  // Collapse / restore the composite bar (header + summary) while the loom is
+  // open, to maximize the viewing area. A thin restore strip takes its place.
+  function _toggleCardHeader(btn) {
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    // If the loom isn't open yet, open it first (collapsing the bar over an
+    // empty card would be pointless).
+    if (!card.classList.contains('pcard-loom-open')) {
+      var exp = card.querySelector('.pcard-explore-btn');
+      if (exp) _toggleLoomCard(exp);
+    }
+    card.classList.toggle('pcard-hdr-hidden');
+  }
+  window._toggleCardHeader = _toggleCardHeader;
 
   // Info-panel click → open the matching section and scroll it into view.
   function _pcardJumpSec(btn) {
@@ -684,14 +700,18 @@
       '<div class="loom-card loom-card-stack loom-card-composite">' +
         '<div class="pcard-top">' +
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" ondblclick="event.stopPropagation();_maximizeCardFromHeader(this)" title="Click to pin to top · double-click to maximize">' +
-            '<button class="pcard-collapse" type="button" onclick="event.stopPropagation();_toggleLoomCard(this)" title="Show / hide this composite\'s loom">▸</button>' +
+            '<button class="pcard-explore-btn" type="button" onclick="event.stopPropagation();_toggleLoomCard(this)" title="Open the loom — Configure · graph · run · outputs">▶ Explore</button>' +
             '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + _compositeTierBadge(c) + wsPill + roPill +
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
+            '<button class="pcard-hdr-collapse" type="button" onclick="event.stopPropagation();_toggleCardHeader(this)" title="Collapse this bar to maximize the view">⤢</button>' +
             _shareCompositeBtn() +
             _compositeJsonBtn() +
             _cardMaximizeBtn() +
             _cardPopoutBtn(c.id, 'composite') +
           '</div>' +
+          // Thin restore strip — shown only while the header is collapsed
+          // (pcard-hdr-hidden); click to bring the bar back.
+          '<button class="pcard-hdr-restore" type="button" onclick="_toggleCardHeader(this)" title="Show the composite bar">▸ ' + _esc(c.name) + '</button>' +
           '<div class="pcard-summary">' +
             '<div class="pcard-desc-col">' +
               '<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
