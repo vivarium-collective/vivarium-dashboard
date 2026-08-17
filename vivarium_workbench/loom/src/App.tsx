@@ -44,6 +44,7 @@ import { NodesPanel } from './panels/NodesPanel';
 import { InspectorPanel } from './panels/InspectorPanel';
 import { ConfigPanel } from './panels/ConfigPanel';
 import { ExploreRunBar } from './panels/ExploreRunBar';
+import { CompositeInfo } from './panels/CompositeInfo';
 import { TopoTransport } from './panels/TopoTransport';
 import { OutputsPanel } from './panels/OutputsPanel';
 import { EmitContext } from './EmitContext';
@@ -201,6 +202,7 @@ export default function App() {
   const [runContext, setRunContext] = useState<string>('');
   // Display metadata for the top bar — composite name + the library it's from.
   const [name, setName] = useState<string | null>(null);
+  const [description, setDescription] = useState<string | null>(null);
   const [library, setLibrary] = useState<string | null>(null);
   // Composite-Process drill-down. `drillHops` is the accumulated list of node
   // paths (one per level) into successive inner composites; `drillCrumbs` the
@@ -533,6 +535,7 @@ export default function App() {
       if (msg.metadata?.id) setCompositeId(msg.metadata.id);
       setRunContext(msg.metadata?.context || '');
       setName(msg.metadata?.name ?? null);
+      setDescription(msg.metadata?.description ?? msg.description ?? null);
       setLibrary(msg.metadata?.library ?? null);
       setParameters(msg.parameters ?? {});
       setOverrides(msg.overrides ?? {});
@@ -594,6 +597,7 @@ export default function App() {
             if (data.overrides) setOverrides(data.overrides);
             if (data.default_n_steps != null) setDefaultSteps(data.default_n_steps);
             if (data.name) setName(data.name);
+            if (data.description) setDescription(data.description);
             if (data.library) setLibrary(data.library);
             if (data.id) setCompositeId(data.id);
           }
@@ -617,6 +621,8 @@ export default function App() {
         if (res.parameters) setParameters(res.parameters);
         if (res.overrides) setOverrides(res.overrides);
         if (res.default_n_steps != null) setDefaultSteps(res.default_n_steps);
+        if (res.name) setName((n) => n ?? res.name ?? null);
+        if (res.description) setDescription((d) => d ?? res.description ?? null);
       })
       .catch(() => { /* leave Setup & Run with Steps + Run only */ });
     return () => { cancelled = true; };
@@ -1976,6 +1982,10 @@ export default function App() {
                 className={`loom-canvas loom-mode-${layoutMode.modeId}`}
                 style={{ flex: 1, position: 'relative', minWidth: 0, ['--loom-fs' as string]: fontScale } as React.CSSProperties}
               >
+                {/* Composite info (name + description), collapsible — available
+                    even in the chromeless / header=off embed. */}
+                <CompositeInfo name={name} description={description} library={library} />
+
                 {/* Modes that cull edges start with NO wires drawn, which without
                     a word of explanation reads as a broken canvas rather than a
                     deliberate clean slate. One line, only in those modes. */}

@@ -17,7 +17,8 @@ export type CompositeLoadMsg = {
   parameters?: Record<string, ParameterDecl>;
   overrides?: Record<string, unknown>;
   default_n_steps?: number;
-  metadata?: { name?: string; library?: string; context?: string; id?: string };
+  description?: string;
+  metadata?: { name?: string; description?: string; library?: string; context?: string; id?: string };
 };
 
 export type ExploreReadyMsg = { type: 'explore:ready' };
@@ -208,6 +209,7 @@ export interface ResolveResponse {
   overrides?: Record<string, unknown>;
   default_n_steps?: number;
   name?: string;
+  description?: string;
   library?: string;
   id?: string;
   error?: string;
