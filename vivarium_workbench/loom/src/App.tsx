@@ -2038,25 +2038,8 @@ export default function App() {
                       keep the toolbar to Layout · Detail · Share · Views · Download). */}
                   <DetailMenu overrides={detailOverrides} setOverrides={setDetailOverrides}
                     fontScale={fontScale} bumpFont={bumpFont} setFontScale={setFontScale} />
-                  {/* Share: copy a self-contained link to THIS view (works on the
-                      static read-only workbench too). Hidden when embedded in a
-                      workbench card — the card header owns Share there. */}
-                  {!chromeless && (
-                  <button
-                    onClick={onCopyViewLink}
-                    title="Copy a shareable link to this exact view — positions, detail, and font — that reopens anywhere"
-                    style={{
-                      height: 28, padding: '0 10px', fontSize: 12,
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      background: shareCopied ? '#ecfdf5' : '#fff',
-                      border: '1px solid ' + (shareCopied ? '#6ee7b7' : '#d1d5db'),
-                      borderRadius: 4, cursor: 'pointer',
-                      color: shareCopied ? '#047857' : '#374151', fontWeight: 600,
-                    }}
-                  >
-                    {shareCopied ? '✓ Link copied' : '🔗 Share'}
-                  </button>
-                  )}
+                  {/* Share lives in the composite TOP BAR now (CompositeInfo),
+                      so it isn't duplicated here in the graph toolbar. */}
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}
