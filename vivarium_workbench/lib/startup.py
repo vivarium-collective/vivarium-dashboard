@@ -68,6 +68,18 @@ def serve_fastapi(workspace: Path, port: int, host: str = "127.0.0.1", base_path
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
 
+    # Surface stale framework deps at startup. A stale process-bigraph (no
+    # `artifacts`) or viva-superpowers (no test_audit/loop_state) otherwise fails
+    # opaquely — the server subprocess crashes on boot, or the Assurance
+    # Audit/Build tabs render blank "unavailable" — with no hint the fix is a
+    # dependency refresh. Best-effort: never blocks or raises.
+    try:
+        from vivarium_workbench.lib import dep_doctor
+        for _w in dep_doctor.warn_lines():
+            logging.getLogger("vivarium_workbench").warning(_w)
+    except Exception:  # noqa: BLE001
+        pass
+
     # Surface the remote viva-api config at startup so a fresh operator (or Chris
     # trying "switch to remote") sees immediately whether the endpoint is reachable.
     # Only probe when VIVA_API_BASE/SMS_API_BASE is explicitly set — a local-only
