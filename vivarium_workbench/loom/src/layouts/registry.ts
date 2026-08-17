@@ -15,7 +15,10 @@ import { clusterGridMode } from './clusterGrid';
 import { flowElkRightMode } from './flow';
 import { treeMode, gridMode } from './treeFlow';
 
-export const DEFAULT_MODE_ID = 'hierarchy';
+// Tree (treeMode, id 'flow-down') is the default: an org-chart nesting layout
+// that reads the place-graph hierarchy top-down. (Was 'hierarchy', the
+// cluster-grid packing — still available from the Layout menu.)
+export const DEFAULT_MODE_ID = 'flow-down';
 
 // hierarchy = the non-directional relationship packing (default). flow-down =
 // "Tree": the place-graph org-chart with processes docked into swimlanes.

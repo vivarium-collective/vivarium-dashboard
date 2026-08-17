@@ -346,6 +346,15 @@ def resolve_composite(
             else:
                 notice = (f"static composite '{spec.name}' has no inline state to display.")
         if state is not None:
+            # Static specs with declared parameters: substitute ${param}
+            # placeholders in the state — defaults, plus any Config→Apply
+            # overrides — so the graph shows real values (not literal
+            # "${capacity}") and Apply updates the preview. Generators already
+            # bake overrides in via _live_generator_build above; only the
+            # static-spec branch reaches here with raw placeholders.
+            if getattr(spec, "kind", None) != "generator" and getattr(spec, "parameters", None):
+                from vivarium_workbench.lib.composite_lookup import substitute_parameters
+                state = substitute_parameters(state, spec.parameters, overrides or {})
             # Per-process docstrings via the env worker (no in-process workspace
             # import); best-effort — decoration never fails the resolve.
             from vivarium_workbench.lib.process_docs import attach_process_docs_via_worker

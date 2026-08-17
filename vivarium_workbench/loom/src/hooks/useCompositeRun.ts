@@ -135,7 +135,9 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [args.compositeId]);
 
-  const handleRun = useCallback(async () => {
+  // Core run launcher. `seedState` (save-point fork) starts the run FROM a
+  // captured frame's state instead of the generator's initial state.
+  const runWith = useCallback(async (seedState?: Record<string, unknown>) => {
     if (!args.compositeId) {
       setStartError('No composite id — pop-out windows need ?id=<dotted-ref> in the URL.');
       return;
@@ -154,6 +156,7 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
         steps: isWorkflow ? Math.max(1, Math.floor(steps)) : steps,
         emit_paths: Array.from(args.emitSet),
         overrides: Object.keys(overrides).length > 0 ? overrides : undefined,
+        seed_state: seedState && Object.keys(seedState).length > 0 ? seedState : undefined,
       });
       setRunId(res.run_id);
       sessionStorage.setItem(ACTIVE_RUN_KEY, JSON.stringify({
@@ -165,13 +168,19 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
     }
   }, [args.compositeId, args.emitSet, isWorkflow, steps, beginPolling]);
 
+  // Param-less so it binds directly to a button onClick (whose MouseEvent arg
+  // must NOT be mistaken for a seed state).
+  const handleRun = useCallback(() => { void runWith(); }, [runWith]);
+  const runFromState = useCallback(
+    (seedState: Record<string, unknown>) => runWith(seedState), [runWith]);
+
   const pct = status && status.n_steps
     ? Math.min(100, Math.round((status.progress_step / status.n_steps) * 100))
     : 0;
 
   return {
     steps, setSteps, runId, status, startError,
-    isRunning, isWorkflow, canRun, inInvestigation, pct, handleRun,
+    isRunning, isWorkflow, canRun, inInvestigation, pct, handleRun, runFromState,
     // 'steps' = discrete step network (integer, steppable); 'duration' = temporal.
     stepMode: (isWorkflow ? 'steps' : 'duration') as 'steps' | 'duration',
   };

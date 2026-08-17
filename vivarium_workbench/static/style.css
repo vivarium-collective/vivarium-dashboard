@@ -1998,6 +1998,51 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 .pcard-sec-feature > .pcard-sec-head:hover{ background:#f4efff; }
 .pcard-sec-feature > .pcard-sec-head .pcard-sec-caret{ color:#7c3aed; }
 .pcard-sec-feature > .pcard-sec-head .pcard-sec-name{ color:#6d28d9; }
+/* Unified composite header IS the single loom toggle: hide the separate
+   "Explore" accordion strip on composite cards; the header caret drives it. */
+.pcard-composite .pcard-sec-explore > .pcard-sec-head{ display:none; }
+.pcard-composite .pcard-sec-feature{ background:transparent; }
+/* Obvious Explore button (replaces the tiny caret). */
+.pcard-explore-btn{
+  border:1px solid #b7ebe3; background:#ecfdf9; color:#0d6e6b; cursor:pointer;
+  font-size:12px; font-weight:700; line-height:1; padding:4px 11px; border-radius:6px;
+  flex:none; align-self:center; margin-right:2px; white-space:nowrap;
+}
+.pcard-explore-btn:hover{ background:#d5f2ee; border-color:#4bb3ae; }
+.pcard-loom-open .pcard-explore-btn{ background:#fff; color:#475569; border-color:#e5e7eb; }
+/* Collapse-the-bar button (⤢): only useful once the loom is open. */
+.pcard-hdr-collapse{
+  border:1px solid #e5e7eb; background:#fff; color:#64748b; cursor:pointer;
+  font-size:12px; line-height:1; padding:3px 8px; border-radius:6px; flex:none;
+  align-self:center; margin-left:auto;
+}
+.pcard-hdr-collapse:hover{ border-color:#4bb3ae; color:#0d6e6b; }
+.pcard-loom-open:not(.pcard-hdr-hidden) .pcard-hdr-collapse{ display:inline-block; }
+/* Restore strip — visible only while the bar is collapsed (the restore button
+   itself lives inside .pcard-top, so hide the header/summary, not the wrapper). */
+.pcard-hdr-restore{ display:none; }
+.pcard-hdr-hidden .pcard-header,
+.pcard-hdr-hidden .pcard-summary,
+.pcard-hdr-hidden .pcard-json-view{ display:none; }
+.pcard-hdr-hidden .pcard-hdr-restore{
+  display:block; width:100%; text-align:left; border:none; border-bottom:1px solid #e5e7eb;
+  background:#f8fafc; color:#0d6e6b; cursor:pointer; font:inherit; font-size:11px;
+  font-weight:700; padding:4px 12px;
+}
+.pcard-hdr-hidden .pcard-hdr-restore:hover{ background:#eef6f4; }
+/* Popped-out card: "Pop back in" sits in the header action row (top-right),
+   where the now-hidden ↗ pop-out button was. */
+.popcard-mode .pcard-popout{ display:none; }
+.popcard-backin-hdr{
+  border:1px solid #b7ebe3; background:#ecfdf9; color:#0d6e6b; cursor:pointer;
+  font-size:12px; font-weight:700; line-height:1; padding:4px 11px; border-radius:6px;
+  margin-left:8px; flex:none; white-space:nowrap;
+}
+.popcard-backin-hdr:hover{ background:#d5f2ee; border-color:#4bb3ae; }
+/* (Study→Model maximize fills the whole window by setting the embed iframe's
+   geometry via INLINE !important in walkthrough.js's pcard-maximize handler —
+   an id-selector !important rule on #study-detail-frame can't be beaten from a
+   class rule, so this is done inline rather than in CSS.) */
 .pcard-sec-hint{
   font-size:0.78em; font-weight:600; color:#7c3aed;
   background:#f1e9ff; border:1px solid #e2d3ff; border-radius:999px;

@@ -58,6 +58,7 @@ from vivarium_workbench.lib import remote_run_views as _remote_run_views
 from vivarium_workbench.lib import auth_views as _auth_views
 from vivarium_workbench.lib import composite_run_views as _cr_views
 from vivarium_workbench.lib import composite_test_run_views as _composite_test_run_views
+from vivarium_workbench.lib import loom_savepoints as _loom_savepoints
 from vivarium_workbench.lib import composite_stop_views as _composite_stop_views
 from vivarium_workbench.lib import study_create_views as _study_create_views
 from vivarium_workbench.lib import investigation_run_one_views as _investigation_run_one_views
@@ -6706,6 +6707,63 @@ def create_app() -> FastAPI:
         body, status = _composite_test_run_views.composite_test_run(
             ws, req.model_dump(exclude_none=True))
         return JSONResponse(status_code=status, content=body)
+
+    # -----------------------------------------------------------------------
+    # Loom SAVE-POINTS: workspace-persisted captured bigraph states. A save-point
+    # is a full state snapshot at one frame of a run; the loom keeps them in
+    # localStorage too, and lets the user persist any of them here (shareable,
+    # survives reloads). View re-loads the state into the graph; "rerun from
+    # here" forks a new run seeded with it (composite-test-run `seed_state`).
+    # -----------------------------------------------------------------------
+    @app.post(
+        "/api/loom-savepoint",
+        tags=["Composites"],
+        summary="Save a bigraph-loom save-point (captured state) to the workspace",
+    )
+    def loom_savepoint_save(
+        body: dict = Body(...),
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        cid = (body.get("composite_id") or "").strip()
+        state = body.get("state")
+        if not cid or not isinstance(state, dict) or not state:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "composite_id and a non-empty state are required"},
+            )
+        try:
+            rec = _loom_savepoints.save(
+                ws, composite_id=cid, name=body.get("name") or "",
+                frame=body.get("frame"), n_frames=body.get("n_frames"),
+                state=state)
+        except ValueError as e:
+            return JSONResponse(status_code=400, content={"error": str(e)})
+        return JSONResponse(status_code=201, content=rec)
+
+    @app.get(
+        "/api/loom-savepoints",
+        tags=["Composites"],
+        summary="List workspace-persisted bigraph-loom save-points for a composite",
+    )
+    def loom_savepoints_list(
+        composite_id: str,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        return JSONResponse(
+            content={"savepoints": _loom_savepoints.list_points(ws, composite_id)})
+
+    @app.delete(
+        "/api/loom-savepoint",
+        tags=["Composites"],
+        summary="Delete a workspace-persisted bigraph-loom save-point",
+    )
+    def loom_savepoint_delete(
+        composite_id: str,
+        id: str,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        ok = _loom_savepoints.delete(ws, composite_id=composite_id, point_id=id)
+        return JSONResponse(status_code=(200 if ok else 404), content={"deleted": ok})
 
     # -----------------------------------------------------------------------
     # P3: investigation-run-one — ad-hoc single composite execution

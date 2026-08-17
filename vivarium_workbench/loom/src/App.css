@@ -2223,11 +2223,22 @@ textarea.sr-input {
   display: flex; flex-direction: column;
 }
 .loom-outputs-dock:not(.collapsed) {
-  height: 300px; min-height: 140px; max-height: 78vh; resize: vertical; overflow: hidden;
+  min-height: 120px; overflow: hidden;   /* height is drag-controlled (inline) */
 }
-.loom-outputs-dock.collapsed { height: auto; }
+.loom-outputs-dock.collapsed { height: auto !important; }
 .loom-outputs-dock.collapsed .outputs-panel { display: none; }
 .loom-outputs-dock .outputs-panel { flex: 1; min-height: 0; }
+/* Top grip: drag UP to enlarge the outputs (the graph above yields room). */
+.loom-outputs-grip {
+  flex: 0 0 auto; height: 7px; cursor: ns-resize; background: #e5e7eb;
+  position: relative; touch-action: none;
+}
+.loom-outputs-grip::before {
+  content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 42px; height: 3px; border-radius: 999px; background: #b6c0cc;
+}
+.loom-outputs-grip:hover { background: #d5f2ee; }
+.loom-outputs-grip:hover::before { background: #4bb3ae; }
 .loom-outputs-toggle {
   flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
   border: 0; background: #f8fafc; cursor: pointer; text-align: left;
@@ -2276,3 +2287,100 @@ textarea.sr-input {
 .explore-runbar-emit-opt:hover { background: #f1f5f9; }
 .explore-runbar-emit-opt input { accent-color: #0d6e6b; }
 .explore-runbar-emit-empty { font-size: 12px; color: #94a3b8; padding: 4px 8px; font-style: italic; }
+
+/* ---- Composite top bar (name · id · counts + expandable description) ---- */
+.cinfobar {
+  flex: 0 0 auto; background: #fff; border-bottom: 1px solid #e5e7eb;
+}
+.cinfobar-row {
+  display: flex; align-items: center; gap: 8px; padding: 6px 14px; min-width: 0;
+}
+.cinfobar-i { color: #0d6e6b; font-size: 13px; flex: none; }
+.cinfobar-name {
+  font-size: 13px; font-weight: 700; color: #111827; flex: none;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40%;
+}
+.cinfobar-id {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+  color: #9ca3af; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.cinfobar-lib {
+  font-size: 10px; color: #64748b; background: #f1f5f9; border-radius: 999px;
+  padding: 1px 8px; flex: none;
+}
+.cinfobar-counts { font-size: 11px; color: #94a3b8; flex: none; }
+.cinfobar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; flex: none; }
+.cinfobar-btn {
+  border: 1px solid #e5e7eb; background: #fff; border-radius: 6px; cursor: pointer;
+  font-size: 11px; color: #475569; padding: 2px 8px; white-space: nowrap;
+}
+.cinfobar-btn:hover { border-color: #4bb3ae; color: #0d6e6b; }
+.cinfobar-min { font-weight: 700; line-height: 1; padding: 2px 9px; }
+.cinfobar-ok { background:#ecfdf5; border-color:#6ee7b7; color:#047857; }
+.cinfobar-desc {
+  padding: 2px 14px 10px 34px; font-size: 12.5px; line-height: 1.55; color: #475569;
+  max-height: 32vh; overflow: auto;
+}
+/* Minimized → a hairline strip with a restore chip. */
+.cinfobar-hidden { padding: 0; }
+.cinfobar-restore {
+  border: none; background: none; cursor: pointer; font: inherit;
+  font-size: 11px; color: #64748b; padding: 3px 14px; width: 100%; text-align: left;
+}
+.cinfobar-restore:hover { color: #0d6e6b; background: #f8fafc; }
+
+/* ---- Save-points (run-bar): capture a frame, browse/View/Rerun history ---- */
+.sp-menu { position: relative; display: inline-flex; gap: 4px; }
+.sp-btn {
+  border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer;
+  font-size: 12px; color: #475569; padding: 3px 9px; white-space: nowrap;
+}
+.sp-btn:hover:not(:disabled) { border-color: #4bb3ae; color: #0d6e6b; }
+.sp-btn:disabled { opacity: .55; cursor: default; }
+.sp-pop {
+  position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 40;
+  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0,0,0,.14); padding: 8px; min-width: 220px;
+}
+.sp-hist-pop { min-width: 300px; max-height: 320px; overflow: auto; }
+.sp-pop-h {
+  font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  color: #94a3b8; padding: 0 2px 6px;
+}
+.sp-name {
+  width: 100%; box-sizing: border-box; border: 1px solid #d1d5db; border-radius: 6px;
+  padding: 5px 8px; font-size: 13px; margin-bottom: 7px;
+}
+.sp-name:focus { outline: none; border-color: #4bb3ae; box-shadow: 0 0 0 2px #d5f2ee; }
+.sp-save-row { display: flex; gap: 6px; }
+.sp-save-where {
+  flex: 1; border: 1px solid #b7ebe3; background: #ecfdf9; color: #0d6e6b;
+  border-radius: 6px; padding: 5px 8px; font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.sp-save-where:hover:not(:disabled) { background: #d5f2ee; }
+.sp-save-where:disabled { opacity: .6; cursor: default; }
+.sp-err { color: #991b1b; font-size: 11px; margin-top: 6px; }
+.sp-empty { font-size: 12px; color: #94a3b8; padding: 4px 2px; font-style: italic; }
+.sp-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.sp-item {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 6px; border-radius: 6px;
+}
+.sp-item:hover { background: #f1f5f9; }
+.sp-item-main { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sp-origin { font-size: 12px; flex: none; }
+.sp-origin-server { color: #0d6e6b; }
+.sp-origin-local { color: #64748b; }
+.sp-item-name {
+  font-size: 13px; color: #1e293b; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px;
+}
+.sp-item-meta { font-size: 10px; color: #94a3b8; white-space: nowrap; }
+.sp-item-actions { display: flex; gap: 3px; flex: none; }
+.sp-item-actions button {
+  border: 1px solid #e2e8f0; background: #fff; border-radius: 5px; cursor: pointer;
+  font-size: 11px; color: #475569; padding: 2px 7px;
+}
+.sp-item-actions button:hover { border-color: #4bb3ae; color: #0d6e6b; }
+.sp-item-actions .sp-rerun { color: #0d6e6b; border-color: #b7ebe3; background: #ecfdf9; }
+.sp-item-actions .sp-del:hover { border-color: #fca5a5; color: #dc2626; }

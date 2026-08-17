@@ -77,6 +77,10 @@ def composite_test_run(ws_root: Path, body: dict) -> tuple[dict, int]:
     emit_paths = body.get("emit_paths") or []
     if not isinstance(emit_paths, list):
         emit_paths = []
+    # Loom save-point fork: a full captured state to start this run FROM.
+    seed_state = body.get("seed_state") or {}
+    if not isinstance(seed_state, dict):
+        seed_state = {}
     if not spec_id:
         return {"error": "missing id"}, 400
 
@@ -124,6 +128,7 @@ def composite_test_run(ws_root: Path, body: dict) -> tuple[dict, int]:
         "overrides": overrides,
         "steps": steps,
         "emit_paths": emit_paths,
+        "seed_state": seed_state,
         "db_file": db_file,
         "log_path": log_rel,
         # SP-D2: which target the detached runner dispatches to (local subprocess

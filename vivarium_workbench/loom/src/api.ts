@@ -17,7 +17,8 @@ export type CompositeLoadMsg = {
   parameters?: Record<string, ParameterDecl>;
   overrides?: Record<string, unknown>;
   default_n_steps?: number;
-  metadata?: { name?: string; library?: string; context?: string; id?: string };
+  description?: string;
+  metadata?: { name?: string; description?: string; library?: string; context?: string; id?: string };
 };
 
 export type ExploreReadyMsg = { type: 'explore:ready' };
@@ -163,6 +164,10 @@ export interface StartRunArgs {
   emit_paths: string[];
   overrides?: Record<string, unknown>;
   label?: string;
+  /** Save-point fork: a captured frame state to START this run from (the
+   *  backend overlays it onto the freshly-built composite). Omitted = a normal
+   *  run from the generator's initial state. */
+  seed_state?: Record<string, unknown>;
 }
 
 export interface StartRunResponse {
@@ -204,6 +209,7 @@ export interface ResolveResponse {
   overrides?: Record<string, unknown>;
   default_n_steps?: number;
   name?: string;
+  description?: string;
   library?: string;
   id?: string;
   error?: string;

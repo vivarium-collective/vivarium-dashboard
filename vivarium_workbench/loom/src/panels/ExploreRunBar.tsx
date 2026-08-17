@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { useCompositeRun, phaseLabel } from '../hooks/useCompositeRun';
 import { TopoTransport } from './TopoTransport';
+import { SavePointsMenu } from './SavePointsMenu';
 
 export interface ExploreRunBarProps {
   compositeId: string | null;
@@ -36,6 +37,9 @@ export interface ExploreRunBarProps {
   /** Top-level stores the run can record; the emit chip toggles them. */
   emitCandidates?: string[];
   onToggleEmit?: (key: string) => void;
+  // Save-points: capture the current frame's state, and load a saved state back.
+  captureState?: () => Record<string, unknown> | null;
+  onViewState?: (state: Record<string, unknown>) => void;
 }
 
 export function ExploreRunBar(props: ExploreRunBarProps) {
@@ -96,6 +100,22 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
         <>
           <span className="explore-runbar-div" aria-hidden="true" />
           <TopoTransport {...props.transport} />
+        </>
+      )}
+
+      {/* Save-points: capture the current frame, browse history, view or fork. */}
+      {!props.readOnly && props.captureState && (
+        <>
+          <span className="explore-runbar-div" aria-hidden="true" />
+          <SavePointsMenu
+            compositeId={props.compositeId}
+            captureState={props.captureState}
+            currentFrame={props.transport ? props.transport.frameIdx : null}
+            frameCount={props.transport ? props.transport.frameCount : null}
+            onView={(s) => props.onViewState?.(s)}
+            onRerun={(s) => { void run.runFromState(s); }}
+            disabled={run.isRunning || !run.canRun}
+          />
         </>
       )}
 

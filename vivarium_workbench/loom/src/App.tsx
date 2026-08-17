@@ -44,6 +44,7 @@ import { NodesPanel } from './panels/NodesPanel';
 import { InspectorPanel } from './panels/InspectorPanel';
 import { ConfigPanel } from './panels/ConfigPanel';
 import { ExploreRunBar } from './panels/ExploreRunBar';
+import { CompositeInfo } from './panels/CompositeInfo';
 import { TopoTransport } from './panels/TopoTransport';
 import { OutputsPanel } from './panels/OutputsPanel';
 import { EmitContext } from './EmitContext';
@@ -201,6 +202,7 @@ export default function App() {
   const [runContext, setRunContext] = useState<string>('');
   // Display metadata for the top bar — composite name + the library it's from.
   const [name, setName] = useState<string | null>(null);
+  const [description, setDescription] = useState<string | null>(null);
   const [library, setLibrary] = useState<string | null>(null);
   // Composite-Process drill-down. `drillHops` is the accumulated list of node
   // paths (one per level) into successive inner composites; `drillCrumbs` the
@@ -235,6 +237,26 @@ export default function App() {
   useEffect(() => {
     if (trajectory !== null || vizHtml !== null) setOutputsOpen(true);
   }, [trajectory, vizHtml]);
+  // Draggable height for the Outputs dock — drag its top grip UP to see more of
+  // the viz (the graph above shrinks to give it room).
+  const [outputsHeight, setOutputsHeight] = useState(300);
+  const outputsDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const onOutputsGripDown = useCallback((e: React.PointerEvent) => {
+    outputsDragRef.current = { startY: e.clientY, startH: outputsHeight };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  }, [outputsHeight]);
+  const onOutputsGripMove = useCallback((e: React.PointerEvent) => {
+    const d = outputsDragRef.current;
+    if (!d) return;
+    const dy = e.clientY - d.startY;           // drag up → dy<0 → taller dock
+    const h = Math.max(120, Math.min(window.innerHeight * 0.88, d.startH - dy));
+    setOutputsHeight(h);
+  }, []);
+  const onOutputsGripUp = useCallback((e: React.PointerEvent) => {
+    outputsDragRef.current = null;
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+  }, []);
 
   // ── Topology playback (loom-live-play) ───────────────────────────────────
   // When a run's trajectory carries a place-graph that CHANGES over steps
@@ -283,6 +305,68 @@ export default function App() {
     if (baseStateRef.current !== null) setState(baseStateRef.current);
     setFrameIdx(null); setPlaying(false); baseStateRef.current = null;
   }, []);
+
+  // ---- Save-points --------------------------------------------------------
+  // Capture the state currently ON the graph: the emitted frame when a
+  // trajectory is armed, else the store subtrees of the base state (skip
+  // processes/steps — a save-point is a STATE snapshot, forked runs rebuild the
+  // processes). Returns null when there's nothing meaningful to save.
+  const captureFrameState = useCallback((): Record<string, unknown> | null => {
+    if (trajectory && frameIdx != null && trajectory[frameIdx]) {
+      return trajectory[frameIdx].state as Record<string, unknown>;
+    }
+    if (state && typeof state === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(state as Record<string, unknown>)) {
+        const o = v as { _type?: string; _control?: string } | null;
+        if (o && typeof o === 'object' && !Array.isArray(o)
+          && (o._type || o._control) && o._type !== 'process' && o._type !== 'step') {
+          out[k] = v;
+        }
+      }
+      return Object.keys(out).length ? out : null;
+    }
+    return null;
+  }, [trajectory, frameIdx, state]);
+
+  // View a saved state: overlay its stores onto whatever's loaded (preserving
+  // each store's _type) and exit any active playback so the frame effect
+  // doesn't overwrite it.
+  const viewSavedState = useCallback((saved: Record<string, unknown>) => {
+    setFrameIdx(null); setPlaying(false);
+    setState((cur: unknown) => {
+      const base = (cur && typeof cur === 'object') ? (cur as Record<string, unknown>) : {};
+      const frame: Record<string, unknown> = { ...base };
+      for (const k of Object.keys(saved)) {
+        if (k === 'time' || k === 'global_time') continue;
+        const b = base[k] as { _type?: string } | undefined;
+        const bt = (b && typeof b === 'object' && b._type) ? b._type : undefined;
+        frame[k] = bt ? { _type: bt, ...(saved[k] as object) } : saved[k];
+      }
+      return frame;
+    });
+  }, []);
+
+  // Download the composite as JSON (name · description · parameters · state) —
+  // the workbench card's "{ } JSON" action, available in the standalone loom.
+  const downloadCompositeJson = useCallback(() => {
+    const doc = { name, description, parameters, state };
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (compositeId ? compositeId.split('.').pop()! : (name || 'composite')) + '.composite.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [name, description, parameters, state, compositeId]);
+
+  // "Pop into" the full workbench view (Modules card + rail) for this composite.
+  const openInWorkbench = useCallback(() => {
+    // The loom is served under the workbench origin (/bigraph-loom/…); the
+    // workbench SPA is the origin root. Carry the composite id so it can focus.
+    const url = '/' + (compositeId ? ('?composite=' + encodeURIComponent(compositeId)) : '');
+    window.open(url, '_blank', 'noopener');
+  }, [compositeId]);
 
   const readyFiredRef = useRef(false);
   // React Flow instance, captured via onInit, so Re-layout can frame the
@@ -492,6 +576,7 @@ export default function App() {
       if (msg.metadata?.id) setCompositeId(msg.metadata.id);
       setRunContext(msg.metadata?.context || '');
       setName(msg.metadata?.name ?? null);
+      setDescription(msg.metadata?.description ?? msg.description ?? null);
       setLibrary(msg.metadata?.library ?? null);
       setParameters(msg.parameters ?? {});
       setOverrides(msg.overrides ?? {});
@@ -553,6 +638,7 @@ export default function App() {
             if (data.overrides) setOverrides(data.overrides);
             if (data.default_n_steps != null) setDefaultSteps(data.default_n_steps);
             if (data.name) setName(data.name);
+            if (data.description) setDescription(data.description);
             if (data.library) setLibrary(data.library);
             if (data.id) setCompositeId(data.id);
           }
@@ -576,6 +662,8 @@ export default function App() {
         if (res.parameters) setParameters(res.parameters);
         if (res.overrides) setOverrides(res.overrides);
         if (res.default_n_steps != null) setDefaultSteps(res.default_n_steps);
+        if (res.name) setName((n) => n ?? res.name ?? null);
+        if (res.description) setDescription((d) => d ?? res.description ?? null);
       })
       .catch(() => { /* leave Setup & Run with Steps + Run only */ });
     return () => { cancelled = true; };
@@ -1846,34 +1934,27 @@ export default function App() {
   return (
     <ReactFlowProvider>
       <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh' }}>
-        {/* Thin breadcrumb header: composite name + library.
-            One layer up from the tabs so the tab strip stays compact. */}
+        {/* Composite top bar: name · id · library · counts, with an expandable
+            description and a minimize toggle. The full workbench card supplies
+            its own header, so the card embed (header=off) hides this one. */}
         {!chromeless && !hideHeader && (name || compositeId) && (
-          <div style={{
-            display: 'flex', alignItems: 'baseline', gap: 6,
-            padding: '4px 16px',
-            fontSize: 12,
-            borderBottom: '1px solid #f3f4f6',
-            background: '#fff',
-            flex: '0 0 auto',
-          }}>
-            {/* The header names the current composite: the human name leads,
-                the dotted registry id trails as quiet secondary (full id on hover). */}
-            <span style={{ fontWeight: 700, color: '#111827' }} title={compositeId || undefined}>
-              {name || (compositeId ? compositeId.split('.').pop()!.replace(/[-_]/g, ' ') : '')}
-            </span>
-            {compositeId && compositeId !== name && (
-              <span style={{ color: '#9ca3af', fontFamily: 'ui-monospace, monospace', fontSize: 11 }}>
-                {compositeId}
-              </span>
-            )}
-            {library && (
-              <>
-                <span style={{ color: '#d1d5db' }}>·</span>
-                <span style={{ color: '#6b7280' }}>{library}</span>
-              </>
-            )}
-          </div>
+          <CompositeInfo
+            name={name}
+            description={description}
+            compositeId={compositeId}
+            library={library}
+            nProcesses={state && typeof state === 'object'
+              ? Object.values(state as Record<string, unknown>).filter(
+                (v) => v && typeof v === 'object'
+                  && ((v as { _type?: string })._type === 'process'
+                    || (v as { _type?: string })._type === 'step')).length
+              : undefined}
+            nParams={Object.keys(parameters).length || undefined}
+            onShare={onCopyViewLink}
+            shareCopied={shareCopied}
+            onDownloadJson={state ? downloadCompositeJson : undefined}
+            onOpenWorkbench={compositeId ? openInWorkbench : undefined}
+          />
         )}
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
           {/* The bigraph surface — always rendered (no tab chrome). */}
@@ -1935,6 +2016,7 @@ export default function App() {
                 className={`loom-canvas loom-mode-${layoutMode.modeId}`}
                 style={{ flex: 1, position: 'relative', minWidth: 0, ['--loom-fs' as string]: fontScale } as React.CSSProperties}
               >
+
                 {/* Modes that cull edges start with NO wires drawn, which without
                     a word of explanation reads as a broken canvas rather than a
                     deliberate clean slate. One line, only in those modes. */}
@@ -1976,25 +2058,8 @@ export default function App() {
                       keep the toolbar to Layout · Detail · Share · Views · Download). */}
                   <DetailMenu overrides={detailOverrides} setOverrides={setDetailOverrides}
                     fontScale={fontScale} bumpFont={bumpFont} setFontScale={setFontScale} />
-                  {/* Share: copy a self-contained link to THIS view (works on the
-                      static read-only workbench too). Hidden when embedded in a
-                      workbench card — the card header owns Share there. */}
-                  {!chromeless && (
-                  <button
-                    onClick={onCopyViewLink}
-                    title="Copy a shareable link to this exact view — positions, detail, and font — that reopens anywhere"
-                    style={{
-                      height: 28, padding: '0 10px', fontSize: 12,
-                      display: 'inline-flex', alignItems: 'center', gap: 5,
-                      background: shareCopied ? '#ecfdf5' : '#fff',
-                      border: '1px solid ' + (shareCopied ? '#6ee7b7' : '#d1d5db'),
-                      borderRadius: 4, cursor: 'pointer',
-                      color: shareCopied ? '#047857' : '#374151', fontWeight: 600,
-                    }}
-                  >
-                    {shareCopied ? '✓ Link copied' : '🔗 Share'}
-                  </button>
-                  )}
+                  {/* Share lives in the composite TOP BAR now (CompositeInfo),
+                      so it isn't duplicated here in the graph toolbar. */}
                   {/* The two menus sit together at the end of the toolbar. */}
                   <ViewsMenu
                     compositeId={compositeId}
@@ -2138,6 +2203,8 @@ export default function App() {
                         transport={transport}
                         emitCandidates={emitCandidates}
                         onToggleEmit={toggleEmit}
+                        captureState={captureFrameState}
+                        onViewState={viewSavedState}
                       />
                     )}
                     {chromeless && transport && (
@@ -2150,7 +2217,15 @@ export default function App() {
                   stacked surface (drag its top edge to resize). In chromeless
                   embeds the workbench card owns Outputs, so it is hidden here. */}
               {!chromeless && (
-                <div className={'loom-outputs-dock' + (outputsOpen ? '' : ' collapsed')}>
+                <div className={'loom-outputs-dock' + (outputsOpen ? '' : ' collapsed')}
+                  style={outputsOpen ? { height: outputsHeight } : undefined}>
+                  {outputsOpen && (
+                    <div className="loom-outputs-grip"
+                      onPointerDown={onOutputsGripDown}
+                      onPointerMove={onOutputsGripMove}
+                      onPointerUp={onOutputsGripUp}
+                      title="Drag to resize — pull up to see more of the outputs" />
+                  )}
                   <button className="loom-outputs-toggle" onClick={() => setOutputsOpen((o) => !o)}
                     title={outputsOpen ? 'Collapse outputs' : 'Expand outputs'}>
                     <span className="loom-outputs-chevron">{outputsOpen ? '▾' : '▸'}</span>
