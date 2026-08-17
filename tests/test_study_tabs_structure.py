@@ -11,10 +11,13 @@ def test_pillar_buttons_present():
     # _setStudyTab(kind) on click (no more separate #study-subnav member row).
     # Pillar name != panel kind for "decide" -> "conclusions"; every other
     # pillar name equals its kind. Task E4 deleted the Exports/data pillar.
+    # Study-spine reorg: Design gains `simulate`; Evidence gains `results` +
+    # `analyses`; Assurance gains `audit` + `build`. 7 -> 11 pillars.
     pillar_to_kind = {
-        "understand": "overview", "compose": "compose", "simulate": "simulate",
-        "readouts": "readouts", "visualize": "visualize", "tests": "tests",
-        "decide": "conclusions",
+        "understand": "overview", "compose": "compose", "readouts": "readouts",
+        "simulate": "simulate", "results": "results", "analyses": "analyses",
+        "visualize": "visualize", "tests": "tests", "audit": "audit",
+        "build": "build", "decide": "conclusions",
     }
     for pillar, kind in pillar_to_kind.items():
         assert f'data-kind="{kind}"' in HTML and f"_setStudyTab('{kind}')" in HTML, \
@@ -27,10 +30,11 @@ def test_subnav_container_removed():
 
 
 def test_every_pillar_button_has_a_kind_and_calls_set_study_tab():
-    # Task E4 dropped the Exports/data pillar: 8 -> 7 buttons.
+    # Task E4 dropped the Exports/data pillar: 8 -> 7 buttons. The study-spine
+    # reorg then added 4 (results, analyses, audit, build): 7 -> 11.
     import re
     btns = re.findall(r'<button class="study-pillar[^"]*"[^>]*>', HTML)
-    assert len(btns) == 7, f"expected 7 pillar buttons, got {len(btns)}"
+    assert len(btns) == 11, f"expected 11 pillar buttons, got {len(btns)}"
     for b in btns:
         assert "data-kind=" in b, f"pillar button missing data-kind: {b[:80]}"
     assert re.search(r'onclick="_setStudyTab\(', HTML), "pillar buttons must call _setStudyTab directly"
@@ -38,8 +42,11 @@ def test_every_pillar_button_has_a_kind_and_calls_set_study_tab():
 
 
 def test_panels_unchanged_all_eleven_present():
-    for kind in ["overview", "build", "simulations", "baseline", "observables",
-                 "variants", "interventions", "runs", "tests", "visualizations", "conclusions"]:
+    # The study-spine reorg's canonical 11 panels (data-kind / id="panel-<kind>"):
+    # Design = compose/readouts/simulate; Evidence = results/analyses/visualize;
+    # Assurance = tests/audit/build; plus overview + conclusions.
+    for kind in ["overview", "compose", "readouts", "simulate", "results",
+                 "analyses", "visualize", "tests", "audit", "build", "conclusions"]:
         assert f'data-kind="{kind}"' in HTML and f'id="panel-{kind}"' in HTML
 
 
