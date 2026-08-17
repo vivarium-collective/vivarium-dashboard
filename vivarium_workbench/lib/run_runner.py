@@ -35,6 +35,12 @@ class RunRequest:
     db_file: str
     log_path: str
     target: str = "local"
+    # Loom save-point fork: a full bigraph STATE captured at some frame of a
+    # prior run, overlaid onto the freshly-built composite so this run STARTS
+    # from that state (branch-the-timeline / "rerun from here"). Empty = a
+    # normal run from the generator's initial state. Overlaid store-wise in
+    # `_apply_seed_state` (preserves each store's `_type`, replaces contents).
+    seed_state: dict = None  # type: ignore[assignment]
     # reproducible-rerun-spine Task 3 / G4, Step 6: the ORIGINAL run_id this
     # run reproduces, when it was launched as a rerun. Optional/best-effort —
     # `.get()` so a request file written by a producer that doesn't set it
@@ -60,6 +66,7 @@ class RunRequest:
             log_path=data["log_path"],
             target=data.get("target") or "local",
             reran_from=data.get("reran_from"),
+            seed_state=data.get("seed_state") or {},
         )
 
 
@@ -106,6 +113,31 @@ def _resolve_state(req: RunRequest) -> tuple[dict, dict | None]:
                                   spec.get("parameters") or {},
                                   req.overrides)
     return state, spec
+
+
+def _apply_seed_state(base: dict, seed: dict) -> dict:
+    """Overlay a save-point ``seed`` state onto a freshly-built ``base`` state.
+
+    Mirrors the loom's per-frame overlay (App.tsx): for each top-level store the
+    seed carries, keep the base store's ``_type`` but take the seed's contents
+    wholesale — so a ``tree[node]`` store's TOPOLOGY (its child nodes) is
+    replaced by the saved frame's, not unioned with the base's. Stores/keys the
+    seed doesn't mention (e.g. process nodes) are left as the generator built
+    them. Time keys are dropped (a fork restarts the clock).
+    """
+    if not seed or not isinstance(seed, dict) or not isinstance(base, dict):
+        return base
+    out = dict(base)
+    for k, v in seed.items():
+        if k in ("time", "global_time"):
+            continue
+        b = base.get(k)
+        if isinstance(b, dict) and isinstance(b.get("_type"), str) and isinstance(v, dict):
+            out[k] = {"_type": b["_type"],
+                      **{kk: vv for kk, vv in v.items() if kk != "_type"}}
+        else:
+            out[k] = v
+    return out
 
 
 def _generator_entry(spec_id: str):
@@ -842,6 +874,10 @@ def execute(request_path: Path) -> int:
             cr.complete_metadata(conn, run_id=req.run_id, n_steps=0,
                                  status="failed", workspace=req.workspace)
             return 1
+
+        # Loom save-point fork: start this run from a captured frame's state.
+        if req.seed_state:
+            state = _apply_seed_state(state, req.seed_state)
 
         # build_core lives in the workspace's own package (e.g.
         # pbg_ws_increase_demo.core). Import it dynamically by package name.

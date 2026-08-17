@@ -284,6 +284,47 @@ export default function App() {
     setFrameIdx(null); setPlaying(false); baseStateRef.current = null;
   }, []);
 
+  // ---- Save-points --------------------------------------------------------
+  // Capture the state currently ON the graph: the emitted frame when a
+  // trajectory is armed, else the store subtrees of the base state (skip
+  // processes/steps — a save-point is a STATE snapshot, forked runs rebuild the
+  // processes). Returns null when there's nothing meaningful to save.
+  const captureFrameState = useCallback((): Record<string, unknown> | null => {
+    if (trajectory && frameIdx != null && trajectory[frameIdx]) {
+      return trajectory[frameIdx].state as Record<string, unknown>;
+    }
+    if (state && typeof state === 'object') {
+      const out: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(state as Record<string, unknown>)) {
+        const o = v as { _type?: string; _control?: string } | null;
+        if (o && typeof o === 'object' && !Array.isArray(o)
+          && (o._type || o._control) && o._type !== 'process' && o._type !== 'step') {
+          out[k] = v;
+        }
+      }
+      return Object.keys(out).length ? out : null;
+    }
+    return null;
+  }, [trajectory, frameIdx, state]);
+
+  // View a saved state: overlay its stores onto whatever's loaded (preserving
+  // each store's _type) and exit any active playback so the frame effect
+  // doesn't overwrite it.
+  const viewSavedState = useCallback((saved: Record<string, unknown>) => {
+    setFrameIdx(null); setPlaying(false);
+    setState((cur: unknown) => {
+      const base = (cur && typeof cur === 'object') ? (cur as Record<string, unknown>) : {};
+      const frame: Record<string, unknown> = { ...base };
+      for (const k of Object.keys(saved)) {
+        if (k === 'time' || k === 'global_time') continue;
+        const b = base[k] as { _type?: string } | undefined;
+        const bt = (b && typeof b === 'object' && b._type) ? b._type : undefined;
+        frame[k] = bt ? { _type: bt, ...(saved[k] as object) } : saved[k];
+      }
+      return frame;
+    });
+  }, []);
+
   const readyFiredRef = useRef(false);
   // React Flow instance, captured via onInit, so Re-layout can frame the
   // freshly-consolidated set (App is the ReactFlowProvider's PARENT, so it can't
@@ -2138,6 +2179,8 @@ export default function App() {
                         transport={transport}
                         emitCandidates={emitCandidates}
                         onToggleEmit={toggleEmit}
+                        captureState={captureFrameState}
+                        onViewState={viewSavedState}
                       />
                     )}
                     {chromeless && transport && (

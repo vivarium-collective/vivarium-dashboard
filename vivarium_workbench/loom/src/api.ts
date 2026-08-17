@@ -163,6 +163,10 @@ export interface StartRunArgs {
   emit_paths: string[];
   overrides?: Record<string, unknown>;
   label?: string;
+  /** Save-point fork: a captured frame state to START this run from (the
+   *  backend overlays it onto the freshly-built composite). Omitted = a normal
+   *  run from the generator's initial state. */
+  seed_state?: Record<string, unknown>;
 }
 
 export interface StartRunResponse {
