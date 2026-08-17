@@ -524,6 +524,14 @@ def cmd_sync(args) -> int:
     return 1
 
 
+def cmd_doctor(args: argparse.Namespace) -> int:
+    """Report on framework-dependency health; exit non-zero if any are stale."""
+    from vivarium_workbench.lib import dep_doctor
+
+    print(dep_doctor.format_report())
+    return 1 if dep_doctor.problems() else 0
+
+
 def cmd_prepare_investigation(args: argparse.Namespace) -> int:
     """CLI handler: prepare an investigation's coordinated generation."""
     from vivarium_workbench.lib.prepare_investigation import prepare_investigation
@@ -1124,6 +1132,10 @@ def main(argv: list[str] | None = None) -> int:
     p_serve.add_argument("--investigation", default=None, metavar="SLUG",
                          help="With --open, open the dashboard at this investigation.")
     p_serve.set_defaults(func=cmd_serve)
+
+    p_doctor = sub.add_parser(
+        "doctor", help="Check framework-dependency health (stale process-bigraph / viva-superpowers)")
+    p_doctor.set_defaults(func=cmd_doctor)
 
     p_mig = sub.add_parser(
         "migrate-investigations",
