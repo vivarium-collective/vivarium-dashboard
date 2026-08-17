@@ -1922,8 +1922,9 @@
 
   function _useRegistryClass(kind, name) {
     if (kind === 'emitter') {
-      _switchPage('simulation-setup');
-      // Find the inline simulation form (inside a <details> in Simulation Setup)
+      _switchPage('modules');
+      // Legacy: the inline simulation form (once on Simulation Setup) is gone —
+      // this early-returns, leaving the Modules page shown.
       var form = document.getElementById('form-simulation');
       if (!form) return;
       var details = form.closest('details');
@@ -4182,7 +4183,8 @@
     if (i === -1) window._pinnedComposites.push(id);
     else window._pinnedComposites.splice(i, 1);
     try { window.localStorage.setItem('viv.pinnedComposites', JSON.stringify(window._pinnedComposites)); } catch (e) { /* private mode */ }
-    _renderComposites();
+    // Re-render the visible Modules grid (the standalone picker page was removed).
+    if (typeof _renderRegistryComposites === 'function') _renderRegistryComposites();
   }
   window._toggleCompositePin = _toggleCompositePin;
   // Hover-revealed pin toggle for a composite card / row. stopPropagation so it
@@ -5856,9 +5858,9 @@
       return;
     }
     if (type === 'composite') {
-      _switchPage('simulation-setup');
-      var ci = document.getElementById('composite-search');
-      if (ci) { ci.value = name; ci.dispatchEvent(new Event('input', { bubbles: true })); }
+      _switchPage('modules');
+      var ci = document.getElementById('registry-search');
+      if (ci) { ci.value = name; if (typeof _filterRegistry === 'function') _filterRegistry(name); }
       return;
     }
     if (type === 'process') {
