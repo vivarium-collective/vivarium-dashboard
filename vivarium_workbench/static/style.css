@@ -1848,11 +1848,15 @@ textarea.loom-in-field{
 
 /* header "{ } JSON" toggle + the revealed spec viewer */
 .pcard-json-btn{
-  margin-left:auto; flex:none; align-self:center;
+  margin-left:6px; flex:none; align-self:center;
   background:none; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer;
   color:#64748b; font-size:0.72em; font-weight:600; padding:2px 8px;
   font-family:ui-monospace,Menlo,monospace; letter-spacing:0.02em;
 }
+/* Only the FIRST action button (Share, right after the address) pushes the whole
+   cluster — Share · JSON · fullscreen · pop-out — to the right so they read as
+   one group, instead of each auto-margin spreading them apart. */
+.pcard-header .loom-addr + .pcard-json-btn{ margin-left:auto; }
 .pcard-json-btn:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
 .pcard-json-btn.active{ background:#2563eb; color:#fff; border-color:#2563eb; }
 .pcard-header .pcard-json-btn + .pcard-popout{ margin-left:6px; }   /* sit side by side */
@@ -1872,9 +1876,9 @@ textarea.loom-in-field{
   background:none; border:1px solid transparent; border-radius:5px; cursor:pointer;
   color:#94a3b8; font-size:0.95em; line-height:1; padding:2px 7px;
 }
-.pcard-maximize{ margin-left:auto; }                 /* push the pair to the right */
+.pcard-maximize{ margin-left:6px; }                  /* sit beside JSON, one group */
 .pcard-maximize + .pcard-popout{ margin-left:6px; }  /* pop-out sits beside maximize */
-.pcard-popout{ margin-left:auto; }                   /* still right-aligned when alone */
+.pcard-popout{ margin-left:6px; }                    /* grouped with the rest */
 .pcard-maximize:hover,
 .pcard-popout:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
 .pcard-maximized .pcard-maximize{ background:#2563eb; color:#fff; border-color:#2563eb; }
@@ -4965,3 +4969,24 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
 .inv-brief-intro p:last-child { margin-bottom: 0; }
 .inv-brief-meta { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
 .inv-brief-meta .inv-brief-meta-item { font-size: 0.9em; color: var(--gray, #64748b); }
+
+/* ── Composite tier badges (Draft / Executable / Live) + figure-group headers ── */
+.ccard-tier{
+  display:inline-block; font-size:0.62rem; font-weight:800; letter-spacing:.04em;
+  text-transform:uppercase; padding:1px 7px; border-radius:999px; vertical-align:middle;
+  margin-left:2px;
+}
+.ccard-tier-draft{ color:#7c3aed; background:#f3effe; border:1px solid #ddd0fb; }
+.ccard-tier-exec{  color:#0d6e6b; background:#ecfdf9; border:1px solid #b7ebe3; }
+.ccard-tier-live{  color:#b45309; background:#fef6e7; border:1px solid #fcd9a3; }
+.composite-figure-group{
+  grid-column:1 / -1; margin:16px 2px 2px; padding:0 0 4px;
+  border-bottom:2px solid #e5e7eb;
+}
+.composite-figure-group:first-child{ margin-top:2px; }
+.composite-figure-group span{
+  font-size:0.74rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  color:#0d6e6b;
+}
+:root[data-theme="dark"] .composite-figure-group{ border-bottom-color:var(--border); }
+:root[data-theme="dark"] .composite-figure-group span{ color:#5eead4; }

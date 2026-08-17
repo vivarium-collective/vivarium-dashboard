@@ -912,42 +912,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
   </div>
 </section>
 
-<!-- ===== PAGE: SIMULATION SETUP ===== -->
-<section id="page-simulation-setup" class="page" data-page="simulation-setup">
-
-  <!-- Available Composites (workspace-local discovery). No heading — the count
-       lives in the search placeholder ("Filter N composites…"). -->
-  <div class="panel">
-    {# Two-row toolbar: search + zoom controls pinned to the TOP row (zoom stays
-       fixed top-right in every zoom setting); tag chips + sort wrap on row 2. #}
-    <div class="card-browse-toolbar cbt-2row" id="composite-toolbar">
-      <div class="cbt-top">
-        <input type="search" class="card-browse-search" id="composite-search" placeholder="Filter composites…">
-        <span class="cols-ctl-slot" data-cols-surface="composites" title="Cards columns"></span>
-        <span class="registry-zoom" role="group" aria-label="View density" title="View density">
-          <button class="reg-zoom-btn" data-czoom="table" onclick="_setCompositeZoom('table')" title="Table — dense &amp; sortable">&#9776;</button>
-          <button class="reg-zoom-btn active" data-czoom="cards" onclick="_setCompositeZoom('cards')" title="Cards — multi-column grid; adjust columns at left">&#9638;</button>
-          <button class="reg-zoom-btn" data-czoom="loom" onclick="_setCompositeZoom('loom')" title="Loom — the composite bigraph (open per card)">&#9707;</button>
-        </span>
-      </div>
-      <div class="cbt-bottom">
-        <div class="card-browse-chips" id="composite-tag-chips"></div>
-        <select id="composites-sort" class="composites-sort-select" onchange="_setCompositesSort(this.value)" title="Sort composites">
-          <option value="workspace-first">Sort: Workspace first</option>
-          <option value="passrate">Sort: Pass rate</option>
-          <option value="name">Sort: Name</option>
-          <option value="module">Sort: Module</option>
-          <option value="kind">Sort: Kind</option>
-        </select>
-      </div>
-    </div>
-    <div id="composite-cards" class="module-grid">
-      <p class="empty-state">Loading composites&hellip;</p>
-    </div>
-  </div>
-
-</section>
-
 <!-- ===== PAGE: ANALYSIS TOOLS ===== -->
 <section id="page-visualizations" class="page" data-page="visualizations">
   <div class="panel">

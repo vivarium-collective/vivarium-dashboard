@@ -122,7 +122,7 @@ export function OutputsPanel(props: OutputsPanelProps) {
         )}
         {activeTab === 'visualizations' && (
           <VisualizationsPanel
-            vizHtml={Object.keys(viz).length ? viz : null}
+            vizHtml={props.vizHtml ? viz : null}
             hasRun={props.hasRun}
             readOnly={props.readOnly}
           />

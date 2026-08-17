@@ -1922,8 +1922,9 @@
 
   function _useRegistryClass(kind, name) {
     if (kind === 'emitter') {
-      _switchPage('simulation-setup');
-      // Find the inline simulation form (inside a <details> in Simulation Setup)
+      _switchPage('modules');
+      // Legacy: the inline simulation form (once on Simulation Setup) is gone —
+      // this early-returns, leaving the Modules page shown.
       var form = document.getElementById('form-simulation');
       if (!form) return;
       var details = form.closest('details');
@@ -4104,390 +4105,13 @@
   // -------------------------------------------------------------------------
 
   window._composites = [];
-  window._compositesFilter = { search: '', tags: new Set() };
-  window._compositesView = 'grid';
+  // Retained: read by the registry toolbar sync to default the composites view.
   window._compositesZoom = (function () {
     var z; try { z = localStorage.getItem('viv.compositesZoom'); } catch (e) { z = null; }
     return (z === 'table' || z === 'cards' || z === 'loom') ? z : 'cards';
   })();
-  // Default sort: workspace-local composites first, then alphabetical.
-  // Surfaces the composites the current investigation actually needs
-  // ahead of the full list of every installed pbg-* package's composites
-  // — the Composites tab grew unwieldy as more pbg-* packages came
-  // online. Other sorts (name / module / kind) remain available via the
-  // dropdown.
-  window._compositesSort = 'workspace-first';
 
-  function _buildCompositeChips() {
-    var chipsEl = document.getElementById('composite-tag-chips');
-    if (!chipsEl) return;
-    var allTags = [];
-    window._composites.forEach(function(c) {
-      (c.tags || []).forEach(function(t) {
-        if (allTags.indexOf(t) === -1) allTags.push(t);
-      });
-    });
-    allTags.sort();
-    chipsEl.innerHTML = allTags.map(function(t) {
-      return '<button class="card-browse-chip" onclick="_toggleCompositeChip(this,\'' + _esc(t) + '\')">' + _esc(t) + '</button>';
-    }).join('');
-  }
 
-  function _toggleCompositeChip(btn, tag) {
-    if (window._compositesFilter.tags.has(tag)) {
-      window._compositesFilter.tags.delete(tag);
-      btn.classList.remove('active');
-    } else {
-      window._compositesFilter.tags.add(tag);
-      btn.classList.add('active');
-    }
-    _renderComposites();
-  }
-  window._toggleCompositeChip = _toggleCompositeChip;
-
-  function _setCompositeView(view) {
-    window._compositesView = view;
-    var btns = document.querySelectorAll('#composite-toolbar .view-btn');
-    btns.forEach(function(b) {
-      b.classList.toggle('active', b.getAttribute('data-view') === view);
-    });
-    _renderComposites();
-  }
-  window._setCompositeView = _setCompositeView;
-
-  function _setCompositesSort(value) {
-    window._compositesSort = value || 'workspace-first';
-    _renderComposites();
-  }
-  window._setCompositesSort = _setCompositesSort;
-
-  // ---- Composite pinning (localStorage, keyed by composite id) -------------
-  // Pinned composites float to the top of the list, above the sort order. The
-  // pin control is hover-revealed on each card (mirrors the studies-rail pins).
-  function _loadPinnedComposites() {
-    try {
-      var raw = window.localStorage.getItem('viv.pinnedComposites');
-      window._pinnedComposites = raw ? JSON.parse(raw) : [];
-    } catch (e) { window._pinnedComposites = []; }
-    if (!Array.isArray(window._pinnedComposites)) window._pinnedComposites = [];
-    return window._pinnedComposites;
-  }
-  function _isCompositePinned(id) {
-    if (!window._pinnedComposites) _loadPinnedComposites();
-    return window._pinnedComposites.indexOf(id) !== -1;
-  }
-  function _toggleCompositePin(id) {
-    if (!window._pinnedComposites) _loadPinnedComposites();
-    var i = window._pinnedComposites.indexOf(id);
-    if (i === -1) window._pinnedComposites.push(id);
-    else window._pinnedComposites.splice(i, 1);
-    try { window.localStorage.setItem('viv.pinnedComposites', JSON.stringify(window._pinnedComposites)); } catch (e) { /* private mode */ }
-    _renderComposites();
-  }
-  window._toggleCompositePin = _toggleCompositePin;
-  // Hover-revealed pin toggle for a composite card / row. stopPropagation so it
-  // never triggers the card's double-click-to-zoom.
-  function _compositePinBtn(c) {
-    var pinned = _isCompositePinned(c.id);
-    return '<button class="ccard-pin' + (pinned ? ' pinned' : '') + '"' +
-      ' onclick="event.stopPropagation(); _toggleCompositePin(\'' + _esc(c.id) + '\')"' +
-      ' title="' + (pinned ? 'Unpin' : 'Pin to top') + '"' +
-      ' aria-label="' + (pinned ? 'Unpin composite' : 'Pin composite to top') + '">📌</button>';
-  }
-  window._compositePinBtn = _compositePinBtn;
-
-  function _renderComposites() {
-    var container = document.getElementById('composite-cards');
-    if (!container) return;
-    var f = window._compositesFilter;
-    var search = f.search.toLowerCase();
-    var activeTags = f.tags;
-    var composites = window._composites.filter(function(c) {
-      if (search) {
-        var haystack = (c.name + ' ' + (c.description || '') + ' ' + (c.tags || []).join(' ') + ' ' + (c.module || '')).toLowerCase();
-        if (haystack.indexOf(search) === -1) return false;
-      }
-      if (activeTags.size > 0) {
-        var cTags = c.tags || [];
-        var match = false;
-        activeTags.forEach(function(t) { if (cTags.indexOf(t) !== -1) match = true; });
-        if (!match) return false;
-      }
-      return true;
-    });
-
-    // Apply sort toggle (Workspace first / Name / Module / Kind). Ties
-    // break on name. Workspace-first puts composites whose `module` starts
-    // with the workspace's own package prefix (backend-annotated as
-    // `workspace_local: true` on each /api/composites record) at the top,
-    // followed by every-installed-pbg-* composites alphabetically. When
-    // grouping, _renderGroupedComposites below inserts a visual section
-    // divider between the two groups.
-    var sorted = composites.slice();
-    if (window._compositesSort === 'module') {
-      sorted.sort(function(a, b) {
-        return (a.module || '').localeCompare(b.module || '')
-          || (a.name || '').localeCompare(b.name || '');
-      });
-    } else if (window._compositesSort === 'kind') {
-      sorted.sort(function(a, b) {
-        return (a.kind || '').localeCompare(b.kind || '')
-          || (a.name || '').localeCompare(b.name || '');
-      });
-    } else if (window._compositesSort === 'passrate') {
-      // Highest report-card pass-rate first; ties → more studies → name.
-      sorted.sort(function(a, b) {
-        function rate(c) { var s = c.studies; return (s && s.total) ? s.pass / s.total : -1; }
-        function used(c) { var s = c.studies; return (s && s.studies) ? s.studies : 0; }
-        return (rate(b) - rate(a)) || (used(b) - used(a))
-          || (a.name || '').localeCompare(b.name || '');
-      });
-    } else if (window._compositesSort === 'workspace-first') {
-      sorted.sort(function(a, b) {
-        var aw = a.workspace_local ? 0 : 1;
-        var bw = b.workspace_local ? 0 : 1;
-        return (aw - bw)
-          || (a.name || '').localeCompare(b.name || '');
-      });
-    } else {
-      sorted.sort(function(a, b) {
-        return (a.name || '').localeCompare(b.name || '');
-      });
-    }
-    // Pinned composites float to the top, preserving the sort order within the
-    // pinned and unpinned groups.
-    _loadPinnedComposites();
-    if (window._pinnedComposites.length) {
-      var _pins = [], _rest = [];
-      sorted.forEach(function (c) { (_isCompositePinned(c.id) ? _pins : _rest).push(c); });
-      sorted = _pins.concat(_rest);
-    }
-    composites = sorted;
-
-    if (!composites.length) {
-      container.innerHTML = '<p class="empty-state">No composites match the current filter.</p>';
-      container.className = '';
-      return;
-    }
-
-    // Semantic zoom: Table (dense sortable) → Cards (full-row) → Loom (bigraph
-    // embedded on demand per card). The old grid/list toggle is subsumed.
-    var _czoom = window._compositesZoom || 'cards';
-    document.querySelectorAll('#composite-toolbar .reg-zoom-btn').forEach(function (b) {
-      b.classList.toggle('active', b.getAttribute('data-czoom') === _czoom);
-    });
-    if (_czoom === 'table') { _renderCompositesTable(container, composites); return; }
-
-    function _moduleLine(c) {
-      var mod = c.module || '';
-      var kind = c.kind || 'spec';
-      var kindBadge = (kind === 'generator')
-        ? ' <span class="kind-badge">generator</span>' : '';
-      if (!mod) return '';
-      return '<div class="composite-module"><small>Module:</small> ' +
-        '<code>' + _esc(mod) + '</code>' + kindBadge + '</div>';
-    }
-    function _wsTag(c) {
-      // Small "📦 workspace" pill on cards whose composite lives in the
-      // workspace's own package. Helps the user scan quickly even when
-      // the workspace-first sort isn't active.
-      return c.workspace_local
-        ? '<span class="composite-ws-tag">📦 workspace</span>' : '';
-    }
-    // Section-divider injector — emits a thin "Other modules" separator
-    // between the last workspace-local item and the first non-local item
-    // when the workspace-first sort is active and both groups are present.
-    // Returns '' otherwise so existing layouts are byte-identical.
-    var _otherCount = composites.filter(function(c) { return !c.workspace_local; }).length;
-    function _maybeDivider(prev, cur) {
-      if (window._compositesSort !== 'workspace-first') return '';
-      if (!prev || !cur) return '';
-      if (prev.workspace_local && !cur.workspace_local) {
-        return '<div class="composite-section-divider">'
-             + '<span>Other installed pbg-* modules'
-             + (_otherCount ? ' (' + _otherCount + ')' : '')
-             + '</span></div>';
-      }
-      return '';
-    }
-
-    var _isSnapshot = document.body.classList.contains('snapshot');
-    if (window._compositesView === 'list') {
-      container.className = 'composite-list';
-      var prevC = null;
-      var rows = composites.map(function(c) {
-        var tagPills = (c.tags || []).map(function(t) {
-          return '<span class="tag-pill">' + _esc(t) + '</span>';
-        }).join('');
-        var divider = _maybeDivider(prevC, c);
-        prevC = c;
-        var exploreBtn = _compositeCardActions(c, 'action-btn', 'action-btn');
-        return divider + '<div class="composite-list-row' + (c.read_only ? ' federated-readonly' : '') + '">' +
-          '<span class="name">' + _esc(c.name) + ' ' + _wsTag(c) + _originBadge(c.origin_repo) + '</span>' +
-          '<span class="desc">' + tagPills + ' ' + _esc(c.description || '(no description)') +
-            _moduleLine(c) +
-          '</span>' +
-          '<span>' + _compositePinBtn(c) + exploreBtn + '</span>' +
-          '</div>';
-      });
-      container.innerHTML = rows.join('');
-    } else {
-      container.className = 'ccard-rows' + (_czoom === 'loom' ? ' ccard-loom' : '');
-      var prevG = null;
-      var cards = composites.map(function(c) {
-        var kind = c.kind || 'spec';
-        // Marker 1 — KIND: generator (builds state from params) vs spec (static
-        // document). One clean pill instead of the old "Module: … generator" line.
-        var kindPill = '<span class="ccard-kind ccard-kind-' + kind + '" title="'
-          + (kind === 'generator'
-              ? 'Generator — builds its state from parameters'
-              : 'Spec — a static composite document') + '">' + kind + '</span>';
-        // Marker 2 — SOURCE: the workspace's own package (green) vs which
-        // installed package it came from (so imported composites name their origin).
-        var srcBadge;
-        if (c.workspace_local) {
-          srcBadge = '<span class="ccard-src ccard-src-ws" title="Defined in this workspace">workspace</span>';
-        } else {
-          var pkg = (c.module || '').split('.')[0].replace(/_/g, '-');
-          srcBadge = pkg
-            ? '<span class="ccard-src" title="From the ' + _esc(pkg) + ' package">' + _esc(pkg) + '</span>'
-            : '';
-        }
-        // Meta row — at-a-glance counts (params / tags / default steps).
-        var paramKeys = Object.keys(c.parameters || {});
-        var meta = [];
-        if (paramKeys.length) meta.push('<span title="configurable parameters">' + paramKeys.length + ' param' + (paramKeys.length === 1 ? '' : 's') + '</span>');
-        if (c.tags && c.tags.length) meta.push('<span title="topic tags">' + c.tags.length + ' tag' + (c.tags.length === 1 ? '' : 's') + '</span>');
-        if (c.default_n_steps) meta.push('<span title="default run length">' + c.default_n_steps + ' steps</span>');
-        var ep = (c.parameters || {}).emitter;
-        if (ep && ep.default) meta.push('<span title="observation sink (emitter)">emitter: ' + _esc(String(ep.default)) + '</span>');
-        var metaRow = meta.length ? '<div class="ccard-meta">' + meta.join('<i>·</i>') + '</div>' : '';
-        // Cross-study track record: usage count + pass/inconclusive/fail bar.
-        var trackRow = '';
-        var st = c.studies;
-        if (st && st.studies) {
-          var tot = st.total || (st.pass + st.inconclusive + st.fail);
-          var pw = tot ? Math.round(100 * st.pass / tot) : 0;
-          var iw = tot ? Math.round(100 * st.inconclusive / tot) : 0;
-          var fw = tot ? (100 - pw - iw) : 0;
-          trackRow = '<div class="ccard-track">' +
-            '<div class="ccard-track-top">used in <strong>' + st.studies + '</strong> stud' + (st.studies === 1 ? 'y' : 'ies') +
-              (tot ? '' : ' <span class="muted">· no report cards yet</span>') + '</div>' +
-            (tot ? '<div class="ccard-bar" title="' + st.pass + ' pass · ' + st.inconclusive + ' inconclusive · ' + st.fail + ' fail">' +
-              '<span class="seg pass" style="width:' + pw + '%"></span>' +
-              '<span class="seg inc" style="width:' + iw + '%"></span>' +
-              '<span class="seg fail" style="width:' + fw + '%"></span></div>' +
-              '<div class="ccard-track-counts">' +
-                '<span class="pass">' + st.pass + ' ✓</span>' +
-                (st.inconclusive ? '<span class="inc">' + st.inconclusive + ' ~</span>' : '') +
-                (st.fail ? '<span class="fail">' + st.fail + ' ✗</span>' : '') +
-              '</div>' : '') +
-          '</div>';
-        }
-        // Lazy structure (process / store counts) — fetched on first expand only.
-        var structRow = '<details class="ccard-struct" ontoggle="_loadCompositeStructure(this,\'' + _esc(c.id) + '\')">' +
-          '<summary>structure</summary>' +
-          '<div class="ccard-struct-body" data-loaded="0"></div></details>';
-        // Config — a collapsed <details> that expands to a per-parameter table
-        // (name · type · default · description). Collapsed keeps the card compact;
-        // expanded gives the full config surface with descriptions.
-        var paramPreview = '';
-        if (paramKeys.length) {
-          var cfgRows = paramKeys.map(function(k) {
-            var p = (c.parameters || {})[k] || {};
-            var t = p.type || '';
-            var dv = (p.default === undefined || p.default === null) ? ''
-              : (typeof p.default === 'object' ? JSON.stringify(p.default) : String(p.default));
-            var desc = p.description || '';
-            return '<div class="ccard-cfg-row">' +
-              '<div class="ccard-cfg-head">' +
-                '<code class="ccard-cfg-name">' + _esc(k) + '</code>' +
-                (t ? '<span class="ccard-cfg-type">' + _esc(t) + '</span>' : '') +
-                (dv !== '' ? '<span class="ccard-cfg-def" title="default">= ' + _esc(dv.length > 44 ? dv.slice(0, 44) + '…' : dv) + '</span>' : '') +
-              '</div>' +
-              (desc ? '<div class="ccard-cfg-desc">' + _esc(desc) + '</div>' : '') +
-            '</div>';
-          }).join('');
-          paramPreview = '<details class="ccard-cfg">' +
-            '<summary>' + paramKeys.length + ' config parameter' + (paramKeys.length === 1 ? '' : 's') + '</summary>' +
-            '<div class="ccard-cfg-body">' + cfgRows + '</div>' +
-          '</details>';
-        }
-        var tagRow = '';
-        if (c.tags && c.tags.length) {
-          tagRow = '<div class="ccard-tags">' + c.tags.slice(0, 5).map(function(t) {
-            return '<span class="ccard-tag">' + _esc(t) + '</span>';
-          }).join('') + (c.tags.length > 5 ? '<span class="ccard-more">+' + (c.tags.length - 5) + '</span>' : '') + '</div>';
-        }
-        var divider = _maybeDivider(prevG, c);
-        prevG = c;
-        var exploreBtn = _compositeCardActions(c, 'ccard-view', 'ccard-explore');
-        var _csel = (window._compositesSelected && window._compositesSelected === c.id) ? ' reg-selected' : '';
-        // Compact full-row card: identity | description | stats | actions across
-        // the bar; config/structure/tags collapse into a details strip below.
-        return divider + '<div class="ccard ccard-compact' + _csel + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '"' +
-            ' data-id="' + _esc(c.id) + '" ondblclick="_compositeCardDblClick(\'' + _esc(c.id) + '\')" title="Double-click to zoom in on this composite">' +
-          '<div class="ccc-grid">' +
-            '<div class="ccc-identity">' +
-              '<div class="ccc-name-row"><span class="ccc-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span> ' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</div>' +
-              '<code class="ccc-addr" title="' + _esc(c.id) + '">' + _esc(c.id) + '</code>' +
-            '</div>' +
-            '<div class="ccc-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</div>' +
-            '<div class="ccc-stats">' + metaRow + trackRow + '</div>' +
-            '<div class="ccc-actions">' + _compositePinBtn(c) + exploreBtn + '</div>' +
-          '</div>' +
-          // Config-parameters / structure preview strips removed as low-signal;
-          // tags (if any) still show. Config lives in the loom's Config sidebar.
-          (tagRow ? '<div class="ccc-details-row">' + tagRow + '</div>' : '') +
-          (_czoom === 'loom' ? _compositeLoomEmbed(c) : '') +
-        '</div>';
-      });
-      container.innerHTML = cards.join('');
-      // Cards zoom (not loom): multi-column grid + column control.
-      _syncColsControls();
-      if (_czoom === 'cards') _applyCardCols(container, 'composites');
-      else { container.classList.remove('cards-grid-cols'); container.style.gridTemplateColumns = ''; }
-    }
-  }
-  window._renderComposites = _renderComposites;
-
-  function _setCompositeZoom(z) {
-    window._compositesZoom = z;
-    try { localStorage.setItem('viv.compositesZoom', z); } catch (e) { /* private mode */ }
-    document.querySelectorAll('#composite-toolbar .reg-zoom-btn').forEach(function (b) {
-      b.classList.toggle('active', b.getAttribute('data-czoom') === z);
-    });
-    _renderComposites();
-    _updateColsSlotVisibility();   // slider only in Cards zoom (table/loom hidden)
-  }
-  window._setCompositeZoom = _setCompositeZoom;
-
-  // Double-click a composite → zoom in one level (table → cards → loom), focused.
-  function _zoomInComposite(id) {
-    var order = ['table', 'cards', 'loom'];
-    var i = order.indexOf(window._compositesZoom || 'cards');
-    window._compositesSelected = id;
-    _setCompositeZoom(order[Math.min(order.length - 1, i + 1)]);
-    setTimeout(function () {
-      var sel = document.querySelector('#composite-cards [data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"]');
-      if (sel) { sel.classList.add('reg-selected'); try { sel.scrollIntoView({ behavior: 'smooth', block: 'center' }); } catch (e) { /* ignore */ } }
-    }, 60);
-  }
-  window._zoomInComposite = _zoomInComposite;
-
-  // Loom (Full) zoom: an on-demand embed of the composite's bigraph. Resolving a
-  // composite can be ParCa-heavy, so it only loads when the card is expanded —
-  // read-only, via the loom's static stateUrl pointed at live composite-resolve.
-  function _compositeLoomEmbed(c) {
-    if (c.read_only && !c.has_wiring) return '';
-    // Read-only viewer only — config is edited in Configure, running is the
-    // external ▶ RUN bar; no in-place "Enable running" toggle.
-    return '<details class="ccard-loom-embed" data-id="' + _esc(c.id) + '" ontoggle="_openCompositeLoomInline(this)">' +
-      '<summary>Open loom</summary>' +
-      '<div class="ccard-loom-frame"><p class="muted" style="padding:10px;font-size:0.85em">Expand to resolve &amp; render the bigraph…</p></div>' +
-    '</details>';
-  }
-  window._compositeLoomEmbed = _compositeLoomEmbed;
 
   // Flip an inline loom embed from read-only preview to LIVE mode (editable
   // config + Run), reloading the iframe at the same URL the pop-out uses
@@ -4507,33 +4131,6 @@
   }
   window._enableInlineLoomRun = _enableInlineLoomRun;
 
-  // "View" — open the composite's loom inline at max detail. From a lower zoom
-  // (table/cards) this jumps to the loom (max semantic) zoom AND opens this
-  // composite's embed; at loom zoom it toggles the embed. Replaces the old
-  // "Explore →" hop to the standalone explorer page (now redundant).
-  function _viewCompositeLoom(id) {
-    var esc = (window.CSS && CSS.escape) ? CSS.escape(id) : id;
-    var find = function () { return document.querySelector('.ccard-loom-embed[data-id="' + esc + '"]'); };
-    var z = window._compositesZoom || 'cards';
-    if (z !== 'loom') {
-      // Jump to max semantic zoom, focus this composite, then open its loom.
-      window._compositesSelected = id;
-      _setCompositeZoom('loom');
-      setTimeout(function () {
-        var det = find();
-        if (det) {
-          if (!det.open) det.open = true;   // fires ontoggle → lazy-load
-          try { det.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { /* ignore */ }
-        }
-      }, 80);
-      return;
-    }
-    var det = find();
-    if (!det) return;
-    det.open = !det.open;                   // toggle at loom zoom
-    if (det.open) { try { det.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) { /* ignore */ } }
-  }
-  window._viewCompositeLoom = _viewCompositeLoom;
 
   // The static composite-state URL the loom fetches. In a PUBLISHED snapshot the
   // live /api/composite-resolve endpoint doesn't exist — the pre-resolved state
@@ -4567,29 +4164,7 @@
   }
   window._popoutCompositeLoom = _popoutCompositeLoom;
 
-  // Card actions: View (inline loom) + Pop out (separate window). Shared by the
-  // table rows and the cards/loom zoom. Empty when the composite has no viewable
-  // wiring in this context (snapshot without pre-built wiring, or a read-only
-  // federated composite without wiring).
-  function _compositeCardActions(c, viewClass, popClass) {
-    if ((document.body.classList.contains('snapshot') && !c.has_wiring)) return '';
-    if (c.read_only && !c.has_wiring) return '';
-    var id = _esc(c.id);
-    return '<button class="' + viewClass + '" onclick="_viewCompositeLoom(\'' + id + '\')"' +
-        ' title="Open the loom inline at full detail">View</button>' +
-      '<button class="' + popClass + '" onclick="_popoutCompositeLoom(\'' + id + '\')"' +
-        ' title="Open the loom in a separate window">Pop out &#8599;</button>';
-  }
-  window._compositeCardActions = _compositeCardActions;
 
-  // Double-click a composite card: at the full (loom) semantic zoom there's no
-  // deeper level to zoom into, so open the loom inline instead — a quiet
-  // shortcut for the top-right "View" button. Lower zooms keep zooming in.
-  function _compositeCardDblClick(id) {
-    if ((window._compositesZoom || 'cards') === 'loom') _viewCompositeLoom(id);
-    else _zoomInComposite(id);
-  }
-  window._compositeCardDblClick = _compositeCardDblClick;
 
   function _openCompositeLoomInline(det) {
     if (!det || det._loomLoaded) return;
@@ -4687,70 +4262,6 @@
   }
   window._wireLoomResize = _wireLoomResize;
 
-  // Composites Table view — sortable (Name / Module / Kind / Params / Steps / Used).
-  function _renderCompositesTable(container, composites) {
-    var sk = window._compositesTableSort || 'workspace';
-    var sd = window._compositesTableDir || (sk === 'workspace' ? 'asc' : 'asc');
-    var mod = function (c) { return (c.module || '').split('.')[0]; };
-    var used = function (c) { return (c.studies && c.studies.studies) ? c.studies.studies : 0; };
-    var nparam = function (c) { return Object.keys(c.parameters || {}).length; };
-    var rows = composites.slice().sort(function (a, b) {
-      var av, bv;
-      // Default view: this-workspace composites on top, then most-used in this
-      // workspace, then alphabetical. Returns directly (direction-agnostic).
-      if (sk === 'workspace') {
-        var aw = a.workspace_local ? 0 : 1, bw = b.workspace_local ? 0 : 1;
-        if (aw !== bw) return aw - bw;
-        var au = used(a), bu = used(b);
-        if (au !== bu) return bu - au;
-        return (a.name || '').localeCompare(b.name || '');
-      }
-      if (sk === 'module') { av = mod(a).toLowerCase(); bv = mod(b).toLowerCase(); }
-      else if (sk === 'kind') { av = (a.kind || ''); bv = (b.kind || ''); }
-      else if (sk === 'params') { av = nparam(a); bv = nparam(b); }
-      else if (sk === 'steps') { av = a.default_n_steps || 0; bv = b.default_n_steps || 0; }
-      else if (sk === 'used') { av = used(a); bv = used(b); }
-      else { av = (a.name || '').toLowerCase(); bv = (b.name || '').toLowerCase(); }
-      var c = av < bv ? -1 : (av > bv ? 1 : (a.name || '').localeCompare(b.name || ''));
-      return sd === 'desc' ? -c : c;
-    });
-    // Pinned composites float to the top of the table too, above the column sort.
-    _loadPinnedComposites();
-    if (window._pinnedComposites.length) {
-      var _tp = [], _tr = [];
-      rows.forEach(function (c) { (_isCompositePinned(c.id) ? _tp : _tr).push(c); });
-      rows = _tp.concat(_tr);
-    }
-    function th(key, label, cls) {
-      var on = sk === key;
-      return '<th class="reg-th' + (cls ? ' ' + cls : '') + (on ? ' active' : '') +
-        '" onclick="_setCompositesTableSort(\'' + key + '\')">' + label + (on ? (sd === 'desc' ? ' ▾' : ' ▴') : '') + '</th>';
-    }
-    var body = rows.map(function (c) {
-      return '<tr class="reg-tr" data-id="' + _esc(c.id || '') + '" ondblclick="_compositeCardDblClick(\'' + _esc(c.id || '') + '\')" title="Double-click to zoom in">' +
-        '<td class="reg-td-pin">' + _compositePinBtn(c) + '</td>' +
-        '<td class="reg-td-name"><strong>' + _esc(c.name) + '</strong> <code>' + _esc(c.id || '') + '</code></td>' +
-        '<td>' + _esc(mod(c)) + '</td>' +
-        '<td>' + _esc(c.kind || 'spec') + '</td>' +
-        '<td class="num">' + nparam(c) + '</td>' +
-        '<td class="num">' + (c.default_n_steps || '') + '</td>' +
-        '<td class="num">' + used(c) + '</td>' +
-        '<td class="reg-td-src">' + (c.workspace_local ? 'workspace' : _esc(mod(c))) + '</td>' +
-      '</tr>';
-    }).join('');
-    container.className = '';
-    container.innerHTML = '<div class="registry-table-wrap"><table class="registry-table"><thead><tr>' +
-      '<th class="reg-th reg-th-pin" title="Pin to top"></th>' +
-      th('name', 'Name') + th('module', 'Module') + th('kind', 'Kind') + th('params', 'Params', 'num') +
-      th('steps', 'Steps', 'num') + th('used', 'Used', 'num') + th('workspace', 'Source') +
-      '</tr></thead><tbody>' + body + '</tbody></table></div>';
-  }
-  function _setCompositesTableSort(key) {
-    if (window._compositesTableSort === key) window._compositesTableDir = (window._compositesTableDir === 'desc') ? 'asc' : 'desc';
-    else { window._compositesTableSort = key; window._compositesTableDir = (key === 'name' || key === 'module' || key === 'kind') ? 'asc' : 'desc'; }
-    _renderComposites();
-  }
-  window._setCompositesTableSort = _setCompositesTableSort;
 
   // Lazily fetch a composite's process/store counts when its "structure"
   // <details> is first opened (building a composite can be ParCa-heavy, so this
@@ -4799,32 +4310,6 @@
         // (a) Registry/Processes-page "Composites" tab — accordion cards.
         _renderRegistryComposites(composites);
 
-        // (b) Standalone Composites page (simulation-setup), if present.
-        var container = document.getElementById('composite-cards');
-        var countBadge = document.getElementById('composite-count');
-        if (countBadge) countBadge.textContent = '(' + composites.length + ')';
-        var _cSearch = document.getElementById('composite-search');
-        if (_cSearch) _cSearch.placeholder = 'Filter ' + composites.length + ' composites…';
-        if (!container) return;
-        if (!composites.length) {
-          container.innerHTML =
-            '<p class="empty-state">No composite specs found yet. Add a <code>*.composite.yaml</code> file under ' +
-            '<code>pbg_&lt;slug&gt;/composites/</code> to register one. See ' +
-            '<a href="https://github.com/vivarium-collective/pbg-superpowers/blob/main/docs/conventions/composites.md" target="_blank">' +
-            'the composite spec convention</a> for the format.</p>';
-          return;
-        }
-        // Wire up search input
-        var searchEl = document.getElementById('composite-search');
-        if (searchEl && !searchEl._pbgWired) {
-          searchEl._pbgWired = true;
-          searchEl.oninput = function() {
-            window._compositesFilter.search = this.value.toLowerCase();
-            _renderComposites();
-          };
-        }
-        _buildCompositeChips();
-        _renderComposites();
       });
   }
   window._loadComposites = _loadComposites;
@@ -4854,12 +4339,29 @@
     // Honour the Sort control (default keeps workspace-local first, then name).
     var _sortKey = window._registrySort || 'use';
     list = list.slice().sort(function (a, b) { return _compositeSortCmp(a, b, _sortKey); });
+    // Group by figure (stable within each figure) so a figure's draft /
+    // executable / live-topology cards cluster together; non-figure composites
+    // keep to the end.
+    var _figNum = function (c) { var m = ((c && c.id) || '').match(/\.fig0*(\d+)/i); return m ? parseInt(m[1], 10) : 9999; };
+    list = list
+      .map(function (c, i) { return { c: c, i: i, n: _figNum(c) }; })
+      .sort(function (a, b) { return (a.n - b.n) || (a.i - b.i); })
+      .map(function (x) { return x.c; });
     // Semantic zoom: Table (dense) → Cards (grid + usage) → Full (accordion).
     var zoom = window._registryZoom || 'grid';
     if (zoom === 'table') { el.innerHTML = _renderCompositeTableHtml(list); return; }
     var cardsCls = 'reg-cards reg-cards-' + (zoom === 'full' ? 'full' : 'grid');
     var render = (zoom === 'full') ? _renderCompositeCardFull : _renderCompositeCardGrid;
-    el.innerHTML = '<div class="' + cardsCls + '">' + list.map(render).join('') + '</div>';
+    var _prevF = null;
+    var _cardsHtml = list.map(function (c) {
+      var n = _figNum(c), head = '';
+      if (n !== 9999 && (!_prevF || _figNum(_prevF) !== n)) {
+        head = '<div class="composite-figure-group"><span>Fig ' + n + '</span></div>';
+      }
+      _prevF = c;
+      return head + render(c);
+    }).join('');
+    el.innerHTML = '<div class="' + cardsCls + '">' + _cardsHtml + '</div>';
     if (zoom === 'grid') el.querySelectorAll('.reg-cards-grid').forEach(function (cc) { _applyCardCols(cc, 'registry'); });
   }
   window._renderRegistryComposites = _renderRegistryComposites;
@@ -5815,9 +5317,9 @@
       return;
     }
     if (type === 'composite') {
-      _switchPage('simulation-setup');
-      var ci = document.getElementById('composite-search');
-      if (ci) { ci.value = name; ci.dispatchEvent(new Event('input', { bubbles: true })); }
+      _switchPage('modules');
+      var ci = document.getElementById('registry-search');
+      if (ci) { ci.value = name; if (typeof _filterRegistry === 'function') _filterRegistry(name); }
       return;
     }
     if (type === 'process') {
