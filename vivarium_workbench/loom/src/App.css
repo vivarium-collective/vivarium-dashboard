@@ -2223,11 +2223,22 @@ textarea.sr-input {
   display: flex; flex-direction: column;
 }
 .loom-outputs-dock:not(.collapsed) {
-  height: 300px; min-height: 140px; max-height: 78vh; resize: vertical; overflow: hidden;
+  min-height: 120px; overflow: hidden;   /* height is drag-controlled (inline) */
 }
-.loom-outputs-dock.collapsed { height: auto; }
+.loom-outputs-dock.collapsed { height: auto !important; }
 .loom-outputs-dock.collapsed .outputs-panel { display: none; }
 .loom-outputs-dock .outputs-panel { flex: 1; min-height: 0; }
+/* Top grip: drag UP to enlarge the outputs (the graph above yields room). */
+.loom-outputs-grip {
+  flex: 0 0 auto; height: 7px; cursor: ns-resize; background: #e5e7eb;
+  position: relative; touch-action: none;
+}
+.loom-outputs-grip::before {
+  content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 42px; height: 3px; border-radius: 999px; background: #b6c0cc;
+}
+.loom-outputs-grip:hover { background: #d5f2ee; }
+.loom-outputs-grip:hover::before { background: #4bb3ae; }
 .loom-outputs-toggle {
   flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
   border: 0; background: #f8fafc; cursor: pointer; text-align: left;

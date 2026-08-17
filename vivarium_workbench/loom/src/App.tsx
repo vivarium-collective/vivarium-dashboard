@@ -237,6 +237,26 @@ export default function App() {
   useEffect(() => {
     if (trajectory !== null || vizHtml !== null) setOutputsOpen(true);
   }, [trajectory, vizHtml]);
+  // Draggable height for the Outputs dock — drag its top grip UP to see more of
+  // the viz (the graph above shrinks to give it room).
+  const [outputsHeight, setOutputsHeight] = useState(300);
+  const outputsDragRef = useRef<{ startY: number; startH: number } | null>(null);
+  const onOutputsGripDown = useCallback((e: React.PointerEvent) => {
+    outputsDragRef.current = { startY: e.clientY, startH: outputsHeight };
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    e.preventDefault();
+  }, [outputsHeight]);
+  const onOutputsGripMove = useCallback((e: React.PointerEvent) => {
+    const d = outputsDragRef.current;
+    if (!d) return;
+    const dy = e.clientY - d.startY;           // drag up → dy<0 → taller dock
+    const h = Math.max(120, Math.min(window.innerHeight * 0.88, d.startH - dy));
+    setOutputsHeight(h);
+  }, []);
+  const onOutputsGripUp = useCallback((e: React.PointerEvent) => {
+    outputsDragRef.current = null;
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+  }, []);
 
   // ── Topology playback (loom-live-play) ───────────────────────────────────
   // When a run's trajectory carries a place-graph that CHANGES over steps
@@ -2197,7 +2217,15 @@ export default function App() {
                   stacked surface (drag its top edge to resize). In chromeless
                   embeds the workbench card owns Outputs, so it is hidden here. */}
               {!chromeless && (
-                <div className={'loom-outputs-dock' + (outputsOpen ? '' : ' collapsed')}>
+                <div className={'loom-outputs-dock' + (outputsOpen ? '' : ' collapsed')}
+                  style={outputsOpen ? { height: outputsHeight } : undefined}>
+                  {outputsOpen && (
+                    <div className="loom-outputs-grip"
+                      onPointerDown={onOutputsGripDown}
+                      onPointerMove={onOutputsGripMove}
+                      onPointerUp={onOutputsGripUp}
+                      title="Drag to resize — pull up to see more of the outputs" />
+                  )}
                   <button className="loom-outputs-toggle" onClick={() => setOutputsOpen((o) => !o)}
                     title={outputsOpen ? 'Collapse outputs' : 'Expand outputs'}>
                     <span className="loom-outputs-chevron">{outputsOpen ? '▾' : '▸'}</span>
