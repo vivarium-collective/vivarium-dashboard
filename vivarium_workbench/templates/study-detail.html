@@ -1453,6 +1453,14 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
     <div class="check-group check-group-reproducibility" id="check-group-reproducibility" data-check-group="reproducibility" style="margin-top:16px">
       <p class="empty-message">Loading reproducibility checks…</p>
     </div>
+
+    {# Sourcing sub-panel (Slice 3) — where the model came from (reuse /
+       compose / build-new) and the module_sourcing audit of that choice.
+       Filled by _loadAuditSourcing off window._study.sourcing; hides itself
+       when the study records no sourcing decision. #}
+    <div class="check-group check-group-sourcing" id="audit-sourcing" data-check-group="sourcing" style="margin-top:16px">
+      <p class="empty-message">Loading sourcing…</p>
+    </div>
   </div>
 </section>
 
