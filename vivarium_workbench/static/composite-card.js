@@ -129,16 +129,22 @@
   function _toggleCardMaximize(btn) {
     var card = btn.closest('.registry-entry-full');
     if (!card) return;
+    // In an embed IFRAME (Study→Model), maximizing in place can't cleanly fill
+    // the window, and expanding the iframe leaves layout residue on restore.
+    // Instead, open the composite in its OWN full-window loom (standalone) —
+    // truly full-screen, zero disruption to the study page behind it.
+    if (window.parent && window.parent !== window) {
+      var embed = card.querySelector('.ccard-loom-embed');
+      var id = card.getAttribute('data-address') || (embed && embed.getAttribute('data-id'));
+      if (id) {
+        var apiUrl = (window.DataSource && window.DataSource.apiUrl)
+          ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+        window.open(apiUrl('/bigraph-loom/index.html') + '?id=' + encodeURIComponent(id), '_blank');
+        return;
+      }
+    }
     var on = card.classList.toggle('pcard-maximized');
     document.body.classList.toggle('pcard-maximized', on);
-    // When this card lives in an embed IFRAME (e.g. the Study→Model page), a
-    // position:fixed maximize only fills the IFRAME, not the window. Ask the
-    // parent to expand THIS iframe to full-window so "maximize" is truly full.
-    try {
-      if (window.parent && window.parent !== window) {
-        window.parent.postMessage({ type: 'pcard-maximize', on: on }, '*');
-      }
-    } catch (e) { /* cross-origin parent — ignore */ }
     if (on) {
       btn.title = 'Restore (Esc)';
       // Make sure the Explore section is open so the loom is actually visible.
