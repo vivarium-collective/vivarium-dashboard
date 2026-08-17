@@ -2305,7 +2305,16 @@
     if (detail && typeof detail === 'object') {
       Object.keys(detail).forEach(function(k) {
         var v = detail[k];
-        if (Array.isArray(v) && v.length) bits.push(k + ': ' + v.length);
+        if (!Array.isArray(v) || !v.length) return;
+        // Surface WHICH items, not just how many — an audit that says "1
+        // uncovered card" isn't actionable; "uncovered_cards: metabolism" is.
+        var names = v.map(function(item) {
+          if (item && typeof item === 'object') return item.name || item.path || item.id || JSON.stringify(item);
+          return String(item);
+        });
+        var shown = names.slice(0, 4).join(', ');
+        if (names.length > 4) shown += ' (+' + (names.length - 4) + ' more)';
+        bits.push(k + ': ' + shown);
       });
     }
     return '<li class="audit-axis-item outcome-' + cls + '" data-axis="' + e((ax && ax.id) || '') + '" '
