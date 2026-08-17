@@ -404,18 +404,21 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
       // Typed store leaf (bigraph-schema typed value). For a typed array/map,
       // fold the element type (`_data`) into the label — `array[concentration]`
       // reads more precisely than a bare `array`.
-      const _n = node as { _type?: unknown; _data?: unknown; _default?: unknown; _figure?: string };
+      const _n = node as { _type?: unknown; _data?: unknown; _value?: unknown; _default?: unknown; _figure?: string };
       const _base = String(_n._type);
       const _elem = typeof _n._data === 'string' ? _n._data : undefined;
       const valueType = (_elem && (_base === 'array' || _base === 'map'))
         ? `${_base}[${_elem}]` : _base;
+      // Prefer the store's actual value (`_value`) over its schema `_default`, so
+      // an edited/Applied input manifests on the node (they can otherwise diverge).
+      const _rawVal = _n._value != null ? _n._value : _n._default;
       nodes.push({
         id: pathKey(path),
         type: 'store',
         data: {
           label: path[path.length - 1] ?? '<root>',
           nodeType: 'store',
-          value: node._default != null ? (displayValue(node._default) ?? undefined) : undefined,
+          value: _rawVal != null ? (displayValue(_rawVal) ?? undefined) : undefined,
           valueType,
           path,
           figure: _n._figure ?? undefined,
