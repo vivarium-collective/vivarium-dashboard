@@ -4264,6 +4264,20 @@
     }
     composites = sorted;
 
+    // Group by figure: order the figure composites by figure number (stable —
+    // keeps the current sort's relative order within each figure), so each
+    // draft / executable / live-topology cluster sits together. Non-figure
+    // composites keep to the end. Self-contained (no dependency on
+    // composite-card.js load order) so the sort always applies.
+    var _figNum = function (c) {
+      var m = ((c && c.id) || '').match(/\.fig0*(\d+)/i);
+      return m ? parseInt(m[1], 10) : 9999;
+    };
+    composites = composites
+      .map(function (c, i) { return { c: c, i: i, n: _figNum(c) }; })
+      .sort(function (a, b) { return (a.n - b.n) || (a.i - b.i); })
+      .map(function (x) { return x.c; });
+
     if (!composites.length) {
       container.innerHTML = '<p class="empty-state">No composites match the current filter.</p>';
       container.className = '';
@@ -4310,6 +4324,14 @@
       }
       return '';
     }
+    // Figure-group header — emitted before the first card of each figure so the
+    // draft / executable / live-topology cards read as one group.
+    function _maybeFigureHeader(prev, cur) {
+      var cn = _figNum(cur);
+      if (cn === 9999) return '';
+      if (prev && _figNum(prev) === cn) return '';
+      return '<div class="composite-figure-group"><span>Fig ' + cn + '</span></div>';
+    }
 
     var _isSnapshot = document.body.classList.contains('snapshot');
     if (window._compositesView === 'list') {
@@ -4319,10 +4341,11 @@
         var tagPills = (c.tags || []).map(function(t) {
           return '<span class="tag-pill">' + _esc(t) + '</span>';
         }).join('');
+        var figHead = _maybeFigureHeader(prevC, c);
         var divider = _maybeDivider(prevC, c);
         prevC = c;
         var exploreBtn = _compositeCardActions(c, 'action-btn', 'action-btn');
-        return divider + '<div class="composite-list-row' + (c.read_only ? ' federated-readonly' : '') + '">' +
+        return figHead + divider + '<div class="composite-list-row' + (c.read_only ? ' federated-readonly' : '') + '">' +
           '<span class="name">' + _esc(c.name) + ' ' + _wsTag(c) + _originBadge(c.origin_repo) + '</span>' +
           '<span class="desc">' + tagPills + ' ' + _esc(c.description || '(no description)') +
             _moduleLine(c) +
@@ -4419,17 +4442,18 @@
             return '<span class="ccard-tag">' + _esc(t) + '</span>';
           }).join('') + (c.tags.length > 5 ? '<span class="ccard-more">+' + (c.tags.length - 5) + '</span>' : '') + '</div>';
         }
+        var figHead = _maybeFigureHeader(prevG, c);
         var divider = _maybeDivider(prevG, c);
         prevG = c;
         var exploreBtn = _compositeCardActions(c, 'ccard-view', 'ccard-explore');
         var _csel = (window._compositesSelected && window._compositesSelected === c.id) ? ' reg-selected' : '';
         // Compact full-row card: identity | description | stats | actions across
         // the bar; config/structure/tags collapse into a details strip below.
-        return divider + '<div class="ccard ccard-compact' + _csel + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '"' +
+        return figHead + divider + '<div class="ccard ccard-compact' + _csel + (c.workspace_local ? ' ccard-ws-card' : '') + (c.read_only ? ' federated-readonly' : '') + '"' +
             ' data-id="' + _esc(c.id) + '" ondblclick="_compositeCardDblClick(\'' + _esc(c.id) + '\')" title="Double-click to zoom in on this composite">' +
           '<div class="ccc-grid">' +
             '<div class="ccc-identity">' +
-              '<div class="ccc-name-row"><span class="ccc-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span> ' + kindPill + srcBadge + _originBadge(c.origin_repo) + '</div>' +
+              '<div class="ccc-name-row"><span class="ccc-name" title="' + _esc(c.name) + '">' + _esc(c.name) + '</span> ' + (window._compositeTierBadge ? _compositeTierBadge(c) : '') + kindPill + srcBadge + _originBadge(c.origin_repo) + '</div>' +
               '<code class="ccc-addr" title="' + _esc(c.id) + '">' + _esc(c.id) + '</code>' +
             '</div>' +
             '<div class="ccc-desc" title="' + _esc(c.description || '') + '">' + _esc(c.description || 'No description') + '</div>' +
@@ -4854,12 +4878,29 @@
     // Honour the Sort control (default keeps workspace-local first, then name).
     var _sortKey = window._registrySort || 'use';
     list = list.slice().sort(function (a, b) { return _compositeSortCmp(a, b, _sortKey); });
+    // Group by figure (stable within each figure) so a figure's draft /
+    // executable / live-topology cards cluster together; non-figure composites
+    // keep to the end.
+    var _figNum = function (c) { var m = ((c && c.id) || '').match(/\.fig0*(\d+)/i); return m ? parseInt(m[1], 10) : 9999; };
+    list = list
+      .map(function (c, i) { return { c: c, i: i, n: _figNum(c) }; })
+      .sort(function (a, b) { return (a.n - b.n) || (a.i - b.i); })
+      .map(function (x) { return x.c; });
     // Semantic zoom: Table (dense) → Cards (grid + usage) → Full (accordion).
     var zoom = window._registryZoom || 'grid';
     if (zoom === 'table') { el.innerHTML = _renderCompositeTableHtml(list); return; }
     var cardsCls = 'reg-cards reg-cards-' + (zoom === 'full' ? 'full' : 'grid');
     var render = (zoom === 'full') ? _renderCompositeCardFull : _renderCompositeCardGrid;
-    el.innerHTML = '<div class="' + cardsCls + '">' + list.map(render).join('') + '</div>';
+    var _prevF = null;
+    var _cardsHtml = list.map(function (c) {
+      var n = _figNum(c), head = '';
+      if (n !== 9999 && (!_prevF || _figNum(_prevF) !== n)) {
+        head = '<div class="composite-figure-group"><span>Fig ' + n + '</span></div>';
+      }
+      _prevF = c;
+      return head + render(c);
+    }).join('');
+    el.innerHTML = '<div class="' + cardsCls + '">' + _cardsHtml + '</div>';
     if (zoom === 'grid') el.querySelectorAll('.reg-cards-grid').forEach(function (cc) { _applyCardCols(cc, 'registry'); });
   }
   window._renderRegistryComposites = _renderRegistryComposites;

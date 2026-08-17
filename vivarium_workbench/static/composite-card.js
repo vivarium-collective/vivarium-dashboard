@@ -57,6 +57,39 @@
   }
   window._compositeBadge = _compositeBadge;
 
+  // TIER of a figure composite — draft interface / executable compilation / live
+  // topology rewrite — inferred from its display name (see the meta-modelers
+  // naming). A small colored badge makes the role scannable at a glance.
+  function _compositeTier(c) {
+    var n = (c && c.name) || '', id = (c && c.id) || '';
+    if (/live topology/i.test(n) || /-rewrite\b/i.test(id))    return { id: 'live', label: 'Live' };
+    if (/executable/i.test(n)    || /-executable\b/i.test(id)) return { id: 'exec', label: 'Executable' };
+    // Any other FIGURE composite is a draft interface (typed ports, no dynamics).
+    if (/\.fig\d/i.test(id))                                   return { id: 'draft', label: 'Draft' };
+    return null;   // not a figure composite → no tier badge
+  }
+  function _compositeTierBadge(c) {
+    var t = _compositeTier(c);
+    if (!t) return '';
+    var titles = {
+      live:  'Live topology — a genuine runtime place-graph rewrite; animates the bigraph when run',
+      exec:  'Executable — the draft compiled to conforming Process handlers (runnable dynamics)',
+      draft: 'Draft interface — typed, unit-bearing ports + a behavior contract, no dynamics',
+    };
+    return '<span class="ccard-tier ccard-tier-' + t.id + '" title="' + titles[t.id] + '">' + t.label + '</span>';
+  }
+  // FIGURE grouping key from the composite id (…composites.fig10-1-rewrite → 10).
+  function _compositeFigure(c) {
+    var id = (c && c.id) || '';
+    var m = id.match(/\.fig0*(\d+)/i);
+    if (!m) return null;
+    var num = parseInt(m[1], 10);
+    return { num: num, label: 'Fig ' + num };
+  }
+  window._compositeTier = _compositeTier;
+  window._compositeTierBadge = _compositeTierBadge;
+  window._compositeFigure = _compositeFigure;
+
   // A card header "pop out" control — opens the whole card (Explore/loom and
   // all) in its own focused window. The onclick references _popoutCard,
   // which is Modules-page-only (its ?popcard= handshake lives in
@@ -560,7 +593,7 @@
         ' title="Double-click to Explore (maximized bigraph)">' +
       '<div class="reg-card-row">' +
         '<div class="reg-card-main">' +
-          '<div class="reg-card-head"><strong class="reg-card-name">' + _esc(c.name) + '</strong>' + _compositeBadge() + wsPill + '</div>' +
+          '<div class="reg-card-head"><strong class="reg-card-name">' + _esc(c.name) + '</strong>' + _compositeBadge() + _compositeTierBadge(c) + wsPill + '</div>' +
           '<code class="reg-card-addr">' + _esc(addr) + '</code>' +
           meta +
           (short ? '<p class="reg-card-desc">' + _esc(short) + '</p>' : '') +
@@ -636,7 +669,7 @@
       '<div class="loom-card loom-card-stack loom-card-composite">' +
         '<div class="pcard-top">' +
           '<div class="pcard-header pcard-title" onclick="_pinCardTop(this)" ondblclick="event.stopPropagation();_maximizeCardFromHeader(this)" title="Click to pin to top · double-click to maximize">' +
-            '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + wsPill + roPill +
+            '<span class="loom-name">' + _esc(c.name) + '</span>' + _compositeBadge() + _compositeTierBadge(c) + wsPill + roPill +
             '<code class="loom-addr">' + _esc(addr) + '</code>' +
             _shareCompositeBtn() +
             _compositeJsonBtn() +

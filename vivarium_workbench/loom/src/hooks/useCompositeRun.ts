@@ -104,6 +104,10 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
         stopPolling();
         void loadTrajectory(id);
         sessionStorage.removeItem(ACTIVE_RUN_KEY);
+        // The run is over: publish the viz result unconditionally so the panel
+        // shows "no visualizations" instead of spinning on "Loading…" forever
+        // when a composite declares none (or its viz step produced nothing).
+        onVizHtmlRef.current?.(s.viz_html ?? {});
         if (s.status === 'completed' && args.compositeId) {
           postRunComplete(id, args.compositeId);
           onCompletedRef.current?.();
