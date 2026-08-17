@@ -24,7 +24,7 @@
 - [x] [51: remote-run-submit client timeout too short for large dispatch](./51.md#goal)
 - [x] [52: V2 Chain-dispatch Lineage Wall Time Under 5min](./52.md#goal)
 - [ ] [53: Streamline Chain-dispatch Job Cancellation](./53.md#goal)
-- [ ] [54: Workspace Build-switch Session Identity Mismatch](./54.md#goal) — REOPENED, critical (cplong feedback)
+- [ ] [54: Workspace Build-switch Session Identity Mismatch](./54.md#goal) — REOPENED, critical (cplong feedback), PR #863 open, not merged
 - [x] [55: Stale batch_baseline Composite ID After v2ecoli Refactor](./55.md#goal)
 - [x] [56: Quantity._serialize_state Missing Float Branch](./56.md#goal)
 - [x] [57: bigraph_schema serialize crash — instance.core is None](./57.md#goal)
