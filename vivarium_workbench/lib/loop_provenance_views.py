@@ -63,6 +63,7 @@ def build_study_loop_state(ws_root: Path, slug: Optional[str]) -> tuple[dict, in
         "prereg_record": state.get("prereg_record"),
         "reopen_count": state.get("reopen_count"),
         "last_verdict": state.get("last_verdict"),
+        "give_up_reason": state.get("give_up_reason"),
         "history": state.get("history"),
     }
     return payload, 200

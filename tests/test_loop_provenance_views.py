@@ -126,6 +126,35 @@ def test_present_loop_state_returns_locked_hash_and_reopen_trail(tmp_path):
     assert body.get("last_verdict", {}).get("roll_up") == "passed"
 
 
+def test_give_up_reason_is_surfaced(tmp_path):
+    """A GIVE_UP loop carries a `give_up_reason` explaining why no model tweak
+    cleared the locked bar; the payload must surface it so the Build tab can
+    render the honest give-up rather than a bare state chip."""
+    if not _HAS_LOOP_STATE:
+        import pytest
+        pytest.skip("viva_superpowers.loop_state not importable in this environment")
+    ws = _make_workspace(tmp_path)
+    reason = ("No mechanism reaches biomass 6.0 — coarse/kinetic/FBA all converge to ~5.0 "
+              "because yield·S0 = 5.0 caps it (mass conservation).")
+    state = {
+        "schema": "model_build_loop/v1", "study": "s1", "question": "q",
+        "state": "GIVE_UP", "iteration": 3,
+        "budget": {"max_iterations": 12, "spent": 3},
+        "locked_tests_hash": "sha256:cafe",
+        "prereg_record": {"locked_at_iteration": 0, "prior_hashes": []},
+        "reopen_count": 0,
+        "last_verdict": {"roll_up": "failed", "gate": "fail"},
+        "give_up_reason": reason,
+        "history": [{"iteration": 3, "edit": "try mechanism fba", "target": "biomass",
+                     "margin_deltas": {}, "gate": "fail"}],
+    }
+    _write_loop_file(ws, "s1", state)
+    body, status = build_study_loop_state(ws, "s1")
+    assert status == 200
+    assert body.get("state") == "GIVE_UP"
+    assert body.get("give_up_reason") == reason
+
+
 def test_loop_state_module_reads_the_same_file_this_worker_writes_the_shape_for(tmp_path):
     """Round-trip through the real `viva_superpowers.loop_state` writer (when
     importable) proves the worker reads the SAME on-disk shape the loop
