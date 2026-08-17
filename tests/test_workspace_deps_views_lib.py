@@ -89,6 +89,24 @@ class TestBuildWorkspaces:
         (ws / "workspace.yaml").write_text(yaml.dump({"name": name}))
         return ws
 
+    def _make_git_ws(self, tmp_path: Path, dirname: str, ws_name: str, origin_url: str) -> Path:
+        """A workspace whose `workspace.yaml` `name` may differ from its real
+        git remote — same shape as sms-ecoli (name: v2ecoli, real repo
+        CovertLabEcoli/sms-ecoli), for item 54 regression coverage."""
+        import subprocess as _sp
+        ws = tmp_path / dirname
+        ws.mkdir(exist_ok=True)
+        (ws / "workspace.yaml").write_text(yaml.dump({"name": ws_name}))
+        env = {"GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+               "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"}
+        run = lambda *a: _sp.run(["git", "-C", str(ws), *a], check=True,
+                                  capture_output=True, text=True, env={**env})
+        _sp.run(["git", "init", "-q", str(ws)], check=True, env={**env})
+        run("remote", "add", "origin", origin_url)
+        run("add", "-A")
+        run("commit", "-q", "-m", "init")
+        return ws
+
     def test_current_only_when_catalog_empty(self, tmp_path, monkeypatch):
         """With empty catalog, result has current + one 'current' workspace row."""
         from vivarium_workbench.lib import workspace_deps_views as wdv
@@ -244,6 +262,70 @@ class TestBuildWorkspaces:
         statuses = [r["status"] for r in result["workspaces"]]
         order = {"current": 0, "running": 1, "stopped": 2, "stale": 3, "missing": 4}
         assert statuses == sorted(statuses, key=lambda s: order.get(s, 99))
+
+    def test_repo_uses_real_git_remote_not_stale_workspace_yaml_name(self, tmp_path, monkeypatch):
+        """Item 54 (Chris Long / cplong): two checkouts sharing a stale
+        `workspace.yaml` `name` (a real forked repo that never renamed it, e.g.
+        sms-ecoli forked from v2ecoli and still declares `name: v2ecoli`) must
+        NOT be merged into one `repo` group — `.repo` must reflect the real git
+        remote, distinct per checkout, while `.name` stays whatever
+        `workspace.yaml` says (unaffected — a different field, different
+        consumers, see the item's own backlog history for why `name` itself
+        can't just be changed)."""
+        from vivarium_workbench.lib import workspace_deps_views as wdv
+
+        ws = self._make_ws(tmp_path, "current-ws")
+        fork = self._make_git_ws(
+            tmp_path, "sms-ecoli-checkout", "v2ecoli",
+            "https://github.com/CovertLabEcoli/sms-ecoli.git",
+        )
+        upstream = self._make_git_ws(
+            tmp_path, "v2ecoli-checkout", "v2ecoli",
+            "https://github.com/vivarium-collective/v2ecoli.git",
+        )
+        monkeypatch.setattr(
+            "viva_superpowers.workspace_catalog.list_workspaces",
+            lambda: [
+                {"name": "v2ecoli", "path": str(fork.resolve())},
+                {"name": "v2ecoli", "path": str(upstream.resolve())},
+            ],
+        )
+        monkeypatch.setattr(
+            "viva_superpowers.workspace_catalog.find_entry",
+            lambda path: None,
+        )
+        result = wdv.build_workspaces(ws)
+        by_path = {r["path"]: r for r in result["workspaces"]}
+        fork_row = by_path[str(fork.resolve())]
+        upstream_row = by_path[str(upstream.resolve())]
+
+        # Same `name` (workspace.yaml is genuinely unchanged) ...
+        assert fork_row["name"] == "v2ecoli"
+        assert upstream_row["name"] == "v2ecoli"
+        # ... but real, distinct repo identity — no more merged "Repo: v2ecoli" group.
+        assert fork_row["repo"] == "sms-ecoli"
+        assert upstream_row["repo"] == "v2ecoli"
+        assert fork_row["repo"] != upstream_row["repo"]
+
+    def test_repo_falls_back_to_name_when_no_git_remote(self, tmp_path, monkeypatch):
+        """A catalog entry with no git remote (or not a git repo at all) still
+        gets a usable, non-empty `.repo` — degrades to `name`, same tolerant
+        shape as `read_workspace_name`, never an empty picker entry."""
+        from vivarium_workbench.lib import workspace_deps_views as wdv
+
+        ws = self._make_ws(tmp_path, "plain-ws")
+        monkeypatch.setattr(
+            "viva_superpowers.workspace_catalog.list_workspaces",
+            lambda: [],
+        )
+        monkeypatch.setattr(
+            "viva_superpowers.workspace_catalog.find_entry",
+            lambda path: None,
+        )
+        result = wdv.build_workspaces(ws)
+        row = result["workspaces"][0]
+        assert row["name"] == "plain-ws"
+        assert row["repo"] == "plain-ws"
 
 
 class TestBuildSystemDepsCheck:
