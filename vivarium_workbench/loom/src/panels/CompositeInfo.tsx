@@ -13,6 +13,11 @@ export interface CompositeInfoProps {
   nParams?: number;
   /** Start expanded (default). */
   defaultOpen?: boolean;
+  // Workbench-parity actions (shown in the bar when provided).
+  onShare?: () => void;
+  shareCopied?: boolean;
+  onDownloadJson?: () => void;
+  onOpenWorkbench?: () => void;
 }
 
 export function CompositeInfo(props: CompositeInfoProps) {
@@ -47,10 +52,24 @@ export function CompositeInfo(props: CompositeInfoProps) {
         {props.library && <span className="cinfobar-lib">{props.library}</span>}
         {counts.length > 0 && <span className="cinfobar-counts">{counts.join(' · ')}</span>}
         <span className="cinfobar-actions">
+          {props.onOpenWorkbench && (
+            <button type="button" className="cinfobar-btn" onClick={props.onOpenWorkbench}
+              title="Open this composite in the full workbench view">⤢ Workbench</button>
+          )}
+          {props.onDownloadJson && (
+            <button type="button" className="cinfobar-btn" onClick={props.onDownloadJson}
+              title="Download this composite as JSON">{'{ } JSON'}</button>
+          )}
+          {props.onShare && (
+            <button type="button" className={'cinfobar-btn' + (props.shareCopied ? ' cinfobar-ok' : '')}
+              onClick={props.onShare} title="Copy a shareable link to this exact view">
+              {props.shareCopied ? '✓ Copied' : '🔗 Share'}
+            </button>
+          )}
           {props.description && (
             <button type="button" className="cinfobar-btn" onClick={() => setOpen((o) => !o)}
               title={open ? 'Hide details' : 'Show details'} aria-expanded={open}>
-              {open ? 'Hide details ▾' : 'Details ▸'}
+              {open ? 'Details ▾' : 'Details ▸'}
             </button>
           )}
           <button type="button" className="cinfobar-btn cinfobar-min" onClick={() => setHidden(true)}

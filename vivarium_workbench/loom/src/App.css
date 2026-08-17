@@ -2305,6 +2305,7 @@ textarea.sr-input {
 }
 .cinfobar-btn:hover { border-color: #4bb3ae; color: #0d6e6b; }
 .cinfobar-min { font-weight: 700; line-height: 1; padding: 2px 9px; }
+.cinfobar-ok { background:#ecfdf5; border-color:#6ee7b7; color:#047857; }
 .cinfobar-desc {
   padding: 2px 14px 10px 34px; font-size: 12.5px; line-height: 1.55; color: #475569;
   max-height: 32vh; overflow: auto;

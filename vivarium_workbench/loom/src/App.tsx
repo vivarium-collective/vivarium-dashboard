@@ -327,6 +327,27 @@ export default function App() {
     });
   }, []);
 
+  // Download the composite as JSON (name · description · parameters · state) —
+  // the workbench card's "{ } JSON" action, available in the standalone loom.
+  const downloadCompositeJson = useCallback(() => {
+    const doc = { name, description, parameters, state };
+    const blob = new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (compositeId ? compositeId.split('.').pop()! : (name || 'composite')) + '.composite.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  }, [name, description, parameters, state, compositeId]);
+
+  // "Pop into" the full workbench view (Modules card + rail) for this composite.
+  const openInWorkbench = useCallback(() => {
+    // The loom is served under the workbench origin (/bigraph-loom/…); the
+    // workbench SPA is the origin root. Carry the composite id so it can focus.
+    const url = '/' + (compositeId ? ('?composite=' + encodeURIComponent(compositeId)) : '');
+    window.open(url, '_blank', 'noopener');
+  }, [compositeId]);
+
   const readyFiredRef = useRef(false);
   // React Flow instance, captured via onInit, so Re-layout can frame the
   // freshly-consolidated set (App is the ReactFlowProvider's PARENT, so it can't
@@ -1909,6 +1930,10 @@ export default function App() {
                     || (v as { _type?: string })._type === 'step')).length
               : undefined}
             nParams={Object.keys(parameters).length || undefined}
+            onShare={onCopyViewLink}
+            shareCopied={shareCopied}
+            onDownloadJson={state ? downloadCompositeJson : undefined}
+            onOpenWorkbench={compositeId ? openInWorkbench : undefined}
           />
         )}
         <div style={{ flex: 1, minHeight: 0, position: 'relative' }}>
