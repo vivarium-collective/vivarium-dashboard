@@ -708,11 +708,101 @@
       });
   }
 
-  // Results tab (Evidence): per-run raw emitter store downloads. Slice 1
-  // (study-spine reorg, spec §3.3) is downloads-only — per-store preview
-  // (sparkline + first/last/min/max) is a later task.
+  // Results tab (Evidence) — per-store preview of the study's LATEST run
+  // (study-spine reorg, plan Task 4): a compact inline-SVG sparkline + a
+  // formatted number, shared by the preview table below.
+  function _resultsSparklineSvg(values) {
+    values = (values || []).filter(function (v) { return typeof v === 'number' && isFinite(v); });
+    if (!values.length) return '<span class="muted" style="font-size:0.8em">—</span>';
+    var w = 90, h = 22;
+    var min = Math.min.apply(null, values), max = Math.max.apply(null, values);
+    var range = (max - min) || 1;
+    var pts = values.map(function (v, i) {
+      var x = values.length > 1 ? (i / (values.length - 1)) * w : w / 2;
+      var y = h - ((v - min) / range) * h;
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+    return '<svg width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" ' +
+      'style="display:block" aria-hidden="true"><polyline points="' + pts +
+      '" fill="none" stroke="#6366f1" stroke-width="1.5"/></svg>';
+  }
+
+  function _resultsFmtNum(v) {
+    if (v === null || v === undefined || typeof v !== 'number' || !isFinite(v)) return '—';
+    var a = Math.abs(v);
+    if (a !== 0 && (a < 1e-3 || a >= 1e6)) return v.toExponential(2);
+    return String(Math.round(v * 1000) / 1000);
+  }
+
+  // Fetches /api/study-results (lib/results_views.build_study_results) and
+  // renders the "Latest run preview" table (#results-preview): one row per
+  // emitted scalar store, each with a sparkline + first/last/min/max + a
+  // per-store download link. Preview only — full arrays stay in the
+  // downloads (this endpoint only ever returns a bounded, downsampled
+  // slice), so the per-store link reuses the SAME whole-run download
+  // (/api/simulation-run-download) the raw-data-list below already offers;
+  // there is no separate per-store extraction endpoint.
+  var _resultsPreviewLoaded = false;
+  function _loadResultsPreview(force) {
+    var mount = document.getElementById('results-preview');
+    if (!mount) return;
+    if (_resultsPreviewLoaded && !force) return;
+    _resultsPreviewLoaded = true;
+    var slug = studyName();
+    var path = '/api/study-results?study=' + encodeURIComponent(slug);
+    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    fetch(url).then(function (r) { return r.text(); }).then(function (t) {
+      var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) {}
+      if (!d.present) {
+        mount.innerHTML = '<p class="empty-message">' +
+          escapeHtmlForTests(d.reason || 'No run data to preview yet.') + '</p>';
+        return;
+      }
+      var stores = d.stores || [];
+      if (!stores.length) {
+        mount.innerHTML = '<p class="empty-message">The latest run (' +
+          escapeHtmlForTests(String(d.run_label || d.run_id || '')) +
+          ') emitted no scalar observables to preview.</p>';
+        return;
+      }
+      var dlHref = (window.__BASE_PATH__ || "") + '/api/simulation-run-download?run_id=' + encodeURIComponent(d.run_id || '');
+      mount.innerHTML =
+        '<p class="muted" style="font-size:0.85em;margin:0 0 8px">From run <code>' +
+        escapeHtmlForTests(String(d.run_label || d.run_id || '')) + '</code></p>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:0.86em">' +
+        '<thead><tr style="text-align:left;border-bottom:1px solid #e5e7eb">' +
+        '<th style="padding:5px 8px">Path</th><th style="padding:5px 8px">dtype</th>' +
+        '<th style="padding:5px 8px">Sparkline</th>' +
+        '<th style="padding:5px 8px;text-align:right">First</th>' +
+        '<th style="padding:5px 8px;text-align:right">Last</th>' +
+        '<th style="padding:5px 8px;text-align:right">Min</th>' +
+        '<th style="padding:5px 8px;text-align:right">Max</th>' +
+        '<th style="padding:5px 8px"></th></tr></thead><tbody>' +
+        stores.map(function (s) {
+          return '<tr style="border-bottom:1px solid #f3f4f6">' +
+            '<td style="padding:5px 8px"><code style="font-size:0.85em">' + escapeHtmlForTests(s.path) + '</code></td>' +
+            '<td style="padding:5px 8px">' + escapeHtmlForTests(s.dtype || '') + '</td>' +
+            '<td style="padding:5px 8px">' + _resultsSparklineSvg(s.sparkline) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.first) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.last) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.min) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right">' + _resultsFmtNum(s.max) + '</td>' +
+            '<td style="padding:5px 8px;text-align:right"><a class="action-btn" download href="' + dlHref + '">⬇</a></td>' +
+            '</tr>';
+        }).join('') + '</tbody></table>';
+    }).catch(function () {
+      mount.innerHTML = '<p class="empty-message">Could not load the results preview.</p>';
+    });
+  }
+  window._loadResultsPreview = _loadResultsPreview;
+
+  // Results tab (Evidence): per-run raw emitter store downloads — the
+  // complete list of runs (not just the latest), each downloadable in full.
+  // The per-store PREVIEW of the latest run (sparkline + first/last/min/max)
+  // is _loadResultsPreview above; _loadResults triggers both.
   var _rawDataLoaded = false;
   function _loadResults(force) {
+    _loadResultsPreview(force);
     var mount = document.getElementById('raw-data-list');
     if (!mount) return;
     if (_rawDataLoaded && !force) return;

@@ -984,24 +984,32 @@
 
 </section>
 
-{# ─── Results tab (Evidence): raw simulation data downloads ───────────────
-   Study-spine reorg (spec §1, §3.3): relocated out of the Simulations
-   panel's old "Study artifacts" strip. This slice is downloads-only — the
-   per-run emitter store (zarr/parquet/runs.db), one row per run plus a
-   bulk "download all" convenience; per-store preview (sparkline +
-   first/last/min/max) is a later task. `id="exports-downloads"` stays the
-   jump target for the Readouts tab's pointer link, now
-   `_gotoStudyTab('results', 'exports-downloads')`. `#raw-data-download-all`
-   is a client-side sequential-download button (populated/shown by
-   _loadResults, triggered by _downloadAllRawExports) — same element ids as
-   before so those loaders bind unchanged; only the markup + panel moved. #}
+{# ─── Results tab (Evidence): latest-run preview + raw simulation data
+   downloads ────────────────────────────────────────────────────────────
+   Study-spine reorg (spec §1, §3.3; plan Task 4): relocated out of the
+   Simulations panel's old "Study artifacts" strip (downloads-only, Task 1),
+   then upgraded with a per-store PREVIEW of the study's latest run —
+   sparkline + first/last/min/max per emitted store path, via
+   /api/study-results -> lib/results_views.build_study_results. Full arrays
+   stay in the downloads below (never fetched into this preview).
+   `id="exports-downloads"` stays the jump target for the Readouts tab's
+   pointer link (`_gotoStudyTab('results', 'exports-downloads')`).
+   `#raw-data-download-all` is a client-side sequential-download button
+   (populated/shown by _loadResults, triggered by _downloadAllRawExports) —
+   same element ids as before so those loaders bind unchanged. #}
 <section class="study-tab-panel" data-kind="results" id="panel-results" hidden>
 
 <div class="overview-section" id="results-section">
   <h2>Results</h2>
-  <p class="muted">Raw simulation data from this study's runs — the per-run emitter store (zarr/parquet/runs.db). Download the full store for each run below.</p>
+  <p class="muted">What came back from this study's runs — a per-store preview of the latest run, plus the raw emitter store (zarr/parquet/runs.db) for every run.</p>
 
-  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+  <h4>Latest run preview</h4>
+  <p class="muted" style="font-size:0.9em">Per-store sparkline + first/last/min/max from the most recent run's emitted trajectory. This is a downsampled PREVIEW, not the full data — use the per-store or Download-all links for the complete arrays.</p>
+  <div id="results-preview" data-study="{{ name }}">
+    <p class="empty-message">Loading results preview…</p>
+  </div>
+
+  <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:22px">
     <span class="muted" id="exports-downloads" style="margin-right:auto;font-weight:600">Raw simulation data</span>
     <button type="button" id="raw-data-download-all" class="btn-mini" style="display:none"
             onclick="_downloadAllRawExports()">⬇ Download all raw data</button>

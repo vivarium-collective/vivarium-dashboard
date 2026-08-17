@@ -109,6 +109,7 @@ from vivarium_workbench.lib import investigation_status
 from vivarium_workbench.lib import investigation_views as _inv_views
 from vivarium_workbench.lib import observables_views as _obs_views
 from vivarium_workbench.lib import readouts_views as _readouts_views
+from vivarium_workbench.lib import results_views as _results_views
 from vivarium_workbench.lib import report_views as _report_views
 from vivarium_workbench.lib import cite_bands_views as _cite_bands_views
 from vivarium_workbench.lib import rigor_views as _rigor_views
@@ -2731,6 +2732,33 @@ def create_app() -> FastAPI:
         body, status = _readouts_views.build_study_readouts(ws, (study or "").strip())
         if status == 200:
             return StudyReadouts.model_validate(body)
+        return JSONResponse(status_code=status, content=body)
+
+    @app.get(
+        "/api/study-results",
+        tags=["Data, inputs & references"],
+        summary="Per-store PREVIEW of the study's latest run (Evidence › Results)",
+    )
+    def study_results(
+        study: str = "",
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Per-store preview (sparkline + first/last/min/max) of the study's
+        LATEST run, backing the Evidence › Results panel. Full arrays stay in
+        the download (``/api/simulation-run-download``) — this route only ever
+        returns a bounded, downsampled slice.
+
+        Always HTTP 200 — a dynamic/passthrough shape (mirrors ``/api/study-
+        audit``), so no ``response_model``:
+        - ``{"present": False, "reason": "..."}`` — no runs yet, invalid slug,
+          the latest run has no on-disk store, or its store couldn't be read.
+        - ``{"present": True, "run_id", "run_label", "started_at",
+          "completed_at", "status", "stores": [{"path", "dtype", "first",
+          "last", "min", "max", "sparkline"}]}`` — the preview.
+
+        Library-backed via ``lib.results_views.build_study_results``.
+        """
+        body, status = _results_views.build_study_results(ws, (study or "").strip())
         return JSONResponse(status_code=status, content=body)
 
     @app.get(

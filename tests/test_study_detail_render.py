@@ -1881,6 +1881,26 @@ def test_panel_results_and_panel_analyses_sections_exist(tmp_path):
     assert 'id="panel-visualize"' in html, "Visualizations panel must still be present"
 
 
+# ---------------------------------------------------------------------------
+# Study-spine reorg, Task 4 (spec §3.3; plan Task 4): the Results panel gains
+# a per-store PREVIEW of the study's latest run (sparkline + first/last/
+# min/max, /api/study-results -> lib/results_views), upgrading it from
+# downloads-only (Task 1). The existing raw-data download group is untouched.
+# ---------------------------------------------------------------------------
+
+def test_results_panel_has_latest_run_preview_mount(tmp_path):
+    html = _render_minimal(tmp_path)
+    results_panel = html[html.index('id="panel-results"'):html.index('id="panel-analyses"')]
+    assert 'id="results-preview"' in results_panel
+    # The preview mount is not a bare placeholder for downloads-only markup —
+    # it's introduced by its own heading, distinct from the raw-data group.
+    assert 'Latest run preview' in results_panel
+    # Existing downloads group (Task 1) still present, unchanged element ids.
+    assert 'id="raw-data-list"' in results_panel
+    assert 'id="raw-data-download-all"' in results_panel
+    assert 'id="exports-downloads"' in results_panel
+
+
 def test_analyses_and_raw_data_markup_no_longer_inside_panel_simulate(tmp_path):
     html = _render_minimal(tmp_path)
     i = html.index('id="panel-simulate"')
