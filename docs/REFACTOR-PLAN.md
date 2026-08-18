@@ -16,6 +16,13 @@
 > near-term plan (§5C) is deliberately low-risk deployment of the *current* code,
 > with the structural refactor sequenced *after* the internal demo and validated on
 > a persistent Dev site. Please comment inline / in the tracking issue.
+>
+> **⚠ Status reconciliation, 2026-08-13 (Jim + Claude):** roughly 250 PRs landed
+> between 2026-07-24 and 2026-08-13 (v0.3.4 → v0.3.42). **§0A below** reconciles
+> this RFC against what actually shipped: which phases are done / partially done /
+> reshaped, the **three competing "Phase" numbering schemes** now in circulation,
+> and the new hurdles the burst surfaced. The body of the RFC is left as written
+> (it is the record of the 2026-07-07 design); read §0A first for current truth.
 
 ---
 
@@ -42,6 +49,94 @@ The **single most important decision** (which changes almost everything
 downstream) is the tenancy model — §2.1. This RFC recommends **single-tenant
 hosted appliance first, designed so multi-tenant is reachable later**, and
 sequences the work accordingly.
+
+---
+
+## 0A. Status reconciliation (2026-08-13)
+
+> Written after the 2026-07-24 → 2026-08-13 burst (~250 PRs, v0.3.4 → v0.3.42).
+> This section is the *only* part of the RFC updated; everything below it reads
+> as of 2026-07-21. Where a phase's reality diverged from the plan, that is
+> stated plainly rather than retrofitted.
+
+### 0A.1 Disambiguation first — three "Phase" numbering schemes now exist
+
+Recent PR titles do **not** use this RFC's phase numbers. Three schemes are live:
+
+| Scheme | Where it lives | What its numbers mean |
+|---|---|---|
+| **This RFC** (Phases 0–5, §5/§5A/§5B) | this document | the AWS-hosting campaign: boundary seed → identity/statelessness → durable runs → cloud storage → hardening → multi-tenant |
+| **Superpowers rewire** ("Phase 2.1a–k", "Phase 3") | the viva-superpowers decoupling plan (PRs #720–#742) | moving study/investigation logic from the plugin into workbench lib + locking the import surface |
+| **Umbrella unification** ("Layer 0–3") | [`docs/superpowers/specs/2026-07-29-framework-unification-design.md`](superpowers/specs/2026-07-29-framework-unification-design.md) (#676) | unifying the workbench on bigraph-schema + process-bigraph: one object (bigraph), one operation (`fill`), one law (`is_ground`) |
+
+When reading git history: "Phase 2.1g" is the rewire plan, **not** this RFC's
+Phase 2; "Layer 2" is the umbrella spec, **not** this RFC's Phase/§ numbering.
+
+### 0A.2 Phase status against this RFC
+
+| RFC phase | Status | Evidence |
+|---|---|---|
+| **0. Boundary seed + guardrails** | **~90% — one real gap** | Landed: `ScientificContent` read port + git adapter, layout-driven `lib/staging.py` allow-list, import-linter (now **two** contracts: ports-purity + the #742 de-vendor/allowlist ban), a real JS harness (`tests/js/`, in CI), the full duration-balanced sharded pytest gate, a ruff `F,E722` gate (#756). **Gap: the AuthoredRecord *write core* was never built** — `lib/ports/scientific_content.py` still has zero write verbs, even though the commit-model fork it was blocked on resolved to **(a) deferred + commit-all** (§5A). |
+| **1. Identity + statelessness** | **Statelessness DONE; identity NOT STARTED** | The §2A.6/§2A.7 spine shipped and exceeded spec: per-request `WorkspaceContext` + `SessionRegistry`, **session-per-tab** (`docs/session-binding.md`, #538–#550), `os.chdir` removed (#529), the boot-time `sys.path.insert` removed (#536) after every `/api/*` in-process workspace import moved to the **env worker** (#530–#536), session-isolated remote-build clones (#729, #763), worktree→main-venv resolution (#681). The Phase-1 exit "N concurrent sessions on distinct workspaces, no cross-talk" is effectively met. **No `Principal`, no OIDC, no app auth exists in code** — perimeter-only per §2B.4 remains the (deliberate) posture. |
+| **2. Durable runs (`RunBackend`)** | **Reshaped — being reached via the umbrella spec, not the port** | The planned engine unification did not happen: the in-request `python -c` engine is still live (`lib/investigation_run_views.py`). Instead the umbrella spec (#676) declares those orchestrators "collapse onto the process-bigraph step-network engine," and that path is underway: **investigation-as-Composite** (#715), topological resolve + **content-addressed artifact caching** (#610, #686, #689), verdict artifacts → evidence chains (#618/#619), pull-or-compute / continue-from-here (#684). Treat `docs/run-backend.md` as **superseded-in-direction** pending reconciliation with the umbrella spec. |
+| **3. Cloud storage + repo split** | **Not started** — but the reproducibility triple got real legs: env-versioned **rerun spine** (#628), `vivarium-workbench sync <repo>@<ref>` (#640), content-addressed artifacts (#686/#689), L0–L5 reproducibility audit (#624). |
+| **4. Hardening** | **Mixed — coupling won, god-files lost** | Won: plugin de-vendor + de-shim (#720/#723), ~15 new `/api/*` endpoints replacing plugin-held logic (#724–#741), import-surface allowlist (#742), dead-module removal (#756/#757), `viva-workspace` extraction deleting the duplicated `WorkspacePaths` (#762). Lost ground, then a reversal: `walkthrough.js` peaked at **22,072 lines** before the server-side investigation-report generator (#873/#876) deleted the legacy client-side builder (#878, −4.9k lines → **16,470**); `api/app.py` is still growing (**8,077 lines** as of 2026-08-18). The "no file > 1.5k lines" exit remains distant, but the report-generator move shows the workable pattern: relocate frontend logic server-side, then delete. |
+| **5. Multi-tenant** | Untouched (as planned). |
+
+### 0A.3 New hurdles surfaced by the burst (not anticipated above)
+
+1. **The canonical workspace went private and moved** — `CovertLabEcoli/sms-ecoli`
+   replaced `vivarium-collective/v2ecoli`. Build-time `git clone` in the image
+   broke CI outright (no credential bridge into GH Actions) → **"Fix B"** (item
+   39, #786/#791–#793): the Dockerfile now COPYs the workspace env from its
+   **per-commit ECR image** via a mandatory `WORKSPACE_IMAGE` build arg, and the
+   release-tag auto-build trigger was **removed** after v0.3.38 shipped broken.
+   Consequence: image builds are manual-parameterized; §2B's "demo appliance"
+   supply chain is more operationally involved than this RFC assumed.
+2. **Cross-repo lock skew is now load-bearing.** sms-ecoli's lock pins
+   process-bigraph/bigraph-schema below what the workbench needs, so the
+   Dockerfile **force-patches exact commits into the copied venv** (#802). This
+   is precisely the class of problem the §2A.7 `EnvironmentResolver` was designed
+   to dissolve — and its **managed local adapter (clone + `uv sync` per session)
+   is still dormant** (`session_env.py`: "wired + tested, dormant"). The §2A.5
+   open item "relax the `==3.12.12` pin" is therefore still open, and now bites
+   harder.
+3. **Ecosystem rebrand churn as a failure mode.** The `pbg-*` → `viva-*` renames
+   (superpowers #577, emitters #801, template #702, plus new shared moving deps
+   `viva-workspace` #762 and `viva-marketplace` #711, both sourced at
+   `branch = "main"`) reproduce the issue-#483 hazard — an upstream rename/move
+   breaks this repo with no local commit — at ecosystem scale. The import-surface
+   allowlist (#742) guards *code* drift but not *packaging* drift; pin discipline
+   on the `viva-*` git sources is the open mitigation.
+4. **Analysis coupling: generalized halfway.** `build_analysis_options` now
+   resolves against the **live served workspace, not the image's baked-in copy**
+   (#791) and analysis tools are workspace-scoped (#714) — retiring the silent
+   stale-registry failure. But discovery is still v2ecoli-shaped (no
+   `workbench_analyses`-style advertised module in viva-template), so the last
+   `import v2ecoli` sites in the env worker remain guarded, not gone.
+5. **Operational hardening this RFC never enumerated:** ecoli-scale emit-paths
+   memory blowup (#778 — default to *declared* paths, not all stores), a Stop
+   control for frozen in-flight runs (#776), env-worker per-call timeout override
+   (#716), `uv` conflicting-URLs trap for worktree checkouts (#762 notes).
+
+### 0A.4 What this means for sequencing (proposed, for review)
+
+- **Identity (Phase 1's other half) and the AuthoredRecord write core are now the
+  two oldest unstarted commitments** of this RFC. Both remain valid; neither is
+  blocked by anything in the burst.
+- **Reconcile Phase 2 with the umbrella spec** before more engine work lands:
+  either the step-network engine *is* the local `RunBackend` adapter (likely —
+  the port becomes a thin seam over it), or the port dissolves. Decide on paper
+  in `docs/run-backend.md`, not implicitly in PRs.
+- **Wire the dormant managed materialization** (clone + `uv sync` → per-session
+  venv on the serve path). It is the single change that retires hurdles 1–2's
+  root cause (the baked-in workspace env), drops the `==3.12.12` lock pin, and
+  fulfills §2A.7's "drops v2ecoli from the workbench lock" promise.
+- **God-file paydown (Phase 4) needs a forcing function** — both files grew ~40%
+  during the burst, and while #878 then reversed `walkthrough.js` by −4.9k lines
+  (the relocate-server-side-then-delete pattern, worth repeating), `app.py` keeps
+  growing; without a ratchet (e.g. a lines-per-file CI warning or a routers-split
+  milestone) the exit criterion will keep receding.
 
 ---
 
@@ -276,6 +371,29 @@ weakest → strongest:
   never in the pod — retiring the synchronous in-process study-run
   post-processing. Drops `v2ecoli` / `3.12.12` from the workbench lock. See §2A.7.
 
+- **Statelessness shipped** (2026-07-22, see §0A.2) — env-worker migration of
+  every `/api/*` in-process workspace import (#530–#536), `os.chdir` (#529) and
+  the boot-time `sys.path.insert` (#536) removed; §2A.6/§2A.7 realized in code.
+- **Session-per-tab** (2026-07-22/23, `docs/session-binding.md`, #538–#550) —
+  one workspace per browser tab, pinned for life; per-tab `X-VW-Session`
+  identity; spawn by catalog name / build id; favicon-by-status.
+- **Umbrella unification spec adopted** (2026-07-29, #676) — the workbench
+  unifies on bigraph-schema + process-bigraph (`fill` / `is_ground`); the
+  bespoke run orchestrators collapse onto the step-network engine. **Reshapes
+  this RFC's Phase 2** (see §0A.1/§0A.2 — the "Layer 0–3" numbering is that
+  spec's, not this RFC's).
+- **Plugin seam decoupled** (2026-07-25 → 08-08, the "Phase 2.1/3" rewire PRs
+  #720–#742) — de-vendored copies, logic moved into workbench lib behind ~15 new
+  `/api/*` endpoints, import surface locked to an allowlist in CI.
+- **Workspace-image supply chain reworked ("Fix B", item 39)** (2026-08,
+  #786/#791–#793, #802) — the image no longer git-clones a workspace repo; it
+  COPYs the per-commit ECR image named by a mandatory `WORKSPACE_IMAGE` arg, and
+  the release auto-build trigger is gone. See §0A.3 hurdles 1–2.
+- **Ecosystem rebrand `pbg-*` → `viva-*`** (2026-07/08) — superpowers (#577),
+  emitters (#801), template (#702); new shared deps `viva-workspace` (#762,
+  deletes the duplicated `WorkspacePaths`) and `viva-marketplace` (#711). The
+  workbench repo/package name itself is unchanged.
+
 **Still open (small)**
 - **Relax the workbench Python pin after `EnvironmentResolver`.** The demo track
   adds `[tool.uv] environments = ["python_full_version == '3.12.12'"]` to
@@ -285,7 +403,10 @@ weakest → strongest:
   Accepted short-term (pre-demo). Broaden back to `>=3.11` once the
   `EnvironmentResolver` port (§2A) resolves the runtime env over a boundary
   instead of importing v2ecoli in-process — at which point the workbench's lock
-  no longer inherits v2ecoli's interpreter pin.
+  no longer inherits v2ecoli's interpreter pin. *(Status 2026-08-13: still open
+  and biting harder — the managed materialization adapter remains dormant while
+  the image now force-patches lock skew by hand; see §0A.3 hurdles 1–2 and
+  §0A.4.)*
 - **Science/environment *repo* split** (Q2 target): when, and its pbg-template
   blast radius (how `build_core()` discovery changes when env is its own repo).
 - **"Make work permanent" under an S3 record:** keep the branch + PR *review*
@@ -862,6 +983,13 @@ gets its own import-linter rule.** Phase 0 (§5A) built `AuthoredRecord`; the re
   `switch` rebinds one session only.*
 
 ### Phase 2 — Durable run execution *(introduces `RunBackend`)*
+
+> **⚠ Direction reshaped (2026-08-13, see §0A.2).** The umbrella unification
+> spec (#676) reaches this phase's goal by collapsing the bespoke orchestrators
+> onto the process-bigraph **step-network engine** rather than by introducing a
+> standalone `RunBackend` port. Reconcile `docs/run-backend.md` with that spec
+> before further engine work; the sketch below is the pre-umbrella framing.
+
 - **Where it goes:** runs survive a restart and can scale out; the two-engines
   liability is resolved.
 - **How (rough):** define the `RunBackend` port. **Local adapter** = unify both of
