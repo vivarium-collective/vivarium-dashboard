@@ -107,3 +107,22 @@
   .ptrack-fill { transition: none; }
   .ptrack-spin { animation: none; opacity: 0.85; }
 }
+
+/* Dark theme. Same token/hex idiom as style.css's :root[data-theme="dark"]
+ * rules: var(--token) for neutral surfaces/text, explicit hex for the
+ * saturated done/active/failed status colors (reusing the exact tints
+ * style.css already uses for the same three states elsewhere). */
+:root[data-theme="dark"] .ptrack{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .ptrack-note{ color:var(--text); }
+:root[data-theme="dark"] .ptrack-note .inv-run-err{ color:#fca5a5; }
+:root[data-theme="dark"] .ptrack-seg{ background:var(--surface-3); }
+:root[data-theme="dark"] .ptrack-seg-active{ background:rgba(59,130,246,0.16); }
+:root[data-theme="dark"] .ptrack-seg-failed{ background:rgba(220,38,38,0.16); }
+:root[data-theme="dark"] .ptrack-label{ color:var(--text-muted); }
+:root[data-theme="dark"] .ptrack-label-done{ color:#86efac; }
+:root[data-theme="dark"] .ptrack-label-active{ color:#93c5fd; }
+:root[data-theme="dark"] .ptrack-label-failed{ color:#fca5a5; }
+:root[data-theme="dark"] .ptrack-meta{ color:var(--text-muted); }
+:root[data-theme="dark"] .ptrack-pct{ color:#93c5fd; }
+:root[data-theme="dark"] .ptrack-steptext{ color:var(--text-muted); }
+:root[data-theme="dark"] .ptrack-detail{ color:var(--text-muted); }

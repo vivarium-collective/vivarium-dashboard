@@ -263,6 +263,75 @@ body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: #94a3b8; }
 .viv-wsp-legend b { font-weight: 700; }
 .viv-wsp-settings { color: #6366f1; text-decoration: none; font-weight: 600; }
 .viv-wsp-settings:hover { text-decoration: underline; }
+/* Dark theme. The picker's a fixed-position popover (escapes the rail's own
+   dark styling context), so it needs its own coverage — same token/hex idiom
+   as everywhere else, indigo accents via the rgba(hue,alpha) idiom already
+   used for .proc-kind-composite, "current" row via the same green tint
+   already used for .inv-run-done. */
+:root[data-theme="dark"] .viv-wsp-trigger { color: var(--text); }
+:root[data-theme="dark"] .viv-wsp-trigger:hover { background: var(--hover); }
+:root[data-theme="dark"] .viv-wsp-source-btn { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-wsp-source-btn:hover { background: rgba(99,102,241,0.16); color: #a5b4fc; }
+:root[data-theme="dark"] .viv-wsp-trigger-label,
+:root[data-theme="dark"] .viv-wsp-trigger-branch,
+:root[data-theme="dark"] .viv-wsp-trigger-caret,
+:root[data-theme="dark"] .viv-wsp-stopped,
+:root[data-theme="dark"] body.snapshot .viv-wsp-trigger .viv-wsp-dot { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-wsp-menu { background: var(--surface); border-color: var(--border); box-shadow: 0 14px 40px rgba(0,0,0,.45); }
+:root[data-theme="dark"] .viv-wsp-head { border-bottom-color: var(--border-faint); }
+:root[data-theme="dark"] .viv-wsp-search { border-color: var(--border-2); background: var(--field); color: var(--text); }
+:root[data-theme="dark"] .viv-wsp-search:focus { background: var(--surface); }
+:root[data-theme="dark"] .viv-wsp-row { color: var(--text); }
+:root[data-theme="dark"] .viv-wsp-row.active,
+:root[data-theme="dark"] .viv-wsp-row:hover { background: var(--hover); }
+:root[data-theme="dark"] .viv-wsp-row.is-current { background: rgba(22,163,74,0.16); }
+:root[data-theme="dark"] .viv-wsp-tail { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-wsp-row.is-current .viv-wsp-tail { color: #86efac; }
+:root[data-theme="dark"] .viv-wsp-actions { background: linear-gradient(90deg, transparent 0%, var(--hover) 22%); }
+:root[data-theme="dark"] .viv-wsp-act { border-color: var(--border-2); background: var(--surface-2); color: var(--text-muted); }
+:root[data-theme="dark"] .viv-wsp-act:hover { border-color: var(--border-2); background: var(--hover); }
+:root[data-theme="dark"] .viv-wsp-act-open { background: rgba(99,102,241,0.16); border-color: rgba(99,102,241,0.4); color: #a5b4fc; }
+:root[data-theme="dark"] .viv-wsp-act-open:hover { background: rgba(99,102,241,0.26); }
+:root[data-theme="dark"] .viv-wsp-pin:hover { background: rgba(99,102,241,0.16); }
+:root[data-theme="dark"] .viv-wsp-empty { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-wsp-foot { border-top-color: var(--border-faint); background: var(--surface-2); color: var(--text-muted); }
+:root[data-theme="dark"] .viv-wsp-settings { color: var(--link); }
+/* Dark theme for the rest of this block's confirmed-live selectors (verified
+   against the app's own actually-loaded scripts + rendered template markup —
+   several sibling classes here belong to source-switch.js/workspace-switcher.js,
+   which are deliberately not loaded, so left unstyled on purpose). */
+:root[data-theme="dark"] .modal-box { background: var(--surface); }
+:root[data-theme="dark"] .modal-box input,
+:root[data-theme="dark"] .modal-box select,
+:root[data-theme="dark"] .modal-box textarea { border-color: var(--border-2); background: var(--field); color: var(--text); }
+:root[data-theme="dark"] .modal-close { color: var(--text-muted); }
+:root[data-theme="dark"] .form-error { color: #fca5a5; }
+:root[data-theme="dark"] .action-btn { border-color: var(--border-2); background: var(--surface-2); color: var(--text-muted); }
+:root[data-theme="dark"] .action-btn:hover { background: var(--hover); border-color: var(--border-2); }
+:root[data-theme="dark"] .icon-btn { border-color: var(--border-2); background: var(--surface-2); color: var(--text-muted); }
+:root[data-theme="dark"] .icon-btn:hover { background: var(--hover); color: var(--text); border-color: var(--border-2); }
+:root[data-theme="dark"] .emitter-sqlite { background: var(--surface-3); color: var(--text-muted); }
+:root[data-theme="dark"] .emitter-parquet { background: rgba(245,158,11,0.15); color: #fcd34d; }
+:root[data-theme="dark"] .emitter-xarray { background: rgba(20,184,166,0.16); color: #5eead4; }
+:root[data-theme="dark"] .emitter-none { color: var(--text-muted); }
+:root[data-theme="dark"] .origin-remote { background: rgba(59,130,246,0.16); color: #93c5fd; }
+:root[data-theme="dark"] .origin-local { color: var(--text-muted); }
+:root[data-theme="dark"] .action-btn--secondary { border-color: rgba(220,38,38,0.4); background: rgba(220,38,38,0.16); color: #fca5a5; }
+:root[data-theme="dark"] .action-btn--secondary:hover { background: rgba(220,38,38,0.26); }
+:root[data-theme="dark"] .action-btn-small { border-color: rgba(220,38,38,0.4); background: rgba(220,38,38,0.16); color: #fca5a5; }
+:root[data-theme="dark"] .action-btn-small:hover { background: rgba(220,38,38,0.26); }
+:root[data-theme="dark"] .btn-mini { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.16); }
+:root[data-theme="dark"] .btn-mini:hover { background: rgba(59,130,246,0.26); }
+:root[data-theme="dark"] .section-lead { color: var(--text-muted); }
+:root[data-theme="dark"] #run-tests-output { background: var(--surface-2); border-color: var(--border-2); }
+:root[data-theme="dark"] #run-tests-spinner { color: var(--text-muted); }
+:root[data-theme="dark"] .panel-lead { color: var(--text-muted); }
+:root[data-theme="dark"] .status-pill.installed { background: rgba(22,163,74,0.16); color: #86efac; }
+:root[data-theme="dark"] .status-pill.not_installed { background: rgba(245,158,11,0.15); color: #fcd34d; }
+:root[data-theme="dark"] .viv-workspace-switcher-glyph { color: #86efac; }
+:root[data-theme="dark"] .viv-ws-repo-link:hover,
+:root[data-theme="dark"] .viv-ws-repo-link:hover .viv-ws-gh-mark { color: var(--text); }
+:root[data-theme="dark"] .viv-ws-gh-mark { color: var(--text-muted); }
 /* The workspace-name chip is the SOURCE SWITCHER trigger: a small status dot +
    the current source name under the Vivarium brand. Click to switch local
    workspace / remote build (source-switch.js opens a dropdown below it). */
@@ -569,6 +638,56 @@ a.viv-bs-commit:hover { text-decoration: underline; }
   flex: 0 0 auto;
 }
 .viv-iset-menu-row-peer:hover .viv-iset-menu-row-arrow { color: #0366d6; }
+/* Dark theme: Investigation switcher popover (.viv-iset-menu-*, live via
+   investigation-switcher.js), Source page title, and the Branch/Source panel
+   (.viv-bs-*, live via branch-source.js — its own .viv-bs-prov-* card already
+   had partial dark coverage above; the rest of the panel didn't). */
+:root[data-theme="dark"] .viv-iset-menu { background: var(--surface); border-color: var(--border); box-shadow: 0 12px 28px rgba(0,0,0,.45); }
+:root[data-theme="dark"] .viv-iset-menu-header { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-iset-menu-row { border-top-color: var(--border-faint); }
+:root[data-theme="dark"] .viv-iset-menu-row:hover,
+:root[data-theme="dark"] .viv-iset-menu-row:focus { background: var(--hover); }
+:root[data-theme="dark"] .viv-iset-menu-row-current { background: rgba(59,130,246,0.16); }
+:root[data-theme="dark"] .viv-iset-menu-row-current:hover { background: rgba(59,130,246,0.26); }
+:root[data-theme="dark"] .viv-iset-menu-row-title { color: var(--text); }
+:root[data-theme="dark"] .viv-iset-menu-forget { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-iset-menu-forget:hover { color: #fca5a5; background: rgba(220,38,38,0.16); }
+:root[data-theme="dark"] .viv-iset-menu-row-slug { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-iset-menu-row-current-tag { color: #93c5fd; }
+:root[data-theme="dark"] .viv-iset-menu-row-newtab { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-iset-menu-row:hover .viv-iset-menu-row-newtab { color: var(--link); }
+:root[data-theme="dark"] .viv-iset-menu-loading,
+:root[data-theme="dark"] .viv-iset-menu-empty,
+:root[data-theme="dark"] .viv-iset-menu-error { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-iset-menu-error { color: #fca5a5; }
+:root[data-theme="dark"] .viv-iset-menu-divider { border-top-color: var(--border); }
+:root[data-theme="dark"] .viv-iset-menu-new { color: var(--link); }
+:root[data-theme="dark"] .viv-iset-menu-new:hover { background: var(--hover); }
+:root[data-theme="dark"] .viv-iset-menu-section { color: var(--text-muted); border-top-color: var(--border); background: var(--surface-2); }
+:root[data-theme="dark"] .viv-iset-menu-row-arrow { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-iset-menu-row-peer:hover .viv-iset-menu-row-arrow { color: var(--link); }
+:root[data-theme="dark"] #page-github .page-title { color: var(--text); }
+:root[data-theme="dark"] .viv-bs-title { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-bs-key { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-bs-select,
+:root[data-theme="dark"] .viv-bs-commit-select { border-color: var(--border-2); background: var(--field); color: var(--text); }
+:root[data-theme="dark"] .viv-bs-toggle { border-color: var(--border-2); background: var(--surface-2); color: var(--text-muted); }
+:root[data-theme="dark"] .viv-bs-toggle.active { background: var(--surface); color: #a5b4fc; }
+:root[data-theme="dark"] .viv-bs-current { color: #a5b4fc; }
+:root[data-theme="dark"] .viv-bs-action { border-color: var(--border-2); background: var(--surface-2); color: var(--text-muted); }
+:root[data-theme="dark"] .viv-bs-action:hover:not(:disabled) { background: var(--hover); border-color: var(--border-2); }
+:root[data-theme="dark"] .viv-bs-note { color: #fcd34d; }
+:root[data-theme="dark"] .viv-bs-list { border-top-color: var(--border-faint); }
+:root[data-theme="dark"] .viv-bs-list-row { border-bottom-color: var(--border-faint); }
+:root[data-theme="dark"] .viv-bs-list-row:hover { background: var(--hover); }
+:root[data-theme="dark"] .viv-bs-list-row.current { background: rgba(99,102,241,0.16); }
+:root[data-theme="dark"] .viv-bs-list-label:hover { color: #a5b4fc; }
+:root[data-theme="dark"] .viv-bs-forget { color: var(--border-2); }
+:root[data-theme="dark"] .viv-bs-forget:hover { color: #fca5a5; }
+:root[data-theme="dark"] .viv-bs-search { border-color: var(--border-2); background: var(--field); color: var(--text); }
+:root[data-theme="dark"] .viv-bs-list-empty { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-bs-note-siblings { color: var(--text-muted); }
+:root[data-theme="dark"] .viv-bs-busy { color: #93c5fd; background: rgba(59,130,246,0.16); border-color: rgba(59,130,246,0.4); }
 </style>
 </head><body>
 
@@ -1361,6 +1480,12 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       .github-settings .gh-action-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center }
       :root[data-theme="dark"] .github-settings .gh-section { border-top-color:var(--border) }
       :root[data-theme="dark"] .github-settings .gh-value { color:var(--text) }
+      :root[data-theme="dark"] .github-settings .gh-section-title { color:var(--text-muted) }
+      :root[data-theme="dark"] .github-settings .gh-label { color:var(--text-muted) }
+      :root[data-theme="dark"] .github-settings .gh-value a { color:var(--link) }
+      :root[data-theme="dark"] .github-settings .gh-value-hint { color:var(--text-muted) }
+      :root[data-theme="dark"] .github-settings select.gh-input,
+      :root[data-theme="dark"] .github-settings input.gh-input { border-color:var(--border-2); background:var(--field); color:var(--text) }
     </style>
 
     <!-- ── Account ──────────────────────────────────────────────── -->
@@ -1560,6 +1685,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
 
   <style>
     #sim-table th[data-sort-key]:hover { background:#e5e7eb; }
+    :root[data-theme="dark"] #sim-table th[data-sort-key]:hover { background:var(--hover); }
     #sim-table th[data-sort-dir="asc"]::after { content:" \25B2"; }
     #sim-table th[data-sort-dir="desc"]::after { content:" \25BC"; }
     /* Actions cell: let the run-action buttons wrap within a roomy column
