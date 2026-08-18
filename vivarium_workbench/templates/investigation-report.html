@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
 :root{
@@ -39,7 +44,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
   font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;scroll-padding-top:64px}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
-.wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+.wrap{max-width:1440px;margin:0 auto;padding:0 40px}
 .kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
 .mono{font-family:var(--mono);font-size:.9em}
 .serif{font-family:var(--serif)}
@@ -73,8 +78,8 @@ a:hover{text-decoration:underline}
   border-left:4px solid var(--pass);border-radius:12px;box-shadow:var(--shadow)}
 .verdict.is-fail{border-left-color:var(--fail)}
 .verdict .vhead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.verdict .vtext{font-family:var(--serif);font-size:20px;line-height:1.4;color:var(--ink);margin:0;max-width:70ch}
-.verdict .what{color:var(--ink-2);font-size:14.5px;margin-top:14px;max-width:76ch}
+.verdict .vtext{font-family:var(--serif);font-size:20px;line-height:1.4;color:var(--ink);margin:0;max-width:none}
+.verdict .what{color:var(--ink-2);font-size:14.5px;margin-top:14px;max-width:none}
 
 /* status chip */
 .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:.03em;
@@ -124,8 +129,15 @@ a:hover{text-decoration:underline}
 .card::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:3px;border-radius:3px;background:var(--pass)}
 .card.is-fail::before{background:var(--fail)}
 .card.is-control{border-style:dashed;border-color:var(--line-2)}
+/* collapsed cards are wholly clickable — signal it clearly */
+.card.collapsed{cursor:pointer;padding-bottom:44px;transition:box-shadow .15s ease,border-color .15s ease,transform .12s ease}
+.card.collapsed:hover{border-color:var(--accent);box-shadow:0 6px 22px rgba(30,25,20,.10),0 1px 0 var(--line);transform:translateY(-1px)}
+.card.collapsed::after{content:"Click to expand ▾";position:absolute;right:24px;bottom:16px;
+  font-family:var(--sans);font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--ink-3);pointer-events:none}
+.card.collapsed:hover::after{color:var(--accent)}
+.card.collapsed:hover .ctoggle{color:var(--accent)}
 .card-h{display:flex;align-items:flex-start;gap:14px;margin-bottom:4px;cursor:pointer;user-select:none}
-.card-h .ctoggle{color:var(--ink-3);font-size:13px;padding-top:6px;transition:transform .15s;line-height:1}
+.card-h .ctoggle{color:var(--ink-3);font-size:15px;padding-top:5px;transition:transform .15s,color .15s;line-height:1}
 .card.collapsed .card-h .ctoggle{transform:rotate(-90deg)}
 .card-h .cnum{font-family:var(--mono);color:var(--ink-3);font-size:14px;padding-top:5px}
 /* collapse behaviour */
@@ -133,7 +145,7 @@ a:hover{text-decoration:underline}
 .card:not(.collapsed) .study-summary{display:none}
 .study-summary{margin-top:10px}
 .summary-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:6px 0}
-.summary-snip{color:var(--ink-2);font-size:13.5px;max-width:78ch;margin-top:6px}
+.summary-snip{color:var(--ink-2);font-size:13.5px;max-width:none;margin-top:6px}
 .studies-toolbar{display:flex;gap:8px;align-items:center;margin-left:auto}
 .studies-toolbar button{font-family:var(--sans);font-size:12px;font-weight:600;color:var(--ink-2);
   background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 12px;cursor:pointer}
@@ -142,8 +154,8 @@ a:hover{text-decoration:underline}
 .card-h .cright{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .control-kick{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.04em;
   text-transform:uppercase;color:var(--warn);background:var(--warn-soft);padding:3px 10px;border-radius:999px}
-.claim{font-family:var(--serif);font-size:16.5px;color:var(--ink);margin:8px 0 2px;max-width:74ch;font-style:italic}
-.biology{color:var(--ink-2);font-size:14px;margin:8px 0 4px;max-width:76ch}
+.claim{font-family:var(--serif);font-size:16.5px;color:var(--ink);margin:8px 0 2px;max-width:none;font-style:italic}
+.biology{color:var(--ink-2);font-size:14px;margin:8px 0 4px;max-width:none}
 
 /* spine stage */
 .stage{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
@@ -152,7 +164,7 @@ a:hover{text-decoration:underline}
 .substage{margin:14px 0}
 .substage .slabel{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:6px}
 .kv{color:var(--ink);font-size:14.5px}
-.kv .rationale{color:var(--ink-2);font-size:13.5px;margin-top:4px;max-width:74ch}
+.kv .rationale{color:var(--ink-2);font-size:13.5px;margin-top:4px;max-width:none}
 .decision-line{font-size:15px}
 
 /* chips */
@@ -175,8 +187,9 @@ a:hover{text-decoration:underline}
 /* decision box */
 .decbox{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:var(--sunken);
   border-radius:10px;margin-top:6px}
+.decbox>div:last-child{flex:1 1 auto;min-width:0}
 .decbox .dverdict{font-size:14px}
-.decbox .dnarr{color:var(--ink-2);font-size:13.5px;margin-top:6px;max-width:74ch}
+.decbox .dnarr{color:var(--ink-2);font-size:13.5px;margin-top:6px;max-width:none}
 
 /* figures */
 figure{margin:12px 0 4px}
@@ -190,7 +203,7 @@ figure img{max-width:100%;height:auto;display:block;border:1px solid var(--line)
 .spine-legend-item{font-size:11.5px;color:var(--ink-2)}
 .study-verdict-dag,.acceptance-rollup,.ac-gating-matrix{margin-top:4px}
 .ac-gating-matrix .gap,.acceptance-rollup td{font-size:13.5px}
-figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:76ch}
+figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:none}
 .fig-scroll{overflow-x:auto}
 
 /* expander */
@@ -199,7 +212,7 @@ details.exp>summary{cursor:pointer;font-size:12.5px;color:var(--accent);font-wei
 details.exp>summary::-webkit-details-marker{display:none}
 details.exp>summary::before{content:"▸ ";color:var(--ink-3)}
 details.exp[open]>summary::before{content:"▾ "}
-details.exp .body{font-size:13.5px;color:var(--ink-2);margin-top:8px;max-width:76ch}
+details.exp .body{font-size:13.5px;color:var(--ink-2);margin-top:8px;max-width:none}
 
 /* appendix */
 .appendix{margin:52px 0 24px}
@@ -279,6 +292,8 @@ footer .wrap{display:flex;flex-direction:column;gap:6px}
   .card{padding:20px}.wrap{padding:0 16px}
 }
 </style>
+</head>
+<body>
 
 <div class="topbar"><div class="wrap">
   <span class="brand">Vivarium <span class="dot">·</span> Workbench</span>
@@ -799,7 +814,7 @@ function renderInvViz(inv){
   else { figs.push(['Agent vs policy — outcomes', vizOutcomeBar(inv)]); figs.push(['Final test outcomes', vizGateMatrix(inv)]); }
   const live=figs.filter(f=>f[1]); if(!live.length) return '';
   return `<div id="inv-viz" class="fbsection">${fbBubble('figures','Investigation visualizations')}<div class="sec-h"><h2>Investigation visualizations</h2><span class="rule"></span></div>
-    <p style="color:var(--ink-2);font-size:14px;max-width:74ch;margin:0 0 6px">The whole investigation in a few figures — the synthesis across all ${inv.studies.length} studies.</p>
+    <p style="color:var(--ink-2);font-size:14px;max-width:none;margin:0 0 6px">The whole investigation in a few figures — the synthesis across all ${inv.studies.length} studies.</p>
     ${live.map(([t,svg])=>`<div style="margin:20px 0"><div class="kicker" style="margin-bottom:8px">${esc(t)}</div>${svg}</div>`).join('')}</div>`;
 }
 function roleLine(s,inv){
@@ -819,7 +834,7 @@ function renderAppendix(inv){
   return `<div class="appendix fbsection" id="appendix">
     ${fbBubble('appendix','Module catalog')}
     <div class="sec-h"><h2>Module catalog</h2><span class="rule"></span></div>
-    <p style="color:var(--ink-2);font-size:14px;max-width:74ch">The reusable modules and the capabilities each declares — the ground truth the sourcing audit checks every <span class="mono">requires ⊆ provided</span> claim against.</p>
+    <p style="color:var(--ink-2);font-size:14px;max-width:none">The reusable modules and the capabilities each declares — the ground truth the sourcing audit checks every <span class="mono">requires ⊆ provided</span> claim against.</p>
     <table class="cat-table"><thead><tr><th>Module</th><th>Declared capabilities</th></tr></thead><tbody>${rows}</tbody></table>
   </div>`;
 }
@@ -918,7 +933,7 @@ function _acceptanceRollupHtml(sp){
   const rows=a.criteria.map(c=>`<tr><td>${c.study?`<a href="#s-${esc(c.study)}">${esc(c.study)}</a>`:'—'}</td><td>${esc(c.behavior||'')}</td><td class="tv">${_acResultBadge(c.result)}</td></tr>`).join('');
   const div=a.diverges_from_authored?`<span class="acceptance-divergence chip warn">⚠ code differs from authored</span>`:'';
   return `<div class="acceptance-rollup"><div class="slabel">Acceptance roll-up ${div}</div>
-    <p style="color:var(--ink-2);font-size:13.5px;max-width:74ch;margin:2px 0 8px">The investigation's acceptance criteria connected to their gating study and code-computed result — the spine roll-up, not a re-computation.</p>
+    <p style="color:var(--ink-2);font-size:13.5px;max-width:none;margin:2px 0 8px">The investigation's acceptance criteria connected to their gating study and code-computed result — the spine roll-up, not a re-computation.</p>
     <table class="ttable"><tbody>${rows}</tbody></table></div>`;
 }
 function _acGatingMatrixHtml(sp){
@@ -954,11 +969,11 @@ function render(inv){
     `<div class="wrap">
       <div class="sec-h"><h2>Studies</h2><span class="rule"></span>
         <div class="studies-toolbar"><button id="expandall">Expand all</button><button id="collapseall">Collapse all</button></div></div>
-      <p style="color:var(--ink-2);font-size:14px;max-width:74ch;margin:0 0 8px">Each study is collapsed to a high-level overview — click a study (or a number in the index) to expand its Model, simulation run, visualizations, tests, and decision.</p>
+      <p style="color:var(--ink-2);font-size:14px;max-width:none;margin:0 0 8px">Each study is collapsed to a high-level overview — click a study (or a number in the index) to expand its Model, simulation run, visualizations, tests, and decision.</p>
       ${inv.studies.map((s,i)=>renderStudy(s,inv,i+1)).join('')}
       ${renderAppendix(inv)}
       <div class="sec-h" id="report-feedback"><h2>Report feedback</h2><span class="rule"></span></div>
-      <p style="color:var(--ink-2);font-size:14px;max-width:74ch">Leave an overall note, and per-study notes above. Then <b>Review &amp; export</b> assembles them into a YAML feedback report.</p>
+      <p style="color:var(--ink-2);font-size:14px;max-width:none">Leave an overall note, and per-study notes above. Then <b>Review &amp; export</b> assembles them into a YAML feedback report.</p>
       ${feedbackRow('overall','the whole report')}
     </div>`;
   updateCount(); window.scrollTo(0,0); spy();
@@ -999,7 +1014,11 @@ app.addEventListener('click',e=>{
   // index link → expand the target study before scrolling to it
   const link=e.target.closest('.subnav a');
   if(link){ const href=link.getAttribute('href')||''; if(href.startsWith('#s-')){ const c=document.getElementById(href.slice(1)); if(c) c.classList.remove('collapsed'); } return; }
-  // header → toggle this study
+  // a collapsed card is clickable anywhere to expand (ignore real controls/links)
+  const anyCard=e.target.closest('.card');
+  if(anyCard && anyCard.classList.contains('collapsed') && !e.target.closest('a,button,summary,input,textarea,select')){
+    anyCard.classList.remove('collapsed'); return; }
+  // header → collapse an expanded study
   const head=e.target.closest('.card-h');
   if(head){ head.closest('.card').classList.toggle('collapsed'); }
 });
@@ -1013,3 +1032,5 @@ document.getElementById('fbcopy').onclick=()=>{ const ta=document.getElementById
   document.getElementById('fbcopy').textContent='Copied ✓'; setTimeout(()=>document.getElementById('fbcopy').textContent='Copy YAML',1500); };
 render(INV);
 </script>
+</body>
+</html>
