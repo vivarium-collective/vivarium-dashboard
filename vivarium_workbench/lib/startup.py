@@ -132,6 +132,17 @@ def serve_fastapi(workspace: Path, port: int, host: str = "127.0.0.1", base_path
     except Exception as e:  # noqa: BLE001
         print(f"warning: run reconcile failed: {e}", file=sys.stderr)
 
+    # Backfill source provenance (repo + commit) onto legacy manifest-less run
+    # rows so the Runs table's Source column is populated for existing runs —
+    # idempotent, best-effort, never blocks boot.
+    try:
+        from vivarium_workbench.lib.simulations_index import backfill_source_provenance
+        n = backfill_source_provenance(workspace)
+        if n:
+            print(f"backfilled source provenance on {n} run row(s)")
+    except Exception as e:  # noqa: BLE001
+        print(f"warning: source-provenance backfill failed: {e}", file=sys.stderr)
+
     # Warm the composite-discovery cache (~8s cold: a fresh subprocess importing
     # the whole workspace package) in a background thread so the FIRST user
     # navigation isn't stuck paying it — which, fired alongside other boot

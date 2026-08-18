@@ -20053,6 +20053,10 @@
     if (key === 'investigation') return String(_simInvestigation(row) || '').toLowerCase();
     if (key === 'run') return String(row.sim_name || row.label || row.run_id || '').toLowerCase();
     if (key === 'composite') return String(row.spec_id || '').toLowerCase();
+    if (key === 'source') {
+      var _s = row.source_ref || {};
+      return ((_s.repo || '') + ' ' + (_s.commit_short || '')).toLowerCase();
+    }
     if (key === 'status') return String(row.status || '').toLowerCase();
     if (key === 'location') return String(row.store_path || row.db_path || '').toLowerCase();
     if (key === 'config') {
@@ -20178,6 +20182,14 @@
     }
     if (table) table.style.display = visible.length ? '' : 'none';
     if (empty) empty.style.display = visible.length ? 'none' : '';
+
+    // Drag-resizable columns for the Simulations DB table. The thead is static
+    // (rendered once in index.html.j2) and only the tbody re-renders, so wire
+    // the grips a single time; stored widths persist across filters/reloads.
+    if (table && window.ColResize && !table._colResizeWired) {
+      table._colResizeWired = true;
+      window.ColResize.apply(table, 'sim-global');
+    }
 
     var note = document.getElementById('sim-scope-note');
     if (note) {

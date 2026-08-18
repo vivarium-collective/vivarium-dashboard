@@ -91,6 +91,43 @@
       'style="color:#b91c1c;font-size:12px;white-space:nowrap;">⚠ <code style="font-size:11px;color:inherit;">' + esc(short) + "</code></span>";
   }
 
+  // Source cell — the repo + commit the run launched from (source provenance,
+  // attached server-side by lib/simulations_index.py as `row.source_ref` from
+  // the run manifest's code_version, or the inferred workspace HEAD). Shows
+  // `repo@shortsha`; the sha links to the commit on GitHub when resolvable.
+  // An inferred/backfilled value (the workspace's current HEAD, not the run's
+  // exact commit) is dimmed and prefixed with ~ so it reads as approximate.
+  function sourceCell(row) {
+    var s = row && row.source_ref;
+    if (!s || (!s.repo && !s.commit_short && !s.commit)) {
+      return '<span style="color:#9ca3af;">—</span>';
+    }
+    var inferred = !!s.inferred;
+    var color = inferred ? "#9ca3af" : "#374151";
+    var short = s.commit_short || (s.commit ? String(s.commit).slice(0, 7) : "");
+    var tip = (s.remote_url ? s.remote_url + "\n" : "") +
+      (s.commit ? "commit " + s.commit : "") +
+      (s.package ? "\npackage " + s.package : "") +
+      (inferred ? "\n(inferred from workspace HEAD — approximate, not the run's exact commit)" : "");
+    var commitHtml = "";
+    if (short) {
+      if (s.commit_url) {
+        commitHtml = '<a href="' + esc(s.commit_url) + '" target="_blank" rel="noopener" ' +
+          'title="Open commit on GitHub" style="color:' + (inferred ? "#9ca3af" : "#2563eb") +
+          ';text-decoration:underline;text-underline-offset:2px;font-size:11px;">' + esc(short) + "</a>";
+      } else {
+        commitHtml = '<code style="font-size:11px;color:' + color + ';">' + esc(short) + "</code>";
+      }
+    }
+    var prefix = inferred
+      ? '<span style="color:#9ca3af;" title="approximate — inferred from workspace HEAD">~</span>' : "";
+    var repoHtml = s.repo
+      ? '<span style="font-size:11px;color:' + color + ';">' + esc(s.repo) + "</span>" : "";
+    var sep = (repoHtml && commitHtml) ? '<span style="color:#d1d5db;">@</span>' : "";
+    return '<span title="' + esc(tip) + '" style="white-space:nowrap;overflow:hidden;' +
+      'text-overflow:ellipsis;display:block;">' + prefix + repoHtml + sep + commitHtml + "</span>";
+  }
+
   // Config cell — the exact generator params that reproduce this run. Shows the
   // first few key=value chips (repro-relevant keys first); full config in the
   // hover title. Empty config → grey em-dash.
@@ -434,6 +471,7 @@
       'text-overflow:ellipsis;white-space:nowrap;" title="' + esc(runId + (row.db_path ? "\n" + row.db_path : "")) +
       '">' + esc(runLabel) + "</code>", "overflow:hidden;");
     if (keep("composite")) cells += td(composite(row), "overflow:hidden;");
+    if (keep("source")) cells += td(sourceCell(row), "overflow:hidden;");
     if (keep("config")) cells += td(config(row), "overflow:hidden;max-width:320px;");
     if (keep("location")) cells += td(location(row), "overflow:hidden;");
     if (keep("origin")) cells += td(originPill(row));
@@ -455,6 +493,9 @@
 
   var STUDY_COLS = [
     { label: "Run", key: "run", id: "run" }, { label: "Composite", key: "composite", id: "composite" },
+    // Source (repo@commit) — carries an html() accessor so an all-"—" column
+    // (a workspace with no resolvable checkout) is dropped like Location/Emitter.
+    { label: "Source", key: "source", id: "source", html: function (row) { return sourceCell(row); } },
     { label: "Config", key: "config", id: "config" },
     // `html` = the same render fn used for the cell. dropEmptyColumns() only
     // considers columns that carry one (see below) — Location/Emitter render
@@ -492,6 +533,10 @@
   function sortValue(row, key) {
     if (key === "time") return row.completed_at || row.started_at || 0;
     if (key === "composite") return String(row.spec_id || "").toLowerCase();
+    if (key === "source") {
+      var s = row.source_ref || {};
+      return ((s.repo || "") + " " + (s.commit_short || "")).toLowerCase();
+    }
     if (key === "emitter") return String(row.emitter_type || "").toLowerCase();
     if (key === "origin") return originLabel(row).toLowerCase();
     if (key === "status") return String(row.status || "").toLowerCase();
@@ -613,12 +658,19 @@
         } catch (e3) { done(false); }
       });
     });
+    // Drag-resizable columns, widths persisted per table namespace. Re-applied
+    // on every renderTable() (the table is rebuilt each sort) — ColResize reads
+    // the stored widths back, so a user's sizing survives sorts and reloads.
+    if (window.ColResize) {
+      var _tbl = mount.querySelector("table");
+      if (_tbl) window.ColResize.apply(_tbl, "sim-" + (opts.scope || "study"));
+    }
   }
 
   window.SimTable = {
     esc: esc, statusChip: statusChip, emitterPill: emitterPill, originPill: originPill,
     originLabel: originLabel, fmtTime: fmtTime, location: location, study: study,
-    investigation: investigation, composite: composite, toolsCell: toolsCell,
+    investigation: investigation, composite: composite, sourceCell: sourceCell, toolsCell: toolsCell,
     renderRow: renderRow, renderTable: renderTable, dropEmptyColumns: dropEmptyColumns,
   };
 })();
