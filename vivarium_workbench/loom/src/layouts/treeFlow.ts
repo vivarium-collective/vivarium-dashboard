@@ -53,15 +53,32 @@ interface Gaps {
 const TREE_GAPS: Gaps = { rowGap: 34, colGap: 22, procGapX: 26, procGapY: 22, bandGap: 48 };
 const GRID_GAPS: Gaps = { rowGap: 30, colGap: 12, procGapX: 24, procGapY: 20, bandGap: 40 };
 
+/** Grow an estimated footprint to React Flow's LIVE measured box when the card
+ *  actually rendered taller/wider than the estimate. The full-tier estimates
+ *  below are content-blind (a fixed store height, a port/contract-derived
+ *  process height), so a content-rich store — a wrapped multi-line name plus a
+ *  value, a wrapped type, and a "N read · M write" badge — renders past the
+ *  fixed STORE_H and the packing below overlaps up into it. `n.measured` is the
+ *  real rendered box; take the max so the reservation is never SMALLER than what
+ *  the card occupies, and never smaller than the full-tier estimate either. */
+function withMeasured(n: Node, est: Foot): Foot {
+  const nn = n as unknown as { width?: number; height?: number; measured?: { width?: number; height?: number } };
+  const w = nn.width || nn.measured?.width;   // React Flow populates both after render
+  const h = nn.height || nn.measured?.height;
+  if (w && h) return { w: Math.max(w, est.w), h: Math.max(h, est.h) };
+  return est;
+}
+
 /** Footprint of a node, sized for the LARGEST (full) tier so positions are
  *  identical at every zoom (persistent placement). Honors a hand-set `_size`
- *  (the authoritative measured box); otherwise over-reserves height so the
- *  tallest full-tier content (ports, config band, contract, equations) can never
- *  overlap a neighbour. Over-reserving only costs whitespace at full zoom. */
+ *  (the authoritative measured box); otherwise takes the max of the full-tier
+ *  estimate and React Flow's live measured box (via withMeasured) so the
+ *  tallest full-tier content (ports, config band, contract, equations, or a
+ *  content-rich store) can never overlap a neighbour. */
 export function treeFootprint(n: Node): Foot {
   const saved = (n.data as { _size?: { width: number; height: number } } | undefined)?._size;
   if (saved && saved.width > 0 && saved.height > 0) return { w: saved.width, h: saved.height };
-  if (n.type !== 'process') return fullFootprint(n); // stores: fixed full-tier size
+  if (n.type !== 'process') return withMeasured(n, fullFootprint(n)); // store: full-tier or real
 
   const d = n.data as {
     inputPorts?: unknown; outputPorts?: unknown;
@@ -90,7 +107,7 @@ export function treeFootprint(n: Node): Foot {
   const symH = nSym ? nSym * 24 + 20 : 0;
   const descH = contract && contract.description ? 100 : 0;
   const contentH = FULL.cardHeight + cfgH + mathH + symH + descH + 24;
-  return { w: FULL.cardWidth, h: Math.max(contentH, portH) };
+  return withMeasured(n, { w: FULL.cardWidth, h: Math.max(contentH, portH) });
 }
 
 /** Spanning forest of the store place graph: for each store its depth (BFS from

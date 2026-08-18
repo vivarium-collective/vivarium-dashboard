@@ -1771,7 +1771,7 @@ def run_investigation(ws_root: Path, name: str, *,
                                   params=overrides,
                                   label=composite_name,
                                   started_at=_time.time(),
-                                  n_steps=steps)
+                                  n_steps=steps, workspace=ws_root)
                 conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?",
                               (composite_name, run_id))
                 conn.commit()
@@ -1808,7 +1808,7 @@ def run_investigation(ws_root: Path, name: str, *,
                                   params=run["overrides"],
                                   label=run["run_label"],
                                   started_at=_time.time(),
-                                  n_steps=run["steps"])
+                                  n_steps=run["steps"], workspace=ws_root)
                 conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?",
                               (run["sim_name"], run_id))
                 conn.commit()

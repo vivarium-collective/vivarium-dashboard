@@ -38,6 +38,7 @@ export interface SimRow {
   study_slug: string | null;
   investigation_slug: string | null;
   remote_origin: RemoteOrigin | null;
+  source_ref: Record<string, any> | null;
   capabilities: string[];
   matched_tools: Record<string, any>[];
 }

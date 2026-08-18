@@ -13,29 +13,30 @@ _PKG = Path(__file__).parent.parent / "vivarium_workbench"
 
 
 def test_report_finding_traceability():
-    js = (_PKG / "static" / "walkthrough.js").read_text(encoding="utf-8")
-    # from_test is anchored via the prefix helper, not dead <code>.
-    assert "_traceLink" in js
-    assert "'#test-'" not in js  # built via the prefix helper, not literal
-    assert "_traceLink('test'" in js  # the TEST reference is still anchored
-    assert "finding-traceability" in js
+    # The report (lib.investigation_report + template) anchors a finding's
+    # from_test to its test card via the prefix helper, inlines the cited
+    # pass_if band, surfaces the computed divergence, and lists run_ids as plain
+    # code (no dangling #run- anchors, since the report has no per-run rows).
+    tpl = (_PKG / "templates" / "investigation-report.html").read_text(encoding="utf-8")
+    assert "_traceLink" in tpl
+    assert "'#test-'" not in tpl  # built via the prefix helper, not literal
+    assert "_traceLink('test'" in tpl  # the TEST reference is anchored
+    assert "finding-traceability" in tpl
     # The headline computed number is surfaced.
-    assert "divergence_factor" in js
-    assert "finding-divergence" in js
-    assert "vs expected" in js
+    assert "divergence_factor" in tpl
+    assert "finding-divergence" in tpl
+    assert "vs expected" in tpl
     # provenance.run_ids surfaced + the cited test's pass_if band inlined.
-    assert "run_ids" in js
-    assert "pass_if-band" in js
-    # report test cards are anchor targets for from_test.
-    assert "id=\"test-" in js or "'test-'" in js
-    # The report has NO per-run rows, so run references must NOT be dangling
-    # anchors — they are plain <code>, never href="#run-".  (The study page
-    # keeps its #run- anchors; that is asserted separately.)
-    assert 'href="#run-' not in js
-    assert "'#run-'" not in js
-    assert "#run-" not in js
-    # ...while the resolvable #test- anchors are kept (built by the helper).
-    assert "prefix + '-'" in js
+    assert "run_ids" in tpl
+    assert "pass_if-band" in tpl
+    # report test rows are anchor targets for from_test.
+    assert 'id="test-' in tpl
+    # Run references are plain <code>, never dangling #run- anchors.
+    assert 'href="#run-' not in tpl
+    assert "'#run-'" not in tpl
+    assert "#run-" not in tpl
+    # ...while the resolvable #test- anchors are built by the helper.
+    assert "prefix + '-'" in tpl
 
 
 def test_study_page_finding_traceability():

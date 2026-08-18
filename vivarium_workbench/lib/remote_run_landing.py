@@ -198,6 +198,13 @@ def land_remote_run(
             label=label or f"Remote run ({deployment})",
             started_at=started,
             n_steps=0,
+            # Pass the workspace so save_metadata auto-stamps a source-provenance
+            # manifest (repo + commit of the local checkout that landed this
+            # remote run) — otherwise the Runs table's Source column is blank
+            # for every remote/GovCloud run. (The row's remote_origin still comes
+            # from `provenance` (source/simulation_id); this only adds the
+            # manifest's code_version.)
+            workspace=ws_root,
         )
         cr.complete_metadata(conn, run_id=run_id, n_steps=0, status="completed")
     finally:

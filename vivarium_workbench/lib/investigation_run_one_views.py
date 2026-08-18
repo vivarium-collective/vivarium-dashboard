@@ -270,7 +270,7 @@ def investigation_run_one(ws_root: Path, body: dict) -> tuple[dict, int]:
     import time as _time
     cr.save_metadata(conn, spec_id=composite_name, run_id=run_id,
                       params=overrides, label=label, started_at=_time.time(),
-                      n_steps=steps)
+                      n_steps=steps, workspace=ws_root)
     conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?", (sim_name, run_id))
     conn.commit()
     conn.close()

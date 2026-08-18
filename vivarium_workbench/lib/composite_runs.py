@@ -168,6 +168,68 @@ def generate_run_id(spec_id: str, params: dict | None = None,
     return f"{spec_id}__{ts}__{short}"
 
 
+def _remote_url_to_repo_name(remote_url: str | None) -> str | None:
+    """Short repo name from a git remote URL.
+
+    Handles both SSH (``git@github.com:org/repo.git``) and HTTPS
+    (``https://github.com/org/repo``) forms; strips a trailing ``.git``.
+    Returns None for an empty/unparseable url.
+    """
+    if not remote_url:
+        return None
+    tail = remote_url.rstrip("/").rsplit("/", 1)[-1]
+    if ":" in tail and "/" not in remote_url.rsplit(":", 1)[-1]:
+        # SSH scp-form with no path slash: git@host:repo.git
+        tail = tail.rsplit(":", 1)[-1]
+    if tail.endswith(".git"):
+        tail = tail[:-4]
+    return tail or None
+
+
+def git_repo_identity(ws_root) -> dict:
+    """Best-effort ``{git_sha, repo, remote_url}`` for a workspace checkout.
+
+    Every field independently degrades to ``None`` — a directory that isn't a
+    git repo, has no ``origin`` remote, or where ``git`` isn't on PATH yields
+    ``{"git_sha": None, "repo": <dir name>, "remote_url": None}``. This never
+    raises: source provenance must never block a run from being recorded.
+
+    ``repo`` prefers the remote's basename (e.g. ``v2ecoli``); when there's no
+    remote it falls back to the checkout directory name so the column still
+    shows *something* identifying for a local-only workspace.
+    """
+    out: dict = {"git_sha": None, "repo": None, "remote_url": None}
+    if ws_root is None:
+        return out
+    import subprocess
+    from pathlib import Path as _Path
+    try:
+        out["repo"] = _Path(str(ws_root)).name or None
+    except Exception:  # noqa: BLE001 — best-effort, never fatal
+        pass
+    try:
+        sha = subprocess.run(
+            ["git", "-C", str(ws_root), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True, timeout=5,
+        ).stdout.strip()
+        out["git_sha"] = sha or None
+    except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
+        pass
+    try:
+        url = subprocess.run(
+            ["git", "-C", str(ws_root), "remote", "get-url", "origin"],
+            capture_output=True, text=True, check=True, timeout=5,
+        ).stdout.strip()
+        if url:
+            out["remote_url"] = url
+            name = _remote_url_to_repo_name(url)
+            if name:
+                out["repo"] = name
+    except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
+        pass
+    return out
+
+
 def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
                        runtime, origin, study=None, pkg=None,
                        generation_id=None, ws_root=None,
@@ -210,17 +272,8 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
     a manifest built by an un-updated call site still gets a non-null
     ``seed`` rather than silently regressing to the old null placeholder.
     """
-    git_sha = None
-    if ws_root is not None:
-        try:
-            import subprocess
-            out = subprocess.run(
-                ["git", "-C", str(ws_root), "rev-parse", "HEAD"],
-                capture_output=True, text=True, check=True, timeout=5,
-            )
-            git_sha = out.stdout.strip() or None
-        except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
-            git_sha = None
+    repo = git_repo_identity(ws_root)
+    git_sha = repo.get("git_sha")
 
     pkg_version = None
     if pkg:
@@ -256,7 +309,17 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         "study": study,
         "pkg": pkg,
         "generation_id": generation_id,
-        "code_version": {"git_sha": git_sha, "package": pkg_version},
+        "code_version": {
+            "git_sha": git_sha,
+            "package": pkg_version,
+            # Repo identity of the workspace checkout the run launched from
+            # (source-provenance). ``repo`` is a short human name (remote
+            # basename, else the checkout dir name); ``remote_url`` is the
+            # origin remote (None when the checkout has no remote). Both are
+            # best-effort — a workspace that isn't a git repo yields None.
+            "repo": repo.get("repo"),
+            "remote_url": repo.get("remote_url"),
+        },
         # v2 keys (reproducible-rerun-spine Task 1): filled in by later tasks
         # (Task 2 = env [now populated above], Task 3 = fingerprint_fields
         # [now populated below] + result_fingerprint [computed post-hoc at
@@ -292,7 +355,24 @@ def save_metadata(conn, *, spec_id, run_id, params, label, started_at,
     ``manifest["env"]`` via :func:`env_fingerprint.env_id` and stored
     alongside — best-effort: a manifest with no ``env`` (legacy caller) or a
     digest failure leaves the column ``NULL`` rather than raising.
+
+    Source-provenance guarantee: when a caller passes ``workspace`` but no
+    ``manifest`` (the remote-landing and ad-hoc-investigation paths), a
+    best-effort manifest is built here from the args already in hand so EVERY
+    recorded run carries ``code_version`` (repo + commit + package). This is
+    the single choke point that makes the Runs table's Source column
+    always-filled without every call site having to build a manifest itself.
     """
+    if manifest is None and workspace is not None:
+        try:
+            manifest = build_run_manifest(
+                spec_id=spec_id, params=params, n_steps=n_steps,
+                emitter=emitter, emit_paths=[], runtime={}, origin=origin,
+                study=study_slug, generation_id=generation_id,
+                ws_root=workspace,
+            )
+        except Exception:  # noqa: BLE001 — best-effort, never block a run
+            manifest = None
     env_id_val = None
     if manifest and manifest.get("env") is not None:
         try:

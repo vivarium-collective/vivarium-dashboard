@@ -650,6 +650,24 @@ export default function App() {
             if (data.library) setLibrary(data.library);
             if (data.id) setCompositeId(data.id);
           }
+          // Static (read-only) mode: also load the composite's BAKED run-viz
+          // (publish copies reports/composite-viz → api/composite-viz), so the
+          // Visualizations panel shows its Plotly / movie without a live run.
+          // The viz JSON is the state URL's sibling; best-effort (bundles that
+          // didn't bake viz simply keep the panel's "run in a live dashboard").
+          if (STATIC && stateUrl) {
+            const vizUrl = stateUrl.replace('composite-state', 'composite-viz');
+            if (vizUrl !== stateUrl) {
+              fetch(vizUrl)
+                .then((r) => (r.ok ? r.json() : null))
+                .then((vz) => {
+                  if (!cancelled && vz && typeof vz === 'object' && Object.keys(vz).length) {
+                    setVizHtml(vz as Record<string, { html: string }>);
+                  }
+                })
+                .catch(() => { /* no baked viz for this composite */ });
+            }
+          }
         }
       })
       .catch(() => { /* fall through to postMessage path */ });
@@ -2263,6 +2281,7 @@ export default function App() {
                     runId={activeRunId}
                     downloadable={downloadable}
                     readOnly={STATIC}
+                    baseName={compositeId ? compositeId.split('.').pop() : (name || 'composite')}
                   />
                 </div>
               )}

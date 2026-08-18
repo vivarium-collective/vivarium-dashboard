@@ -37,9 +37,10 @@ def test_study_detail_js_has_no_seed_from_finding():
     assert "/api/study-seed-followup" in js
 
 
-def test_walkthrough_js_renders_seeded_study_lineage():
-    js = (_PKG / "static" / "walkthrough.js").read_text(encoding="utf-8")
-    # The finding card renders the seeded_study back-link from the stamp.
-    assert "seeded_study" in js
-    assert "finding-seeded" in js
-    assert "seeded study" in js
+def test_report_template_renders_seeded_study_lineage():
+    # The report (lib.investigation_report + template) renders a finding's
+    # seeded_study back-link from the stamp.
+    tpl = (_PKG / "templates" / "investigation-report.html").read_text(encoding="utf-8")
+    assert "seeded_study" in tpl
+    assert "finding-seeded" in tpl
+    assert "seeded study" in tpl

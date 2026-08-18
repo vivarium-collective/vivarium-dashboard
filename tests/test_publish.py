@@ -120,6 +120,20 @@ def test_build_bundle_investigation_json(tmp_workspace, tmp_path):
     assert iset_data == expected, "iset JSON parity failed"
 
 
+def test_build_bundle_pre_renders_investigation_report(tmp_workspace, tmp_path):
+    """build_bundle pre-renders a self-contained report per investigation into
+    reports/ so the static bundle's ↓ report button can open it with no server."""
+    from vivarium_workbench import publish
+
+    out = tmp_path / "bundle"
+    publish.build_bundle(tmp_workspace, out)
+    report = out / "reports" / "investigation-main-inv.html"
+    assert report.is_file()
+    html = report.read_text(encoding="utf-8")
+    assert "Main Investigation" in html          # rendered from the real title
+    assert "fetch(" not in html and "/api/" not in html  # self-contained
+
+
 def test_build_bundle_workspace_json(tmp_workspace, tmp_path):
     """build_bundle writes api/workspace.json matching _workspace_home_data."""
     from vivarium_workbench import publish

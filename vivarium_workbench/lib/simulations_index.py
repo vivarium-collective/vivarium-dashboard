@@ -240,6 +240,90 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     return out
 
 
+def _commit_url(remote_url: str | None, commit: str | None) -> str | None:
+    """Build a browsable commit URL from a git remote + sha.
+
+    Recognises GitHub SSH (``git@github.com:org/repo.git``) and HTTPS remotes;
+    returns None for a non-GitHub or unparseable remote (the UI then shows the
+    sha as plain text rather than a dead link).
+    """
+    if not remote_url or not commit:
+        return None
+    u = remote_url.strip()
+    host_path = None
+    if u.startswith("git@") and ":" in u:
+        host_path = u.split("@", 1)[1].replace(":", "/", 1)
+    elif u.startswith("http://") or u.startswith("https://"):
+        host_path = u.split("://", 1)[1]
+    elif u.startswith("ssh://"):
+        host_path = u.split("://", 1)[1].split("@", 1)[-1]
+    if not host_path:
+        return None
+    if host_path.endswith(".git"):
+        host_path = host_path[:-4]
+    if "github.com" not in host_path:
+        return None
+    return "https://" + host_path.rstrip("/") + "/commit/" + commit
+
+
+def _source_from_manifest(manifest_json: str | None) -> dict | None:
+    """Extract the run's source-provenance ``{repo, commit, …}`` from its
+    stored manifest ``code_version`` block. Returns None when the run has no
+    manifest or no code_version (a legacy manifest-less row) — the caller
+    then falls back to the inferred workspace source.
+    """
+    if not manifest_json:
+        return None
+    try:
+        m = json.loads(manifest_json) or {}
+    except (TypeError, ValueError):
+        return None
+    cv = m.get("code_version")
+    if not isinstance(cv, dict):
+        return None
+    commit = cv.get("git_sha")
+    repo = cv.get("repo")
+    remote_url = cv.get("remote_url")
+    if not (commit or repo):
+        return None
+    return {
+        "repo": repo,
+        "commit": commit,
+        "commit_short": (commit[:7] if isinstance(commit, str) else None),
+        "remote_url": remote_url,
+        "commit_url": _commit_url(remote_url, commit),
+        "package": cv.get("package"),
+        # A manifest written by backfill_source_provenance carries the
+        # workspace's HEAD at backfill time, not the run's original commit —
+        # flag it so the UI shows it as approximate, same as the read-time
+        # inferred fallback.
+        "inferred": bool(cv.get("backfilled")),
+    }
+
+
+def _inferred_workspace_source(workspace) -> dict | None:
+    """The inferred source (repo + current HEAD) for a workspace checkout.
+
+    Flagged ``inferred: True`` — it's the workspace's CURRENT commit, used to
+    backfill any row whose recording path didn't stamp source provenance, so
+    the Runs table's Source column is never blank. None when the workspace
+    isn't a resolvable checkout (no git_sha and no repo name).
+    """
+    ident = cr.git_repo_identity(workspace)
+    commit = ident.get("git_sha")
+    if not (commit or ident.get("repo")):
+        return None
+    return {
+        "repo": ident.get("repo"),
+        "commit": commit,
+        "commit_short": (commit[:7] if isinstance(commit, str) else None),
+        "remote_url": ident.get("remote_url"),
+        "commit_url": _commit_url(ident.get("remote_url"), commit),
+        "package": None,
+        "inferred": True,
+    }
+
+
 def _row_to_dict(row, db_path_str: str) -> dict:
     """Convert a runs_meta SELECT row to the public dict shape."""
     # Parse provenance JSON (may be absent in legacy DBs or None).
@@ -296,6 +380,14 @@ def _row_to_dict(row, db_path_str: str) -> dict:
         "study_slug": _study_slug_from_db_path(db_path_str),
         "investigation_slug": None,
         "remote_origin": remote_origin,
+        # Source provenance (repo + commit the run launched from), read from the
+        # manifest's code_version. None here for a manifest-less legacy row —
+        # list_simulations() then backfills the inferred workspace source so the
+        # Runs table's Source column is never blank. Named ``source_ref`` (not
+        # ``source``) to avoid colliding with the row's origin-bucket ``source``
+        # ("runs_meta"/"sqlite_emitter"/…) used by the dedup pass.
+        "source_ref": _source_from_manifest(
+            row["manifest_json"] if "manifest_json" in row.keys() else None),
     }
     # Validate/normalize through the typed model (single source of truth). The
     # dumped dict is identical to `raw` for well-formed rows; on an unexpected
@@ -392,7 +484,7 @@ def _read_runs_meta(db_path: Path, db_path_str: str) -> list[dict]:
         rows = conn.execute(
             "SELECT run_id, spec_id, sim_name, label, status, n_steps, "
             "progress_step, started_at, completed_at, params_json, "
-            "emitter_path, capabilities_json "
+            "emitter_path, capabilities_json, manifest_json "
             "FROM runs_meta ORDER BY started_at DESC"
         ).fetchall()
         # Attach capabilities WHILE conn is still open, so a completed run
@@ -1117,6 +1209,13 @@ def list_simulations(workspace: Path) -> list[dict]:
 
     run_to_studies = _build_run_to_studies_map(workspace)
     _wp = WorkspacePaths.load(workspace)
+    # Inferred workspace source (repo + current HEAD), computed once. Used to
+    # backfill any row whose manifest didn't record source provenance
+    # (legacy/manifest-less runs, emitter-discovered runs) so the Runs table's
+    # Source column is never blank. Flagged ``inferred: True`` (see
+    # _inferred_workspace_source) — the workspace's CURRENT commit, not
+    # necessarily the exact commit an old run executed under.
+    _ws_source = _inferred_workspace_source(workspace)
     # SQLiteEmitter runs are study-scoped by path (studies/<name>/runs.db),
     # so derive the study name from db_path when no explicit study.yaml
     # cross-reference exists.
@@ -1161,7 +1260,75 @@ def list_simulations(workspace: Path) -> list[dict]:
                 run_store.detect_kind(r["store_path"]))
             if _k:
                 r["emitter"] = _k
+        # Backfill source provenance for any row the recording path didn't stamp
+        # (manifest-less runs_meta rows, emitter-discovered runs) with the
+        # inferred workspace source, so the Source column is always populated.
+        if not r.get("source_ref") and _ws_source is not None:
+            r["source_ref"] = dict(_ws_source)
     return rows
+
+
+def backfill_source_provenance(workspace: Path) -> int:
+    """Stamp a source-provenance manifest onto existing manifest-less rows.
+
+    One-time, idempotent backfill (called on server startup): every
+    ``runs_meta`` row across the workspace's runs DBs that has no
+    ``manifest_json`` gets a best-effort manifest whose ``code_version``
+    records the workspace's repo + CURRENT HEAD, flagged ``backfilled: True``
+    (surfaced as ``inferred`` in the row — the commit is approximate, not the
+    run's original one). Rows that already have a manifest are left untouched,
+    so re-runs are no-ops and accurate per-run provenance is never clobbered.
+
+    Returns the number of rows stamped. Never raises — a locked/legacy DB is
+    skipped with a warning; provenance backfill must not block server startup.
+    """
+    ident = cr.git_repo_identity(workspace)
+    if not (ident.get("git_sha") or ident.get("repo")):
+        return 0  # not a resolvable checkout — nothing meaningful to stamp
+    stamped = 0
+    for db_path, db_rel in _discover_dbs(workspace):
+        try:
+            conn = cr.connect(db_path)
+        except sqlite3.OperationalError as e:
+            warnings.warn(f"simulations_index: backfill skipping {db_rel}: {e}")
+            continue
+        try:
+            tbls = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            if "runs_meta" not in tbls:
+                continue
+            rows = conn.execute(
+                "SELECT run_id, spec_id, params_json, n_steps FROM runs_meta "
+                "WHERE manifest_json IS NULL"
+            ).fetchall()
+            for r in rows:
+                try:
+                    params = json.loads(r["params_json"]) if r["params_json"] else {}
+                    if not isinstance(params, dict):
+                        params = {}
+                except (TypeError, ValueError):
+                    params = {}
+                try:
+                    manifest = cr.build_run_manifest(
+                        spec_id=r["spec_id"], params=params, n_steps=r["n_steps"],
+                        emitter=None, emit_paths=[], runtime={}, origin="local",
+                        ws_root=workspace,
+                    )
+                    manifest["code_version"]["backfilled"] = True
+                    conn.execute(
+                        "UPDATE runs_meta SET manifest_json=? WHERE run_id=?",
+                        (json.dumps(manifest), r["run_id"]),
+                    )
+                    stamped += 1
+                except Exception as e:  # noqa: BLE001 — never block startup
+                    warnings.warn(
+                        f"simulations_index: backfill failed for {r['run_id']}: {e}")
+            conn.commit()
+        except sqlite3.OperationalError as e:
+            warnings.warn(f"simulations_index: backfill skipping {db_rel}: {e}")
+        finally:
+            conn.close()
+    return stamped
 
 
 def _find_db_for_run(workspace: Path, run_id: str) -> tuple[Path, str] | None:
@@ -1424,6 +1591,13 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
         # supplies it, re-backfill so the log record carries it.
         has_config = bool(row.get("config"))
         prev_has_config = bool(prev and prev.get("config"))
+        # Same self-heal for source provenance (repo@commit): a run migrated
+        # before a manifest recorded its code_version has none in the log; once
+        # list_simulations resolves one (manifest or inferred workspace source),
+        # re-backfill so the Source column populates. Presence-only (like config)
+        # so an already-folded value doesn't re-append on every build.
+        has_source = bool(row.get("source_ref"))
+        prev_has_source = bool(prev and prev.get("source_ref"))
         # Skip when already represented AND its store location is known (or the
         # legacy store has none to add) AND its composite is known AND its
         # capabilities are known AND its config is known (or the legacy store has
@@ -1432,13 +1606,14 @@ def backfill_index_into_jsonl(ws_root: Path) -> int:
                 and (prev_has_store or not has_store)
                 and (prev_has_composite or not has_composite)
                 and (prev_has_capabilities or not has_capabilities)
-                and (prev_has_config or not has_config)):
+                and (prev_has_config or not has_config)
+                and (prev_has_source or not has_source)):
             continue
         ev = {"run_id": rid, "event": "backfill"}
         for k in ("spec_id", "sim_name", "label", "status", "n_steps",
                   "progress_step", "started_at", "completed_at", "db_path",
                   "store_path", "emitter", "study_slug", "investigation_slug",
-                  "remote_origin", "capabilities", "config"):
+                  "remote_origin", "capabilities", "config", "source_ref"):
             v = row.get(k)
             if v is not None:
                 ev[k] = v
@@ -1460,7 +1635,8 @@ def _rec_to_simrow(run_id: str, rec: dict) -> dict:
     row: dict = {"run_id": run_id}
     for k in ("spec_id", "sim_name", "label", "status", "n_steps",
               "progress_step", "started_at", "completed_at", "db_path",
-              "store_path", "study_slug", "investigation_slug", "capabilities"):
+              "store_path", "study_slug", "investigation_slug", "capabilities",
+              "source_ref"):
         if rec.get(k) is not None:
             row[k] = rec[k]
 
@@ -1736,6 +1912,16 @@ def build_simulations_data(ws_root: Path) -> dict:
         _attach_matched_tools(sims, ws_root)
     except Exception:  # noqa: BLE001
         pass
+
+    # Always-filled Source column: stamp the inferred workspace source onto any
+    # row that still lacks source provenance — including live remote sims added
+    # by _append_remote_simulations, which never pass through list_simulations /
+    # the JSONL fold and so carry no manifest-derived source_ref.
+    _ws_source = _inferred_workspace_source(ws_root)
+    if _ws_source is not None:
+        for s in sims:
+            if not s.get("source_ref"):
+                s["source_ref"] = dict(_ws_source)
 
     from vivarium_workbench.lib.investigation_status import current_branch_slug
     return {"simulations": sims, "current": current_branch_slug(ws_root)}

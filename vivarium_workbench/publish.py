@@ -848,6 +848,19 @@ def _do_build(
             payload = {}
         _write_json(api_dir / "inputs" / f"{inv_name}.json", payload)
 
+    # reports/investigation-<slug>.html — pre-rendered self-contained investigation
+    # reports. In the live app these come from GET /api/investigation-report/<slug>;
+    # in the static bundle (no server) the ↓ report button opens these files. Each
+    # is fully self-contained (data + figures inlined), so no base-path rewrite is
+    # needed. A malformed investigation is skipped, not fatal to the bundle.
+    from vivarium_workbench.lib.investigation_report import render_investigation_report
+    reports_dir = out_dir / "reports"
+    for inv_name in investigations:
+        try:
+            render_investigation_report(ws_root, inv_name, out_dir=reports_dir)
+        except Exception:
+            pass
+
     # api/catalog.json — curated module catalog (GET /api/catalog)
     try:
         catalog = build_catalog(ws_root)
@@ -948,6 +961,44 @@ def _do_build(
                 exported_wiring.add(cid)
         except Exception:
             pass
+
+    # api/composite-resolve/<id>.json — the pre-resolved CARD payload (id / name /
+    # parameters / processes / wiring) the Study Model tab renders its composite
+    # card from. The live tab hits GET /api/composite-resolve?id=…; a read-only
+    # snapshot has no such endpoint, so bake the default-overrides payload here
+    # (study-detail.js fetches this file in snapshot mode). Without it the Model
+    # tab shows "Could not resolve …" and no inline bigraph-loom card.
+    from vivarium_workbench.lib.composite_resolve import resolve_composite_for_request
+    composite_resolve_dir = api_dir / "composite-resolve"
+    composite_resolve_dir.mkdir(parents=True, exist_ok=True)
+    for comp in (composites.get("composites") or []):
+        cid = comp.get("id")
+        if not cid:
+            continue
+        try:
+            payload = resolve_composite_for_request(ws_root, cid, {})
+            if payload is not None:
+                _write_json(composite_resolve_dir / f"{cid}.json", payload)
+        except Exception:
+            pass
+
+    # api/composite-viz/<id>.json — a composite's baked run-visualization HTML
+    # ({viz_path: {html}}), so the read-only loom can show the Plotly/movie a
+    # Visualization step produces WITHOUT a live run. A live run renders these on
+    # the fly (run_runner); a static bundle has no run data, so the workspace
+    # bakes them once — running each composite through its own build_core and
+    # capturing render_results — into ``reports/composite-viz/<id>.json`` (see the
+    # workspace's bake script), and we copy them verbatim here. Purely additive:
+    # absent → the loom just shows "run in a live dashboard" as before.
+    committed_viz_dir = ws_root / "reports" / "composite-viz"
+    if committed_viz_dir.is_dir():
+        composite_viz_dir = api_dir / "composite-viz"
+        composite_viz_dir.mkdir(parents=True, exist_ok=True)
+        for baked in sorted(committed_viz_dir.glob("*.json")):
+            try:
+                (composite_viz_dir / baked.name).write_bytes(baked.read_bytes())
+            except Exception:
+                pass
 
     # Also publish any committed override whose filename is NOT a canonical
     # registry id — these are ALIAS forms a study.yaml references directly (e.g.
@@ -1218,6 +1269,34 @@ def _do_build(
             print(f"  warn: study-charts export failed for {slug!r}: {exc}")
             continue
         _write_json(charts_api_dir / f"{slug}.json", payload)
+
+    # api/study-{rigor,audit,test-audit,loop-state}/<slug>.json — the Assurance
+    # Audit + Build tabs fetch these per-study endpoints live (viva_superpowers
+    # rigor / audit / test_audit / loop_state). A snapshot has no live backend, so
+    # the tabs showed "unavailable (HTTP 404)". Bake each so they render read-only.
+    # Tolerant per builder (a missing optional dep) and per study (one bad study)
+    # — neither ever aborts the publish.
+    from vivarium_workbench.lib import rigor_views as _rv
+    from vivarium_workbench.lib import audit_views as _av
+    from vivarium_workbench.lib import audit_panel_views as _apv
+    from vivarium_workbench.lib import loop_provenance_views as _lpv
+    _assurance = {
+        "study-rigor": lambda s: _rv.build_study_rigor(ws_root, s),
+        "study-audit": lambda s: _av.build_study_audit(ws_root, s),
+        "study-test-audit": lambda s: _apv.build_study_test_audit(ws_root, s),
+        "study-loop-state": lambda s: _lpv.build_study_loop_state(ws_root, s),
+    }
+    for endpoint, builder in _assurance.items():
+        endpoint_dir = api_dir / endpoint
+        endpoint_dir.mkdir(parents=True, exist_ok=True)
+        for slug in studies:
+            try:
+                body = builder(slug)
+                if isinstance(body, tuple):   # (payload, status_code) builders
+                    body = body[0]
+                _write_json(endpoint_dir / f"{slug}.json", body)
+            except Exception as exc:  # noqa: BLE001 — one study/builder never aborts a publish
+                print(f"  warn: {endpoint} export failed for {slug!r}: {exc}")
 
     # api/study-native-gallery/<slug>.json — the Visualizations-tab native figure
     # gallery (the study's latest completed run's viz.json panels), byte-parity
