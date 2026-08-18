@@ -301,6 +301,29 @@ def _source_from_manifest(manifest_json: str | None) -> dict | None:
     }
 
 
+def _inferred_workspace_source(workspace) -> dict | None:
+    """The inferred source (repo + current HEAD) for a workspace checkout.
+
+    Flagged ``inferred: True`` — it's the workspace's CURRENT commit, used to
+    backfill any row whose recording path didn't stamp source provenance, so
+    the Runs table's Source column is never blank. None when the workspace
+    isn't a resolvable checkout (no git_sha and no repo name).
+    """
+    ident = cr.git_repo_identity(workspace)
+    commit = ident.get("git_sha")
+    if not (commit or ident.get("repo")):
+        return None
+    return {
+        "repo": ident.get("repo"),
+        "commit": commit,
+        "commit_short": (commit[:7] if isinstance(commit, str) else None),
+        "remote_url": ident.get("remote_url"),
+        "commit_url": _commit_url(ident.get("remote_url"), commit),
+        "package": None,
+        "inferred": True,
+    }
+
+
 def _row_to_dict(row, db_path_str: str) -> dict:
     """Convert a runs_meta SELECT row to the public dict shape."""
     # Parse provenance JSON (may be absent in legacy DBs or None).
@@ -1189,22 +1212,10 @@ def list_simulations(workspace: Path) -> list[dict]:
     # Inferred workspace source (repo + current HEAD), computed once. Used to
     # backfill any row whose manifest didn't record source provenance
     # (legacy/manifest-less runs, emitter-discovered runs) so the Runs table's
-    # Source column is never blank. Flagged ``inferred: True`` so the UI can
-    # show it dimmed — it's the workspace's CURRENT commit, not necessarily the
-    # exact commit an old run executed under.
-    _ws_ident = cr.git_repo_identity(workspace)
-    _ws_source = None
-    if _ws_ident.get("commit") or _ws_ident.get("git_sha") or _ws_ident.get("repo"):
-        _ws_commit = _ws_ident.get("git_sha")
-        _ws_source = {
-            "repo": _ws_ident.get("repo"),
-            "commit": _ws_commit,
-            "commit_short": (_ws_commit[:7] if isinstance(_ws_commit, str) else None),
-            "remote_url": _ws_ident.get("remote_url"),
-            "commit_url": _commit_url(_ws_ident.get("remote_url"), _ws_commit),
-            "package": None,
-            "inferred": True,
-        }
+    # Source column is never blank. Flagged ``inferred: True`` (see
+    # _inferred_workspace_source) — the workspace's CURRENT commit, not
+    # necessarily the exact commit an old run executed under.
+    _ws_source = _inferred_workspace_source(workspace)
     # SQLiteEmitter runs are study-scoped by path (studies/<name>/runs.db),
     # so derive the study name from db_path when no explicit study.yaml
     # cross-reference exists.
@@ -1901,6 +1912,16 @@ def build_simulations_data(ws_root: Path) -> dict:
         _attach_matched_tools(sims, ws_root)
     except Exception:  # noqa: BLE001
         pass
+
+    # Always-filled Source column: stamp the inferred workspace source onto any
+    # row that still lacks source provenance — including live remote sims added
+    # by _append_remote_simulations, which never pass through list_simulations /
+    # the JSONL fold and so carry no manifest-derived source_ref.
+    _ws_source = _inferred_workspace_source(ws_root)
+    if _ws_source is not None:
+        for s in sims:
+            if not s.get("source_ref"):
+                s["source_ref"] = dict(_ws_source)
 
     from vivarium_workbench.lib.investigation_status import current_branch_slug
     return {"simulations": sims, "current": current_branch_slug(ws_root)}
