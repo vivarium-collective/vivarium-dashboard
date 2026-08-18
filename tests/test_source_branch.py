@@ -34,6 +34,24 @@ def test_branch_source_js_present_and_wired():
         assert needle in js, needle
 
 
+def test_branch_source_js_new_branch_registration_wired():
+    """item 67: the Branch dropdown under Remote scope only ever listed branches
+    with an existing sms-api build (state.entries is sourced from
+    /api/source/builds), and the "Build via sms-api" button — whose entire
+    purpose is registering a NEW branch's build — was gated on
+    state.selected.repo_url, which could only ever be set from an
+    ALREADY-built branch. That made the one UI affordance meant to solve this
+    unusable for exactly the case it exists for. Fix: a "+ New branch..."
+    sentinel option reveals a free-text branch input, and the Build button's
+    repo_url now comes from the selected REPO (shared across all its entries)
+    rather than the specific selected build entry."""
+    js = (_PKG_DIR / "static" / "branch-source.js").read_text()
+    for needle in ("NEW_BRANCH_SENTINEL", "viv-bs-new-branch", "repoUrlForBuild"):
+        assert needle in js, needle
+    # Regression guard: the old gating that made this impossible must be gone.
+    assert "state.selected && state.selected.repo_url" not in js
+
+
 def test_branch_source_mounted_in_github_page():
     tpl = (_PKG_DIR / "templates" / "index.html.j2").read_text()
     assert 'id="viv-branch-source"' in tpl

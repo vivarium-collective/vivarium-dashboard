@@ -4,7 +4,8 @@
 (function () {
   "use strict";
 
-  var state = { scope: "local", repo: null, branch: null, entries: [], current: null, health: null };
+  var state = { scope: "local", repo: null, branch: null, entries: [], current: null, health: null, newBranch: "" };
+  var NEW_BRANCH_SENTINEL = "__new_branch__";
   var pollTimer = null;
 
   // Snapshot (published static bundle): no live backend. The Source panel
@@ -265,7 +266,7 @@
         ? (s === "local" ? "Workspaces" : "sms-api builds")
         : (s === "local" ? "Local" : "Remote");
       var b = _el("button", "viv-bs-toggle" + (state.scope === s ? " active" : ""), label);
-      b.addEventListener("click", function () { state.scope = s; state.repo = null; state.branch = null; refresh(); });
+      b.addEventListener("click", function () { state.scope = s; state.repo = null; state.branch = null; state.newBranch = ""; refresh(); });
       scopeGroup.appendChild(b);
     });
     scopeRow.appendChild(scopeGroup);
@@ -283,21 +284,61 @@
     }
 
     host.appendChild(_selectRow("Repo", "viv-bs-repo", repos, state.repo, function (v) {
-      state.repo = v; state.branch = null; _render();
+      state.repo = v; state.branch = null; state.newBranch = ""; _render();
     }));
 
     var inRepo = state.entries.filter(function (e) { return e.repo === state.repo; });
     var branches = _distinct(inRepo, "branch");
-    if (state.branch == null || branches.indexOf(state.branch) < 0) state.branch = branches[0] || null;
-    host.appendChild(_selectRow("Branch", "viv-bs-branch", branches, state.branch, function (v) {
+    // Remote scope: `branches` only ever covers branches with an existing sms-api
+    // build (state.entries is sourced from /api/source/builds) — registering a
+    // brand-new branch's build already works server-side (/api/source/build-remote
+    // resolves any real branch's live HEAD via sms-api), the picker just never
+    // offered a way to type one (item 67). Append a sentinel option that reveals a
+    // free-text branch input instead of forcing a pick from already-built ones.
+    var branchOptions = branches.slice();
+    if (state.scope === "remote" && state.repo) branchOptions.push(NEW_BRANCH_SENTINEL);
+    if (state.branch == null || (branches.indexOf(state.branch) < 0 && state.branch !== NEW_BRANCH_SENTINEL)) {
+      state.branch = branches[0] || null;
+    }
+    host.appendChild(_selectRow("Branch", "viv-bs-branch", branchOptions, state.branch, function (v) {
       state.branch = v; _render();
-    }));
+    }, function (v) { return v === NEW_BRANCH_SENTINEL ? "+ New branch…" : (v || "—"); }));
+
+    if (state.branch === NEW_BRANCH_SENTINEL) {
+      var newBranchRow = _el("div", "viv-bs-row");
+      newBranchRow.appendChild(_el("label", "viv-bs-key", ""));
+      var nbInput = _el("input", "viv-bs-select"); nbInput.id = "viv-bs-new-branch";
+      nbInput.type = "text";
+      nbInput.placeholder = "branch name — no build yet, HEAD resolved on Build";
+      nbInput.value = state.newBranch || "";
+      // Update state only — NOT a full _render(), which would tear down and
+      // recreate this input on every keystroke and drop focus/cursor position
+      // (same reasoning as the existing search-filter input below).
+      nbInput.addEventListener("input", function () {
+        state.newBranch = nbInput.value;
+        // buildBtn/repoUrlForBuild are declared later in this same _render() call
+        // but already assigned by the time a keystroke fires this handler (var
+        // hoisting + closure-by-reference) — keep the button's enabled state
+        // live as the user types, without a full re-render.
+        if (typeof buildBtn !== "undefined" && buildBtn) {
+          var eb = nbInput.value.trim();
+          buildBtn.disabled = !(repoUrlForBuild && eb);
+          buildBtn.title = buildBtn.disabled
+            ? "Select a Remote repo and branch (or type a new branch name) to register a build" : "";
+        }
+      });
+      newBranchRow.appendChild(nbInput);
+      host.appendChild(newBranchRow);
+    }
 
     var matches = inRepo.filter(function (e) { return e.branch === state.branch; });
     // Commit line (+ a select when a branch has multiple builds)
     var commitRow = _el("div", "viv-bs-row");
     commitRow.appendChild(_el("label", "viv-bs-key", "Commit"));
-    if (matches.length <= 1) {
+    if (state.branch === NEW_BRANCH_SENTINEL) {
+      commitRow.appendChild(_el("span", "viv-bs-commit", "resolved from branch HEAD on Build"));
+      state.selected = {};
+    } else if (matches.length <= 1) {
       var c = matches[0] || {};
       commitRow.appendChild(_el("span", "viv-bs-commit", c.commit ? (_short(c.commit) + _dateSuffix(c.created_at)) : "—"));
       if (c.current) commitRow.appendChild(_el("span", "viv-bs-current", "current ✓"));
@@ -357,10 +398,19 @@
     actions.appendChild(pushBtn);
 
     var buildBtn = _el("button", "viv-bs-action", "Build via sms-api"); buildBtn.id = "viv-bs-build";
-    buildBtn.disabled = !(state.scope === "remote" && state.selected && state.selected.repo_url);
-    buildBtn.title = buildBtn.disabled ? "Select a Remote source (full repo URL) to register a build" : "";
+    // repo_url comes from the REPO (any entry for it carries the same repo_url),
+    // not from state.selected specifically — that field only exists for branches
+    // that already have a build, which is exactly the gap item 67 fixes: this
+    // button IS the "register a new branch's build" action, so it must not
+    // require the branch to already have a build to become enabled.
+    var repoUrlForBuild = (inRepo[0] || {}).repo_url || "";
+    var effectiveBranch = state.branch === NEW_BRANCH_SENTINEL ? (state.newBranch || "").trim() : state.branch;
+    buildBtn.disabled = !(state.scope === "remote" && repoUrlForBuild && effectiveBranch);
+    buildBtn.title = buildBtn.disabled
+      ? "Select a Remote repo and branch (or type a new branch name) to register a build"
+      : "";
     buildBtn.addEventListener("click", function () {
-      var repo = (state.selected && state.selected.repo_url) || "", branch = state.branch;
+      var repo = repoUrlForBuild, branch = effectiveBranch;
       if (!repo || !branch) { alert("Pick a repo and branch first"); return; }
       buildBtn.disabled = true; buildBtn.textContent = "Registering…";
       fetch("/api/source/build-remote", {
@@ -369,7 +419,10 @@
       }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
         .then(function (res) {
           buildBtn.disabled = false; buildBtn.textContent = "Build via sms-api";
-          if (res.ok) { alert("Registered build #" + res.d.simulator_id + " @ " + (res.d.commit || "").slice(0, 7)); state.scope = "remote"; refresh(); }
+          if (res.ok) {
+            alert("Registered build #" + res.d.simulator_id + " @ " + (res.d.commit || "").slice(0, 7));
+            state.branch = res.d.branch || branch; state.newBranch = ""; state.scope = "remote"; refresh();
+          }
           else alert("Build failed: " + (res.d.error || "error"));
         })
         .catch(function () {
@@ -471,12 +524,12 @@
     _fillList();
   }
 
-  function _selectRow(key, id, options, value, onChange) {
+  function _selectRow(key, id, options, value, onChange, labelFn) {
     var row = _el("div", "viv-bs-row");
     row.appendChild(_el("label", "viv-bs-key", key));
     var sel = _el("select", "viv-bs-select"); sel.id = id;
     options.forEach(function (o) {
-      var opt = _el("option", null, o || "—"); opt.value = o;
+      var opt = _el("option", null, labelFn ? labelFn(o) : (o || "—")); opt.value = o;
       if (o === value) opt.selected = true;
       sel.appendChild(opt);
     });
