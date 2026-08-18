@@ -329,3 +329,38 @@ class TestStudyInterface:
         iface = study_interface(spec)
         assert iface["composite"] == "v2ecoli.composites.baseline"
         assert iface["config"] == {}
+
+
+# ---------------------------------------------------------------------------
+# condition_environment (dual-engine W1 — docs/dual-engine-comparison.md §3.1)
+# ---------------------------------------------------------------------------
+
+class TestConditionEnvironment:
+    def test_absent_returns_none(self):
+        from vivarium_workbench.lib.study_spec import condition_environment
+        assert condition_environment({}) is None
+        assert condition_environment({"conditions": {}}) is None
+        assert condition_environment({"conditions": {"baseline": {}}}) is None
+        # a different condition declaring one doesn't leak into baseline
+        spec = {"conditions": {"reference": {"environment": {"repo": "r", "ref": "abc"}}}}
+        assert condition_environment(spec, "baseline") is None
+
+    def test_wellformed_is_normalized(self):
+        from vivarium_workbench.lib.study_spec import condition_environment
+        spec = {"conditions": {"reference": {
+            "environment": {"repo": " CovertLabEcoli/vEcoli-private ", "ref": " a1b2c3d "}}}}
+        assert condition_environment(spec, "reference") == {
+            "repo": "CovertLabEcoli/vEcoli-private", "ref": "a1b2c3d"}
+
+    def test_malformed_raises_never_silently_drops(self):
+        import pytest
+        from vivarium_workbench.lib.study_spec import condition_environment
+        # not a mapping
+        with pytest.raises(ValueError, match="must be a mapping"):
+            condition_environment(
+                {"conditions": {"baseline": {"environment": "repo@ref"}}})
+        # missing / empty fields
+        for env in ({"repo": "r"}, {"ref": "x"}, {"repo": "", "ref": "x"},
+                    {"repo": "r", "ref": "   "}):
+            with pytest.raises(ValueError, match="non-empty string"):
+                condition_environment({"conditions": {"baseline": {"environment": env}}})

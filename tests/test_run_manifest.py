@@ -222,3 +222,53 @@ def test_query_run_meta_includes_env_id_and_fingerprint_columns(tmp_path):
     assert row["env_id"] is not None
     assert row["result_fingerprint"] == "abc123"
     assert row["provenance_status"] == "nondeterministic"
+
+
+# ---------------------------------------------------------------------------
+# environments — multi-entry env pins (dual-engine W1)
+# ---------------------------------------------------------------------------
+
+def test_manifest_environments_primary_always_present():
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                              emitter="sqlite", emit_paths=[], runtime={},
+                              origin="study")
+    envs = m["environments"]
+    assert isinstance(envs, list) and len(envs) == 1
+    p = envs[0]
+    assert p["role"] == "primary"
+    # no ws_root → every provenance field independently degrades to None
+    for k in ("repo", "commit", "remote_url", "lockfile_hash"):
+        assert p[k] is None
+
+
+def test_manifest_environments_primary_matches_code_version(tmp_path):
+    import subprocess
+    ws = tmp_path / "ws"
+    ws.mkdir()
+    subprocess.run(["git", "init", "-q"], cwd=ws, check=True)
+    (ws / "uv.lock").write_text("lock-bytes", encoding="utf-8")
+    (ws / "f").write_text("x")
+    subprocess.run(["git", "add", "."], cwd=ws, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-qm", "init"], cwd=ws, check=True)
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                              emitter="sqlite", emit_paths=[], runtime={},
+                              origin="study", ws_root=ws)
+    p = m["environments"][0]
+    assert p["commit"] == m["code_version"]["git_sha"] and p["commit"]
+    assert p["repo"] == m["code_version"]["repo"]
+    assert p["lockfile_hash"]  # the uv.lock hash landed
+
+
+def test_manifest_declared_environment_recorded_unresolved():
+    m = cr.build_run_manifest(spec_id="s", params={}, n_steps=1,
+                              emitter="sqlite", emit_paths=[], runtime={},
+                              origin="study",
+                              declared_environment={"repo": "CovertLabEcoli/vEcoli-private",
+                                                    "ref": "a1b2c3d"})
+    envs = m["environments"]
+    assert [e["role"] for e in envs] == ["primary", "declared"]
+    d = envs[1]
+    assert d["repo"] == "CovertLabEcoli/vEcoli-private" and d["ref"] == "a1b2c3d"
+    # honesty: declared ≠ executed until a W4/W5 dispatch resolves it
+    assert d["commit"] is None and d["lockfile_hash"] is None

@@ -219,3 +219,63 @@ def test_run_study_variant_unknown_variant_404(tmp_path, hermetic_engine):
                  variants=[])
     resp, code = study_runs.run_study_variant(ws, {"study": "s1", "variant": "ghost"})
     assert code == 404
+
+
+# ---------------------------------------------------------------------------
+# declared per-condition environment (dual-engine W1)
+# ---------------------------------------------------------------------------
+
+def _write_v4_study(ws: Path, name: str, baseline_cond: dict) -> Path:
+    sd = ws / "studies" / name
+    sd.mkdir(parents=True, exist_ok=True)
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 4, "name": name, "created": "2026-08-18",
+        "objective": "", "conditions": {"baseline": baseline_cond},
+        "runs": [], "visualizations": [],
+    }), encoding="utf-8")
+    return sd
+
+
+def test_baseline_declared_environment_lands_in_manifest(tmp_path, hermetic_engine):
+    ws = tmp_path / "ws"
+    _write_workspace(ws)
+    _write_v4_study(ws, "s1", {
+        "composite": "demo_pkg.composites.cell",
+        "params": {"n_steps": 5},
+        "environment": {"repo": "CovertLabEcoli/vEcoli-private", "ref": "a1b2c3d"},
+    })
+    resp, code = study_runs.run_study_baseline(ws, {"study": "s1"})
+    assert code == 200, resp
+    manifest = hermetic_engine["run"][0]["manifest"]
+    roles = [e["role"] for e in manifest["environments"]]
+    assert roles == ["primary", "declared"]
+    d = manifest["environments"][1]
+    assert d["repo"] == "CovertLabEcoli/vEcoli-private" and d["ref"] == "a1b2c3d"
+    assert d["commit"] is None  # not resolved/executed until W4/W5
+
+
+def test_baseline_without_declaration_is_primary_only(tmp_path, hermetic_engine):
+    ws = tmp_path / "ws"
+    _write_workspace(ws)
+    _write_study(ws, "s1", [
+        {"name": "core", "composite": "demo_pkg.composites.cell",
+         "params": {"n_steps": 5}},
+    ])
+    resp, code = study_runs.run_study_baseline(ws, {"study": "s1"})
+    assert code == 200, resp
+    manifest = hermetic_engine["run"][0]["manifest"]
+    assert [e["role"] for e in manifest["environments"]] == ["primary"]
+
+
+def test_baseline_malformed_declaration_is_loud_400(tmp_path, hermetic_engine):
+    ws = tmp_path / "ws"
+    _write_workspace(ws)
+    _write_v4_study(ws, "s1", {
+        "composite": "demo_pkg.composites.cell",
+        "params": {"n_steps": 5},
+        "environment": {"repo": "only-a-repo"},   # ref missing
+    })
+    resp, code = study_runs.run_study_baseline(ws, {"study": "s1"})
+    assert code == 400
+    assert "environment" in resp["error"]
+    assert not hermetic_engine["run"]  # never dispatched
