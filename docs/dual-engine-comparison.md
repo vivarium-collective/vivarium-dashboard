@@ -200,6 +200,53 @@ REFACTOR-PLAN #804 §0A.4):
 - The existing local one-command harness keeps working unchanged while this
   lands (W5 is severable; see §6).
 
+### 5.3 Mixed-version rollout — every step ships alone (2026-08-18)
+
+Multiple developers land work continuously, so every workstream is designed
+**additive / tolerant-reader**: no two PRs must be committed together, and each
+intermediate state is functional both locally and remotely.
+
+- **Manifests:** the `environments` key is additive (W1/#885). New manifests
+  read by old code → unknown key, ignored. Old manifests read by new code →
+  `.get()`. No API-surface change until W6's badges (which tolerate absence).
+- **Metrics artifacts (W2/W3):** version-tagged (`comparison-metrics/v1`); the
+  compare node refuses a wrong tag loudly. The workbench's report-card mapping
+  is **presence-gated** — no artifacts on disk → dormant, never broken.
+- **W5:** dormant until a study *declares* an environment; nothing else changes.
+
+Two **ordering rules** (deployment discipline, not co-commits):
+
+1. **Declarations after upgrade.** An *old* server does not error on a declared
+   `environment:` — it silently ignores the pin (exactly the failure the new
+   code refuses). Do not add `environment:` declarations to a **shared**
+   workspace until every server that launches runs there is ≥ the W1 build.
+2. **viva-api capability before workbench dispatch.** The W4 workbench dispatch
+   must **feature-detect** the containerized-job capability (Appendix A, Q5) and
+   fail with a clear "service doesn't support this yet" — never assume, never
+   half-dispatch. With detection in place, the two services may deploy in either
+   order.
+
+### 5.4 Smoke tests
+
+Neither existed before this spec; both are cheap and pay for themselves during
+the multi-developer rollout above.
+
+- **`vivarium-workbench smoke` (local, <1 min, no arguments).** Hermetic: scaffolds
+  a throwaway minimal workspace (tiny package + one study) in a temp dir, then
+  checks the whole local spine — server boots and answers `/health` and `/`, the
+  env worker answers `ping` for the workspace, a tiny baseline run executes, and
+  the run's manifest carries `environments: [primary]` with a stamped
+  `source_ref`. Exit 0/1; CI-able; safe to run anywhere (never touches a user
+  workspace). `--workspace PATH` runs the **non-mutating** subset (server +
+  worker + read checks) against a real workspace.
+- **`vivarium-workbench smoke --remote` (once compatible viva-api services are
+  deployed).** Scripted version of today's manual runbook: viva-api health →
+  resolve a pinned commit → dispatch a minimal run → poll to landed → verify S3
+  artifacts + `source_ref` provenance. Extends naturally into the **W4
+  acceptance test**: the two-sims-plus-compare DAG at tiny step counts *is* the
+  "W4 done" criterion. Blocked on the Appendix A answers (capability detection,
+  Q5).
+
 ## 6. Scoped workstreams
 
 | # | Work | Where | Size | Depends on |
@@ -281,6 +328,12 @@ and migrates onto the step-network engine when that reconciliation lands.
 > 4. Anything about the per-commit ECR image convention (no floating tags) that
 >    the two-engine case complicates — e.g., resolving "latest built commit" for
 >    two repos atomically?
+> 5. **Capability detection:** how should the workbench detect, at request time,
+>    whether the viva-api instance it is talking to supports the containerized-job
+>    dispatch (and job dependencies)? A version endpoint, a capabilities list, or
+>    a probe? The workbench must **feature-detect, never assume** — dual-engine
+>    dispatch against an older viva-api has to be a clear "service doesn't support
+>    this yet" error, not a half-dispatched run (see §5.3, rollout rule 2).
 >
 > Please answer against viva-api `main` as of today; the workbench side will pin
 > exact commits in every dispatch (no branch coordinates).

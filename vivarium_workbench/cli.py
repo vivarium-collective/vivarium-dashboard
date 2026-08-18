@@ -532,6 +532,16 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     return 1 if dep_doctor.problems() else 0
 
 
+def cmd_smoke(args: argparse.Namespace) -> int:
+    """Local spine smoke check (docs/dual-engine-comparison.md §5.4)."""
+    from pathlib import Path as _Path
+
+    from vivarium_workbench.lib import smoke
+
+    ws = _Path(args.workspace) if getattr(args, "workspace", None) else None
+    return smoke.run_smoke(ws)
+
+
 def cmd_prepare_investigation(args: argparse.Namespace) -> int:
     """CLI handler: prepare an investigation's coordinated generation."""
     from vivarium_workbench.lib.prepare_investigation import prepare_investigation
@@ -1136,6 +1146,15 @@ def main(argv: list[str] | None = None) -> int:
     p_doctor = sub.add_parser(
         "doctor", help="Check framework-dependency health (stale process-bigraph / viva-superpowers)")
     p_doctor.set_defaults(func=cmd_doctor)
+
+    p_smoke = sub.add_parser(
+        "smoke",
+        help="<1-min local sanity check: server + env worker + a tiny run "
+             "(hermetic scaffold by default; --workspace = non-mutating subset)")
+    p_smoke.add_argument("--workspace", default=None,
+                         help="Check a REAL workspace (server + env-worker only; "
+                              "no run is written). Default: hermetic temp workspace.")
+    p_smoke.set_defaults(func=cmd_smoke)
 
     p_mig = sub.add_parser(
         "migrate-investigations",
