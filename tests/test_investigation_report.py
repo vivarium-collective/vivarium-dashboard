@@ -242,3 +242,50 @@ def test_missing_investigation_raises(tmp_path):
     except FileNotFoundError:
         return
     raise AssertionError("expected FileNotFoundError for a missing investigation")
+
+
+# --- Model-section loom view (bigraph topology) --------------------------------
+
+def test_compact_bigraph_extracts_processes_and_nested_stores():
+    """_compact_bigraph splits a resolved composite state into the flat process
+    list (name/address/ports) and the nested store tree (name/type/children)."""
+    from vivarium_workbench.lib.investigation_report import _compact_bigraph
+    state = {
+        "_type": "composite",
+        "metabolism": {"_type": "process", "address": "local:Foo",
+                       "inputs": {"nutrients": ["env", "n"]},
+                       "outputs": {"biomass": ["cell", "m"]}},
+        "cell": {"biomass": {"_type": "mass"},
+                 "sub": {"x": {"_type": "concentration"}}},
+        "viz": {"_type": "step", "address": "local:Plot", "inputs": {}, "outputs": {}},
+    }
+    topo = _compact_bigraph(state)
+    assert {p["name"] for p in topo["processes"]} == {"metabolism", "viz"}
+    foo = next(p for p in topo["processes"] if p["name"] == "metabolism")
+    assert foo["address"] == "local:Foo"
+    assert foo["inputs"] == ["nutrients"] and foo["outputs"] == ["biomass"]
+    cell = next(st for st in topo["stores"] if st["name"] == "cell")
+    assert any(c["name"] == "biomass" and c["type"] == "mass" for c in cell["children"])
+    sub = next(c for c in cell["children"] if c["name"] == "sub")
+    assert any(gc["name"] == "x" and gc["type"] == "concentration" for gc in sub["children"])
+
+
+def test_model_topology_is_fully_guarded():
+    """_model_topology returns None (never raises) when there is no baseline
+    composite to resolve — the report must render even without a resolvable model."""
+    from vivarium_workbench.lib.investigation_report import _model_topology
+    assert _model_topology("/no/such/ws", {}) is None
+    assert _model_topology("/no/such/ws", {"baseline": [{"name": "x"}]}) is None
+
+
+def test_template_renders_loom_view_and_light_markdown():
+    """The Model section prefers the resolved loom view, and authored conclusions
+    are rendered through the light-markdown helper (no raw ## headers)."""
+    from pathlib import Path
+    import vivarium_workbench
+    tpl = (Path(vivarium_workbench.__file__).parent
+           / "templates" / "investigation-report.html").read_text(encoding="utf-8")
+    assert "function loomTopoSVG(" in tpl
+    assert "s.model_topology ? loomTopoSVG(s.model_topology)" in tpl
+    assert "function mdLite(" in tpl
+    assert "mdLite(conclusion)" in tpl

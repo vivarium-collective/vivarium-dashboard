@@ -260,6 +260,60 @@ def _match_traj(trajs, slug, kind):
     return None
 
 
+def _compact_bigraph(state: dict) -> dict:
+    """Reduce a resolved composite ``state`` to a compact bigraph topology for
+    the Model-section loom view: the nested store tree (name + type) and the
+    flat process list (name + address + declared input/output ports)."""
+    procs: list = []
+
+    def walk(node: dict) -> list:
+        out = []
+        for k, v in node.items():
+            if k.startswith("_") or not isinstance(v, dict):
+                continue
+            t = v.get("_type")
+            if t in ("process", "step"):
+                procs.append({
+                    "name": k, "kind": t, "address": v.get("address"),
+                    "inputs": list((v.get("inputs") or {}).keys()),
+                    "outputs": list((v.get("outputs") or {}).keys()),
+                })
+                continue
+            out.append({"name": k, "type": t, "children": walk(v)})
+        return out
+
+    stores = walk(state)
+    return {"processes": procs, "stores": stores}
+
+
+def _model_topology(ws_root, spec: dict) -> "dict | None":
+    """Best-effort bigraph topology for the study's first baseline composite,
+    used to render the loom view in the Model section. Fully guarded: any
+    resolution/import failure returns None so the report never breaks."""
+    try:
+        cid = None
+        for b in (spec.get("baseline") or []):
+            if isinstance(b, dict) and b.get("composite"):
+                cid = b["composite"]
+                break
+        if not cid:
+            return None
+        from vivarium_workbench.lib.composite_resolve import resolve_composite
+        data = resolve_composite(ws_root, cid)
+        if not isinstance(data, dict):
+            return None
+        state = data["state"] if isinstance(data.get("state"), dict) else data
+        if not isinstance(state, dict):
+            return None
+        topo = _compact_bigraph(state)
+        if not topo["processes"] and not topo["stores"]:
+            return None
+        topo["composite"] = cid
+        return topo
+    except Exception:
+        return None
+
+
 def build_report_data(ws_root, inv_slug: str) -> dict:
     """Assemble the pure report-data dict for one investigation from existing
     files only. Raises FileNotFoundError if the investigation is missing."""
@@ -293,6 +347,10 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
             figs = _embed_visualizations(wp.studies / real_slug, spec["visualizations"], img_budget)
             if figs:
                 s["figures_embedded"] = figs
+        # resolve the baseline composite's bigraph topology for the Model loom view
+        topo = _model_topology(ws_root, spec)
+        if topo:
+            s["model_topology"] = topo
         studies.append(s)
 
     spine = _build_spine(ws_root, inv_slug, studies)
