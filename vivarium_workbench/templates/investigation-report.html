@@ -78,8 +78,8 @@ a:hover{text-decoration:underline}
   border-left:4px solid var(--pass);border-radius:12px;box-shadow:var(--shadow)}
 .verdict.is-fail{border-left-color:var(--fail)}
 .verdict .vhead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
-.verdict .vtext{font-family:var(--serif);font-size:20px;line-height:1.4;color:var(--ink);margin:0;max-width:70ch}
-.verdict .what{color:var(--ink-2);font-size:14.5px;margin-top:14px;max-width:76ch}
+.verdict .vtext{font-family:var(--serif);font-size:20px;line-height:1.4;color:var(--ink);margin:0;max-width:none}
+.verdict .what{color:var(--ink-2);font-size:14.5px;margin-top:14px;max-width:none}
 
 /* status chip */
 .status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:.03em;
@@ -164,7 +164,7 @@ a:hover{text-decoration:underline}
 .substage{margin:14px 0}
 .substage .slabel{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:6px}
 .kv{color:var(--ink);font-size:14.5px}
-.kv .rationale{color:var(--ink-2);font-size:13.5px;margin-top:4px;max-width:74ch}
+.kv .rationale{color:var(--ink-2);font-size:13.5px;margin-top:4px;max-width:none}
 .decision-line{font-size:15px}
 
 /* chips */
@@ -187,8 +187,9 @@ a:hover{text-decoration:underline}
 /* decision box */
 .decbox{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:var(--sunken);
   border-radius:10px;margin-top:6px}
+.decbox>div:last-child{flex:1 1 auto;min-width:0}
 .decbox .dverdict{font-size:14px}
-.decbox .dnarr{color:var(--ink-2);font-size:13.5px;margin-top:6px;max-width:74ch}
+.decbox .dnarr{color:var(--ink-2);font-size:13.5px;margin-top:6px;max-width:none}
 
 /* figures */
 figure{margin:12px 0 4px}
@@ -202,7 +203,7 @@ figure img{max-width:100%;height:auto;display:block;border:1px solid var(--line)
 .spine-legend-item{font-size:11.5px;color:var(--ink-2)}
 .study-verdict-dag,.acceptance-rollup,.ac-gating-matrix{margin-top:4px}
 .ac-gating-matrix .gap,.acceptance-rollup td{font-size:13.5px}
-figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:76ch}
+figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:none}
 .fig-scroll{overflow-x:auto}
 
 /* expander */
@@ -211,7 +212,7 @@ details.exp>summary{cursor:pointer;font-size:12.5px;color:var(--accent);font-wei
 details.exp>summary::-webkit-details-marker{display:none}
 details.exp>summary::before{content:"▸ ";color:var(--ink-3)}
 details.exp[open]>summary::before{content:"▾ "}
-details.exp .body{font-size:13.5px;color:var(--ink-2);margin-top:8px;max-width:76ch}
+details.exp .body{font-size:13.5px;color:var(--ink-2);margin-top:8px;max-width:none}
 
 /* appendix */
 .appendix{margin:52px 0 24px}
@@ -813,7 +814,7 @@ function renderInvViz(inv){
   else { figs.push(['Agent vs policy — outcomes', vizOutcomeBar(inv)]); figs.push(['Final test outcomes', vizGateMatrix(inv)]); }
   const live=figs.filter(f=>f[1]); if(!live.length) return '';
   return `<div id="inv-viz" class="fbsection">${fbBubble('figures','Investigation visualizations')}<div class="sec-h"><h2>Investigation visualizations</h2><span class="rule"></span></div>
-    <p style="color:var(--ink-2);font-size:14px;max-width:74ch;margin:0 0 6px">The whole investigation in a few figures — the synthesis across all ${inv.studies.length} studies.</p>
+    <p style="color:var(--ink-2);font-size:14px;max-width:none;margin:0 0 6px">The whole investigation in a few figures — the synthesis across all ${inv.studies.length} studies.</p>
     ${live.map(([t,svg])=>`<div style="margin:20px 0"><div class="kicker" style="margin-bottom:8px">${esc(t)}</div>${svg}</div>`).join('')}</div>`;
 }
 function roleLine(s,inv){
@@ -833,7 +834,7 @@ function renderAppendix(inv){
   return `<div class="appendix fbsection" id="appendix">
     ${fbBubble('appendix','Module catalog')}
     <div class="sec-h"><h2>Module catalog</h2><span class="rule"></span></div>
-    <p style="color:var(--ink-2);font-size:14px;max-width:74ch">The reusable modules and the capabilities each declares — the ground truth the sourcing audit checks every <span class="mono">requires ⊆ provided</span> claim against.</p>
+    <p style="color:var(--ink-2);font-size:14px;max-width:none">The reusable modules and the capabilities each declares — the ground truth the sourcing audit checks every <span class="mono">requires ⊆ provided</span> claim against.</p>
     <table class="cat-table"><thead><tr><th>Module</th><th>Declared capabilities</th></tr></thead><tbody>${rows}</tbody></table>
   </div>`;
 }
@@ -932,7 +933,7 @@ function _acceptanceRollupHtml(sp){
   const rows=a.criteria.map(c=>`<tr><td>${c.study?`<a href="#s-${esc(c.study)}">${esc(c.study)}</a>`:'—'}</td><td>${esc(c.behavior||'')}</td><td class="tv">${_acResultBadge(c.result)}</td></tr>`).join('');
   const div=a.diverges_from_authored?`<span class="acceptance-divergence chip warn">⚠ code differs from authored</span>`:'';
   return `<div class="acceptance-rollup"><div class="slabel">Acceptance roll-up ${div}</div>
-    <p style="color:var(--ink-2);font-size:13.5px;max-width:74ch;margin:2px 0 8px">The investigation's acceptance criteria connected to their gating study and code-computed result — the spine roll-up, not a re-computation.</p>
+    <p style="color:var(--ink-2);font-size:13.5px;max-width:none;margin:2px 0 8px">The investigation's acceptance criteria connected to their gating study and code-computed result — the spine roll-up, not a re-computation.</p>
     <table class="ttable"><tbody>${rows}</tbody></table></div>`;
 }
 function _acGatingMatrixHtml(sp){
@@ -968,11 +969,11 @@ function render(inv){
     `<div class="wrap">
       <div class="sec-h"><h2>Studies</h2><span class="rule"></span>
         <div class="studies-toolbar"><button id="expandall">Expand all</button><button id="collapseall">Collapse all</button></div></div>
-      <p style="color:var(--ink-2);font-size:14px;max-width:74ch;margin:0 0 8px">Each study is collapsed to a high-level overview — click a study (or a number in the index) to expand its Model, simulation run, visualizations, tests, and decision.</p>
+      <p style="color:var(--ink-2);font-size:14px;max-width:none;margin:0 0 8px">Each study is collapsed to a high-level overview — click a study (or a number in the index) to expand its Model, simulation run, visualizations, tests, and decision.</p>
       ${inv.studies.map((s,i)=>renderStudy(s,inv,i+1)).join('')}
       ${renderAppendix(inv)}
       <div class="sec-h" id="report-feedback"><h2>Report feedback</h2><span class="rule"></span></div>
-      <p style="color:var(--ink-2);font-size:14px;max-width:74ch">Leave an overall note, and per-study notes above. Then <b>Review &amp; export</b> assembles them into a YAML feedback report.</p>
+      <p style="color:var(--ink-2);font-size:14px;max-width:none">Leave an overall note, and per-study notes above. Then <b>Review &amp; export</b> assembles them into a YAML feedback report.</p>
       ${feedbackRow('overall','the whole report')}
     </div>`;
   updateCount(); window.scrollTo(0,0); spy();
