@@ -107,6 +107,7 @@ def _build_spine(ws_root, inv_slug: str, studies: list) -> dict:
     except Exception:
         detail = {}
     cgv = {s.get("name"): s.get("computed_gate_verdict") for s in detail.get("studies", []) if s.get("name")}
+    rcmap = {s.get("name"): s.get("run_commands") for s in detail.get("studies", []) if s.get("name")}
     ac_matrix = None
     try:
         from vivarium_workbench.lib import linkage_index
@@ -122,6 +123,9 @@ def _build_spine(ws_root, inv_slug: str, studies: list) -> dict:
         s["verdict_counts"] = _outcome_counts(s)
         if gate:
             s["computed_gate_verdict"] = gate
+        rc = rcmap.get(s["slug"])
+        if rc:
+            s["run_commands"] = rc
         for p in (s.get("parent_studies") or []):
             src = p.get("study") if isinstance(p, dict) else p
             if src in slugs:

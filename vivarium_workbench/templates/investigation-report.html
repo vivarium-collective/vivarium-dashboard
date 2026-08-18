@@ -586,6 +586,9 @@ function part(label, body, key, klabel){ if(!body) return '';
 // href), so a finding's from_test resolves to its test-card anchor
 function _traceLink(prefix, name){ return '<a class="trace-link" href="#' + prefix + '-' + esc(name) + '">' + esc(name) + '</a>'; }
 
+// a copy-to-run command chip; '' for a falsy command (older payloads / static bundle)
+function _runChip(cmd){ if (!cmd) return ''; return '<code class="run-chip" title="copy to run">' + esc(cmd) + '</code>'; }
+
 // per-outcome rows separating the AUTHORED result from the COMPUTED/measured
 // value (divergence badged), instead of a raw key:value dump
 function outcomeRows(outcomes){
@@ -647,12 +650,19 @@ function renderStudy(s, inv, idx){
 
   // SIMULATION RUN
   const runs=s.runs||[];
-  const runBody = runs.length?runs.map(r=>{
+  let runBody = runs.length?runs.map(r=>{
     return `<div class="kv" style="margin:6px 0"><span class="chip ${r.status==='completed'?'pass':''}">${esc(r.status)}</span>
       <span class="mono" style="margin-left:8px;color:var(--ink-2)">${esc(r.name||r.module||'')}</span>
       ${outcomeRows(r.outcomes)}
       ${r.provenance?`<div class="texp mono" style="margin-top:2px">${esc(r.provenance)}</div>`:''}</div>`;
   }).join(''):'';
+  // run-command chips: how to reproduce this study + per-variant commands
+  if(s.run_commands){
+    const _base = s.run_commands && s.run_commands.baseline;
+    if(_base) runBody += `<div class="reproduce-line texp" style="margin-top:6px">Reproduce: ${_runChip(_base)}</div>`;
+    const _rcVariants = (s.run_commands && s.run_commands.variants) || [];
+    _rcVariants.forEach(_vc=>{ runBody += `<div class="texp">${esc(_vc.name)}: ${_runChip(_vc && _vc.cmd)}</div>`; });
+  }
 
   // VISUALIZATIONS (study figures + inlined images + audit axes)
   const figs=[];
