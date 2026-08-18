@@ -5021,7 +5021,7 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
 .theme-dark .study-overview .ctr-figure { background: #0f1720; border-color: #2b3a4f; }
 
 /* Investigation intro — full what_is_this as prose (study-ui) */
-.inv-brief-intro { margin: 14px 0 6px; max-width: 80ch; }
+.inv-brief-intro { margin: 14px 0 6px; max-width: none; }
 .inv-brief-intro p { margin: 0 0 0.92em; line-height: 1.66; color: var(--ink-2, #334155); }
 .inv-brief-intro p:last-child { margin-bottom: 0; }
 .inv-brief-meta { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
