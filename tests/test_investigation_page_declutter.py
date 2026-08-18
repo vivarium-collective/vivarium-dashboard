@@ -25,6 +25,16 @@ def test_header_export_cluster_and_icon_refresh():
     assert 'id="investigation-detail-refresh"' in dv, "refresh button id lost"
 
 
+def test_report_button_downloads_not_just_opens():
+    """The ↓ report action DOWNLOADS the report into the browser's download
+    folder: live mode requests the endpoint with ?download=1 (the server sends
+    Content-Disposition: attachment) and the click goes through an <a download>
+    so the file is saved rather than opened in a tab."""
+    assert "?download=1" in JS
+    assert "a.download = 'investigation-'" in JS
+    assert "a.click()" in JS
+
+
 def test_intro_is_inquiry_brief_host():
     dv = detail_view()
     # The opening is now an always-visible inquiry brief rendered by JS into

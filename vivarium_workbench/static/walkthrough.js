@@ -8828,7 +8828,7 @@
     // investigation actually has figures (same n_figures gate as the card).
     actions.innerHTML =
       '<button class="btn-mini" onclick="_downloadInvestigationReport()" ' +
-        'title="Open the shareable HTML report">↓ report</button> ' +
+        'title="Download the shareable HTML report">↓ report</button> ' +
       '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
         'title="Download a self-contained Jupyter notebook">↓ notebook</button>' +
       '<span id="ws-actions-figures"></span>' +
@@ -11050,7 +11050,18 @@
       console.warn('_downloadInvestigationReport: no current investigation');
       return;
     }
-    window.open(_investigationReportUrl(name), '_blank', 'noopener');
+    var cfg = window.__DASH_CONFIG__ || {};
+    // Live: hit the endpoint with ?download=1 so the server sends
+    // Content-Disposition: attachment and the browser saves it. Snapshot: the
+    // pre-rendered static file, downloaded via the anchor's `download` attr.
+    var url = _investigationReportUrl(name) + (cfg.mode === 'snapshot' ? '' : '?download=1');
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = 'investigation-' + name + '.html';
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   }
   window._downloadInvestigationReport = _downloadInvestigationReport;
 
