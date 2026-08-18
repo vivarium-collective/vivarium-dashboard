@@ -16299,9 +16299,23 @@
     if (!host) return;  // page not present (e.g. published snapshot layout)
     fetch('/api/git-log').then(function (r) { return r.json(); }).then(function (d) {
       if (!d || !d.commits || d.commits.length === 0) {
-        host.innerHTML = '<div class="gh-log-empty">'
-          + (d && d.error ? 'No commit history available.' : 'No commits yet.')
-          + '</div>';
+        if (d && d.error) {
+          host.innerHTML = '<div class="gh-log-empty">No commit history available.</div>';
+          return;
+        }
+        // An empty log alone can't distinguish "nothing done yet" from real
+        // uncommitted work sitting in the working tree — check dirty-status
+        // once, only for this (rare) empty-log case, rather than coupling
+        // every _refreshGitLog() call to git-status's own fetch cadence.
+        fetch('/api/git-status').then(function (r) { return r.json(); }).then(function (s) {
+          host.innerHTML = (s && s.dirty_count > 0)
+            ? '<div class="gh-log-empty">No commits yet — ' + s.dirty_count
+              + ' uncommitted file' + (s.dirty_count === 1 ? '' : 's')
+              + ' waiting. <a href="#" onclick="event.preventDefault();_toggleDirtyPanel()">Commit all</a> to add them to history.</div>'
+            : '<div class="gh-log-empty">No commits yet.</div>';
+        }).catch(function () {
+          host.innerHTML = '<div class="gh-log-empty">No commits yet.</div>';
+        });
         return;
       }
       var rows = d.commits.map(function (c) {
