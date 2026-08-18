@@ -59,6 +59,28 @@ def test_branch_source_mounted_in_github_page():
     assert "assets/branch-source.js" in tpl
 
 
+def test_branch_source_js_remote_health_polls_continuously():
+    """item 72 Phase 1: the remote-health badge (_healthRow(), fed by
+    GET /api/source/remote-health — see tests/test_remote_health.py for the
+    backend probe itself, unchanged here) must poll continuously while Remote
+    scope is selected, not just retry-until-recovered. Before this fix the poll
+    only ever started when state.error was already set and self-stopped on the
+    first successful check, so a CURRENTLY-reachable endpoint going unreachable
+    while the panel sat open was never reflected until a manual reload — only
+    the opposite direction (unreachable -> reachable) was live. This replaces
+    the old startup-console-log-only signal (lib/startup.py's remote_health()
+    print) with a persistent, polling UI badge."""
+    js = (_PKG_DIR / "static" / "branch-source.js").read_text()
+    # New: polling is gated on scope alone, not on an existing error.
+    assert 'if (state.scope === "remote") _ensureBuildsPoll(); else _stopBuildsPoll();' in js
+    # Regression guard: the old code stopped polling on the FIRST successful
+    # check (`if (!state.error) _stopBuildsPoll();` inside the interval
+    # callback) — that line must be gone, or a live disconnect is never caught.
+    assert "if (!state.error) _stopBuildsPoll();" not in js
+    # The health probe itself still feeds the badge each poll tick.
+    assert "/api/source/remote-health" in js
+
+
 def test_chip_is_display_only_and_no_source_switch_js():
     tpl = (_PKG_DIR / "templates" / "index.html.j2").read_text()
     # The chip block keeps the source label but is no longer a button/dropdown trigger.

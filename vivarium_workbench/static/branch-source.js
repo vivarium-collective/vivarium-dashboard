@@ -448,8 +448,19 @@
 
     host.appendChild(actions);
 
+    // item 72 Phase 1: keep the remote-health badge (_healthRow, above) AND the
+    // builds list LIVE for as long as Remote scope is in view — not just
+    // recovering from an error. Previously this poll only ever ran while
+    // state.error was set and self-stopped on the first successful check, so a
+    // CURRENTLY-reachable endpoint going unreachable while the panel sat open
+    // was never reflected until a manual reload — only the opposite direction
+    // (unreachable -> reachable) was live. Polling continuously in both
+    // directions is what makes the badge actually "live" (replaces the old
+    // startup-console-log-only signal — lib/startup.py's remote_health() print
+    // — with a persistent, polling UI one).
+    if (state.scope === "remote") _ensureBuildsPoll(); else _stopBuildsPoll();
+
     if (state.error) {
-      if (state.scope === "remote") _ensureBuildsPoll();  // keep recovering in the background
       var haveBuilds = state.entries && state.entries.length;
       if (haveBuilds) {
         // Builds already on screen → a transient blip (tunnel reconnecting).
@@ -470,8 +481,6 @@
         errNote.appendChild(retryBtn);
         host.appendChild(errNote);
       }
-    } else {
-      _stopBuildsPoll();
     }
 
     // Search / paste-a-commit filter. While filtering in remote scope, search
@@ -701,17 +710,19 @@
     if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
   }
 
-  // While a Remote source is selected but sms-api is unreachable, keep
-  // re-checking in the background so a recovered tunnel clears the error and
-  // populates the builds on its own — no manual page reload needed.
+  // While Remote scope is selected, keep re-probing /api/source/remote-health
+  // + /api/source/builds every 5s — live in BOTH directions: a dropped tunnel
+  // clears the error and repopulates builds on its own (no manual reload), and
+  // a currently-reachable endpoint going down is caught within one interval
+  // tick instead of only at the next manual refresh. Runs for as long as
+  // Remote scope stays selected (does not self-stop on a healthy check —
+  // that was the old, narrower "retry until recovered" behavior); stops the
+  // moment scope leaves "remote".
   function _ensureBuildsPoll() {
     if (pollTimer) return;
     pollTimer = setInterval(function () {
       if (state.scope !== "remote") { _stopBuildsPoll(); return; }
-      _loadEntries().then(function () {
-        if (!state.error) _stopBuildsPoll();
-        _render();
-      }).catch(function () {});
+      _loadEntries().then(function () { _render(); }).catch(function () {});
     }, 5000);
   }
 
