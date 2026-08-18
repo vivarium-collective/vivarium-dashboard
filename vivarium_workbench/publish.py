@@ -1270,6 +1270,34 @@ def _do_build(
             continue
         _write_json(charts_api_dir / f"{slug}.json", payload)
 
+    # api/study-{rigor,audit,test-audit,loop-state}/<slug>.json — the Assurance
+    # Audit + Build tabs fetch these per-study endpoints live (viva_superpowers
+    # rigor / audit / test_audit / loop_state). A snapshot has no live backend, so
+    # the tabs showed "unavailable (HTTP 404)". Bake each so they render read-only.
+    # Tolerant per builder (a missing optional dep) and per study (one bad study)
+    # — neither ever aborts the publish.
+    from vivarium_workbench.lib import rigor_views as _rv
+    from vivarium_workbench.lib import audit_views as _av
+    from vivarium_workbench.lib import audit_panel_views as _apv
+    from vivarium_workbench.lib import loop_provenance_views as _lpv
+    _assurance = {
+        "study-rigor": lambda s: _rv.build_study_rigor(ws_root, s),
+        "study-audit": lambda s: _av.build_study_audit(ws_root, s),
+        "study-test-audit": lambda s: _apv.build_study_test_audit(ws_root, s),
+        "study-loop-state": lambda s: _lpv.build_study_loop_state(ws_root, s),
+    }
+    for endpoint, builder in _assurance.items():
+        endpoint_dir = api_dir / endpoint
+        endpoint_dir.mkdir(parents=True, exist_ok=True)
+        for slug in studies:
+            try:
+                body = builder(slug)
+                if isinstance(body, tuple):   # (payload, status_code) builders
+                    body = body[0]
+                _write_json(endpoint_dir / f"{slug}.json", body)
+            except Exception as exc:  # noqa: BLE001 — one study/builder never aborts a publish
+                print(f"  warn: {endpoint} export failed for {slug!r}: {exc}")
+
     # api/study-native-gallery/<slug>.json — the Visualizations-tab native figure
     # gallery (the study's latest completed run's viz.json panels), byte-parity
     # with GET /api/study-native-gallery/<slug>. Without this the snapshot SPA's
