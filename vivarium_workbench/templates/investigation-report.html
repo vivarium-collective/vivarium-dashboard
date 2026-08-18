@@ -1,0 +1,874 @@
+<title>__TITLE__</title>
+<style>
+:root{
+  --paper:#FAF9F6; --surface:#FFFFFF; --sunken:#F4F2ED;
+  --ink:#1F1D1B; --ink-2:#57534E; --ink-3:#8A857D;
+  --line:#E7E4DE; --line-2:#D8D4CC;
+  --accent:#0F766B; --accent-soft:#0F766B22;
+  --pass:#1A7F5A; --fail:#B42318; --warn:#A16207; --cal:#0E7490;
+  --pass-soft:#1A7F5A18; --fail-soft:#B4231814; --warn-soft:#A1620714;
+  --chip:#F1EFEA;
+  --shadow:0 1px 2px rgba(30,25,20,.04),0 1px 0 var(--line);
+  --serif:"Iowan Old Style","Palatino Nova",Palatino,"Book Antiqua",Georgia,serif;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#161513; --surface:#1E1C19; --sunken:#232019;
+  --ink:#EDEAE3; --ink-2:#A8A29B; --ink-3:#78736B;
+  --line:#37332D; --line-2:#453F37;
+  --accent:#3FB9A5; --accent-soft:#3FB9A526;
+  --pass:#43C08D; --fail:#E5675C; --warn:#D9A036; --cal:#4CC3E0;
+  --pass-soft:#43C08D1f; --fail-soft:#E5675C1c; --warn-soft:#D9A0361c;
+  --chip:#2A2723;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 1px 0 var(--line);
+}}
+:root[data-theme="dark"]{
+  --paper:#161513; --surface:#1E1C19; --sunken:#232019;
+  --ink:#EDEAE3; --ink-2:#A8A29B; --ink-3:#78736B;
+  --line:#37332D; --line-2:#453F37;
+  --accent:#3FB9A5; --accent-soft:#3FB9A526;
+  --pass:#43C08D; --fail:#E5675C; --warn:#D9A036; --cal:#4CC3E0;
+  --pass-soft:#43C08D1f; --fail-soft:#E5675C1c; --warn-soft:#D9A0361c;
+  --chip:#2A2723;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 1px 0 var(--line);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;scroll-padding-top:64px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+.kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
+.mono{font-family:var(--mono);font-size:.9em}
+.serif{font-family:var(--serif)}
+
+/* ---- top bar ---- */
+.topbar{position:sticky;top:0;z-index:40;background:color-mix(in srgb,var(--paper) 88%,transparent);
+  backdrop-filter:saturate(1.4) blur(8px);border-bottom:1px solid var(--line)}
+.topbar .wrap{display:flex;align-items:center;gap:16px;height:56px}
+.brand{font-family:var(--serif);font-weight:600;font-size:16px;letter-spacing:.01em;white-space:nowrap}
+.brand .dot{color:var(--accent)}
+.switch{display:flex;gap:4px;margin-left:auto;background:var(--sunken);border:1px solid var(--line);
+  border-radius:999px;padding:3px}
+.switch button{font-family:var(--sans);font-size:12.5px;font-weight:600;color:var(--ink-2);
+  background:none;border:none;padding:6px 14px;border-radius:999px;cursor:pointer;white-space:nowrap}
+.switch button[aria-selected="true"]{background:var(--surface);color:var(--ink);box-shadow:var(--shadow)}
+.switch-label{margin-left:auto;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.switch-label+.switch{margin-left:10px}
+.themebtn{background:none;border:1px solid var(--line);color:var(--ink-2);width:34px;height:34px;
+  border-radius:8px;cursor:pointer;font-size:15px;line-height:1;display:grid;place-items:center}
+
+/* ---- masthead ---- */
+.masthead{padding:44px 0 8px}
+.masthead .eyebrow{color:var(--ink-3);font-size:12.5px;letter-spacing:.04em;margin-bottom:10px}
+.masthead h1{font-family:var(--serif);font-weight:600;font-size:38px;line-height:1.12;margin:0;
+  letter-spacing:-.01em;text-wrap:balance;max-width:20ch}
+.provline{color:var(--ink-3);font-size:13px;margin-top:14px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.provline .sep{opacity:.5}
+
+/* ---- verdict banner ---- */
+.verdict{margin:28px 0 8px;padding:24px 26px 24px 30px;background:var(--surface);border:1px solid var(--line);
+  border-left:4px solid var(--pass);border-radius:12px;box-shadow:var(--shadow)}
+.verdict.is-fail{border-left-color:var(--fail)}
+.verdict .vhead{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.verdict .vtext{font-family:var(--serif);font-size:20px;line-height:1.4;color:var(--ink);margin:0;max-width:70ch}
+.verdict .what{color:var(--ink-2);font-size:14.5px;margin-top:14px;max-width:76ch}
+
+/* status chip */
+.status{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;letter-spacing:.03em;
+  padding:4px 11px;border-radius:999px;text-transform:uppercase}
+.status.pass{color:var(--pass);background:var(--pass-soft)}
+.status.fail{color:var(--fail);background:var(--fail-soft)}
+.status.warn{color:var(--warn);background:var(--warn-soft)}
+.status .g{width:7px;height:7px;border-radius:999px;background:currentColor}
+
+/* ---- stat strip ---- */
+.stats{display:flex;flex-wrap:wrap;gap:0;margin:22px 0;border:1px solid var(--line);border-radius:12px;
+  background:var(--surface);overflow:hidden}
+.stats .stat{flex:1;min-width:120px;padding:16px 18px;border-right:1px solid var(--line)}
+.stats .stat:last-child{border-right:none}
+.stats .num{font-family:var(--serif);font-size:26px;font-weight:600;line-height:1}
+.stats .lbl{color:var(--ink-2);font-size:12.5px;margin-top:6px}
+.stats .num.pass{color:var(--pass)}.stats .num.fail{color:var(--fail)}
+
+/* ---- section headers ---- */
+.sec-h{display:flex;align-items:baseline;gap:12px;margin:44px 0 16px}
+.sec-h h2{font-family:var(--serif);font-size:22px;font-weight:600;margin:0}
+.sec-h .rule{flex:1;height:1px;background:var(--line)}
+
+/* ---- glance table ---- */
+.glance{width:100%;border-collapse:collapse;font-size:14px}
+.glance th{text-align:left;font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-2);padding:8px 12px;border-bottom:1px solid var(--line-2)}
+.glance td{padding:11px 12px;border-bottom:1px solid var(--line)}
+.glance tr:hover td{background:var(--sunken)}
+.glance .idx{color:var(--ink-3);font-family:var(--mono);width:26px}
+.glance a.st{font-weight:600;color:var(--ink)}
+.glance a.st:hover{color:var(--accent);text-decoration:none}
+.glance .flag{color:var(--warn);font-size:11.5px;font-weight:700;margin-left:8px}
+
+/* ---- sticky nav ---- */
+.subnav{position:sticky;top:56px;z-index:30;background:color-mix(in srgb,var(--paper) 90%,transparent);
+  backdrop-filter:blur(6px);border-bottom:1px solid var(--line);border-top:1px solid var(--line);margin-top:36px}
+.subnav .wrap{display:flex;gap:4px;height:44px;align-items:center;overflow-x:auto;scrollbar-width:none}
+.subnav .wrap::-webkit-scrollbar{display:none}
+.subnav a{font-size:12.5px;color:var(--ink-2);padding:5px 10px;border-radius:7px;white-space:nowrap;font-weight:500}
+.subnav a.active{background:var(--accent-soft);color:var(--accent);font-weight:700}
+.subnav a.exec{font-weight:600}
+
+/* ---- study card ---- */
+.card{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:14px;
+  padding:26px 28px;margin:24px 0;box-shadow:var(--shadow);scroll-margin-top:112px}
+.card::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:3px;border-radius:3px;background:var(--pass)}
+.card.is-fail::before{background:var(--fail)}
+.card.is-control{border-style:dashed;border-color:var(--line-2)}
+.card-h{display:flex;align-items:flex-start;gap:14px;margin-bottom:4px;cursor:pointer;user-select:none}
+.card-h .ctoggle{color:var(--ink-3);font-size:13px;padding-top:6px;transition:transform .15s;line-height:1}
+.card.collapsed .card-h .ctoggle{transform:rotate(-90deg)}
+.card-h .cnum{font-family:var(--mono);color:var(--ink-3);font-size:14px;padding-top:5px}
+/* collapse behaviour */
+.card.collapsed .study-detail{display:none}
+.card:not(.collapsed) .study-summary{display:none}
+.study-summary{margin-top:10px}
+.summary-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:6px 0}
+.summary-snip{color:var(--ink-2);font-size:13.5px;max-width:78ch;margin-top:6px}
+.studies-toolbar{display:flex;gap:8px;align-items:center;margin-left:auto}
+.studies-toolbar button{font-family:var(--sans);font-size:12px;font-weight:600;color:var(--ink-2);
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 12px;cursor:pointer}
+.studies-toolbar button:hover{border-color:var(--accent);color:var(--accent)}
+.card-h .ctitle{font-family:var(--serif);font-size:22px;font-weight:600;margin:0;flex:1;line-height:1.2}
+.card-h .cright{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
+.control-kick{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.04em;
+  text-transform:uppercase;color:var(--warn);background:var(--warn-soft);padding:3px 10px;border-radius:999px}
+.claim{font-family:var(--serif);font-size:16.5px;color:var(--ink);margin:8px 0 2px;max-width:74ch;font-style:italic}
+.biology{color:var(--ink-2);font-size:14px;margin:8px 0 4px;max-width:76ch}
+
+/* spine stage */
+.stage{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
+.stage:first-of-type{border-top:none}
+.stage>.kicker{display:block;margin-bottom:12px}
+.substage{margin:14px 0}
+.substage .slabel{font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:6px}
+.kv{color:var(--ink);font-size:14.5px}
+.kv .rationale{color:var(--ink-2);font-size:13.5px;margin-top:4px;max-width:74ch}
+.decision-line{font-size:15px}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:3px 10px;
+  border-radius:999px;background:var(--chip);color:var(--ink-2);white-space:nowrap}
+.chip.pass{color:var(--pass);background:var(--pass-soft)}
+.chip.fail{color:var(--fail);background:var(--fail-soft)}
+.chip.decision{background:none;border:1px solid var(--accent);color:var(--accent)}
+.chip.mod{background:none;border:1px solid var(--line-2);color:var(--ink);font-family:var(--mono);font-size:11.5px}
+.chiprow{display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+
+/* mini table for tests */
+.ttable{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:4px}
+.ttable td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+.ttable tr:last-child td{border-bottom:none}
+.ttable .tname{font-weight:600}
+.ttable .texp{color:var(--ink-3);font-family:var(--mono);font-size:12px}
+.ttable .tv{text-align:right;white-space:nowrap}
+
+/* decision box */
+.decbox{display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:var(--sunken);
+  border-radius:10px;margin-top:6px}
+.decbox .dverdict{font-size:14px}
+.decbox .dnarr{color:var(--ink-2);font-size:13.5px;margin-top:6px;max-width:74ch}
+
+/* figures */
+figure{margin:12px 0 4px}
+figure svg{max-width:100%;height:auto;display:block}
+figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:76ch}
+.fig-scroll{overflow-x:auto}
+
+/* expander */
+details.exp{margin-top:10px;border-top:1px dotted var(--line-2);padding-top:8px}
+details.exp>summary{cursor:pointer;font-size:12.5px;color:var(--accent);font-weight:600;list-style:none}
+details.exp>summary::-webkit-details-marker{display:none}
+details.exp>summary::before{content:"▸ ";color:var(--ink-3)}
+details.exp[open]>summary::before{content:"▾ "}
+details.exp .body{font-size:13.5px;color:var(--ink-2);margin-top:8px;max-width:76ch}
+
+/* appendix */
+.appendix{margin:52px 0 24px}
+.cat-table{width:100%;border-collapse:collapse;font-size:13.5px}
+.cat-table td,.cat-table th{padding:9px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+.cat-table th{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2)}
+.cat-table .m{font-family:var(--mono);font-weight:600;color:var(--ink);white-space:nowrap}
+
+/* breadcrumb + prev/next + study grid */
+.crumb{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink-3);padding:26px 0 2px}
+.crumb a{color:var(--ink-2);font-weight:600}
+.crumb .cur{color:var(--ink)}
+.crumb .chev{opacity:.5}
+.prevnext{display:flex;justify-content:space-between;gap:12px;margin:28px 0 8px}
+.prevnext a{flex:1;border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:var(--surface);
+  display:flex;flex-direction:column;gap:3px;box-shadow:var(--shadow)}
+.prevnext a:hover{border-color:var(--accent);text-decoration:none}
+.prevnext a.next{text-align:right;align-items:flex-end}
+.prevnext .dir{font-size:11px;color:var(--ink-3);letter-spacing:.05em;text-transform:uppercase}
+.prevnext .nm{font-family:var(--serif);font-size:15px;color:var(--ink);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;margin-top:8px}
+.gcard{position:relative;border:1px solid var(--line);border-radius:12px;padding:16px 18px;background:var(--surface);
+  box-shadow:var(--shadow);display:flex;flex-direction:column;gap:6px}
+.gcard:hover{border-color:var(--accent);text-decoration:none}
+.gcard::before{content:"";position:absolute;left:0;top:14px;bottom:14px;width:3px;border-radius:3px;background:var(--pass)}
+.gcard.is-fail::before{background:var(--fail)}
+.gcard .gh{display:flex;align-items:baseline;gap:8px}
+.gcard .gn{font-family:var(--mono);color:var(--ink-3);font-size:12px}
+.gcard .gt{font-family:var(--serif);font-size:16.5px;font-weight:600;color:var(--ink);flex:1;line-height:1.2}
+.gcard .grole{color:var(--ink-2);font-size:12.5px}
+.gcard .gclaim{color:var(--ink-2);font-size:13px;line-height:1.5;font-style:italic}
+.gcard .gfoot{display:flex;justify-content:space-between;align-items:center;margin-top:2px}
+.gcard .garrow{color:var(--accent);font-size:13px;font-weight:600}
+/* per-section feedback bubble */
+.fbsection{position:relative}
+.fbbubble{position:absolute;right:-6px;top:-4px;width:26px;height:26px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--ink-3);font-size:13px;line-height:1;cursor:pointer;opacity:0;
+  transition:opacity .12s,transform .12s,color .12s,border-color .12s;box-shadow:var(--shadow);display:grid;place-items:center;z-index:5}
+.fbsection:hover>.fbbubble{opacity:.85}
+.fbbubble:hover{opacity:1 !important;transform:scale(1.08);color:var(--accent);border-color:var(--accent)}
+.fbbubble.has{opacity:1;color:var(--accent);border-color:var(--accent);background:var(--accent-soft)}
+.fbbubble.has::after{content:"";position:absolute;right:-1px;top:-1px;width:8px;height:8px;border-radius:999px;background:var(--accent);border:1.5px solid var(--surface)}
+.fbeditor-wrap{margin-top:12px;padding:12px 14px;background:var(--sunken);border:1px solid var(--line);border-radius:10px}
+.fbeditor-wrap .fbrow{margin-top:0;padding-top:0;border-top:none}
+@media(max-width:640px){.fbbubble{opacity:.6}}
+/* feedback */
+.fbrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:20px;padding-top:14px;border-top:1px dashed var(--line-2)}
+.fbrow .fblabel{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.fbdisp{display:flex;gap:4px}
+.fbdisp button{font-family:var(--sans);font-size:12px;font-weight:600;color:var(--ink-2);background:var(--surface);
+  border:1px solid var(--line);border-radius:999px;padding:4px 11px;cursor:pointer}
+.fbdisp button.on-ok{background:var(--pass-soft);color:var(--pass);border-color:transparent}
+.fbdisp button.on-rev{background:var(--warn-soft);color:var(--warn);border-color:transparent}
+.fbrow input.fbnote{flex:1;min-width:180px;font-family:var(--sans);font-size:13px;color:var(--ink);
+  background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:7px 11px}
+.fbrow input.fbnote:focus{outline:none;border-color:var(--accent)}
+.fbfloat{position:fixed;right:22px;bottom:22px;z-index:60;background:var(--accent);color:#fff;border:none;
+  border-radius:999px;padding:12px 18px;font-family:var(--sans);font-size:13px;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 14px rgba(15,118,107,.4);display:flex;align-items:center;gap:8px}
+.fbfloat .cnt{background:rgba(255,255,255,.25);border-radius:999px;padding:1px 8px;font-size:12px}
+.modal-bg{position:fixed;inset:0;z-index:70;background:rgba(20,18,15,.5);display:none;align-items:center;justify-content:center;padding:24px}
+.modal-bg.open{display:flex}
+.modal{background:var(--surface);border:1px solid var(--line);border-radius:14px;max-width:720px;width:100%;
+  max-height:82vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+.modal h3{font-family:var(--serif);font-size:20px;margin:0;padding:20px 22px 6px}
+.modal .sub{color:var(--ink-2);font-size:13px;padding:0 22px 12px}
+.modal textarea{flex:1;margin:0 22px;font-family:var(--mono);font-size:12.5px;line-height:1.55;color:var(--ink);
+  background:var(--sunken);border:1px solid var(--line);border-radius:10px;padding:14px;min-height:280px;resize:vertical}
+.modal .mfoot{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px}
+.modal .mfoot button{font-family:var(--sans);font-size:13px;font-weight:600;border-radius:9px;padding:9px 16px;cursor:pointer;border:1px solid var(--line);background:var(--surface);color:var(--ink)}
+.modal .mfoot button.primary{background:var(--accent);color:#fff;border-color:transparent}
+footer{border-top:1px solid var(--line);margin-top:48px;padding:24px 0 60px;color:var(--ink-3);font-size:12.5px}
+footer .wrap{display:flex;flex-direction:column;gap:6px}
+.reasoning-step{margin:2px 0}
+@media(max-width:640px){
+  .masthead h1{font-size:30px}.verdict .vtext{font-size:17px}
+  .card{padding:20px}.wrap{padding:0 16px}
+}
+</style>
+
+<div class="topbar"><div class="wrap">
+  <span class="brand">Vivarium <span class="dot">·</span> Workbench</span>
+  <span class="switch-label" id="wsname"></span>
+  <button class="themebtn" id="themebtn" title="Toggle theme">◐</button>
+</div></div>
+
+<main id="app"></main>
+
+<button class="fbfloat" id="fbfloat">Review &amp; export <span class="cnt" id="fbcnt">0</span></button>
+<div class="modal-bg" id="modalbg"><div class="modal">
+  <h3>Feedback report</h3>
+  <div class="sub">Your notes across the report, as a YAML feedback document — the same shape the workbench ingests. Copy it, or select all and save.</div>
+  <textarea id="fbyaml" spellcheck="false" readonly></textarea>
+  <div class="mfoot">
+    <button id="fbcopy">Copy YAML</button>
+    <button class="primary" id="fbclose">Close</button>
+  </div>
+</div></div>
+
+<footer><div class="wrap">
+  <div>Rendered from workspace <span class="mono">viva-casebook</span> · investigation + study YAML and loop trajectories — every panel maps to a real field.</div>
+  <div id="foot-prov" class="mono"></div>
+</div></footer>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+const INV = JSON.parse(document.getElementById('data').textContent);
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const has = v => v!=null && !(Array.isArray(v)&&!v.length) && !(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length);
+
+/* ---------- helpers ---------- */
+function statusChip(kind){
+  const map={pass:['pass','Passed'],fail:['fail','Refuted'],warn:['warn','Open']};
+  const [c,l]=map[kind]||map.warn; return `<span class="status ${c}"><span class="g"></span>${l}</span>`;
+}
+function gateOf(s){ // pass/fail
+  const g = (s.sourcing&&s.sourcing.audit&&s.sourcing.audit.gate) || s.gate_status;
+  if(g==='pass'||g==='passed') return 'pass';
+  if(g==='fail'||g==='failed') return 'fail';
+  return 'warn';
+}
+function isControl(s){ return gateOf(s)==='fail' && (s.confidence==='Refuted'||s.confidence==='Accepted') && !!s.conclusion; }
+function loopOutcome(s){
+  const r=(s.runs||[]).map(r=>r.outcomes&&r.outcomes['LOOP-OUTCOME']).find(Boolean);
+  return r||null;
+}
+
+/* ---------- SVG visualizations ---------- */
+// V1 capability coverage matrix: rows=requires, cols=chosen modules(+build-new), fill where provided
+function vizCapMatrix(s,inv){
+  const req=s.requires||[]; const mods=(s.sourcing&&s.sourcing.modules)||[];
+  const cat=inv.catalog||{};
+  if(!req.length) return '';
+  const cols = mods.length?mods:['(build-new)'];
+  const cw=Math.max(96,...cols.map(c=>c.length*7.2+24)), rh=30, lh=150, top=54;
+  const W=lh+cols.length*cw+16, H=top+req.length*rh+10;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12.5">`;
+  cols.forEach((c,i)=>{ const x=lh+i*cw+cw/2;
+    sv+=`<text x="${x}" y="20" text-anchor="middle" font-weight="600" fill="var(--ink)">${esc(c)}</text>`;
+    sv+=`<text x="${x}" y="36" text-anchor="middle" fill="var(--ink-3)" font-size="10">provides</text>`;});
+  req.forEach((r,ri)=>{ const y=top+ri*rh;
+    const covered=cols.some(c=>(cat[c]||[]).includes(r));
+    sv+=`<text x="${lh-12}" y="${y+rh/2+4}" text-anchor="end" fill="${covered?'var(--ink)':'var(--fail)'}" font-weight="${covered?400:700}">${esc(r)}</text>`;
+    cols.forEach((c,ci)=>{ const x=lh+ci*cw, provides=(cat[c]||[]).includes(r);
+      sv+=`<rect x="${x+6}" y="${y+4}" width="${cw-12}" height="${rh-9}" rx="5" fill="${provides?'var(--accent)':'var(--sunken)'}" stroke="${provides?'none':'var(--line)'}"/>`;
+      if(provides) sv+=`<text x="${x+cw/2}" y="${y+rh/2+4}" text-anchor="middle" fill="var(--surface)" font-size="11" font-weight="700">✓</text>`;
+    });
+    if(!covered) sv+=`<rect x="${lh-4}" y="${y+2}" width="${cols.length*cw+4}" height="${rh-4}" rx="6" fill="none" stroke="var(--fail)" stroke-dasharray="4 3"/>`;
+  });
+  sv+=`</svg>`;
+  const uncovered=req.filter(r=>!cols.some(c=>(cat[c]||[]).includes(r)));
+  const cap=uncovered.length? `Required capability <span class="mono">${esc(uncovered.join(', '))}</span> is not provided by the chosen module — the coverage argument <span class="mono">requires ⊆ provided</span> fails, and the audit refuses the reuse.`
+    : `Every required capability is provided by the chosen module(s): <span class="mono">requires ⊆ provided</span> holds.`;
+  return `<figure><div class="fig-scroll">${sv}</div><figcaption>${cap}</figcaption></figure>`;
+}
+// V3 audit axes chips
+function vizAuditAxes(s){
+  const ax=s.sourcing&&s.sourcing.audit&&s.sourcing.audit.axes; if(!ax) return '';
+  const order=['source_fit','reinvention','novelty_justified','survey_recorded'];
+  let chips=order.filter(k=>k in ax).map(k=>{ const ok=ax[k]==='within_tol';
+    return `<span class="chip ${ok?'pass':'fail'}">${ok?'✓':'✗'} ${k.replace(/_/g,' ')}</span>`;}).join('');
+  const catches=s.sourcing.audit.catches_if_wrong;
+  return `<div class="chiprow" style="margin-top:4px">${chips}</div>`+
+    (catches?`<div class="kv rationale" style="margin-top:8px"><b>Catches if wrong:</b> ${esc(catches)}</div>`:'');
+}
+// V2 sourcing decision map (investigation)
+function vizDecisionMap(inv){
+  const lanes=['reuse','compose','build-new'];
+  const studies=inv.studies.filter(s=>s.sourcing);
+  if(!studies.length) return '';
+  const laneH=76, top=20, W=940, padL=104;
+  const H=top+lanes.length*laneH+10;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12.5">`;
+  lanes.forEach((ln,li)=>{ const y=top+li*laneH;
+    sv+=`<text x="8" y="${y+laneH/2}" fill="var(--ink-2)" font-weight="700" font-size="11" letter-spacing=".06em">${ln.toUpperCase()}</text>`;
+    sv+=`<line x1="${padL-14}" y1="${y+laneH-1}" x2="${W-10}" y2="${y+laneH-1}" stroke="var(--line)"/>`;
+    const inLane=studies.filter(s=>s.sourcing.decision===ln);
+    const gap=(W-padL-20)/Math.max(inLane.length,1);
+    inLane.forEach((s,si)=>{ const gate=gateOf(s), fail=gate==='fail';
+      const x=padL+si*gap+gap/2-70, cx=x+70, cy=y+laneH/2-4, bw=150, bh=46;
+      sv+=`<a href="#s-${s.slug}">`;
+      sv+=`<rect x="${cx-bw/2}" y="${cy-bh/2}" width="${bw}" height="${bh}" rx="9" fill="var(--surface)" stroke="${fail?'var(--fail)':'var(--line-2)'}" stroke-width="${fail?1.5:1}" ${fail?'stroke-dasharray="5 3"':''}/>`;
+      sv+=`<text x="${cx}" y="${cy-3}" text-anchor="middle" fill="var(--ink)" font-weight="600" font-size="12.5">${esc(s.title.replace(/^Trap /,''))}</text>`;
+      const mods=(s.sourcing.modules||[]).join(' + ')||'new module';
+      sv+=`<text x="${cx}" y="${cy+13}" text-anchor="middle" fill="var(--ink-3)" font-size="10.5" font-family="var(--mono)">${esc(mods)}</text>`;
+      sv+=`<circle cx="${cx+bw/2-11}" cy="${cy-bh/2+11}" r="7" fill="${fail?'var(--fail)':'var(--pass)'}"/>`;
+      sv+=`<text x="${cx+bw/2-11}" y="${cy-bh/2+14.5}" text-anchor="middle" fill="var(--surface)" font-size="9" font-weight="700">${fail?'✗':'✓'}</text>`;
+      if(fail) sv+=`<text x="${cx}" y="${cy+bh/2+13}" text-anchor="middle" fill="var(--warn)" font-size="9.5" font-weight="700">⚑ ADVERSARIAL CONTROL</text>`;
+      sv+=`</a>`;
+    });
+  });
+  sv+=`</svg>`;
+  return `<figure><div class="fig-scroll">${sv}</div><figcaption>Every sourcing decision placed in its lane; the node's badge is the audit gate. The dashed node is the deliberate trap — a plausible reuse the audit correctly refuses.</figcaption></figure>`;
+}
+// V6 agent-vs-policy outcome bar (investigation)
+function vizOutcomeBar(inv){
+  const rows=inv.studies.map(s=>{
+    const at=s.agent_trajectory, pt=s.policy_trajectory;
+    return {s, agent:at&&at.result, policy:pt&&pt.result};
+  }).filter(r=>r.agent||r.policy);
+  if(!rows.length) return '';
+  const rh=46, top=30, padL=150, W=940, maxE=Math.max(1,...rows.flatMap(r=>[r.agent&&r.agent.edits||0,r.policy&&r.policy.edits||0]));
+  const barMax=W-padL-150, unit=barMax/Math.max(maxE,3);
+  const H=top+rows.length*rh+8;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12">`;
+  sv+=`<text x="${padL}" y="18" fill="var(--ink-2)" font-size="10.5" font-weight="700">AGENT ▲  /  POLICY ▼   ·   bar = edits, terminal chip = outcome</text>`;
+  rows.forEach((r,ri)=>{ const y=top+ri*rh;
+    sv+=`<a href="#s-${r.s.slug}"><text x="${padL-12}" y="${y+rh/2}" text-anchor="end" fill="var(--ink)" font-weight="600" font-size="12.5">${esc(r.s.title)}</text></a>`;
+    [['agent',r.agent,-1],['policy',r.policy,1]].forEach(([k,res,dir])=>{
+      if(!res) return; const cy=y+rh/2+dir*10;
+      const done=res.state==='DONE'; const w=Math.max(unit*(res.edits||0),6);
+      sv+=`<rect x="${padL}" y="${cy-6}" width="${w}" height="12" rx="6" fill="${done?'var(--accent)':'var(--sunken)'}" stroke="${done?'none':'var(--line-2)'}"/>`;
+      const chx=padL+w+8;
+      sv+=`<text x="${chx}" y="${cy+4}" fill="${done?'var(--pass)':'var(--fail)'}" font-weight="700" font-size="11">${done?'✓ DONE':'✗ GIVE-UP'} · ${res.edits} edit${res.edits==1?'':'s'}</text>`;
+    });
+  });
+  sv+=`</svg>`;
+  return `<figure><div class="fig-scroll">${sv}</div><figcaption>Head-to-head across every task: the LLM agent (upper lane) reaches DONE where the deterministic policy (lower lane) gives up. Bar length is the number of model edits taken.</figcaption></figure>`;
+}
+// V4 margin ladder (study, build)
+function vizMarginLadder(traj){
+  if(!traj||!traj.iterations||!traj.iterations.length) return '';
+  const its=traj.iterations, tests=(its[0].tests||[]).map(t=>t.id);
+  if(!tests.length) return '';
+  const cw=Math.max(52,(700-160)/its.length), rh=34, top=40, padL=160;
+  const W=padL+its.length*cw+10, H=top+tests.length*rh+16;
+  const maxAbs=Math.max(1,...its.flatMap(it=>(it.tests||[]).map(t=>Math.abs(t.margin||0))));
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12">`;
+  its.forEach((it,i)=>{ const x=padL+i*cw+cw/2;
+    sv+=`<text x="${x}" y="20" text-anchor="middle" fill="var(--ink-2)" font-size="10.5" font-weight="600">iter ${it.iteration}</text>`;
+    sv+=`<text x="${x}" y="33" text-anchor="middle" fill="var(--ink-3)" font-size="9.5">${it.n_pass}/${it.n_hard}</text>`;});
+  tests.forEach((tid,ri)=>{ const y=top+ri*rh;
+    const lbl=(its[0].tests[ri].label)||tid;
+    sv+=`<text x="${padL-12}" y="${y+rh/2+4}" text-anchor="end" fill="var(--ink)" font-size="11.5">${esc(lbl.length>26?lbl.slice(0,25)+'…':lbl)}</text>`;
+    its.forEach((it,ci)=>{ const t=(it.tests||[])[ri]; if(!t) return; const x=padL+ci*cw;
+      const ok=t.verdict==='within_tol'; const op=(0.28+0.72*Math.min(1,Math.abs(t.margin||0)/maxAbs)).toFixed(2);
+      const isLast=ci===its.length-1;
+      sv+=`<rect x="${x+5}" y="${y+4}" width="${cw-10}" height="${rh-9}" rx="5" fill="${ok?'var(--pass)':'var(--fail)'}" fill-opacity="${ok?0.9:op}" stroke="${isLast?'var(--ink)':'none'}" stroke-width="${isLast?1.4:0}"/>`;
+      const fixed=(it.newly_fixed||[]).includes(tid);
+      if(fixed) sv+=`<text x="${x+cw/2}" y="${y+rh/2+4}" text-anchor="middle" fill="var(--surface)" font-size="12" font-weight="700">✦</text>`;
+    });
+  });
+  sv+=`</svg>`;
+  return `<figure><div class="fig-scroll">${sv}</div><figcaption>Each locked test (row) across build iterations (columns); green = passing, red = failing (deeper = larger margin from the bar). <b>✦</b> marks the iteration a test was newly fixed; the ringed column is the final model.</figcaption></figure>`;
+}
+// V5 iteration timeline
+function timelineSteps(traj){
+  if(!traj||!traj.iterations) return '';
+  const steps=traj.iterations.map(it=>{
+    const d=it.decision||{}; const act=d.action||d.kind||'';
+    let label=act;
+    if(d.mechanism) label='install '+d.mechanism;
+    else if(d.value) label=(d.action||'')+' '+d.value;
+    else if(act==='done') label='DONE';
+    else if(act==='blocked'||act==='install') label=act;
+    const reason=d.reasoning||d.note||'';
+    return {it:it.iteration,label,reason,np:it.n_pass,nh:it.n_hard};
+  });
+  let html='<div style="margin-top:6px">';
+  steps.forEach((s,i)=>{
+    const pct=s.nh?Math.round(100*s.np/s.nh):0;
+    html+=`<div class="reasoning-step" style="display:flex;gap:10px;align-items:baseline;padding:4px 0">
+      <span class="mono" style="color:var(--ink-3);min-width:34px">i${s.it}</span>
+      <span style="font-weight:600;min-width:180px">${esc(s.label)}</span>
+      <span style="flex:1;height:6px;background:var(--sunken);border-radius:4px;overflow:hidden;max-width:160px">
+        <span style="display:block;height:100%;width:${pct}%;background:var(--accent)"></span></span>
+      <span class="mono" style="color:var(--ink-2);font-size:11px">${s.np}/${s.nh}</span></div>`;
+    if(s.reason) html+=`<div class="kv rationale" style="margin:0 0 6px 44px;font-size:12.5px">${esc(s.reason)}</div>`;
+  });
+  html+='</div>';
+  return html;
+}
+
+/* ---------- V7 gate matrix (investigation) : tests × studies ---------- */
+function vizGateMatrix(inv){
+  const studies=inv.studies.filter(s=>s.agent_trajectory&&s.agent_trajectory.iterations&&s.agent_trajectory.iterations.length);
+  if(studies.length<2) return '';
+  // union of test ids is heterogeneous across tasks; instead show pass-count per study as a compact dot bar
+  const rh=30, top=24, padL=150, W=760;
+  const H=top+studies.length*rh+10, maxN=Math.max(...studies.map(s=>lastIt(s).n_hard||1));
+  const cell=Math.min(26,(W-padL-40)/maxN);
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12">`;
+  sv+=`<text x="${padL}" y="16" fill="var(--ink-2)" font-size="10.5" font-weight="700">FINAL TEST OUTCOMES · one square per locked test</text>`;
+  studies.forEach((s,ri)=>{ const y=top+ri*rh, it=lastIt(s), ts=it.tests||[];
+    sv+=`<a href="#s-${s.slug}"><text x="${padL-12}" y="${y+rh/2+4}" text-anchor="end" fill="var(--ink)" font-weight="600" font-size="12">${esc(s.title)}</text></a>`;
+    ts.forEach((t,ci)=>{ const ok=t.verdict==='within_tol'; const x=padL+ci*(cell+4);
+      sv+=`<rect x="${x}" y="${y+3}" width="${cell}" height="${cell}" rx="4" fill="${ok?'var(--pass)':'var(--fail)'}" fill-opacity="${ok?.9:.5}"><title>${esc(t.label||t.id)}: ${ok?'pass':'fail'}</title></rect>`;
+    });
+    sv+=`<text x="${padL+ts.length*(cell+4)+8}" y="${y+rh/2+4}" fill="var(--ink-2)" font-size="11" font-weight="600">${it.n_pass}/${it.n_hard}</text>`;
+  });
+  sv+=`</svg>`;
+  return `<figure><div class="fig-scroll">${sv}</div><figcaption>Every task's final model against its own locked acceptance tests — the agent drives each to a full green row.</figcaption></figure>`;
+}
+function lastIt(s){const its=s.agent_trajectory.iterations;return its[its.length-1];}
+
+/* ---------- model diagram (the "model SVG") ---------- */
+function modelText(s){ const cm=(s.conclusion||'').match(/##\s*Final model\s*([\s\S]*?)(?:\n##|$)/i);
+  return (cm?cm[1].trim():'')||s.biological_summary||''; }
+function vizModelSVG(s, inv){
+  if(s.sourcing){
+    const mods=(s.baseline||[]).filter(b=>b.module||b.name);
+    const boxes=mods.length?mods:[{name:'new module',domain:'built for this task'}];
+    const bw=200,bh=58,gap=30,padT=54,x0=20;
+    const W=Math.max(560,x0+boxes.length*(bw+gap)), H=padT+bh+58;
+    let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12.5">`;
+    // task node
+    sv+=`<rect x="${x0}" y="14" width="${(s.requires||[]).length?260:180}" height="28" rx="8" fill="var(--sunken)" stroke="var(--line)"/>`;
+    sv+=`<text x="${x0+12}" y="32" fill="var(--ink-2)" font-size="11">task requires: <tspan fill="var(--ink)" font-family="var(--mono)">${esc((s.requires||[]).join(', '))}</tspan></text>`;
+    boxes.forEach((b,i)=>{ const x=x0+i*(bw+gap), y=padT;
+      sv+=`<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="10" fill="var(--surface)" stroke="var(--accent)"/>`;
+      sv+=`<text x="${x+bw/2}" y="${y+24}" text-anchor="middle" fill="var(--ink)" font-weight="700" font-family="var(--mono)" font-size="13">${esc(b.name)}</text>`;
+      sv+=`<text x="${x+bw/2}" y="${y+42}" text-anchor="middle" fill="var(--ink-2)" font-size="11">${esc((b.domain||'').slice(0,34))}</text>`;
+      sv+=`<line x1="${x+bw/2}" y1="42" x2="${x+bw/2}" y2="${y}" stroke="var(--line-2)" stroke-width="1.5" marker-end="url(#ar)"/>`;
+      if(i>0) sv+=`<line x1="${x-gap}" y1="${y+bh/2}" x2="${x}" y2="${y+bh/2}" stroke="var(--line-2)" stroke-dasharray="3 3"/>`;
+    });
+    sv+=`<text x="${x0}" y="${H-14}" fill="var(--ink-3)" font-size="11">${esc(s.sourcing.decision)} · ${boxes.length>1?'composed':'single module'}</text>`;
+    sv+=`<defs><marker id="ar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--line-2)"/></marker></defs></svg>`;
+    return `<figure><div class="fig-scroll">${sv}</div><figcaption>The sourced model: ${boxes.length>1?'the composed modules':'the reused module'} that supply the task's required capabilities.</figcaption></figure>`;
+  }
+  // agentic: extract CamelCase process names + stores from the final-model text
+  const text=modelText(s);
+  const procs=[...new Set((text.match(/\b[A-Z][a-z]+(?:[A-Z][a-z0-9]+)+\b/g)||[]))]
+    .filter(p=>!/^(Composite|Process|Hill|Cellular|Potts|Rust|Monod|ParCa|Wnt)$/.test(p)).slice(0,6);
+  const sm=text.match(/over ([a-z0-9_\/ ,]+)/i);
+  const stores=sm?sm[1].split(/[\/,]/).map(x=>x.trim()).filter(Boolean).slice(0,6):[];
+  if(!procs.length){ // fallback: single composite box
+    const bl=(s.baseline||[])[0];
+    return `<figure><div class="kv mono texp">${esc(bl&&bl.composite||'process-bigraph Composite')}</div><figcaption>${esc(text||'A process-bigraph Composite run through the engine.')}</figcaption></figure>`;
+  }
+  const bw=Math.max(120,...procs.map(p=>p.length*8+24)),bh=42,gap=24,x0=16,padT=24;
+  const rowW=x0+procs.length*(bw+gap), storeY=padT+bh+40;
+  const W=Math.max(560,rowW), H=stores.length?storeY+40:padT+bh+30;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12.5">`;
+  sv+=`<text x="${x0}" y="16" fill="var(--ink-3)" font-size="10.5" letter-spacing=".06em">PROCESSES</text>`;
+  procs.forEach((p,i)=>{ const x=x0+i*(bw+gap), y=padT;
+    sv+=`<rect x="${x}" y="${y}" width="${bw}" height="${bh}" rx="9" fill="var(--surface)" stroke="var(--accent)"/>`;
+    sv+=`<text x="${x+bw/2}" y="${y+bh/2+4}" text-anchor="middle" fill="var(--ink)" font-weight="700" font-family="var(--mono)" font-size="12">${esc(p)}</text>`;
+    if(i>0) sv+=`<line x1="${x-gap}" y1="${y+bh/2}" x2="${x}" y2="${y+bh/2}" stroke="var(--line-2)" marker-end="url(#ar2)"/>`;
+    if(stores.length) sv+=`<line x1="${x+bw/2}" y1="${y+bh}" x2="${x+bw/2}" y2="${storeY}" stroke="var(--line)" stroke-dasharray="2 3"/>`;
+  });
+  if(stores.length){
+    sv+=`<text x="${x0}" y="${storeY-8}" fill="var(--ink-3)" font-size="10.5" letter-spacing=".06em">STORES</text>`;
+    let sx=x0; stores.forEach(st=>{ const w=st.length*7.5+20;
+      sv+=`<rect x="${sx}" y="${storeY}" width="${w}" height="26" rx="13" fill="var(--sunken)" stroke="var(--line)"/>`;
+      sv+=`<text x="${sx+w/2}" y="${storeY+17}" text-anchor="middle" fill="var(--ink-2)" font-family="var(--mono)" font-size="11">${esc(st)}</text>`; sx+=w+10; });
+  }
+  sv+=`<defs><marker id="ar2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--line-2)"/></marker></defs></svg>`;
+  return `<figure><div class="fig-scroll">${sv}</div><figcaption>The process-bigraph Composite the agent built: ${procs.length} process${procs.length>1?'es':''}${stores.length?` wired over ${stores.length} shared stores`:''}, run through the engine.</figcaption></figure>`;
+}
+
+/* ---------- block renderers (spine) ---------- */
+// dense tests / report-card table: description, machine criterion, provenance, final verdict + observed + margin
+function testsTable(tests, traj){
+  let finals={}, prov={};
+  if(traj){
+    if(traj.iterations&&traj.iterations.length)
+      (traj.iterations[traj.iterations.length-1].tests||[]).forEach(t=>finals[t.id]={v:t.verdict,exp:t.expected,obs:t.observed,m:t.margin});
+    (traj.tests||[]).forEach(t=>{prov[t.id]={exp:t.expected,provenance:t.provenance,label:t.label};});
+  }
+  const rows=(tests||[]).map(t=>{
+    const name=t.name||t.id, desc=t.description||t.label||(prov[name]&&prov[name].label)||'';
+    const meas=t.measure&&(t.measure.path||t.measure.observable||t.measure.kind);
+    const cls=t.classification;
+    const fin=finals[name]; const v=fin?(fin.v==='within_tol'?'pass':'fail'):null;
+    const exp=(fin&&fin.exp)||(prov[name]&&prov[name].exp)||(t.pass_if&&(t.pass_if.op+' '+t.pass_if.value))||'';
+    const pv=(prov[name]&&prov[name].provenance)||(t.pass_if&&t.pass_if.provenance)||(t.measure&&t.measure.kind==='audit-axis'?('audit axis '+meas):'');
+    const obs=(fin&&fin.obs!=null)?`observed ${fmt(fin.obs)}`:'';
+    const mg=(fin&&fin.m!=null)?` · margin ${fmt(fin.m)}`:'';
+    return `<tr><td class="tname">${esc(desc||name)}
+        <div class="texp mono">${esc(name)}${cls?' · '+esc(cls):''}${meas?' · '+esc(meas):''}</div>
+        ${pv?`<div class="kv rationale" style="font-size:12px;margin-top:3px">${esc(pv)}</div>`:''}</td>
+      <td class="tv"><div>${exp?`<span class="mono texp">${esc(exp)}</span>`:''} ${v?`<span class="chip ${v}" style="margin-left:6px">${v==='pass'?'✓ pass':'✗ fail'}</span>`:'<span class="chip">pending</span>'}</div>
+        ${obs?`<div class="texp mono" style="margin-top:3px">${esc(obs)}${esc(mg)}</div>`:''}</td></tr>`;
+  }).join('');
+  return `<table class="ttable">${rows}</table>`;
+}
+function fmt(n){ if(typeof n!=='number') return esc(n); return Number.isInteger(n)?n:(Math.abs(n)<0.01?n.toExponential(1):n.toFixed(2)); }
+
+function fbBubble(key,label){ return `<button class="fbbubble ${FB[key]?'has':''}" data-fb="${esc(key)}" data-fblabel="${esc(label)}" title="Add feedback to this section" aria-label="Add feedback to ${esc(label)}">💬</button>`; }
+function part(label, body, key, klabel){ if(!body) return '';
+  return `<div class="substage fbsection">${key?fbBubble(key,klabel||label):''}<div class="slabel">${label}</div>${body}</div>`; }
+
+// high-level overview shown when a study is COLLAPSED
+function studySummary(s, inv){
+  const chips=[];
+  if(s.sourcing){
+    chips.push(`<span class="chip decision">${esc(s.sourcing.decision)}</span>`);
+    (s.sourcing.modules||[]).forEach(m=>chips.push(`<span class="chip mod">${esc(m)}</span>`));
+    const ax=s.sourcing.audit&&s.sourcing.audit.axes;
+    if(ax){ const ok=Object.values(ax).filter(v=>v==='within_tol').length; chips.push(`<span class="chip">audit ${ok}/${Object.keys(ax).length} axes</span>`); }
+  } else {
+    const a=s.agent_trajectory&&s.agent_trajectory.result, p=s.policy_trajectory&&s.policy_trajectory.result;
+    if(a) chips.push(`<span class="chip ${a.state==='DONE'?'pass':'fail'}">agent ${a.state==='DONE'?'✓ '+a.edits+'e':'✗'}</span>`);
+    if(p) chips.push(`<span class="chip ${p.state==='DONE'?'pass':'fail'}">policy ${p.state==='DONE'?'✓':'✗ give-up'}</span>`);
+    const it=s.agent_trajectory&&lastIt(s); if(it) chips.push(`<span class="chip">tests ${it.n_pass}/${it.n_hard}</span>`);
+  }
+  const runN=(s.runs||[]).length; if(runN) chips.push(`<span class="chip">${runN} run${runN>1?'s':''}</span>`);
+  const concl=(s.conclusion||'').replace(/##\s*Final model[\s\S]*?(?=\n##|$)/i,'').replace(/##\s*Result/i,'').trim();
+  const snip=concl.split(/(?<=[.!?])\s/).slice(0,2).join(' ');
+  return `<div class="summary-chips">${chips.join('')}</div>${snip?`<div class="summary-snip">${esc(snip)}</div>`:''}`;
+}
+
+function renderStudy(s, inv, idx){
+  const gate=gateOf(s), fail=gate==='fail', control=isControl(s), lo=loopOutcome(s);
+  const dchip=fail?'fail':'pass';
+
+  // OVERVIEW
+  const claimLine = s.claim? `<div class="claim">“${esc(s.claim)}”</div>` : (s.question? `<div class="claim">${esc(s.question)}</div>`:'');
+  const overview = (s.biological_summary && (s.claim||s.question))?`<div class="biology">${esc(s.biological_summary)}</div>`:'';
+
+  // MODEL (svg + rationale/ref)
+  const bl=(s.baseline||[])[0];
+  let modelBody = vizModelSVG(s,inv);
+  if(s.sourcing){
+    modelBody += `<div class="decision-line" style="margin-top:6px"><span class="chip decision">${esc(s.sourcing.decision)}</span>
+      ${(s.sourcing.modules||[]).map(m=>`<span class="chip mod">${esc(m)}</span>`).join(' ')||'<span class="chip mod">new module</span>'}</div>
+      ${s.sourcing.rationale?`<div class="kv rationale">${esc(s.sourcing.rationale)}</div>`:''}`;
+  } else if(bl&&bl.composite){
+    modelBody += `<div class="texp mono" style="margin-top:4px">${esc(bl.composite)}</div>`;
+  }
+
+  // SIMULATION RUN
+  const runs=s.runs||[];
+  const runBody = runs.length?runs.map(r=>{
+    const o=r.outcomes&&(r.outcomes['LOOP-OUTCOME']||r.outcomes['SOURCING-GATE']);
+    return `<div class="kv" style="margin:2px 0"><span class="chip ${r.status==='completed'?'pass':''}">${esc(r.status)}</span>
+      <span class="mono" style="margin-left:8px;color:var(--ink-2)">${esc(r.name||r.module||'')}</span>
+      ${o?`<span class="kv" style="margin-left:8px"><b class="mono">${esc(o.result)}</b> ${esc(o.detail||'')}</span>`:''}
+      ${r.provenance?`<div class="texp mono" style="margin-top:2px">${esc(r.provenance)}</div>`:''}</div>`;
+  }).join(''):'';
+
+  // VISUALIZATIONS (study figures + audit axes)
+  const figs=[];
+  if(s.agent_trajectory) figs.push(['Margin ladder — LLM agent', vizMarginLadder(s.agent_trajectory)]);
+  if(s.policy_trajectory) figs.push(['Margin ladder — deterministic policy control', vizMarginLadder(s.policy_trajectory)]);
+  if(s.sourcing) figs.push(['Capability coverage', vizCapMatrix(s,inv)]);
+  const figHtml=figs.filter(f=>f[1]).map(([t,svg])=>`<div style="margin:12px 0"><div class="kicker" style="margin-bottom:6px">${esc(t)}</div>${svg}</div>`).join('');
+  const auditHtml=(s.sourcing&&s.sourcing.audit&&s.sourcing.audit.axes)?`<div style="margin:10px 0"><div class="kicker" style="margin-bottom:6px">Audit — sourcing gate (4 axes)</div>${vizAuditAxes(s)}</div>`:'';
+  const vizBody=(figHtml+auditHtml)||'';
+
+  // TESTS (+ build reasoning for agentic)
+  let testsBody = has(s.behavior_tests)?testsTable(s.behavior_tests, s.agent_trajectory):'';
+  if(s.agent_trajectory){
+    const at=s.agent_trajectory;
+    testsBody += `<details class="exp"><summary>How the agent converged — iteration-by-iteration</summary><div class="body">${timelineSteps(at)}`;
+    if(at.result&&has(at.result.violations)) testsBody+=`<div class="kv rationale" style="margin-top:8px;color:var(--warn)"><b>Integrity trail:</b> ${at.result.violations.map(esc).join('; ')}</div>`;
+    if(s.policy_trajectory){const pr=s.policy_trajectory.result||{};
+      testsBody+=`<div class="kv rationale" style="margin-top:8px"><b>Deterministic-policy control:</b> ${pr.state==='DONE'?`also DONE in ${pr.edits} edits`:`gave up after ${pr.edits} edit${pr.edits==1?'':'s'}`}.</div>`;}
+    testsBody+=`</div></details>`;
+  }
+
+  // DECISION
+  const conclusion=(s.conclusion||'').replace(/##\s*Final model[\s\S]*?(?=\n##|$)/i,'').replace(/##\s*Result/i,'').trim();
+  const decisionBody=`<div class="decbox"><div>${statusChip(dchip)}</div>
+    <div><div class="dverdict"><b>${fail?'Gate refused':'Gate cleared'}</b> · ${esc(s.confidence||'')}${lo?` · <span class="mono">${esc(lo.result)} (${esc(lo.detail||'')})</span>`:''}</div>
+    ${conclusion?`<div class="dnarr">${esc(conclusion)}</div>`:''}</div></div>`;
+
+  return `<section class="card collapsed ${fail?'is-fail':''} ${control?'is-control':''}" id="s-${s.slug}">
+    <div class="card-h">
+      <span class="ctoggle">▾</span>
+      <span class="cnum">${String(idx).padStart(2,'0')}</span>
+      <h3 class="ctitle">${esc(s.title)}</h3>
+      <div class="cright">${control?'<span class="control-kick">⚑ Adversarial control</span>':''}${statusChip(dchip)}</div>
+    </div>
+    ${claimLine}${overview}
+    <div class="study-summary">${studySummary(s,inv)}</div>
+    <div class="study-detail">
+      ${part('Model', modelBody, 'study:'+s.slug+'/model', s.title+' · Model')}
+      ${part('Simulation run', runBody, 'study:'+s.slug+'/simulation', s.title+' · Simulation run')}
+      ${part('Visualizations', vizBody, 'study:'+s.slug+'/visualizations', s.title+' · Visualizations')}
+      ${part('Tests', testsBody, 'study:'+s.slug+'/tests', s.title+' · Tests')}
+      ${part('Decision', decisionBody, 'study:'+s.slug+'/decision', s.title+' · Decision')}
+      ${feedbackRow('study:'+s.slug, 'this whole study')}
+    </div>
+  </section>`;
+}
+
+/* ---------- executive band ---------- */
+function renderExec(inv){
+  const studies=inv.studies;
+  const gates=studies.map(gateOf);
+  const nPass=gates.filter(g=>g==='pass').length, nFail=gates.filter(g=>g==='fail').length;
+  const exv=inv.executive||{};
+  const verdictText = exv.verdict || inv.question;
+  const status = exv.verdict_status==='passed'?'pass':(inv.status==='in_progress'?'warn':'pass');
+  // stat strip
+  let stats='';
+  if(inv.slug==='model-sourcing'){
+    const dec={};studies.forEach(s=>{const d=s.sourcing&&s.sourcing.decision;if(d)dec[d]=(dec[d]||0)+1;});
+    stats=[[studies.length,'studies'],[dec['reuse']||0,'reuse'],[dec['compose']||0,'compose'],[dec['build-new']||0,'build-new'],[nFail,'trap refused ✗','fail']];
+  }else{
+    let aDone=0,pDone=0,pTot=0;
+    studies.forEach(s=>{ if(s.agent_trajectory&&s.agent_trajectory.result&&s.agent_trajectory.result.state==='DONE')aDone++;
+      if(s.policy_trajectory){pTot++; if(s.policy_trajectory.result&&s.policy_trajectory.result.state==='DONE')pDone++;} });
+    stats=[[studies.length,'tasks'],[aDone+'/'+studies.length,'agent solved','pass'],[pDone+'/'+pTot,'policy solved'],[studies.length-pDone,'need an agent']];
+  }
+  const statHtml=stats.map(([n,l,c])=>`<div class="stat"><div class="num ${c||''}">${n}</div><div class="lbl">${l}</div></div>`).join('');
+  // glance table
+  const glance=studies.map((s,i)=>{
+    const g=gateOf(s), role=roleLine(s,inv), ctrl=isControl(s);
+    return `<tr><td class="idx">${i+1}</td>
+      <td><a class="st" href="#s-${s.slug}">${esc(s.title)}</a>${ctrl?'<span class="flag">⚑ control</span>':''}</td>
+      <td style="color:var(--ink-2)">${role}</td>
+      <td style="text-align:right">${g==='fail'?'<span class="chip fail">✗ refuted</span>':g==='pass'?'<span class="chip pass">✓ pass</span>':'<span class="chip">open</span>'}</td></tr>`;
+  }).join('');
+  const howto = inv.slug==='model-sourcing'
+    ? `Each study is one <b>sourcing decision</b> — reuse an existing module, compose several, or build a new one. A deterministic audit grades the decision on four axes (<span class="mono">source_fit · reinvention · novelty_justified · survey_recorded</span>) by checking <span class="mono">requires ⊆ provided</span> against the module catalog. A study whose gate <b>fails</b> while it is still marked complete is an <b>adversarial control</b> — a plausible-but-wrong choice the audit is meant to refuse.`
+    : `Each study is a <b>model-building task</b> run twice: an LLM agent and a deterministic worst-margin policy each try to build a real process-bigraph model that passes the same <b>locked</b> acceptance tests. The <b>margin ladder</b> shows each test across build iterations; the <b>timeline</b> shows what the agent edited and why. The contrast is where an agent is genuinely required — where the policy has no move for the real fix and gives up.`;
+  return `<div class="verdict fbsection ${status==='fail'?'is-fail':''}">
+      ${fbBubble('overview','Investigation overview')}
+      <div class="vhead">${statusChip(status)}<span class="kicker">Verdict</span></div>
+      <p class="vtext">${esc(verdictText)}</p>
+      ${exv.what_is_this?`<div class="what">${esc(exv.what_is_this)}</div>`:(inv.hypothesis?`<div class="what">${esc(inv.hypothesis)}</div>`:'')}
+      ${inv.lead?`<div class="what" style="margin-top:8px">${esc(inv.lead)}</div>`:''}
+      <details class="exp"><summary>How to read this report</summary><div class="body">${howto}</div></details>
+    </div>
+    <div class="stats">${statHtml}</div>
+    <div class="sec-h"><h2>At a glance</h2><span class="rule"></span></div>
+    <table class="glance"><thead><tr><th></th><th>Study</th><th>${inv.slug==='model-sourcing'?'Sourcing decision':'Agent vs policy'}</th><th style="text-align:right">Gate</th></tr></thead><tbody>${glance}</tbody></table>`;
+}
+// dedicated place for the FINAL investigation-level visualizations
+function renderInvViz(inv){
+  const figs=[];
+  if(inv.slug==='model-sourcing'){ figs.push(['Sourcing decision map', vizDecisionMap(inv)]); }
+  else { figs.push(['Agent vs policy — outcomes', vizOutcomeBar(inv)]); figs.push(['Final test outcomes', vizGateMatrix(inv)]); }
+  const live=figs.filter(f=>f[1]); if(!live.length) return '';
+  return `<div id="inv-viz" class="fbsection">${fbBubble('figures','Investigation visualizations')}<div class="sec-h"><h2>Investigation visualizations</h2><span class="rule"></span></div>
+    <p style="color:var(--ink-2);font-size:14px;max-width:74ch;margin:0 0 6px">The whole investigation in a few figures — the synthesis across all ${inv.studies.length} studies.</p>
+    ${live.map(([t,svg])=>`<div style="margin:20px 0"><div class="kicker" style="margin-bottom:8px">${esc(t)}</div>${svg}</div>`).join('')}</div>`;
+}
+function roleLine(s,inv){
+  if(s.sourcing){ const mods=(s.sourcing.modules||[]).join(' + ')||'new module';
+    return `${esc(s.sourcing.decision)} · <span class="mono">${esc(mods)}</span>`; }
+  const a=s.agent_trajectory&&s.agent_trajectory.result, p=s.policy_trajectory&&s.policy_trajectory.result;
+  const av=a?(a.state==='DONE'?`agent ✓ ${a.edits}e`:'agent ✗'):'';
+  const pv=p?(p.state==='DONE'?` · policy ✓`:` · policy ✗ give-up`):'';
+  return av+pv;
+}
+
+/* ---------- appendix ---------- */
+function renderAppendix(inv){
+  if(!inv.catalog) return '';
+  const rows=Object.entries(inv.catalog).map(([m,caps])=>
+    `<tr><td class="m">${esc(m)}</td><td>${caps.map(c=>`<span class="chip mod" style="margin:2px">${esc(c)}</span>`).join('')}</td></tr>`).join('');
+  return `<div class="appendix fbsection" id="appendix">
+    ${fbBubble('appendix','Module catalog')}
+    <div class="sec-h"><h2>Module catalog</h2><span class="rule"></span></div>
+    <p style="color:var(--ink-2);font-size:14px;max-width:74ch">The reusable modules and the capabilities each declares — the ground truth the sourcing audit checks every <span class="mono">requires ⊆ provided</span> claim against.</p>
+    <table class="cat-table"><thead><tr><th>Module</th><th>Declared capabilities</th></tr></thead><tbody>${rows}</tbody></table>
+  </div>`;
+}
+
+/* ---------- feedback ---------- */
+let FB={}, CUR='model-sourcing';
+function fbKeyStore(){ return 'viva-fb-'+CUR; }
+function loadFB(){ try{ FB=JSON.parse(localStorage.getItem(fbKeyStore())||'{}'); }catch(e){ FB={}; } }
+function saveFB(){ try{ localStorage.setItem(fbKeyStore(), JSON.stringify(FB)); }catch(e){} updateCount(); }
+function setFB(key,patch){ FB[key]={...(FB[key]||{}),...patch};
+  if(!FB[key].note && !FB[key].disp) delete FB[key]; saveFB(); }
+function fbCount(){ return Object.keys(FB).length; }
+function updateCount(){ const el=document.getElementById('fbcnt'); if(el) el.textContent=fbCount(); }
+function feedbackRow(key,label){ const f=FB[key]||{};
+  return `<div class="fbrow" data-fbkey="${esc(key)}">
+    <span class="fblabel">Feedback · ${esc(label)}</span>
+    <div class="fbdisp">
+      <button data-disp="ok" class="${f.disp==='ok'?'on-ok':''}">👍 Looks right</button>
+      <button data-disp="revise" class="${f.disp==='revise'?'on-rev':''}">✏️ Needs revision</button>
+    </div>
+    <input class="fbnote" placeholder="Add a note…" value="${esc(f.note||'')}"></div>`;
+}
+function yq(s){ return '"'+String(s).replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,' ')+'"'; }
+function genYaml(inv){
+  const L=['feedback_report:','  investigation: '+inv.slug,'  title: '+yq(inv.title),
+    '  reviewer: ""','  date: ""'];
+  const emit=(k,ind)=>{ const f=FB[k]||{}; if(f.disp) L.push(ind+'disposition: '+f.disp); if(f.note) L.push(ind+'note: '+yq(f.note)); };
+  if(FB['overall']){ L.push('  overall:'); emit('overall','    '); }
+  const invSecs=Object.keys(FB).filter(k=>k!=='overall'&&!k.startsWith('study:'));
+  if(invSecs.length){ L.push('  sections:'); invSecs.forEach(k=>{ L.push('    - section: '+k); emit(k,'      '); }); }
+  const rows=inv.studies.filter(s=>Object.keys(FB).some(k=>k==='study:'+s.slug||k.startsWith('study:'+s.slug+'/')));
+  if(rows.length){ L.push('  studies:');
+    rows.forEach(s=>{ L.push('    - study: '+s.slug); L.push('      verdict: '+gateOf(s));
+      if(FB['study:'+s.slug]) emit('study:'+s.slug,'      ');
+      const secs=Object.keys(FB).filter(k=>k.startsWith('study:'+s.slug+'/'));
+      if(secs.length){ L.push('      sections:'); secs.forEach(k=>{ L.push('        - section: '+k.split('/')[1]); emit(k,'          '); }); }
+    });
+  }
+  if(!Object.keys(FB).length) L.push('  # (no notes yet — hover any section and click the 💬 to add feedback)');
+  return L.join('\n')+'\n';
+}
+function markBubble(key){ document.querySelectorAll('.fbbubble').forEach(b=>{ if(b.dataset.fb===key) b.classList.toggle('has', !!FB[key]); }); }
+
+/* ---------- TOC + scroll spy ---------- */
+function toc(inv){
+  const items=['<a href="#top" class="exec">Overview</a>','<a href="#inv-viz">Figures</a>']
+    .concat(inv.studies.map((s,i)=>`<a href="#s-${s.slug}" title="${esc(s.title)}">${i+1}. ${esc(shortTitle(s.title))}</a>`))
+    .concat(inv.catalog?['<a href="#appendix">Appendix</a>']:[]).join('');
+  return `<div class="subnav"><div class="wrap">${items}</div></div>`;
+}
+function shortTitle(t){ return t.length>22?t.slice(0,21)+'…':t; }
+function spy(){
+  const links=[...document.querySelectorAll('.subnav a')];
+  const map={}; links.forEach(l=>map[l.getAttribute('href').slice(1)]=l);
+  const obs=new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersecting){
+    links.forEach(l=>l.classList.remove('active')); const l=map[e.target.id]; if(l)l.classList.add('active');}});},
+    {rootMargin:'-30% 0px -60% 0px'});
+  document.querySelectorAll('.card,#top,#inv-viz,#appendix').forEach(el=>{if(el.id)obs.observe(el);});
+}
+
+/* ---------- one contiguous document ---------- */
+function render(inv){
+  CUR=inv.slug; loadFB();
+  document.getElementById('app').innerHTML=
+    `<div class="wrap"><div class="masthead" id="top">
+      <div class="eyebrow mono">${esc(inv.slug)} · investigation report</div>
+      <h1>${esc(inv.title)}</h1>
+      <div class="provline"><span>${inv.studies.length} studies</span><span class="sep">·</span>
+        <span>generated 2026-08-18</span><span class="sep">·</span><span class="mono">viva-casebook</span></div>
+    </div>${renderExec(inv)}${renderInvViz(inv)}</div>`+
+    toc(inv)+
+    `<div class="wrap">
+      <div class="sec-h"><h2>Studies</h2><span class="rule"></span>
+        <div class="studies-toolbar"><button id="expandall">Expand all</button><button id="collapseall">Collapse all</button></div></div>
+      <p style="color:var(--ink-2);font-size:14px;max-width:74ch;margin:0 0 8px">Each study is collapsed to a high-level overview — click a study (or a number in the index) to expand its Model, simulation run, visualizations, tests, and decision.</p>
+      ${inv.studies.map((s,i)=>renderStudy(s,inv,i+1)).join('')}
+      ${renderAppendix(inv)}
+      <div class="sec-h" id="report-feedback"><h2>Report feedback</h2><span class="rule"></span></div>
+      <p style="color:var(--ink-2);font-size:14px;max-width:74ch">Leave an overall note, and per-study notes above. Then <b>Review &amp; export</b> assembles them into a YAML feedback report.</p>
+      ${feedbackRow('overall','the whole report')}
+    </div>`;
+  updateCount(); window.scrollTo(0,0); spy();
+}
+
+/* ---------- wiring ---------- */
+document.getElementById('foot-prov').textContent=(INV.provenance||'investigations/'+INV.slug+'/investigation.yaml · studies/*/study.yaml · loop-trajectory JSON');
+document.getElementById('wsname').textContent=(INV.workspace||'');
+document.getElementById('themebtn').onclick=()=>{const r=document.documentElement;
+  const cur=r.getAttribute('data-theme');const dark=cur?cur==='dark':matchMedia('(prefers-color-scheme:dark)').matches;
+  r.setAttribute('data-theme',dark?'light':'dark');};
+// feedback delegation (bound once; #app persists)
+const app=document.getElementById('app');
+app.addEventListener('input',e=>{ if(e.target.classList.contains('fbnote')){
+  const key=e.target.closest('.fbrow').dataset.fbkey; setFB(key,{note:e.target.value}); markBubble(key); }});
+function toggleEditor(bub){
+  const key=bub.dataset.fb, label=bub.dataset.fblabel, sec=bub.closest('.fbsection');
+  let ed=sec.querySelector(':scope > .fbeditor-wrap');
+  if(ed){ ed.remove(); return; }
+  ed=document.createElement('div'); ed.className='fbeditor-wrap'; ed.innerHTML=feedbackRow(key,label);
+  sec.appendChild(ed); const inp=ed.querySelector('input.fbnote'); if(inp) inp.focus();
+}
+app.addEventListener('click',e=>{
+  // per-section feedback bubble → toggle inline editor
+  const bub=e.target.closest('.fbbubble');
+  if(bub){ e.stopPropagation(); toggleEditor(bub); return; }
+  // feedback disposition
+  const btn=e.target.closest('.fbdisp button');
+  if(btn){ const row=btn.closest('.fbrow'), key=row.dataset.fbkey, disp=btn.dataset.disp;
+    const cur=(FB[key]||{}).disp; setFB(key,{disp:cur===disp?null:disp}); markBubble(key);
+    row.querySelectorAll('.fbdisp button').forEach(x=>x.classList.remove('on-ok','on-rev'));
+    const nd=(FB[key]||{}).disp;
+    if(nd==='ok') row.querySelector('[data-disp=ok]').classList.add('on-ok');
+    if(nd==='revise') row.querySelector('[data-disp=revise]').classList.add('on-rev'); return; }
+  // expand/collapse all
+  if(e.target.id==='expandall'){ document.querySelectorAll('.card').forEach(c=>c.classList.remove('collapsed')); return; }
+  if(e.target.id==='collapseall'){ document.querySelectorAll('.card').forEach(c=>c.classList.add('collapsed')); return; }
+  // index link → expand the target study before scrolling to it
+  const link=e.target.closest('.subnav a');
+  if(link){ const href=link.getAttribute('href')||''; if(href.startsWith('#s-')){ const c=document.getElementById(href.slice(1)); if(c) c.classList.remove('collapsed'); } return; }
+  // header → toggle this study
+  const head=e.target.closest('.card-h');
+  if(head){ head.closest('.card').classList.toggle('collapsed'); }
+});
+// modal
+const modalbg=document.getElementById('modalbg');
+document.getElementById('fbfloat').onclick=()=>{ document.getElementById('fbyaml').value=genYaml(INV); modalbg.classList.add('open'); };
+document.getElementById('fbclose').onclick=()=>modalbg.classList.remove('open');
+modalbg.onclick=e=>{ if(e.target===modalbg) modalbg.classList.remove('open'); };
+document.getElementById('fbcopy').onclick=()=>{ const ta=document.getElementById('fbyaml'); ta.select();
+  try{ navigator.clipboard.writeText(ta.value); }catch(e){ document.execCommand&&document.execCommand('copy'); }
+  document.getElementById('fbcopy').textContent='Copied ✓'; setTimeout(()=>document.getElementById('fbcopy').textContent='Copy YAML',1500); };
+render(INV);
+</script>
