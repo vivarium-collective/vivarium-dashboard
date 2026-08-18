@@ -56,17 +56,28 @@ class FakeRun:
         return types.SimpleNamespace(
             returncode=self._returncode, stdout=self._stdout, stderr=self._stderr)
 
+    # Recording a run now shells out to `git` for source provenance (repo +
+    # commit) BEFORE the child is spawned, so the child-spawn call is no longer
+    # guaranteed to be calls[0]. Locate the `python -c <script>` child call
+    # explicitly (cmd[1] == "-c"), falling back to calls[0] for any legacy path.
+    @property
+    def _child_call(self):
+        for cmd, kwargs in self.calls:
+            if len(cmd) >= 3 and cmd[1] == "-c":
+                return (cmd, kwargs)
+        return self.calls[0]
+
     @property
     def cmd(self):
-        return self.calls[0][0]
+        return self._child_call[0]
 
     @property
     def script(self):
-        return self.calls[0][0][2]
+        return self._child_call[0][2]
 
     @property
     def kwargs(self):
-        return self.calls[0][1]
+        return self._child_call[1]
 
 
 def _extract_payload(script):
