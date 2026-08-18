@@ -1,6 +1,10 @@
 # Dual-engine comparison — cross-environment investigations
 
 > **Status:** Draft for discussion (Jim + Alex + Eran + the viva-api team), 2026-08-13.
+> **Updated 2026-08-18:** W1 is now roughly **half-landed** — #868 shipped
+> always-filled per-run source provenance (`source_ref {repo, commit}` on every
+> run row, manifests auto-built at a single choke point, legacy rows backfilled).
+> See §3.1 and the revised W1 row in §6.
 > **Type:** Target-state design + scoped work plan. No code changes yet.
 > **Companions:** [REFACTOR-PLAN.md](REFACTOR-PLAN.md) §2A.2/§2A.5 (Q1) and the
 > 2026-08-13 status reconciliation (PR #804, §0A); the umbrella unification spec
@@ -100,17 +104,25 @@ Key properties:
 
 ### 3.1 What this changes in the run model
 
-The run-as-binding (§2A.2) already carries `env_id` per run. Changes:
+The run-as-binding (§2A.2) already carries `env_id` per run. Changes — with the
+**output side already landed by #868** (2026-08-18 update):
 
-- **Study/investigation schema:** a condition (and hence its runs) may declare an
-  optional `environment: {repo, ref}`. Absent → the workspace's own environment
-  (today's behavior, byte-for-byte).
-- **Provenance manifest:** grows `environments: [{role, repo, commit,
-  lockfile_hash}]` — for a plain run, one entry (identical to today's single
-  pin); for a comparison investigation, the compare node's provenance lists both.
-- **Sim-DB / run rows:** surface the per-run coordinate. (Remote-build runs
-  already display `repo@branch@commit`; this generalizes an existing column, not
-  a new concept.)
+- **Study/investigation schema (the remaining input-side work):** a condition
+  (and hence its runs) may declare an optional `environment: {repo, ref}`.
+  Absent → the workspace's own environment (today's behavior, byte-for-byte).
+- **Provenance manifest:** ✅ **half done.** #868 made per-run source provenance
+  **always-filled**: `build_run_manifest` records `repo` + `remote_url` in
+  `code_version`, `save_metadata` auto-builds a manifest at a single choke point
+  (remote-landing, ad-hoc, and investigation paths all stamped), and legacy
+  manifest-less rows are backfilled idempotently (`inferred`/`backfilled`
+  flags). **Remaining:** the multi-entry `environments: [{role, repo, commit,
+  lockfile_hash}]` form, so a comparison's compare node can pin *both* engines
+  (today's shape is one pin per run — which §3 keeps for the sim nodes).
+- **Sim-DB / run rows:** ✅ **done.** #868 surfaces `source_ref {repo, commit,
+  commit_short, remote_url, commit_url, package, inferred}` on every row
+  (`SimRow.source_ref`, wired through the JSONL fold + backfill), with a
+  repo@commit Source column in the Runs table. Dual-engine needs only the
+  cosmetic step of badging *different* coordinates within one investigation.
 
 ## 4. The normalized metrics artifact (the one new contract)
 
@@ -192,7 +204,7 @@ REFACTOR-PLAN #804 §0A.4):
 
 | # | Work | Where | Size | Depends on |
 |---|---|---|---|---|
-| **W1** | Per-run env coordinate: schema (`environment: {repo, ref}` on conditions), provenance `environments: []`, Sim-DB/run-row surfacing | workbench (+ viva-template / viva-workspace schema) | **S–M** (~2 PRs) | — |
+| **W1** | Per-run env coordinate — **half-landed by #868** (always-filled `source_ref` provenance + Sim-DB surfacing ✅). Remaining: schema (`environment: {repo, ref}` on conditions) + the multi-entry `environments: []` provenance form (§3.1) | workbench (+ viva-template / viva-workspace schema) | **S** (~1 PR) | — |
 | **W2** | Metrics contract (§4) + per-engine extractors ported from harness logic | sms-ecoli (harness) + this spec | **M** (~2–3 PRs) | — (parallel with W1) |
 | **W3** | Compare node: two artifacts → report + tolerance verdicts; verdicts → report cards; transfer becomes an explicit node | sms-ecoli + workbench mapping | **M** (~2–3 PRs) | W2 |
 | **W4** | AWS dispatch: register `vEcoli-private`; containerized-job escape hatch if needed; Batch dependency wiring (2 sims → 1 compare) | **viva-api** | **M–L** (~3–4 PRs) | W1, W2 |
