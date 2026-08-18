@@ -1248,7 +1248,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       <h3 id="investigation-detail-title" style="margin:0; flex:1"></h3>
       <span id="investigation-detail-status" class="status-pill planned" style="font-size:0.85em"></span>
       <span class="inv-export-actions" style="display:inline-flex; gap:6px">
-        <button class="btn-mini" onclick="_downloadInvestigationReport()" title="Open the shareable HTML report (self-contained, attach to email)">Report 📄</button>
+        <button class="btn-mini" onclick="_downloadInvestigationReport()" title="Download the shareable HTML report (self-contained, attach to email)">Report 📄</button>
         <button class="btn-mini" onclick="_downloadInvestigationNotebook()" title="Download a self-contained Jupyter notebook (+ matching .py) that re-runs this investigation's studies via the process-bigraph protocol and renders their figures. The coder-facing complement to the HTML report.">Notebook 📓</button>
         <button id="investigation-rerun" class="btn-mini" onclick="_rerunInvestigation()" title="Re-run every member study's CURRENT baseline spec (re-derives from each study's study.yaml)">▶ Run current spec</button>
       </span>
