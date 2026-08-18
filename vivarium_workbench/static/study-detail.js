@@ -2083,6 +2083,18 @@
   }
   window._loadTestsPanel = _loadTestsPanel;
 
+  // Snapshot-aware URL for the per-study Assurance endpoints (rigor / audit /
+  // test-audit / loop-state). Live: /api/<endpoint>?study=<slug>. Read-only
+  // bundle: /api/<endpoint>/<slug>.json (publish bakes these), so the Audit +
+  // Build tabs render instead of "unavailable (HTTP 404)".
+  function _assuranceUrl(endpoint, slug) {
+    var api = (window.DataSource && window.DataSource.apiUrl)
+      ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    return document.body.classList.contains('snapshot')
+      ? api('/api/' + endpoint + '/' + encodeURIComponent(slug) + '.json')
+      : '/api/' + endpoint + '?study=' + encodeURIComponent(slug);
+  }
+
   // ── G5: Quality check group (rigor scorecard) ───────────────────────────
   // GET /api/study-rigor?study=<slug> → viva_superpowers.rigor.study_rigor,
   // already computed in CI but never rendered on the page until now. Fetched
@@ -2181,7 +2193,7 @@
       host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
       return;
     }
-    fetch('/api/study-rigor?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+    fetch(_assuranceUrl('study-rigor', slug), { headers: { Accept: 'application/json' } })
       .then(function(r) {
         return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
           .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
@@ -2356,7 +2368,7 @@
       host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
       return;
     }
-    fetch('/api/study-audit?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+    fetch(_assuranceUrl('study-audit', slug), { headers: { Accept: 'application/json' } })
       .then(function(r) {
         return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
           .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
@@ -2476,7 +2488,7 @@
       host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
       return;
     }
-    fetch('/api/study-test-audit?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+    fetch(_assuranceUrl('study-test-audit', slug), { headers: { Accept: 'application/json' } })
       .then(function(r) {
         return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
           .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
@@ -2744,7 +2756,7 @@
       host.innerHTML = '<p class="empty-message">unavailable(no study slug)</p>';
       return;
     }
-    fetch('/api/study-loop-state?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+    fetch(_assuranceUrl('study-loop-state', slug), { headers: { Accept: 'application/json' } })
       .then(function(r) {
         return r.json().then(function(j) { return { ok: r.ok, status: r.status, json: j }; })
           .catch(function() { return { ok: r.ok, status: r.status, json: null }; });
