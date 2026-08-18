@@ -45,12 +45,13 @@ def test_per_test_computed_outcomes_render_on_tests_tab():
 
 
 def test_report_separates_authored_from_computed_no_raw_dump():
-    js = (_PKG / "static" / "walkthrough.js").read_text(encoding="utf-8")
-    # The report renders measured_value as a styled row, authored vs computed
-    # in separate chips, divergence badged, linked to its run + band.
-    assert "outcome-chip-computed" in js
-    assert "outcome-chip-authored" in js
-    assert "reconcile-divergent" in js
-    assert "computed-outcome-row" in js
-    # The old merged raw k:v dump is gone (it blended authored + computed).
-    assert "Object.keys(out).filter(function(k){return k !== 'result';})" not in js
+    # The report (lib.investigation_report + template) renders each outcome as a
+    # row with the authored result vs the computed/measured value in separate
+    # chips, divergence badged — not a raw key:value dump.
+    tpl = (_PKG / "templates" / "investigation-report.html").read_text(encoding="utf-8")
+    assert "outcome-chip-computed" in tpl
+    assert "outcome-chip-authored" in tpl
+    assert "reconcile-divergent" in tpl
+    assert "computed-outcome-row" in tpl
+    # No merged raw k:v dump blending authored + computed.
+    assert "Object.keys(out).filter(function(k){return k !== 'result';})" not in tpl

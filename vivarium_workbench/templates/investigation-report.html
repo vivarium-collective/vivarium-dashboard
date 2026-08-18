@@ -568,7 +568,7 @@ function testsTable(tests, traj){
     const pv=(prov[name]&&prov[name].provenance)||(t.pass_if&&t.pass_if.provenance)||(t.measure&&t.measure.kind==='audit-axis'?('audit axis '+meas):'');
     const obs=(fin&&fin.obs!=null)?`observed ${fmt(fin.obs)}`:'';
     const mg=(fin&&fin.m!=null)?` · margin ${fmt(fin.m)}`:'';
-    return `<tr><td class="tname">${esc(desc||name)}
+    return `<tr id="test-${esc(name)}"><td class="tname">${esc(desc||name)}
         <div class="texp mono">${esc(name)}${cls?' · '+esc(cls):''}${meas?' · '+esc(meas):''}</div>
         ${pv?`<div class="kv rationale" style="font-size:12px;margin-top:3px">${esc(pv)}</div>`:''}</td>
       <td class="tv"><div>${exp?`<span class="mono texp">${esc(exp)}</span>`:''} ${v?`<span class="chip ${v}" style="margin-left:6px">${v==='pass'?'✓ pass':'✗ fail'}</span>`:'<span class="chip">pending</span>'}</div>
@@ -581,6 +581,24 @@ function fmt(n){ if(typeof n!=='number') return esc(n); return Number.isInteger(
 function fbBubble(key,label){ return `<button class="fbbubble ${FB[key]?'has':''}" data-fb="${esc(key)}" data-fblabel="${esc(label)}" title="Add feedback to this section" aria-label="Add feedback to ${esc(label)}">💬</button>`; }
 function part(label, body, key, klabel){ if(!body) return '';
   return `<div class="substage fbsection">${key?fbBubble(key,klabel||label):''}<div class="slabel">${label}</div>${body}</div>`; }
+
+// traceability anchor built via the prefix helper (assembled, not a hardcoded
+// href), so a finding's from_test resolves to its test-card anchor
+function _traceLink(prefix, name){ return '<a class="trace-link" href="#' + prefix + '-' + esc(name) + '">' + esc(name) + '</a>'; }
+
+// per-outcome rows separating the AUTHORED result from the COMPUTED/measured
+// value (divergence badged), instead of a raw key:value dump
+function outcomeRows(outcomes){
+  return Object.entries(outcomes||{}).map(([k,o])=>{
+    o=o||{}; const authored=o.result;
+    const computed=(o.computed!=null?o.computed:o.measured_value);
+    const diverge=(computed!=null && String(computed)!==String(authored));
+    return `<div class="computed-outcome-row"><span class="mono" style="color:var(--ink-2)">${esc(k)}</span>
+      <span class="outcome-chip-authored chip">authored: ${esc(authored)}</span>
+      ${computed!=null?`<span class="outcome-chip-computed chip ${diverge?'reconcile-divergent':''}">computed: ${esc(computed)}</span>`:''}
+      ${o.detail?`<span class="texp" style="margin-left:6px">${esc(o.detail)}</span>`:''}</div>`;
+  }).join('');
+}
 
 // high-level overview shown when a study is COLLAPSED
 function studySummary(s, inv){
@@ -630,10 +648,9 @@ function renderStudy(s, inv, idx){
   // SIMULATION RUN
   const runs=s.runs||[];
   const runBody = runs.length?runs.map(r=>{
-    const o=r.outcomes&&(r.outcomes['LOOP-OUTCOME']||r.outcomes['SOURCING-GATE']);
-    return `<div class="kv" style="margin:2px 0"><span class="chip ${r.status==='completed'?'pass':''}">${esc(r.status)}</span>
+    return `<div class="kv" style="margin:6px 0"><span class="chip ${r.status==='completed'?'pass':''}">${esc(r.status)}</span>
       <span class="mono" style="margin-left:8px;color:var(--ink-2)">${esc(r.name||r.module||'')}</span>
-      ${o?`<span class="kv" style="margin-left:8px"><b class="mono">${esc(o.result)}</b> ${esc(o.detail||'')}</span>`:''}
+      ${outcomeRows(r.outcomes)}
       ${r.provenance?`<div class="texp mono" style="margin-top:2px">${esc(r.provenance)}</div>`:''}</div>`;
   }).join(''):'';
 
@@ -662,14 +679,23 @@ function renderStudy(s, inv, idx){
     testsBody+=`</div></details>`;
   }
 
-  // FINDINGS (workspaces that record explicit findings)
+  // FINDINGS (with traceability: from_test anchored to its test card, the cited
+  // pass_if band inlined, divergence surfaced, run_ids as plain code, seeded-study back-link)
   let findingsBody='';
   if(Array.isArray(s.findings) && s.findings.length){
+    const bands={}; (s.behavior_tests||[]).forEach(t=>{ if(t.pass_if) bands[t.name||t.id]=t.pass_if; });
     findingsBody=s.findings.map(f=>{
       const ok=(f.status==='passed'||f.status==='pass');
-      return `<div class="kv" style="margin:6px 0"><span class="chip ${ok?'pass':(f.status?'':'')}">${esc((f.id?f.id+' · ':'')+(f.status||'finding'))}</span>
+      const ft=f.evidence&&f.evidence.from_test, band=ft&&bands[ft];
+      const runIds=(f.provenance&&f.provenance.run_ids)||[];
+      const dv=f.divergence_factor;
+      return `<div class="finding-traceability" style="margin:8px 0">
+        <span class="chip ${ok?'pass':''}">${esc((f.id?f.id+' · ':'')+(f.status||'finding'))}</span>
         <div class="kv rationale">${esc(f.statement||'')}</div>
-        ${f.evidence&&f.evidence.from_test?`<div class="texp mono">from test: ${esc(f.evidence.from_test)}</div>`:''}</div>`;
+        ${ft?`<div class="texp">from test: ${_traceLink('test',ft)}${band?` <span class="pass_if-band mono">${esc((band.op||'')+' '+(band.value!=null?band.value:''))}</span>`:''}</div>`:''}
+        ${dv!=null?`<div class="finding-divergence texp">divergence ${esc(dv)}× vs expected</div>`:''}
+        ${runIds.length?`<div class="texp">runs: ${runIds.map(r=>`<code>${esc(r)}</code>`).join(' ')}</div>`:''}
+        ${f.seeded_study?`<div class="finding-seeded texp">seeded study: ${_traceLink('s',f.seeded_study)}</div>`:''}</div>`;
     }).join('');
   }
 
