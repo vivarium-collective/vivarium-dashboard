@@ -132,7 +132,8 @@ def test_sourcing_data_shape_and_provenance(tmp_path):
     assert trap["sourcing"]["audit"]["gate"] == "fail"
     # only known top-level keys — nothing invented
     assert set(d) <= {"slug", "title", "status", "question", "hypothesis", "lead",
-                      "executive", "at_a_glance", "catalog", "workspace", "provenance", "studies"}
+                      "executive", "at_a_glance", "acceptance_criteria", "spine",
+                      "catalog", "workspace", "provenance", "studies"}
 
 
 def test_agentic_trajectory_attached(tmp_path):
@@ -197,6 +198,41 @@ def test_oversized_figure_is_skipped_not_read(tmp_path):
     d = build_report_data(ws, "sf")
     figs = d["studies"][0]["figures_embedded"]
     assert figs and figs[0].get("skipped") is True and "data_uri" not in figs[0]
+
+
+def test_spine_verdict_dag_acceptance_and_matrix(tmp_path):
+    """The report data carries the computed spine: a verdict DAG (nodes + edges
+    from parent_studies + 5-state verdicts), the acceptance roll-up, and the
+    AC→study gating matrix (with the unlinked-criterion gap flagged)."""
+    ws = tmp_path
+    _write(ws / "workspace.yaml", {"schema_version": 2, "name": "tw", "package_path": "pkg"})
+    _write(ws / "investigations" / "sp" / "investigation.yaml", {
+        "name": "sp", "title": "Spine", "studies": ["a", "b"],
+        "acceptance_criteria": [{"study": "a", "behavior": "beh-a"}, {"behavior": "unlinked"}],
+    })
+    _write(ws / "studies" / "a" / "study.yaml", {
+        "name": "a", "title": "Study A", "gate_status": "passed",
+        "behavior_tests": [{"name": "beh-a"}],
+        "runs": [{"name": "r", "status": "completed", "outcomes": {"beh-a": {"result": "PASS"}}}]})
+    _write(ws / "studies" / "b" / "study.yaml", {
+        "name": "b", "title": "Study B", "gate_status": "failed", "parent_studies": [{"study": "a"}],
+        "runs": [{"name": "r", "status": "completed", "outcomes": {"beh-b": {"result": "FAIL"}}}]})
+
+    d = build_report_data(ws, "sp")
+    sp = d["spine"]
+    # verdict DAG: nodes carry 5-state verdicts; edge a→b from parent_studies; b deeper
+    nodes = {n["slug"]: n for n in sp["verdict_dag"]["nodes"]}
+    assert nodes["a"]["verdict"] == "passed" and nodes["b"]["verdict"] == "failing"
+    assert nodes["b"]["depth"] > nodes["a"]["depth"]
+    assert {"from": "a", "to": "b"} in sp["verdict_dag"]["edges"]
+    # acceptance roll-up present with the linked criterion resolved
+    assert any(c.get("study") == "a" for c in (sp["acceptance"] or {}).get("criteria", []))
+    # AC gating matrix flags the unlinked criterion as a gap
+    gaps = [c for c in (sp["ac_matrix"] or {}).get("criteria", []) if c.get("gap")]
+    assert any(c["behavior"] == "unlinked" for c in gaps)
+    # the rendered report is still self-contained
+    html = render_html(d)
+    assert "fetch(" not in html and "/api/" not in html
 
 
 def test_missing_investigation_raises(tmp_path):

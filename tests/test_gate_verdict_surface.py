@@ -147,14 +147,14 @@ def test_computed_gate_verdict_carries_counts_on_fallback_path(tmp_path):
 # references). The chip mirrors the param-enforcement banner.
 # ---------------------------------------------------------------------------
 
-def test_walkthrough_js_renders_gate_divergence_chip():
-    js = (_PKG / "static" / "walkthrough.js").read_text(encoding="utf-8")
-    # References the computed data + the divergence flag
-    assert "computed_gate_verdict" in js
-    assert "diverges_from_authored" in js
-    # Renders a code-vs-authored chip connected to the source
-    assert "sp-gate-divergence" in js
-    assert "code:" in js and "authored:" in js
+def test_report_template_renders_gate_divergence_chip():
+    # The report (lib.investigation_report + template) renders a code-vs-authored
+    # gate-divergence chip per study from computed_gate_verdict.
+    tpl = (_PKG / "templates" / "investigation-report.html").read_text(encoding="utf-8")
+    assert "computed_gate_verdict" in tpl
+    assert "diverges_from_authored" in tpl
+    assert "sp-gate-divergence" in tpl
+    assert "code:" in tpl and "authored:" in tpl
 
 
 def test_study_detail_template_renders_gate_divergence_chip():

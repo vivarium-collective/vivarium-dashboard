@@ -1,14 +1,16 @@
-"""Task 9: the investigation-report SPA wires run-command chips.
+"""Task 9: the investigation report wires run-command chips.
 
 These are STRUCTURAL wiring assertions (not "the substring exists somewhere"):
-the report builder must define a `_runChip` helper, read `run_commands` off the
-per-study payload, and reference `.run_commands.baseline` for the Reproduce /
-"what we ran" chips and `.run_commands.variants` for the per-variant chips.
+the report (lib.investigation_report + its template) defines a `_runChip` helper,
+reads `run_commands` off the per-study payload, and references
+`.run_commands.baseline` for the Reproduce / "what we ran" chips and
+`.run_commands.variants` for the per-variant chips. (The report moved server-side;
+these assert its template render source.)
 """
 from pathlib import Path
 
 _PKG = Path(__file__).parent.parent
-JS = (_PKG / "static" / "walkthrough.js").read_text()
+JS = (_PKG / "templates" / "investigation-report.html").read_text()
 
 
 def test_run_chip_helper_defined():

@@ -1,67 +1,57 @@
-"""Thread-C / Task 4 (C2): investigation verdict DAG + acceptance narrative.
+"""Investigation report: verdict-annotated study DAG + acceptance roll-up.
 
-The generated investigation report (`_buildInvestigationReportHtml`) gains a
-verdict-annotated study DAG — nodes = member studies, edges from
-`parent_studies`/`pipeline_gate.prerequisites`, each badged with its
-`computed_gate_verdict.result` (✅/⚠/⛔) — and a one-paragraph acceptance
-roll-up connecting the studies into the investigation's verdict (from
-`computed_acceptance`). Reuses the existing topological ordering; no recompute.
-
-Structural (no JS harness): assert the markup/data references.
+The report is now rendered server-side by ``lib.investigation_report`` and its
+template (the old client-side ``_buildInvestigationReportHtml`` was removed). Its
+verdict DAG has nodes = member studies, edges from ``parent_studies``, each badged
+with the code-computed gate verdict in one of five states; plus an acceptance
+roll-up. These assert the template's render source (the direct analog of the old
+walkthrough.js source checks); the data-shape coverage — that the spine block is
+actually populated with nodes/edges/verdicts — lives in
+``test_investigation_report.py``.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
-_PKG = Path(__file__).parent.parent / "vivarium_workbench"
-_JS = (_PKG / "static" / "walkthrough.js").read_text(encoding="utf-8")
+_TPL = (
+    Path(__file__).parent.parent / "vivarium_workbench" / "templates" / "investigation-report.html"
+).read_text(encoding="utf-8")
 
 
 def test_report_renders_verdict_annotated_study_dag():
-    assert "study-verdict-dag" in _JS
+    assert "study-verdict-dag" in _TPL
+    assert "_verdictDagHtml" in _TPL
     # Nodes badged with the code-computed gate verdict.
-    assert "computed_gate_verdict" in _JS
-    assert "_spineVerdictBadge" in _JS
-    # The three verdict glyphs.
-    assert "✅" in _JS and "⚠" in _JS and "⛔" in _JS
+    assert "computed_gate_verdict" in _TPL
+    assert "_spineVerdictBadge" in _TPL
+    # The verdict glyphs.
+    assert "✅" in _TPL and "⚠" in _TPL and "⛔" in _TPL
     # Edges from the pipeline dependency structure.
-    assert "parent_studies" in _JS
+    assert "parent_studies" in _TPL
     # Nodes link to their per-study report sections.
-    assert "#study-" in _JS
+    assert "#s-" in _TPL
 
 
-def test_report_renders_acceptance_rollup_paragraph():
-    assert "acceptance-narrative" in _JS
-    # Reuses the spine-computed acceptance (no recompute).
-    assert "computed_acceptance" in _JS
-    assert "acceptance criteria" in _JS
+def test_report_renders_acceptance_rollup():
+    assert "acceptance-rollup" in _TPL
+    assert "acceptance criteria" in _TPL
 
 
 def test_verdict_badge_distinguishes_five_states():
-    # roll_up_verdict emits five states; the badge must render the three that
-    # used to collapse into one ⚠ distinctly (workbench#758).
-    # not_started renders neutral (never ⚠ — an unstarted study is not broken).
-    assert "'not_started'" in _JS or '"not_started"' in _JS
-    assert "not evaluated" in _JS
-    # needs_calibration gets a progress-shaped glyph, distinct from blocked's ⚠.
-    assert "needs_calibration" in _JS
-    assert "🔄" in _JS
-    # The legend enumerates all five states, not just three.
-    assert "◽ not evaluated" in _JS
-    assert "🔄 needs calibration" in _JS
-    assert "⚠ blocked" in _JS
+    # roll_up emits five states; the badge legend renders all five distinctly.
+    assert "not_started" in _TPL and "needs_calibration" in _TPL
+    assert "'◽','not evaluated'" in _TPL
+    assert "'🔄','needs calibration'" in _TPL
+    assert "'⚠','blocked'" in _TPL
 
 
 def test_verdict_badge_surfaces_derived_counts():
-    # The counts the verdict was derived from are shown, so needs_calibration
-    # reads as progress ("4 passed · 1 skipped") rather than a bare badge.
-    assert "_studyOutcomeCounts" in _JS
-    assert "_spineCountLabel" in _JS
-    assert "passed" in _JS and "skipped" in _JS
+    # The derived pass/skip counts are shown, so a badge reads as progress.
+    assert "_spineCountLabel" in _TPL
+    assert "passed" in _TPL and "skipped" in _TPL
 
 
-def test_dag_reuses_existing_topological_ordering():
-    # The DAG consumes the already-computed `ordered` / `depthMap` (not a new
-    # second sort) — the helper references depthMap.
-    assert "_verdictDagHtml" in _JS
-    assert "depthMap" in _JS
+def test_dag_uses_topological_ordering():
+    # The DAG places nodes by computed depth columns (no second sort).
+    assert "_verdictDagHtml" in _TPL
+    assert "byDepth" in _TPL
