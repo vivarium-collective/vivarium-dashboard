@@ -969,6 +969,24 @@ def _do_build(
         except Exception:
             pass
 
+    # api/composite-viz/<id>.json — a composite's baked run-visualization HTML
+    # ({viz_path: {html}}), so the read-only loom can show the Plotly/movie a
+    # Visualization step produces WITHOUT a live run. A live run renders these on
+    # the fly (run_runner); a static bundle has no run data, so the workspace
+    # bakes them once — running each composite through its own build_core and
+    # capturing render_results — into ``reports/composite-viz/<id>.json`` (see the
+    # workspace's bake script), and we copy them verbatim here. Purely additive:
+    # absent → the loom just shows "run in a live dashboard" as before.
+    committed_viz_dir = ws_root / "reports" / "composite-viz"
+    if committed_viz_dir.is_dir():
+        composite_viz_dir = api_dir / "composite-viz"
+        composite_viz_dir.mkdir(parents=True, exist_ok=True)
+        for baked in sorted(committed_viz_dir.glob("*.json")):
+            try:
+                (composite_viz_dir / baked.name).write_bytes(baked.read_bytes())
+            except Exception:
+                pass
+
     # Also publish any committed override whose filename is NOT a canonical
     # registry id — these are ALIAS forms a study.yaml references directly (e.g.
     # `...baseline.baseline.json` when discovery canonicalizes the id to
