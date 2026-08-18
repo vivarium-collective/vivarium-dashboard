@@ -1,3 +1,8 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>__TITLE__</title>
 <style>
 :root{
@@ -39,7 +44,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
   font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;scroll-padding-top:64px}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
-.wrap{max-width:1000px;margin:0 auto;padding:0 24px}
+.wrap{max-width:1280px;margin:0 auto;padding:0 40px}
 .kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
 .mono{font-family:var(--mono);font-size:.9em}
 .serif{font-family:var(--serif)}
@@ -279,6 +284,8 @@ footer .wrap{display:flex;flex-direction:column;gap:6px}
   .card{padding:20px}.wrap{padding:0 16px}
 }
 </style>
+</head>
+<body>
 
 <div class="topbar"><div class="wrap">
   <span class="brand">Vivarium <span class="dot">·</span> Workbench</span>
@@ -1013,3 +1020,5 @@ document.getElementById('fbcopy').onclick=()=>{ const ta=document.getElementById
   document.getElementById('fbcopy').textContent='Copied ✓'; setTimeout(()=>document.getElementById('fbcopy').textContent='Copy YAML',1500); };
 render(INV);
 </script>
+</body>
+</html>
