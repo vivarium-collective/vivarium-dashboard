@@ -970,6 +970,65 @@ def test_git_status_in_openapi(client):
 
 
 # ---------------------------------------------------------------------------
+# /api/git-log
+# ---------------------------------------------------------------------------
+
+def test_git_log_empty_workspace(client, monkeypatch):
+    """No git history yet → 200 with an empty list, not a 500."""
+    import vivarium_workbench.api.app as _app
+
+    monkeypatch.setattr(
+        _app._git_status, "build_git_log",
+        lambda ws, limit=50: {
+            "branch": None, "commits": [], "truncated": False,
+            "error": "git log failed: not a git repository",
+        },
+    )
+    r = client.get("/api/git-log")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["branch"] is None
+    assert body["commits"] == []
+    assert body["truncated"] is False
+    assert body["error"]
+
+
+def test_git_log_with_data(client, monkeypatch):
+    """Typed response validates a realistic payload through GitLog."""
+    import vivarium_workbench.api.app as _app
+
+    payload = {
+        "branch": "feat/thing",
+        "commits": [
+            {
+                "sha": "a" * 40, "short_sha": "aaaaaaa", "author": "pbg-template",
+                "timestamp": "2026-08-18T10:00:00-07:00", "message": "feat: add new study",
+            },
+            {
+                "sha": "b" * 40, "short_sha": "bbbbbbb", "author": "Test",
+                "timestamp": "2026-08-17T09:00:00-07:00", "message": "init",
+            },
+        ],
+        "truncated": False,
+    }
+    monkeypatch.setattr(_app._git_status, "build_git_log", lambda ws, limit=50: payload)
+    r = client.get("/api/git-log")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["branch"] == "feat/thing"
+    assert len(body["commits"]) == 2
+    assert body["commits"][0]["message"] == "feat: add new study"
+    assert body["commits"][0]["sha"] == "a" * 40
+    assert body["truncated"] is False
+
+
+def test_git_log_in_openapi(client):
+    spec = client.get("/openapi.json").json()
+    assert "/api/git-log" in spec["paths"]
+    assert "GitLog" in spec["components"]["schemas"]
+
+
+# ---------------------------------------------------------------------------
 # /api/work-status
 # ---------------------------------------------------------------------------
 

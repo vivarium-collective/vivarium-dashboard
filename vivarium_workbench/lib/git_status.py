@@ -11,6 +11,7 @@ Builders
 build_git_status     → GET /api/git-status
 build_work_status    → GET /api/work-status
 build_dirty_status   → GET /api/dirty-status
+build_git_log        → GET /api/git-log
 """
 
 from __future__ import annotations
@@ -534,3 +535,90 @@ def build_dirty_status(ws_root: Path) -> dict:
             continue
         files.append({"status": raw[:2].strip(), "path": raw[3:]})
     return {"count": len(files), "files": files}
+
+
+# ---------------------------------------------------------------------------
+# Commit history (bounded git log read)
+# ---------------------------------------------------------------------------
+
+#: Default number of commits build_git_log returns when the caller doesn't
+#: ask for a different count.
+DEFAULT_GIT_LOG_LIMIT = 50
+
+#: Hard ceiling on how many commits build_git_log will ever request from git,
+#: regardless of what a caller passes as ``limit`` — so a bad or malicious
+#: value can never turn this into an unbounded read on a workspace with
+#: arbitrarily long history.
+MAX_GIT_LOG_LIMIT = 200
+
+# ASCII unit separator: delimits fields within one `git log --pretty=format`
+# line. Commits themselves are newline-delimited (safe: `%s`, the subject, is
+# single-line by git's own definition — see git-log(1)), so only the
+# within-line field separator needs to avoid colliding with real content;
+# \x1f is a non-printable control byte no commit author/subject will contain.
+_LOG_FIELD_SEP = "\x1f"
+
+
+def build_git_log(ws_root: Path, limit: int = DEFAULT_GIT_LOG_LIMIT) -> dict:
+    """Build the GET /api/git-log payload for *ws_root*.
+
+    Returns ``{branch, commits: [{sha, short_sha, author, timestamp, message}, ...],
+    truncated}`` — the most recent commits reachable from the workspace's
+    current HEAD (whatever branch is checked out; the dashboard keeps HEAD on
+    the active workstream branch while one exists — see
+    ``work_state.active_branch_action``). Newest commit first, matching
+    ``git log``'s own default order. ``timestamp`` is the author date in
+    strict ISO-8601 (``git log``'s ``%aI``).
+
+    ``limit`` is clamped to ``[1, MAX_GIT_LOG_LIMIT]`` before use — a fixed
+    hard ceiling so a bad or caller-supplied value can never trigger an
+    unbounded ``git log`` on a workspace with arbitrarily long history. One
+    more commit than the (clamped) limit is requested internally so
+    ``truncated`` can report whether older history exists beyond what's
+    returned.
+
+    Always returns a 200-shaped dict (never raises) — mirrors
+    ``build_work_composite_diff``'s error-in-payload style: on any git
+    failure (not a repo, zero commits yet, ...) returns ``{branch,
+    commits: [], truncated: False, error: <msg>}`` rather than raising.
+    """
+    limit = max(1, min(int(limit), MAX_GIT_LOG_LIMIT))
+    result: dict = {"branch": None, "commits": [], "truncated": False}
+
+    r = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=ws_root, capture_output=True, text=True, timeout=5,
+    )
+    if r.returncode == 0:
+        branch = (r.stdout or "").strip()
+        result["branch"] = branch if branch and branch != "HEAD" else None
+
+    log = subprocess.run(
+        [
+            "git", "log", "--no-color", f"--max-count={limit + 1}",
+            "--pretty=format:"
+            f"%H{_LOG_FIELD_SEP}%h{_LOG_FIELD_SEP}%an{_LOG_FIELD_SEP}%aI{_LOG_FIELD_SEP}%s",
+        ],
+        cwd=ws_root, capture_output=True, text=True, timeout=10,
+    )
+    if log.returncode != 0:
+        result["error"] = f"git log failed: {(log.stderr or log.stdout)[:200]}"
+        return result
+
+    lines = [ln for ln in log.stdout.splitlines() if ln.strip()]
+    result["truncated"] = len(lines) > limit
+    commits = []
+    for line in lines[:limit]:
+        parts = line.split(_LOG_FIELD_SEP, 4)
+        if len(parts) != 5:
+            continue
+        sha, short_sha, author, timestamp, message = parts
+        commits.append({
+            "sha": sha,
+            "short_sha": short_sha,
+            "author": author,
+            "timestamp": timestamp,
+            "message": message,
+        })
+    result["commits"] = commits
+    return result

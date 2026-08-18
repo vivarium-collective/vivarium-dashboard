@@ -682,6 +682,9 @@
     if (pageId === 'github' && typeof window._renderBranchSource === 'function') {
       window._renderBranchSource();
     }
+    if (pageId === 'github') {
+      _refreshGitLog();
+    }
     if (pageId === 'simulation-setup') {
       _loadComposites();
     }
@@ -6439,6 +6442,7 @@
         if (typeof _showToast === 'function') _showToast('Committed: ' + res.body.message);
         _toggleDirtyPanel();
         _refreshGitStatus();
+        if (typeof _refreshGitLog === 'function') _refreshGitLog();
       })
       .catch(function(e){ alert('Network error: ' + e); });
   }
@@ -16281,6 +16285,44 @@
   }
   window._refreshGitStatus = _refreshGitStatus;
 
+  // -------------------------------------------------------------------------
+  // GitHub tab — Recent commits panel (item 72 phase 3): a bounded, read-only
+  // git log of the workspace's current HEAD branch. Fetched independently of
+  // _refreshGitStatus (not folded into that function) so an unrelated
+  // app-wide mutation elsewhere doesn't trigger an extra `git log` subprocess
+  // call on every save — this only loads on first page load and whenever the
+  // GitHub tab is actually viewed (see _switchPage), plus right after the one
+  // action on this tab that provably creates a new commit (_commitDirtyAll).
+  // -------------------------------------------------------------------------
+  function _refreshGitLog() {
+    var host = document.getElementById('viv-gh-log');
+    if (!host) return;  // page not present (e.g. published snapshot layout)
+    fetch('/api/git-log').then(function (r) { return r.json(); }).then(function (d) {
+      if (!d || !d.commits || d.commits.length === 0) {
+        host.innerHTML = '<div class="gh-log-empty">'
+          + (d && d.error ? 'No commit history available.' : 'No commits yet.')
+          + '</div>';
+        return;
+      }
+      var rows = d.commits.map(function (c) {
+        var when = c.timestamp;
+        try { when = new Date(c.timestamp).toLocaleString(); } catch (_e) { /* keep raw */ }
+        return '<div class="gh-log-row">'
+          + '<code class="gh-log-sha" title="' + _esc(c.sha) + '">' + _esc(c.short_sha) + '</code>'
+          + '<span class="gh-log-message" title="' + _esc(c.message) + '">' + _esc(c.message) + '</span>'
+          + '<span class="gh-log-meta">' + _esc(c.author) + ' · ' + _esc(when) + '</span>'
+          + '</div>';
+      }).join('');
+      if (d.truncated) {
+        rows += '<div class="gh-log-empty">showing latest ' + d.commits.length + ' commits</div>';
+      }
+      host.innerHTML = rows;
+    }).catch(function () {
+      host.innerHTML = '<div class="gh-log-empty">Could not load commit history.</div>';
+    });
+  }
+  window._refreshGitLog = _refreshGitLog;
+
   // ------------------------------------------------------------------
   // GitHub tab — default-org picker. Populates #viv-gh-default-org from
   // /api/auth/github/orgs once the user is signed in. Persists the
@@ -16372,6 +16414,7 @@
   });
 
   document.addEventListener('DOMContentLoaded', _refreshGitStatus);
+  document.addEventListener('DOMContentLoaded', _refreshGitLog);
 
   // -------------------------------------------------------------------------
   // Spine A3: per-study readiness panel (lint findings)

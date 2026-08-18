@@ -60,6 +60,8 @@ _MODELS: list[type[BaseModel]] = [
     _models.WorkStatusActive,
     _models.DirtyFile,
     _models.DirtyStatus,
+    _models.GitLogEntry,
+    _models.GitLog,
     # Work & branches models (generation, composite diff)
     _models.GenerationSummary,
     _models.Generation,

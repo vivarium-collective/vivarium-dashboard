@@ -32,6 +32,9 @@ class LocalGitScientificContent:
     def dirty_status(self) -> dict:
         return git_status.build_dirty_status(self.ws_root)
 
+    def history(self) -> dict:
+        return git_status.build_git_log(self.ws_root)
+
     def head_version(self) -> str:
         r = subprocess.run(
             ["git", "rev-parse", "HEAD"],

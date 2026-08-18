@@ -29,12 +29,14 @@ def test_read_methods_delegate_to_git_status(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(git_status, "build_git_status", _stub("status", {"k": "status"}))
     monkeypatch.setattr(git_status, "build_work_status", _stub("work", {"k": "work"}))
     monkeypatch.setattr(git_status, "build_dirty_status", _stub("dirty", {"k": "dirty"}))
+    monkeypatch.setattr(git_status, "build_git_log", _stub("log", {"k": "log"}))
 
     rec = LocalGitScientificContent(tmp_path)
     assert rec.status() == {"k": "status"}
     assert rec.work_status() == {"k": "work"}
     assert rec.dirty_status() == {"k": "dirty"}
-    assert calls == {"status": tmp_path, "work": tmp_path, "dirty": tmp_path}
+    assert rec.history() == {"k": "log"}
+    assert calls == {"status": tmp_path, "work": tmp_path, "dirty": tmp_path, "log": tmp_path}
 
 
 def test_head_version_in_a_real_repo(tmp_path: Path):

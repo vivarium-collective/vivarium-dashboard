@@ -38,6 +38,15 @@ class ScientificContent(Protocol):
         paths — reports/, out/, .pbg/)."""
         ...
 
+    def history(self) -> dict:
+        """Bounded, read-only commit history for the record's current HEAD.
+
+        Returns ``{branch, commits: [{sha, short_sha, author, timestamp,
+        message}, ...], truncated}`` — capped at a fixed max commit count, so
+        this can never become an unbounded read on a record with arbitrarily
+        long history."""
+        ...
+
     def head_version(self) -> str:
         """Opaque id of the current record version (empty string if none)."""
         ...

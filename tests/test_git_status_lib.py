@@ -412,3 +412,171 @@ class TestDiagnosePushError:
         assert gs.diagnose_push_error("[rejected] non-fast-forward")["category"] == "behind"
         assert gs.diagnose_push_error("") is None
         assert gs.diagnose_push_error("nope") is None
+
+
+# ---------------------------------------------------------------------------
+# build_git_log
+# ---------------------------------------------------------------------------
+
+class TestBuildGitLog:
+    def test_not_a_git_repo(self, tmp_path: Path) -> None:
+        """Non-git dir → graceful empty result (no crash)."""
+        result = gs.build_git_log(tmp_path)
+        assert result["branch"] is None
+        assert result["commits"] == []
+        assert result["truncated"] is False
+        assert "error" in result
+
+    def test_repo_with_zero_commits(self, tmp_path: Path) -> None:
+        """A freshly-init'd repo (no commits yet) degrades gracefully."""
+        _git(tmp_path, "init", "-b", "main")
+        result = gs.build_git_log(tmp_path)
+        assert result["commits"] == []
+        assert result["truncated"] is False
+        assert "error" in result
+
+    def test_single_commit(self, repo: Path) -> None:
+        result = gs.build_git_log(repo)
+        assert result["branch"] == "main"
+        assert result["truncated"] is False
+        assert len(result["commits"]) == 1
+        c = result["commits"][0]
+        expected_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        assert c["sha"] == expected_sha
+        assert expected_sha.startswith(c["short_sha"])
+        assert c["message"] == "init"
+        assert c["author"] == "Test"
+        assert c["timestamp"]  # non-empty ISO-8601-ish string
+
+    def test_commit_fields_shape(self, repo: Path) -> None:
+        result = gs.build_git_log(repo)
+        c = result["commits"][0]
+        assert set(c.keys()) == {"sha", "short_sha", "author", "timestamp", "message"}
+
+    def test_newest_first_ordering(self, repo: Path) -> None:
+        (repo / "a.txt").write_text("a\n")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "second")
+        (repo / "b.txt").write_text("b\n")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "third")
+
+        result = gs.build_git_log(repo)
+        messages = [c["message"] for c in result["commits"]]
+        assert messages == ["third", "second", "init"]
+
+    def test_limit_truncates_and_flags_truncated(self, repo: Path) -> None:
+        for i in range(4):
+            (repo / f"f{i}.txt").write_text(f"{i}\n")
+            _git(repo, "add", ".")
+            _git(repo, "commit", "-m", f"commit {i}")
+        # 5 commits total (init + 4). Ask for 2.
+        result = gs.build_git_log(repo, limit=2)
+        assert len(result["commits"]) == 2
+        assert result["truncated"] is True
+        assert result["commits"][0]["message"] == "commit 3"
+        assert result["commits"][1]["message"] == "commit 2"
+
+    def test_limit_not_truncated_when_commits_fit(self, repo: Path) -> None:
+        result = gs.build_git_log(repo, limit=50)
+        assert len(result["commits"]) == 1
+        assert result["truncated"] is False
+
+    def test_default_limit_is_50(self) -> None:
+        assert gs.DEFAULT_GIT_LOG_LIMIT == 50
+
+    def test_limit_is_clamped_to_hard_ceiling(self, monkeypatch, tmp_path: Path) -> None:
+        """A caller-supplied limit far beyond MAX_GIT_LOG_LIMIT never reaches git
+        as-is — it's clamped first, so this can never become an unbounded read
+        on a workspace with arbitrarily long history."""
+        seen: dict = {}
+
+        def _fake_run(args, **kwargs):
+            if args[:2] == ["git", "rev-parse"]:
+                return _cp(returncode=0, stdout="main\n")
+            if args[:2] == ["git", "log"]:
+                seen["args"] = args
+                return _cp(returncode=0, stdout="")
+            raise AssertionError(f"unexpected git call: {args}")
+
+        monkeypatch.setattr(gs.subprocess, "run", _fake_run)
+        gs.build_git_log(tmp_path, limit=10**9)
+        max_count_arg = next(a for a in seen["args"] if a.startswith("--max-count="))
+        assert max_count_arg == f"--max-count={gs.MAX_GIT_LOG_LIMIT + 1}"
+
+    def test_limit_below_one_is_clamped_to_one(self, monkeypatch, tmp_path: Path) -> None:
+        seen: dict = {}
+
+        def _fake_run(args, **kwargs):
+            if args[:2] == ["git", "rev-parse"]:
+                return _cp(returncode=0, stdout="main\n")
+            if args[:2] == ["git", "log"]:
+                seen["args"] = args
+                return _cp(returncode=0, stdout="")
+            raise AssertionError(f"unexpected git call: {args}")
+
+        monkeypatch.setattr(gs.subprocess, "run", _fake_run)
+        gs.build_git_log(tmp_path, limit=0)
+        max_count_arg = next(a for a in seen["args"] if a.startswith("--max-count="))
+        assert max_count_arg == "--max-count=2"  # clamped to 1, +1 for the truncation probe
+
+    def test_git_log_failure_returns_error_not_raise(self, monkeypatch, tmp_path: Path) -> None:
+        def _fake_run(args, **kwargs):
+            if args[:2] == ["git", "rev-parse"]:
+                return _cp(returncode=0, stdout="main\n")
+            if args[:2] == ["git", "log"]:
+                return _cp(
+                    returncode=128,
+                    stderr="fatal: your current branch 'main' does not have any commits yet",
+                )
+            raise AssertionError(f"unexpected git call: {args}")
+
+        monkeypatch.setattr(gs.subprocess, "run", _fake_run)
+        result = gs.build_git_log(tmp_path)
+        assert result["commits"] == []
+        assert result["truncated"] is False
+        assert "does not have any commits yet" in result["error"]
+
+    def test_detached_head_branch_is_none(self, repo: Path) -> None:
+        sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+        _git(repo, "checkout", sha)  # detach HEAD
+        result = gs.build_git_log(repo)
+        assert result["branch"] is None
+        assert len(result["commits"]) == 1  # git log itself still works fine
+
+    def test_active_branch_action_commit_appears_in_log(self, tmp_path: Path, monkeypatch) -> None:
+        """The 'real dashboard action' path: work_state.active_branch_action commits
+        through the actual bot-identity mechanism every live dashboard action uses;
+        build_git_log must surface that exact commit (sha/message/author)."""
+        from vivarium_workbench.lib import work_state
+        from vivarium_workbench.lib._root import set_workspace_root
+
+        ws = tmp_path / "ws"
+        ws.mkdir()
+        _git(ws, "init", "-b", "main")
+        _git(ws, "config", "user.email", "t@t")
+        _git(ws, "config", "user.name", "t")
+        (ws / "workspace.yaml").write_text("name: test\n")
+        _git(ws, "add", "-A")
+        _git(ws, "commit", "-m", "init")
+        _git(ws, "checkout", "-b", "stage/test")
+
+        set_workspace_root(ws)
+        monkeypatch.setattr(work_state, "load_state", lambda: {"active_branch": "stage/test"})
+        monkeypatch.setattr(work_state, "save_state", lambda state: None)
+
+        def action():
+            (ws / "studies").mkdir(exist_ok=True)
+            (ws / "studies" / "new.yaml").write_text("k: v\n")
+
+        resp, code = work_state.active_branch_action(ws, "feat: add new study", action)
+        assert code == 200, resp
+
+        result = gs.build_git_log(ws)
+        assert result["branch"] == "stage/test"
+        assert len(result["commits"]) == 2  # init + the new dashboard commit
+        top = result["commits"][0]
+        expected_sha = _git(ws, "rev-parse", "HEAD").stdout.strip()
+        assert top["sha"] == expected_sha
+        assert top["message"] == "feat: add new study"
+        assert top["author"] == "pbg-template"  # active_branch_action's fixed bot identity

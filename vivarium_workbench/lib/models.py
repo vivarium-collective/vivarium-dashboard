@@ -582,6 +582,35 @@ class DirtyStatus(BaseModel):
     files: list[DirtyFile] = []
 
 
+class GitLogEntry(BaseModel):
+    """One commit entry in ``GitLog.commits``."""
+
+    sha: str
+    short_sha: str
+    author: str
+    timestamp: str
+    message: str
+
+
+class GitLog(BaseModel):
+    """``GET /api/git-log`` payload (lib.git_status.build_git_log).
+
+    Bounded, read-only commit history for the workspace's current HEAD branch
+    (newest first). Capped at a fixed max commit count — never an unbounded
+    ``git log``. Always HTTP 200 (best-effort; failures carry an ``error`` key
+    with an empty ``commits`` list rather than a 500 — mirrors
+    ``WorkCompositeDiff``). ``extra="allow"`` preserves any future extension
+    keys.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    branch: Optional[str] = None
+    commits: list[GitLogEntry] = []
+    truncated: bool = False
+    error: Optional[str] = None
+
+
 # ---------------------------------------------------------------------------
 # Work & branches models (generation, composite diff)
 # ---------------------------------------------------------------------------

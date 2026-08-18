@@ -174,6 +174,7 @@ from vivarium_workbench.lib.models import (
     ExplorerVector,
     FrameworkMetrics,
     GithubRepo,
+    GitLog,
     GitStatus,
     InvestigationCompositeDocPayload,
     InvestigationCompositesPayload,
@@ -1711,6 +1712,26 @@ def create_app() -> FastAPI:
             )
         files = [DirtyFile.model_validate(f) for f in payload["files"]]
         return DirtyStatus(count=payload["count"], files=files)
+
+    @app.get(
+        "/api/git-log",
+        response_model=GitLog,
+        tags=["Git & workstream"],
+        summary="Bounded, read-only commit history for the workspace",
+    )
+    def git_log_route(ws: Path = Depends(get_workspace)) -> GitLog:
+        """Recent commit history for the workspace's current HEAD branch.
+
+        Returns up to the last 50 commits (SHA, short SHA, author, ISO-8601
+        author timestamp, subject) newest first — capped at a fixed max
+        count, never an unbounded ``git log`` read regardless of how long the
+        workspace's history is. Always HTTP 200; degrades to an empty list +
+        an ``error`` key when there's no git history yet (fresh repo, not a
+        git workspace, ...).
+
+        Via the ``ScientificContent`` port (local-git adapter → ``build_git_log``).
+        """
+        return GitLog.model_validate(_record.for_workspace(ws).history())
 
     @app.get(
         "/api/generation",
