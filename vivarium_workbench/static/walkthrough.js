@@ -8453,8 +8453,8 @@
         // (▶ Run current spec / ↻ Reproduce), not here — so a card stays a
         // browse+download surface.
         var acts =
-          '<a href="#" style="' + lnk + '" title="Download this study\'s outputs (figures + embedded HTML reports) as a zip" ' +
-            'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ outputs</a>' +
+          '<a href="#" style="' + lnk + '" title="Download this study\'s figures (and embedded HTML reports) as a zip" ' +
+            'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;">↓ figures</a>' +
           '<a href="#" style="' + lnk + '" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
             'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(iset.name) + '\');return false;">↓ notebook</a>';
         return '<div class="iset-study-row" style="padding:6px;border-radius:5px" ' +
@@ -10169,9 +10169,9 @@
   function _dagDownloadControlsHtml(slug) {
     var lnk = 'font-size:0.66em;color:#3b82f6;text-decoration:none;white-space:nowrap';
     return '<div class="dag-download-controls" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">' +
-      '<a href="#" title="Download this study\'s outputs (figures + embedded HTML reports) as a zip" ' +
+      '<a href="#" title="Download this study\'s figures (and embedded HTML reports) as a zip" ' +
         'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
-        'style="' + lnk + '">↓ outputs</a>' +
+        'style="' + lnk + '">↓ figures</a>' +
       '<a href="#" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
         'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(_dagInvSlug || '') + '\');return false;" ' +
         'style="' + lnk + '">↓ notebook</a>' +
