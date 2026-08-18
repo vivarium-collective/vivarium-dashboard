@@ -886,7 +886,11 @@
       // like its existing "Set composite" control already does.
       var baselineInput = block.querySelector('.baseline-composite-input');
       var baselineName = baselineInput ? baselineInput.getAttribute('data-baseline-name') : '';
-      fetch('/api/composite-resolve?id=' + encodeURIComponent(composite) + '&overrides=' + encodeURIComponent(overridesJson))
+      var _cfgApi = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+      var _cfgUrl = document.body.classList.contains('snapshot')
+        ? _cfgApi('/api/composite-resolve/' + encodeURIComponent(composite) + '.json')
+        : '/api/composite-resolve?id=' + encodeURIComponent(composite) + '&overrides=' + encodeURIComponent(overridesJson);
+      fetch(_cfgUrl)
         .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
         .then(function (res) {
           if (res.status !== 200 || !res.body || !res.body.parameters) {
@@ -948,6 +952,18 @@
       mount.innerHTML = '<p class="empty-message">No composite declared for this study yet.</p>';
       return;
     }
+    // Consolidation (Fable §4.2 / #14): the loom cards below ARE the study's
+    // models — each is a full inline explorer with its OWN Configure & Inputs
+    // panel, Run bar, and Outputs. That makes the separate "Runnable models"
+    // section (composite id + Set composite + resolved params + run-status pill)
+    // entirely redundant, so hide it. The cards are still derived from its
+    // .cond-block elements' data-model-composite attributes below, and
+    // _loadModelConfig still populates them off-screen (harmless), so nothing
+    // downstream breaks. NOTE: the "Set composite" (repoint study.baseline)
+    // authoring action lives only here; it can be re-surfaced behind an explicit
+    // edit affordance if a study needs to change its model from this tab.
+    var modelSection = document.getElementById('model-section');
+    if (modelSection) modelSection.style.display = 'none';
     mount.innerHTML = '';
     order.forEach(function (id) {
       var entry = byId[id];
@@ -959,7 +975,13 @@
         entry.labels.map(esc).join(' · ') + '</div>' +
         '<p class="muted" style="font-size:0.85em;margin:0">Resolving composite…</p>';
       mount.appendChild(wrap);
-      fetch('/api/composite-resolve?id=' + encodeURIComponent(entry.id) + '&overrides=' + encodeURIComponent(entry.overridesJson))
+      // Snapshot-aware: a read-only bundle has no live /api/composite-resolve,
+      // so publish.py bakes the card payload to api/composite-resolve/<id>.json.
+      var _mcApi = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+      var _mcUrl = document.body.classList.contains('snapshot')
+        ? _mcApi('/api/composite-resolve/' + encodeURIComponent(entry.id) + '.json')
+        : '/api/composite-resolve?id=' + encodeURIComponent(entry.id) + '&overrides=' + encodeURIComponent(entry.overridesJson);
+      fetch(_mcUrl)
         .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
         .then(function (res) {
           var body = res.body;
@@ -977,6 +999,11 @@
           }
           var cardHost = document.createElement('div');
           cardHost.innerHTML = window._renderCompositeCardFull(body);
+          // Card starts COLLAPSED — click "▶ Explore" to open the inline
+          // bigraph-loom explorer (its Configure · graph · Run · Outputs). The
+          // Model tab is the study's model surface, but a study can declare
+          // several composites, so eagerly mounting every loom is heavy; the
+          // reader opens the one they want.
           wrap.querySelector('p').replaceWith(cardHost.firstElementChild);
         })
         .catch(function () {

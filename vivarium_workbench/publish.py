@@ -949,6 +949,26 @@ def _do_build(
         except Exception:
             pass
 
+    # api/composite-resolve/<id>.json — the pre-resolved CARD payload (id / name /
+    # parameters / processes / wiring) the Study Model tab renders its composite
+    # card from. The live tab hits GET /api/composite-resolve?id=…; a read-only
+    # snapshot has no such endpoint, so bake the default-overrides payload here
+    # (study-detail.js fetches this file in snapshot mode). Without it the Model
+    # tab shows "Could not resolve …" and no inline bigraph-loom card.
+    from vivarium_workbench.lib.composite_resolve import resolve_composite_for_request
+    composite_resolve_dir = api_dir / "composite-resolve"
+    composite_resolve_dir.mkdir(parents=True, exist_ok=True)
+    for comp in (composites.get("composites") or []):
+        cid = comp.get("id")
+        if not cid:
+            continue
+        try:
+            payload = resolve_composite_for_request(ws_root, cid, {})
+            if payload is not None:
+                _write_json(composite_resolve_dir / f"{cid}.json", payload)
+        except Exception:
+            pass
+
     # Also publish any committed override whose filename is NOT a canonical
     # registry id — these are ALIAS forms a study.yaml references directly (e.g.
     # `...baseline.baseline.json` when discovery canonicalizes the id to
