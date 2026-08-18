@@ -44,7 +44,7 @@ body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
   font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;scroll-padding-top:64px}
 a{color:var(--accent);text-decoration:none}
 a:hover{text-decoration:underline}
-.wrap{max-width:1280px;margin:0 auto;padding:0 40px}
+.wrap{max-width:1440px;margin:0 auto;padding:0 40px}
 .kicker{font-size:11px;font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-2)}
 .mono{font-family:var(--mono);font-size:.9em}
 .serif{font-family:var(--serif)}
@@ -129,8 +129,15 @@ a:hover{text-decoration:underline}
 .card::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:3px;border-radius:3px;background:var(--pass)}
 .card.is-fail::before{background:var(--fail)}
 .card.is-control{border-style:dashed;border-color:var(--line-2)}
+/* collapsed cards are wholly clickable — signal it clearly */
+.card.collapsed{cursor:pointer;padding-bottom:44px;transition:box-shadow .15s ease,border-color .15s ease,transform .12s ease}
+.card.collapsed:hover{border-color:var(--accent);box-shadow:0 6px 22px rgba(30,25,20,.10),0 1px 0 var(--line);transform:translateY(-1px)}
+.card.collapsed::after{content:"Click to expand ▾";position:absolute;right:24px;bottom:16px;
+  font-family:var(--sans);font-size:12px;font-weight:600;letter-spacing:.02em;color:var(--ink-3);pointer-events:none}
+.card.collapsed:hover::after{color:var(--accent)}
+.card.collapsed:hover .ctoggle{color:var(--accent)}
 .card-h{display:flex;align-items:flex-start;gap:14px;margin-bottom:4px;cursor:pointer;user-select:none}
-.card-h .ctoggle{color:var(--ink-3);font-size:13px;padding-top:6px;transition:transform .15s;line-height:1}
+.card-h .ctoggle{color:var(--ink-3);font-size:15px;padding-top:5px;transition:transform .15s,color .15s;line-height:1}
 .card.collapsed .card-h .ctoggle{transform:rotate(-90deg)}
 .card-h .cnum{font-family:var(--mono);color:var(--ink-3);font-size:14px;padding-top:5px}
 /* collapse behaviour */
@@ -138,7 +145,7 @@ a:hover{text-decoration:underline}
 .card:not(.collapsed) .study-summary{display:none}
 .study-summary{margin-top:10px}
 .summary-chips{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin:6px 0}
-.summary-snip{color:var(--ink-2);font-size:13.5px;max-width:78ch;margin-top:6px}
+.summary-snip{color:var(--ink-2);font-size:13.5px;max-width:none;margin-top:6px}
 .studies-toolbar{display:flex;gap:8px;align-items:center;margin-left:auto}
 .studies-toolbar button{font-family:var(--sans);font-size:12px;font-weight:600;color:var(--ink-2);
   background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 12px;cursor:pointer}
@@ -147,8 +154,8 @@ a:hover{text-decoration:underline}
 .card-h .cright{display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end}
 .control-kick{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;letter-spacing:.04em;
   text-transform:uppercase;color:var(--warn);background:var(--warn-soft);padding:3px 10px;border-radius:999px}
-.claim{font-family:var(--serif);font-size:16.5px;color:var(--ink);margin:8px 0 2px;max-width:74ch;font-style:italic}
-.biology{color:var(--ink-2);font-size:14px;margin:8px 0 4px;max-width:76ch}
+.claim{font-family:var(--serif);font-size:16.5px;color:var(--ink);margin:8px 0 2px;max-width:none;font-style:italic}
+.biology{color:var(--ink-2);font-size:14px;margin:8px 0 4px;max-width:none}
 
 /* spine stage */
 .stage{margin-top:22px;padding-top:20px;border-top:1px solid var(--line)}
@@ -1006,7 +1013,11 @@ app.addEventListener('click',e=>{
   // index link → expand the target study before scrolling to it
   const link=e.target.closest('.subnav a');
   if(link){ const href=link.getAttribute('href')||''; if(href.startsWith('#s-')){ const c=document.getElementById(href.slice(1)); if(c) c.classList.remove('collapsed'); } return; }
-  // header → toggle this study
+  // a collapsed card is clickable anywhere to expand (ignore real controls/links)
+  const anyCard=e.target.closest('.card');
+  if(anyCard && anyCard.classList.contains('collapsed') && !e.target.closest('a,button,summary,input,textarea,select')){
+    anyCard.classList.remove('collapsed'); return; }
+  // header → collapse an expanded study
   const head=e.target.closest('.card-h');
   if(head){ head.closest('.card').classList.toggle('collapsed'); }
 });
