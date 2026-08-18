@@ -17,7 +17,7 @@
 - [x] [44: Workbench pod crashloop — process-bigraph artifacts module missing](./44.md#goal)
 - [ ] [45: sms-ecoli process-bigraph floor bump](./45.md#goal)
 - [ ] [46: min/gen wall time reduction for lineages in v2 to match v1](./46.md#goal)
-- [x] [47: Dark/light mode theme switcher, with selectable-themes feasibility assessment](./47.md#goal) — full dark-mode sweep (toggle visibility + every un-themed live component found via 2 real bug reports) verified live, PR #869 open awaiting review, not merged; N-theme system deliberately deferred (needs a token-consolidation pass first, per the item's own recommendation)
+- [x] [47: Dark/light mode theme switcher, with selectable-themes feasibility assessment](./47.md#goal) — full dark-mode sweep (toggle visibility + every un-themed live component found via 2 real bug reports) verified live, PR #869 MERGED; N-theme system deliberately deferred (needs a token-consolidation pass first, per the item's own recommendation)
 - [ ] [48: Persistent build URL + cross-tab session isolation fix](./48.md#goal)
 - [ ] [49: process-bigraph-native dispatch routing design review](./49.md#goal)
 - [ ] [50: The /compose/v1/* Redesign as Comprehensively Recorded](./50.md#goal)
