@@ -18,7 +18,7 @@ def test_header_export_cluster_and_icon_refresh():
     assert 'inv-export-actions' in dv, "export cluster wrapper missing"
     cluster_start = dv.index('inv-export-actions')
     cluster = dv[cluster_start:cluster_start + 600]
-    assert '_generateInvestigationReport()' in cluster, "report button not in export cluster"
+    assert '_downloadInvestigationReport()' in cluster, "report button not in export cluster"
     assert '_downloadInvestigationNotebook()' in cluster, "notebook button not in export cluster"
     # Refresh is icon-only now (no text label on the button itself)
     assert '↻ Refresh</button>' not in HTML, "Refresh button still has a text label"

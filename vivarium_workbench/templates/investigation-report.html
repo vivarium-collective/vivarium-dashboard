@@ -182,6 +182,14 @@ a:hover{text-decoration:underline}
 figure{margin:12px 0 4px}
 figure svg{max-width:100%;height:auto;display:block}
 figure img{max-width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.spine-badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:600;padding:2px 9px;border-radius:999px;background:var(--chip);color:var(--ink-2)}
+.spine-badge.v-passed{color:var(--pass);background:var(--pass-soft)}
+.spine-badge.v-failing{color:var(--fail);background:var(--fail-soft)}
+.spine-badge.v-blocked,.spine-badge.v-needs_calibration{color:var(--warn);background:var(--warn-soft)}
+.spine-legend{display:flex;gap:14px;flex-wrap:wrap;margin-top:8px}
+.spine-legend-item{font-size:11.5px;color:var(--ink-2)}
+.study-verdict-dag,.acceptance-rollup,.ac-gating-matrix{margin-top:4px}
+.ac-gating-matrix .gap,.acceptance-rollup td{font-size:13.5px}
 figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:76ch}
 .fig-scroll{overflow-x:auto}
 
@@ -671,9 +679,18 @@ function renderStudy(s, inv, idx){
     const cl=s.conclusion_logic.if_primary_tests_pass;
     conclusion=[cl.implementation_status, cl.biological_validation].filter(Boolean).join(' ');
   }
+  // gate divergence: the code-computed gate verdict vs the authored gate_status
+  let gateDiv='';
+  const cg=s.computed_gate_verdict;
+  if(cg){
+    const code=cg.result||'', authored=s.gate_status||'';
+    const same=(code===authored)||(code==='passing'&&authored==='passed')||(code==='failing'&&authored==='failed');
+    if(cg.diverges_from_authored===true || (code && authored && !same))
+      gateDiv=`<div class="sp-gate-divergence chip warn" style="margin-top:8px">⚠ gate divergence — code: ${esc(code)} · authored: ${esc(authored)}</div>`;
+  }
   const decisionBody=`<div class="decbox"><div>${statusChip(dchip)}</div>
     <div><div class="dverdict"><b>${fail?'Gate refused':'Gate cleared'}</b> · ${esc(s.confidence||'')}${lo?` · <span class="mono">${esc(lo.result)} (${esc(lo.detail||'')})</span>`:''}</div>
-    ${conclusion?`<div class="dnarr">${esc(conclusion)}</div>`:''}</div></div>`;
+    ${conclusion?`<div class="dnarr">${esc(conclusion)}</div>`:''}${gateDiv}</div></div>`;
 
   return `<section class="card collapsed ${fail?'is-fail':''} ${control?'is-control':''}" id="s-${s.slug}">
     <div class="card-h">
@@ -827,6 +844,66 @@ function spy(){
   document.querySelectorAll('.card,#top,#inv-viz,#appendix').forEach(el=>{if(el.id)obs.observe(el);});
 }
 
+/* ---------- spine presentation: verdict DAG · acceptance roll-up · AC gating matrix ---------- */
+const VG={passed:['✅','passed'],failing:['⛔','failing'],blocked:['⚠','blocked'],
+          needs_calibration:['🔄','needs calibration'],not_started:['◽','not evaluated']};
+function _spineVerdictBadge(v){ const g=VG[v]||VG.not_started; return `<span class="spine-badge v-${v}">${g[0]} ${g[1]}</span>`; }
+function _spineCountLabel(c){ if(!c) return ''; const p=[]; if(c.passed) p.push(c.passed+' passed'); if(c.skipped) p.push(c.skipped+' skipped'); if(c.failed) p.push(c.failed+' failed'); return p.join(' · '); }
+function _acResultBadge(r){ const ok=(r==='passing'||r==='passed'||r==='passing-with-caveats'); const bad=(r==='failing'||r==='failed'); return `<span class="chip ${ok?'pass':(bad?'fail':'')}">${esc(r||'—')}</span>`; }
+
+// V8 — verdict-annotated study DAG (renders only when there are dependency edges;
+// otherwise the at-a-glance table already conveys the flat list)
+function _verdictDagHtml(sp){
+  const dag=sp&&sp.verdict_dag; if(!dag||!dag.edges||!dag.edges.length) return '';
+  const nodes=dag.nodes, edges=dag.edges;
+  const byDepth={}; let maxD=0;
+  nodes.forEach(n=>{ (byDepth[n.depth]=byDepth[n.depth]||[]).push(n); if(n.depth>maxD)maxD=n.depth; });
+  const colW=210, rowH=64, padL=8, padT=20, bw=180, bh=46;
+  const maxRows=Math.max(...Object.values(byDepth).map(a=>a.length),1);
+  const W=padL+(maxD+1)*colW, H=padT+maxRows*rowH+10;
+  const pos={};
+  Object.keys(byDepth).forEach(d=>{ byDepth[d].forEach((n,i)=>{ pos[n.slug]={x:padL+d*colW+bw/2, y:padT+i*rowH+bh/2}; }); });
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12">`;
+  edges.forEach(e=>{ const a=pos[e.from], b=pos[e.to]; if(!a||!b) return;
+    sv+=`<line x1="${a.x+bw/2}" y1="${a.y}" x2="${b.x-bw/2}" y2="${b.y}" stroke="var(--line-2)" marker-end="url(#dgar)"/>`; });
+  nodes.forEach(n=>{ const p=pos[n.slug]; const g=VG[n.verdict]||VG.not_started;
+    sv+=`<a href="#s-${n.slug}"><rect x="${p.x-bw/2}" y="${p.y-bh/2}" width="${bw}" height="${bh}" rx="9" fill="var(--surface)" stroke="var(--line-2)"/>`;
+    sv+=`<text x="${p.x-bw/2+10}" y="${p.y-4}" fill="var(--ink)" font-weight="600" font-size="12">${g[0]} ${esc(n.title.length>20?n.title.slice(0,19)+'…':n.title)}</text>`;
+    const cl=_spineCountLabel(n.counts);
+    sv+=`<text x="${p.x-bw/2+10}" y="${p.y+13}" fill="var(--ink-3)" font-size="10.5">${g[1]}${cl?' · '+esc(cl):''}</text></a>`; });
+  sv+=`<defs><marker id="dgar" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="var(--line-2)"/></marker></defs></svg>`;
+  const legend=Object.keys(VG).map(k=>`<span class="spine-legend-item">${VG[k][0]} ${VG[k][1]}</span>`).join('');
+  return `<div class="study-verdict-dag"><div class="fig-scroll">${sv}</div>
+    <div class="spine-legend">${legend}</div>
+    <figcaption>Member studies as a dependency DAG (edges from <span class="mono">parent_studies</span>), each badged with its code-computed gate verdict.</figcaption></div>`;
+}
+function _acceptanceRollupHtml(sp){
+  const a=sp&&sp.acceptance; if(!a||!(a.criteria&&a.criteria.length)) return '';
+  const rows=a.criteria.map(c=>`<tr><td>${c.study?`<a href="#s-${esc(c.study)}">${esc(c.study)}</a>`:'—'}</td><td>${esc(c.behavior||'')}</td><td class="tv">${_acResultBadge(c.result)}</td></tr>`).join('');
+  const div=a.diverges_from_authored?`<span class="acceptance-divergence chip warn">⚠ code differs from authored</span>`:'';
+  return `<div class="acceptance-rollup"><div class="slabel">Acceptance roll-up ${div}</div>
+    <p style="color:var(--ink-2);font-size:13.5px;max-width:74ch;margin:2px 0 8px">The investigation's acceptance criteria connected to their gating study and code-computed result — the spine roll-up, not a re-computation.</p>
+    <table class="ttable"><tbody>${rows}</tbody></table></div>`;
+}
+function _acGatingMatrixHtml(sp){
+  const m=sp&&sp.ac_matrix; if(!m||!(m.criteria&&m.criteria.length)) return '';
+  const rows=m.criteria.map(c=> c.gap
+    ? `<tr><td>${esc(c.behavior||'')}</td><td class="gap" style="color:var(--fail)">no study linked — gap</td><td></td></tr>`
+    : `<tr><td>${esc(c.behavior||'')}</td><td><a href="#s-${esc(c.study)}">${esc(c.study)}</a></td><td class="tv">${_acResultBadge(c.result)}</td></tr>`).join('');
+  const gaps=m.criteria.filter(c=>c.gap).length;
+  const foot=gaps?`<div class="texp" style="color:var(--ink-3);margin-top:6px">${gaps} acceptance criteria have no study linked (gaps).</div>`:'';
+  return `<div class="ac-gating-matrix"><div class="slabel">Acceptance-criteria gating matrix</div>
+    <table class="ttable"><thead><tr><th>Criterion</th><th>Gating study</th><th class="tv">Result</th></tr></thead><tbody>${rows}</tbody></table>${foot}</div>`;
+}
+function renderSpine(inv){
+  const sp=inv.spine; if(!sp) return '';
+  const dag=_verdictDagHtml(sp), acc=_acceptanceRollupHtml(sp), mx=_acGatingMatrixHtml(sp);
+  if(!dag && !acc && !mx) return '';
+  return `<div id="spine-presentation" class="fbsection">${fbBubble('spine','Spine — verdicts & acceptance')}
+    <div class="sec-h"><h2>Verdicts &amp; acceptance</h2><span class="rule"></span></div>
+    ${dag}${acc?`<div style="margin-top:16px">${acc}</div>`:''}${mx?`<div style="margin-top:16px">${mx}</div>`:''}</div>`;
+}
+
 /* ---------- one contiguous document ---------- */
 function render(inv){
   CUR=inv.slug; loadFB();
@@ -836,7 +913,7 @@ function render(inv){
       <h1>${esc(inv.title)}</h1>
       <div class="provline"><span>${inv.studies.length} studies</span><span class="sep">·</span>
         <span>generated 2026-08-18</span><span class="sep">·</span><span class="mono">viva-casebook</span></div>
-    </div>${renderExec(inv)}${renderInvViz(inv)}</div>`+
+    </div>${renderExec(inv)}${renderInvViz(inv)}${renderSpine(inv)}</div>`+
     toc(inv)+
     `<div class="wrap">
       <div class="sec-h"><h2>Studies</h2><span class="rule"></span>

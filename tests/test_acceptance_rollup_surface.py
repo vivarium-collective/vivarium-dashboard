@@ -91,10 +91,10 @@ def test_iset_response_surfaces_persisted_divergence(tmp_path, dashboard_client)
     assert ca.get("diverges_from_authored") is True
 
 
-def test_walkthrough_js_renders_acceptance_rollup():
-    js = (_PKG / "static" / "walkthrough.js").read_text(encoding="utf-8")
-    assert "computed_acceptance" in js
-    assert "diverges_from_authored" in js
-    # renders the per-criterion table + a divergence badge
-    assert "acceptance-rollup" in js
-    assert "acceptance-divergence" in js
+def test_report_template_renders_acceptance_rollup():
+    # The report (lib.investigation_report + template) renders the per-criterion
+    # roll-up table + a code-vs-authored divergence badge from computed_acceptance.
+    tpl = (_PKG / "templates" / "investigation-report.html").read_text(encoding="utf-8")
+    assert "diverges_from_authored" in tpl
+    assert "acceptance-rollup" in tpl
+    assert "acceptance-divergence" in tpl

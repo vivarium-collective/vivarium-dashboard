@@ -33,7 +33,107 @@ _STUDY_KEEP = (
     "title", "confidence", "gate_status", "question", "claim", "biological_summary",
     "requires", "sourcing", "baseline", "behavior_tests", "runs", "conclusion",
     "loop_provenance", "purpose", "findings", "conclusion_logic", "limitations",
+    "parent_studies", "pipeline_gate",
 )
+
+# 5-state study verdict (mirrors viva_superpowers roll-up): each maps to a glyph
+# + label the report legend enumerates.
+_VERDICT_GLYPH = {
+    "passed": ("✅", "passed"), "failing": ("⛔", "failing"), "blocked": ("⚠", "blocked"),
+    "needs_calibration": ("🔄", "needs calibration"), "not_started": ("◽", "not evaluated"),
+}
+_VERDICT_MAP = {
+    "passing": "passed", "passing-with-caveats": "passed", "passed": "passed", "pass": "passed",
+    "failing": "failing", "failed": "failing", "fail": "failing", "blocked": "blocked",
+    "needs_calibration": "needs_calibration", "not_started": "not_started",
+}
+
+
+def _study_verdict(spec, computed_gate) -> str:
+    """Reduce a study to one of the five verdict states from its computed gate
+    evaluator, else its gate_status, else run presence."""
+    res = (computed_gate or {}).get("result")
+    if res and res in _VERDICT_MAP:
+        return _VERDICT_MAP[res]
+    gs = spec.get("gate_status")
+    if gs in ("passed", "pass"):
+        return "passed"
+    if gs in ("failed", "fail"):
+        return "failing"
+    return "not_started" if not spec.get("runs") else "blocked"
+
+
+def _outcome_counts(spec) -> dict:
+    passed = skipped = failed = 0
+    for r in (spec.get("runs") or []):
+        for o in ((r.get("outcomes") or {}).values()):
+            res = str((o or {}).get("result", "")).upper()
+            if res == "PASS":
+                passed += 1
+            elif res in ("SKIP", "SKIPPED", "NA", "N/A"):
+                skipped += 1
+            elif res == "FAIL":
+                failed += 1
+    return {"passed": passed, "skipped": skipped, "failed": failed}
+
+
+def _depths(slugs, edges) -> dict:
+    """Longest-path depth per node (topological column for the DAG)."""
+    incoming = {s: [] for s in slugs}
+    for e in edges:
+        if e["to"] in incoming and e["from"] in incoming:
+            incoming[e["to"]].append(e["from"])
+    depth = {s: 0 for s in slugs}
+    for _ in range(len(slugs)):  # relax up to N times (DAG converges)
+        changed = False
+        for s in slugs:
+            d = max((depth[p] + 1 for p in incoming[s]), default=0)
+            if d != depth[s]:
+                depth[s] = d
+                changed = True
+        if not changed:
+            break
+    return depth
+
+
+def _build_spine(ws_root, inv_slug: str, studies: list) -> dict:
+    """Computed spine presentation: per-study verdicts, the verdict-annotated
+    study DAG, the acceptance roll-up, and the AC→study gating matrix. All from
+    the existing server-side computations (build_iset_detail, ac_gating_matrix)."""
+    detail = {}
+    try:
+        from vivarium_workbench.lib.report_views import build_iset_detail
+        detail = build_iset_detail(ws_root, inv_slug) or {}
+    except Exception:
+        detail = {}
+    cgv = {s.get("name"): s.get("computed_gate_verdict") for s in detail.get("studies", []) if s.get("name")}
+    ac_matrix = None
+    try:
+        from vivarium_workbench.lib import linkage_index
+        ac_matrix = linkage_index.ac_gating_matrix(ws_root, inv_slug)
+    except Exception:
+        ac_matrix = None
+
+    slugs = [s["slug"] for s in studies]
+    edges = []
+    for s in studies:
+        gate = cgv.get(s["slug"])
+        s["verdict"] = _study_verdict(s, gate)
+        s["verdict_counts"] = _outcome_counts(s)
+        if gate:
+            s["computed_gate_verdict"] = gate
+        for p in (s.get("parent_studies") or []):
+            src = p.get("study") if isinstance(p, dict) else p
+            if src in slugs:
+                edges.append({"from": src, "to": s["slug"]})
+    depth = _depths(slugs, edges)
+    nodes = [{"slug": s["slug"], "title": s["title"], "verdict": s["verdict"],
+              "counts": s["verdict_counts"], "depth": depth.get(s["slug"], 0)} for s in studies]
+    return {
+        "verdict_dag": {"nodes": nodes, "edges": edges},
+        "acceptance": detail.get("computed_acceptance"),
+        "ac_matrix": ac_matrix,
+    }
 
 # inline-image budget: keep the self-contained report a sane size
 _IMG_PER_FILE_MAX = 1_400_000     # skip a single figure larger than this
@@ -191,6 +291,8 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
                 s["figures_embedded"] = figs
         studies.append(s)
 
+    spine = _build_spine(ws_root, inv_slug, studies)
+
     return {
         "slug": inv.get("name") or inv_slug,
         "title": inv.get("title") or inv_slug,
@@ -200,6 +302,8 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
         "lead": inv.get("lead"),
         "executive": inv.get("executive"),
         "at_a_glance": inv.get("at_a_glance"),
+        "acceptance_criteria": inv.get("acceptance_criteria"),
+        "spine": spine,
         "catalog": inv.get("catalog"),
         "workspace": ws_root.name,
         "provenance": (
