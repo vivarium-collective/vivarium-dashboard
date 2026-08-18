@@ -423,6 +423,114 @@
 .di-gain-medium{background:#fef3c7;color:#92400e}
 .di-gain-low{background:#e5e7eb;color:#374151}
 .di-chip{font-size:0.7em;padding:1px 8px;border-radius:9999px;background:#e2e8f0;color:#475569}
+
+/* ── Dark theme ──────────────────────────────────────────────────────
+   Same idiom as vivarium_workbench/static/style.css's own dark block:
+   var(--token) for structural neutrals, rgba(hue,alpha) + a reused light
+   fg-tint per semantic family (green=passed/confirms, amber=needs_calib/
+   gated/blocked-phase, red=failed/contradicts, blue=simulate/supporting/
+   info, indigo=design/effort, purple=stale/waived/novel, pink=evaluate).
+   Solid saturated dot-fills (emerald/amber/red/purple on .status-step
+   .dot / .act-gate-dot) are left unchanged — small solid marks already
+   read fine on dark, same call already made for .ptrack-fill. */
+:root[data-theme="dark"] .study-kind-tag{background:var(--surface-3);color:var(--text-muted)}
+:root[data-theme="dark"] .study-kind-tag.study-kind-biological{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .study-kind-tag.study-kind-computational{background:rgba(59,130,246,0.16);color:#93c5fd}
+:root[data-theme="dark"] .study-kind-tag.study-kind-theoretical{background:rgba(124,58,237,0.16);color:#c4b5fd}
+:root[data-theme="dark"] .study-question-headline{color:var(--text)}
+:root[data-theme="dark"] .study-question-headline .q-glyph{color:var(--text-muted);background:var(--surface-3)}
+:root[data-theme="dark"] .status-detail-axis{color:var(--text-muted)}
+:root[data-theme="dark"] .status-chip{background:var(--surface-3);color:var(--text)}
+:root[data-theme="dark"] .gate-status-blocked{background:var(--surface-3);color:var(--text-muted)}
+:root[data-theme="dark"] .gate-status-needs_calibration{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .gate-status-passed{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .gate-status-failed{background:rgba(220,38,38,0.16);color:#fca5a5}
+:root[data-theme="dark"] .gate-status-stale{background:rgba(124,58,237,0.16);color:#c4b5fd}
+:root[data-theme="dark"] .status-step{color:var(--text-muted)}
+:root[data-theme="dark"] .status-step .dot{background:var(--border-2);box-shadow:inset 0 0 0 1px var(--border)}
+:root[data-theme="dark"] .status-step.set{color:var(--text)}
+:root[data-theme="dark"] .status-step .step-val{color:var(--text-muted)}
+:root[data-theme="dark"] .status-step.gate-status-blocked .dot{background:var(--text-muted);box-shadow:none}
+:root[data-theme="dark"] .status-step.gate-state-not-assessed .dot{background:var(--border-2);box-shadow:inset 0 0 0 1px var(--border)}
+:root[data-theme="dark"] .status-chip.gate-state-not-assessed{background:var(--surface-3);color:var(--text)}
+:root[data-theme="dark"] .status-chip.gate-state-passed{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .status-chip.gate-state-passed-with-conditions{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .status-chip.gate-state-blocked{background:rgba(220,38,38,0.16);color:#fca5a5}
+:root[data-theme="dark"] .status-chip.gate-state-waived{background:rgba(124,58,237,0.16);color:#c4b5fd}
+:root[data-theme="dark"] .gate-computed-chip{background:rgba(59,130,246,0.16);border-color:rgba(59,130,246,0.4);color:#93c5fd}
+:root[data-theme="dark"] .gate-divergence-chip-inline{background:rgba(245,158,11,0.15);border-color:rgba(245,158,11,0.35);color:#fcd34d}
+:root[data-theme="dark"] .status-stepper-more{color:var(--text-muted)}
+:root[data-theme="dark"] .status-stepper-body{border-top-color:var(--border-faint)}
+:root[data-theme="dark"] .phase-pill{background:rgba(99,102,241,0.16);color:#a5b4fc}
+:root[data-theme="dark"] .phase-design{background:rgba(99,102,241,0.16);color:#a5b4fc}
+:root[data-theme="dark"] .phase-build{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .phase-simulate{background:rgba(59,130,246,0.16);color:#93c5fd}
+:root[data-theme="dark"] .phase-evaluate{background:rgba(219,39,119,0.18);color:#f9a8d4}
+:root[data-theme="dark"] .phase-decide{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .classification-primary{background:rgba(220,38,38,0.16);color:#fca5a5}
+:root[data-theme="dark"] .classification-supporting{background:rgba(59,130,246,0.16);color:#93c5fd}
+:root[data-theme="dark"] .classification-diagnostic{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .classification-regression{background:var(--surface-3);color:var(--text-muted)}
+:root[data-theme="dark"] .sim-status-ready{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .sim-status-gated{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .sim-status-running{background:rgba(59,130,246,0.16);color:#93c5fd}
+:root[data-theme="dark"] .sim-status-ran{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .followup-card{border-color:var(--border);border-left-color:var(--text-muted);background:var(--surface-2)}
+:root[data-theme="dark"] .followup-card.followup-kind-existing{background:rgba(59,130,246,0.16)}
+:root[data-theme="dark"] .followup-card.followup-kind-infrastructure_fix{background:rgba(220,38,38,0.16)}
+:root[data-theme="dark"] .followup-card.followup-kind-calibration_task{background:rgba(245,158,11,0.15)}
+:root[data-theme="dark"] .followup-card.followup-kind-expert_question{background:rgba(124,58,237,0.16)}
+:root[data-theme="dark"] .followup-card.followup-kind-new{background:rgba(16,185,129,0.14)}
+:root[data-theme="dark"] .followup-kind{background:var(--surface-3);color:var(--text-muted)}
+:root[data-theme="dark"] .followup-effort{background:rgba(99,102,241,0.16);color:#a5b4fc}
+:root[data-theme="dark"] .followup-status{background:var(--surface-3);color:var(--text-muted)}
+:root[data-theme="dark"] .followup-status.status-blocked{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .followup-status.status-done{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .followup-hypothesis{background:var(--surface-2);border-color:var(--border-2)}
+:root[data-theme="dark"] .btn-seed-followup{background:var(--surface-2);border-color:#3b82f6;color:#93c5fd}
+:root[data-theme="dark"] .figure-card{border-color:var(--border);background:var(--surface)}
+:root[data-theme="dark"] .figure-media-frame{background:var(--surface)}
+:root[data-theme="dark"] .figure-desc{color:var(--text-muted)}
+:root[data-theme="dark"] .figure-caption-row{color:var(--text-muted);border-top-color:var(--border-faint);background:var(--surface-2)}
+:root[data-theme="dark"] .figure-source-chip{background:var(--surface-3);color:var(--text-muted)}
+:root[data-theme="dark"] .figure-title{color:var(--text)}
+:root[data-theme="dark"] .figure-run-link,
+:root[data-theme="dark"] .figure-open-link{color:var(--link)}
+:root[data-theme="dark"] .chart-caption{color:var(--text-muted)}
+:root[data-theme="dark"] .findings-section{background:var(--surface-2);border-color:rgba(99,102,241,0.3)}
+:root[data-theme="dark"] .finding-card{border-color:var(--border);background:var(--surface)}
+:root[data-theme="dark"] .finding-chip{color:var(--text-muted);background:var(--surface-3)}
+:root[data-theme="dark"] .finding-drawer{border-top-color:var(--border-2)}
+:root[data-theme="dark"] .finding-id{color:var(--text-muted);background:var(--surface-3)}
+:root[data-theme="dark"] .finding-kind{background:rgba(99,102,241,0.16);color:#a5b4fc}
+:root[data-theme="dark"] .finding-status-text{color:var(--text-muted)}
+:root[data-theme="dark"] .finding-statement{color:var(--text)}
+:root[data-theme="dark"] .finding-evidence,
+:root[data-theme="dark"] .finding-expected{color:var(--text-muted);background:var(--surface-2);border-left-color:var(--text-muted)}
+:root[data-theme="dark"] .finding-exp-summary{color:var(--text-muted);background:var(--surface-2)}
+:root[data-theme="dark"] .finding-explanation{color:var(--text)}
+:root[data-theme="dark"] .finding-explanation em{color:var(--text-muted)}
+:root[data-theme="dark"] .finding-expert{background:var(--surface-2);border-color:var(--border)}
+:root[data-theme="dark"] .finding-expert summary{color:var(--text-muted)}
+:root[data-theme="dark"] .finding-expert-quote{background:var(--surface-2);color:var(--text)}
+:root[data-theme="dark"] .finding-expert-note{color:var(--text-muted)}
+:root[data-theme="dark"] .finding-next{background:rgba(16,185,129,0.14)}
+:root[data-theme="dark"] .finding-next strong{color:#6ee7b7}
+:root[data-theme="dark"] .di-unc-resolved h4{color:#6ee7b7}
+:root[data-theme="dark"] .di-unc-remaining h4{color:#fcd34d}
+:root[data-theme="dark"] .di-card{border-color:var(--border);border-left-color:var(--text-muted);background:var(--surface-2)}
+:root[data-theme="dark"] .di-card-why{color:var(--text-muted)}
+:root[data-theme="dark"] .di-card-line{color:var(--text-muted)}
+:root[data-theme="dark"] .di-lbl{color:var(--text-muted)}
+:root[data-theme="dark"] .di-mech-card{background:rgba(124,58,237,0.16)}
+:root[data-theme="dark"] .di-update-chip{background:rgba(99,102,241,0.16);color:#a5b4fc}
+:root[data-theme="dark"] .di-conf-change{color:var(--text-muted)}
+:root[data-theme="dark"] .di-approval-badge{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .di-fup-card{background:rgba(16,185,129,0.14)}
+:root[data-theme="dark"] .di-gain-high{background:rgba(22,163,74,0.16);color:#86efac}
+:root[data-theme="dark"] .di-gain-medium{background:rgba(245,158,11,0.15);color:#fcd34d}
+:root[data-theme="dark"] .di-gain-low{background:var(--surface-3);color:var(--text-muted)}
+:root[data-theme="dark"] .di-chip{background:var(--surface-3);color:var(--text-muted)}
 </style>
 
 <style>
@@ -451,6 +559,17 @@
 .tag-k{font-size:0.72em;text-transform:uppercase;letter-spacing:0.05em;color:#94a3b8;font-weight:600}
 .tag-select,.tag-input{font-size:0.85em;padding:3px 8px;border:1px solid #e2e8f0;border-radius:6px;background:#fff}
 .tag-input{min-width:220px}
+:root[data-theme="dark"] .add-field-btn{border-color:var(--border-2);color:var(--text-muted)}
+:root[data-theme="dark"] .add-field-btn:hover{border-color:rgba(59,130,246,.5);color:#93c5fd;background:rgba(59,130,246,0.16)}
+:root[data-theme="dark"] .conclusion-block{border-top-color:var(--border)}
+:root[data-theme="dark"] .conclusion-md{color:var(--text)}
+:root[data-theme="dark"] .conclusion-md code{background:var(--surface-3)}
+:root[data-theme="dark"] .conclusion-md pre{background:var(--surface-3)}
+:root[data-theme="dark"] .conclusion-insight{color:var(--text)}
+:root[data-theme="dark"] .computed-tag{color:var(--text-muted);background:var(--surface-3);border-color:var(--border)}
+:root[data-theme="dark"] .tag-k{color:var(--text-muted)}
+:root[data-theme="dark"] .tag-select,
+:root[data-theme="dark"] .tag-input{border-color:var(--border-2);background:var(--field);color:var(--text)}
 </style>
 <section class="study-tab-panel active" data-kind="overview" id="panel-overview">
   <div class="study-overview">
