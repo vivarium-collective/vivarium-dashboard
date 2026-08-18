@@ -674,7 +674,7 @@ def test_tests_merged_single_concept(tmp_path, dashboard_client):
     tests_panel = html[html.index('id="panel-tests"'):html.index('id="panel-audit"')]
     assert 'id="report-cards-panel"' in tests_panel
     assert '<h2>Tests</h2>' in tests_panel
-    assert 'Audit —' in tests_panel
+    assert 'The bar.' in tests_panel   # reframed subtitle (was "Audit — …", a collision with the Audit tab)
 
 
 # ---------------------------------------------------------------------------
