@@ -323,6 +323,55 @@ footer .wrap{display:flex;flex-direction:column;gap:6px}
 <script>
 const INV = JSON.parse(document.getElementById('data').textContent);
 const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// Light markdown for authored prose fields (conclusions carry ## headers, **bold**, `code`).
+function mdLite(t){
+  if(t==null) return '';
+  let s=esc(t);
+  s=s.replace(/\s*#{2,}\s*([^\n]+?)\s*-\s+/g,'<br><b>$1</b> — ');   // "## Claims - " → bold header
+  s=s.replace(/\s*#{1,}\s*([^\n]+)/g,'<br><b>$1</b>');              // any remaining # header
+  s=s.replace(/\*\*([^*]+)\*\*/g,'<b>$1</b>');
+  s=s.replace(/`([^`]+)`/g,'<span class="mono">$1</span>');
+  return s.replace(/^\s*<br>\s*/,'');
+}
+
+// The Model-section "loom view": the composite's resolved bigraph — the nested
+// state tree (name : type) beside the process list (name · address · ports).
+function loomTopoSVG(topo){
+  if(!topo) return '';
+  const procs=topo.processes||[], stores=topo.stores||[];
+  const rows=[]; (function fl(ns,d){ (ns||[]).forEach(n=>{ rows.push({d,n}); fl(n.children,d+1); }); })(stores,0);
+  if(!rows.length && !procs.length) return '';
+  const rowH=23, headH=28, padX=14, colGap=44;
+  const storeW=Math.max(240,...rows.map(r=>padX+r.d*16+(String(r.n.name).length)*7+(String(r.n.type||'').length)*6.2+70));
+  const procH=64;
+  const procW=Math.max(250,...procs.map(p=>Math.max(String(p.name).length*8+28,
+      String(p.address||'').length*6.2+20,
+      (('in: '+(p.inputs||[]).join(', ')).length)*6.0+20,
+      (('out: '+(p.outputs||[]).join(', ')).length)*6.0+20)));
+  const storesH=headH+rows.length*rowH+8, procsH=headH+procs.length*(procH+10);
+  const H=Math.max(storesH,procsH)+14, W=storeW+colGap+procW+padX;
+  let sv=`<svg viewBox="0 0 ${W} ${H}" font-family="var(--sans)" font-size="12">`;
+  sv+=`<text x="${padX}" y="16" fill="var(--ink-3)" font-size="10" letter-spacing=".08em">STATE · BIGRAPH</text>`;
+  rows.forEach((r,i)=>{ const y=headH+i*rowH, x=padX+r.d*16, leaf=!(r.n.children&&r.n.children.length);
+    if(r.d>0) sv+=`<line x1="${x-8}" y1="${y+ (rowH-4)/2}" x2="${x}" y2="${y+(rowH-4)/2}" stroke="var(--line-2)"/>`;
+    sv+=`<rect x="${x}" y="${y}" width="${storeW-x-6}" height="${rowH-5}" rx="5" fill="${leaf?'var(--sunken)':'var(--surface)'}" stroke="var(--line)"/>`;
+    sv+=`<text x="${x+9}" y="${y+13}" fill="var(--ink)" font-family="var(--mono)" font-size="11.5">${esc(r.n.name)}</text>`;
+    if(r.n.type) sv+=`<text x="${storeW-12}" y="${y+13}" text-anchor="end" fill="var(--accent)" font-size="10.5" font-family="var(--mono)">${esc(r.n.type)}</text>`;
+  });
+  const px=storeW+colGap;
+  sv+=`<text x="${px}" y="16" fill="var(--ink-3)" font-size="10" letter-spacing=".08em">PROCESSES</text>`;
+  procs.forEach((p,i)=>{ const y=headH+i*(procH+10);
+    sv+=`<rect x="${px}" y="${y}" width="${procW}" height="${procH}" rx="9" fill="var(--surface)" stroke="var(--accent)"/>`;
+    sv+=`<text x="${px+12}" y="${y+21}" fill="var(--ink)" font-weight="700" font-family="var(--mono)" font-size="12.5">${esc(p.name)}</text>`;
+    if(p.address) sv+=`<text x="${px+12}" y="${y+36}" fill="var(--ink-3)" font-size="10.5" font-family="var(--mono)">${esc(p.address)}</text>`;
+    sv+=`<text x="${px+12}" y="${y+50}" fill="var(--ink-2)" font-size="10.5">in: <tspan fill="var(--ink)">${esc((p.inputs||[]).join(', ')||'—')}</tspan></text>`;
+    sv+=`<text x="${px+12}" y="${y+62}" fill="var(--ink-2)" font-size="10.5">out: <tspan fill="var(--ink)">${esc((p.outputs||[]).join(', ')||'—')}</tspan></text>`;
+  });
+  sv+=`</svg>`;
+  const cap=`Loom view of <span class="mono">${esc(topo.composite||'')}</span> — the composite's bigraph: ${procs.length} process${procs.length==1?'':'es'} over ${rows.length} state node${rows.length==1?'':'s'}.`;
+  return `<figure><div class="fig-scroll">${sv}</div><figcaption>${cap}</figcaption></figure>`;
+}
 const has = v => v!=null && !(Array.isArray(v)&&!v.length) && !(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length);
 
 /* ---------- helpers ---------- */
@@ -654,7 +703,8 @@ function renderStudy(s, inv, idx){
 
   // MODEL (svg + rationale/ref)
   const bl=(s.baseline||[])[0];
-  let modelBody = vizModelSVG(s,inv);
+  // Prefer the resolved bigraph loom view; fall back to the schematic diagram.
+  let modelBody = (s.model_topology ? loomTopoSVG(s.model_topology) : '') || vizModelSVG(s,inv);
   if(s.sourcing){
     modelBody += `<div class="decision-line" style="margin-top:6px"><span class="chip decision">${esc(s.sourcing.decision)}</span>
       ${(s.sourcing.modules||[]).map(m=>`<span class="chip mod">${esc(m)}</span>`).join(' ')||'<span class="chip mod">new module</span>'}</div>
@@ -741,7 +791,7 @@ function renderStudy(s, inv, idx){
   }
   const decisionBody=`<div class="decbox"><div>${statusChip(dchip)}</div>
     <div><div class="dverdict"><b>${fail?'Gate refused':'Gate cleared'}</b> · ${esc(s.confidence||'')}${lo?` · <span class="mono">${esc(lo.result)} (${esc(lo.detail||'')})</span>`:''}</div>
-    ${conclusion?`<div class="dnarr">${esc(conclusion)}</div>`:''}${gateDiv}</div></div>`;
+    ${conclusion?`<div class="dnarr">${mdLite(conclusion)}</div>`:''}${gateDiv}</div></div>`;
 
   return `<section class="card collapsed ${fail?'is-fail':''} ${control?'is-control':''}" id="s-${s.slug}">
     <div class="card-h">
