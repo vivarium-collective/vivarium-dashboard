@@ -80,7 +80,7 @@ Phase 2; "Layer 2" is the umbrella spec, **not** this RFC's Phase/§ numbering.
 | **1. Identity + statelessness** | **Statelessness DONE; identity NOT STARTED** | The §2A.6/§2A.7 spine shipped and exceeded spec: per-request `WorkspaceContext` + `SessionRegistry`, **session-per-tab** (`docs/session-binding.md`, #538–#550), `os.chdir` removed (#529), the boot-time `sys.path.insert` removed (#536) after every `/api/*` in-process workspace import moved to the **env worker** (#530–#536), session-isolated remote-build clones (#729, #763), worktree→main-venv resolution (#681). The Phase-1 exit "N concurrent sessions on distinct workspaces, no cross-talk" is effectively met. **No `Principal`, no OIDC, no app auth exists in code** — perimeter-only per §2B.4 remains the (deliberate) posture. |
 | **2. Durable runs (`RunBackend`)** | **Reshaped — being reached via the umbrella spec, not the port** | The planned engine unification did not happen: the in-request `python -c` engine is still live (`lib/investigation_run_views.py`). Instead the umbrella spec (#676) declares those orchestrators "collapse onto the process-bigraph step-network engine," and that path is underway: **investigation-as-Composite** (#715), topological resolve + **content-addressed artifact caching** (#610, #686, #689), verdict artifacts → evidence chains (#618/#619), pull-or-compute / continue-from-here (#684). Treat `docs/run-backend.md` as **superseded-in-direction** pending reconciliation with the umbrella spec. |
 | **3. Cloud storage + repo split** | **Not started** — but the reproducibility triple got real legs: env-versioned **rerun spine** (#628), `vivarium-workbench sync <repo>@<ref>` (#640), content-addressed artifacts (#686/#689), L0–L5 reproducibility audit (#624). |
-| **4. Hardening** | **Mixed — coupling won, god-files lost** | Won: plugin de-vendor + de-shim (#720/#723), ~15 new `/api/*` endpoints replacing plugin-held logic (#724–#741), import-surface allowlist (#742), dead-module removal (#756/#757), `viva-workspace` extraction deleting the duplicated `WorkspacePaths` (#762). Lost ground: `api/app.py` is now **7,801 lines** and `walkthrough.js` **22,072 lines** — the "no file > 1.5k lines" exit is receding. |
+| **4. Hardening** | **Mixed — coupling won, god-files lost** | Won: plugin de-vendor + de-shim (#720/#723), ~15 new `/api/*` endpoints replacing plugin-held logic (#724–#741), import-surface allowlist (#742), dead-module removal (#756/#757), `viva-workspace` extraction deleting the duplicated `WorkspacePaths` (#762). Lost ground, then a reversal: `walkthrough.js` peaked at **22,072 lines** before the server-side investigation-report generator (#873/#876) deleted the legacy client-side builder (#878, −4.9k lines → **16,470**); `api/app.py` is still growing (**8,077 lines** as of 2026-08-18). The "no file > 1.5k lines" exit remains distant, but the report-generator move shows the workable pattern: relocate frontend logic server-side, then delete. |
 | **5. Multi-tenant** | Untouched (as planned). |
 
 ### 0A.3 New hurdles surfaced by the burst (not anticipated above)
@@ -132,9 +132,11 @@ Phase 2; "Layer 2" is the umbrella spec, **not** this RFC's Phase/§ numbering.
   venv on the serve path). It is the single change that retires hurdles 1–2's
   root cause (the baked-in workspace env), drops the `==3.12.12` lock pin, and
   fulfills §2A.7's "drops v2ecoli from the workbench lock" promise.
-- **God-file paydown (Phase 4) needs a forcing function** — the two files grew
-  ~40% during the burst; without a ratchet (e.g. a lines-per-file CI warning or
-  a routers-split milestone) the exit criterion will keep receding.
+- **God-file paydown (Phase 4) needs a forcing function** — both files grew ~40%
+  during the burst, and while #878 then reversed `walkthrough.js` by −4.9k lines
+  (the relocate-server-side-then-delete pattern, worth repeating), `app.py` keeps
+  growing; without a ratchet (e.g. a lines-per-file CI warning or a routers-split
+  milestone) the exit criterion will keep receding.
 
 ---
 
