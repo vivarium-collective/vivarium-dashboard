@@ -1173,7 +1173,7 @@
 
 <section class="study-tab-panel" data-kind="tests" id="panel-tests" hidden>
   <h2>Tests</h2>
-  <p class="muted" style="margin:0 0 12px 0">Audit — does this study pass its own bar (report cards + behavioral gates).</p>
+  <p class="muted" style="margin:0 0 12px 0"><strong>The bar.</strong> What must be true for this model to count as correct — the acceptance criteria, their bands, and the report cards that grade them.</p>
 
   {# C5 moved literature_anchors here verbatim from the dissolved Overview
      "Plan & provenance" group. C6 restyles it as an "Expectations" band: each
@@ -1439,7 +1439,7 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
    than an empty box (§2 R2). #}
 <section class="study-tab-panel" data-kind="audit" id="panel-audit" hidden>
   <h2>Audit</h2>
-  <p class="muted" style="margin:0 0 12px 0">Is the bar high enough to trust? Sufficiency of the Test set, plus the rigor and reproducibility scorecards.</p>
+  <p class="muted" style="margin:0 0 12px 0"><strong>Is the bar sound?</strong> Whether the tests themselves are rigorous and matched to the problem — sufficiency, where the model was sourced, and the rigor + reproducibility scorecards.</p>
 
   <div class="checks-band">
     <div class="check-group check-group-sufficiency" id="audit-sufficiency" data-check-group="sufficiency">
@@ -1474,7 +1474,7 @@ cites:   {{ b.cites|tojson }}{% endif %}</pre>
    never an error. #}
 <section class="study-tab-panel" data-kind="build" id="panel-build" hidden>
   <h2>Build</h2>
-  <p class="muted" style="margin:0 0 12px 0">Was the pass earned honestly? Provenance from the agentic model-building loop, if this study was built through it.</p>
+  <p class="muted" style="margin:0 0 12px 0"><strong>Was it earned?</strong> The agentic model-building loop that iterated the model to clear the bar — the draft, the frozen tests, the iteration-by-iteration trajectory, and the result (or an honest give-up).</p>
 
   <div id="build-loop-state"><p class="empty-message">Loading loop provenance…</p></div>
 </section>

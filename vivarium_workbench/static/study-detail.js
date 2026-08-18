@@ -2585,16 +2585,87 @@
     GIVE_UP: { bg: '#fee2e2', fg: '#991b1b' }
   };
 
-  function _renderLoopHistoryRow(h) {
+  // verdict → colors for per-test margin cells (matches the audit-panel vocabulary)
+  var _LOOP_VERDICT_COLORS = {
+    within_tol: { bg: '#d1fae5', fg: '#065f46' },
+    drift: { bg: '#fef3c7', fg: '#92400e' },
+    mismatch: { bg: '#fee2e2', fg: '#991b1b' }
+  };
+
+  // The integrity ribbon — the honesty guarantees at a glance.
+  function _buildIntegrityRibbon(state) {
     var e = escapeHtmlForTests;
-    var md = (h && h.margin_deltas) || {};
-    var mdKeys = Object.keys(md);
-    return '<li style="padding:5px 0;border-top:1px solid #f8fafc;font-size:0.85em">'
-      + '<strong>#' + e((h && h.iteration) != null ? h.iteration : '') + '</strong> '
-      + e((h && h.edit) || '') + ' &rarr; <code>' + e((h && h.target) || '') + '</code>'
-      + ' <span class="muted">gate: ' + e((h && h.gate) || '') + '</span>'
-      + (mdKeys.length ? ' <span class="muted">(' + mdKeys.length + ' margin delta' + (mdKeys.length === 1 ? '' : 's') + ')</span>' : '')
-      + '</li>';
+    var budget = state.budget || {};
+    var prereg = state.prereg_record || {};
+    var priorHashes = prereg.prior_hashes || [];
+    var rb = function (label, val, ok) {
+      return '<span style="font-family:ui-monospace,Menlo,monospace;font-size:0.72rem;padding:3px 9px;'
+        + 'border-radius:8px;border:1px solid #e2e8f0;background:#fff;color:#64748b">' + e(label)
+        + ' <strong style="color:' + (ok ? '#059669' : '#0f172a') + '">' + e(val) + '</strong></span>';
+    };
+    var reopens = state.reopen_count != null ? state.reopen_count : 0;
+    return '<div style="display:flex;flex-wrap:wrap;gap:7px;margin-top:10px">'
+      + rb('state', state.state || '?', state.state === 'DONE')
+      + rb('edits', (budget.spent != null ? budget.spent : 0) + ' / ' + (budget.max_iterations != null ? budget.max_iterations : '—'), false)
+      + rb('reopens', reopens, reopens === 0)
+      + (priorHashes.length ? rb('prior hashes', priorHashes.length, false) : '')
+      + '<span style="font-family:ui-monospace,Menlo,monospace;font-size:0.72rem;padding:3px 9px;border-radius:8px;'
+      + 'border:1px solid #e2e8f0;background:#fff;color:#64748b" title="locked-tests hash">'
+      + e((state.locked_tests_hash || 'not locked').slice(0, 20)) + '…</span></div>';
+  }
+
+  // Signed-margin matrix (rows = tests, cols = iterations) — rendered only when
+  // the loop_state history carries per-test verdicts (h.tests: [{name, verdict,
+  // margin}]). Older/aggregate history without that falls back to the ladder.
+  function _renderMarginMatrix(history) {
+    var e = escapeHtmlForTests;
+    var withTests = history.filter(function (h) { return h && h.tests && h.tests.length; });
+    if (!withTests.length) return null;
+    var names = [];
+    history.forEach(function (h) {
+      (h.tests || []).forEach(function (t) { if (names.indexOf(t.name) < 0) names.push(t.name); });
+    });
+    var head = '<th style="text-align:left">signed margin</th>' + history.map(function (h) {
+      return '<th>iter ' + e(h.iteration != null ? h.iteration : '') + '</th>';
+    }).join('');
+    var rows = names.map(function (nm) {
+      var cells = history.map(function (h) {
+        var t = (h.tests || []).filter(function (x) { return x.name === nm; })[0];
+        if (!t) return '<td style="color:#cbd5e1">—</td>';
+        var c = _LOOP_VERDICT_COLORS[t.verdict] || { bg: '#f8fafc', fg: '#64748b' };
+        var m = (t.margin == null) ? '—' : (t.margin >= 0 ? '+' : '') + Number(t.margin).toFixed(2);
+        return '<td style="background:' + c.bg + ';color:' + c.fg + ';font-family:ui-monospace,Menlo,monospace">' + e(m) + '</td>';
+      }).join('');
+      return '<tr><td style="text-align:left;font-weight:600">' + e(nm) + '</td>' + cells + '</tr>';
+    }).join('');
+    return '<div style="margin-top:12px"><strong style="font-size:0.9em">Iteration trajectory</strong>'
+      + '<div style="overflow-x:auto;border:1px solid #e2e8f0;border-radius:10px;margin-top:6px">'
+      + '<table style="border-collapse:collapse;width:100%;font-size:0.78rem;text-align:center">'
+      + '<thead><tr>' + head + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      + '<p class="muted" style="font-size:0.78rem;margin:6px 0 0">Each cell is the real signed margin to the band edge; green→met, red→missed. Read a row to watch one test converge.</p></div>';
+  }
+
+  // Fallback ladder — one row per iteration with the edit, gate, and the actual
+  // margin-delta values (not just a count).
+  function _renderIterationLadder(history) {
+    var e = escapeHtmlForTests;
+    var rows = history.map(function (h) {
+      var md = (h && h.margin_deltas) || {};
+      var deltas = Object.keys(md).map(function (k) {
+        var v = md[k]; var s = (typeof v === 'number') ? (v >= 0 ? '+' : '') + v.toFixed(2) : v;
+        return '<code style="font-size:0.75rem;background:#f1f5f9;padding:1px 5px;border-radius:4px;margin-right:4px">' + e(k) + ' ' + e(s) + '</code>';
+      }).join('');
+      var g = _LOOP_VERDICT_COLORS[(h && h.gate) === 'pass' ? 'within_tol' : (h && h.gate) === 'warn' ? 'drift' : 'mismatch'] || { bg: '#f1f5f9', fg: '#475569' };
+      return '<li style="padding:8px 0;border-top:1px solid #f1f5f9;font-size:0.86em">'
+        + '<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
+        + '<strong>iter ' + e((h && h.iteration) != null ? h.iteration : '') + '</strong>'
+        + '<span>' + e((h && h.edit) || '') + (h && h.target ? ' &rarr; <code>' + e(h.target) + '</code>' : '') + '</span>'
+        + '<span class="outcome-chip" style="margin-left:auto;font-size:0.72rem;font-weight:600;padding:2px 8px;border-radius:9999px;background:' + g.bg + ';color:' + g.fg + '">gate: ' + e((h && h.gate) || '?') + '</span></span>'
+        + (deltas ? '<div style="margin-top:5px">' + deltas + '</div>' : '')
+        + '</li>';
+    }).join('');
+    return '<div style="margin-top:12px"><strong style="font-size:0.9em">Iteration trajectory</strong>'
+      + '<ul style="list-style:none;padding-left:0;margin:6px 0 0 0">' + rows + '</ul></div>';
   }
 
   function _buildPanelHtml(state) {
@@ -2604,37 +2675,33 @@
         || 'This study was not built via the agentic model-building loop (/viva-model-build).';
       return '<p class="empty-message">' + e(reason) + '</p>';
     }
-    var budget = state.budget || {};
-    var prereg = state.prereg_record || {};
-    var priorHashes = prereg.prior_hashes || [];
     var history = state.history || [];
     var sc = _BUILD_STATE_COLORS[state.state] || { bg: '#f1f5f9', fg: '#475569' };
+    // header + state chip
     var html = '<div class="check-group-header" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">'
-      + '<strong>Loop provenance</strong> <span class="muted" style="font-size:0.85em">'
+      + '<strong>Was it earned?</strong> <span class="muted" style="font-size:0.85em">the model-building loop &mdash; '
       + '<code>viva_superpowers.loop_state</code></span>'
       + '<span class="outcome-chip" style="margin-left:auto;font-size:0.78em;font-weight:600;padding:2px 9px;'
       + 'border-radius:9999px;background:' + sc.bg + ';color:' + sc.fg + '">' + e(state.state || '?') + '</span></div>';
-    html += '<div style="margin-top:8px;font-size:0.9em">'
-      + '<div><strong>Question:</strong> ' + e(state.question || '—') + '</div>'
-      + '<div><strong>Iteration:</strong> ' + e(state.iteration != null ? state.iteration : '—')
-      + ' / ' + e(budget.max_iterations != null ? budget.max_iterations : '—')
-      + ' <span class="muted">(' + e(budget.spent != null ? budget.spent : 0) + ' spent)</span></div>'
-      + '<div><strong>Locked tests hash:</strong> <code style="font-size:0.85em">'
-      + e(state.locked_tests_hash || 'not locked') + '</code></div>'
-      + '<div><strong>Reopen count:</strong> ' + e(state.reopen_count != null ? state.reopen_count : 0)
-      + (priorHashes.length
-          ? ' <span class="muted">(' + priorHashes.length + ' prior hash' + (priorHashes.length === 1 ? '' : 'es') + ' retained)</span>'
-          : '')
-      + '</div></div>';
-    if (state.state === 'GIVE_UP' && state.give_up_reason) {
+    // the contract line
+    html += '<div style="margin-top:8px;font-size:0.9em"><strong>Question:</strong> ' + e(state.question || '—') + '</div>';
+    // the integrity ribbon
+    html += _buildIntegrityRibbon(state);
+    // result / honest give-up
+    if (state.state === 'GIVE_UP') {
       html += '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:' + sc.bg
         + ';color:' + sc.fg + ';border:1px solid rgba(153,27,27,0.25);font-size:0.9em">'
-        + '<strong>Why the loop gave up:</strong> ' + e(state.give_up_reason) + '</div>';
+        + '<strong>Honest give-up:</strong> ' + e(state.give_up_reason || 'the loop stopped without a pass rather than fake one')
+        + '</div>';
+    } else if (state.state === 'DONE') {
+      html += '<div style="margin-top:12px;padding:10px 12px;border-radius:8px;background:' + sc.bg
+        + ';color:' + sc.fg + ';border:1px solid rgba(6,95,70,0.2);font-size:0.9em">'
+        + '<strong>Done &mdash; the tests passed, honestly:</strong> the locked tests were never weakened '
+        + '(' + e(state.reopen_count != null ? state.reopen_count : 0) + ' reopens), and the pass was earned by editing the model.</div>';
     }
+    // the iteration trajectory — matrix when per-test verdicts are present, else ladder
     if (history.length) {
-      html += '<div style="margin-top:12px"><strong style="font-size:0.9em">Iteration history</strong>'
-        + '<ul style="list-style:none;padding-left:0;margin:6px 0 0 0">'
-        + history.map(_renderLoopHistoryRow).join('') + '</ul></div>';
+      html += _renderMarginMatrix(history) || _renderIterationLadder(history);
     }
     return html;
   }
