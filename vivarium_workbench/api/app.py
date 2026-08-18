@@ -891,6 +891,42 @@ def create_app() -> FastAPI:
         return Response(content=html, status_code=status, media_type="text/html")
 
     @app.get(
+        "/api/investigation-report/{slug}",
+        tags=["Investigations"],
+        summary="Self-contained investigation report (deterministic, data-only)",
+        response_class=Response,
+    )
+    def investigation_report(
+        slug: str,
+        download: int = 0,
+        ws: Path = Depends(get_workspace),
+    ) -> Response:
+        """Render one investigation to a single self-contained HTML document.
+
+        Deterministic and data-only: every panel is read from existing
+        ``investigation.yaml`` / ``study.yaml`` / loop-trajectory JSON (no model
+        call, no invented prose). ``?download=1`` sets a ``Content-Disposition``
+        so the browser saves the file. Library-backed via
+        ``lib.investigation_report.build_report_data`` + ``render_html``.
+        """
+        from vivarium_workbench.lib.investigation_report import (
+            build_report_data,
+            render_html,
+        )
+        try:
+            data = build_report_data(ws, slug)
+        except FileNotFoundError:
+            return Response(
+                content=f'{{"error": "investigation not found: {slug}"}}',
+                status_code=404, media_type="application/json",
+            )
+        html = render_html(data)
+        headers = None
+        if download:
+            headers = {"Content-Disposition": f'attachment; filename="investigation-{slug}.html"'}
+        return Response(content=html, media_type="text/html", headers=headers)
+
+    @app.get(
         "/api/study-native-gallery/{slug}",
         tags=["Studies"],
         summary="Native-analysis figure gallery from a study's latest run viz.json",
