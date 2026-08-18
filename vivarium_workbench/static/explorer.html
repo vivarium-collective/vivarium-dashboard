@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Data Explorer — vivarium-dashboard</title>
   <link rel="stylesheet" href="style.css">
+  <!-- Apply the saved light/dark theme before first paint (no flash of light).
+       Same 'viv.theme' localStorage key as the main SPA (index.html.j2) and
+       study-detail.html — same-origin, so this standalone popup window
+       inherits whatever theme was last set anywhere in the app. -->
+  <script>(function(){try{var t=localStorage.getItem('viv.theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
   <!-- Same client stack as the embedded card -->
   <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
@@ -16,6 +21,37 @@
   <script src="explorer-views.js"></script>
 </head>
 <body class="explorer-standalone">
+  <!-- Light/dark toggle. This popup has no rail (it's opened via window.open
+       as a full-window "Open ↗" from the embedded card), so the button lives
+       fixed top-right rather than in a .viv-rail-theme-footer, and reuses
+       .viv-theme-toggle's CSS from style.css as-is (unscoped, so it renders
+       fully visible instead of the rail's hover-to-reveal treatment). -->
+  <button class="viv-theme-toggle" id="viv-theme-toggle" type="button" role="switch" aria-checked="false"
+          style="position:fixed;top:12px;right:14px;z-index:20"
+          title="Toggle dark / light mode" aria-label="Toggle dark mode" onclick="_toggleTheme()">
+    <span class="viv-theme-ico viv-theme-sun" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></span>
+    <span class="viv-theme-ico viv-theme-moon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></span>
+    <span class="viv-theme-thumb" aria-hidden="true"></span>
+  </button>
+  <script>
+    // Self-contained (walkthrough.js isn't loaded on this standalone page) —
+    // same localStorage contract as walkthrough.js's _setTheme/_toggleTheme,
+    // so toggling here and in the main SPA stay in sync via 'viv.theme'.
+    (function () {
+      function setTheme(t) {
+        document.documentElement.setAttribute('data-theme', t);
+        try { localStorage.setItem('viv.theme', t); } catch (e) { /* private mode */ }
+        var b = document.getElementById('viv-theme-toggle');
+        if (b) b.setAttribute('aria-checked', t === 'dark' ? 'true' : 'false');
+      }
+      window._toggleTheme = function () {
+        var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+        setTheme(cur === 'dark' ? 'light' : 'dark');
+      };
+      var b = document.getElementById('viv-theme-toggle');
+      if (b) b.setAttribute('aria-checked', document.documentElement.getAttribute('data-theme') === 'dark' ? 'true' : 'false');
+    })();
+  </script>
   <div id="explorer-root"></div>
   <script>
     (function () {

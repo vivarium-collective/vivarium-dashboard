@@ -50,6 +50,16 @@ body.snapshot #snapshot-banner a {
   text-decoration: underline;
   white-space: nowrap;
 }
+/* Dark theme — same amber-warning tint style.css already uses for
+   .inv-run-blocked / .proc-kind-step (rgba(245,158,11,*) + #fcd34d fg). */
+:root[data-theme="dark"] body.snapshot #snapshot-banner {
+  background: rgba(245, 158, 11, 0.12);
+  border-bottom-color: rgba(245, 158, 11, 0.35);
+  color: #fcd34d;
+}
+:root[data-theme="dark"] body.snapshot #snapshot-banner a {
+  color: #fcd34d;
+}
 
 /* ── Hidden rail tabs ─────────────────────────────────────────────────── */
 /* Simulations DB and Visualizations/Analyses tabs are now read-only enabled
