@@ -234,7 +234,7 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
                        runtime, origin, study=None, pkg=None,
                        generation_id=None, ws_root=None,
                        cache_fingerprint=None, fingerprint_fields=None,
-                       seed=None) -> dict:
+                       seed=None, declared_environment=None) -> dict:
     """Assemble the canonical per-run replay manifest (spec Part A).
 
     A complete, self-contained record of everything a rerun needs to
@@ -271,6 +271,18 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
     caller already stashes the seed there as a regular generator param), so
     a manifest built by an un-updated call site still gets a non-null
     ``seed`` rather than silently regressing to the old null placeholder.
+
+    ``environments`` (dual-engine comparison W1, docs/dual-engine-comparison.md
+    §3.1) is the multi-entry environment-pin list. Entry shape:
+    ``{role, repo, ref, commit, remote_url, lockfile_hash}``. The **primary**
+    entry — the workspace env this run actually executed in — is always
+    present, derived from the same best-effort repo identity as
+    ``code_version`` plus the workspace's ``uv.lock`` hash. When the study
+    condition DECLARES an environment (``declared_environment={repo, ref}``,
+    see ``study_spec.condition_environment``), a second entry with role
+    ``declared`` records the intent — ``commit``/``lockfile_hash`` are null
+    until a dispatch path (W4/W5) resolves and executes it. A comparison's
+    compare node will carry one entry per engine.
     """
     repo = git_repo_identity(ws_root)
     git_sha = repo.get("git_sha")
@@ -296,6 +308,35 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         env = env_fingerprint.compute_env(ws_root=ws_root, cache_fingerprint=cf)
     except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
         env = None
+
+    # Multi-entry environment pins (dual-engine W1). Primary = the workspace
+    # env this run executes in; best-effort like every provenance field.
+    lock_hash = None
+    if ws_root is not None:
+        try:
+            from vivarium_workbench.lib.provenance_manifest import lockfile_hash
+            lock_hash = lockfile_hash(Path(str(ws_root)))
+        except Exception:  # noqa: BLE001 — best-effort provenance, never fatal
+            lock_hash = None
+    environments = [{
+        "role": "primary",
+        "repo": repo.get("repo"),
+        "ref": None,
+        "commit": git_sha,
+        "remote_url": repo.get("remote_url"),
+        "lockfile_hash": lock_hash,
+    }]
+    if declared_environment:
+        environments.append({
+            "role": "declared",
+            "repo": declared_environment.get("repo"),
+            "ref": declared_environment.get("ref"),
+            # Resolved + executed only by a W4/W5 dispatch path; null records
+            # honestly that this run declared the env but ran in `primary`.
+            "commit": None,
+            "remote_url": None,
+            "lockfile_hash": None,
+        })
 
     return {
         "version": 2,
@@ -331,6 +372,9 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
         # probing for it.
         "env": env,
         "seed": run_seed,
+        # Multi-entry environment pins (dual-engine W1, additive like
+        # code_version.repo in #868 — no manifest version bump; readers .get()).
+        "environments": environments,
         "fingerprint_fields": (
             list(fingerprint_fields) if fingerprint_fields is not None
             else list(emit_paths or [])

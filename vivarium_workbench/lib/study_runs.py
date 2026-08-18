@@ -360,7 +360,8 @@ def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
 
 def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
                       emitter=None, emit_paths=None, runtime=None, label=None,
-                      dry_run=False, reran_from=None, skip_analyses=False):
+                      dry_run=False, reran_from=None, skip_analyses=False,
+                      declared_environment=None):
     """Launch a run into a Study's ``runs.db`` from EXPLICIT replay inputs.
 
     Factored out of ``run_study_baseline`` (spec Part C) so a rerun can
@@ -448,6 +449,7 @@ def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
         origin="study", study=study, spec_id=spec_id, params=full_params,
         n_steps=n_steps, emitter=emitter, emit_paths=emit_paths,
         runtime=runtime, pkg=pkg, ws_root=ws_root, seed=effective_seed,
+        declared_environment=declared_environment,
     )
 
     return _launch_run_and_flush(
@@ -500,6 +502,15 @@ def run_study_baseline(ws_root, body):
     # the file. Keeps legacy investigations/spec.yaml usable.
     from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
     spec = migrate_v2_to_v3(spec)
+    # A declared per-condition environment pin (dual-engine W1) must be read
+    # from the RAW v4 spec BEFORE the legacy projection below — the projection
+    # synthesises legacy fields and is not guaranteed to carry `conditions`
+    # extras. A malformed declaration is a loud 400, never silently dropped
+    # (the user believes their run is pinned to it).
+    try:
+        declared_env = study_spec.condition_environment(spec, "baseline")
+    except ValueError as e:
+        return {"error": str(e)}, 400
     # v4-redesign projection: synthesises legacy fields (baseline list,
     # variants list, behavior_tests, simulation_set) from a v4 conditions
     # block. Idempotent on v3 (no-op when conditions is absent).
@@ -563,6 +574,7 @@ def run_study_baseline(ws_root, body):
         label=entry.get("name") or "baseline",
         dry_run=bool(body.get("dry_run")),
         skip_analyses=skip_analyses,
+        declared_environment=declared_env,
     )
 
 

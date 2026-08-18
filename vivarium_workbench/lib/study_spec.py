@@ -255,6 +255,55 @@ def study_interface(spec: dict) -> dict:
     }
 
 
+def condition_environment(spec: dict, condition: str = "baseline") -> "dict | None":
+    """The environment coordinate a study condition DECLARES, or ``None``.
+
+    Dual-engine comparison W1 (``docs/dual-engine-comparison.md`` §3.1): a v4
+    condition may declare the environment its runs are meant to execute in::
+
+        conditions:
+          reference:
+            environment: {repo: CovertLabEcoli/vEcoli-private, ref: <sha>}
+
+    Absent → ``None`` (the workspace's own environment — today's behavior for
+    every existing study, byte-for-byte). Present and well-formed → a normalized
+    ``{"repo": str, "ref": str}``.
+
+    A PRESENT-but-malformed declaration raises ``ValueError`` rather than being
+    silently ignored: a user who declared an environment believes their run is
+    pinned to it, and dropping the pin quietly is exactly the silent-failure
+    class this codebase keeps retiring. (Read this from the RAW v4 spec —
+    ``_project_v4_redesign_to_legacy_view`` is not guaranteed to carry it.)
+
+    Execution in a non-workspace environment is W4/W5; until then the
+    declaration is recorded into the run manifest (``build_run_manifest``'s
+    ``environments`` list, role ``declared``) so provenance is truthful about
+    intent even while execution still uses the workspace env.
+    """
+    conditions = spec.get("conditions")
+    if not isinstance(conditions, dict):
+        return None
+    cond = conditions.get(condition)
+    if not isinstance(cond, dict):
+        return None
+    env = cond.get("environment")
+    if env is None:
+        return None
+    if not isinstance(env, dict):
+        raise ValueError(
+            f"conditions.{condition}.environment must be a mapping "
+            f"{{repo, ref}}, got {type(env).__name__}"
+        )
+    repo = env.get("repo")
+    ref = env.get("ref")
+    if not (isinstance(repo, str) and repo.strip()) or not (isinstance(ref, str) and ref.strip()):
+        raise ValueError(
+            f"conditions.{condition}.environment requires non-empty string "
+            f"'repo' and 'ref' (got repo={repo!r}, ref={ref!r})"
+        )
+    return {"repo": repo.strip(), "ref": ref.strip()}
+
+
 # ---------------------------------------------------------------------------
 # runs.db reading (ws_root-parameterised)
 # ---------------------------------------------------------------------------
