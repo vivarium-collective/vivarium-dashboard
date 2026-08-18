@@ -130,13 +130,17 @@ environments = ["python_full_version == '3.12.12'"]
 # viva-superpowers: sourced from git (NOT PyPI 0.22.0) because only main has
 # migrated off pbg-emitters onto viva-emitters>=0.2.3 — the whole point of this
 # change. Pinned to a REV, not `branch = "main"`, matching the deliberate choice
-# for investigation-contracts below: a floating branch ref lets `uv lock`
-# silently re-resolve to whatever main points at, so a breaking upstream change
-# lands here with no commit in this repo (the exact failure mode that hid a
-# pbg-superpowers break for ~3 weeks — issue #483). Bump this rev deliberately
-# when adopting upstream changes; drop the source and pin a PyPI floor once
+# Track viva-superpowers `main` (branch, not a pinned rev). NOTE: a floating
+# branch ref lets `uv lock` silently re-resolve to whatever main points at, so a
+# breaking upstream change can land here with no commit in this repo (the failure
+# mode that hid a break for ~3 weeks — issue #483). We accept that tradeoff here so
+# this pin UNIFIES with the sibling process-packages (viva-copasi / viva-tellurium)
+# that also track viva-superpowers@main — without a common form, uv refuses to
+# resolve any consumer that pulls both (e.g. viva-human-atlas). If #483's silent-
+# breakage risk resurfaces, the fix is to pin ALL of them (here + copasi/tellurium)
+# to the same rev, not just this one. Drop the source + pin a PyPI floor once
 # viva-superpowers ships a release that requires viva-emitters.
-viva-superpowers = { git = "https://github.com/vivarium-collective/viva-superpowers.git", rev = "45c5dc51facf0c0c2ca85963483b80205b088476" }
+viva-superpowers = { git = "https://github.com/vivarium-collective/viva-superpowers.git", branch = "main" }
 pbg-basic-processes = { git = "https://github.com/vivarium-collective/pbg-basic-processes.git", branch = "main" }
 viva-marketplace = { git = "https://github.com/vivarium-collective/viva-marketplace.git", branch = "main" }
 viva-workspace = { git = "https://github.com/vivarium-collective/viva-workspace.git", branch = "main" }
