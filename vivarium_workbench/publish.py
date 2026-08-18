@@ -848,6 +848,19 @@ def _do_build(
             payload = {}
         _write_json(api_dir / "inputs" / f"{inv_name}.json", payload)
 
+    # reports/investigation-<slug>.html — pre-rendered self-contained investigation
+    # reports. In the live app these come from GET /api/investigation-report/<slug>;
+    # in the static bundle (no server) the ↓ report button opens these files. Each
+    # is fully self-contained (data + figures inlined), so no base-path rewrite is
+    # needed. A malformed investigation is skipped, not fatal to the bundle.
+    from vivarium_workbench.lib.investigation_report import render_investigation_report
+    reports_dir = out_dir / "reports"
+    for inv_name in investigations:
+        try:
+            render_investigation_report(ws_root, inv_name, out_dir=reports_dir)
+        except Exception:
+            pass
+
     # api/catalog.json — curated module catalog (GET /api/catalog)
     try:
         catalog = build_catalog(ws_root)
