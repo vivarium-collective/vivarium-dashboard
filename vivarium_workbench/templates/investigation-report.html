@@ -205,6 +205,12 @@ figure img{max-width:100%;height:auto;display:block;border:1px solid var(--line)
 .ac-gating-matrix .gap,.acceptance-rollup td{font-size:13.5px}
 figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:none}
 .fig-scroll{overflow-x:auto}
+.loom-embed{margin:12px 0 4px}
+.loom-frame{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);height:440px;resize:vertical;min-height:240px}
+.loom-iframe{width:100%;height:100%;border:0;display:block}
+.loom-fallback{margin-top:6px}
+.loom-fallback>summary{cursor:pointer;color:var(--accent);font-size:12px;user-select:none}
+.loom-fallback[open]>summary{margin-bottom:6px}
 
 /* expander */
 details.exp{margin-top:10px;border-top:1px dotted var(--line-2);padding-top:8px}
@@ -369,8 +375,29 @@ function loomTopoSVG(topo){
     sv+=`<text x="${px+12}" y="${y+62}" fill="var(--ink-2)" font-size="10.5">out: <tspan fill="var(--ink)">${esc((p.outputs||[]).join(', ')||'—')}</tspan></text>`;
   });
   sv+=`</svg>`;
-  const cap=`Loom view of <span class="mono">${esc(topo.composite||'')}</span> — the composite's bigraph: ${procs.length} process${procs.length==1?'':'es'} over ${rows.length} state node${rows.length==1?'':'s'}.`;
+  const cap=`Static topology of <span class="mono">${esc(topo.composite||'')}</span> — ${procs.length} process${procs.length==1?'':'es'} over ${rows.length} state node${rows.length==1?'':'s'}.`;
   return `<figure><div class="fig-scroll">${sv}</div><figcaption>${cap}</figcaption></figure>`;
+}
+// Embed the REAL bigraph-loom for a study's baseline composite — the same live
+// loom the workbench serves at /bigraph-loom/, so the Model section shows loom's
+// own rendering instead of a re-drawn topology. Returns '' when no composite is
+// known (caller then falls back to the static topology SVG). When the report is
+// opened standalone (file://) the loom route is unreachable and the iframe stays
+// blank — the caption's "static topology" <details> is the offline fallback.
+function loomEmbed(s){
+  const cid=(s.model_topology&&s.model_topology.composite) || (s.baseline&&s.baseline[0]&&s.baseline[0].composite);
+  if(!cid) return '';
+  const snap=document.body.classList.contains('snapshot');
+  const base='bigraph-loom/index.html';
+  const src=snap
+    ? base+'?static=1&stateUrl='+encodeURIComponent('api/composite-state/'+encodeURIComponent(cid)+'.json')+'&chrome=off'
+    : base+'?id='+encodeURIComponent(cid)+'&live=1&chrome=off';
+  const fallback=s.model_topology?loomTopoSVG(s.model_topology):'';
+  return `<figure class="loom-embed">
+      <div class="loom-frame"><iframe class="loom-iframe" title="bigraph-loom — ${esc(cid)}" src="${esc(src)}" loading="lazy"></iframe></div>
+      <figcaption>Live <b>bigraph-loom</b> view of <span class="mono">${esc(cid)}</span> — the composite's bigraph, rendered by loom itself.
+        ${fallback?`<details class="loom-fallback"><summary>static topology (offline fallback)</summary>${fallback}</details>`:''}</figcaption>
+    </figure>`;
 }
 const has = v => v!=null && !(Array.isArray(v)&&!v.length) && !(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length);
 
@@ -629,7 +656,8 @@ function testsTable(tests, traj){
     const cls=t.classification;
     const fin=finals[name]; const v=fin?(fin.v==='within_tol'?'pass':'fail'):null;
     const exp=(fin&&fin.exp)||(prov[name]&&prov[name].exp)||(t.pass_if&&(t.pass_if.op+' '+t.pass_if.value))||'';
-    const pv=(prov[name]&&prov[name].provenance)||(t.pass_if&&t.pass_if.provenance)||(t.measure&&t.measure.kind==='audit-axis'?('audit axis '+meas):'');
+    const _pt=p=>!p?'':(typeof p==='string'?p:(p.note||p.rationale||p.kind||''));
+    const pv=_pt((prov[name]&&prov[name].provenance))||_pt(t.pass_if&&t.pass_if.provenance)||(t.measure&&t.measure.kind==='audit-axis'?('audit axis '+meas):'');
     const obs=(fin&&fin.obs!=null)?`observed ${fmt(fin.obs)}`:'';
     const mg=(fin&&fin.m!=null)?` · margin ${fmt(fin.m)}`:'';
     return `<tr id="test-${esc(name)}"><td class="tname">${esc(desc||name)}
@@ -701,10 +729,10 @@ function renderStudy(s, inv, idx){
   const bioText = s.biological_summary || pm;
   const overview = (bioText && headline)?`<div class="biology">${esc(bioText)}</div>`:'';
 
-  // MODEL (svg + rationale/ref)
+  // MODEL — embed the REAL bigraph-loom for the composite (not a re-draw); the
+  // static topology SVG is kept as an on-demand fallback for standalone viewing.
   const bl=(s.baseline||[])[0];
-  // Prefer the resolved bigraph loom view; fall back to the schematic diagram.
-  let modelBody = (s.model_topology ? loomTopoSVG(s.model_topology) : '') || vizModelSVG(s,inv);
+  let modelBody = loomEmbed(s) || (s.model_topology ? loomTopoSVG(s.model_topology) : '') || vizModelSVG(s,inv);
   if(s.sourcing){
     modelBody += `<div class="decision-line" style="margin-top:6px"><span class="chip decision">${esc(s.sourcing.decision)}</span>
       ${(s.sourcing.modules||[]).map(m=>`<span class="chip mod">${esc(m)}</span>`).join(' ')||'<span class="chip mod">new module</span>'}</div>
@@ -815,8 +843,20 @@ function renderStudy(s, inv, idx){
 }
 
 /* ---------- executive band ---------- */
+// The report adapts to what the studies ACTUALLY are, rather than assuming an
+// agent-vs-policy competition. Three modes:
+//   sourcing  — studies carry a `sourcing` decision (model-sourcing investigations)
+//   agentic   — studies carry an `agent_trajectory` (LLM-agent vs policy tasks)
+//   generic   — everything else (a normal study: model · run · tests · decision)
+function reportMode(inv){
+  const ss=inv.studies||[];
+  if(ss.some(s=>s.sourcing)) return 'sourcing';
+  if(ss.some(s=>s.agent_trajectory)) return 'agentic';
+  return 'generic';
+}
 function renderExec(inv){
   const studies=inv.studies;
+  const MODE=reportMode(inv);
   const gates=studies.map(gateOf);
   const nPass=gates.filter(g=>g==='pass').length, nFail=gates.filter(g=>g==='fail').length;
   const exv=inv.executive||{};
@@ -824,14 +864,20 @@ function renderExec(inv){
   const status = exv.verdict_status==='passed'?'pass':(inv.status==='in_progress'?'warn':'pass');
   // stat strip
   let stats='';
-  if(inv.slug==='model-sourcing'){
+  if(MODE==='sourcing'){
     const dec={};studies.forEach(s=>{const d=s.sourcing&&s.sourcing.decision;if(d)dec[d]=(dec[d]||0)+1;});
     stats=[[studies.length,'studies'],[dec['reuse']||0,'reuse'],[dec['compose']||0,'compose'],[dec['build-new']||0,'build-new'],[nFail,'trap refused ✗','fail']];
-  }else{
+  }else if(MODE==='agentic'){
     let aDone=0,pDone=0,pTot=0;
     studies.forEach(s=>{ if(s.agent_trajectory&&s.agent_trajectory.result&&s.agent_trajectory.result.state==='DONE')aDone++;
       if(s.policy_trajectory){pTot++; if(s.policy_trajectory.result&&s.policy_trajectory.result.state==='DONE')pDone++;} });
     stats=[[studies.length,'tasks'],[aDone+'/'+studies.length,'agent solved','pass'],[pDone+'/'+pTot,'policy solved'],[studies.length-pDone,'need an agent']];
+  }else{
+    // generic: describe the evidence base — studies, gate outcomes, acceptance tests
+    let nTests=0; studies.forEach(s=>{ nTests+=(s.behavior_tests||[]).length; });
+    stats=[[studies.length,'studies'],[nPass,'passed','pass']];
+    if(nFail) stats.push([nFail,'failing','fail']);
+    stats.push([nTests,'acceptance test'+(nTests===1?'':'s')]);
   }
   const statHtml=stats.map(([n,l,c])=>`<div class="stat"><div class="num ${c||''}">${n}</div><div class="lbl">${l}</div></div>`).join('');
   // glance table
@@ -842,9 +888,11 @@ function renderExec(inv){
       <td style="color:var(--ink-2)">${role}</td>
       <td style="text-align:right">${g==='fail'?'<span class="chip fail">✗ refuted</span>':g==='pass'?'<span class="chip pass">✓ pass</span>':'<span class="chip">open</span>'}</td></tr>`;
   }).join('');
-  const howto = inv.slug==='model-sourcing'
+  const howto = MODE==='sourcing'
     ? `Each study is one <b>sourcing decision</b> — reuse an existing module, compose several, or build a new one. A deterministic audit grades the decision on four axes (<span class="mono">source_fit · reinvention · novelty_justified · survey_recorded</span>) by checking <span class="mono">requires ⊆ provided</span> against the module catalog. A study whose gate <b>fails</b> while it is still marked complete is an <b>adversarial control</b> — a plausible-but-wrong choice the audit is meant to refuse.`
-    : `Each study is a <b>model-building task</b> run twice: an LLM agent and a deterministic worst-margin policy each try to build a real process-bigraph model that passes the same <b>locked</b> acceptance tests. The <b>margin ladder</b> shows each test across build iterations; the <b>timeline</b> shows what the agent edited and why. The contrast is where an agent is genuinely required — where the policy has no move for the real fix and gives up.`;
+    : MODE==='agentic'
+    ? `Each study is a <b>model-building task</b> run twice: an LLM agent and a deterministic worst-margin policy each try to build a real process-bigraph model that passes the same <b>locked</b> acceptance tests. The <b>margin ladder</b> shows each test across build iterations; the <b>timeline</b> shows what the agent edited and why. The contrast is where an agent is genuinely required — where the policy has no move for the real fix and gives up.`
+    : `Each study builds and runs a real <b>process-bigraph composite</b> and checks it against declared <b>acceptance tests</b>. Each study section shows its <b>model</b> (the composite's bigraph), how to <b>reproduce the run</b>, its <b>visualizations</b>, the <b>tests</b> and their verdicts, and the <b>decision</b>. Studies are collapsed to a high-level overview — expand any study for the full detail.`;
   return `<div class="verdict fbsection ${status==='fail'?'is-fail':''}">
       ${fbBubble('overview','Investigation overview')}
       <div class="vhead">${statusChip(status)}<span class="kicker">Verdict</span></div>
@@ -855,13 +903,15 @@ function renderExec(inv){
     </div>
     <div class="stats">${statHtml}</div>
     <div class="sec-h"><h2>At a glance</h2><span class="rule"></span></div>
-    <table class="glance"><thead><tr><th></th><th>Study</th><th>${inv.slug==='model-sourcing'?'Sourcing decision':'Agent vs policy'}</th><th style="text-align:right">Gate</th></tr></thead><tbody>${glance}</tbody></table>`;
+    <table class="glance"><thead><tr><th></th><th>Study</th><th>${MODE==='sourcing'?'Sourcing decision':MODE==='agentic'?'Agent vs policy':'Evidence'}</th><th style="text-align:right">Gate</th></tr></thead><tbody>${glance}</tbody></table>`;
 }
 // dedicated place for the FINAL investigation-level visualizations
 function renderInvViz(inv){
   const figs=[];
-  if(inv.slug==='model-sourcing'){ figs.push(['Sourcing decision map', vizDecisionMap(inv)]); }
-  else { figs.push(['Agent vs policy — outcomes', vizOutcomeBar(inv)]); figs.push(['Final test outcomes', vizGateMatrix(inv)]); }
+  const MODE=reportMode(inv);
+  if(MODE==='sourcing'){ figs.push(['Sourcing decision map', vizDecisionMap(inv)]); }
+  else if(MODE==='agentic'){ figs.push(['Agent vs policy — outcomes', vizOutcomeBar(inv)]); figs.push(['Final test outcomes', vizGateMatrix(inv)]); }
+  else { figs.push(['Test outcomes across studies', vizGateMatrix(inv)]); }
   const live=figs.filter(f=>f[1]); if(!live.length) return '';
   return `<div id="inv-viz" class="fbsection">${fbBubble('figures','Investigation visualizations')}<div class="sec-h"><h2>Investigation visualizations</h2><span class="rule"></span></div>
     <p style="color:var(--ink-2);font-size:14px;max-width:none;margin:0 0 6px">The whole investigation in a few figures — the synthesis across all ${inv.studies.length} studies.</p>
@@ -871,9 +921,20 @@ function roleLine(s,inv){
   if(s.sourcing){ const mods=(s.sourcing.modules||[]).join(' + ')||'new module';
     return `${esc(s.sourcing.decision)} · <span class="mono">${esc(mods)}</span>`; }
   const a=s.agent_trajectory&&s.agent_trajectory.result, p=s.policy_trajectory&&s.policy_trajectory.result;
-  const av=a?(a.state==='DONE'?`agent ✓ ${a.edits}e`:'agent ✗'):'';
-  const pv=p?(p.state==='DONE'?` · policy ✓`:` · policy ✗ give-up`):'';
-  return av+pv;
+  if(a||p){
+    const av=a?(a.state==='DONE'?`agent ✓ ${a.edits}e`:'agent ✗'):'';
+    const pv=p?(p.state==='DONE'?` · policy ✓`:` · policy ✗ give-up`):'';
+    return av+pv;
+  }
+  // generic: the most informative available summary — test count + what it found
+  const nt=(s.behavior_tests||[]).length;
+  const c=s.verdict_counts||{}; const np=c.passed||0;
+  let summary=s.claim||(s.findings&&s.findings[0]&&(s.findings[0].summary||s.findings[0].claim))||'';
+  summary=String(summary).split('\n')[0].trim();
+  const bits=[];
+  if(nt) bits.push(`${np?np+'/':''}${nt} test${nt===1?'':'s'}${np?' pass':''}`);
+  if(summary) bits.push(`<span style="color:var(--ink-2)">${esc(summary.length>90?summary.slice(0,88)+'…':summary)}</span>`);
+  return bits.join(' · ')||'—';
 }
 
 /* ---------- appendix ---------- */
@@ -1074,7 +1135,20 @@ app.addEventListener('click',e=>{
 });
 // modal
 const modalbg=document.getElementById('modalbg');
-document.getElementById('fbfloat').onclick=()=>{ document.getElementById('fbyaml').value=genYaml(INV); modalbg.classList.add('open'); };
+// "Review & export" downloads the YAML feedback report straight to the downloads
+// folder (no modal). A Blob + transient <a download> — works in the served page.
+document.getElementById('fbfloat').onclick=()=>{
+  const yaml=genYaml(INV);
+  const blob=new Blob([yaml],{type:'application/x-yaml'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='feedback-'+(INV.slug||'investigation')+'.yaml';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  const btn=document.getElementById('fbfloat');
+  const prev=btn.innerHTML; btn.innerHTML='Downloaded ✓';
+  setTimeout(()=>{btn.innerHTML=prev;},1600);
+};
 document.getElementById('fbclose').onclick=()=>modalbg.classList.remove('open');
 modalbg.onclick=e=>{ if(e.target===modalbg) modalbg.classList.remove('open'); };
 document.getElementById('fbcopy').onclick=()=>{ const ta=document.getElementById('fbyaml'); ta.select();
