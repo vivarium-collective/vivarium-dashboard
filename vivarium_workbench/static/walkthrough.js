@@ -8827,8 +8827,8 @@
     // instead of the old emoji buttons. ↓ figures is injected async, only when the
     // investigation actually has figures (same n_figures gate as the card).
     actions.innerHTML =
-      '<button class="btn-mini" onclick="_generateInvestigationReport()" ' +
-        'title="Generate a shareable HTML report">↓ report</button> ' +
+      '<button class="btn-mini" onclick="_downloadInvestigationReport()" ' +
+        'title="Open the shareable HTML report">↓ report</button> ' +
       '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
         'title="Download a self-contained Jupyter notebook">↓ notebook</button>' +
       '<span id="ws-actions-figures"></span>' +
@@ -11032,6 +11032,27 @@
   // (over email) BEFORE simulations run — so it surfaces the predictions,
   // assumptions, and gaps in a form that lets the expert validate the
   // design without needing the dashboard.
+  // The investigation report is generated server-side (GET
+  // /api/investigation-report/<slug>) — a deterministic, data-only, fully
+  // self-contained document. In a static bundle (no server) publish.py
+  // pre-renders it to reports/investigation-<slug>.html and this opens that
+  // file instead. Replaces the old client-side _generateInvestigationReport
+  // fan-out (kept below for one release; scheduled for removal).
+  function _downloadInvestigationReport() {
+    var name = window._wsInvestigation || window._currentIset;
+    if (!name) {
+      console.warn('_downloadInvestigationReport: no current investigation');
+      return;
+    }
+    var cfg = window.__DASH_CONFIG__ || {};
+    var base = cfg.basePath || '';
+    var url = (cfg.mode === 'snapshot')
+      ? base + '/reports/investigation-' + encodeURIComponent(name) + '.html'
+      : '/api/investigation-report/' + encodeURIComponent(name);
+    window.open(url, '_blank', 'noopener');
+  }
+  window._downloadInvestigationReport = _downloadInvestigationReport;
+
   function _generateInvestigationReport() {
     var name = window._currentIset;
     if (!name) {
