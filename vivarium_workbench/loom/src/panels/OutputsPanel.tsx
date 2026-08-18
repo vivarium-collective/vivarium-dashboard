@@ -16,6 +16,8 @@ export interface OutputsPanelProps {
   runId: string | null;
   downloadable: boolean;
   readOnly?: boolean;
+  /** Composite name/id — names the "↓ Visualizations" zip download. */
+  baseName?: string;
   /** Run flags: the run produced a report / analyses (content may render out of
    *  band). Used to distinguish "none produced" from "produced, not embedded". */
   hasReport?: boolean;
@@ -125,6 +127,7 @@ export function OutputsPanel(props: OutputsPanelProps) {
             vizHtml={props.vizHtml ? viz : null}
             hasRun={props.hasRun}
             readOnly={props.readOnly}
+            baseName={props.baseName}
           />
         )}
         {activeTab === 'cards' && (
