@@ -58,7 +58,13 @@ const STORE_H = 150;
 const FULL = TIERS[TIERS.length - 1];
 
 /** Full-tier footprint of a node. Process cards grow one row per port (as the
- *  card does from the `types` tier up); stores use the fixed full-tier size. */
+ *  card does from the `types` tier up). Stores are `height:auto` with only a
+ *  `min-height` (StoreNode.tsx / App.css), so a content-rich store grows well
+ *  past the old fixed STORE_H: at the full tier it stacks a wrapped 27px name,
+ *  a 22px value, a wrapped 24px type, an illustration/icon block, a
+ *  "N read · M write" badge, and an "emitted" tag. Estimating a fixed height
+ *  under-reserved these and the packing dropped the process lane INTO the store
+ *  row (the reported overlap). Reserve per the blocks the card actually shows. */
 export function fullFootprint(n: Node): { w: number; h: number } {
   if (n.type === 'process') {
     const d = n.data as { inputPorts?: unknown; outputPorts?: unknown } | undefined;
@@ -66,7 +72,21 @@ export function fullFootprint(n: Node): { w: number; h: number } {
       + (Array.isArray(d?.outputPorts) ? d!.outputPorts.length : 0);
     return { w: FULL.cardWidth, h: FULL.cardHeight + nPorts * PORT_ROW_H };
   }
-  return { w: STORE_W, h: STORE_H };
+  const d = n.data as {
+    value?: unknown; valueType?: unknown; figure?: unknown;
+    _readers?: unknown; _writers?: unknown; _emitted?: unknown;
+  } | undefined;
+  const nRW = (Array.isArray(d?._readers) ? d!._readers.length : 0)
+    + (Array.isArray(d?._writers) ? d!._writers.length : 0);
+  const contentH =
+    24                                                              // vertical padding + inter-block gaps
+    + 66                                                            // name label (27px, up to 2 wrapped lines)
+    + (d?.value != null ? 28 : 0)                                  // value row (22px)
+    + (typeof d?.valueType === 'string' && d.valueType ? 58 : 0)   // type (24px, may wrap to 2 lines)
+    + (d?.figure ? 52 : 0)                                         // illustration / icon block
+    + (nRW > 0 ? 20 : 0)                                           // "N read · M write" badge
+    + (d?._emitted ? 16 : 0);                                      // "emitted" tag
+  return { w: STORE_W, h: Math.max(STORE_H, contentH) };
 }
 
 export interface Box { id: string; x: number; y: number; w: number; h: number }
