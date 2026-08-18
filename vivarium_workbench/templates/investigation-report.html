@@ -181,6 +181,7 @@ a:hover{text-decoration:underline}
 /* figures */
 figure{margin:12px 0 4px}
 figure svg{max-width:100%;height:auto;display:block}
+figure img{max-width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
 figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:76ch}
 .fig-scroll{overflow-x:auto}
 
@@ -588,7 +589,10 @@ function studySummary(s, inv){
     const it=s.agent_trajectory&&lastIt(s); if(it) chips.push(`<span class="chip">tests ${it.n_pass}/${it.n_hard}</span>`);
   }
   const runN=(s.runs||[]).length; if(runN) chips.push(`<span class="chip">${runN} run${runN>1?'s':''}</span>`);
-  const concl=(s.conclusion||'').replace(/##\s*Final model[\s\S]*?(?=\n##|$)/i,'').replace(/##\s*Result/i,'').trim();
+  const nfig=(s.figures_embedded||[]).filter(f=>f.data_uri).length; if(nfig) chips.push(`<span class="chip">${nfig} figure${nfig>1?'s':''}</span>`);
+  const nfind=Array.isArray(s.findings)?s.findings.length:0; if(nfind) chips.push(`<span class="chip">${nfind} finding${nfind>1?'s':''}</span>`);
+  let concl=(s.conclusion||'').replace(/##\s*Final model[\s\S]*?(?=\n##|$)/i,'').replace(/##\s*Result/i,'').trim();
+  if(!concl && s.purpose && s.purpose.question) concl=s.purpose.question;
   const snip=concl.split(/(?<=[.!?])\s/).slice(0,2).join(' ');
   return `<div class="summary-chips">${chips.join('')}</div>${snip?`<div class="summary-snip">${esc(snip)}</div>`:''}`;
 }
@@ -597,9 +601,12 @@ function renderStudy(s, inv, idx){
   const gate=gateOf(s), fail=gate==='fail', control=isControl(s), lo=loopOutcome(s);
   const dchip=fail?'fail':'pass';
 
-  // OVERVIEW
-  const claimLine = s.claim? `<div class="claim">“${esc(s.claim)}”</div>` : (s.question? `<div class="claim">${esc(s.question)}</div>`:'');
-  const overview = (s.biological_summary && (s.claim||s.question))?`<div class="biology">${esc(s.biological_summary)}</div>`:'';
+  // OVERVIEW  (falls back to purpose.* for workspaces that use a `purpose:` block)
+  const pq = s.purpose && s.purpose.question, pm = s.purpose && s.purpose.mechanism;
+  const headline = s.claim || s.question || pq;
+  const claimLine = s.claim? `<div class="claim">“${esc(s.claim)}”</div>` : (headline? `<div class="claim">${esc(headline)}</div>`:'');
+  const bioText = s.biological_summary || pm;
+  const overview = (bioText && headline)?`<div class="biology">${esc(bioText)}</div>`:'';
 
   // MODEL (svg + rationale/ref)
   const bl=(s.baseline||[])[0];
@@ -622,12 +629,17 @@ function renderStudy(s, inv, idx){
       ${r.provenance?`<div class="texp mono" style="margin-top:2px">${esc(r.provenance)}</div>`:''}</div>`;
   }).join(''):'';
 
-  // VISUALIZATIONS (study figures + audit axes)
+  // VISUALIZATIONS (study figures + inlined images + audit axes)
   const figs=[];
   if(s.agent_trajectory) figs.push(['Margin ladder — LLM agent', vizMarginLadder(s.agent_trajectory)]);
   if(s.policy_trajectory) figs.push(['Margin ladder — deterministic policy control', vizMarginLadder(s.policy_trajectory)]);
   if(s.sourcing) figs.push(['Capability coverage', vizCapMatrix(s,inv)]);
-  const figHtml=figs.filter(f=>f[1]).map(([t,svg])=>`<div style="margin:12px 0"><div class="kicker" style="margin-bottom:6px">${esc(t)}</div>${svg}</div>`).join('');
+  let figHtml=figs.filter(f=>f[1]).map(([t,svg])=>`<div style="margin:12px 0"><div class="kicker" style="margin-bottom:6px">${esc(t)}</div>${svg}</div>`).join('');
+  // on-disk study visualizations, inlined as data URIs by the generator
+  (s.figures_embedded||[]).forEach(im=>{
+    if(im.data_uri) figHtml+=`<figure><img src="${im.data_uri}" alt="${esc(im.name)}" loading="lazy"><figcaption>${esc(im.name)}</figcaption></figure>`;
+    else if(im.skipped) figHtml+=`<div class="texp" style="color:var(--ink-3)">↪ ${esc(im.name)} — ${esc(im.reason||'not inlined')}</div>`;
+  });
   const auditHtml=(s.sourcing&&s.sourcing.audit&&s.sourcing.audit.axes)?`<div style="margin:10px 0"><div class="kicker" style="margin-bottom:6px">Audit — sourcing gate (4 axes)</div>${vizAuditAxes(s)}</div>`:'';
   const vizBody=(figHtml+auditHtml)||'';
 
@@ -642,8 +654,23 @@ function renderStudy(s, inv, idx){
     testsBody+=`</div></details>`;
   }
 
-  // DECISION
-  const conclusion=(s.conclusion||'').replace(/##\s*Final model[\s\S]*?(?=\n##|$)/i,'').replace(/##\s*Result/i,'').trim();
+  // FINDINGS (workspaces that record explicit findings)
+  let findingsBody='';
+  if(Array.isArray(s.findings) && s.findings.length){
+    findingsBody=s.findings.map(f=>{
+      const ok=(f.status==='passed'||f.status==='pass');
+      return `<div class="kv" style="margin:6px 0"><span class="chip ${ok?'pass':(f.status?'':'')}">${esc((f.id?f.id+' · ':'')+(f.status||'finding'))}</span>
+        <div class="kv rationale">${esc(f.statement||'')}</div>
+        ${f.evidence&&f.evidence.from_test?`<div class="texp mono">from test: ${esc(f.evidence.from_test)}</div>`:''}</div>`;
+    }).join('');
+  }
+
+  // DECISION  (conclusion, or a conclusion_logic block for pipeline-style studies)
+  let conclusion=(s.conclusion||'').replace(/##\s*Final model[\s\S]*?(?=\n##|$)/i,'').replace(/##\s*Result/i,'').trim();
+  if(!conclusion && s.conclusion_logic && s.conclusion_logic.if_primary_tests_pass){
+    const cl=s.conclusion_logic.if_primary_tests_pass;
+    conclusion=[cl.implementation_status, cl.biological_validation].filter(Boolean).join(' ');
+  }
   const decisionBody=`<div class="decbox"><div>${statusChip(dchip)}</div>
     <div><div class="dverdict"><b>${fail?'Gate refused':'Gate cleared'}</b> · ${esc(s.confidence||'')}${lo?` · <span class="mono">${esc(lo.result)} (${esc(lo.detail||'')})</span>`:''}</div>
     ${conclusion?`<div class="dnarr">${esc(conclusion)}</div>`:''}</div></div>`;
@@ -662,6 +689,7 @@ function renderStudy(s, inv, idx){
       ${part('Simulation run', runBody, 'study:'+s.slug+'/simulation', s.title+' · Simulation run')}
       ${part('Visualizations', vizBody, 'study:'+s.slug+'/visualizations', s.title+' · Visualizations')}
       ${part('Tests', testsBody, 'study:'+s.slug+'/tests', s.title+' · Tests')}
+      ${part('Findings', findingsBody, 'study:'+s.slug+'/findings', s.title+' · Findings')}
       ${part('Decision', decisionBody, 'study:'+s.slug+'/decision', s.title+' · Decision')}
       ${feedbackRow('study:'+s.slug, 'this whole study')}
     </div>

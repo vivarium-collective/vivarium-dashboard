@@ -14,6 +14,7 @@ types, which is exported (never fabricated).
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 from pathlib import Path
@@ -31,8 +32,53 @@ _TRAJ_SCHEMAS = ("agent_build_trajectory", "model_build_trajectory")
 _STUDY_KEEP = (
     "title", "confidence", "gate_status", "question", "claim", "biological_summary",
     "requires", "sourcing", "baseline", "behavior_tests", "runs", "conclusion",
-    "loop_provenance",
+    "loop_provenance", "purpose", "findings", "conclusion_logic", "limitations",
 )
+
+# inline-image budget: keep the self-contained report a sane size
+_IMG_PER_FILE_MAX = 1_400_000     # skip a single figure larger than this
+_IMG_TOTAL_MAX = 11_000_000       # stop embedding once the report gets heavy
+_IMG_MIME = {".svg": "image/svg+xml", ".png": "image/png", ".gif": "image/gif",
+             ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
+
+
+def _humanize(slug: str) -> str:
+    return re.sub(r"[-_]+", " ", str(slug)).strip().title()
+
+
+def _embed_visualizations(study_dir: Path, viz_list, budget: list) -> list:
+    """Resolve each ``visualizations[].address`` of the form ``image:<relpath>``
+    to a data-URI so the report stays self-contained. Respects a size budget
+    (``budget[0]`` is the running total); oversized/missing files are skipped
+    with a note so the report never silently drops a figure it meant to show."""
+    out = []
+    for v in (viz_list or []):
+        if not isinstance(v, dict):
+            continue
+        addr = str(v.get("address") or "")
+        name = v.get("name") or ""
+        if not addr.startswith("image:"):
+            continue
+        rel = addr[len("image:"):]
+        f = (study_dir / rel).resolve()
+        try:
+            f.relative_to(study_dir.resolve())
+        except ValueError:
+            continue  # never read outside the study dir
+        ext = f.suffix.lower()
+        if not f.is_file() or ext not in _IMG_MIME:
+            continue
+        size = f.stat().st_size
+        if size > _IMG_PER_FILE_MAX or budget[0] + size > _IMG_TOTAL_MAX:
+            out.append({"name": name, "skipped": True, "reason": "too large to inline"})
+            continue
+        try:
+            data = base64.b64encode(f.read_bytes()).decode("ascii")
+        except OSError:
+            continue
+        budget[0] += size
+        out.append({"name": name, "data_uri": f"data:{_IMG_MIME[ext]};base64,{data}"})
+    return out
 
 
 def _norm_study(s) -> str:
@@ -122,6 +168,7 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
     trajs = _discover_trajectories(wp)
 
     studies = []
+    img_budget = [0]
     for slug in (inv.get("studies") or []):
         try:
             spec = _load_study_spec(ws_root, slug)
@@ -130,12 +177,18 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
         real_slug = spec.get("name") or slug
         s = {k: spec.get(k) for k in _STUDY_KEEP if spec.get(k) is not None}
         s["slug"] = real_slug
+        s["title"] = spec.get("title") or _humanize(real_slug)   # title is optional in some workspaces
         at = _match_traj(trajs, real_slug, "agent")
         pt = _match_traj(trajs, real_slug, "policy")
         if at:
             s["agent_trajectory"] = at
         if pt:
             s["policy_trajectory"] = pt
+        # inline any on-disk study visualization images (self-contained report)
+        if spec.get("visualizations"):
+            figs = _embed_visualizations(wp.studies / real_slug, spec["visualizations"], img_budget)
+            if figs:
+                s["figures_embedded"] = figs
         studies.append(s)
 
     return {

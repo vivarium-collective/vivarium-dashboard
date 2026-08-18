@@ -90,6 +90,30 @@ def _ws(tmp_path):
             ],
             "result": {"state": "DONE", "edits": 1, "violations": []}}
     (tmp_path / "investigations" / "build" / "tsk_agent_trajectory.json").write_text(json.dumps(traj))
+
+    # --- spatio-flux-style investigation: DIFFERENT fields, no `title`, an
+    #     on-disk figure, purpose/findings/conclusion_logic instead of claim/sourcing ---
+    _write(tmp_path / "investigations" / "sf" / "investigation.yaml", {
+        "name": "sf", "title": "Scenarios", "status": "complete", "studies": ["sf-scn"],
+    })
+    _write(tmp_path / "studies" / "sf-scn" / "study.yaml", {
+        "name": "sf-scn", "gate_status": "passed",   # note: no title / claim / confidence
+        "purpose": {"question": "Does the scenario reproduce its artifacts?",
+                    "mechanism": "Runs the pkg.composites.scn composite."},
+        "baseline": [{"name": "baseline", "composite": "pkg.composites.scn", "params": {"model": "core"}}],
+        "visualizations": [{"name": "plot.svg", "address": "image:visualizations/plot.svg", "chart": "image"}],
+        "behavior_tests": [{"name": "SCN-REPRODUCES", "classification": "regression",
+                            "measure": {"kind": "artifacts_present", "expected": ["plot.svg", "state.json"]},
+                            "pass_if": {"op": "all_exist_and_match", "tolerance": 0.02}}],
+        "runs": [{"name": "scn-reproduce", "status": "completed", "result": "PASS",
+                  "outcomes": {"SCN-REPRODUCES": {"result": "PASS", "detail": "artifacts match"}}}],
+        "findings": [{"id": "F1", "status": "passed", "statement": "reproduces the reference artifacts.",
+                      "evidence": {"from_test": "SCN-REPRODUCES"}}],
+        "conclusion_logic": {"if_primary_tests_pass": {"implementation_status": "Faithfully reproduced."}},
+    })
+    svg = (tmp_path / "studies" / "sf-scn" / "visualizations" / "plot.svg")
+    svg.parent.mkdir(parents=True, exist_ok=True)
+    svg.write_text('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10"/></svg>')
     return tmp_path
 
 
@@ -142,6 +166,37 @@ def test_render_writes_file(tmp_path):
     assert out.name == "investigation-build.html"
     assert out.is_file()
     assert "Build challenges" in out.read_text(encoding="utf-8")
+
+
+def test_spatioflux_style_fields_and_inlined_figure(tmp_path):
+    """A workspace whose studies use purpose/findings/conclusion_logic + on-disk
+    figures (no title/claim/sourcing) renders adaptively with the same generator."""
+    ws = _ws(tmp_path)
+    d = build_report_data(ws, "sf")
+    s = d["studies"][0]
+    # title falls back to a humanized slug when the study has none
+    assert s["title"] == "Sf Scn"
+    assert s["purpose"]["question"].startswith("Does the scenario")
+    assert s["findings"][0]["statement"].startswith("reproduces")
+    assert s["conclusion_logic"]["if_primary_tests_pass"]["implementation_status"]
+    # the on-disk figure is inlined as a data URI (self-contained)
+    figs = s["figures_embedded"]
+    assert figs and figs[0]["data_uri"].startswith("data:image/svg+xml;base64,")
+    html = render_html(d)
+    assert "Sf Scn" in html and "data:image/svg+xml;base64," in html
+    # still self-contained even with an embedded image
+    assert "fetch(" not in html and "/api/" not in html
+
+
+def test_oversized_figure_is_skipped_not_read(tmp_path):
+    """A figure past the per-file cap is reported as skipped, not embedded."""
+    import vivarium_workbench.lib.investigation_report as mod
+    ws = _ws(tmp_path)
+    big = ws / "studies" / "sf-scn" / "visualizations" / "plot.svg"
+    big.write_text("<svg/>" + " " * (mod._IMG_PER_FILE_MAX + 10))
+    d = build_report_data(ws, "sf")
+    figs = d["studies"][0]["figures_embedded"]
+    assert figs and figs[0].get("skipped") is True and "data_uri" not in figs[0]
 
 
 def test_missing_investigation_raises(tmp_path):
