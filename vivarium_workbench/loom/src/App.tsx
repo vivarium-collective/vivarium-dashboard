@@ -2263,6 +2263,7 @@ export default function App() {
                     runId={activeRunId}
                     downloadable={downloadable}
                     readOnly={STATIC}
+                    baseName={compositeId ? compositeId.split('.').pop() : (name || 'composite')}
                   />
                 </div>
               )}
