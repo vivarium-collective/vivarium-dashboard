@@ -98,6 +98,13 @@ class SimRow(BaseModel):
     study_slug: Optional[str] = None
     investigation_slug: Optional[str] = None
     remote_origin: Optional[RemoteOrigin] = None
+    # Source provenance: the repo + commit the run launched from, derived from
+    # the run manifest's ``code_version`` (repo/commit/remote_url/package), or
+    # the inferred workspace HEAD (``inferred: True``) when the run has no
+    # manifest. None only when the workspace itself isn't a resolvable checkout.
+    # Shape: {repo, commit, commit_short, remote_url, commit_url, package,
+    # inferred}. See lib/simulations_index.py's `_source_from_manifest`.
+    source_ref: Optional[dict[str, Any]] = None
     capabilities: list[str] = []  # capability tags advertised by this run
     # Installed analysis tools whose `requires` is satisfied by `capabilities`,
     # each reduced to {"id","label","kind","launch_url"} — see
