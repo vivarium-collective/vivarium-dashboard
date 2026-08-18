@@ -68,8 +68,19 @@ def remote_health() -> dict:
 # GET /api/workspaces
 # ---------------------------------------------------------------------------
 
-def _git_branch_commit(path: str) -> tuple[str, str]:
-    """(branch, short_commit) for a git workspace; ('', '') when unresolvable."""
+def _git_identity(path: str) -> tuple[str, str, str]:
+    """(branch, short_commit, repo) for a git workspace; ('', '', '') when unresolvable.
+
+    ``repo`` is the real remote identity — the origin URL's last path segment,
+    parsed the same way ``remote_build_source.list_build_sources`` already
+    derives it for Remote-scope builds — NOT ``workspace.yaml``'s ``name``
+    field. That field can permanently lag a fork's real repo identity (e.g.
+    sms-ecoli's ``workspace.yaml`` still declares ``name: v2ecoli`` — see
+    backlog item 54); grouping the Local-scope picker by ``name`` silently
+    merged sms-ecoli's branches into v2ecoli's entry. Callers fall back to
+    ``name`` when this returns ``""`` (no remote configured, or an unresolvable
+    checkout) — same tolerant-degradation shape as ``read_workspace_name``.
+    """
 
     def _run(args: list[str]) -> str:
         try:
@@ -80,7 +91,11 @@ def _git_branch_commit(path: str) -> tuple[str, str]:
         except Exception:
             return ""
 
-    return _run(["rev-parse", "--abbrev-ref", "HEAD"]), _run(["rev-parse", "--short", "HEAD"])
+    branch = _run(["rev-parse", "--abbrev-ref", "HEAD"])
+    commit = _run(["rev-parse", "--short", "HEAD"])
+    origin = _run(["remote", "get-url", "origin"])
+    repo = origin.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git") if origin else ""
+    return branch, commit, repo
 
 
 def _branch_label(
@@ -157,7 +172,7 @@ def build_workspaces(ws_root: Path) -> dict:
             "added_at": None,
         }] + list(catalog)
 
-    # `_git_branch_commit` shells out to git twice per workspace; done serially
+    # `_git_identity` shells out to git three times per workspace; done serially
     # across the whole pbg ecosystem (~40 repos) that dominated the endpoint
     # (~13s). The calls are independent and I/O-bound, so resolve them in a
     # thread pool up front — cuts the wall time to roughly the slowest one.
@@ -167,7 +182,7 @@ def build_workspaces(ws_root: Path) -> dict:
     if _dir_paths:
         from concurrent.futures import ThreadPoolExecutor
         with ThreadPoolExecutor(max_workers=min(16, len(_dir_paths))) as _ex:
-            for _p, _res in zip(_dir_paths, _ex.map(_git_branch_commit, _dir_paths)):
+            for _p, _res in zip(_dir_paths, _ex.map(_git_identity, _dir_paths)):
                 _bc[_p] = _res
 
     # A name shared by several catalog checkouts needs its default-branch
@@ -178,7 +193,7 @@ def build_workspaces(ws_root: Path) -> dict:
         (e.get("name") or Path(e.get("path", "")).name) for e in catalog
     )
     _name_branch_counts = Counter(
-        ((e.get("name") or Path(e.get("path", "")).name), _bc.get(e.get("path", ""), ("", ""))[0])
+        ((e.get("name") or Path(e.get("path", "")).name), _bc.get(e.get("path", ""), ("", "", ""))[0])
         for e in catalog
     )
 
@@ -186,8 +201,12 @@ def build_workspaces(ws_root: Path) -> dict:
         path = entry.get("path", "")
         name = entry.get("name") or Path(path).name
         row: dict = {"name": name, "path": path}
-        branch, commit = _bc.get(path, ("", ""))
-        row["repo"] = name
+        branch, commit, repo = _bc.get(path, ("", "", ""))
+        # Real repo identity (item 54): falls back to `name` only when the
+        # checkout has no resolvable git remote — never silently groups two
+        # different repos together just because their `workspace.yaml`s share
+        # a stale/forked `name` field.
+        row["repo"] = repo or name
         row["branch"] = branch
         row["commit"] = commit
         _ambig = _name_counts.get(name, 0) > 1

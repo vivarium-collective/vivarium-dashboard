@@ -13,17 +13,18 @@ def _git(cwd, *args):
     subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True)
 
 
-def test_git_branch_commit_resolves(tmp_path):
+def test_git_identity_resolves(tmp_path):
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "checkout", "-q", "-b", "feat/x")
     _git(tmp_path, "-c", "user.email=a@b.c", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "m")
-    branch, commit = _wdv._git_branch_commit(str(tmp_path))
+    branch, commit, repo = _wdv._git_identity(str(tmp_path))
     assert branch == "feat/x"
     assert len(commit) >= 4 and commit.isalnum()
+    assert repo == ""  # no remote configured on this fixture repo
 
 
-def test_git_branch_commit_non_git(tmp_path):
-    assert _wdv._git_branch_commit(str(tmp_path)) == ("", "")
+def test_git_identity_non_git(tmp_path):
+    assert _wdv._git_identity(str(tmp_path)) == ("", "", "")
 
 
 def test_branch_source_js_present_and_wired():
