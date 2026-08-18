@@ -5,11 +5,11 @@ expert (Haochen) can review one study at a time — verdict, key metrics,
 biological summary, viz embeds — without wading through the full
 investigation walkthrough.
 
-This is intentionally a small server-side Python renderer, NOT a port of
-the JS-side ``_buildInvestigationReportHtml``. The full investigation
-report is assembled in the browser from the iset bundle; this single-
-study path runs entirely server-side so it can be triggered from CLI /
-PR review hooks without spinning up a browser.
+This is a small server-side Python renderer for a single study. The full
+investigation report is rendered separately by ``lib.investigation_report``
+(also server-side, data-only); this single-study path runs entirely
+server-side too, so it can be triggered from CLI / PR review hooks without
+spinning up a browser.
 
 Public API:
     render_single_study_report(ws_root, study_slug, *, investigation_slug=None,
