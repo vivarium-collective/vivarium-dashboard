@@ -924,7 +924,7 @@ def create_app() -> FastAPI:
         headers = None
         if download:
             headers = {"Content-Disposition": f'attachment; filename="investigation-{slug}.html"'}
-        return Response(content=html, media_type="text/html", headers=headers)
+        return Response(content=html, media_type="text/html; charset=utf-8", headers=headers)
 
     @app.get(
         "/api/study-native-gallery/{slug}",

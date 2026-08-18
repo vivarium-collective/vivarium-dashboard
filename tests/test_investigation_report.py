@@ -150,6 +150,10 @@ def test_agentic_trajectory_attached(tmp_path):
 def test_render_is_self_contained(tmp_path):
     ws = _ws(tmp_path)
     html = render_html(build_report_data(ws, "src"))
+    # declares UTF-8 up front so a downloaded file (file://, no HTTP header)
+    # renders the ✓ / — / · / → glyphs instead of mojibake
+    assert '<meta charset="utf-8">' in html
+    assert html.index('<meta charset="utf-8">') < 200  # within the first bytes
     # no unrendered placeholders
     assert "__DATA__" not in html and "__TITLE__" not in html
     # self-contained: no live calls, no external assets
