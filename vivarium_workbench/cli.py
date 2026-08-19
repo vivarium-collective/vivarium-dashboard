@@ -1101,6 +1101,81 @@ def cmd_server_restart(args: argparse.Namespace) -> int:
     return cmd_serve(args)
 
 
+def cmd_render_loom(args: argparse.Namespace) -> int:
+    """Render each study's baseline composite bigraph-loom to a PNG.
+
+    Drives the running dashboard's loom (its ``__loomExportPng`` export hook) with
+    a headless browser and saves ``studies/<slug>/viz/model-loom.png`` — the
+    self-contained investigation report then shows it in the Model section offline
+    (no live server), rasterised so a heavy composite's loom stays ~0.3 MB instead
+    of a multi-MB vector SVG.
+    """
+    import base64
+    from urllib.parse import quote
+
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+
+    ws = Path(args.workspace).resolve()
+    info = _read_server_info(ws)
+    url = (info or {}).get("url", "").rstrip("/")
+    if not url or not _http_ok(url):
+        print("render-loom needs a running dashboard. Start one first:\n"
+              "  vivarium-workbench serve --workspace . --detach", file=sys.stderr)
+        return 1
+
+    wp = WorkspacePaths.load(ws)
+    jobs: list[tuple[str, str]] = []
+    for sd in sorted(wp.studies.iterdir()):
+        sf = sd / "study.yaml"
+        if not sf.is_file():
+            continue
+        if args.study and sd.name != args.study:
+            continue
+        spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+        comp = ((spec.get("baseline") or [{}])[0] or {}).get("composite")
+        if comp:
+            jobs.append((sd.name, comp))
+    if not jobs:
+        print("no studies with a baseline composite found")
+        return 0
+
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        print("render-loom needs Playwright:\n"
+              "  pip install 'vivarium-workbench[loom-render]'\n"
+              "  python -m playwright install chromium", file=sys.stderr)
+        return 1
+
+    ok = 0
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": 1600, "height": 1000},
+                                device_scale_factor=2)
+        for slug, comp in jobs:
+            out = wp.studies / slug / "viz" / "model-loom.png"
+            loom_url = (f"{url}/bigraph-loom/?id={quote(comp)}"
+                        "&tabs=explore,document&nopersist=1")
+            try:
+                page.goto(loom_url, wait_until="domcontentloaded", timeout=60_000)
+                page.wait_for_selector(".react-flow__node", timeout=40_000)
+                page.wait_for_timeout(int(args.settle_ms))
+                data = page.evaluate(
+                    "async () => { const f = window.__loomExportPng;"
+                    " return f ? await f() : null; }")
+                if not data or not data.startswith("data:image/png"):
+                    raise RuntimeError("__loomExportPng returned null")
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_bytes(base64.b64decode(data.split(",", 1)[1]))
+                print(f"  OK   {slug}  ({out.stat().st_size // 1024} KB)")
+                ok += 1
+            except Exception as exc:  # noqa: BLE001
+                print(f"  FAIL {slug}: {exc}", file=sys.stderr)
+        browser.close()
+    print(f"{ok}/{len(jobs)} loom images rendered → studies/<slug>/viz/model-loom.png")
+    return 0 if ok == len(jobs) else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="vivarium-workbench")
     sub = parser.add_subparsers(dest="cmd", required=True)
@@ -1426,6 +1501,16 @@ def main(argv: list[str] | None = None) -> int:
     p_srestart.add_argument("--host", default="127.0.0.1", help="Bind host (default 127.0.0.1)")
     p_srestart.add_argument("--base-path", default="", help="URL path prefix (default: root)")
     p_srestart.set_defaults(func=cmd_server_restart)
+
+    p_render_loom = sub.add_parser(
+        "render-loom",
+        help="Render each study's composite bigraph-loom to studies/<slug>/viz/"
+             "model-loom.png for the report Model section (needs a running server)")
+    p_render_loom.add_argument("--workspace", default=".", help="Workspace root (default: cwd)")
+    p_render_loom.add_argument("--study", default=None, help="Only this study slug")
+    p_render_loom.add_argument("--settle-ms", type=int, default=4000,
+                               help="Wait after layout before capture (default 4000)")
+    p_render_loom.set_defaults(func=cmd_render_loom)
 
     args = parser.parse_args(argv)
     return args.func(args)

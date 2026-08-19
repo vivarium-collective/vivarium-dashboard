@@ -289,3 +289,34 @@ def test_template_renders_loom_view_and_light_markdown():
     assert "s.model_topology ? loomTopoSVG(s.model_topology)" in tpl
     assert "function mdLite(" in tpl
     assert "mdLite(conclusion)" in tpl
+
+
+def test_model_loom_png_embedded_in_report(tmp_path):
+    """A study that saved viz/model-loom.png gets a self-contained data-URI
+    Model view (`model_loom`), preferred over the live loom iframe."""
+    _write(tmp_path / "workspace.yaml",
+           {"schema_version": 2, "name": "tw", "package_path": "pkg"})
+    _write(tmp_path / "investigations" / "inv" / "investigation.yaml", {
+        "name": "inv", "title": "Inv", "status": "complete",
+        "question": "?", "studies": ["s1"],
+    })
+    _write(tmp_path / "studies" / "s1" / "study.yaml", {
+        "name": "s1", "title": "S1",
+        "baseline": [{"name": "baseline", "composite": "pkg.composites.demo.demo"}],
+    })
+    # a tiny (valid) PNG saved by `render-loom`
+    png = bytes.fromhex(
+        "89504e470d0a1a0a0000000d494844520000000100000001080600000"
+        "01f15c4890000000d4944415478da63f8cfc0f01f0005000155a3f4610"
+        "000000049454e44ae426082")
+    loom = tmp_path / "studies" / "s1" / "viz" / "model-loom.png"
+    loom.parent.mkdir(parents=True, exist_ok=True)
+    loom.write_bytes(png)
+
+    data = build_report_data(tmp_path, "inv")
+    assert len(data["studies"]) == 1
+    s1 = data["studies"][0]
+    assert s1.get("model_loom", "").startswith("data:image/png;base64,")
+
+    html = render_html(data)
+    assert s1["model_loom"] in html  # self-contained (no external fetch)
