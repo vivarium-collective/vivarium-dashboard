@@ -33,6 +33,7 @@ from typing import Any, Callable
 
 from viva_superpowers.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib import linkage_index
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from viva_superpowers import rigor
 from viva_superpowers import viz_freshness
 
@@ -493,7 +494,7 @@ def _test_regression_items(ws_root, wp: WorkspacePaths, slug: str) -> list[dict]
 def _member_studies(wp: WorkspacePaths, inv_spec: dict) -> list[tuple[str, dict]]:
     """Resolve the investigation's member studies (slug, spec), filtered to its
     ``studies:`` list. Best-effort — unparseable studies are silently skipped."""
-    members = inv_spec.get("studies")
+    members = investigation_member_slugs(inv_spec)
     # A missing/malformed ``studies:`` list means NO members — do NOT fall back
     # to scanning the whole workspace (that would pull in unrelated studies'
     # signals under this investigation).
