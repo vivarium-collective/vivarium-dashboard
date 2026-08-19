@@ -37,6 +37,38 @@ def _prime_registry() -> None:
         pass
 
 
+def _prime_generator_module(spec_id: str) -> bool:
+    """Best-effort: import the module a generator id names so its
+    ``@composite_generator`` decorator runs and registers the generator.
+
+    A generator id is ``"<dotted.module>.<generator_name>"`` (e.g.
+    ``pbg_cpm_studies.composites.chemotaxis.recruitment``). The package-wide
+    ``discover_generators()`` in ``_prime_registry`` walks a fixed set of
+    bigraph packages and does NOT reach a local workspace's own
+    ``<pkg>.composites.*`` modules, so a workspace generator stays unregistered
+    and ``composite_spec.get`` returns ``None`` — the resolve then falls through
+    to the static-file branch, misses (it is a generator, not a file), and the
+    UI shows "Could not resolve …". Importing the module the id points at is the
+    missing priming step: the id literally encodes where the generator lives, so
+    this imports exactly that module and nothing broader.
+
+    Returns ``True`` if a module was imported (caller should retry the registry
+    lookup), ``False`` otherwise. Wrapped in a broad ``except`` — a workspace
+    generator module whose native deps are missing/broken degrades to the same
+    honest-unavailable path as before, never a 500. The workspace root must
+    already be on ``sys.path`` (``_ws_add_to_sys_path``).
+    """
+    if not spec_id or "." not in spec_id:
+        return False
+    module_name = spec_id.rsplit(".", 1)[0]  # strip the trailing <generator_name>
+    try:
+        import importlib
+        importlib.import_module(module_name)
+        return True
+    except Exception:
+        return False
+
+
 def declared_emit_paths(decls: "list[dict] | None") -> list:
     """Flatten a composite's declared ``emitters=[...]`` decl(s) into the
     ordered, deduped list of paths they emit (e.g. ``["global_time", "bulk",
@@ -286,6 +318,11 @@ def resolve_composite(
         _ws_add_to_sys_path(ws_root)
         _prime_registry()
         spec = _get_spec(spec_id)                       # generator branch: "<module>.<name>"
+        if spec is None and _prime_generator_module(spec_id):
+            # The package-wide prime didn't reach this workspace's own
+            # @composite_generator module; import the module the id names so its
+            # decorator registers, then retry before the static-file fallback.
+            spec = _get_spec(spec_id)
         if spec is None:                                # static branch: "<pkg>.composites.<stem>"
             from vivarium_workbench.lib.composite_lookup import find_composite_path
             ws_yaml = ws_root / "workspace.yaml"
