@@ -732,10 +732,17 @@ function renderStudy(s, inv, idx){
   const bioText = s.biological_summary || pm;
   const overview = (bioText && headline)?`<div class="biology">${esc(bioText)}</div>`:'';
 
-  // MODEL — embed the REAL bigraph-loom for the composite (not a re-draw); the
-  // static topology SVG is kept as an on-demand fallback for standalone viewing.
+  // MODEL — prefer a pre-rendered bigraph-loom image (offline-safe, config
+  // loaded, from `vivarium-workbench render-loom`); else the live loom iframe;
+  // else the re-drawn static topology / viz.
   const bl=(s.baseline||[])[0];
-  let modelBody = loomEmbed(s) || (s.model_topology ? loomTopoSVG(s.model_topology) : '') || vizModelSVG(s,inv);
+  const _mcid=(s.model_topology&&s.model_topology.composite)||(bl&&bl.composite)||'';
+  const loomRendered = s.model_loom
+    ? `<figure class="loom-embed"><div class="loom-frame" style="height:auto;max-height:640px;overflow:auto">
+         <img src="${s.model_loom}" alt="bigraph-loom view of ${esc(_mcid)}" style="width:100%;display:block"/></div>
+       <figcaption><b>bigraph-loom</b> view of <span class="mono">${esc(_mcid)}</span> — the composite's bigraph with its config loaded.</figcaption></figure>`
+    : '';
+  let modelBody = loomRendered || loomEmbed(s) || (s.model_topology ? loomTopoSVG(s.model_topology) : '') || vizModelSVG(s,inv);
   if(s.sourcing){
     modelBody += `<div class="decision-line" style="margin-top:6px"><span class="chip decision">${esc(s.sourcing.decision)}</span>
       ${(s.sourcing.modules||[]).map(m=>`<span class="chip mod">${esc(m)}</span>`).join(' ')||'<span class="chip mod">new module</span>'}</div>

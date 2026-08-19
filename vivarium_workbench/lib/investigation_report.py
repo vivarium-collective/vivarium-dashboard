@@ -185,6 +185,39 @@ def _embed_visualizations(study_dir: Path, viz_list, budget: list) -> list:
     return out
 
 
+_LOOM_IMG_CANDIDATES = (
+    "viz/model-loom.png", "viz/model-loom.svg",
+    "visualizations/model-loom.png", "visualizations/model-loom.svg",
+)
+
+
+def _model_loom_img(study_dir: Path, budget: list) -> "str | None":
+    """Data-URI for a study's pre-rendered bigraph-loom image (Model section).
+
+    Looks for a saved loom render at ``viz/model-loom.{png,svg}`` (produced by
+    ``vivarium-workbench render-loom``). PNG is preferred — a rasterised loom is
+    ~0.3 MB vs a 1-4 MB KaTeX/font-heavy vector SVG. Respects the shared inline-
+    image budget; returns None when absent or oversized.
+    """
+    for rel in _LOOM_IMG_CANDIDATES:
+        f = study_dir / rel
+        if not f.is_file():
+            continue
+        ext = f.suffix.lower()
+        if ext not in _IMG_MIME:
+            continue
+        size = f.stat().st_size
+        if size > _IMG_PER_FILE_MAX or budget[0] + size > _IMG_TOTAL_MAX:
+            return None
+        try:
+            data = base64.b64encode(f.read_bytes()).decode("ascii")
+        except OSError:
+            return None
+        budget[0] += size
+        return f"data:{_IMG_MIME[ext]};base64,{data}"
+    return None
+
+
 def _norm_study(s) -> str:
     return re.sub(r"-(agent|policy)$", "", str(s or "").strip())
 
@@ -351,6 +384,11 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
         topo = _model_topology(ws_root, spec)
         if topo:
             s["model_topology"] = topo
+        # embed a pre-rendered loom image (offline-safe Model view) if the study
+        # saved one via `vivarium-workbench render-loom`
+        loom_img = _model_loom_img(wp.studies / real_slug, img_budget)
+        if loom_img:
+            s["model_loom"] = loom_img
         studies.append(s)
 
     spine = _build_spine(ws_root, inv_slug, studies)
