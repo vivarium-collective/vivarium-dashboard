@@ -21,6 +21,10 @@ from pathlib import Path
 
 import yaml
 
+from vivarium_workbench.lib.investigation_members import (
+    investigation_member_slugs,
+    member_slug,
+)
 from vivarium_workbench.lib.single_study_report import _load_study_spec
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
@@ -360,7 +364,14 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
 
     studies = []
     img_budget = [0]
-    for slug in (inv.get("studies") or []):
+    # Read the member list via the shared helper so BOTH the pre-migration
+    # `studies:` key and the post-migration `members:` key render — otherwise a
+    # members-only investigation reports zero studies (the generated report's
+    # study list comes solely from here). Normalize dict/bare-slug entries.
+    for entry in investigation_member_slugs(inv):
+        slug = member_slug(entry)
+        if not slug:
+            continue
         try:
             spec = _load_study_spec(ws_root, slug)
         except (FileNotFoundError, ValueError):

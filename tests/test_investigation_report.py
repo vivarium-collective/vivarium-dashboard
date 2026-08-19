@@ -320,3 +320,23 @@ def test_model_loom_png_embedded_in_report(tmp_path):
 
     html = render_html(data)
     assert s1["model_loom"] in html  # self-contained (no external fetch)
+
+
+def test_report_renders_studies_from_members_only_investigation(tmp_path):
+    """The generated report's study list must come from `members ∪ studies` —
+    a post-migration investigation that carries only `members:` (the L0-audit
+    canonical key) must still render its studies, not an empty list."""
+    _write(tmp_path / "workspace.yaml", {"schema_version": 2, "name": "tw", "package_path": "pkg"})
+    _write(tmp_path / "investigations" / "inv" / "investigation.yaml", {
+        "name": "inv", "title": "Members-only", "status": "complete",
+        "question": "Do members render?",
+        "members": ["only-study"],          # NOTE: members:, no studies:
+    })
+    _write(tmp_path / "studies" / "only-study" / "study.yaml", {
+        "name": "only-study", "title": "Only Study", "confidence": "Accepted",
+        "gate_status": "passed", "claim": "renders",
+        "baseline": [{"name": "b", "composite": "pkg.composites.b"}],
+    })
+    data = build_report_data(tmp_path, "inv")
+    slugs = [s.get("slug") for s in data.get("studies", [])]
+    assert slugs == ["only-study"], f"members-only investigation rendered {slugs!r}, expected the member"

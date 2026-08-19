@@ -59,6 +59,8 @@ from typing import Any, Callable, Iterable
 from viva_superpowers import study_io
 from viva_superpowers.workspace_paths import WorkspacePaths
 
+from vivarium_workbench.lib.investigation_members import investigation_member_slugs
+
 
 # ---------------------------------------------------------------------------
 # Node / edge typed-id helpers
@@ -322,7 +324,7 @@ def build_index(ws_root: Path | str) -> dict:
         inv_id = add_node(_node(_id("investigation", inv_slug), "investigation",
                                 name=inv_slug, title=inv_spec.get("title")))
 
-        for member in (inv_spec.get("studies") or []):
+        for member in investigation_member_slugs(inv_spec):
             if isinstance(member, str) and member:
                 edges.append(_edge(inv_id, _id("study", member), "contains"))
 
@@ -500,7 +502,7 @@ def study_dag(ws_root: Path | str, inv: str) -> dict:
     each member study's ``pipeline_gate``."""
     wp = WorkspacePaths.load(Path(ws_root))
     inv_spec = _load(wp.dir("investigations") / inv / "investigation.yaml") or {}
-    members = [m for m in (inv_spec.get("studies") or []) if isinstance(m, str)]
+    members = [m for m in investigation_member_slugs(inv_spec) if isinstance(m, str)]
     member_set = set(members)
 
     specs: dict[str, dict] = {
