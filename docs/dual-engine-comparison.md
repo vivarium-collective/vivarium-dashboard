@@ -247,6 +247,46 @@ the multi-developer rollout above.
   "W4 done" criterion. Blocked on the Appendix A answers (capability detection,
   Q5).
 
+### 5.5 Ecosystem convergence — perspective from recent commits (2026-08-19)
+
+A survey of recent work across the three repos shows **"independent execution
+environments" is not a future direction this spec argues for — it is the
+pattern all three repos are actively building**, one backlog item at a time.
+This spec's comparison is a *consumer* of that pattern, not its driver.
+
+| Repo | Evidence |
+|---|---|
+| vivarium-workbench | HTTP process purged of workspace Python (env workers, #530–#536); session-isolated build clones (#729/#763); the workbench image takes the workspace env from the workspace's **own per-commit image** (item 39 / Fix B) |
+| viva-api | Everything executes as **per-commit container jobs on AWS Batch**; Array jobs + `dependsOn` chaining landed and fixed against real AWS (#226/#229, in prod since 0.9.40); chain-dispatch campaigns with per-seed progress (item 6 — its workbench half was #853); **vEcoli already runs as its own image** (`vecoli:ray` in Batch MNP job definitions; a `vecoli-github-pat` build secret; "ensure the vEcoli repo is cloned and image is built") |
+| sms-ecoli | **Item 71** (2026-08-18): the self-contained simulation *software* image — no baked data, ParCa computed/fetched at job time, "workload-owned, like vEcoli's image" |
+
+**Consequences for this spec:**
+
+1. **Appendix A is largely pre-answered.** Q3 (job dependencies): *yes* —
+   `dependsOn` works in production. Q2 (containerized job): being built as item
+   71's workload-owned image + entrypoint, and viva-api already builds/runs
+   vEcoli images — so W4's "register the reference engine" half mostly
+   **exists**. What genuinely remains of W4: wiring the comparison DAG (two
+   sims + a dependent compare job) and Q5 (capability detection). The viva-api
+   session should *confirm* rather than design.
+2. **The local harness guide describes the legacy mode.** "Fork loads in the
+   candidate's venv, no cloud" is the local convenience path; the ecosystem's
+   main line is both engines in their own containers via viva-api. **W5
+   deprioritizes accordingly** — developer convenience, not the product path.
+   The local harness keeps working unchanged meanwhile (§5.3).
+3. **W2's design is validated and sharpened**: the extractors' primary role is
+   to run **as container job stages inside each engine's image**; the
+   local-harness integration (slotting into `run_local_comparison.py`) is
+   secondary. The reference extractor's zero-repo-imports design is exactly
+   what the container stage needs.
+4. **Revised critical path:** W2 (sms-ecoli) → W4-remainder (viva-api DAG
+   wiring + capability detection) → W3 (the compare node *as the dependent
+   Batch job*). The workbench is not the bottleneck (W1 done; W6 trails).
+5. **Register the workstreams as items in the shared cross-repo backlog**
+   (the item-numbered program: items 6, 39, 61, 65, 71, …). This spec is the
+   design record; the backlog is the program of record — without item numbers
+   the other developers won't see this work in their queue.
+
 ## 6. Scoped workstreams
 
 | # | Work | Where | Size | Depends on |
@@ -254,8 +294,8 @@ the multi-developer rollout above.
 | **W1** | Per-run env coordinate — **half-landed by #868** (always-filled `source_ref` provenance + Sim-DB surfacing ✅). Remaining: schema (`environment: {repo, ref}` on conditions) + the multi-entry `environments: []` provenance form (§3.1) | workbench (+ viva-template / viva-workspace schema) | **S** (~1 PR) | — |
 | **W2** | Metrics contract (§4) + per-engine extractors ported from harness logic | sms-ecoli (harness) + this spec | **M** (~2–3 PRs) | — (parallel with W1) |
 | **W3** | Compare node: two artifacts → report + tolerance verdicts; verdicts → report cards; transfer becomes an explicit node | sms-ecoli + workbench mapping | **M** (~2–3 PRs) | W2 |
-| **W4** | AWS dispatch: register `vEcoli-private`; containerized-job escape hatch if needed; Batch dependency wiring (2 sims → 1 compare) | **viva-api** | **M–L** (~3–4 PRs) | W1, W2 |
-| **W5** | Local dual-env: wire managed materialization for env B + job-style exec; ParCa cache → content-addressed store | workbench | **M** (~3 PRs) | W1; *may lag W4* |
+| **W4** | AWS dispatch — **scope reduced by §5.5**: viva-api already builds/runs vEcoli images and `dependsOn` chaining works in prod, so what remains is the comparison-DAG wiring (2 sims → 1 dependent compare job) + capability detection (Q5) | **viva-api** | **M** (~2 PRs) | W1, W2 |
+| **W5** | Local dual-env: wire managed materialization for env B + job-style exec; ParCa cache → content-addressed store. **Deprioritized (§5.5):** developer convenience, not the product path — the container path (W4) is primary | workbench | **M** (~3 PRs) | W1; *trails W4* |
 | **W6** | UX: investigation graph renders the DAG with per-node env badges; comparison report per-run | workbench | **S** (~1–2 PRs) | W3 |
 
 **Critical path to "this workflow on AWS": W1 → W2 → W3 → W4.** W5 (local
@@ -321,10 +361,15 @@ and migrates onto the step-network engine when that reconciliation lands.
 > 2. vEcoli executes via its own native runscripts, not a process-bigraph run
 >    request. Does viva-api's dispatch support (or how hard is) a **generic
 >    containerized job**: image + command + env + outputs-to-S3 — with no pbg
->    assumptions?
+>    assumptions? *(§5.5, 2026-08-19: largely pre-answered — viva-api already
+>    builds/runs vEcoli images, and sms-ecoli item 71 adds the workload-owned
+>    software image + entrypoint. Please CONFIRM the remaining delta rather
+>    than design from scratch.)*
 > 3. Does viva-api's Batch integration expose **job dependencies** (compare job
 >    starts after both sim jobs land), or should the workbench poll-and-dispatch
->    the compare job itself?
+>    the compare job itself? *(§5.5: answered — `dependsOn` chaining landed and
+>    was fixed against real AWS Batch (#226/#229), in prod since 0.9.40. Please
+>    confirm it is exposed at the dispatch-API level the comparison needs.)*
 > 4. Anything about the per-commit ECR image convention (no floating tags) that
 >    the two-engine case complicates — e.g., resolving "latest built commit" for
 >    two repos atomically?
