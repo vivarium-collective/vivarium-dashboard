@@ -331,9 +331,13 @@ def build_run_manifest(*, spec_id, params, n_steps, emitter, emit_paths,
             "role": "declared",
             "repo": declared_environment.get("repo"),
             "ref": declared_environment.get("ref"),
-            # Resolved + executed only by a W4/W5 dispatch path; null records
-            # honestly that this run declared the env but ran in `primary`.
-            "commit": None,
+            # Filled when a W4 dispatch has resolved the declaration
+            # (comparison_pinning.resolve_comparison_pair threads the resolved
+            # commit + simulator_id through the caller's declared_environment);
+            # null otherwise — honest that the run declared the env but ran in
+            # `primary` unresolved.
+            "commit": declared_environment.get("commit"),
+            "simulator_id": declared_environment.get("simulator_id"),
             "remote_url": None,
             "lockfile_hash": None,
         })
