@@ -2998,20 +2998,8 @@ class StudyTestsRunRequest(BaseModel):
     study: str = ""
 
 
-class RerunRequest(BaseModel):
-    """POST /api/run-rerun request body — ``{"run_id"}``.
-
-    Replays a recorded run (study or composite origin) as a brand-new run.
-    An unknown ``run_id`` is rejected with HTTP 404 by ``lib.rerun.run_rerun``.
-    """
-
-    model_config = ConfigDict(extra="allow")
-
-    run_id: str = ""
-
-
 class RerunResult(BaseModel):
-    """Result of ``POST /api/run-rerun`` — the new run's launch result plus
+    """Result of ``POST /api/study-reproduce`` — the new run's launch result plus
     rerun provenance (``origin``, and on success the replayed ``reran`` run_id).
 
     ``extra="allow"``: the wrapped launcher (``study_runs.launch_into_study``

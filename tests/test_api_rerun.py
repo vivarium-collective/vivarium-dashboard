@@ -1,7 +1,9 @@
-"""Live endpoints: POST /api/run-rerun + POST /api/investigation-rerun.
+"""Live endpoints: POST /api/study-reproduce + POST /api/investigation-rerun.
 
 Task 6 — thin HTTP wrappers over lib.rerun.run_rerun / rerun_investigation
-(Tasks 1-5). Exercises the routes against a throwaway copy of the
+(Tasks 1-5). (The generic ``/api/run-rerun`` was folded into the study-scoped
+``/api/study-reproduce``, which delegates to the same ``lib.rerun.run_rerun``.)
+Exercises the routes against a throwaway copy of the
 ws_increase_demo fixture: an unknown run_id 404s (or returns an error body),
 an investigation with no member studies returns a 200 empty-batch result,
 and both mutating POSTs are guarded by the app-wide CSRF/origin middleware
@@ -44,9 +46,9 @@ def _post_with_origin(base_url: str, path: str, body: dict, *, origin: str) -> i
         return e.code
 
 
-def test_run_rerun_unknown_run_404s(dashboard_client, ws_copy):
+def test_study_reproduce_unknown_run_404s(dashboard_client, ws_copy):
     client = dashboard_client(workspace=ws_copy)
-    r = client.post("/api/run-rerun", json={"run_id": "does-not-exist"})
+    r = client.post("/api/study-reproduce", json={"study": "s", "run_id": "does-not-exist"})
     assert r.status_code == 404 or "error" in r.json()
 
 
@@ -60,10 +62,10 @@ def test_investigation_rerun_empty_investigation_200s(dashboard_client, ws_copy)
     assert body["count"] == 0
 
 
-def test_run_rerun_cross_origin_is_rejected(dashboard_client, ws_copy):
+def test_study_reproduce_cross_origin_is_rejected(dashboard_client, ws_copy):
     client = dashboard_client(workspace=ws_copy)
     code = _post_with_origin(
-        client.base_url, "/api/run-rerun", {"run_id": "x"},
+        client.base_url, "/api/study-reproduce", {"study": "s", "run_id": "x"},
         origin="http://evil.example.com")
     assert code in (400, 403)
 

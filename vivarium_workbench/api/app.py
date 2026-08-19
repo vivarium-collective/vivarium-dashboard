@@ -342,8 +342,7 @@ from vivarium_workbench.lib.models import (
     StudyRunVariantRequest,
     StudyTestsRunRequest,
     RunTestsRequest,
-    # Task 6: rerun-capability POST request bodies
-    RerunRequest,
+    # Task 6: rerun-capability POST request body
     InvestigationRerunRequest,
     # reproducible-rerun-spine Task 4: study-scoped manifest replay
     StudyReproduceRequest,
@@ -6458,29 +6457,6 @@ def create_app() -> FastAPI:
           - 200  run-result dict
         """
         body, status = _study_runs.run_study_variant(ws, req.model_dump(exclude_none=True))
-        return JSONResponse(status_code=status, content=body)
-
-    @app.post(
-        "/api/run-rerun",
-        tags=["Runs"],
-        summary="Replay a recorded run as a brand-new run",
-    )
-    def run_rerun(
-        req: RerunRequest,
-        ws: Path = Depends(get_workspace),
-    ) -> JSONResponse:
-        """Replay a recorded run (study- or composite-origin) as a new run.
-
-        Body: ``{"run_id"}`` — resolves the run's replay target (manifest-
-        preferred) and forwards it to the matching launcher (``lib.rerun.
-        run_rerun``). Never mutates the original run; always produces a new
-        one.
-
-        Status codes:
-          - 404  unknown ``run_id``
-          - 200/202  new run's launch-result dict, plus ``origin``/``reran``
-        """
-        body, status = _rerun.run_rerun(ws, req.run_id)
         return JSONResponse(status_code=status, content=body)
 
     @app.post(

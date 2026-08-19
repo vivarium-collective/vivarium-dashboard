@@ -4,9 +4,10 @@ Thin smoke tests over the served HTML/JS for the Rerun/Reproduce affordances:
 
   1. Sim DB row action (``static/sim-table.js`` ``_actions``) — a per-row
      ``↻ Rerun`` control. reproducible-rerun-spine Task 4 repointed this at
-     ``POST /api/study-reproduce`` (manifest replay) instead of the generic
-     ``/api/run-rerun`` — "Reproduce" vs "Run current spec" is now a
-     deliberate, named distinction (see ``test_study_reproduce_button.py``).
+     ``POST /api/study-reproduce`` (manifest replay) — "Reproduce" vs "Run
+     current spec" is a deliberate, named distinction (see
+     ``test_study_reproduce_button.py``). study-reproduce is the sole replay
+     endpoint; the redundant generic ``/api/run-rerun`` was folded into it.
   2. Investigation header (``templates/index.html.j2``) — an
      ``#investigation-rerun`` button (Task 4 relabeled it "Run current spec"
      — it still re-derives from each member study's current study.yaml via
@@ -48,8 +49,8 @@ def test_sim_table_js_has_rerun_action(dashboard_client, ws_copy):
     client = dashboard_client(workspace=ws_copy)
     r = client.get("/sim-table.js")
     assert r.status_code == 200
-    # Task 4: the per-row control now reproduces the recorded manifest via
-    # /api/study-reproduce, not the generic /api/run-rerun.
+    # Task 4: the per-row control reproduces the recorded manifest via
+    # /api/study-reproduce (the sole replay endpoint).
     assert "study-reproduce" in r.text
     assert "Rerun" in r.text
 
