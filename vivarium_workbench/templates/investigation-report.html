@@ -387,16 +387,27 @@ function loomTopoSVG(topo){
 function loomEmbed(s){
   const cid=(s.model_topology&&s.model_topology.composite) || (s.baseline&&s.baseline[0]&&s.baseline[0].composite);
   if(!cid) return '';
+  const topo=s.model_topology?loomTopoSVG(s.model_topology):'';
+  // No live loom to embed → nothing to add beyond the static topology, which
+  // the caller renders directly. Returning '' lets modelBody fall through to it.
+  if(!topo) return '';
   const snap=document.body.classList.contains('snapshot');
   const base='bigraph-loom/index.html';
   const src=snap
     ? base+'?static=1&stateUrl='+encodeURIComponent('api/composite-state/'+encodeURIComponent(cid)+'.json')+'&chrome=off'
     : base+'?id='+encodeURIComponent(cid)+'&live=1&chrome=off';
-  const fallback=s.model_topology?loomTopoSVG(s.model_topology):'';
+  // The static topology is the VISIBLE model figure — it always renders, live
+  // server or not (a downloaded standalone report has no reachable loom route,
+  // so a live iframe would just be a blank box). The interactive loom is an
+  // opt-in enhancement tucked behind a <details> for deployments served
+  // alongside the loom bundle.
   return `<figure class="loom-embed">
-      <div class="loom-frame"><iframe class="loom-iframe" title="bigraph-loom — ${esc(cid)}" src="${esc(src)}" loading="lazy"></iframe></div>
-      <figcaption>Live <b>bigraph-loom</b> view of <span class="mono">${esc(cid)}</span> — the composite's bigraph, rendered by loom itself.
-        ${fallback?`<details class="loom-fallback"><summary>static topology (offline fallback)</summary>${fallback}</details>`:''}</figcaption>
+      <div class="kicker" style="margin-bottom:6px">Model — bigraph of <span class="mono">${esc(cid)}</span></div>
+      ${topo}
+      <figcaption>The composite's bigraph (processes, stores, and their wiring).
+        <details class="loom-fallback"><summary>open the interactive bigraph-loom view</summary>
+          <div class="loom-frame"><iframe class="loom-iframe" title="bigraph-loom — ${esc(cid)}" src="${esc(src)}" loading="lazy"></iframe></div>
+        </details></figcaption>
     </figure>`;
 }
 const has = v => v!=null && !(Array.isArray(v)&&!v.length) && !(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length);
@@ -713,7 +724,7 @@ function studySummary(s, inv){
     const it=s.agent_trajectory&&lastIt(s); if(it) chips.push(`<span class="chip">tests ${it.n_pass}/${it.n_hard}</span>`);
   }
   const runN=(s.runs||[]).length; if(runN) chips.push(`<span class="chip">${runN} run${runN>1?'s':''}</span>`);
-  const nfig=(s.figures_embedded||[]).filter(f=>f.data_uri).length; if(nfig) chips.push(`<span class="chip">${nfig} figure${nfig>1?'s':''}</span>`);
+  const nfig=(s.figures_embedded||[]).filter(f=>f.data_uri||f.html).length; if(nfig) chips.push(`<span class="chip">${nfig} figure${nfig>1?'s':''}</span>`);
   const nfind=Array.isArray(s.findings)?s.findings.length:0; if(nfind) chips.push(`<span class="chip">${nfind} finding${nfind>1?'s':''}</span>`);
   let concl=(s.conclusion||'').replace(/##\s*Final model[\s\S]*?(?=\n##|$)/i,'').replace(/##\s*Result/i,'').trim();
   if(!concl && s.purpose && s.purpose.question) concl=s.purpose.question;
@@ -773,9 +784,11 @@ function renderStudy(s, inv, idx){
   if(s.policy_trajectory) figs.push(['Margin ladder — deterministic policy control', vizMarginLadder(s.policy_trajectory)]);
   if(s.sourcing) figs.push(['Capability coverage', vizCapMatrix(s,inv)]);
   let figHtml=figs.filter(f=>f[1]).map(([t,svg])=>`<div style="margin:12px 0"><div class="kicker" style="margin-bottom:6px">${esc(t)}</div>${svg}</div>`).join('');
-  // on-disk study visualizations, inlined as data URIs by the generator
+  // on-disk study visualizations, inlined by the generator: images as data
+  // URIs, and `local:` live visualizations as their committed rendered HTML.
   (s.figures_embedded||[]).forEach(im=>{
     if(im.data_uri) figHtml+=`<figure><img src="${im.data_uri}" alt="${esc(im.name)}" loading="lazy"><figcaption>${esc(im.name)}</figcaption></figure>`;
+    else if(im.html) figHtml+=`<div style="margin:12px 0"><div class="kicker" style="margin-bottom:6px">${esc(im.name)}</div><div class="embedded-viz">${im.html}</div></div>`;
     else if(im.skipped) figHtml+=`<div class="texp" style="color:var(--ink-3)">↪ ${esc(im.name)} — ${esc(im.reason||'not inlined')}</div>`;
   });
   const auditHtml=(s.sourcing&&s.sourcing.audit&&s.sourcing.audit.axes)?`<div style="margin:10px 0"><div class="kicker" style="margin-bottom:6px">Audit — sourcing gate (4 axes)</div>${vizAuditAxes(s)}</div>`:'';
