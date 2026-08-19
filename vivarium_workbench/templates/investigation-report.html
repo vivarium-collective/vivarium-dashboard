@@ -877,8 +877,14 @@ function renderStudy(s, inv, idx){
 //   generic   — everything else (a normal study: model · run · tests · decision)
 function reportMode(inv){
   const ss=inv.studies||[];
-  if(ss.some(s=>s.sourcing)) return 'sourcing';
-  if(ss.some(s=>s.agent_trajectory)) return 'agentic';
+  // 'sourcing' is for a sourcing-AUDIT investigation — one whose figure is the
+  // reuse/compose/build-new decision map with an audit gate. Requires the actual
+  // audit data (s.sourcing.audit), NOT merely a `sourcing.decision`: that is now
+  // standard contract metadata on nearly every study, so keying off `s.sourcing`
+  // alone mislabelled ordinary claim/agentic investigations as sourcing and
+  // showed them an empty, trap-captioned decision map.
+  if(ss.some(s=>s.agent_trajectory||s.policy_trajectory)) return 'agentic';
+  if(ss.some(s=>s.sourcing&&s.sourcing.audit)) return 'sourcing';
   return 'generic';
 }
 function renderExec(inv){
