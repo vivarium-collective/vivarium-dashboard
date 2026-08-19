@@ -1132,7 +1132,10 @@ def cmd_render_loom(args: argparse.Namespace) -> int:
         if args.study and sd.name != args.study:
             continue
         spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
-        comp = ((spec.get("baseline") or [{}])[0] or {}).get("composite")
+        # Read the composite from either schema shape (v4 conditions.baseline or
+        # the legacy top-level baseline list) — v4 studies otherwise bake nothing.
+        from vivarium_workbench.lib.investigation_report import _baseline_composite_id
+        comp = _baseline_composite_id(spec)
         if comp:
             jobs.append((sd.name, comp))
     if not jobs:
