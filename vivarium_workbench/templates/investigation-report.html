@@ -656,8 +656,7 @@ function testsTable(tests, traj){
     const cls=t.classification;
     const fin=finals[name]; const v=fin?(fin.v==='within_tol'?'pass':'fail'):null;
     const exp=(fin&&fin.exp)||(prov[name]&&prov[name].exp)||(t.pass_if&&(t.pass_if.op+' '+t.pass_if.value))||'';
-    const _pt=p=>!p?'':(typeof p==='string'?p:(p.note||p.rationale||p.kind||''));
-    const pv=_pt((prov[name]&&prov[name].provenance))||_pt(t.pass_if&&t.pass_if.provenance)||(t.measure&&t.measure.kind==='audit-axis'?('audit axis '+meas):'');
+    const pv=provText((prov[name]&&prov[name].provenance))||provText(t.pass_if&&t.pass_if.provenance)||(t.measure&&t.measure.kind==='audit-axis'?('audit axis '+meas):'');
     const obs=(fin&&fin.obs!=null)?`observed ${fmt(fin.obs)}`:'';
     const mg=(fin&&fin.m!=null)?` · margin ${fmt(fin.m)}`:'';
     return `<tr id="test-${esc(name)}"><td class="tname">${esc(desc||name)}
@@ -669,6 +668,10 @@ function testsTable(tests, traj){
   return `<table class="ttable">${rows}</table>`;
 }
 function fmt(n){ if(typeof n!=='number') return esc(n); return Number.isInteger(n)?n:(Math.abs(n)<0.01?n.toExponential(1):n.toFixed(2)); }
+// provenance may be a plain string OR an object ({kind, note, ...}); render a
+// readable line, never a stringified object ("[object Object]").
+function provText(p){ if(!p) return ''; if(typeof p==='string') return p;
+  if(typeof p==='object') return String(p.note||p.rationale||p.kind||Object.values(p).filter(v=>typeof v==='string').join(' · ')||''); return String(p); }
 
 function fbBubble(key,label){ return `<button class="fbbubble ${FB[key]?'has':''}" data-fb="${esc(key)}" data-fblabel="${esc(label)}" title="Add feedback to this section" aria-label="Add feedback to ${esc(label)}">💬</button>`; }
 function part(label, body, key, klabel){ if(!body) return '';
@@ -747,7 +750,7 @@ function renderStudy(s, inv, idx){
     return `<div class="kv" style="margin:6px 0"><span class="chip ${r.status==='completed'?'pass':''}">${esc(r.status)}</span>
       <span class="mono" style="margin-left:8px;color:var(--ink-2)">${esc(r.name||r.module||'')}</span>
       ${outcomeRows(r.outcomes)}
-      ${r.provenance?`<div class="texp mono" style="margin-top:2px">${esc(r.provenance)}</div>`:''}</div>`;
+      ${r.provenance?`<div class="texp mono" style="margin-top:2px">${esc(provText(r.provenance))}</div>`:''}</div>`;
   }).join(''):'';
   // run-command chips: how to reproduce this study + per-variant commands
   if(s.run_commands){
