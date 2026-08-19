@@ -287,6 +287,43 @@ This spec's comparison is a *consumer* of that pattern, not its driver.
    design record; the backlog is the program of record — without item numbers
    the other developers won't see this work in their queue.
 
+### 5.6 W4 answers landed — and the architecture shifted under them (2026-08-19)
+
+The viva-api session answered Appendix A (full report:
+`sms-api/artifacts/2026-08-19-prod-migration-incident.md`). Verified against
+viva-api `main` @ `27d54ffb` (0.9.50), plus two in-flight unmerged PRs that
+change the picture:
+
+- **Q1 — VERIFIED end-to-end, not just "exists."** A real
+  `vEcoli-private@master` dispatch succeeded on stanford-test on 2026-08-12
+  (simulator 67, commit `1d80baa`: 8/8 Batch tasks, 624 MB parquet to S3). The
+  backends are **asymmetric by explicit map**: `sms-ecoli → RAY`,
+  `vEcoli-private → BATCH` (deliberate — a substring fallback would mis-route
+  sms-ecoli). One shared credential secret covers both repos' image builds.
+  **ECR tag asymmetry** the DAG wiring must handle: `vecoli` repo tags
+  `<commit>-arm64 / -amd64 / -amd64-submit`; `v2ecoli` tags bare `<commit>`.
+- **Q2 — the delta was named, then implemented while we asked.** The generic
+  substrate (`_submit_mnp` = image+command+env, zero pbg semantics) exists, but
+  the MNP job definition's `ray-batch-entrypoint.sh` hard-requires Ray/MNP — and
+  vEcoli has **no Ray dependency**, so its image can't ride it. The fix —
+  `_ensure_container_job_def`/`_submit_container`, `CONTAINER_*` env, per-commit
+  job-def cloning (`containerOverrides` cannot swap the image; verified in #226)
+  — is **already implemented in viva-api PR #258 (v0.9.51)**, independently
+  converging on this spec's design. It is gated on correctness+scaling pilots.
+- **Q3 — the earlier "answered" is INVERTED by viva-api PR #260 (v0.9.52):**
+  native Batch `dependsOn` chaining is being **replaced by app-level incremental
+  submission** (viva-api schedules generations itself in its poll loop, advisory-
+  locked; motivated by item 68's Batch scaling stall). The compare job must
+  therefore be planned as **a node in viva-api's app-level scheduler**, not a raw
+  `dependsOn` dependent. Note the architectural drift: viva-api is becoming a
+  scheduler.
+- **Q4 / Q5 — still open.** Q5 (capability detection) is now *more* urgent:
+  during this exchange, prod was found running an image from unmerged #260 whose
+  migration put the prod schema **ahead of `main`** — a live demonstration that
+  the workbench cannot assume the service it talks to matches any main. See the
+  incident report; resolving that (pilots → merge-forward) is a team decision
+  outside this spec.
+
 ## 6. Scoped workstreams
 
 | # | Work | Where | Size | Depends on |
@@ -294,7 +331,7 @@ This spec's comparison is a *consumer* of that pattern, not its driver.
 | **W1** | Per-run env coordinate — **half-landed by #868** (always-filled `source_ref` provenance + Sim-DB surfacing ✅). Remaining: schema (`environment: {repo, ref}` on conditions) + the multi-entry `environments: []` provenance form (§3.1) | workbench (+ viva-template / viva-workspace schema) | **S** (~1 PR) | — |
 | **W2** | Metrics contract (§4) + per-engine extractors ported from harness logic | sms-ecoli (harness) + this spec | **M** (~2–3 PRs) | — (parallel with W1) |
 | **W3** | Compare node: two artifacts → report + tolerance verdicts; verdicts → report cards; transfer becomes an explicit node | sms-ecoli + workbench mapping | **M** (~2–3 PRs) | W2 |
-| **W4** | AWS dispatch — **scope reduced by §5.5**: viva-api already builds/runs vEcoli images and `dependsOn` chaining works in prod, so what remains is the comparison-DAG wiring (2 sims → 1 dependent compare job) + capability detection (Q5) | **viva-api** | **M** (~2 PRs) | W1, W2 |
+| **W4** | AWS dispatch — **rescoped by §5.6**: PR-1 is *land viva-api #258* (container job defs — already written, gated on pilots); PR-2 = comparison-DAG wiring **as nodes in the new app-level scheduler** (#260) + capability detection (Q5) + the two ECR tag schemes | **viva-api** | **M** (~2 PRs, one pre-written) | W1, W2, #258/#260 pilots |
 | **W5** | Local dual-env: wire managed materialization for env B + job-style exec; ParCa cache → content-addressed store. **Deprioritized (§5.5):** developer convenience, not the product path — the container path (W4) is primary | workbench | **M** (~3 PRs) | W1; *trails W4* |
 | **W6** | UX: investigation graph renders the DAG with per-node env badges; comparison report per-run | workbench | **S** (~1–2 PRs) | W3 |
 
@@ -386,9 +423,10 @@ and migrates onto the step-network engine when that reconciliation lands.
 >    than design from scratch.)*
 > 3. Does viva-api's Batch integration expose **job dependencies** (compare job
 >    starts after both sim jobs land), or should the workbench poll-and-dispatch
->    the compare job itself? *(§5.5: answered — `dependsOn` chaining landed and
->    was fixed against real AWS Batch (#226/#229), in prod since 0.9.40. Please
->    confirm it is exposed at the dispatch-API level the comparison needs.)*
+>    the compare job itself? *(ANSWERED — twice, see §5.6: `dependsOn` landed in
+>    0.9.40, but unmerged PR #260 replaces it with app-level incremental
+>    submission. Plan the compare job as a node in viva-api's app-level
+>    scheduler.)*
 > 4. Anything about the per-commit ECR image convention (no floating tags) that
 >    the two-engine case complicates — e.g., resolving "latest built commit" for
 >    two repos atomically?
