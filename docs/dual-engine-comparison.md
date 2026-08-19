@@ -347,12 +347,31 @@ and migrates onto the step-network engine when that reconciliation lands.
 
 ## Appendix A — hand-off prompt for the viva-api session
 
-> **Context:** vivarium-workbench is designing a dual-engine comparison workflow
+> **Context:** vivarium-workbench is building a dual-engine comparison workflow
 > (see `docs/dual-engine-comparison.md` in the workbench repo): two whole-cell
 > models — `CovertLabEcoli/sms-ecoli` (process-bigraph) and
 > `CovertLabEcoli/vEcoli-private` (native vEcoli) — each run as its **own** Batch
 > job in its **own** per-commit image, followed by a dependent compare job that
 > consumes one small metrics artifact from each run's S3 output.
+>
+> **What already exists (as of 2026-08-19) — the concrete pieces you'd be wiring:**
+> - **The artifact + per-engine extractors are merged** (sms-ecoli #82):
+>   `docs/comparison-metrics-v1.md` (the contract — each engine emits its
+>   gen-1-windowed metric series on its native emit grid),
+>   `scripts/extract_metrics_v2.py` (candidate side), and
+>   `scripts/extract_metrics_vecoli.py` (reference side — deliberately zero repo
+>   imports, so it runs inside vEcoli-private's env; its only remaining stub is
+>   S3 reads, moot when it runs in-job with local output).
+> - **The container stage is on sms-ecoli main**: item 71's
+>   `docker/batch-container-entrypoint.sh` (+ Dockerfile wiring, #78) for plain
+>   container-type Batch jobs.
+> - **The run-side provenance is merged** (workbench #885): per-run
+>   `environment: {repo, ref}` declarations + multi-entry `environments:`
+>   manifest pins, ready to record what your dispatch resolves.
+>
+> So the ask is the **comparison-DAG wiring**: dispatch candidate-sim +
+> reference-sim (each image runs its sim then its extractor, landing a
+> `comparison-metrics/v1` artifact to S3) → one dependent compare job.
 >
 > **Questions for you (W4 of that spec):**
 > 1. Can `vEcoli-private` be registered as a simulator source in viva-api's
