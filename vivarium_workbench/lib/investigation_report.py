@@ -189,6 +189,58 @@ def _embed_visualizations(study_dir: Path, viz_list, budget: list) -> list:
     return out
 
 
+_HTML_PER_FILE_MAX = 2_500_000    # a single inlined HTML figure (Plotly etc.)
+_HTML_FIG_DIRS = ("viz", "charts")
+_HTML_FIG_SKIP = ("model-loom.html",)  # reserved for the Model section, not a result figure
+
+
+def _humanize_stem(stem: str) -> str:
+    return re.sub(r"[-_]+", " ", stem).strip().capitalize()
+
+
+def _embed_html_figures(study_dir: Path, budget: list, skip_names: set) -> list:
+    """Inline a study's on-disk HTML figures (``viz/*.html`` / ``charts/*.html``)
+    as raw HTML so the self-contained report shows them.
+
+    This is how the ``local:`` (live-rendered) visualizations every current
+    workspace uses reach the downloadable report: the dashboard renders them
+    live, and the study commits the rendered artifact next to its ``study.yaml``;
+    here we inline that committed HTML. Complements :func:`_embed_visualizations`,
+    which only inlines ``image:``-addressed raster/vector figures as data-URIs.
+
+    Ordered by filename for determinism; respects the shared inline-size budget;
+    ``skip_names`` (e.g. an already-embedded image basename) avoids duplicating a
+    figure surfaced through another path. Fully guarded — an unreadable file is
+    skipped, never fatal.
+    """
+    out: list = []
+    seen: set = set()
+    for sub in _HTML_FIG_DIRS:
+        d = study_dir / sub
+        if not d.is_dir():
+            continue
+        for f in sorted(d.glob("*.html")):
+            base = f.name
+            if base in _HTML_FIG_SKIP or base in skip_names or base in seen:
+                continue
+            seen.add(base)
+            try:
+                size = f.stat().st_size
+            except OSError:
+                continue
+            if size > _HTML_PER_FILE_MAX or budget[0] + size > _IMG_TOTAL_MAX:
+                out.append({"name": _humanize_stem(f.stem), "skipped": True,
+                            "reason": "too large to inline"})
+                continue
+            try:
+                html = f.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            budget[0] += size
+            out.append({"name": _humanize_stem(f.stem), "html": html})
+    return out
+
+
 _LOOM_IMG_CANDIDATES = (
     "viz/model-loom.png", "viz/model-loom.svg",
     "visualizations/model-loom.png", "visualizations/model-loom.svg",
@@ -323,16 +375,39 @@ def _compact_bigraph(state: dict) -> dict:
     return {"processes": procs, "stores": stores}
 
 
+def _baseline_composite_id(spec: dict) -> "str | None":
+    """The study's baseline composite id, from either schema shape:
+
+    - v4: ``conditions.baseline.composite`` (a single dict) — what current
+      studies author, and what the dashboard's Model tab reads.
+    - legacy v3: the first entry of the top-level ``baseline:`` list.
+
+    Returns None when neither carries a composite. Reading only the legacy list
+    is why v4 studies (every current one) rendered no Model figure in the
+    downloadable report.
+    """
+    conditions = spec.get("conditions")
+    if isinstance(conditions, dict):
+        base = conditions.get("baseline")
+        if isinstance(base, dict) and base.get("composite"):
+            return str(base["composite"])
+        # tolerate a list-shaped conditions.baseline too
+        if isinstance(base, list):
+            for b in base:
+                if isinstance(b, dict) and b.get("composite"):
+                    return str(b["composite"])
+    for b in (spec.get("baseline") or []):
+        if isinstance(b, dict) and b.get("composite"):
+            return str(b["composite"])
+    return None
+
+
 def _model_topology(ws_root, spec: dict) -> "dict | None":
-    """Best-effort bigraph topology for the study's first baseline composite,
-    used to render the loom view in the Model section. Fully guarded: any
+    """Best-effort bigraph topology for the study's baseline composite, used to
+    render the loom view in the Model section. Fully guarded: any
     resolution/import failure returns None so the report never breaks."""
     try:
-        cid = None
-        for b in (spec.get("baseline") or []):
-            if isinstance(b, dict) and b.get("composite"):
-                cid = b["composite"]
-                break
+        cid = _baseline_composite_id(spec)
         if not cid:
             return None
         from vivarium_workbench.lib.composite_resolve import resolve_composite
@@ -386,11 +461,22 @@ def build_report_data(ws_root, inv_slug: str) -> dict:
             s["agent_trajectory"] = at
         if pt:
             s["policy_trajectory"] = pt
-        # inline any on-disk study visualization images (self-contained report)
+        # inline study visualizations so the self-contained report shows them:
+        #   1. `image:`-addressed raster/vector figures → data-URIs
+        #   2. on-disk viz/charts HTML (the committed render of every `local:`
+        #      live visualization current workspaces use) → inlined HTML
+        study_dir = wp.studies / real_slug
+        figs = []
         if spec.get("visualizations"):
-            figs = _embed_visualizations(wp.studies / real_slug, spec["visualizations"], img_budget)
-            if figs:
-                s["figures_embedded"] = figs
+            figs.extend(_embed_visualizations(study_dir, spec["visualizations"], img_budget))
+        img_basenames = {
+            Path(str(v.get("address", ""))[len("image:"):]).name
+            for v in (spec.get("visualizations") or [])
+            if isinstance(v, dict) and str(v.get("address", "")).startswith("image:")
+        }
+        figs.extend(_embed_html_figures(study_dir, img_budget, img_basenames))
+        if figs:
+            s["figures_embedded"] = figs
         # resolve the baseline composite's bigraph topology for the Model loom view
         topo = _model_topology(ws_root, spec)
         if topo:
