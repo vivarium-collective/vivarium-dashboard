@@ -145,7 +145,11 @@ def _build_spine(ws_root, inv_slug: str, studies: list) -> dict:
 
 # inline-image budget: keep the self-contained report a sane size
 _IMG_PER_FILE_MAX = 1_400_000     # skip a single figure larger than this
-_IMG_TOTAL_MAX = 11_000_000       # stop embedding once the report gets heavy
+# The model loom is the study's most important figure and a rasterised loom of a
+# large composite legitimately runs past the generic figure cap (e.g. an atlas
+# loom ~1.4-2.5 MB), so it gets its own higher per-file ceiling.
+_LOOM_IMG_PER_FILE_MAX = 3_000_000
+_IMG_TOTAL_MAX = 16_000_000       # stop embedding once the report gets heavy
 _IMG_MIME = {".svg": "image/svg+xml", ".png": "image/png", ".gif": "image/gif",
              ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp"}
 
@@ -252,8 +256,9 @@ def _model_loom_img(study_dir: Path, budget: list) -> "str | None":
 
     Looks for a saved loom render at ``viz/model-loom.{png,svg}`` (produced by
     ``vivarium-workbench render-loom``). PNG is preferred — a rasterised loom is
-    ~0.3 MB vs a 1-4 MB KaTeX/font-heavy vector SVG. Respects the shared inline-
-    image budget; returns None when absent or oversized.
+    ~0.3 MB vs a 1-4 MB KaTeX/font-heavy vector SVG. Respects the total inline
+    budget and its own higher per-file cap (``_LOOM_IMG_PER_FILE_MAX``); returns
+    None when absent or oversized.
     """
     for rel in _LOOM_IMG_CANDIDATES:
         f = study_dir / rel
@@ -263,7 +268,7 @@ def _model_loom_img(study_dir: Path, budget: list) -> "str | None":
         if ext not in _IMG_MIME:
             continue
         size = f.stat().st_size
-        if size > _IMG_PER_FILE_MAX or budget[0] + size > _IMG_TOTAL_MAX:
+        if size > _LOOM_IMG_PER_FILE_MAX or budget[0] + size > _IMG_TOTAL_MAX:
             return None
         try:
             data = base64.b64encode(f.read_bytes()).decode("ascii")

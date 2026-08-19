@@ -87,3 +87,26 @@ def test_embed_html_figures_respects_size_cap(tmp_path):
 
 def test_embed_html_figures_empty_when_no_viz_dirs(tmp_path):
     assert _embed_html_figures(tmp_path, [0], set()) == []
+
+
+# --- _model_loom_img: dedicated (higher) per-file cap ------------------------
+
+def test_loom_img_uses_its_own_higher_cap(tmp_path, monkeypatch):
+    """A model-loom PNG larger than the GENERIC figure cap still inlines, up to
+    the loom's own higher cap — a large atlas loom shouldn't silently vanish."""
+    import vivarium_workbench.lib.investigation_report as mod
+    d = tmp_path / "viz"; d.mkdir(parents=True)
+    (d / "model-loom.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 2000)  # ~2 KB
+    # generic cap BELOW the file, loom cap ABOVE it → the loom still inlines
+    monkeypatch.setattr(mod, "_IMG_PER_FILE_MAX", 500)
+    monkeypatch.setattr(mod, "_LOOM_IMG_PER_FILE_MAX", 50_000)
+    out = mod._model_loom_img(tmp_path, [0])
+    assert out and out.startswith("data:image/png;base64,")
+
+
+def test_loom_img_skipped_over_its_own_cap(tmp_path, monkeypatch):
+    import vivarium_workbench.lib.investigation_report as mod
+    d = tmp_path / "viz"; d.mkdir(parents=True)
+    (d / "model-loom.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"x" * 2000)
+    monkeypatch.setattr(mod, "_LOOM_IMG_PER_FILE_MAX", 100)  # below the file size
+    assert mod._model_loom_img(tmp_path, [0]) is None
