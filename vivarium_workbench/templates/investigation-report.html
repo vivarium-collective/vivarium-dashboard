@@ -207,6 +207,10 @@ figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:none}
 .fig-scroll{overflow-x:auto}
 .loom-embed{margin:12px 0 4px}
 .loom-frame{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:var(--surface);height:440px;resize:vertical;min-height:240px}
+/* An inlined local: visualization runs in its own iframe so its scripts execute
+   and its (often full-document) CSS can't leak into the report. onload sizes it
+   to content; this is the pre-resize default. */
+.viz-frame{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--surface);height:460px;display:block}
 .loom-iframe{width:100%;height:100%;border:0;display:block}
 .loom-fallback{margin-top:6px}
 .loom-fallback>summary{cursor:pointer;color:var(--accent);font-size:12px;user-select:none}
@@ -788,7 +792,7 @@ function renderStudy(s, inv, idx){
   // URIs, and `local:` live visualizations as their committed rendered HTML.
   (s.figures_embedded||[]).forEach(im=>{
     if(im.data_uri) figHtml+=`<figure><img src="${im.data_uri}" alt="${esc(im.name)}" loading="lazy"><figcaption>${esc(im.name)}</figcaption></figure>`;
-    else if(im.html) figHtml+=`<div style="margin:12px 0"><div class="kicker" style="margin-bottom:6px">${esc(im.name)}</div><div class="embedded-viz">${im.html}</div></div>`;
+    else if(im.html) figHtml+=`<figure class="embedded-viz" style="margin:12px 0"><figcaption class="kicker" style="margin-bottom:6px">${esc(im.name)}</figcaption><iframe class="viz-frame" srcdoc="${esc(im.html)}" loading="lazy" onload="try{this.style.height=(this.contentWindow.document.documentElement.scrollHeight+8)+'px';}catch(e){}"></iframe></figure>`;
     else if(im.skipped) figHtml+=`<div class="texp" style="color:var(--ink-3)">↪ ${esc(im.name)} — ${esc(im.reason||'not inlined')}</div>`;
   });
   const auditHtml=(s.sourcing&&s.sourcing.audit&&s.sourcing.audit.axes)?`<div style="margin:10px 0"><div class="kicker" style="margin-bottom:6px">Audit — sourcing gate (4 axes)</div>${vizAuditAxes(s)}</div>`:'';
