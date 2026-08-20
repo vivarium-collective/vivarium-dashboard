@@ -8,21 +8,9 @@ from pathlib import Path
 import yaml
 
 from vivarium_workbench.lib.atomic_io import atomic_write_text
+from vivarium_workbench.lib.node_store import study_dir as _study_dir
 from vivarium_workbench.lib.event_log import emit_event
 from investigation_contracts.lifecycle import initial_state
-
-
-def _study_dir(ws_root: Path, slug: str) -> Path | None:
-    try:
-        from vivarium_workbench.lib.workspace_paths import WorkspacePaths
-        wp = WorkspacePaths.load(ws_root)
-        d = wp.studies / slug
-        if d.is_dir():
-            return d
-    except Exception:  # noqa: BLE001
-        pass
-    d = Path(ws_root) / "studies" / slug
-    return d if d.is_dir() else None
 
 
 def create_finding(ws_root: Path, body: dict) -> tuple[dict, int]:

@@ -28,10 +28,10 @@ latest_run_timestamp        → most-recent run wall-clock time from runs_meta
 
 from __future__ import annotations
 
-import sqlite3
 import sys
 import threading
 from pathlib import Path
+from vivarium_workbench.lib.study_spec import latest_run_timestamp
 
 import yaml
 
@@ -41,33 +41,6 @@ chance to call ``_ws_add_to_sys_path`` and inject a workspace onto it. Used by
 ``build_analysis_options``'s image-registry fallback (backlog item 39)."""
 
 _analysis_registry_lock = threading.Lock()
-
-
-def latest_run_timestamp(runs_db: Path) -> float | None:
-    """Return the most recent run's wall-clock time from ``runs_meta``.
-
-    Prefers ``completed_at`` (when the run finished, hence when its viz
-    could have been rendered), falling back to ``started_at``. Returns
-    ``None`` if the table is unreadable or empty.
-
-    Why not ``runs.db`` file mtime: the db is opened in WAL mode, and any
-    *read* connection (including the one render_visualizations uses to draw
-    the charts) can trigger a checkpoint that bumps the file mtime AFTER the
-    viz HTML was written. That made freshly-rendered viz look "older" than
-    the db and get silently dropped. The recorded run timestamps are real
-    data and immune to that race.
-    """
-    try:
-        conn = sqlite3.connect(f"file:{runs_db}?mode=ro", uri=True, timeout=1.0)
-        try:
-            row = conn.execute(
-                "SELECT MAX(COALESCE(completed_at, started_at)) FROM runs_meta"
-            ).fetchone()
-        finally:
-            conn.close()
-        return float(row[0]) if row and row[0] is not None else None
-    except Exception:  # noqa: BLE001 — best-effort freshness probe
-        return None
 
 
 def run_post_run_scripts(spec: dict, ws_root: Path) -> tuple[list[str], list[dict]]:
