@@ -156,67 +156,6 @@ def _registry_include_pkgs(ws_data: dict | None) -> set[str] | None:
     return pkgs or None
 
 
-def _build_reexport_map(include: set[str]) -> dict[str, str]:
-    """Map re-exported classes → the allow-listed package that re-exports them.
-
-    For each allow-listed package, import it and scan its top-level namespace
-    (``dir(mod)``) for classes whose ``__module__`` top-level segment is a
-    DIFFERENT package. Those are re-exports: a class defined elsewhere (e.g.
-    ``spatio_flux.visualizations.field_heatmap.FieldHeatmap``) that the
-    allow-listed package surfaces as part of its own API (e.g. exposed as
-    ``viva_munk.FieldHeatmap``).
-
-    The returned map is keyed by the class's full definition address
-    (``def_module + '.' + qualname``, e.g.
-    ``spatio_flux.visualizations.field_heatmap.FieldHeatmap``) AND, as a
-    looser fallback, by ``(def_top_pkg, class_name)`` joined as
-    ``"<def_top_pkg>::<name>"``. The value is the re-exporting package's
-    normalized name (e.g. ``viva_munk``).
-
-    Imports are guarded with try/except — a single bad import never blanks the
-    registry; the worst case is a class is not surfaced. The allow-listed set is
-    small (a handful of packages) so importing them here is cheap.
-    """
-    import importlib
-    import inspect
-
-    # Framework infrastructure packages are intentionally hidden from the
-    # filtered registry; do NOT resurrect them as re-exports just because an
-    # allow-listed package re-imports e.g. process_bigraph.Composite into its
-    # namespace. Mirrors _FRAMEWORK_PKGS in the registry subprocess.
-    _FRAMEWORK_PKGS = {
-        "process_bigraph", "bigraph_schema", "bigraph_viz",
-        "viva_superpowers", "vivarium_workbench",
-    }
-
-    reexports: dict[str, str] = {}
-    for pkg in sorted(include):
-        try:
-            mod = importlib.import_module(pkg)
-        except Exception:
-            continue
-        for attr in dir(mod):
-            try:
-                obj = getattr(mod, attr)
-            except Exception:
-                continue
-            if not inspect.isclass(obj):
-                continue
-            def_mod = getattr(obj, "__module__", "") or ""
-            def_top = def_mod.split(".")[0].replace("-", "_")
-            if not def_top or def_top == pkg:
-                continue  # defined in the re-exporting package itself → not a re-export
-            if def_top in include:
-                continue  # already surfaced by its own allow-listed package
-            if def_top in _FRAMEWORK_PKGS:
-                continue  # framework infra stays hidden; not a workspace re-export
-            qualname = getattr(obj, "__qualname__", attr) or attr
-            full_addr = f"{def_mod}.{qualname}"
-            reexports[full_addr] = pkg
-            reexports[f"{def_top}::{qualname}"] = pkg
-    return reexports
-
-
 def _reexport_map_via_worker(ws_root: "Path", include: set) -> dict:
     """The re-export map via the env worker (imports the allow-listed packages
     there, not in the HTTP process). Soft-degrade to ``{}`` — a bad import or an

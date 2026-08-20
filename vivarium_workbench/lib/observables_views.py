@@ -28,9 +28,7 @@ from __future__ import annotations
 
 import json
 import re
-import sys
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -69,95 +67,6 @@ def _resolve_registry_ref(ref: str, keys) -> str | None:
     if not matches:
         return None
     return min(matches, key=lambda k: (len(k), k))
-
-
-def build_composite_state_for_observables(ws_root: Path, ref: str) -> tuple[Any, Any, Any]:
-    """Build a composite by ``ref`` and return ``(core, state, schema)``.
-
-    Reuses the SAME build path the Composite Explorer uses
-    (``_get_composite_state`` / ``_get_composite_resolve``): a
-    ``@composite_generator`` entry via ``build_generator``, else a spec file
-    parsed + ``substitute_parameters``-resolved. A best-effort workspace
-    ``build_core()`` is threaded through so registered ``LabeledArray`` types
-    resolve their ``_labels`` catalogs (tolerated if it fails — ``core`` may be
-    ``None``, in which case only inline ``_labels`` are recoverable).
-
-    Raises ``LookupError`` for an unknown ref and ``RuntimeError`` for a build
-    failure; the caller maps those to clear 4xx statuses.
-    """
-    ws_root = Path(ws_root)
-    ws_str = str(ws_root)
-    if ws_str not in sys.path:
-        sys.path.insert(0, ws_str)
-
-    ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8")) or {}
-    pkg = ws_data.get("package_path") or ("pbg_" + str(ws_data.get("name", "")).replace("-", "_"))
-
-    # Best-effort core for labeled-array catalog resolution. Absence is fine —
-    # leaves come from the state tree alone; only static catalogs degrade.
-    core = None
-    try:
-        core_module = __import__(f"{pkg}.core", fromlist=["build_core"])
-        core = core_module.build_core()
-    except Exception:
-        core = None
-
-    # Generator branch (mirrors _get_composite_state): resolve via the live
-    # pbg-superpowers registry.
-    entry: Any = None
-    apply_core_extensions: Any = None
-    build_generator: Any = None
-    try:
-        from process_bigraph.composite_generator import (
-            _REGISTRY,
-            build_generator as _build_generator,
-            discover_generators,
-            apply_core_extensions as _apply_core_extensions,
-        )
-        build_generator = _build_generator
-        apply_core_extensions = _apply_core_extensions
-        if not _REGISTRY:
-            try:
-                discover_generators()
-            except Exception:
-                pass
-        entry = _REGISTRY.get(ref)
-        if entry is None:
-            # Short study refs (``baseline``) miss the FQN-keyed registry;
-            # resolve via the canonical-alias rule before falling through.
-            canon = _resolve_registry_ref(ref, _REGISTRY.keys())
-            if canon is not None:
-                entry = _REGISTRY.get(canon)
-    except ImportError:
-        entry = None
-
-    if entry is not None:
-        if core is not None and apply_core_extensions is not None:
-            try:
-                core = apply_core_extensions(entry, core)
-            except Exception:
-                pass
-        try:
-            doc = build_generator(entry, core=core)
-        except Exception as e:  # noqa: BLE001
-            raise RuntimeError(f"generator build failed: {e}") from e
-        if isinstance(doc, dict) and isinstance(doc.get("state"), dict):
-            return core, doc["state"], doc.get("schema")
-        return core, doc, None
-
-    # Spec-parse branch (mirrors _get_composite_resolve): read the file +
-    # substitute parameter defaults to get the live state tree.
-    from vivarium_workbench.lib.composite_lookup import find_composite_path, substitute_parameters
-    path = find_composite_path(ws_root, pkg, ref)
-    if path is None or not path.is_file():
-        raise LookupError(f"composite not found: {ref}")
-    try:
-        text = path.read_text(encoding="utf-8")
-        spec = json.loads(text) if path.suffix.lower() == ".json" else (yaml.safe_load(text) or {})
-        state = substitute_parameters(spec.get("state") or {}, spec.get("parameters") or {}, {})
-    except Exception as e:  # noqa: BLE001
-        raise RuntimeError(f"spec parse failed: {e}") from e
-    return core, state, spec.get("schema") or spec.get("composition")
 
 
 _LINEAGE_AGENT_RE = re.compile(r"^agents\.\d+\.(.+)$")

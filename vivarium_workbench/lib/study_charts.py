@@ -1231,47 +1231,6 @@ def _pick_first_nonempty_db(primary: Path,
     return (None, "none")
 
 
-def _load_latest_run(db_path: Path) -> tuple[list[dict], list[float], str | None]:
-    """Return (parsed_states, times, simulation_id) for the latest run in db_path."""
-    conn = sqlite3.connect(str(db_path))
-    try:
-        if not _table_exists(conn, "simulations") or not _table_exists(conn, "history"):
-            return [], [], None
-        row = conn.execute(
-            "SELECT simulation_id FROM simulations ORDER BY started_at DESC LIMIT 1"
-        ).fetchone()
-        if row is None:
-            return [], [], None
-        sim_id = row[0]
-        rows = conn.execute(
-            "SELECT step, global_time, state FROM history "
-            "WHERE simulation_id=? ORDER BY step ASC",
-            (sim_id,),
-        ).fetchall()
-    finally:
-        conn.close()
-    if not rows:
-        return [], [], sim_id
-    times = [r[1] for r in rows]
-    parsed = [json.loads(r[2]) for r in rows]
-    return parsed, times, sim_id
-
-
-def _resolve_path(state: dict, path: str, index=None):
-    """Walk a dotted path through state; index into the leaf array if given."""
-    node = state
-    for seg in path.split("."):
-        if isinstance(node, dict) and seg in node:
-            node = node[seg]
-        else:
-            return None
-    if index is None:
-        return node
-    if isinstance(node, list) and isinstance(index, int) and 0 <= index < len(node):
-        return node[index]
-    return None
-
-
 def _pass_if_to_overlay(pass_if: dict):
     """Translate pass_if to (target_band, hline) for _render_svg."""
     op = pass_if.get("op")

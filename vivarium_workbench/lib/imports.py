@@ -18,12 +18,6 @@ def get_import(ws_root: Path, name: str) -> dict | None:
     return (ws.get("imports") or {}).get(name)
 
 
-def list_imports(ws_root: Path) -> dict:
-    """Return the imports catalog (empty dict if none registered)."""
-    ws = load_workspace(ws_root / "workspace.yaml")
-    return ws.get("imports") or {}
-
-
 def register_import(
     ws_root: Path, *,
     name: str, source: str, ref: str, mode: ImportMode,
@@ -50,16 +44,3 @@ def register_import(
     imports[name] = entry
     save_workspace(ws_file, ws)
 
-
-def unregister_import(ws_root: Path, name: str) -> bool:
-    """Remove an import entry. Returns True if it existed, False otherwise."""
-    ws_file = ws_root / "workspace.yaml"
-    ws = load_workspace(ws_file)
-    imports = ws.get("imports") or {}
-    if name not in imports:
-        return False
-    del imports[name]
-    if not imports:
-        ws.pop("imports", None)
-    save_workspace(ws_file, ws)
-    return True

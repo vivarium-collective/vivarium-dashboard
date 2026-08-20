@@ -45,7 +45,6 @@ from vivarium_workbench.lib.federation import (
     federated_studies,
     linked_workspaces,
 )
-from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
 
@@ -120,85 +119,6 @@ def _last_updated(root: Path) -> str | None:
     except Exception:
         pass
     return None
-
-
-def _own_referenced_ids(ws_root: Path) -> set[str]:
-    """Item ids referenced by THIS workspace's own studies/investigations.
-
-    Collects:
-      - composite ids from own study specs' ``baseline[].composite`` /
-        ``variants[].composite`` (after full load_spec migration, so v2/v3/v4
-        study shapes are all normalized to the same legacy-projected view).
-      - federated study ids (``<repo>::<study>``) referenced by own
-        investigation.yaml ``studies:``/``members:`` membership lists.
-
-    Best-effort: a malformed spec is skipped, never raises.
-    """
-    ws_root = Path(ws_root)
-    out: set[str] = set()
-
-    try:
-        wp = WorkspacePaths.load(ws_root)
-    except Exception:
-        return out
-
-    # Local import: investigations.py is heavier (spec migration/validation)
-    # than this leaf module's other deps, and isn't needed on every caller of
-    # workspace_paths/federation, so keep the import scoped to this function.
-    try:
-        from vivarium_workbench.lib.investigations import load_spec as _load_study_spec
-    except Exception:
-        _load_study_spec = None
-
-    if _load_study_spec is not None:
-        try:
-            for sdir in wp.iter_study_dirs():
-                f = sdir / "study.yaml"
-                if not f.is_file():
-                    f = sdir / "spec.yaml"
-                if not f.is_file():
-                    continue
-                try:
-                    spec = _load_study_spec(f)
-                except Exception:
-                    continue
-                if not isinstance(spec, dict):
-                    continue
-                for entry in (spec.get("baseline") or []):
-                    if isinstance(entry, dict) and entry.get("composite"):
-                        out.add(str(entry["composite"]))
-                for entry in (spec.get("variants") or []):
-                    if isinstance(entry, dict) and entry.get("composite"):
-                        out.add(str(entry["composite"]))
-        except Exception:
-            pass
-
-    try:
-        idir = wp.investigations
-        if idir.is_dir():
-            for d in idir.iterdir():
-                if not d.is_dir():
-                    continue
-                f = d / "investigation.yaml"
-                if not f.is_file():
-                    continue
-                try:
-                    spec = yaml.safe_load(f.read_text(encoding="utf-8")) or {}
-                except Exception:
-                    continue
-                if not isinstance(spec, dict):
-                    continue
-                for item in investigation_member_slugs(spec):
-                    slug = (
-                        item if isinstance(item, str)
-                        else (item or {}).get("study") or (item or {}).get("slug")
-                    )
-                    if slug and "::" in str(slug):
-                        out.add(str(slug))
-    except Exception:
-        pass
-
-    return out
 
 
 def _own_module_usage(ws_root: Path) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
