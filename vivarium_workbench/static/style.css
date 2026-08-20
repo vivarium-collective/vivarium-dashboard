@@ -4069,7 +4069,7 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .tool-matches { display: flex; flex-direction: column; gap: 4px; }
 .tool-row + .tool-row { margin-top: 8px; }
 .viewer-target-list { display: flex; flex-direction: column; gap: 4px; }
-.explorer { display:flex; flex-direction:column; gap:10px; }
+
 /* top bar: run picker · view tabs · pop-out */
 .exp-topbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center;
   padding-bottom:8px; border-bottom:1px solid #2a313c; }
@@ -4094,12 +4094,11 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .exp-view { flex:1 1 auto; min-width:0; min-height:460px;
   background:#0e1116; border:1px solid #1d2530; border-radius:6px; }
 .exp-view svg { display:block; margin:0 auto; }
-.explorer-loading { color:#8896a5; font-size:0.9em; padding:8px 0; }
+
 /* full-window standalone page */
-.explorer-standalone { position:fixed; inset:0; padding:14px 18px; box-sizing:border-box;
-  display:flex; flex-direction:column; background:#0b0e12; }
-.explorer-standalone .explorer { flex:1 1 auto; min-height:0; }
-.explorer-standalone .exp-body { flex:1 1 auto; min-height:0; }
+
+.explorer-standalone 
+
 .explorer-standalone .exp-view { height:100%; }
 .exp-rail #ts-obs, .exp-rail #ts-search { width:100%; }
 .exp-rail #ts-obs { height:220px; }

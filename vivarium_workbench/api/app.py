@@ -90,7 +90,6 @@ from vivarium_workbench.lib import download_views as _download_views
 from vivarium_workbench.lib import analysis_outputs as _analysis_outputs
 from vivarium_workbench.lib import simulations_index as _simulations_index
 from vivarium_workbench.lib import events as _events
-from vivarium_workbench.lib import explorer_data as _explorer_data
 from vivarium_workbench.lib import metadata_mutations as _meta_mut
 from vivarium_workbench.lib import study_crud_mutations as _study_crud_mut
 from vivarium_workbench.lib.adapters import scientific_content as _record
@@ -157,10 +156,6 @@ from vivarium_workbench.lib.models import (
     DataSourcesPayload,
     DirtyFile,
     DirtyStatus,
-    ExplorerFlux,
-    ExplorerObservables,
-    ExplorerProteinBreakdown,
-    ExplorerRuns,
     IsetDetail,
     InputsPayload,
     NeedsAttention,
@@ -170,8 +165,6 @@ from vivarium_workbench.lib.models import (
     CitationGaps,
     ExpertSearchResult,
     StudyFindingsPopulateResult,
-    ExplorerSeries,
-    ExplorerVector,
     FrameworkMetrics,
     GithubRepo,
     GitStatus,
@@ -2156,242 +2149,6 @@ def create_app() -> FastAPI:
     # -----------------------------------------------------------------------
     # Data explorer routes  (always HTTP 200 — error carried in body)
     # -----------------------------------------------------------------------
-
-    @app.get(
-        "/api/explorer/runs",
-        response_model=ExplorerRuns,
-        tags=["Data, inputs & references"],
-        summary="Run-picker list for the Data Explorer card",
-    )
-    def explorer_runs(ws: Path = Depends(get_workspace)) -> ExplorerRuns:
-        """Run-picker list for the Analyses Data Explorer.
-
-        Returns all SQLite, zarr, and parquet runs that have emitted history,
-        ordered so that parquet runs appear first.  Always HTTP 200 — on error
-        the body carries ``{"error": <msg>, "runs": []}``.
-
-        Library-backed via ``lib.explorer_data.list_runs``.
-        """
-        try:
-            result = _explorer_data.list_runs(ws)
-            return ExplorerRuns.model_validate({"runs": result})
-        except Exception as exc:  # noqa: BLE001
-            return ExplorerRuns.model_validate({"error": str(exc), "runs": []})
-
-    @app.get(
-        "/api/explorer/observables",
-        response_model=ExplorerObservables,
-        tags=["Data, inputs & references"],
-        summary="Observable discovery for one run store",
-    )
-    def explorer_observables(
-        db: Optional[str] = None,
-        run: Optional[str] = None,
-        ws: Path = Depends(get_workspace),
-    ) -> ExplorerObservables:
-        """Discover observable paths (scalars, vectors, bulk molecules) in a run.
-
-        ``?db=<path>`` selects the run store (SQLite, zarr, or parquet path).
-        ``?run=<id>`` narrows to a specific simulation inside a multi-run SQLite
-        db (ignored for zarr/parquet stores).
-
-        Missing ``?db=`` returns ``{"error": "missing db", "categories": {}}``
-        at HTTP 200 — matching the legacy handler exactly.
-
-        Library-backed via ``lib.explorer_data.list_observables``.
-        """
-        if not db:
-            return ExplorerObservables.model_validate(
-                {"error": "missing db", "categories": {}}
-            )
-        try:
-            result = _explorer_data.list_observables(db, run, workspace=ws)
-            return ExplorerObservables.model_validate(result)
-        except Exception as exc:  # noqa: BLE001
-            return ExplorerObservables.model_validate(
-                {"error": str(exc), "categories": {}}
-            )
-
-    @app.get(
-        "/api/explorer/series",
-        response_model=ExplorerSeries,
-        tags=["Data, inputs & references"],
-        summary="Aligned time-series for one or more observables",
-    )
-    def explorer_series(
-        db: Optional[str] = None,
-        paths: Optional[str] = None,
-        subsample: str = "400",
-        run: Optional[str] = None,
-        ws: Path = Depends(get_workspace),
-    ) -> ExplorerSeries:
-        """Aligned time-series values for one or more observable paths.
-
-        ``?db=<path>`` selects the run store.  ``?paths=a,b#2,c`` is a
-        comma-separated list of observable paths, each optionally followed by
-        ``#<int>`` to select a vector index.  ``?subsample=N`` (default 400)
-        limits the number of time-steps returned; non-integer values fall back
-        to 400.  ``?run=<id>`` selects a specific simulation in a multi-run db.
-
-        Missing ``?db=`` returns ``{"error": "missing db", "time": [], "series":
-        {}}`` at HTTP 200.
-
-        Library-backed via ``lib.explorer_data.get_series``.
-        """
-        if not db:
-            return ExplorerSeries.model_validate(
-                {"error": "missing db", "time": [], "series": {}}
-            )
-        # Replicate legacy paths parsing: comma-split, strip blanks, #index.
-        specs = []
-        for tok in (paths or "").split(","):
-            tok = tok.strip()
-            if not tok:
-                continue
-            if "#" in tok:
-                p, _, i = tok.partition("#")
-                specs.append((p, int(i) if i.isdigit() else None))
-            else:
-                specs.append((tok, None))
-        # Replicate legacy int-parse-with-fallback for subsample.
-        try:
-            sub = int(subsample)
-        except ValueError:
-            sub = 400
-        try:
-            result = _explorer_data.get_series(db, specs, sub, run, workspace=ws)
-            return ExplorerSeries.model_validate(result)
-        except Exception as exc:  # noqa: BLE001
-            return ExplorerSeries.model_validate(
-                {"error": str(exc), "time": [], "series": {}}
-            )
-
-    @app.get(
-        "/api/explorer/flux",
-        response_model=ExplorerFlux,
-        tags=["Data, inputs & references"],
-        summary="Flux map snapshot at one time-step",
-    )
-    def explorer_flux(
-        db: Optional[str] = None,
-        step: str = "0",
-        run: Optional[str] = None,
-        ws: Path = Depends(get_workspace),
-    ) -> ExplorerFlux:
-        """FBA flux map for one time-step, keyed by BiGG reaction ID.
-
-        ``?db=<path>`` selects the run store.  ``?step=<int>`` (default 0)
-        selects the emit step; non-integer values fall back to 0.
-        ``?run=<id>`` selects a specific simulation in a multi-run db.
-
-        Missing ``?db=`` returns ``{"error": "missing db", "fluxes": {}}`` at
-        HTTP 200.
-
-        Library-backed via ``lib.explorer_data.get_flux_auto``.
-        """
-        if not db:
-            return ExplorerFlux.model_validate({"error": "missing db", "fluxes": {}})
-        try:
-            step_int = int(step)
-        except ValueError:
-            step_int = 0
-        try:
-            _, id_map = _explorer_data.load_flux_assets()
-            result = _explorer_data.get_flux_auto(
-                db, step_int, id_map, run, workspace=ws
-            )
-            return ExplorerFlux.model_validate(result)
-        except Exception as exc:  # noqa: BLE001
-            return ExplorerFlux.model_validate({"error": str(exc), "fluxes": {}})
-
-    @app.get(
-        "/api/explorer/vector",
-        response_model=ExplorerVector,
-        tags=["Data, inputs & references"],
-        summary="Per-entity vector snapshot at one time-step",
-    )
-    def explorer_vector(
-        db: Optional[str] = None,
-        path: Optional[str] = None,
-        step: str = "0",
-        run: Optional[str] = None,
-        ws: Path = Depends(get_workspace),
-    ) -> ExplorerVector:
-        """Per-entity (ids, values) snapshot of a vector observable.
-
-        ``?db=<path>`` and ``?path=<observable>`` are both required.
-        ``?step=<int>`` (default 0) selects the emit step; non-integer falls
-        back to 0.  ``?run=<id>`` selects a specific simulation.
-
-        Missing ``?db=`` or ``?path=`` returns
-        ``{"error": "missing db/path", "ids": [], "values": [], "step": 0,
-        "time": null}`` at HTTP 200 — byte-identical to the legacy handler.
-
-        Library-backed via ``lib.explorer_data.get_vector``.
-        """
-        step_int = 0
-        if not db or not path:
-            return ExplorerVector.model_validate(
-                {"error": "missing db/path", "ids": [], "values": [],
-                 "step": 0, "time": None}
-            )
-        try:
-            step_int = int(step)
-        except ValueError:
-            step_int = 0
-        try:
-            result = _explorer_data.get_vector(db, path, step_int, run, ws)
-            return ExplorerVector.model_validate(result)
-        except Exception as exc:  # noqa: BLE001
-            return ExplorerVector.model_validate(
-                {"error": str(exc), "ids": [], "values": [],
-                 "step": step_int, "time": None}
-            )
-
-    @app.get(
-        "/api/explorer/protein-breakdown",
-        response_model=ExplorerProteinBreakdown,
-        tags=["Data, inputs & references"],
-        summary="Protein mass by functional category at one time-step",
-    )
-    def explorer_protein_breakdown(
-        db: Optional[str] = None,
-        path: Optional[str] = None,
-        step: str = "0",
-        run: Optional[str] = None,
-        ws: Path = Depends(get_workspace),
-    ) -> ExplorerProteinBreakdown:
-        """Protein mass grouped by functional category (count × MW per category).
-
-        ``?db=<path>`` and ``?path=<monomer-counts observable>`` are both
-        required.  ``?step=<int>`` (default 0) selects the emit step;
-        non-integer falls back to 0.  ``?run=<id>`` selects a specific
-        simulation.
-
-        Missing ``?db=`` or ``?path=`` returns
-        ``{"error": "missing db/path", "breakdown": {}, "step": 0,
-        "time": null}`` at HTTP 200 — byte-identical to the legacy handler.
-
-        Library-backed via ``lib.explorer_data.get_protein_breakdown``.
-        """
-        step_int = 0
-        if not db or not path:
-            return ExplorerProteinBreakdown.model_validate(
-                {"error": "missing db/path", "breakdown": {}, "step": 0, "time": None}
-            )
-        try:
-            step_int = int(step)
-        except ValueError:
-            step_int = 0
-        try:
-            result = _explorer_data.get_protein_breakdown(
-                db, path, step_int, run, ws
-            )
-            return ExplorerProteinBreakdown.model_validate(result)
-        except Exception as exc:  # noqa: BLE001
-            return ExplorerProteinBreakdown.model_validate(
-                {"error": str(exc), "breakdown": {}, "step": step_int, "time": None}
-            )
 
     # -----------------------------------------------------------------------
     # Reports & inputs routes

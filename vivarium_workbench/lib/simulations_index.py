@@ -1688,8 +1688,6 @@ def _launch_url_for_matched_tool(tool: dict, row: dict) -> "str | None":
     `_build3dSrc` / `_launchViewer`, so a chip built from this URL opens the
     exact same place a user would reach from the Analysis Tools tab:
 
-    - ``embed-explorer`` (built-in Data Explorer): the standalone explorer
-      page for this run.
     - ``embed-3d`` (built-in Parsimony Viewer): a per-STUDY match — a study
       either has a 3D pack or it doesn't, so the row's ``study_slug`` selects
       the tool's matched pack candidate; its hosted ``viewer_url`` wins, else
@@ -1705,11 +1703,6 @@ def _launch_url_for_matched_tool(tool: dict, row: dict) -> "str | None":
     kind = tool.get("kind") or "launcher"
     run_id = row.get("run_id")
     study = row.get("study_slug")
-
-    if kind == "embed-explorer":
-        if not run_id:
-            return None
-        return f"/assets/explorer.html?run={_urlquote(str(run_id), safe='')}"
 
     if kind == "embed-3d":
         matched = tool.get("matched") or []

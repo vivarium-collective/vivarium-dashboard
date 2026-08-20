@@ -1681,14 +1681,6 @@
     return html;
   }
 
-  function _renderExplorerCard() {
-    return '<div class="analyses-card" id="explorer-card">' +
-      '<div class="analyses-card-head"><strong>Data Explorer</strong></div>' +
-      '<p class="muted" style="font-size:0.85em;margin:2px 0 8px">' +
-      'Interactively explore any run: timeseries, scatter, allocation, and flux maps.</p>' +
-      '<div id="explorer-mount"></div></div>';
-  }
-
   function _launchViewer(uid, study) {
     // The read-only snapshot has no launch backend to call. Bail with a clear
     // message rather than fetch a 404 HTML page and throw a JSON-parse error.
@@ -1797,7 +1789,6 @@
   }
 
   // Open a tool's selected result full-window in a new tab. Per kind:
-  //   embed-explorer -> the standalone Data Explorer page for the run
   //   embed-3d       -> the (hosted or bundled) parsimony viewer for the study
   //   launcher       -> the target's external href, else the live launch endpoint
   function _openTool(toolId, btn) {
@@ -1807,10 +1798,7 @@
     var sel = card ? card.querySelector('.tool-select') : null;
     var idx = sel ? (parseInt(sel.value, 10) || 0) : 0;
     var m = items[idx] || items[0]; if (!m) return;
-    if (t.kind === 'embed-explorer') {
-      window.open(_analysesBase() + '/assets/explorer.html?run=' +
-        encodeURIComponent(m.ref || m.run_id || ''), '_blank', 'noopener');
-    } else if (t.kind === 'embed-3d') {
+    if (t.kind === 'embed-3d') {
       window.open(_build3dSrc(m), '_blank', 'noopener');
     } else if (m.href) {
       window.open(m.href, '_blank', 'noopener');
@@ -1827,7 +1815,7 @@
     var countEl   = document.getElementById('viz-count');
     if (!container) return;
     // Tools-first Analysis Tools tab, backed by GET /api/analysis-tools: built-in
-    // tools (Data Explorer, Parsimony Viewer) + external contributed viewers, each
+    // tools (Parsimony Viewer) + external contributed viewers, each
     // capability-matched to the runs/studies that satisfy its `requires`. Snapshot
     // mode reads the static api/analysis-tools.json bundle file; live mode hits the
     // endpoint. Parse defensively via text() so a missing/HTML response degrades to
@@ -1847,7 +1835,7 @@
         data = data || {};
         var tools = data.tools || [];
         if (!tools.length) {
-          container.innerHTML = '<p class="empty-state">No analysis tools for this workspace. Tools are built-in (Data Explorer, Parsimony Viewer) or contributed by the repo (a package\'s <code>workbench_viewers</code> module).</p>';
+          container.innerHTML = '<p class="empty-state">No analysis tools for this workspace. Tools are built-in (Parsimony Viewer) or contributed by the repo (a package\'s <code>workbench_viewers</code> module).</p>';
           if (countEl) countEl.textContent = '';
           return;
         }
