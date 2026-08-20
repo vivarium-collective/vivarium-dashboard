@@ -16,7 +16,17 @@ from urllib.request import Request, urlopen
 
 
 class SmsApiError(Exception):
-    """Raised when an sms-api call fails (non-200 or connection error)."""
+    """Raised when an sms-api call fails (non-200 or connection error).
+
+    ``status`` carries the HTTP status code when the failure was an HTTP error
+    (e.g. 404 from a deployment that predates an endpoint), else ``None`` for
+    connection-level failures — so callers can distinguish "old server" from
+    "unreachable" without parsing the message.
+    """
+
+    def __init__(self, message: str, status: "int | None" = None) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 class SmsApiClient:
@@ -33,7 +43,7 @@ class SmsApiClient:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310 — fixed scheme, internal tunnel
                 return json.loads(r.read().decode())
         except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}") from e
+            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
 
@@ -53,6 +63,17 @@ class SmsApiClient:
         """GET /core/v1/simulator/versions — all registered simulator builds."""
         return self._get("/core/v1/simulator/versions")
 
+    def capabilities(self) -> dict:
+        """GET /core/v1/capabilities — ``{version, capabilities: [str, ...]}``.
+
+        The deployment's capability advertisement (viva-api #262, dual-engine
+        W4/Q5). Clients branch on MEMBERSHIP in ``capabilities``, never on
+        ``version`` (which is for humans/logs). A deployment predating the
+        endpoint 404s — callers use ``lib.server_capabilities.fetch_capabilities``,
+        which maps that to "advertises nothing" per the endpoint's own contract.
+        """
+        return self._get("/core/v1/capabilities")
+
     def ping(self, timeout: float | None = None) -> str:
         """GET /version — lightweight reachability probe for the health indicator.
 
@@ -66,7 +87,7 @@ class SmsApiClient:
             with urlopen(req, timeout=timeout or min(self.timeout, 5.0)) as r:  # noqa: S310 — fixed scheme, internal tunnel
                 body = r.read().decode().strip()
         except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}") from e
+            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
         try:
@@ -112,7 +133,7 @@ class SmsApiClient:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
                 shutil.copyfileobj(r, f)
         except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}") from e
+            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
         return out_path
@@ -151,7 +172,7 @@ class SmsApiClient:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310
                 return json.loads(r.read().decode())
         except HTTPError as e:
-            raise SmsApiError(f"POST {url} -> {e.code}") from e
+            raise SmsApiError(f"POST {url} -> {e.code}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"POST {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
 
@@ -279,7 +300,7 @@ class SmsApiClient:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310
                 data = json.loads(r.read().decode())
         except HTTPError as e:
-            raise SmsApiError(f"POST {url} -> {e.code}") from e
+            raise SmsApiError(f"POST {url} -> {e.code}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(
                 f"POST {url} failed (sms-api unreachable — is the tunnel up?): {e}"
@@ -308,7 +329,7 @@ class SmsApiClient:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
                 shutil.copyfileobj(r, f)
         except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}") from e
+            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(
                 f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}"
@@ -327,7 +348,7 @@ class SmsApiClient:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
                 shutil.copyfileobj(r, f)
         except HTTPError as e:
-            raise SmsApiError(f"POST {url} -> {e.code}") from e
+            raise SmsApiError(f"POST {url} -> {e.code}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"POST {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
         return out_path
