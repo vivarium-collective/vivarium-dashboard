@@ -1787,22 +1787,7 @@
 
   // --- Runs ---
   bindAll('.btn-view-run', function(btn) {
-    // Per-run viewer: open THIS run's own store (zarr/parquet/sqlite) in the
-    // Data Explorer standalone page. Prefer the run's provenance store_path
-    // (data-store-path) so it works even when the store lives outside the
-    // explorer's run-picker discovery; fall back to run_id (the explorer
-    // resolves it via /api/explorer/runs).
-    var row = btn.closest('tr');
-    var runId = btn.dataset.runId || (row && row.dataset.runId) || '';
-    var store = (row && row.dataset.storePath) || '';
-    if (store || runId) {
-      var u = '/assets/explorer.html?' +
-        (store ? 'db=' + encodeURIComponent(store) + '&' : '') +
-        'run=' + encodeURIComponent(runId);
-      window.open(u, '_blank');
-      return;
-    }
-    // No run identity → fall back to the study-level results view.
+    // Per-run viewer: open the study-level Results view.
     _setStudyTab('visualize');
     var panel = document.getElementById('panel-visualize');
     if (panel && panel.scrollIntoView) { try { panel.scrollIntoView({block: 'start'}); } catch (e) {} }

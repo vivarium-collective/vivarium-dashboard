@@ -289,24 +289,6 @@ export interface InvestigationRigor {
 export interface StudyDetail {
 }
 
-export interface ExplorerRuns {
-}
-
-export interface ExplorerObservables {
-}
-
-export interface ExplorerSeries {
-}
-
-export interface ExplorerFlux {
-}
-
-export interface ExplorerVector {
-}
-
-export interface ExplorerProteinBreakdown {
-}
-
 export interface ReportLint {
 }
 

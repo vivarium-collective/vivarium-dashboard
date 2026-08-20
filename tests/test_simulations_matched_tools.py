@@ -13,8 +13,6 @@ def _fake_tools():
         {"id": "parsimony-viewer", "title": "Parsimony Viewer", "kind": "embed-3d",
          "requires": ["3d_pack"],
          "matched": [{"ref": "ecoli-3d", "label": "ecoli-3d"}]},
-        {"id": "data-explorer", "title": "Data Explorer", "kind": "embed-explorer",
-         "requires": ["observables"], "matched": []},
     ]
 
 
@@ -85,12 +83,6 @@ def test_launcher_tool_builds_actuation_url():
     row = {"run_id": "r1", "study_slug": "showcase"}
     url = si._launch_url_for_matched_tool(tool, row)
     assert url == "/api/analysis-viewer/pkg%3A%3Ademo/launch?study=showcase&run=r1"
-
-
-def test_embed_explorer_tool_builds_run_scoped_url():
-    tool = {"id": "data-explorer", "kind": "embed-explorer", "requires": ["observables"]}
-    row = {"run_id": "r1", "study_slug": None}
-    assert si._launch_url_for_matched_tool(tool, row) == "/assets/explorer.html?run=r1"
 
 
 def test_bare_embed_contributed_viewer_is_omitted():
