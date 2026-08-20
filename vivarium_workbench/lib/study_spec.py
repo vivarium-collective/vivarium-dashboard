@@ -308,7 +308,7 @@ def condition_environment(spec: dict, condition: str = "baseline") -> "dict | No
 # runs.db reading (ws_root-parameterised)
 # ---------------------------------------------------------------------------
 
-def _latest_run_timestamp(runs_db: Path) -> Optional[float]:
+def latest_run_timestamp(runs_db: Path) -> Optional[float]:
     """Return the most recent run's wall-clock time from ``runs_meta``.
 
     Prefers ``completed_at`` (when the run finished, hence when its viz could
@@ -576,7 +576,7 @@ def discover_viz_html_files(ws_root: Path, name: str) -> list[dict]:
     if viz_dir.is_dir() and runs_db.is_file():
         # Freshness reference: the latest recorded run time (WAL-immune), not the
         # db file mtime. A small grace absorbs sub-second render/commit ordering.
-        fresh_ref = _latest_run_timestamp(runs_db)
+        fresh_ref = latest_run_timestamp(runs_db)
         # Provenance (Fable §4.5, Task V3): a NON-STALE viz HTML file was
         # rendered from this study's runs.db AFTER the latest run completed,
         # so it genuinely represents that run — attach latest_run_id (below,

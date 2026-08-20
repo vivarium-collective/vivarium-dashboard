@@ -28,6 +28,7 @@ import yaml
 
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
+from vivarium_workbench.lib.study_spec import study_dir as _study_dir
 
 
 # ---------------------------------------------------------------------------
@@ -53,23 +54,6 @@ class InvViewError(Exception):
 # ---------------------------------------------------------------------------
 # Private path helpers (ws_root-parameterised mirrors of server.py helpers)
 # ---------------------------------------------------------------------------
-
-def _study_dir(ws_root: Path, name: str) -> Path:
-    """Resolve a study directory — nested-first, then flat, then legacy.
-
-    Mirrors ``server._study_dir`` parameterised on ``ws_root`` instead of the
-    module-level ``WORKSPACE`` global.
-    """
-    wp = WorkspacePaths.load(ws_root)
-    try:
-        return wp.study_dir(name, must_exist=True)
-    except FileNotFoundError:
-        pass
-    flat = wp.studies / name
-    if flat.is_dir():
-        return flat
-    return wp.investigations / name
-
 
 def _study_spec_path(ws_root: Path, name: str) -> Path:
     """Resolve the study spec file (``study.yaml`` → ``spec.yaml`` fallback).
