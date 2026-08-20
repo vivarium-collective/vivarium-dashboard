@@ -45,10 +45,6 @@ def clear_state() -> None:
         p.unlink()
 
 
-def get_active_branch() -> str | None:
-    return load_state().get("active_branch")
-
-
 def _current_git_branch(ws_root: Path) -> str | None:
     """Return the workspace's current git HEAD branch, or None on failure."""
     try:

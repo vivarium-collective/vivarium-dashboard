@@ -248,19 +248,6 @@ _RUN_ARTIFACTS = {
 }
 
 
-def run_artifacts_present(ws_root, run_id: str) -> dict:
-    """Return ``{name: bool}`` for each retrievable artifact of a run — so the
-    Runs table only renders a button when the artifact actually exists."""
-    run_dir = WorkspacePaths.load(ws_root).pbg / "runs" / run_id
-    if not run_dir.is_dir():
-        return {k: False for k in _RUN_ARTIFACTS}
-    present = {k: (run_dir / f).is_file() for k, (f, _mt) in _RUN_ARTIFACTS.items()}
-    # "results" = the emitter store dir (native zarr/parquet) or an sqlite db.
-    present["results"] = any(run_dir.glob("*.zarr")) or any(run_dir.glob("*.db")) \
-        or any(run_dir.glob("*.sqlite*")) or any(run_dir.glob("*parquet*"))
-    return present
-
-
 def _zarr_fallback_viz(ws_root, run_id: str, name: str) -> "str | None":
     """Best-effort zarr-native render for a run with no local viz.json/report.html.
 

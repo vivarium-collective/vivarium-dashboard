@@ -38,13 +38,6 @@ def _study_name_from_body(body: dict) -> str:
     )
 
 
-def _resolve_study_dir_and_sf(ws_root: Path, study: str):
-    """Return (study_dir, spec_file) for the given study name."""
-    study_dir = _study_spec_lib.study_dir(ws_root, study)
-    sf = _study_spec_lib.study_spec_file(study_dir)
-    return study_dir, sf
-
-
 # ---------------------------------------------------------------------------
 # Variant builders
 # ---------------------------------------------------------------------------

@@ -8,12 +8,10 @@ Public API:
 """
 from __future__ import annotations
 
-import importlib
 import json
 import re
 import shutil
 import subprocess
-import sys
 import warnings
 from datetime import date
 from pathlib import Path
@@ -129,76 +127,6 @@ def _report_core_via_worker(ws_root: Path, package_path: str | None) -> dict:
     except EnvWorkerUnavailable:
         return {"registry": {"processes": [], "types": []},
                 "registry_warning": None, "document": {}}
-
-
-def _load_registry(ws_root: Path, package_path: str | None) -> tuple[dict, str | None]:
-    """Try to import the workspace package and call build_core()/registry_snapshot().
-
-    package_path: e.g. 'pbg_chromosome_rep1' (the Python package directory name).
-    Returns (registry_dict, warning_or_None).
-    """
-    if not package_path:
-        return {"processes": [], "types": []}, None
-
-    ws_root_str = str(ws_root)
-    injected = ws_root_str not in sys.path
-    if injected:
-        sys.path.insert(0, ws_root_str)
-    try:
-        core = importlib.import_module(f"{package_path}.core")
-        build_core = getattr(core, "build_core", None)
-        registry_snapshot = getattr(core, "registry_snapshot", None)
-        if build_core is None or registry_snapshot is None:
-            return {"processes": [], "types": []}, (
-                f"{package_path}.core imported but missing build_core() or registry_snapshot()."
-            )
-        build_core()
-        snap = registry_snapshot()
-
-        def _names(items):
-            if not items:
-                return []
-            if isinstance(items[0], str):
-                return list(items)
-            return [it.get("name", str(it)) for it in items]
-
-        return {
-            "processes": _names(snap.get("processes", [])),
-            "types": _names(snap.get("types", [])),
-        }, None
-    except ModuleNotFoundError:
-        warning = (
-            f"Package '{package_path}' is not importable — registry shown as empty. "
-            "Install it in the workspace venv or run /pbg-pull-processes."
-        )
-        return {"processes": [], "types": []}, warning
-    except Exception as exc:
-        warning = f"{package_path}.core raised {type(exc).__name__}: {exc}"
-        return {"processes": [], "types": []}, warning
-    finally:
-        if injected and ws_root_str in sys.path:
-            sys.path.remove(ws_root_str)
-
-
-def _load_document(ws_root: Path, package_path: str | None) -> dict:
-    """Try to call <package_path>.document.build_document(); return {} on any error."""
-    if not package_path:
-        return {}
-    ws_root_str = str(ws_root)
-    injected = ws_root_str not in sys.path
-    if injected:
-        sys.path.insert(0, ws_root_str)
-    try:
-        doc_mod = importlib.import_module(f"{package_path}.document")
-        build_document = getattr(doc_mod, "build_document", None)
-        if build_document is None:
-            return {}
-        return build_document() or {}
-    except Exception:
-        return {}
-    finally:
-        if injected and ws_root_str in sys.path:
-            sys.path.remove(ws_root_str)
 
 
 def _count_bib_entries(ws_root: Path) -> int:

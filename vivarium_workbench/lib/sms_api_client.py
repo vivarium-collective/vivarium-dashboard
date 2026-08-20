@@ -149,9 +149,6 @@ class SmsApiClient:
         aggregate — callers should use ``simulation_status`` for those)."""
         return self._get(f"/api/v1/simulations/{simulation_id}/chain-progress")
 
-    def observables_index(self, simulation_id: int, seed: int = 0) -> dict:
-        return self._get(f"/api/v1/simulations/{simulation_id}/observables/index", {"seed": seed})
-
     def observables(self, simulation_id: int, names: list[str], seed: int = 0) -> dict:
         params = {"seed": seed}
         if names:

@@ -1514,24 +1514,6 @@ def report_card_findings_for_study(ws_root: Path, slug: str, existing_findings=N
 _COMPLETE_STATUSES = {"complete", "completed", "ran", "done"}
 
 
-def _canonical_run(runs: list) -> dict | None:
-    """The run whose outcomes are authoritative — delegates to the shared
-    ``viva_workspace.canonical_run`` (the single source of truth, previously a
-    hand-copied duplicate here):
-
-    1. an explicit ``canonical: true`` run wins (last such run if several);
-    2. else the newest *completed* run by ``timestamp``;
-    3. else the last run;
-    4. else ``None``.
-
-    This deliberately does NOT do last-run-wins per-test aggregation — it picks
-    ONE authoritative run so the study page and the report agree on pass/fail.
-    """
-    from viva_workspace import canonical_run as _vw_canonical_run
-
-    return _vw_canonical_run(runs)
-
-
 def _latest_outcomes(spec: dict) -> tuple[dict, dict]:
     """Resolve the study's authoritative per-test outcomes from the single
     *canonical* run (see ``_canonical_run``), mirroring the client's

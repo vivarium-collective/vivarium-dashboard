@@ -506,33 +506,6 @@ def _read_runs_meta(db_path: Path, db_path_str: str) -> list[dict]:
         conn.close()
 
 
-def _study_yaml_run_ids(yaml_path: Path) -> list[str]:
-    """Extract run_ids from a study.yaml's runs[]. Accepts list-of-strings
-    or list-of-dicts ({run_id: ...}). Malformed yaml → []."""
-    try:
-        data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
-    except yaml.YAMLError:
-        warnings.warn(f"simulations_index: malformed yaml at {yaml_path}")
-        return []
-    runs = data.get("runs") or []
-    if not isinstance(runs, list):
-        return []
-    out: list[str] = []
-    for entry in runs:
-        if isinstance(entry, str):
-            out.append(entry)
-        elif isinstance(entry, dict):
-            # run_id is the canonical key; fall back to `name` (emitter-less
-            # workspaces — e.g. numpy investigations — record runs as {name: ...}),
-            # then `simulation_id`/`simulation` (multigen study.yaml runs, e.g.
-            # mbp-*, whose entries are {simulation: <name>, simulation_id: <uuid>}).
-            rid = (entry.get("run_id") or entry.get("name")
-                   or entry.get("simulation_id") or entry.get("simulation"))
-            if isinstance(rid, str) and rid:
-                out.append(rid)
-    return out
-
-
 def _study_has_run_store(study_dir: "Path") -> bool:
     """True if a study directory has its own run store (runs.db / parquet / zarr).
     Such a study records real runs by their global id in each run's ``name``, so
