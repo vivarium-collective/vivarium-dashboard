@@ -1101,6 +1101,36 @@ def cmd_server_restart(args: argparse.Namespace) -> int:
     return cmd_serve(args)
 
 
+def _shrink_loom_png(raw: bytes, max_width: int, colors: int) -> bytes:
+    """Downscale + palette-quantize a captured loom PNG so the saved image (and the
+    self-contained report that inlines it as base64) stays small. Loom diagrams are
+    line art with few colours, so a max-width cap + palette quantise cuts the PNG
+    ~10x with no visible loss. Best-effort: returns the original bytes if Pillow is
+    unavailable or anything fails. ``max_width`` <= 0 disables the downscale;
+    ``colors`` <= 0 keeps full colour."""
+    try:
+        import io
+        from PIL import Image
+        im = Image.open(io.BytesIO(raw))
+        if max_width and im.width > max_width:
+            h = round(im.height * max_width / im.width)
+            im = im.resize((max_width, h), Image.LANCZOS)
+        if im.mode in ("RGBA", "LA", "P"):
+            bg = Image.new("RGB", im.size, (255, 255, 255))
+            rgba = im.convert("RGBA")
+            bg.paste(rgba, mask=rgba.split()[-1])
+            im = bg
+        else:
+            im = im.convert("RGB")
+        if colors and colors > 0:
+            im = im.quantize(colors=colors, method=Image.FASTOCTREE)
+        buf = io.BytesIO()
+        im.save(buf, "PNG", optimize=True)
+        return buf.getvalue() or raw
+    except Exception:  # noqa: BLE001 — never let image-shrinking break the bake
+        return raw
+
+
 def cmd_render_loom(args: argparse.Namespace) -> int:
     """Render each study's baseline composite bigraph-loom to a PNG.
 
@@ -1153,8 +1183,9 @@ def cmd_render_loom(args: argparse.Namespace) -> int:
     ok = 0
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
-        page = browser.new_page(viewport={"width": 1600, "height": 1000},
-                                device_scale_factor=2)
+        page = browser.new_page(
+            viewport={"width": int(args.width), "height": int(args.height)},
+            device_scale_factor=float(args.device_scale))
         for slug, comp in jobs:
             out = wp.studies / slug / "viz" / "model-loom.png"
             loom_url = (f"{url}/bigraph-loom/?id={quote(comp)}"
@@ -1169,7 +1200,8 @@ def cmd_render_loom(args: argparse.Namespace) -> int:
                 if not data or not data.startswith("data:image/png"):
                     raise RuntimeError("__loomExportPng returned null")
                 out.parent.mkdir(parents=True, exist_ok=True)
-                out.write_bytes(base64.b64decode(data.split(",", 1)[1]))
+                raw = base64.b64decode(data.split(",", 1)[1])
+                out.write_bytes(_shrink_loom_png(raw, int(args.max_width), int(args.colors)))
                 print(f"  OK   {slug}  ({out.stat().st_size // 1024} KB)")
                 ok += 1
             except Exception as exc:  # noqa: BLE001
@@ -1513,6 +1545,21 @@ def main(argv: list[str] | None = None) -> int:
     p_render_loom.add_argument("--study", default=None, help="Only this study slug")
     p_render_loom.add_argument("--settle-ms", type=int, default=4000,
                                help="Wait after layout before capture (default 4000)")
+    p_render_loom.add_argument("--device-scale", type=float, default=2.0,
+                               help="Device scale factor for the capture (default 2.0; "
+                                    "use 1.0 for a ~4x smaller PNG, 1.5 for ~2x smaller)")
+    p_render_loom.add_argument("--width", type=int, default=1600,
+                               help="Capture viewport width in CSS px (default 1600)")
+    p_render_loom.add_argument("--height", type=int, default=1000,
+                               help="Capture viewport height in CSS px (default 1000)")
+    p_render_loom.add_argument("--max-width", type=int, default=1600,
+                               help="Downscale the saved PNG to at most this width in px "
+                                    "(default 1600; 0 = keep the loom's full resolution). "
+                                    "Keeps the self-contained report small.")
+    p_render_loom.add_argument("--colors", type=int, default=128,
+                               help="Palette-quantize the saved PNG to this many colours "
+                                    "(default 128; 0 = full colour). Loom diagrams are line "
+                                    "art, so this cuts PNG size ~10x with no visible loss.")
     p_render_loom.set_defaults(func=cmd_render_loom)
 
     args = parser.parse_args(argv)
