@@ -904,6 +904,8 @@ def create_app() -> FastAPI:
         from vivarium_workbench.lib.investigation_report import (
             build_report_data,
             render_html,
+            _find_plotly_js,
+            _has_interactive_figures,
         )
         try:
             data = build_report_data(ws, slug)
@@ -912,7 +914,12 @@ def create_app() -> FastAPI:
                 content=f'{{"error": "investigation not found: {slug}"}}',
                 status_code=404, media_type="application/json",
             )
-        html = render_html(data)
+        # Inline one shared Plotly.js when the report carries interactive figures,
+        # so the served/downloaded report is fully self-contained (interactive
+        # figures render standalone, not only inside the live app). Mirrors
+        # render_investigation_report; image/SVG-only reports stay lean.
+        plotly_js = _find_plotly_js(ws) if _has_interactive_figures(data) else None
+        html = render_html(data, plotly_js)
         headers = None
         if download:
             headers = {"Content-Disposition": f'attachment; filename="investigation-{slug}.html"'}
