@@ -1478,6 +1478,13 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       .github-settings select.gh-input, .github-settings input.gh-input { width:100%; max-width:360px; padding:6px 10px; font:inherit; font-size:13px; border:1px solid #d7dbe0; border-radius:8px; background:#fff; color:#0f172a }
       .github-settings .gh-input:focus { outline:none; border-color:#6366f1; box-shadow:0 0 0 3px rgba(99,102,241,.12) }
       .github-settings .gh-action-row { display:flex; flex-wrap:wrap; gap:8px; align-items:center }
+      .github-settings .gh-log { display:flex; flex-direction:column; max-height:360px; overflow-y:auto; border:1px solid #eef1f4; border-radius:8px }
+      .github-settings .gh-log-row { display:flex; align-items:baseline; gap:10px; padding:7px 10px; border-bottom:1px solid #eef1f4; font-size:12.5px }
+      .github-settings .gh-log-row:last-child { border-bottom:none }
+      .github-settings .gh-log-sha { font-family:monospace; color:#6b7280; flex:0 0 auto }
+      .github-settings .gh-log-message { color:#0f172a; flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+      .github-settings .gh-log-meta { color:#94a3b8; flex:0 0 auto; font-size:11.5px; white-space:nowrap }
+      .github-settings .gh-log-empty { padding:8px 10px; color:#94a3b8; font-size:13px }
       :root[data-theme="dark"] .github-settings .gh-section { border-top-color:var(--border) }
       :root[data-theme="dark"] .github-settings .gh-value { color:var(--text) }
       :root[data-theme="dark"] .github-settings .gh-section-title { color:var(--text-muted) }
@@ -1486,6 +1493,12 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       :root[data-theme="dark"] .github-settings .gh-value-hint { color:var(--text-muted) }
       :root[data-theme="dark"] .github-settings select.gh-input,
       :root[data-theme="dark"] .github-settings input.gh-input { border-color:var(--border-2); background:var(--field); color:var(--text) }
+      :root[data-theme="dark"] .github-settings .gh-log { border-color:var(--border) }
+      :root[data-theme="dark"] .github-settings .gh-log-row { border-bottom-color:var(--border) }
+      :root[data-theme="dark"] .github-settings .gh-log-sha { color:var(--text-muted) }
+      :root[data-theme="dark"] .github-settings .gh-log-message { color:var(--text) }
+      :root[data-theme="dark"] .github-settings .gh-log-meta { color:var(--text-muted) }
+      :root[data-theme="dark"] .github-settings .gh-log-empty { color:var(--text-muted) }
     </style>
 
     <!-- ── Account ──────────────────────────────────────────────── -->
@@ -1574,6 +1587,13 @@ a.viv-bs-commit:hover { text-decoration: underline; }
       <!-- Legacy hidden host for any code path that still writes to #viv-git-status.
            The new field-by-field hooks above are the primary surface. -->
       <div id="viv-git-status" class="git-status" hidden></div>
+    </div>
+
+    <!-- ── Recent commits — bounded, read-only git log of the workspace's
+         current HEAD branch (item 72 phase 3) ──────────────────────── -->
+    <div class="gh-section">
+      <h3 class="gh-section-title">Recent commits</h3>
+      <div id="viv-gh-log" class="gh-log"><div class="gh-log-empty">loading…</div></div>
     </div>
 
     <!-- ── Actions ────────────────────────────────────────────────── -->

@@ -223,6 +223,21 @@ export interface DirtyStatus {
   files: DirtyFile[];
 }
 
+export interface GitLogEntry {
+  sha: string;
+  short_sha: string;
+  author: string;
+  timestamp: string;
+  message: string;
+}
+
+export interface GitLog {
+  branch: string | null;
+  commits: GitLogEntry[];
+  truncated: boolean;
+  error: string | null;
+}
+
 export interface GenerationSummary {
   generation_id: string;
   git_sha: string | null;
