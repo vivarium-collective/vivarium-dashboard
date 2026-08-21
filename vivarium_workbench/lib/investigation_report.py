@@ -193,9 +193,53 @@ def _embed_visualizations(study_dir: Path, viz_list, budget: list) -> list:
     return out
 
 
-_HTML_PER_FILE_MAX = 2_500_000    # a single inlined HTML figure (Plotly etc.)
+_HTML_PER_FILE_MAX = 2_500_000    # a single inlined HTML figure (post-processing)
+_HTML_RAW_READ_MAX = 12_000_000   # never even read an on-disk figure larger than this
 _HTML_FIG_DIRS = ("viz", "charts")
 _HTML_FIG_SKIP = ("model-loom.html",)  # reserved for the Model section, not a result figure
+
+# A per-figure Plotly.js loader: an external <script src="…plotly…"> the figure
+# used to pull its own copy of the library. The report now provides ONE shared
+# Plotly.js, so these are stripped when a figure is inlined interactively.
+_PLOTLY_SRC_LOADER_RE = re.compile(
+    r"<script\b[^>]*\bsrc\s*=\s*['\"][^'\"]*plotly[^'\"]*['\"][^>]*>\s*</script\s*>",
+    re.IGNORECASE,
+)
+# An INLINE plotly bundle: a large <script> (no src) that carries the library
+# itself (not the figure's own newPlot call). Stripped too, so a self-contained
+# Plotly figure shrinks from ~4.6 MB to tens of KB and comfortably inlines.
+_INLINE_SCRIPT_RE = re.compile(r"<script\b(?![^>]*\bsrc=)[^>]*>(.*?)</script\s*>",
+                               re.IGNORECASE | re.DOTALL)
+_BODY_RE = re.compile(r"<body[^>]*>(.*)</body\s*>", re.IGNORECASE | re.DOTALL)
+
+
+def _strip_inline_plotly_bundle(frag: str) -> str:
+    """Drop an inline <script> that is the Plotly LIBRARY itself (big, mentions
+    plotly, but is not the figure's own ``Plotly.newPlot`` call)."""
+    def _repl(m):
+        body = m.group(1)
+        low = body.lower()
+        if len(body) > 200_000 and "plotly" in low and "newplot" not in low:
+            return ""
+        return m.group(0)
+    return _INLINE_SCRIPT_RE.sub(_repl, frag)
+
+
+def _prepare_interactive_figure(html: str) -> "str | None":
+    """If ``html`` is a self-contained Plotly figure, return just its body
+    fragment — the graph ``<div>`` plus its ``Plotly.newPlot`` script — with any
+    per-figure Plotly.js loader (external ``<script src=…plotly…>`` or an inline
+    library bundle) removed. The report supplies one shared Plotly.js and renders
+    this fragment inline in the main document, so every figure uses that single
+    copy. Returns None when the HTML is not a Plotly figure (the caller then keeps
+    the isolated-iframe path for arbitrary HTML). Fully guarded by the caller."""
+    if "Plotly.newPlot" not in html:
+        return None
+    m = _BODY_RE.search(html)
+    frag = m.group(1) if m else html
+    frag = _PLOTLY_SRC_LOADER_RE.sub("", frag)
+    frag = _strip_inline_plotly_bundle(frag)
+    return frag.strip()
 
 
 def _humanize_stem(stem: str) -> str:
@@ -229,10 +273,10 @@ def _embed_html_figures(study_dir: Path, budget: list, skip_names: set) -> list:
                 continue
             seen.add(base)
             try:
-                size = f.stat().st_size
+                raw_size = f.stat().st_size
             except OSError:
                 continue
-            if size > _HTML_PER_FILE_MAX or budget[0] + size > _IMG_TOTAL_MAX:
+            if raw_size > _HTML_RAW_READ_MAX:  # don't even read an enormous file
                 out.append({"name": _humanize_stem(f.stem), "skipped": True,
                             "reason": "too large to inline"})
                 continue
@@ -240,8 +284,31 @@ def _embed_html_figures(study_dir: Path, budget: list, skip_names: set) -> list:
                 html = f.read_text(encoding="utf-8")
             except OSError:
                 continue
-            budget[0] += size
-            out.append({"name": _humanize_stem(f.stem), "html": html})
+            # An interactive Plotly figure is inlined in the main document sharing
+            # the report's single Plotly.js — so strip its own Plotly loader and
+            # keep just the graph <div> + newPlot script. Any other HTML stays raw
+            # and renders in its own isolated iframe. Guarded: a malformed figure
+            # falls back to raw HTML, never fatal.
+            interactive = False
+            frag = html
+            try:
+                prepared = _prepare_interactive_figure(html)
+                if prepared is not None:
+                    frag, interactive = prepared, True
+            except Exception:
+                frag, interactive = html, False
+            # budget against the POST-processing size (a stripped interactive
+            # figure is tiny even if its on-disk file bundled a 4.6 MB Plotly.js)
+            fsize = len(frag.encode("utf-8"))
+            if fsize > _HTML_PER_FILE_MAX or budget[0] + fsize > _IMG_TOTAL_MAX:
+                out.append({"name": _humanize_stem(f.stem), "skipped": True,
+                            "reason": "too large to inline"})
+                continue
+            budget[0] += fsize
+            rec = {"name": _humanize_stem(f.stem), "html": frag}
+            if interactive:
+                rec["interactive"] = True
+            out.append(rec)
     return out
 
 
@@ -519,13 +586,66 @@ def _h(s) -> str:
     return str(s).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def render_html(data: dict) -> str:
-    """Embed the report-data dict into the fixed template + renderer."""
+_PLOTLY_PKG_CANDIDATES = ("package_data/plotly.min.js", "plotly.min.js")
+
+
+def _find_plotly_js(ws_root=None) -> "str | None":
+    """The Plotly.js source to inline ONCE in the report so every interactive
+    figure shares a single copy (keeping the whole report ~5 MB, not 4.6 MB × N).
+
+    Prefers the workspace's committed ``plotly.min.js`` (the exact build the
+    figures were rendered against); falls back to the installed ``plotly``
+    package's bundled ``plotly.min.js``. Returns None when neither is available —
+    the report still renders, just without live interactive figures. Fully
+    guarded: any read/import error yields None."""
+    candidates = []
+    if ws_root is not None:
+        try:
+            candidates.append(Path(ws_root) / "plotly.min.js")
+        except Exception:
+            pass
+    try:
+        import plotly  # noqa: PLC0415
+        pkg = Path(plotly.__file__).resolve().parent
+        for rel in _PLOTLY_PKG_CANDIDATES:
+            candidates.append(pkg / rel)
+    except Exception:
+        pass
+    for c in candidates:
+        try:
+            if c and c.is_file():
+                return c.read_text(encoding="utf-8")
+        except Exception:
+            continue
+    return None
+
+
+def _has_interactive_figures(data: dict) -> bool:
+    for s in (data.get("studies") or []):
+        for f in (s.get("figures_embedded") or []):
+            if isinstance(f, dict) and f.get("interactive"):
+                return True
+    return False
+
+
+def render_html(data: dict, plotly_js: "str | None" = None) -> str:
+    """Embed the report-data dict into the fixed template + renderer.
+
+    ``plotly_js`` (when given) is inlined once as the report's single shared
+    Plotly.js, powering every interactive figure. It is neutralized against
+    breaking out of its ``<script>`` element."""
     tpl = _TEMPLATE.read_text(encoding="utf-8")
     # escape '<' so the JSON can never break out of the <script> element
     payload = json.dumps(data, ensure_ascii=False).replace("<", "\\u003c")
     title = f"{data.get('title', 'Investigation')} — report"
-    return tpl.replace("__TITLE__", _h(title)).replace("__DATA__", payload)
+    html = tpl.replace("__TITLE__", _h(title)).replace("__DATA__", payload)
+    pj = plotly_js or ""
+    if pj:
+        # a Plotly bundle can contain the literal "</script>" inside a string;
+        # neutralize it so it can't close the wrapping <script> element early
+        pj = pj.replace("</script", "<\\/script")
+    # done last so the (large, opaque) bundle can't collide with other tokens
+    return html.replace("__PLOTLY_JS__", pj)
 
 
 def render_investigation_report(ws_root, inv_slug: str, *, out_dir=None) -> Path:
@@ -533,7 +653,10 @@ def render_investigation_report(ws_root, inv_slug: str, *, out_dir=None) -> Path
     ``out_dir``) and return the written path."""
     ws_root = Path(ws_root)
     data = build_report_data(ws_root, inv_slug)
-    html = render_html(data)
+    # inline one shared Plotly.js only when the report actually carries an
+    # interactive figure — an image/SVG-only report stays lean
+    plotly_js = _find_plotly_js(ws_root) if _has_interactive_figures(data) else None
+    html = render_html(data, plotly_js)
     out_dir = Path(out_dir) if out_dir is not None else WorkspacePaths.load(ws_root).reports
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"investigation-{inv_slug}.html"

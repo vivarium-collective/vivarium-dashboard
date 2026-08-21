@@ -211,6 +211,10 @@ figcaption{color:var(--ink-2);font-size:12.5px;margin-top:8px;max-width:none}
    and its (often full-document) CSS can't leak into the report. onload sizes it
    to content; this is the pre-resize default. */
 .viz-frame{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--surface);height:460px;display:block}
+/* An interactive (Plotly) figure rendered inline in the main document, sharing
+   the report's one Plotly.js. Bordered like the iframe path it replaces. */
+.embedded-plotly .plotly-holder{width:100%;border:1px solid var(--line);border-radius:12px;background:var(--surface);padding:6px;overflow:hidden}
+.embedded-plotly .plotly-holder>div{max-width:100%}
 .loom-iframe{width:100%;height:100%;border:0;display:block}
 .loom-fallback{margin-top:6px}
 .loom-fallback>summary{cursor:pointer;color:var(--accent);font-size:12px;user-select:none}
@@ -329,6 +333,10 @@ footer .wrap{display:flex;flex-direction:column;gap:6px}
   <div id="foot-prov" class="mono"></div>
 </div></footer>
 
+<!-- One shared Plotly.js for the whole report: every interactive figure is
+     rendered inline in this document and uses this single copy (empty when the
+     report carries no interactive figure). Must load before the renderer runs. -->
+<script id="plotlyjs">__PLOTLY_JS__</script>
 <script id="data" type="application/json">__DATA__</script>
 <script>
 const INV = JSON.parse(document.getElementById('data').textContent);
@@ -792,6 +800,14 @@ function renderStudy(s, inv, idx){
   // URIs, and `local:` live visualizations as their committed rendered HTML.
   (s.figures_embedded||[]).forEach(im=>{
     if(im.data_uri) figHtml+=`<figure><img src="${im.data_uri}" alt="${esc(im.name)}" loading="lazy"><figcaption>${esc(im.name)}</figcaption></figure>`;
+    // Interactive figure (Plotly): the generator stripped its own Plotly loader
+    // and handed us just the graph <div> + its Plotly.newPlot script. Render it
+    // INLINE in the main document so it draws with the report's one shared
+    // Plotly.js. Scripts set via innerHTML are inert, so activatePlotlyFigures()
+    // re-runs them after mount; watchCardExpansion() resizes them when a study
+    // card opens.
+    else if(im.html && im.interactive) figHtml+=`<figure class="embedded-viz embedded-plotly" style="margin:12px 0"><figcaption class="kicker" style="margin-bottom:6px">${esc(im.name)}</figcaption><div class="plotly-holder">${im.html}</div></figure>`;
+    // Any other committed HTML figure keeps the isolated-iframe path.
     else if(im.html) figHtml+=`<figure class="embedded-viz" style="margin:12px 0"><figcaption class="kicker" style="margin-bottom:6px">${esc(im.name)}</figcaption><iframe class="viz-frame" srcdoc="${esc(im.html)}" loading="lazy" onload="try{this.style.height=(this.contentWindow.document.documentElement.scrollHeight+8)+'px';}catch(e){}"></iframe></figure>`;
     else if(im.skipped) figHtml+=`<div class="texp" style="color:var(--ink-3)">↪ ${esc(im.name)} — ${esc(im.reason||'not inlined')}</div>`;
   });
@@ -1099,6 +1115,34 @@ function renderSpine(inv){
     ${dag}${acc?`<div style="margin-top:16px">${acc}</div>`:''}${mx?`<div style="margin-top:16px">${mx}</div>`:''}</div>`;
 }
 
+/* ---------- interactive (Plotly) figures ----------
+   Each interactive figure is inlined as its graph <div> + its Plotly.newPlot
+   <script>. Scripts inserted via innerHTML never execute, so after mounting we
+   re-create each figure's <script> element (which DOES run) — drawing the plot
+   into its <div> with the report's one shared Plotly.js. Fully guarded: with no
+   Plotly bundle, or a malformed figure, this is a silent no-op. */
+function activatePlotlyFigures(root){
+  if(typeof Plotly==='undefined') return;   // no shared bundle → leave figures inert
+  (root||document).querySelectorAll('figure.embedded-plotly script').forEach(old=>{
+    try{
+      const s=document.createElement('script');
+      if(old.src) s.src=old.src; else s.textContent=old.textContent;
+      old.parentNode.replaceChild(s,old);
+    }catch(e){}
+  });
+}
+// A responsive Plotly figure drawn while its study card is collapsed (display:none)
+// lays out at zero width; resize it when a card's collapsed/expanded state flips.
+function watchCardExpansion(){
+  if(typeof Plotly==='undefined') return;
+  const fire=()=>{ document.querySelectorAll('figure.embedded-plotly .plotly-graph-div')
+    .forEach(d=>{ try{ Plotly.Plots.resize(d); }catch(e){} }); };
+  try{
+    const obs=new MutationObserver(ms=>{ if(ms.some(m=>m.attributeName==='class')) fire(); });
+    document.querySelectorAll('.card').forEach(c=>obs.observe(c,{attributes:true,attributeFilter:['class']}));
+  }catch(e){}
+}
+
 /* ---------- one contiguous document ---------- */
 function render(inv){
   CUR=inv.slug; loadFB();
@@ -1121,6 +1165,7 @@ function render(inv){
       ${feedbackRow('overall','the whole report')}
     </div>`;
   updateCount(); window.scrollTo(0,0); spy();
+  activatePlotlyFigures(); watchCardExpansion();
 }
 
 /* ---------- wiring ---------- */
