@@ -803,9 +803,10 @@ function renderStudy(s, inv, idx){
     // Interactive figure (Plotly): the generator stripped its own Plotly loader
     // and handed us just the graph <div> + its Plotly.newPlot script. Render it
     // INLINE in the main document so it draws with the report's one shared
-    // Plotly.js. Scripts set via innerHTML are inert, so activatePlotlyFigures()
-    // re-runs them after mount; watchCardExpansion() resizes them when a study
-    // card opens.
+    // Plotly.js. The script stays inert until setupLazyPlotly() runs it the first
+    // time the figure is actually laid out with a real width (see below) — so a
+    // tab-hidden / collapsed figure is drawn at correct size when revealed, never
+    // blank.
     else if(im.html && im.interactive) figHtml+=`<figure class="embedded-viz embedded-plotly" style="margin:12px 0"><figcaption class="kicker" style="margin-bottom:6px">${esc(im.name)}</figcaption><div class="plotly-holder">${im.html}</div></figure>`;
     // Any other committed HTML figure keeps the isolated-iframe path.
     else if(im.html) figHtml+=`<figure class="embedded-viz" style="margin:12px 0"><figcaption class="kicker" style="margin-bottom:6px">${esc(im.name)}</figcaption><iframe class="viz-frame" srcdoc="${esc(im.html)}" loading="lazy" onload="try{this.style.height=(this.contentWindow.document.documentElement.scrollHeight+8)+'px';}catch(e){}"></iframe></figure>`;
@@ -1115,32 +1116,72 @@ function renderSpine(inv){
     ${dag}${acc?`<div style="margin-top:16px">${acc}</div>`:''}${mx?`<div style="margin-top:16px">${mx}</div>`:''}</div>`;
 }
 
-/* ---------- interactive (Plotly) figures ----------
+/* ---------- interactive (Plotly) figures — LAZY, visibility-driven ----------
    Each interactive figure is inlined as its graph <div> + its Plotly.newPlot
-   <script>. Scripts inserted via innerHTML never execute, so after mounting we
-   re-create each figure's <script> element (which DOES run) — drawing the plot
-   into its <div> with the report's one shared Plotly.js. Fully guarded: with no
-   Plotly bundle, or a malformed figure, this is a silent no-op. */
-function activatePlotlyFigures(root){
-  if(typeof Plotly==='undefined') return;   // no shared bundle → leave figures inert
-  (root||document).querySelectorAll('figure.embedded-plotly script').forEach(old=>{
+   <script>, which is INERT until the figure first becomes visible. We must NOT
+   render eagerly at load: a figure inside a collapsed study card (display:none)
+   or below the fold has zero width, so Plotly.newPlot would lay it out at 0px →
+   a blank box that a later resize can't reliably recover (seen in Safari when a
+   figure is revealed by a subnav tab / card expand). Instead each figure is
+   rendered the first time it is actually laid out with a real width — created at
+   the correct size. Fully guarded: no Plotly bundle, or a malformed figure, is a
+   silent no-op. */
+function _isLaidOut(el){
+  try{ const r=el.getBoundingClientRect(); return r.width>2 && r.height>2; }
+  catch(e){ return false; }
+}
+function _resizeFig(fig){
+  fig.querySelectorAll('.plotly-graph-div').forEach(d=>{ try{ Plotly.Plots.resize(d); }catch(e){} });
+}
+// Run a figure's inert <script>s (re-creating them so they actually execute),
+// which calls Plotly.newPlot into the now-visible, real-width <div>. Idempotent:
+// a figure is rendered at most once, then only resized.
+function renderPlotlyFigure(fig){
+  if(!fig || typeof Plotly==='undefined') return;
+  if(fig.dataset.plRendered){ _resizeFig(fig); return; }
+  if(!_isLaidOut(fig)) return;               // not visible yet — wait for a later trigger
+  fig.dataset.plRendered='1';
+  fig.querySelectorAll('script').forEach(old=>{
     try{
       const s=document.createElement('script');
       if(old.src) s.src=old.src; else s.textContent=old.textContent;
       old.parentNode.replaceChild(s,old);
     }catch(e){}
   });
+  // one post-layout resize so the plot fills its container exactly
+  try{ requestAnimationFrame(()=>_resizeFig(fig)); }catch(e){ _resizeFig(fig); }
 }
-// A responsive Plotly figure drawn while its study card is collapsed (display:none)
-// lays out at zero width; resize it when a card's collapsed/expanded state flips.
-function watchCardExpansion(){
-  if(typeof Plotly==='undefined') return;
-  const fire=()=>{ document.querySelectorAll('figure.embedded-plotly .plotly-graph-div')
-    .forEach(d=>{ try{ Plotly.Plots.resize(d); }catch(e){} }); };
+function setupLazyPlotly(){
+  if(typeof Plotly==='undefined') return;    // no shared bundle → leave figures inert
+  const figs=[...document.querySelectorAll('figure.embedded-plotly')];
+  if(!figs.length) return;
+  // Sweep every figure: render the visible-and-unrendered ones, resize the rest.
+  // This is the reliable path for a subnav-tab click / card expand / expand-all —
+  // ANY reveal that changes layout — independent of scrolling.
+  const sweep=()=>{ figs.forEach(f=>{ if(_isLaidOut(f)) renderPlotlyFigure(f); }); };
+  // Primary: IntersectionObserver renders a figure as it scrolls into view (or
+  // becomes visible when its card expands). rootMargin pre-renders slightly early.
   try{
-    const obs=new MutationObserver(ms=>{ if(ms.some(m=>m.attributeName==='class')) fire(); });
-    document.querySelectorAll('.card').forEach(c=>obs.observe(c,{attributes:true,attributeFilter:['class']}));
+    const io=new IntersectionObserver(entries=>{
+      entries.forEach(en=>{ if(en.isIntersecting){ renderPlotlyFigure(en.target);
+        if(en.target.dataset.plRendered) io.unobserve(en.target); } });
+    }, {root:null, rootMargin:'250px 0px', threshold:0.01});
+    figs.forEach(f=>io.observe(f));
   }catch(e){}
+  // Belt-and-suspenders for Safari file:// timing: any card class flip (collapse/
+  // expand, subnav tab, expand-all) → sweep on the next frame.
+  try{
+    const mo=new MutationObserver(ms=>{ if(ms.some(m=>m.attributeName==='class')){
+      try{ requestAnimationFrame(sweep); }catch(e){ sweep(); } } });
+    document.querySelectorAll('.card').forEach(c=>mo.observe(c,{attributes:true,attributeFilter:['class']}));
+  }catch(e){}
+  // Subnav tab / index click expands + scrolls its target card; sweep just after.
+  document.addEventListener('click', e=>{ try{ if(e.target.closest('.subnav a')||e.target.id==='expandall'){
+    setTimeout(sweep,60); setTimeout(sweep,220); } }catch(err){} }, true);
+  // Keep already-drawn figures crisp on viewport resize.
+  window.addEventListener('resize', ()=>{ figs.forEach(f=>{ if(f.dataset.plRendered) _resizeFig(f); }); });
+  // Anchored deep-link (opening the report at #s-<slug>): render after layout.
+  try{ setTimeout(sweep,120); }catch(e){}
 }
 
 /* ---------- one contiguous document ---------- */
@@ -1165,7 +1206,7 @@ function render(inv){
       ${feedbackRow('overall','the whole report')}
     </div>`;
   updateCount(); window.scrollTo(0,0); spy();
-  activatePlotlyFigures(); watchCardExpansion();
+  setupLazyPlotly();
 }
 
 /* ---------- wiring ---------- */
