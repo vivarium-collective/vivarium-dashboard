@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "vivarium-workbench"
-version = "0.3.47"
+version = "0.3.50"
 description = "Web-based workbench for Vivarium / process-bigraph workspaces"
 authors = [{name = "Vivarium Collective", email = "team@vivarium-collective.org"}]
 requires-python = ">=3.11"
@@ -320,6 +320,8 @@ files = [
     "vivarium_workbench/lib/env_worker_pool.py",
     "vivarium_workbench/lib/session_registry.py",
     "vivarium_workbench/lib/workspace_context.py",
+    "vivarium_workbench/lib/_secrets_backend.py",
+    "vivarium_workbench/lib/secrets_store.py",
     "vivarium_workbench/lib/metadata_mutations.py",
     "vivarium_workbench/lib/study_crud_mutations.py",
     "vivarium_workbench/lib/lifecycle_mutations.py",

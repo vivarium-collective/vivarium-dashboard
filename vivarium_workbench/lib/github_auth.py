@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 import shutil
 import subprocess
@@ -40,13 +39,17 @@ from dataclasses import dataclass
 from threading import Lock
 from typing import Literal
 
+from vivarium_workbench.lib import _secrets_backend as _backend
+
 log = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
-_KEYRING_SERVICE = "vivarium-dashboard"
+# Shared with secrets_store.py's generalized named-secret store — see
+# _secrets_backend.KEYRING_SERVICE for why this keeps the pre-rename name.
+_KEYRING_SERVICE = _backend.KEYRING_SERVICE
 
 # Public OAuth App client_id. Must be set via env for the device flow to work;
 # the gh-cli delegate path doesn't need it. Empty string disables device flow
@@ -113,57 +116,38 @@ def mask_token(text: str) -> str:
 
     Safe to call on already-masked text (idempotent). Use before logging or
     surfacing captured subprocess output / HTTP responses that might contain
-    a token.
+    a token. Shape-based (regex), so this catches a token even when the
+    caller doesn't hold its literal value — unlike secrets_store.py's
+    arbitrary named secrets, a GitHub token always has this recognizable
+    shape. Delegates to the shared backend's generic pattern-masker.
     """
-    return _TOKEN_RE.sub("<redacted>", text)
+    return _backend.mask_pattern(text, _TOKEN_RE)
 
 
 # ---------------------------------------------------------------------------
-# Keyring storage — wraps the optional ``keyring`` library so missing/broken
-# backends degrade to "in-memory only" rather than crashing.
+# Keyring storage — thin wrappers over the shared _secrets_backend module
+# (factored out in item 72 Phase 2, see
+# ecosystem/docs/plan-colab-design-clone.md Part 5) so missing/broken keyring
+# backends still degrade to "in-memory only" rather than crashing. Kept as
+# named module-level functions here (rather than calling _backend.* inline at
+# each call site) so existing tests can keep monkeypatching them directly.
 # ---------------------------------------------------------------------------
 
 
 def _keyring_available() -> bool:
-    try:
-        import keyring  # noqa: F401
-        return True
-    except Exception:
-        return False
+    return _backend.keyring_available()
 
 
 def _keyring_get(login: str) -> str | None:
-    if not _keyring_available():
-        return None
-    try:
-        import keyring
-        return keyring.get_password(_KEYRING_SERVICE, login)
-    except Exception as e:
-        log.warning("keyring read failed for login=%s: %s", login, mask_token(str(e)))
-        return None
+    return _backend.keyring_get(_KEYRING_SERVICE, login)
 
 
 def _keyring_set(login: str, token: str) -> bool:
-    if not _keyring_available():
-        return False
-    try:
-        import keyring
-        keyring.set_password(_KEYRING_SERVICE, login, token)
-        return True
-    except Exception as e:
-        log.warning("keyring write failed for login=%s: %s", login, mask_token(str(e)))
-        return False
+    return _backend.keyring_set(_KEYRING_SERVICE, login, token)
 
 
 def _keyring_delete(login: str) -> None:
-    if not _keyring_available():
-        return
-    try:
-        import keyring
-        keyring.delete_password(_KEYRING_SERVICE, login)
-    except Exception:
-        # delete is best-effort; absent entries are not an error.
-        pass
+    _backend.keyring_delete(_KEYRING_SERVICE, login)
 
 
 # Tiny on-disk hint file under ~/.config/vivarium-dashboard/ to remember the
@@ -171,9 +155,7 @@ def _keyring_delete(login: str) -> None:
 # back, and we don't want to scan all usernames. This file holds *only* the
 # login (a username string like ``alexpatrie``), never the token.
 def _last_login_path():
-    from pathlib import Path
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    return Path(base) / "vivarium-dashboard" / "last_login"
+    return _backend.config_dir() / "last_login"
 
 
 def _remember_login(login: str) -> None:
