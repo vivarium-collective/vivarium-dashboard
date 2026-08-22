@@ -118,13 +118,17 @@ def test_loadcharts_wires_figure_run_links():
 def test_chart_card_renders_iframe_for_declared_interactive_figure():
     i = JS.index("function _renderChartCard")
     block = JS[i:i + 1800]
+    # A declared interactive figure renders as an iframe by EITHER c.iframe_url
+    # (workspace-served, live dashboard) OR c.srcdoc (self-contained + inlined
+    # Plotly, static publish snapshot — publish._inline_declared_iframe_figures).
     assert 'c.iframe_url' in block
+    assert 'c.srcdoc' in block
     assert "'<iframe " in block
     assert 'figure-media-frame' in block
-    # Same trust model as the embed_visualizations iframe: src (not srcdoc),
-    # no `sandbox` attribute beyond what embeds already use.
+    # Same trust model as the embed_visualizations iframe: no `sandbox` attribute
+    # beyond what embeds already use (srcdoc carries the doc inline but is
+    # otherwise the identical iframe embed).
     assert 'sandbox=' not in block
-    assert 'srcdoc' not in block
     # Title/name is escaped before landing in the iframe's `title` attribute
     # and the caption row's figure-title span.
     assert 'escapeHtmlForTests(title)' in block

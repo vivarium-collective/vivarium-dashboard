@@ -295,6 +295,91 @@ def _stage_gif_visualizations(spec: dict, ws_root: Path, out_dir: Path, slug: st
             shutil.copy2(src, dst)
 
 
+# A figure's per-file Plotly.js loader — the external ``<script src="…plotly…">``
+# a Plotly panel uses to pull the shared ``plotly.min.js`` (relative to the
+# workspace-served file). Mirrors ``investigation_report._PLOTLY_SRC_LOADER_RE``.
+_PLOTLY_SRC_LOADER_RE = re.compile(
+    r"<script\b[^>]*\bsrc\s*=\s*['\"][^'\"]*plotly[^'\"]*['\"][^>]*>\s*</script\s*>",
+    re.IGNORECASE,
+)
+# Interactive declared-figure media kinds that carry an ``iframe_url``
+# (mirrors ``study_charts._IFRAME_ADDR_SCHEMES`` / ``viz_gate._INTERACTIVE_KINDS``).
+_IFRAME_MEDIA = frozenset({"html", "threejs"})
+_IFRAME_HTML_MAX = 12_000_000  # never inline an on-disk figure larger than this
+
+
+def _inline_plotly_src(html: str, plotly_js: "str | None") -> str:
+    """Replace a figure's external ``<script src="…plotly…">`` loader with the
+    Plotly library inlined, so the figure HTML is fully self-contained.
+
+    A study's Plotly panel loads the workspace's shared ``plotly.min.js`` through
+    a RELATIVE ``<script src="../../../plotly.min.js">`` — fine on the live
+    dashboard (the workspace serves it) but a dangling reference once the figure
+    is lifted into a ``srcdoc`` in the static bundle. Inlining the library makes
+    the document stand alone.
+
+    No-op when the figure carries no such loader, or when the Plotly source is
+    unavailable (the figure still inlines as ``srcdoc`` — better than a
+    guaranteed 404 on the referenced file). The bundle's ``</script`` sequences
+    are neutralized so the library can't close the wrapping element early
+    (mirrors ``investigation_report.render_html``)."""
+    if not plotly_js or not _PLOTLY_SRC_LOADER_RE.search(html):
+        return html
+    inline = "<script>" + plotly_js.replace("</script", "<\\/script") + "</script>"
+    return _PLOTLY_SRC_LOADER_RE.sub(lambda _m: inline, html)
+
+
+def _inline_declared_iframe_figures(payload: dict, ws_root: Path) -> None:
+    """Make a study-charts payload's declared interactive figures self-contained
+    for the static snapshot.
+
+    ``study_charts.discover_declared_figure_charts`` emits an ``html:``/
+    ``threejs:`` declared figure as a chart record carrying an ``iframe_url``
+    (e.g. ``/studies/<slug>/viz/<file>.html``). The live dashboard's catch-all
+    static route serves that file from the workspace, but the published bundle
+    never materializes it — so on the read-only snapshot every such interactive
+    panel 404s (unlike image/svg figures, which already inline as data-URIs).
+
+    Here we lift each interactive figure into the record itself: read the
+    referenced HTML, inline its Plotly.js dependency, and replace ``iframe_url``
+    with a ``srcdoc`` string the frontend renders in an inline iframe
+    (``study-detail.js::_renderChartCard``). A ``srcdoc`` document carries no
+    relative/root-absolute URL, so it renders correctly under ANY hosting base
+    path — the reason this is preferred over copying the file into the bundle.
+
+    Mutates ``payload`` in place. Best-effort per chart: an unreadable, missing,
+    or oversized file leaves that record's ``iframe_url`` untouched rather than
+    aborting the publish. Plotly source is read at most once per payload."""
+    charts = payload.get("charts")
+    if not isinstance(charts, list):
+        return
+    from vivarium_workbench.lib.investigation_report import _find_plotly_js
+
+    plotly_js = None
+    plotly_loaded = False
+    for c in charts:
+        if not isinstance(c, dict):
+            continue
+        url = c.get("iframe_url")
+        if not url or c.get("srcdoc") or c.get("media") not in _IFRAME_MEDIA:
+            continue
+        rel = str(url).lstrip("/")
+        if not rel or ".." in rel.split("/"):
+            continue  # never resolve a traversal outside the workspace
+        src = ws_root / rel
+        try:
+            if not src.is_file() or src.stat().st_size > _IFRAME_HTML_MAX:
+                continue
+            html = src.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        if not plotly_loaded:
+            plotly_js = _find_plotly_js(ws_root)
+            plotly_loaded = True
+        c["srcdoc"] = _inline_plotly_src(html, plotly_js)
+        c.pop("iframe_url", None)
+
+
 def _rewrite_pack_mesh_urls(obj, pack_dir_rel: str, base_no_slash: str) -> None:
     """Recursively rewrite mesh ``url`` strings in a parsimony pack (in place).
 
@@ -1149,6 +1234,10 @@ def _do_build(
         except Exception as exc:  # noqa: BLE001 — never abort a publish on one study
             print(f"  warn: study-charts export failed for {slug!r}: {exc}")
             continue
+        # Declared html:/threejs: figures point at an `iframe_url` the static
+        # bundle never serves. Inline each as a self-contained `srcdoc` so the
+        # interactive panels render on the read-only snapshot under any base path.
+        _inline_declared_iframe_figures(payload, ws_root)
         _write_json(charts_api_dir / f"{slug}.json", payload)
 
     # api/study-{rigor,audit,test-audit,loop-state}/<slug>.json — the Assurance
