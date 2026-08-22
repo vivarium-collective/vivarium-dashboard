@@ -420,17 +420,9 @@
     "if(h>0)f.style.height=(h+24)+'px';}catch(e){}})(this)";
 
   function _renderChartCard(c) {
-    // SVG records carry inline markup in c.svg; PNG/GIF records carry a
-    // self-contained data-URI in c.img (rendered as <img>). A declared
-    // threejs:/html: figure (Task V6, study_charts.discover_declared_figure_
-    // charts) carries EITHER an `iframe_url` pointing at a workspace-served
-    // HTML file (live dashboard) OR — for the static publish snapshot, where
-    // no server materializes that URL — a self-contained `srcdoc` string with
-    // its Plotly.js inlined (publish._inline_declared_iframe_figures). Both
-    // render as an iframe with the same trust model (no extra `sandbox`
-    // attribute beyond what embeds already use) and the same auto-height
-    // onload resizer; `srcdoc` simply carries the document inline instead of
-    // by reference, so it needs no base-path/relative-URL resolution.
+    // c.svg=inline svg; c.img=data-URI <img>; a declared threejs:/html: figure
+    // carries c.iframe_url (live) OR c.srcdoc (self-contained, static publish —
+    // publish._inline_declared_iframe_figures). Both render as an iframe embed.
     var title = c.title || c.key || 'figure';
     var media = c.srcdoc
       ? '<iframe srcdoc="' + escapeHtmlForTests(c.srcdoc) + '" '
@@ -446,7 +438,6 @@
         + '></iframe>'
       : (c.img
         ? '<img class="chart-img figure-media" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
-        // SVGs → <img> data-URI so WebKit scales foreignObject figures (_svgImg).
         : (c.svg ? _svgImg(c) : '')));
     var desc = c.caption ? '<div class="chart-caption">' + c.caption + '</div>' : '';
     var runLink = c.run_id
