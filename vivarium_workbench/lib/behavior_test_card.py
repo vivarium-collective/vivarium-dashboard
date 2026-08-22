@@ -30,6 +30,7 @@ import yaml
 
 from vivarium_workbench.lib.atomic_io import atomic_write_text
 from vivarium_workbench.lib.conclusion_card import _TRACK_COLORS
+from vivarium_workbench.lib import gate_rigor as _gate_rigor
 
 SCHEMA = "behavior_test_card/v1"
 
@@ -76,9 +77,25 @@ def build_behavior_tests_verdict(spec: dict) -> dict:
             "severity": ax.get("severity"),
             "meter": ax.get("meter"),
             "verdict": ax.get("verdict"),
+            # Rigor split (viva-superpowers #285): pin vs acceptance gate class
+            # + expected-fail control marker, so the card can badge each row.
+            "gate_class": _gate_rigor.test_gate_class(t),
+            "expected_fail": _gate_rigor.is_expected_fail(t),
         })
 
-    results = [r["result"] for r in rows]
+    # Rollup uses each row's EFFECTIVE result: an expected-fail control BEHAVES
+    # by failing, so its FAIL counts as satisfied (and a PASS — the control
+    # failing to discriminate — counts as a failure). Rows without the
+    # expected-fail markers are unchanged, byte-for-byte.
+    def _effective(r: dict) -> str:
+        if r["expected_fail"]:
+            if r["result"] == "FAIL":
+                return "PASS"
+            if r["result"] == "PASS":
+                return "FAIL"
+        return r["result"]
+
+    results = [_effective(r) for r in rows]
     if not results:
         overall = "ungraded"
     elif any(r == "FAIL" for r in results):
@@ -95,11 +112,65 @@ def build_behavior_tests_verdict(spec: dict) -> dict:
         "n_pass": sum(1 for r in results if r == "PASS"),
         "n_fail": sum(1 for r in results if r == "FAIL"),
         "n_total": len(rows),
+        # The split verdict ledger (pins vs acceptance vs expected-fail) —
+        # additive key; delegates to viva_superpowers.study_verdict when #285
+        # is installed, mirrors the same buckets locally otherwise.
+        "count_split": _gate_rigor.verdict_count_split(spec),
     }
 
 
 _VERDICT_COLOR = {"within_tol": "#16a34a", "drift": "#d97706",
                   "mismatch": "#dc2626", "ungraded": "#6b7280"}
+
+# Gate-class badge palette (viva-superpowers #285): a regression pin freezes
+# known-good behavior (indigo), an acceptance criterion is the forward-looking
+# scientific gate (blue).
+_GATE_CLASS_BADGES = {
+    "regression_pin": ("pin", "#e0e7ff", "#3730a3"),
+    "acceptance_criterion": ("acceptance", "#dbeafe", "#1e40af"),
+}
+
+
+def _gate_class_badge_html(row: dict) -> str:
+    """Small pin/acceptance pill after the test name. '' when unclassified."""
+    entry = _GATE_CLASS_BADGES.get(str(row.get("gate_class") or ""))
+    if not entry:
+        return ""
+    label, bg, fg = entry
+    return (
+        f'<span title="gate_class: {_html.escape(str(row["gate_class"]))}" '
+        f'style="display:inline-block;padding:1px 8px;border-radius:9999px;'
+        f'background:{bg};color:{fg};font-weight:600;font-size:0.72em">'
+        f'{label}</span>'
+    )
+
+
+def _result_pill(row: dict) -> str:
+    """The row's result pill. An expected-fail control is badged distinctly:
+    amber "EXPECTED FAIL" when it behaved (result FAIL), red "UNEXPECTED PASS"
+    when it did not fail — NEVER a green pass."""
+    res = str(row.get("result") or "PENDING")
+    if row.get("expected_fail"):
+        if res == "FAIL":
+            text, (bg, fg) = "EXPECTED FAIL", ("#fef3c7", "#92400e")
+            title = "expected-fail control — behaved (failed as designed)"
+        elif res == "PASS":
+            text, (bg, fg) = "UNEXPECTED PASS", ("#fee2e2", "#991b1b")
+            title = "expected-fail control did NOT fail — it is not discriminating"
+        else:
+            text, (bg, fg) = f"EXPECTED FAIL · {res}", _TRACK_COLORS["PENDING"]
+            title = "expected-fail control — not yet evaluated"
+        return (
+            f'<span title="{_html.escape(title)}" style="display:inline-block;'
+            f'padding:2px 10px;border-radius:9999px;background:{bg};color:{fg};'
+            f'font-weight:700;font-size:0.82em">{_html.escape(text)}</span>'
+        )
+    bg, fg = _TRACK_COLORS.get(res, _TRACK_COLORS["PENDING"])
+    return (
+        '<span style="display:inline-block;padding:2px 10px;border-radius:9999px;'
+        f'background:{bg};color:{fg};font-weight:700;font-size:0.82em">'
+        f'{_html.escape(res)}</span>'
+    )
 
 
 def _margin_bar_html(row: dict) -> str:
@@ -148,8 +219,6 @@ def render_behavior_tests_html(verdict: dict, spec: dict) -> str:
 
     body_rows = []
     for r in rows:
-        res = str(r.get("result") or "PENDING")
-        bg, fg = _TRACK_COLORS.get(res, _TRACK_COLORS["PENDING"])
         detail = r.get("detail") or ""
         mv = r.get("measured_value")
         meta = detail or (f"measured: {mv}" if mv is not None else "")
@@ -164,10 +233,10 @@ def render_behavior_tests_html(verdict: dict, spec: dict) -> str:
         body_rows.append(
             '<div style="padding:8px 0;border-top:1px solid #f1f5f9">'
             '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap">'
-            '<span style="display:inline-block;padding:2px 10px;border-radius:9999px;'
-            f'background:{bg};color:{fg};font-weight:700;font-size:0.82em">{_html.escape(res)}</span>'
+            + _result_pill(r) +
             '<span style="font-weight:600;color:#1e293b">'
             f'{_html.escape(str(r.get("name") or ""))}</span>'
+            + _gate_class_badge_html(r) +
             "</div>" + en_html + meta_html + _margin_bar_html(r) + "</div>"
         )
 
@@ -182,6 +251,12 @@ def render_behavior_tests_html(verdict: dict, spec: dict) -> str:
         + (f' · <span style="color:#991b1b;font-weight:600">{n_fail} fail</span>' if n_fail else "")
         + f' · {n_total} total'
     ) if n_total else "no tests"
+    # Split ledger (pins vs acceptance vs expected-fail) beside the counts,
+    # when the study classified any of its gates.
+    split = verdict.get("count_split")
+    split_label = (split or {}).get("label") if isinstance(split, dict) else None
+    if n_total and split_label and split_label != "no classified gates":
+        summary += (f' · <span style="color:#475569">{_html.escape(split_label)}</span>')
 
     return (
         REPORT_CARD_MARKER + "\n"

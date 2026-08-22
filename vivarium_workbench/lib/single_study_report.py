@@ -1112,6 +1112,242 @@ def _render_measurement_integrity(spec: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Rigor split (viva-superpowers #285) — the verdict-count ledger, the
+# units_and_time table, and the provenance/environment block. Each renders
+# defensively: a missing/empty field returns '' so the section is omitted.
+# ---------------------------------------------------------------------------
+
+def _render_gate_ledger(spec: dict) -> str:
+    """The verdict-count LEDGER — pins vs acceptance vs expected-fail counted
+    separately (e.g. "pins 2/2 · acceptance 1/2 · expected-fail behaved 1/1")
+    instead of a single conflated "gate: passed". Driven by
+    ``gate_rigor.verdict_count_split`` (delegates to viva_superpowers when
+    #285 is installed, local mirror otherwise). '' when the study declares no
+    behavior tests.
+    """
+    try:
+        from vivarium_workbench.lib.gate_rigor import verdict_count_split
+        split = verdict_count_split(spec)
+    except Exception:
+        return ""
+    if not isinstance(split, dict):
+        return ""
+    pins = split.get("regression_pins") or {}
+    acc = split.get("acceptance_criteria") or {}
+    ef = split.get("expected_fail") or {}
+    n_unclassified = split.get("unclassified") or 0
+    n_narrated = split.get("narrated") or 0
+    if not (pins.get("total") or acc.get("total") or ef.get("total")
+            or n_unclassified or n_narrated):
+        return ""
+
+    def _seg(label: str, ok: int, total: int, *, hint: str) -> str:
+        if total <= 0:
+            return ""
+        if ok >= total:
+            bg, fg = "#dcfce7", "#166534"
+        elif ok > 0:
+            bg, fg = "#fef3c7", "#92400e"
+        else:
+            bg, fg = "#fee2e2", "#991b1b"
+        return (
+            f'<span title="{_h(hint)}" style="display:inline-block;'
+            f'padding:3px 12px;border-radius:9999px;background:{bg};color:{fg};'
+            f'font-weight:700;font-size:0.9em;margin:2px">'
+            f'{_h(label)} {ok}/{total}</span>'
+        )
+
+    segs = [
+        _seg("pins", int(pins.get("pass") or 0), int(pins.get("total") or 0),
+             hint="regression pins — freeze known-good behavior"),
+        _seg("acceptance", int(acc.get("pass") or 0), int(acc.get("total") or 0),
+             hint="acceptance criteria — the forward-looking scientific gates"),
+        _seg("expected-fail behaved", int(ef.get("behaved") or 0),
+             int(ef.get("total") or 0),
+             hint="expected-fail controls — behaved = failed as designed"),
+    ]
+    extras = []
+    if n_unclassified:
+        extras.append(
+            f'<span style="display:inline-block;padding:3px 12px;border-radius:9999px;'
+            f'background:#f1f5f9;color:#475569;font-size:0.9em;margin:2px" '
+            f'title="graded tests with no gate_class — classify them as '
+            f'regression_pin or acceptance_criterion">'
+            f'{n_unclassified} unclassified</span>')
+    if n_narrated:
+        extras.append(
+            f'<span style="display:inline-block;padding:3px 12px;border-radius:9999px;'
+            f'background:#f1f5f9;color:#475569;font-size:0.9em;margin:2px" '
+            f'title="narrative-only expectations (no machine-checkable measure)">'
+            f'{n_narrated} narrated</span>')
+    label = str(split.get("label") or "")
+    rerun = split.get("committed_rerunnable")
+    rerun_html = ""
+    if rerun is not None:
+        rerun_html = (
+            '<div style="color:#64748b;font-size:0.85em;margin-top:4px">'
+            'committed rerunnable evidence: '
+            + ("yes" if rerun else "no") + '</div>'
+        )
+    return (
+        '<section id="gate-ledger"><h2>Gate ledger</h2>'
+        '<p style="color:#475569;font-size:0.92em;margin:0 0 8px">Regression pins, '
+        'acceptance criteria, and expected-fail controls counted <strong>separately</strong> '
+        '— a behaved negative control is never a green acceptance pass, and a pin '
+        'regression is never hidden inside an overall "gate: passed".</p>'
+        f'<div title="{_h(label)}">' + "".join(s for s in segs if s) + "".join(extras)
+        + '</div>' + rerun_html +
+        '</section>'
+    )
+
+
+def _render_units_and_time(spec: dict) -> str:
+    """The declared ``units_and_time:`` block as a table. Accepts either a list
+    of per-quantity dicts (``{quantity/name, unit, scale/step, note}``) or a
+    flat mapping of ``key: value`` rows. '' when the study declares none.
+    """
+    ut = spec.get("units_and_time")
+    if not ut:
+        return ""
+
+    def _cell(v) -> str:
+        if isinstance(v, dict):
+            v = ", ".join(f"{k}={x}" for k, x in v.items())
+        elif isinstance(v, (list, tuple)):
+            v = ", ".join(str(x) for x in v)
+        return _h(str(v)) if v not in (None, "") else '<span style="color:#cbd5e1">—</span>'
+
+    rows = []
+    if isinstance(ut, list):
+        entries = [e for e in ut if isinstance(e, dict)]
+        if not entries:
+            return ""
+        head = (
+            '<tr style="text-align:left;color:#475569;font-size:0.82em">'
+            '<th style="padding:4px 8px">Quantity</th><th style="padding:4px 8px">Unit</th>'
+            '<th style="padding:4px 8px">Scale / step</th><th style="padding:4px 8px">Note</th></tr>'
+        )
+        for e in entries:
+            rows.append(
+                '<tr style="border-top:1px solid #f1f5f9;font-size:0.9em">'
+                f'<td style="padding:4px 8px"><code>{_h(str(e.get("quantity") or e.get("name") or ""))}</code></td>'
+                f'<td style="padding:4px 8px">{_cell(e.get("unit"))}</td>'
+                f'<td style="padding:4px 8px">{_cell(e.get("scale") if e.get("scale") is not None else e.get("step"))}</td>'
+                f'<td style="padding:4px 8px">{_cell(e.get("note"))}</td>'
+                '</tr>'
+            )
+    elif isinstance(ut, dict):
+        head = (
+            '<tr style="text-align:left;color:#475569;font-size:0.82em">'
+            '<th style="padding:4px 8px">Quantity</th><th style="padding:4px 8px">Value</th></tr>'
+        )
+        for k, v in ut.items():
+            rows.append(
+                '<tr style="border-top:1px solid #f1f5f9;font-size:0.9em">'
+                f'<td style="padding:4px 8px"><code>{_h(str(k))}</code></td>'
+                f'<td style="padding:4px 8px">{_cell(v)}</td>'
+                '</tr>'
+            )
+    else:
+        return ""
+    if not rows:
+        return ""
+    return (
+        '<section id="units-and-time"><h2>Units &amp; time</h2>'
+        '<p style="color:#475569;font-size:0.92em;margin:0 0 8px">The unit and '
+        'time-base declarations this study commits to — what each observable is '
+        'measured in and what a simulation step means in wall/biological time.</p>'
+        '<table style="border-collapse:collapse;width:100%">'
+        + head + "".join(rows) + '</table>'
+        '</section>'
+    )
+
+
+def _provenance_info(ws_root: Optional[Path]) -> dict:
+    """Collect provenance/environment facts: workspace git short-commit,
+    platform, and importable stack versions. Every probe degrades gracefully
+    (missing git / package → the row is simply absent). Deliberately carries
+    NO absolute paths — only commit ids, platform strings, and versions.
+    """
+    info: dict = {}
+    if ws_root is not None:
+        try:
+            import subprocess
+            r = subprocess.run(
+                ["git", "rev-parse", "--short", "HEAD"],
+                cwd=str(ws_root), capture_output=True, text=True, timeout=10,
+            )
+            if r.returncode == 0 and r.stdout.strip():
+                info["workspace_commit"] = r.stdout.strip()
+        except Exception:
+            pass
+    try:
+        import platform as _platform
+        info["platform"] = _platform.platform()
+        info["python"] = _platform.python_version()
+    except Exception:
+        pass
+    versions: dict = {}
+    try:
+        from importlib import metadata as _metadata
+        for dist in ("vivarium-workbench", "viva-superpowers", "process-bigraph",
+                     "bigraph-schema", "numpy", "pandas"):
+            try:
+                versions[dist] = _metadata.version(dist)
+            except Exception:
+                continue
+    except Exception:
+        pass
+    if versions:
+        info["versions"] = versions
+    return info
+
+
+def _render_provenance(info: dict) -> str:
+    """The provenance/environment block from :func:`_provenance_info`. Always
+    renders the section (even when every probe failed) so the reader sees that
+    provenance was attempted; absent facts show as "unavailable".
+    """
+    info = info if isinstance(info, dict) else {}
+    rows = []
+
+    def _row(label: str, value: str) -> str:
+        return (
+            '<div style="display:flex;gap:10px;padding:5px 0;border-top:1px solid #e2e8f0">'
+            f'<span style="flex:0 0 12em;font-weight:600;color:#475569">{_h(label)}</span>'
+            f'<span style="color:#1e293b">{value}</span>'
+            '</div>'
+        )
+
+    commit = info.get("workspace_commit")
+    rows.append(_row("Workspace commit",
+                     f'<code>{_h(commit)}</code>' if commit
+                     else '<span style="color:#94a3b8">unavailable (not a git checkout)</span>'))
+    plat = info.get("platform")
+    py = info.get("python")
+    plat_bits = " · ".join(_h(x) for x in (plat, f"Python {py}" if py else None) if x)
+    rows.append(_row("Platform", plat_bits or '<span style="color:#94a3b8">unavailable</span>'))
+    versions = info.get("versions") or {}
+    if versions:
+        chips = "".join(
+            f'<code style="font-size:0.85em;margin-right:8px">{_h(k)}=={_h(v)}</code>'
+            for k, v in versions.items()
+        )
+        rows.append(_row("Stack", chips))
+    else:
+        rows.append(_row("Stack", '<span style="color:#94a3b8">no stack packages importable</span>'))
+    return (
+        '<section id="provenance"><h2>Provenance &amp; environment</h2>'
+        '<p style="color:#475569;font-size:0.92em;margin:0 0 8px">The code state and '
+        'environment this report was rendered from, so a reviewer can tie the numbers '
+        'to an exact commit and stack.</p>'
+        '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;'
+        'padding:4px 14px 10px">' + "".join(rows) + '</div>'
+        '</section>'
+    )
+
+
+# ---------------------------------------------------------------------------
 # W15 — open epistemic debts panel
 # ---------------------------------------------------------------------------
 
@@ -1868,6 +2104,7 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
                  composite_doc: Optional[dict] = None,
                  skeptic: bool = False,
                  report_cards_html: str = "",
+                 provenance_html: str = "",
                  # Each entry is either a bare ref string (legacy — no
                  # suggestion to offer) or a {"ref": ..., "suggestion": ...}
                  # dict (see unresolved_study_composite_refs callers below).
@@ -1890,6 +2127,8 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
     study_type_badge = _render_study_type_badge(study_spec)   # critique #10
     prereg_chip = _render_preregistration_chip(study_spec)    # critique #18
     metrics_html = _render_key_metrics(key_metrics)
+    gate_ledger_html = _render_gate_ledger(study_spec)       # viva-superpowers #285
+    units_time_html = _render_units_and_time(study_spec)     # viva-superpowers #285
     verdicts_html = _render_conclusion_verdicts(study_spec)
     synthesis_html = _render_conclusion_synthesis(study_spec)
     biology_html = _render_biological_summary(study_spec)
@@ -2014,13 +2253,16 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             ("alternatives", "Alternatives", alternatives_html, bool(alternatives_html)),
             ("limitations", "Limitations", limitations_html, bool(limitations_html)),
             ("epistemic-debts", "Open debts", debts_html, bool(debts_html)),
+            ("gate-ledger", "Gate ledger", gate_ledger_html, bool(gate_ledger_html)),
             ("verdicts", "Verdicts", verdicts_html, bool(verdicts_html)),
+            ("units-and-time", "Units & time", units_time_html, bool(units_time_html)),
             ("report-cards", "Report cards", report_cards_html, bool(report_cards_html)),
             ("synthesis", "Synthesis", synthesis_html, bool(synthesis_html)),
             ("biology", "Biology", biology_section, bool(biology_html)),
             ("model-card", "Model card", model_card_html, bool(model_card_html)),
             ("representation", "Representation", representation_html, bool(representation_html)),
             ("viz", "Visualisations", viz_section, bool(viz_html)),
+            ("provenance", "Provenance", provenance_html, bool(provenance_html)),
         ]
         body_main = "\n\n".join(html for (_a, _l, html, _show) in seq if html)
         nav_chips = [_chip(a, l) for (a, l, _html, show) in seq if show]
@@ -2032,8 +2274,12 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             nav_chips.append(_chip("commitment", "Commitment"))
         if invariants_html:
             nav_chips.append(_chip("invariants", "Invariants"))
+        if gate_ledger_html:
+            nav_chips.append(_chip("gate-ledger", "Gate ledger"))
         if verdicts_html:
             nav_chips.append(_chip("verdicts", "Verdicts"))
+        if units_time_html:
+            nav_chips.append(_chip("units-and-time", "Units & time"))
         if report_cards_html:
             nav_chips.append(_chip("report-cards", "Report cards"))
         if synthesis_html:
@@ -2052,6 +2298,8 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             nav_chips.append(_chip("measurement-integrity", "Measurement integrity"))
         if viz_html:
             nav_chips.append(_chip("viz", "Visualisations"))
+        if provenance_html:
+            nav_chips.append(_chip("provenance", "Provenance"))
         # W15 — the open-debts panel renders right after rigor in normal mode.
         # Wave 2 — commitment + invariants lead the framing; the causal-necessity
         # table sits in the evidence area (after rigor); model card + representation
@@ -2061,7 +2309,9 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             reproduce_html,
             commitment_html,
             invariants_html,
+            gate_ledger_html,
             verdicts_html,
+            units_time_html,
             report_cards_html,
             synthesis_html,
             biology_section,
@@ -2073,6 +2323,7 @@ def _render_html(study_spec: dict, viz_entries: list[dict],
             model_card_html,
             representation_html,
             viz_section,
+            provenance_html,
         ])
     nav_html = (
         '<nav class="ssr-section-nav">' + "".join(nav_chips) + '</nav>'
@@ -2252,6 +2503,13 @@ def render_single_study_report(
         report_cards_html = render_report_cards_section(ws_root, study_slug)
     except Exception:
         report_cards_html = ""
+    # Provenance/environment block (viva-superpowers #285 companion): git
+    # short-commit + platform + importable stack versions. Every probe degrades
+    # gracefully; the render itself must never break the report.
+    try:
+        provenance_html = _render_provenance(_provenance_info(ws_root))
+    except Exception:
+        provenance_html = ""
     html = _render_html(
         study_spec, viz_entries,
         investigation_slug=investigation_slug,
@@ -2259,6 +2517,7 @@ def render_single_study_report(
         composite_doc=composite_doc,
         skeptic=skeptic,
         report_cards_html=report_cards_html,
+        provenance_html=provenance_html,
         unresolved_composites=unresolved_composites,
     )
 
