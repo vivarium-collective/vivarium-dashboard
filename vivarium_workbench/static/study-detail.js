@@ -423,13 +423,22 @@
     // SVG records carry inline markup in c.svg; PNG/GIF records carry a
     // self-contained data-URI in c.img (rendered as <img>). A declared
     // threejs:/html: figure (Task V6, study_charts.discover_declared_figure_
-    // charts) carries neither — just an `iframe_url` pointing at a self-
-    // contained HTML file — and renders as an iframe, reusing the
-    // embed_visualizations iframe pattern: same trust model (a same-origin
-    // `src` iframe, no `sandbox` attribute beyond what embeds already use)
-    // and the same auto-height onload resizer.
+    // charts) carries EITHER an `iframe_url` pointing at a workspace-served
+    // HTML file (live dashboard) OR — for the static publish snapshot, where
+    // no server materializes that URL — a self-contained `srcdoc` string with
+    // its Plotly.js inlined (publish._inline_declared_iframe_figures). Both
+    // render as an iframe with the same trust model (no extra `sandbox`
+    // attribute beyond what embeds already use) and the same auto-height
+    // onload resizer; `srcdoc` simply carries the document inline instead of
+    // by reference, so it needs no base-path/relative-URL resolution.
     var title = c.title || c.key || 'figure';
-    var media = c.iframe_url
+    var media = c.srcdoc
+      ? '<iframe srcdoc="' + escapeHtmlForTests(c.srcdoc) + '" '
+        + 'class="figure-media-frame figure-media-frame--embed" '
+        + 'loading="lazy" title="' + escapeHtmlForTests(title) + '" '
+        + 'onload="' + _FIGURE_IFRAME_ONLOAD + '"'
+        + '></iframe>'
+      : (c.iframe_url
       ? '<iframe src="' + escapeHtmlForTests(c.iframe_url) + '" '
         + 'class="figure-media-frame figure-media-frame--embed" '
         + 'loading="lazy" title="' + escapeHtmlForTests(title) + '" '
@@ -438,7 +447,7 @@
       : (c.img
         ? '<img class="chart-img figure-media" src="' + c.img + '" alt="' + (c.key || 'chart') + '" loading="lazy">'
         // SVGs → <img> data-URI so WebKit scales foreignObject figures (_svgImg).
-        : (c.svg ? _svgImg(c) : ''));
+        : (c.svg ? _svgImg(c) : '')));
     var desc = c.caption ? '<div class="chart-caption">' + c.caption + '</div>' : '';
     var runLink = c.run_id
       ? '<a href="#" class="figure-run-link" data-run-id="' + escapeHtmlForTests(String(c.run_id)) + '">from run '
@@ -447,7 +456,7 @@
     return '<div class="figure-card">' + media + desc
       + '<div class="figure-caption-row">'
       + '<span class="figure-source-chip">chart</span>'
-      + (c.title ? '<span class="figure-title">' + (c.iframe_url ? escapeHtmlForTests(c.title) : c.title) + '</span>' : '')
+      + (c.title ? '<span class="figure-title">' + ((c.iframe_url || c.srcdoc) ? escapeHtmlForTests(c.title) : c.title) + '</span>' : '')
       + runLink
       + '</div></div>';
   }
