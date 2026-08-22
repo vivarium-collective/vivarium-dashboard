@@ -782,6 +782,14 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
                     _eff_status = "evaluated"
             except Exception:  # noqa: BLE001
                 pass
+        # Rigor count-split (viva-superpowers #285): pins vs acceptance vs
+        # expected-fail counted separately, so the investigation view can show
+        # the split ledger instead of one conflated gate result. Best-effort.
+        try:
+            from vivarium_workbench.lib.gate_rigor import verdict_count_split  # noqa: PLC0415
+            _count_split = verdict_count_split(study_spec)
+        except Exception:  # noqa: BLE001
+            _count_split = None
         studies_out.append({
             "name":                  study_spec["name"],
             "status":                raw_status,
@@ -813,6 +821,8 @@ def build_iset_detail(ws_root: Path, name: str) -> Optional[dict]:
             "evaluation_status":     study_spec.get("evaluation_status"),
             "gate_status":           study_spec.get("gate_status"),
             "expert_review_status":  study_spec.get("expert_review_status"),
+            # viva-superpowers #285 — the split verdict ledger (or None).
+            "verdict_count_split":   _count_split,
             # Spine A2: persisted coded gate_evaluator.
             "computed_gate_verdict": (
                 (study_spec.get("pipeline_gate") or {}).get("gate_evaluator")

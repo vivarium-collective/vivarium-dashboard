@@ -867,6 +867,18 @@ def load_study_detail_spec(ws_root: Path, name: str) -> Optional[dict]:
         except Exception:  # noqa: BLE001
             pass
 
+        # Rigor count-split (viva-superpowers #285): the pins-vs-acceptance-vs-
+        # expected-fail verdict ledger, so views can render "pins 2/2 ·
+        # acceptance 1/2 · expected-fail behaved 1/1" instead of one conflated
+        # "gate: passed". gate_rigor delegates to viva_superpowers.study_verdict
+        # .verdict_count_split when importable, mirrors the buckets locally
+        # otherwise. Render-only; best-effort.
+        try:
+            from vivarium_workbench.lib.gate_rigor import verdict_count_split
+            spec["verdict_count_split"] = verdict_count_split(spec)
+        except Exception:  # noqa: BLE001
+            pass
+
         # Wave 3a #18: pre-registration status — compare the study's declared
         # `preregistered` block (registered_at vs the canonical run's start;
         # thresholds vs behavior_tests[].pass_if) so the SPA / report can render
