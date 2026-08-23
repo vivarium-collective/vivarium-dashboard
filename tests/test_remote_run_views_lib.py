@@ -273,6 +273,58 @@ def test_submit_issues_run_and_returns_simulation_id(monkeypatch, tmp_path):
     assert body["phase"] == "running"
 
 
+# ---------------------------------------------------------------------------
+# item 84: a dispatch-time pending-run placeholder, so the Runs tab shows a
+# UI-dispatched campaign immediately instead of only once someone lands it
+# (land_remote_run was the ONLY place a runs_meta row was ever written for a
+# remote run — confirmed by reading the code, not assumed).
+# ---------------------------------------------------------------------------
+
+def test_submit_writes_a_pending_runs_meta_row(monkeypatch, tmp_path):
+    from vivarium_workbench.lib import composite_runs as cr
+
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    monkeypatch.setattr(rrv.remote_pinned, "remote_deployment_name", lambda: "smscdk")
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 10, "num_seeds": 1000})
+    assert status == 202
+
+    # _wire_thin stubs study_spec.study_dir to return tmp_path itself.
+    conn = cr.connect(tmp_path / "runs.db")
+    try:
+        row = conn.execute(
+            "SELECT spec_id, status, params_json FROM runs_meta WHERE run_id=?",
+            (f"remote-pending-{body['simulation_id']}",),
+        ).fetchone()
+    finally:
+        conn.close()
+    assert row is not None
+    spec_id, status_col, params_json = row
+    assert spec_id == "my-comp"  # from _wire_thin's baseline[0].composite
+    assert status_col == "running"
+    import json as _json
+    params = _json.loads(params_json)
+    assert params == {"source": "smscdk", "simulation_id": 199, "backend": "ray"}
+
+
+def test_submit_still_succeeds_when_pending_row_write_fails(monkeypatch, tmp_path):
+    """The pending-row write is cosmetic (Runs-tab visibility); a real,
+    already-dispatched, real-money AWS Batch campaign must never be reported
+    as failed just because this bookkeeping side effect couldn't happen."""
+    _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+
+    def _boom(ws, name):
+        raise OSError("workspace paths unavailable")
+
+    monkeypatch.setattr(rrv.study_spec, "study_dir", _boom)
+    body, status = rrv.remote_run_submit(
+        tmp_path, {"simulator_id": 66, "study": "s", "num_generations": 1, "num_seeds": 1})
+    assert status == 202
+    assert body["simulation_id"] == 199
+
+
 def test_submit_missing_simulator_id_400(monkeypatch, tmp_path):
     _wire_thin(monkeypatch, tmp_path)
     monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)

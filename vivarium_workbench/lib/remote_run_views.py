@@ -376,6 +376,44 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
         # so the caller gets the actual upstream error message instead of a
         # generic crash, on this path too.
         return {"error": str(e), "reachable": False}, 502
+    # item 84: land_remote_run is the ONLY place a runs_meta row has ever been
+    # written for a remote run -- confirmed by reading the real code, not
+    # assumed -- so a UI-dispatched campaign was completely invisible in the
+    # Runs tab from dispatch until someone explicitly clicked "Land Results",
+    # which could be hours later or never. Write a lightweight pending-dispatch
+    # placeholder here, at the moment we actually have a real simulation_id,
+    # so the Runs tab shows it immediately. Its run_id (`remote-pending-<id>`)
+    # is deliberately NOT generate_run_id's own scheme -- that hash embeds the
+    # CALL-TIME timestamp, so it can never be reproduced later at land time to
+    # target the same row; a stable, simulation_id-derived id is what makes
+    # land_remote_run's own cleanup below possible. Best-effort: a Runs-tab
+    # visibility row must never block or fail a real, already-dispatched,
+    # real-money AWS Batch campaign.
+    try:
+        from vivarium_workbench.lib import composite_runs as cr
+        _baseline = spec.get("baseline") or []
+        _spec_id = (_baseline[0].get("composite") if _baseline else None) or study
+        _deployment = remote_pinned.remote_deployment_name()
+        conn = cr.connect(study_spec.study_dir(ws_root, study) / "runs.db")
+        try:
+            cr.save_metadata(
+                conn,
+                spec_id=_spec_id,
+                run_id=f"remote-pending-{sim['database_id']}",
+                params={
+                    "source": _deployment,
+                    "simulation_id": sim["database_id"],
+                    "backend": "ray",
+                },
+                label=f"Remote dispatch ({_deployment}) — in progress",
+                started_at=time.time(),
+                n_steps=0,
+                workspace=ws_root,
+            )
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 — see docstring above; never block the real dispatch
+        pass
     response = {"simulation_id": sim["database_id"], "phase": "running"}
     if analysis_errors:
         # backlog item 39: surface which requested analyses couldn't be

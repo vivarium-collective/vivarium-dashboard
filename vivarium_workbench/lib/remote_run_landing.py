@@ -207,6 +207,14 @@ def land_remote_run(
             workspace=ws_root,
         )
         cr.complete_metadata(conn, run_id=run_id, n_steps=0, status="completed")
+        # item 84: remove the dispatch-time pending placeholder (remote_run_
+        # submit's own `remote-pending-<simulation_id>` row, written so the
+        # Runs tab shows the campaign immediately instead of only once landed)
+        # now that this real row supersedes it. Safe to call unconditionally —
+        # deleting a run_id that was never written (any simulation landed via
+        # an older/other path, or a simulation never dispatched through
+        # remote_run_submit at all) is a silent no-op.
+        cr.delete_run(conn, run_id=f"remote-pending-{simulation_id}")
     finally:
         conn.close()
 
