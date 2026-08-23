@@ -538,8 +538,12 @@ def _run_xarray(*, state, run_id, emit_paths, out_dir, core, steps,
 
     from process_bigraph import Composite
     from process_bigraph.emitter import collect_input_ports
-    from pbg_emitters.xarray_emitter import XArrayEmitter
-    from pbg_emitters.xarray_emitter.view import view_from_emit_paths
+    try:  # package renamed pbg_emitters -> viva_emitters; support both
+        from viva_emitters.xarray_emitter import XArrayEmitter
+        from viva_emitters.xarray_emitter.view import view_from_emit_paths
+    except ImportError:
+        from pbg_emitters.xarray_emitter import XArrayEmitter
+        from pbg_emitters.xarray_emitter.view import view_from_emit_paths
 
     core.register_link("XArrayEmitter", XArrayEmitter)
     composite = Composite({"state": state}, core=core)
