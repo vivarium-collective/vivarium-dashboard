@@ -311,6 +311,66 @@ def test_pinned_build_start_falls_back_to_static_pin_when_unswitched(
     assert body["simulator_id"] == 69
 
 
+# --------------------------------------------------------------------------- #
+# resolve_pinned_simulator_id (item 83) — the simulator_id a deployment-target
+# dispatch should use, same precedence as remote_run_pinned_build_start/
+# remote_run_config (session build first, else the static pin), but collapsed
+# to a single Optional[int] since study_runs.py's caller only needs a
+# yes/no-and-which-id (one generic 409 fallback), not the richer distinct
+# 404/502 shapes remote_run_pinned_build_start's own callers need — those two
+# stay on their existing, unrefactored logic on purpose.
+# --------------------------------------------------------------------------- #
+
+
+def test_resolve_pinned_simulator_id_prefers_session_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(rp, "pinned_config", lambda: (_ for _ in ()).throw(
+        AssertionError("pinned_config must not be consulted when a session build exists")))
+    _stamp_build_meta(tmp_path)
+    assert rp.resolve_pinned_simulator_id(_FakeClient(), tmp_path) == 54
+
+
+def test_resolve_pinned_simulator_id_falls_back_to_static_pin(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        rp, "pinned_config",
+        lambda: rp.PinnedConfig(
+            repo_url="https://github.com/vivarium-collective/v2ecoli", branch="main"),
+    )
+    assert rp.resolve_pinned_simulator_id(_FakeClient(), tmp_path) == 69
+
+
+def test_resolve_pinned_simulator_id_none_when_pinned_mode_off(tmp_path, monkeypatch):
+    monkeypatch.setattr(rp, "pinned_config", lambda: None)
+    assert rp.resolve_pinned_simulator_id(_FakeClient(), tmp_path) is None
+
+
+def test_resolve_pinned_simulator_id_none_when_no_matching_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        rp, "pinned_config",
+        lambda: rp.PinnedConfig(repo_url="https://github.com/nobody/nothing", branch="main"),
+    )
+    assert rp.resolve_pinned_simulator_id(_FakeClient(), tmp_path) is None
+
+
+def test_resolve_pinned_simulator_id_none_when_sms_api_unreachable(tmp_path, monkeypatch):
+    """The real gap this closes: an unreachable sms-api used to bubble up as
+    an unhandled SmsApiError from this helper — now degrades to None, the
+    same as "no build resolved", so callers get one clean, controlled 409
+    instead of a crash (exercised end to end by
+    test_study_run_baseline_pinned_deployment_409_over_real_http)."""
+    from vivarium_workbench.lib.sms_api_client import SmsApiError
+
+    class _BoomClient:
+        def list_simulators(self):
+            raise SmsApiError("GET ... failed: connection refused")
+
+    monkeypatch.setattr(
+        rp, "pinned_config",
+        lambda: rp.PinnedConfig(
+            repo_url="https://github.com/vivarium-collective/v2ecoli", branch="main"),
+    )
+    assert rp.resolve_pinned_simulator_id(_BoomClient(), tmp_path) is None
+
+
 def test_remote_deployment_name_default(monkeypatch):
     import vivarium_workbench.lib.remote_pinned as rp_mod
 
