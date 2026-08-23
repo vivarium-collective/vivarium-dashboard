@@ -128,6 +128,72 @@ def test_land_without_ws_root_skips_analysis_folding(tmp_path: Path):
     assert run_id  # lands normally; no ws_root means no .pbg/runs/ write attempted
 
 
+# ---------------------------------------------------------------------------
+# item 84: land_remote_run cleans up remote_run_submit's own dispatch-time
+# pending placeholder (run_id `remote-pending-<simulation_id>`) once the real,
+# fully-landed row exists — the two can never share a run_id (generate_run_id
+# embeds the call-TIME timestamp, so it's not reproducible from simulation_id
+# alone), so without this cleanup a landed campaign would show TWICE in the
+# Runs tab: a permanently-stuck "running" placeholder alongside the real
+# completed row.
+# ---------------------------------------------------------------------------
+
+def test_land_removes_the_dispatch_time_pending_placeholder(tmp_path: Path):
+    from vivarium_workbench.lib import composite_runs as cr
+
+    study = tmp_path / "study"
+    study.mkdir()
+    conn = cr.connect(study / "runs.db")
+    try:
+        cr.save_metadata(
+            conn, spec_id="s", run_id="remote-pending-88",
+            params={"source": "smscdk", "simulation_id": 88, "backend": "ray"},
+            label="Remote dispatch (smscdk) — in progress",
+            started_at=1000.0, n_steps=0,
+        )
+    finally:
+        conn.close()
+
+    tar = _make_remote_zarr_tar(tmp_path)
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=88, experiment_id="e", commit="c", tar_path=tar,
+    )
+    assert run_id != "remote-pending-88"  # the real row uses generate_run_id's own scheme
+
+    conn = sqlite3.connect(str(study / "runs.db"))
+    try:
+        pending = conn.execute(
+            "SELECT 1 FROM runs_meta WHERE run_id=?", ("remote-pending-88",)
+        ).fetchone()
+        landed = conn.execute(
+            "SELECT status FROM runs_meta WHERE run_id=?", (run_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert pending is None  # placeholder removed
+    assert landed is not None and landed[0] == "completed"  # real row present
+
+
+def test_land_without_a_pending_placeholder_is_unaffected(tmp_path: Path):
+    """Landing a simulation that was never dispatched through remote_run_submit
+    (an older run, or one landed via another path) has no pending row to clean
+    up — the delete is a silent no-op, landing succeeds exactly as before."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar(tmp_path)
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=999, experiment_id="e", commit="c", tar_path=tar,
+    )
+    conn = sqlite3.connect(str(study / "runs.db"))
+    try:
+        landed = conn.execute(
+            "SELECT status FROM runs_meta WHERE run_id=?", (run_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    assert landed is not None and landed[0] == "completed"
+
+
 def test_land_zarr_places_store_and_writes_runs_meta(tmp_path: Path):
     study = tmp_path / "study"
     study.mkdir()
