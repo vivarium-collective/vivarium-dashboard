@@ -49,7 +49,12 @@ def git_pip_url(ws_root: "Path | str") -> str:
     ws_root = Path(ws_root).resolve()
 
     # --- dirty tree check ---
-    status = _git(ws_root, "status", "--porcelain")
+    # Exclude the `.viv-build.json` provenance stamp: it's bookkeeping the
+    # workbench (re)writes on every build-switch, and a stale/regenerated stamp
+    # must never block a remote dispatch (#858). The primary fix stamps it
+    # before the baseline commit so it's normally clean anyway; this is
+    # defense-in-depth for caches materialized by an older workbench.
+    status = _git(ws_root, "status", "--porcelain", "--", ".", ":!.viv-build.json")
     if status.strip():
         raise RuntimeError(
             f"Workspace at {ws_root} has uncommitted or untracked changes "

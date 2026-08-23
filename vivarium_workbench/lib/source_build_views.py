@@ -126,6 +126,23 @@ def switch_build(body: dict, *, switch_active: bool = True, session_key: str | N
             cache_dir = materialize_build(client, sim_id, entry["commit"])
     except SmsApiError as e:
         return {"error": f"materialize failed: {e}"}, 502
+    # Stamp build provenance into the cache dir so the rail chip can show
+    # "<branch> @ <commit> · remote build #<id>" (a materialized build is not
+    # a git repo, so the chip can't derive branch/commit from git). This MUST
+    # run BEFORE ensure_git_workspace so the single baseline commit
+    # (`git add -A` inside ensure_git_workspace) captures this file — otherwise
+    # the on-disk stamp never matches the committed tree and the workspace stays
+    # dirty (`M .viv-build.json`), tripping remote_run's clean-tree guard (#858).
+    # On subsequent switches ensure_git_workspace no-ops (.git exists) and
+    # re-writing identical content produces no diff — the tree stays clean.
+    try:
+        (Path(cache_dir) / ".viv-build.json").write_text(json.dumps({
+            "simulator_id": sim_id, "repo": entry.get("repo", ""),
+            "branch": entry.get("branch", ""), "commit": entry.get("commit", ""),
+            "repo_url": entry.get("repo_url", ""),
+        }), encoding="utf-8")
+    except Exception:
+        pass  # provenance stamp is best-effort, never block the switch
     # Idempotent/self-healing: a bare tarball extraction has no `.git`, so a
     # session bound to it can never dispatch (remote_run_views's push-based
     # "Run on remote" 409s with "no GitHub remote configured" — found live
@@ -135,17 +152,6 @@ def switch_build(body: dict, *, switch_active: bool = True, session_key: str | N
     # durable storage (see remote_build_source.build_cache_root's docstring for
     # where it is / isn't in each deployment).
     ensure_git_workspace(Path(cache_dir), entry.get("repo_url", ""), entry.get("branch", ""), entry["commit"], sim_id)
-    # Stamp build provenance into the cache dir so the rail chip can show
-    # "<branch> @ <commit> · remote build #<id>" (a materialized build is not
-    # a git repo, so the chip can't derive branch/commit from git).
-    try:
-        (Path(cache_dir) / ".viv-build.json").write_text(json.dumps({
-            "simulator_id": sim_id, "repo": entry.get("repo", ""),
-            "branch": entry.get("branch", ""), "commit": entry.get("commit", ""),
-            "repo_url": entry.get("repo_url", ""),
-        }), encoding="utf-8")
-    except Exception:
-        pass  # provenance stamp is best-effort, never block the switch
     if switch_active:
         active_workspace.switch_workspace(cache_dir)
     return {"ok": True, "source": {"path": str(cache_dir), "name": entry["label"]}}, 200

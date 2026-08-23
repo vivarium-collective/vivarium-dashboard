@@ -193,6 +193,43 @@ def test_switch_build_happy_stamps_and_repoints(tmp_path, monkeypatch):
     assert fired, "switch_workspace must call active_workspace.invalidate()"
 
 
+def test_switch_build_leaves_clean_tree(tmp_path, monkeypatch):
+    """Regression for #858: the ``.viv-build.json`` stamp must be committed by
+    the baseline commit ``ensure_git_workspace`` makes, so the materialized
+    cache's working tree is clean immediately after ``switch_build`` returns.
+
+    Before the fix the stamp was written *after* the baseline commit, so the
+    on-disk stamp never matched the committed tree — the tree stayed dirty
+    (``M .viv-build.json``), which tripped ``remote_run``'s clean-tree guard.
+    """
+    import subprocess
+
+    cache = tmp_path / "cache"
+    cache.mkdir()
+    monkeypatch.setattr(source_build_views, "SmsApiClient", lambda base=None: object())
+    monkeypatch.setattr(
+        source_build_views, "list_build_sources",
+        lambda client: {"builds": [_build_entry(5)]},
+    )
+    monkeypatch.setattr(
+        source_build_views, "materialize_build",
+        lambda client, sim_id, commit: cache,
+    )
+
+    body, status = source_build_views.switch_build({"simulator_id": 5})
+
+    assert status == 200
+    # ensure_git_workspace ran for real (repo_url is set) → a .git now exists.
+    assert (cache / ".git").exists(), "ensure_git_workspace should have created a git repo"
+    porcelain = subprocess.run(
+        ["git", "status", "--porcelain"],
+        cwd=cache, check=True, capture_output=True, text=True,
+    ).stdout
+    assert porcelain.strip() == "", (
+        f"materialized cache tree is dirty after switch_build:\n{porcelain}"
+    )
+
+
 def test_switch_build_stamp_failure_is_swallowed(tmp_path, monkeypatch):
     cache = tmp_path / "cache"
     cache.mkdir()
