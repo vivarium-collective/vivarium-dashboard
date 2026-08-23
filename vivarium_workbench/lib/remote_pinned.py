@@ -163,6 +163,36 @@ class NoPinnedBuildError(RuntimeError):
     """No completed build exists for the configured repo@branch."""
 
 
+def resolve_pinned_simulator_id(client: SmsApiClient, ws_root: Path) -> int | None:
+    """The simulator_id a deployment-target dispatch should use, via the same
+    two-step precedence :func:`remote_run_pinned_build_start`/
+    :func:`remote_run_config` already apply: this session's own switched
+    build first, else the deployment-wide pin. Returns ``None`` when neither
+    resolves (pinned mode off, or no build exists yet for the configured
+    repo@branch) — callers surface that as their own error.
+
+    Extracted here (item 83) so every dispatch entrypoint that needs "which
+    build does a deployment-target run use" resolves it identically, instead
+    of each re-deriving the session-build-then-pin fallback inline.
+    """
+    session_build = resolved_from_session_build(ws_root)
+    if session_build is not None:
+        return session_build["simulator_id"]
+    cfg = pinned_config()
+    if cfg is None:
+        return None
+    from vivarium_workbench.lib.sms_api_client import SmsApiError
+    try:
+        resolved = resolve_pinned_build(client, cfg.repo_url, cfg.branch)
+    except (NoPinnedBuildError, SmsApiError):
+        # Unreachable sms-api degrades the same as "no build resolved" — the
+        # caller surfaces its own clear error rather than this bubbling up as
+        # an unhandled exception (mirrors remote_run_config's own handling of
+        # exactly these two exception types).
+        return None
+    return resolved["simulator_id"]
+
+
 def resolve_pinned_build(client: SmsApiClient, repo_url: str, branch: str) -> dict:
     """Resolve the newest registered build for ``repo_url``@``branch``.
 

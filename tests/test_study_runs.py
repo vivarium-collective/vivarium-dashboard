@@ -69,7 +69,13 @@ def test_study_run_baseline_pinned_deployment_409_over_real_http(
     client = dashboard_client(ws)
     res = client.post("/api/study-run-baseline", json={"study": "demo"})
     assert res.status_code == 409, res.text
-    assert "not available" in res.json().get("error", "").lower()
+    # item 83: this exact scenario (default baseline entry, deployment target)
+    # now attempts REAL delegation to remote_run_submit first (the proven
+    # dispatch mechanism) — this test's spawned subprocess has no real sms-api
+    # to reach, so that resolution degrades cleanly to this specific error
+    # rather than the old generic launch_into_study 409. Still never falls
+    # through to a local subprocess (the property this test exists to prove).
+    assert "no remote build resolved" in res.json().get("error", "").lower()
 
 
 def test_study_run_baseline_local_unaffected_over_real_http(
@@ -94,6 +100,107 @@ def test_study_run_baseline_local_unaffected_over_real_http(
         "/api/study-run-baseline", json={"study": "demo", "dry_run": True})
     assert res.status_code == 200, res.text
     assert res.json().get("dry_run") is True
+
+
+# ---------------------------------------------------------------------------
+# item 83: default-baseline deployment dispatch now delegates to the ONE
+# proven, real remote-dispatch mechanism (remote_run_submit) instead of an
+# unconditional 409 — the confirmed real bug found live during item 80's
+# UI-dispatch walkthrough (study_runs.py resolved the deployment target
+# correctly via resolve_run_target, then refused to act on it in every
+# branch). Scoped narrowly to what remote_run_submit actually supports: the
+# study's DEFAULT baseline entry, real (non-dry-run) dispatch — see
+# study_runs.run_study_baseline's own inline comment for why a non-default
+# ?composite= override and dry_run both still fall through to the pre-
+# existing 409 unchanged.
+# ---------------------------------------------------------------------------
+
+def test_study_run_baseline_on_deployment_delegates_to_remote_run_submit(tmp_path, monkeypatch):
+    """The real, positive case: pinned deployment + a resolvable build +
+    the study's default baseline entry → a REAL call into remote_run_submit,
+    not a 409. Faking remote_run_submit itself (not the sms-api boundary it
+    calls) proves the delegation wiring — remote_run_submit's own internal
+    behavior is independently covered by test_remote_run_views_lib.py."""
+    from vivarium_workbench.lib import remote_pinned, study_runs
+    from vivarium_workbench.lib import remote_run_views
+
+    monkeypatch.setattr(remote_pinned, "resolve_run_target", lambda ws_root: "deployment")
+    monkeypatch.setattr(remote_pinned, "resolve_pinned_simulator_id", lambda client, ws_root: 75)
+
+    captured = {}
+
+    def fake_submit(ws_root, body):
+        captured["body"] = body
+        return {"simulation_id": 999, "phase": "running"}, 202
+
+    monkeypatch.setattr(remote_run_views, "remote_run_submit", fake_submit)
+
+    sd = tmp_path / "studies" / "demo"
+    sd.mkdir(parents=True)
+    (sd / "study.yaml").write_text(
+        "name: demo\nbaseline:\n  - {name: core, composite: pkg.composites.cell, "
+        "params: {n_seeds: 1000, n_generations: 10}}\n"
+    )
+    body, status = study_runs.run_study_baseline(tmp_path, {"study": "demo"})
+    assert status == 202
+    assert body == {"simulation_id": 999, "phase": "running"}
+    assert captured["body"] == {
+        "study": "demo",
+        "simulator_id": 75,
+        "num_generations": 10,
+        "num_seeds": 1000,
+        "run_parca": True,
+    }
+
+
+def test_study_run_baseline_explicit_composite_on_deployment_still_409s(tmp_path, monkeypatch):
+    """remote_run_submit has no way to select a specific composite — it
+    dispatches whatever the pinned simulator's own build contains. An
+    explicit non-default ?composite= override on a deployment target must
+    NOT silently delegate (which would run the wrong composite); it keeps
+    the existing, honest 409 instead."""
+    from vivarium_workbench.lib import remote_pinned, study_runs
+    from vivarium_workbench.lib import remote_run_views
+
+    monkeypatch.setattr(remote_pinned, "resolve_run_target", lambda ws_root: "deployment")
+
+    def fail_if_called(*a, **k):
+        raise AssertionError("remote_run_submit must not be called for a non-default composite")
+
+    monkeypatch.setattr(remote_run_views, "remote_run_submit", fail_if_called)
+
+    sd = tmp_path / "studies" / "demo"
+    sd.mkdir(parents=True)
+    (sd / "study.yaml").write_text(
+        "name: demo\nbaseline:\n"
+        "  - {name: core, composite: pkg.composites.cell, params: {n_seeds: 1, n_generations: 1}}\n"
+        "  - {name: alt, composite: pkg.composites.alt, params: {n_seeds: 1, n_generations: 1}}\n"
+    )
+    body, status = study_runs.run_study_baseline(
+        tmp_path, {"study": "demo", "composite": "alt"})
+    assert status == 409
+
+
+def test_study_run_baseline_deployment_no_resolvable_build_409s_cleanly(tmp_path, monkeypatch):
+    """resolve_pinned_simulator_id returning None (pinned mode off, or no
+    build exists yet) must degrade to a clear 409, not an unhandled
+    exception — this is the exact path test_study_run_baseline_pinned_
+    deployment_409_over_real_http exercises end to end via the real
+    (unreachable-in-tests) sms-api boundary."""
+    from vivarium_workbench.lib import remote_pinned, study_runs
+
+    monkeypatch.setattr(remote_pinned, "resolve_run_target", lambda ws_root: "deployment")
+    monkeypatch.setattr(remote_pinned, "resolve_pinned_simulator_id", lambda client, ws_root: None)
+
+    sd = tmp_path / "studies" / "demo"
+    sd.mkdir(parents=True)
+    (sd / "study.yaml").write_text(
+        "name: demo\nbaseline:\n  - {name: core, composite: pkg.composites.cell, "
+        "params: {n_seeds: 1, n_generations: 1}}\n"
+    )
+    body, status = study_runs.run_study_baseline(tmp_path, {"study": "demo"})
+    assert status == 409
+    assert "no remote build resolved" in body["error"].lower()
 
 
 @pytest.fixture
