@@ -106,7 +106,13 @@ export default function App() {
   // with the noisy bookkeeping processes (unique_update*/allocator_*/*listener*)
   // so the default view is clean; re-show any via the Processes sidebar.
   const [hidden, setHidden] = useState<Set<string>>(
-    () => defaultHiddenIds(decodeUrlComposite()),
+    () => {
+      // ?only=processes → a process-contract view: hide every store so only the
+      // process card(s) remain (Fig 4b / Fig 7). Headless render + interactive.
+      let onlyProc = false;
+      try { onlyProc = new URLSearchParams(window.location.search).get('only') === 'processes'; } catch { /* no-op */ }
+      return defaultHiddenIds(decodeUrlComposite(), onlyProc);
+    },
   );
   // Mirror `hidden` in a ref so the (async) layout effect can read the LATEST
   // hidden set without taking it as a dependency — which would force an ELK
@@ -907,6 +913,25 @@ export default function App() {
       return (e.hidden ?? false) === h ? e : { ...e, hidden: h };
     }));
   }, [hidden, raw, setNodes, setEdges]);
+
+  // ?only=processes — hide EVERY store once the composite's nodes exist, so only
+  // the process card(s) remain (a headless render loads the composite BY ID after
+  // mount, so the initial `hidden` seed had no store ids to work with yet).
+  const onlyProcesses = useMemo(() => {
+    try { return new URLSearchParams(window.location.search).get('only') === 'processes'; }
+    catch { return false; }
+  }, []);
+  useEffect(() => {
+    if (!onlyProcesses) return;
+    const storeIds = (raw.nodes as any[]).filter((n) => n.type === 'store').map((n) => n.id);
+    if (!storeIds.length) return;
+    setHidden((prev) => {
+      let changed = false;
+      const next = new Set(prev);
+      for (const id of storeIds) if (!next.has(id)) { next.add(id); changed = true; }
+      return changed ? next : prev;
+    });
+  }, [onlyProcesses, raw]);
 
   // A pinned node that then gets explicitly hidden (sidebar Processes/Nodes
   // toggle) would otherwise be unreachable — nothing on screen to shift-click
