@@ -15488,17 +15488,42 @@
   // waiting for that click. Analysis-side staleness (item 84's own filing:
   // GET /analyses/{id}/status is also pull-based) is a separate, still-open
   // follow-on -- no analysis_id is tracked per-row today to poll against.
+  // Page-session-scoped: once a poll confirms a simulation_id's real terminal
+  // phase, remember it here. Required because this poller never writes to
+  // runs.db (landing stays the explicit user action) -- without this cache,
+  // every 15s auto-refresh re-renders every row from the raw DB value (still
+  // "running" until landed), silently erasing the chip this function just
+  // set, and the very next tick would re-poll and flip it right back --
+  // running/completed/running/completed forever for as long as the tab
+  // stays open on a real, finished-but-unlanded remote campaign. Caught live
+  // by watching more than one refresh cycle, not by a single before/after
+  // check.
+  window._remoteTerminalCache = window._remoteTerminalCache || {};
+
   function _pollNonTerminalRemoteRuns() {
     if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return;  // no live backend
     var rows = document.querySelectorAll('tr[data-remote-sim-id]');
     if (!rows.length) return;
     var checked = 0;
-    for (var i = 0; i < rows.length && checked < 20; i++) {  // defensive cap, not expected to bind in practice
+    for (var i = 0; i < rows.length; i++) {
       var tr = rows[i];
       var chipHost = tr.querySelector('.run-status-live');
-      if (!chipHost || !/running/i.test(chipHost.textContent)) continue;
+      if (!chipHost) continue;
       var simId = tr.getAttribute('data-remote-sim-id');
       if (!simId) continue;
+
+      // Already known terminal from an earlier poll this page session --
+      // reapply immediately (no request, no visible flicker) instead of
+      // leaving this tick's fresh-from-DB "running" render stand until the
+      // next poll gets around to it.
+      var cachedPhase = window._remoteTerminalCache[simId];
+      if (cachedPhase) {
+        chipHost.innerHTML = window.SimTable.statusChip(cachedPhase);
+        continue;
+      }
+
+      if (!/running/i.test(chipHost.textContent)) continue;
+      if (checked >= 20) continue;  // defensive cap, not expected to bind in practice
       checked++;
       (function (host, id) {
         fetch('/api/remote-run-poll?simulation_id=' + encodeURIComponent(id))
@@ -15506,8 +15531,10 @@
           .then(function (body) {
             var phase = body && body.phase;
             if (phase === 'done') {
+              window._remoteTerminalCache[id] = 'completed';
               host.innerHTML = window.SimTable.statusChip('completed');
             } else if (phase === 'failed') {
+              window._remoteTerminalCache[id] = 'failed';
               host.innerHTML = window.SimTable.statusChip('failed');
             }
             // running / queued / unreachable: leave the chip as-is, the next
