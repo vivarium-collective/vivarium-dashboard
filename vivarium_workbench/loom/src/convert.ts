@@ -377,7 +377,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: port,          // process's left input port
           label: port,
           animated: false,
-          style: { stroke: '#aeb8c4', strokeDasharray: '5,4', strokeWidth: 1.75 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
+          style: { stroke: '#aeb8c4', strokeDasharray: '5,4', strokeWidth: 2.75 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the process's input port
           data: { edgeType: 'input' },
         });
@@ -395,7 +395,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           targetHandle: 'right-in',    // store's right handle
           label: port,
           animated: false,
-          style: { stroke: '#aeb8c4', strokeDasharray: '5,4', strokeWidth: 1.75 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
+          style: { stroke: '#aeb8c4', strokeDasharray: '5,4', strokeWidth: 2.75 },  // wire convention: dashed, thick for legibility (inline stroke so image export captures it)
           markerEnd: WIRE_ARROW,       // arrow at the store's incoming side
           data: { edgeType: 'output' },
         });
@@ -496,7 +496,7 @@ export function stateToReactFlow(state: any): { nodes: RFNode[]; edges: RFEdge[]
           // Containment convention: a light, thin slate connector that reads as
           // structural scaffolding and recedes behind the node cards, rather than
           // a heavy dark bracket that competes with the node borders.
-          style: { stroke: '#c2cbd6', strokeWidth: 1.5 },  // inline stroke for SVG export
+          style: { stroke: '#c2cbd6', strokeWidth: 2.75 },  // inline stroke for SVG export
           data: { edgeType: 'place' },
         });
       }
