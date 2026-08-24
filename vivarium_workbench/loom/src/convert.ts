@@ -123,7 +123,14 @@ export function defaultCollapsedIds(state: any, minDepth = 3): Set<string> {
  * process cascades via `isHiddenByAncestor`. Users can re-show any via the
  * Processes sidebar.
  */
-export function defaultHiddenIds(state: any): Set<string> {
+export function defaultHiddenIds(state: any, onlyProcesses = false): Set<string> {
+  // Also honor ?only=processes from the URL, so EVERY re-seed site (applyView,
+  // composite (re)load, machine restore) hides stores — a process-contract view
+  // that survives view application, not just the initial mount.
+  if (!onlyProcesses) {
+    try { onlyProcesses = new URLSearchParams(window.location.search).get('only') === 'processes'; }
+    catch { /* non-browser / no location */ }
+  }
   const root = state?.state ?? state ?? {};
   const out = new Set<string>();
   const isNoise = (name: string) =>
@@ -151,14 +158,20 @@ export function defaultHiddenIds(state: any): Set<string> {
     // not `{_type:'float'}`), so match on name/path BEFORE bailing on non-objects
     // — otherwise a scalar global_time is walked past and never hidden.
     if (path.length > 0 && isNoiseStore(name, path)) { out.add(path.join('.')); return; }
-    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
+    // ?only=processes — a process-contract view (e.g. Fig 4b / Fig 7): hide EVERY
+    // store (bare leaf, typed leaf, and group container) so only the process
+    // card(s) remain. Processes are never hidden here — the branch below returns
+    // before this can add them.
+    const hideStore = () => { if (onlyProcesses && path.length > 0) out.add(path.join('.')); };
+    if (!node || typeof node !== 'object' || Array.isArray(node)) { hideStore(); return; }
     if (node._type === 'process' || node._type === 'step') {
       // Hide auto-materialized emitter plumbing, but NOT a draft emitter authored
       // as part of a (conceptual) figure — that one is meant to be shown.
       if (isNoise(name) || (isEmitter(name) && node._draft !== true)) out.add(path.join('.'));
       return;
     }
-    if ('_type' in node) return;  // other typed leaf store
+    if ('_type' in node) { hideStore(); return; }  // other typed leaf store
+    hideStore();                                   // group / container store
     for (const [k, v] of Object.entries(node)) {
       if (k === DECLARED_EMIT_PATHS_KEY) continue;
       walk(v, [...path, k]);

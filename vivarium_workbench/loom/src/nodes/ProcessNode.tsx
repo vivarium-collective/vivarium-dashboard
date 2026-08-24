@@ -191,7 +191,10 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   // The config band shows real configuration KEYS only — drop the metadata keys
   // (summary / contract / status) that ride along in a draft process's config
   // dict; the summary belongs to the meta/contract, not the config.
-  const CONFIG_META = new Set(["summary", "contract", "status", "description", "math", "symbols", "ports"]);
+  // `interval` is an ORCHESTRATION parameter (how often the process updates),
+  // not a domain configuration — drop it from the config band like the other
+  // metadata keys so a process that only sets its update interval reads clean.
+  const CONFIG_META = new Set(["summary", "contract", "status", "description", "math", "symbols", "ports", "interval"]);
   const realCfg = cfg.filter((c) => !CONFIG_META.has(c.name));
 
   const topFor = (i: number, n: number) => `${((i + 1) / (n + 1)) * 100}%`;

@@ -282,11 +282,17 @@ function FloatingStoreEdge({
     // place-edge column so the wire's arrow never lands on the containment line.
     const overTop = center.y < boxCy;
     const laneY = overTop ? box.y0 - LANE_GAP : box.y1 + LANE_GAP;
-    const faceY = overTop ? center.y - shh : center.y + shh;
+    // Attach on the store face the LANE actually approaches from — the wire runs
+    // along `laneY`, so it should enter whichever face (top/bottom) sits on the
+    // lane's side of the store, giving the shortest drop-in. Choosing by process
+    // side instead made a store level with (but drawn lower/taller than) a big
+    // process wrap around to the far face.
+    const laneAboveStore = laneY < center.y;
+    const faceY = laneAboveStore ? center.y - shh : center.y + shh;
     const dir = stub.x >= center.x ? 1 : -1;
     const anchorX = Math.max(center.x - shw + 8, Math.min(center.x + shw - 8, center.x + dir * PLACE_KEEPOUT));
     const anchor = { x: anchorX, y: faceY };
-    const ap = { x: anchorX, y: overTop ? faceY - APPROACH : faceY + APPROACH };
+    const ap = { x: anchorX, y: laneAboveStore ? faceY - APPROACH : faceY + APPROACH };
     way = [procPoint, stub, { x: stub.x, y: laneY }, { x: anchorX, y: laneY }, ap, anchor];
   }
   const pts = storeIsSource ? [...way].reverse() : way;

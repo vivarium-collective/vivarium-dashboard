@@ -50,7 +50,7 @@ interface Gaps {
 // Gaps are kept tight so processes sit close to each other and close to the
 // store rows they wire — the card footprints (full tier, 620×320) already force
 // generous spacing, so small gaps read as compact, not cramped.
-const TREE_GAPS: Gaps = { rowGap: 34, colGap: 22, procGapX: 26, procGapY: 22, bandGap: 48 };
+const TREE_GAPS: Gaps = { rowGap: 92, colGap: 22, procGapX: 26, procGapY: 22, bandGap: 48 };
 const GRID_GAPS: Gaps = { rowGap: 30, colGap: 12, procGapX: 24, procGapY: 20, bandGap: 40 };
 
 /** Grow an estimated footprint to React Flow's LIVE measured box when the card
@@ -303,11 +303,16 @@ async function treeLanesLayout(nodes: Node[], edges: Edge[], gaps: Gaps): Promis
     y += rowH[dp] + gaps.rowGap;
     const lane = laneMembers.get(dp);
     if (lane && lane.length) {
-      const cols = Math.min(lane.length, laneCols);
-      const blockW = cols * cellW + (cols - 1) * gaps.procGapX;
-      const packed = packBlock(lane, treeMidX - blockW / 2, y, cols, gaps.procGapX, gaps.procGapY);
-      for (const [id, p] of packed.pos) pos.set(id, p);
-      y += packed.h + gaps.rowGap;
+      // Place each process centered under the stores it wires — its `key` is the
+      // mean center-x of its connected stores — so a process sits DIRECTLY BELOW
+      // the nodes it connects to, instead of being packed into one centered block.
+      // finalize()'s removeOverlaps then spreads any that collide horizontally.
+      let laneH = 0;
+      for (const m of lane) {
+        pos.set(m.id, { x: m.key - m.f.w / 2, y });
+        if (m.f.h > laneH) laneH = m.f.h;
+      }
+      y += laneH + gaps.rowGap;
     }
   }
   // Trailing band: hub-only / unwired processes, centered below the tree.
