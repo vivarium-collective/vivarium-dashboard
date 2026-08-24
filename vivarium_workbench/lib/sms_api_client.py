@@ -188,6 +188,7 @@ class SmsApiClient:
         experiment_id: str | None = None,
         description: str | None = None,
         analysis_options: dict | None = None,
+        extra_params: dict | None = None,
     ) -> dict:
         params: dict = {
             "simulator_id": simulator_id,
@@ -201,12 +202,17 @@ class SmsApiClient:
             params["description"] = description
         if observables:
             params["observables"] = observables  # list → repeated key via doseq
-        # analysis_options is a Pydantic model on the sms-api side with no
-        # Query()/Body() wrapper — FastAPI reads a bare model param from the
-        # JSON request body, not the query string, so it goes in json_body
-        # rather than alongside the other params above.
-        json_body = {"analysis_options": analysis_options} if analysis_options else None
-        return self._post("/api/v1/simulations", params=params, json_body=json_body)
+        # analysis_options/extra_params are both nested-dict-shaped bodies with no
+        # Query()/Body() wrapper on the sms-api side — FastAPI reads them from the
+        # JSON request body, not the query string (nested dicts don't survive
+        # urlencode sensibly), so they go in json_body rather than alongside the
+        # other flat/scalar params above.
+        json_body: dict = {}
+        if analysis_options:
+            json_body["analysis_options"] = analysis_options
+        if extra_params:
+            json_body["extra_params"] = extra_params
+        return self._post("/api/v1/simulations", params=params, json_body=json_body or None)
 
     def run_analysis(self, simulation_id: int, modules: dict) -> dict:
         """POST /api/v1/simulations/{id}/analysis — trigger standalone analysis on

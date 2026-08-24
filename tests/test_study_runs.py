@@ -150,7 +150,41 @@ def test_study_run_baseline_on_deployment_delegates_to_remote_run_submit(tmp_pat
         "num_generations": 10,
         "num_seeds": 1000,
         "run_parca": True,
+        "extra_params": None,
     }
+
+
+def test_study_run_baseline_on_deployment_forwards_extra_composite_params(tmp_path, monkeypatch):
+    """Backlog items 86/88: any baseline param beyond n_seeds/n_generations rides through
+    to remote_run_submit as a generic extra_params dict, keyed by whatever the composite
+    itself declares — never silently dropped, never inspected by name here."""
+    from vivarium_workbench.lib import remote_pinned, study_runs
+    from vivarium_workbench.lib import remote_run_views
+
+    monkeypatch.setattr(remote_pinned, "resolve_run_target", lambda ws_root: "deployment")
+    monkeypatch.setattr(remote_pinned, "resolve_pinned_simulator_id", lambda client, ws_root: 75)
+
+    captured = {}
+
+    def fake_submit(ws_root, body):
+        captured["body"] = body
+        return {"simulation_id": 999, "phase": "running"}, 202
+
+    monkeypatch.setattr(remote_run_views, "remote_run_submit", fake_submit)
+
+    sd = tmp_path / "studies" / "demo"
+    sd.mkdir(parents=True)
+    (sd / "study.yaml").write_text(
+        "name: demo\nbaseline:\n  - {name: core, composite: pkg.composites.cell, "
+        "params: {n_seeds: 4, n_generations: 2, custom_composite_knob: {nested: true}}}\n"
+    )
+    body, status = study_runs.run_study_baseline(tmp_path, {"study": "demo"})
+    assert status == 202
+    assert body == {"simulation_id": 999, "phase": "running"}
+    assert captured["body"]["extra_params"] == {"custom_composite_knob": {"nested": True}}
+    # n_seeds/n_generations are never duplicated into extra_params
+    assert "n_seeds" not in captured["body"]["extra_params"]
+    assert "n_generations" not in captured["body"]["extra_params"]
 
 
 def test_study_run_baseline_explicit_composite_on_deployment_still_409s(tmp_path, monkeypatch):
