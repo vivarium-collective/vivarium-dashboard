@@ -217,21 +217,37 @@ def build_study_observable_check(ws_root: Path, slug: str) -> tuple[dict, int]:
     if not SLUG_RE.match(slug or ""):
         return {"error": "invalid slug"}, 400
 
-    study_dir = ws_root / "studies" / slug
-    if not study_dir.is_dir():
-        study_dir = ws_root / "investigations" / slug
+    # Resolve the study dir honoring the workspace layout (workspace.yaml may
+    # nest studies under e.g. workspace/studies — v2ecoli). Fall back to the
+    # flat root layout if WorkspacePaths can't load. (Mirrors readouts_views.)
+    try:
+        from .workspace_paths import WorkspacePaths
+        wp = WorkspacePaths.load(ws_root)
+        study_dir = wp.studies / slug
+        if not study_dir.is_dir():
+            study_dir = wp.investigations / slug
+    except Exception:  # noqa: BLE001
+        study_dir = ws_root / "studies" / slug
+        if not study_dir.is_dir():
+            study_dir = ws_root / "investigations" / slug
     sf = study_spec_file(study_dir)
     if not sf.is_file():
         return {"error": f"study not found: {slug}"}, 404
 
     try:
-        spec = yaml.safe_load(sf.read_text(encoding="utf-8")) or {}
+        # Project legacy v2 shape (baseline: <str>) into the v3 baseline list.
+        from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
+        spec = migrate_v2_to_v3(yaml.safe_load(sf.read_text(encoding="utf-8")) or {})
+        # v4 studies carry the baseline composite under conditions.baseline;
+        # project it onto the legacy v3 baseline-list shape this worker reads
+        # (mirrors readouts_views.py / study_runs.py / investigations.py).
+        if spec.get("schema_version") == 4 and isinstance(spec.get("conditions"), dict):
+            from vivarium_workbench.lib.investigations import (
+                _project_v4_redesign_to_legacy_view,
+            )
+            spec = _project_v4_redesign_to_legacy_view(spec)
     except Exception as e:  # noqa: BLE001
         return {"error": f"study spec parse failed: {e}"}, 400
-
-    # Project legacy v2 shape (baseline: <str>) into the v3 baseline list.
-    from vivarium_workbench.lib.spec_migration import migrate_v2_to_v3
-    spec = migrate_v2_to_v3(spec)
 
     baseline = spec.get("baseline") or []
     if not (isinstance(baseline, list) and baseline and isinstance(baseline[0], dict)):
