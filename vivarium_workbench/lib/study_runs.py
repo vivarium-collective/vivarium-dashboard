@@ -588,6 +588,15 @@ def run_study_baseline(ws_root, body):
         if target == "deployment":
             num_generations = generator_overrides.get("n_generations")
             num_seeds = generator_overrides.get("n_seeds")
+            # Backlog items 86/88: any composite-declared param beyond the two run-size
+            # knobs above (e.g. a fork/injection spec, or a multi-node dispatch request)
+            # rides through to viva-api as a generic passthrough dict — never silently
+            # dropped the way it previously was. Composite-agnostic: no key here is
+            # inspected or special-cased by name.
+            extra_params = {
+                k: v for k, v in generator_overrides.items()
+                if k not in ("n_generations", "n_seeds")
+            }
             from vivarium_workbench.lib.sms_api_client import SmsApiClient
             from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
             simulator_id = remote_pinned.resolve_pinned_simulator_id(
@@ -603,6 +612,7 @@ def run_study_baseline(ws_root, body):
                 "num_generations": num_generations,
                 "num_seeds": num_seeds,
                 "run_parca": bool(body.get("run_parca", True)),
+                "extra_params": extra_params or None,
             })
 
     return launch_into_study(

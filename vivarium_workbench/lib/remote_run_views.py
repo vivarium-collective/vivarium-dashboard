@@ -359,6 +359,7 @@ def remote_run_submit(ws_root: Path, body: dict) -> tuple[dict, int]:
             run_parca=bool(body.get("run_parca", True)),
             observables=observables,
             analysis_options=analysis_options or None,
+            extra_params=body.get("extra_params") or None,
         )
     except SmsApiError as e:
         # backlog item 51: this call used to be left unguarded, so ANY
