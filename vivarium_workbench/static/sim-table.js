@@ -477,7 +477,11 @@
     if (keep("origin")) cells += td(originPill(row));
     if (keep("emitter")) cells += td(emitterPill(row.emitter_type));
     if (keep("time")) cells += td(esc(fmtTime(row.completed_at || row.started_at)), "color:#6b7280;");
-    if (keep("status")) cells += td(statusChip(row.status));
+    // .run-status-live: a stable hook so live-status polling (item 84) can
+    // replace just this chip in place once a remote row's real phase is
+    // known, without knowing this column's position among the others (which
+    // varies — dropEmptyColumns can remove neighboring columns per-page).
+    if (keep("status")) cells += td('<span class="run-status-live">' + statusChip(row.status) + "</span>");
     if (keep("tools")) cells += td(toolsCell(row), "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;");
     if (keep("actions")) cells += td('<div class="run-actions">' + _actions(row) + '</div>', "vertical-align:middle;");
     // data-remote-sim-id: the remote deployment's simulation database id, present

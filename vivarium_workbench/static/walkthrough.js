@@ -15460,6 +15460,7 @@
         if (loading) loading.style.display = 'none';
         _populateSimFilters();
         _applySimFilter();
+        _pollNonTerminalRemoteRuns();
       })
       .catch(function (err) {
         if (quiet) return;
@@ -15469,6 +15470,53 @@
       });
   }
   window._initSimulations = _initSimulations;
+
+  // Backlog item 84: a UI-dispatched remote run's row shows "running" from
+  // the moment PR #922's pending-dispatch placeholder lands until someone
+  // explicitly clicks "Land Results" -- runs.db is never otherwise touched,
+  // so without this the row is frozen at "running" even long after the real
+  // AWS Batch campaign finished. Piggybacks on the auto-refresh cadence
+  // _startSimAutoRefresh already drives (every 15s while this page is open)
+  // rather than adding a second timer. For each currently-rendered remote
+  // row still showing "running", does ONE live check via the same
+  // GET /api/remote-run-poll?simulation_id=<id> endpoint item 6/81's own
+  // active-dispatch progress bar already uses (remote_run_status --
+  // on-demand, no in-process state) and, if the real phase is terminal,
+  // swaps just that row's chip in place. Deliberately does NOT write to
+  // runs.db or auto-land -- landing (the actual data pull) stays an
+  // explicit user action; this only keeps what's ON SCREEN honest while
+  // waiting for that click. Analysis-side staleness (item 84's own filing:
+  // GET /analyses/{id}/status is also pull-based) is a separate, still-open
+  // follow-on -- no analysis_id is tracked per-row today to poll against.
+  function _pollNonTerminalRemoteRuns() {
+    if ((window.__DASH_CONFIG__ || {}).mode === 'snapshot') return;  // no live backend
+    var rows = document.querySelectorAll('tr[data-remote-sim-id]');
+    if (!rows.length) return;
+    var checked = 0;
+    for (var i = 0; i < rows.length && checked < 20; i++) {  // defensive cap, not expected to bind in practice
+      var tr = rows[i];
+      var chipHost = tr.querySelector('.run-status-live');
+      if (!chipHost || !/running/i.test(chipHost.textContent)) continue;
+      var simId = tr.getAttribute('data-remote-sim-id');
+      if (!simId) continue;
+      checked++;
+      (function (host, id) {
+        fetch('/api/remote-run-poll?simulation_id=' + encodeURIComponent(id))
+          .then(function (r) { return r.json(); })
+          .then(function (body) {
+            var phase = body && body.phase;
+            if (phase === 'done') {
+              host.innerHTML = window.SimTable.statusChip('completed');
+            } else if (phase === 'failed') {
+              host.innerHTML = window.SimTable.statusChip('failed');
+            }
+            // running / queued / unreachable: leave the chip as-is, the next
+            // 15s auto-refresh tick will check again.
+          })
+          .catch(function () { /* transient -- next tick retries */ });
+      })(chipHost, simId);
+    }
+  }
 
   // Auto-refresh: while the Simulations DB page is open, re-pull every 15s so
   // the table stays current with newly persisted / remote-landed runs without
