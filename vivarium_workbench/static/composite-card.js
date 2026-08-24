@@ -442,6 +442,121 @@
   }
   window._cfgJsonToggle = _cfgJsonToggle;
 
+  // item 86: "external config" — upload or paste an arbitrary JSON document
+  // (not necessarily shaped like this composite's own fields) and have the
+  // server match its keys onto the composite's declared params before
+  // applying them. Distinct from _cfgJsonTools above (which round-trips the
+  // CURRENT field values as JSON for quick bulk-editing of already-known
+  // fields) — this one accepts a foreign document and adapts it. Genuinely
+  // shared (unlike the walkthrough.js-only deep interactives noted at the
+  // top of this file): every function this panel calls is defined in THIS
+  // file, so it works on both the Modules page and the Study Detail page.
+  function _extConfigTools() {
+    return '<div class="cfg-extconfig" hidden data-role="cfg-extconfig">' +
+        '<div class="cfg-extconfig-divider muted">— OR: load an external JSON config —</div>' +
+        '<div class="cfg-extconfig-row">' +
+          '<input type="file" class="cfg-extconfig-file" accept=".json,application/json">' +
+          '<span class="muted">or paste below</span>' +
+        '</div>' +
+        '<textarea class="cfg-extconfig-box" spellcheck="false" rows="5" ' +
+          'placeholder=\'{ …a JSON config document… } — matched against this composite\\\'s declared params\'></textarea>' +
+        '<div class="cfg-json-actions">' +
+          '<button class="btn-mini" type="button" onclick="_applyExternalConfig(this)">Apply config</button>' +
+          '<span class="cfg-extconfig-status muted"></span>' +
+        '</div>' +
+      '</div>';
+  }
+  window._extConfigTools = _extConfigTools;
+
+  function _extConfigToggle() {
+    return '<button class="btn-mini cfg-extconfig-toggle" type="button" onclick="_toggleExtConfig(this)" ' +
+      'title="Upload or paste a JSON config document to set several parameters at once">📄 External config</button>';
+  }
+  window._extConfigToggle = _extConfigToggle;
+
+  function _toggleExtConfig(btn) {
+    var body = btn.closest('.pcard-sec-body') || btn.closest('.pcard-region-body'); if (!body) return;
+    var panel = body.querySelector('[data-role="cfg-extconfig"]'); if (!panel) return;
+    var show = panel.hidden;
+    panel.hidden = !show;
+    btn.classList.toggle('active', show);
+    if (show) {
+      var box = panel.querySelector('.cfg-extconfig-box');
+      if (box) box.focus();
+    }
+  }
+  window._toggleExtConfig = _toggleExtConfig;
+
+  // Set one config field's value from a JS value, respecting its editor
+  // vtype — mirrors walkthrough.js's own _setCfgFieldValue (Modules-page-
+  // only) so this stays independently usable on the Study Detail page.
+  function _setExtConfigFieldValue(el, v) {
+    var vt = el.getAttribute('data-vtype');
+    if (vt === 'boolean') { el.checked = !!v; return; }
+    if (vt === 'number') { el.value = (v == null ? '' : v); return; }
+    if (vt === 'json') { el.value = (typeof v === 'string') ? v : (function () { try { return JSON.stringify(v); } catch (e) { return ''; } })(); return; }
+    el.value = (v == null ? '' : v);
+  }
+  window._setExtConfigFieldValue = _setExtConfigFieldValue;
+
+  function _extConfigApiUrl(p) {
+    return (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(p) : p;
+  }
+
+  // Read the (file XOR pasted-text) source into a parsed object, or throw
+  // with a message fit for direct display.
+  function _readExternalConfigSource(panel) {
+    var fileInput = panel.querySelector('.cfg-extconfig-file');
+    var box = panel.querySelector('.cfg-extconfig-box');
+    var file = fileInput && fileInput.files && fileInput.files[0];
+    if (file) {
+      return file.text().then(function (text) {
+        try { return JSON.parse(text); }
+        catch (e) { throw new Error('Uploaded file is not valid JSON: ' + e.message); }
+      });
+    }
+    var raw = (box && box.value || '').trim();
+    if (!raw) return Promise.reject(new Error('Upload a .json file or paste a JSON document first'));
+    try { return Promise.resolve(JSON.parse(raw)); }
+    catch (e) { return Promise.reject(new Error('Not valid JSON: ' + e.message)); }
+  }
+
+  function _applyExternalConfig(btn) {
+    var panel = btn.closest('[data-role="cfg-extconfig"]'); if (!panel) return;
+    var card = btn.closest('.registry-entry-full'); if (!card) return;
+    var status = panel.querySelector('.cfg-extconfig-status');
+    var address = card.getAttribute('data-address');
+    var setStatus = function (msg, isErr) {
+      if (!status) return;
+      status.textContent = msg;
+      status.classList.toggle('pcard-apply-err', !!isErr);
+    };
+    setStatus('reading…', false);
+    _readExternalConfigSource(panel).then(function (parsed) {
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('Config must be a JSON object (not an array or scalar)');
+      }
+      setStatus('matching against declared params…', false);
+      return fetch(_extConfigApiUrl('/api/composite-config-translate'), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ composite_id: address, config_json: parsed }),
+      }).then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); });
+    }).then(function (res) {
+      if (res.status !== 200) { setStatus((res.body && res.body.error) || ('HTTP ' + res.status), true); return; }
+      var params = res.body.params || {};
+      var applied = 0;
+      Object.keys(params).forEach(function (k) {
+        var el = card.querySelector('.loom-cfg-field[data-key="' + k.replace(/"/g, '\\"') + '"]');
+        if (el) { _setExtConfigFieldValue(el, params[k]); applied += 1; }
+      });
+      var unmatched = res.body.unmatched || [];
+      var msg = '✓ applied ' + applied + ' field' + (applied === 1 ? '' : 's');
+      if (unmatched.length) msg += ' — ignored (no matching param): ' + unmatched.join(', ');
+      setStatus(msg, false);
+    }).catch(function (e) { setStatus((e && e.message) || String(e), true); });
+  }
+  window._applyExternalConfig = _applyExternalConfig;
+
   // One config parameter as an organized ROW: name · declared type · value
   // field (prefilled with the default). `opts.type` is the declared type label,
   // `opts.description` a hover/explainer line. The input carries the vtype the
@@ -687,10 +802,12 @@
     var configBody =
       '<div class="cfg-list" data-role="cfg">' + cfgFields + '</div>' +
       _cfgJsonTools() +
+      _extConfigTools() +
       '<div class="pcard-config-actions">' +
         '<button class="btn-mini pcard-apply" type="button" onclick="_applyCompositeConfig(this)" title="Apply parameters &amp; re-resolve the Explore bigraph">✓ Apply</button>' +
         '<button class="btn-mini" type="button" onclick="_resetCompositeConfig(this)" title="Reset to declared defaults">↺ Reset</button>' +
         _cfgJsonToggle() +
+        _extConfigToggle() +
         '<span class="pcard-apply-status muted" data-role="apply-status"></span>' +
       '</div>';
 

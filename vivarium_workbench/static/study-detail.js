@@ -941,11 +941,23 @@
       var label = el.classList.contains('cond-block')
         ? ((el.querySelector('.cond-block-title strong') || {}).textContent || 'baseline')
         : ((el.querySelector('code') || {}).textContent || 'variant');
+      // item 86: track the real study.baseline[] entry name (when this
+      // composite id's FIRST-seen source is a genuine, editable baseline
+      // block — mirrors _loadModelConfig's own `editable = !!baselineName`
+      // gate) so a "Save as baseline" affordance below has somewhere real
+      // to persist into. Variant-sourced entries stay unset — saving a
+      // variant's params is a separate, not-yet-built affordance.
+      var baselineName = '';
+      if (el.classList.contains('cond-block')) {
+        var _bi = el.querySelector('.baseline-composite-input');
+        if (_bi) baselineName = _bi.getAttribute('data-baseline-name') || '';
+      }
       if (!byId[id]) {
-        byId[id] = { id: id, overridesJson: el.getAttribute('data-model-overrides') || '{}', labels: [label] };
+        byId[id] = { id: id, overridesJson: el.getAttribute('data-model-overrides') || '{}', labels: [label], baselineName: baselineName };
         order.push(id);
-      } else if (byId[id].labels.indexOf(label) === -1) {
-        byId[id].labels.push(label);
+      } else {
+        if (byId[id].labels.indexOf(label) === -1) byId[id].labels.push(label);
+        if (!byId[id].baselineName && baselineName) byId[id].baselineName = baselineName;
       }
     });
     if (!order.length) {
@@ -999,12 +1011,20 @@
           }
           var cardHost = document.createElement('div');
           cardHost.innerHTML = window._renderCompositeCardFull(body);
+          var cardEl = cardHost.firstElementChild;
           // Card starts COLLAPSED — click "▶ Explore" to open the inline
           // bigraph-loom explorer (its Configure · graph · Run · Outputs). The
           // Model tab is the study's model surface, but a study can declare
           // several composites, so eagerly mounting every loom is heavy; the
           // reader opens the one they want.
-          wrap.querySelector('p').replaceWith(cardHost.firstElementChild);
+          wrap.querySelector('p').replaceWith(cardEl);
+          // item 86: the card's own Configure section has no live "persist
+          // into study.yaml" action on this page (its Apply/Run buttons are
+          // walkthrough.js-only, inert here — see composite-card.js's own
+          // header comment). Add one real, working save affordance for a
+          // genuine baseline entry, so the per-field form AND the new
+          // external-config JSON panel both have somewhere durable to land.
+          if (entry.baselineName) _mountModelCardSaveBtn(wrap, cardEl, entry);
         })
         .catch(function () {
           var note = document.createElement('p');
@@ -1015,6 +1035,65 @@
     });
   }
   window._loadModelCards = _loadModelCards;
+
+  // item 86: collect a mounted composite card's current per-field values —
+  // a self-contained mirror of walkthrough.js's _collectCardConfig (that
+  // file isn't loaded on this page; see composite-card.js's header comment)
+  // so this page can read the SAME .loom-cfg-field markup independently.
+  function _collectModelCardConfig(cardEl) {
+    var config = {}, bad = null;
+    cardEl.querySelectorAll('.loom-cfg-field').forEach(function (el) {
+      if (bad) return;
+      var key = el.getAttribute('data-key'), vt = el.getAttribute('data-vtype'), v;
+      if (vt === 'boolean') v = el.checked;
+      else if (vt === 'number') v = (el.value === '' ? null : parseFloat(el.value));
+      else if (vt === 'json') { try { v = (el.value === '' ? null : JSON.parse(el.value)); } catch (e) { bad = 'Config "' + key + '": ' + e.message; return; } }
+      else v = el.value;
+      config[key] = v;
+    });
+    return bad ? { __error: bad } : config;
+  }
+
+  // Mount a "Save as baseline" action for a model card that corresponds to a
+  // real study.baseline[] entry — the persist target the per-field form AND
+  // the external-config JSON panel (composite-card.js) both feed into.
+  function _mountModelCardSaveBtn(wrap, cardEl, entry) {
+    var bar = document.createElement('div');
+    bar.className = 'model-card-save-bar';
+    bar.style.cssText = 'display:flex;align-items:center;gap:8px;margin:4px 0 10px 2px';
+    bar.innerHTML = '<button type="button" class="btn-mini model-card-save-btn">💾 Save as baseline</button>' +
+      '<span class="muted model-card-save-status" style="font-size:0.82em"></span>';
+    wrap.appendChild(bar);
+    var status = bar.querySelector('.model-card-save-status');
+    bar.querySelector('.model-card-save-btn').addEventListener('click', function (ev) {
+      var btn = ev.currentTarget;
+      var cfg = _collectModelCardConfig(cardEl);
+      if (cfg.__error) { status.textContent = cfg.__error; return; }
+      // Mirrors _saveModelParams's own add-then-remove sequence exactly (same
+      // study-baseline-add/-remove endpoints): add under a new timestamped
+      // name FIRST, remove the old name only once the add succeeds — never a
+      // moment with zero entries under either name, and add's own 409
+      // ("already exists") can't collide with the still-present old entry.
+      var oldName = entry.baselineName;
+      var newName = oldName + '-' + Date.now().toString(36);
+      btn.disabled = true;
+      status.textContent = 'saving…';
+      api('POST', '/api/study-baseline-add', { study: studyName(), name: newName, composite: entry.id, params: cfg })
+        .then(function (addResult) {
+          if (addResult.status !== 200) throw addResult;
+          return api('POST', '/api/study-baseline-remove', { study: studyName(), name: oldName });
+        })
+        .then(function (r) {
+          if (r.status === 200) { location.reload(); return; }
+          btn.disabled = false;
+          status.textContent = 'Error: ' + ((r.body && r.body.error) || r.status);
+        })
+        .catch(function (addResult) {
+          btn.disabled = false;
+          status.textContent = 'Error: ' + ((addResult.body && addResult.body.error) || addResult.status || String(addResult));
+        });
+    });
+  }
 
   // Coerce a raw <input> string to the composite's declared parameter type —
   // mirrors process_bigraph.composite_spec._cast's canonical type vocabulary

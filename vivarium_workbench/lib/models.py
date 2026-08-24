@@ -1977,6 +1977,20 @@ class SimulationRunDeleteBody(BaseModel):
     run_id: Optional[str] = None
 
 
+class CompositeConfigTranslateBody(BaseModel):
+    """POST /api/composite-config-translate {composite_id, config_json}
+
+    Item 86: adapts a user-supplied JSON document onto a composite's own
+    declared parameter names — the "external config" input mode alongside
+    the per-field parameter form. Non-mutating (no write side effects).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    composite_id: Optional[str] = None
+    config_json: Optional[dict] = None
+
+
 class VisualizationDeleteBody(BaseModel):
     """DELETE /api/visualization {name}"""
 
