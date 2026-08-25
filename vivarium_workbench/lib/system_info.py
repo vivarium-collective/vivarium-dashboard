@@ -136,20 +136,17 @@ def build_github_repo(ws_root: Path) -> dict:
 def build_ui_config(ws_root: Path) -> dict:
     """Return the UI feature-flags dict for GET /api/ui-config.
 
-    Reads workspace.yaml's ``ui:`` block.  Missing or unreadable workspace →
-    all-default values (never raises).
+    Resolves the ``ui:`` block through :mod:`vivarium_workbench.lib.deploy_config`
+    — workspace.yaml overlaid by the deployment config, when one is configured.
+    With no deployment config this is identical to reading workspace.yaml
+    directly.  Missing or unreadable sources → all-default values (never raises).
 
     Keys returned:
       composite_view          — default "bigraph-loom"
     """
     ws_root = Path(ws_root)
-    try:
-        ws = yaml.safe_load(
-            (ws_root / "workspace.yaml").read_text(encoding="utf-8")
-        ) or {}
-    except Exception:  # noqa: BLE001
-        ws = {}
-    ui = ws.get("ui") or {}
+    from vivarium_workbench.lib.deploy_config import resolve_ui_config
+    ui = resolve_ui_config(ws_root)
     from vivarium_workbench.lib.env_compat import get_env
     readonly = (get_env("READONLY", "") or "").strip().lower() \
         not in ("", "0", "false", "no")
