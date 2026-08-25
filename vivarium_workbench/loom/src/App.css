@@ -2384,3 +2384,28 @@ textarea.sr-input {
 .sp-item-actions button:hover { border-color: #4bb3ae; color: #0d6e6b; }
 .sp-item-actions .sp-rerun { color: #0d6e6b; border-color: #b7ebe3; background: #ecfdf9; }
 .sp-item-actions .sp-del:hover { border-color: #fca5a5; color: #dc2626; }
+.sp-pick { flex: none; margin: 0 1px 0 0; cursor: pointer; accent-color: #0d6e6b; }
+.sp-export {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.sp-export-h {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8;
+}
+.sp-export-sel { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-weight: 600; color: #64748b; }
+.sp-export-all {
+  border: 1px solid #e2e8f0; background: #fff; border-radius: 5px; cursor: pointer;
+  font-size: 10px; color: #0d6e6b; padding: 1px 6px;
+}
+.sp-export-all:hover { border-color: #4bb3ae; }
+.sp-export-fmts { display: flex; gap: 12px; }
+.sp-export-fmt { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #475569; cursor: pointer; }
+.sp-export-fmt input { accent-color: #0d6e6b; cursor: pointer; }
+.sp-export-btn {
+  border: 1px solid #0d6e6b; background: #ecfdf9; color: #0d6e6b;
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.sp-export-btn:hover:not(:disabled) { background: #d5f2ee; }
+.sp-export-btn:disabled { opacity: .55; cursor: default; }
+.sp-export-note { font-size: 10px; color: #94a3b8; font-style: italic; }

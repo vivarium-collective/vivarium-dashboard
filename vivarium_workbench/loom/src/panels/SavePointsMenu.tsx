@@ -8,6 +8,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   listAll, save, remove, type SavePoint, type SavePointOrigin,
 } from '../savepoints';
+import { exportSeries, type SeriesFormat, type SeriesPanel } from '../snapshotSeries';
+
+const spKey = (p: SavePoint) => p.origin + ':' + p.id;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export interface SavePointsMenuProps {
   compositeId: string | null;
@@ -37,6 +41,10 @@ export function SavePointsMenu(props: SavePointsMenuProps) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // Series export: which save-points to include + which formats, plus progress.
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [fmt, setFmt] = useState<Set<SeriesFormat>>(new Set(['png', 'svg', 'zip'] as SeriesFormat[]));
+  const [exporting, setExporting] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!compositeId) { setPoints([]); return; }
@@ -82,7 +90,61 @@ export function SavePointsMenu(props: SavePointsMenuProps) {
   const doDelete = async (p: SavePoint) => {
     if (!compositeId) return;
     await remove(compositeId, p);
+    setSel((s) => { const n = new Set(s); n.delete(spKey(p)); return n; });
     await refresh();
+  };
+
+  const toggleSel = (p: SavePoint) => setSel((s) => {
+    const n = new Set(s); const k = spKey(p);
+    if (n.has(k)) n.delete(k); else n.add(k);
+    return n;
+  });
+  const toggleFmt = (f: SeriesFormat) => setFmt((s) => {
+    const n = new Set(s); if (n.has(f)) n.delete(f); else n.add(f);
+    return n;
+  });
+
+  // Export the selected save-points as ONE side-by-side series. We drive the
+  // live graph: capture the current state to restore, then for each selected
+  // save-point (in frame order) load its state, let the layout settle, and grab
+  // the loom's headless SVG/PNG export — exactly what "View then export" gives,
+  // stitched into one figure by snapshotSeries.
+  const doExport = async () => {
+    const w = window as unknown as {
+      __loomExportSvg?: () => Promise<string | null>;
+      __loomExportPng?: () => Promise<string | null>;
+    };
+    if (!compositeId || !w.__loomExportSvg) { setErr('Nothing to export — run and render first.'); return; }
+    if (fmt.size === 0) { setErr('Pick at least one format.'); return; }
+    const chosen = points.filter((p) => sel.has(spKey(p)))
+      .sort((a, b) => (a.frame ?? 0) - (b.frame ?? 0));
+    if (chosen.length === 0) { setErr('Select one or more save-points to export.'); return; }
+
+    const original = props.captureState();
+    setErr(null);
+    const panels: SeriesPanel[] = [];
+    try {
+      for (let i = 0; i < chosen.length; i++) {
+        const p = chosen[i];
+        setExporting(`Rendering ${i + 1}/${chosen.length}…`);
+        props.onView(p.state);            // load this snapshot's state into the graph
+        await sleep(600);                 // let the layout re-flow and re-fit
+        const svg = fmt.has('svg') || fmt.has('zip') ? await w.__loomExportSvg!() : null;
+        const png = fmt.has('png') || fmt.has('zip') ? (w.__loomExportPng ? await w.__loomExportPng() : null) : null;
+        panels.push({
+          svg, png, label: p.name,
+          sub: p.frame != null ? `frame ${p.frame}${p.n_frames ? '/' + p.n_frames : ''}` : undefined,
+        });
+      }
+      setExporting('Composing…');
+      const base = (compositeId.split('.').pop() || 'composite') + '-snapshots';
+      await exportSeries(panels, fmt, base);
+    } catch (e) {
+      setErr(String(e instanceof Error ? e.message : e));
+    } finally {
+      if (original) props.onView(original);   // restore the frame the user was on
+      setExporting(null);
+    }
   };
 
   return (
@@ -129,6 +191,9 @@ export function SavePointsMenu(props: SavePointsMenuProps) {
               {points.map((p) => (
                 <li className="sp-item" key={p.origin + ':' + p.id}>
                   <div className="sp-item-main">
+                    <input type="checkbox" className="sp-pick" checked={sel.has(spKey(p))}
+                      onChange={() => toggleSel(p)}
+                      title="Include this snapshot in the exported series" />
                     <span className={'sp-origin sp-origin-' + p.origin}
                       title={p.origin === 'server' ? 'Workspace-persisted' : 'This browser'}>
                       {p.origin === 'server' ? '⛁' : '⬇'}
@@ -150,6 +215,39 @@ export function SavePointsMenu(props: SavePointsMenuProps) {
                 </li>
               ))}
             </ul>
+          )}
+
+          {points.length > 0 && (
+            <div className="sp-export">
+              <div className="sp-export-h">
+                <span>Export series</span>
+                <span className="sp-export-sel">
+                  {sel.size} selected
+                  <button type="button" className="sp-export-all"
+                    onClick={() => setSel(new Set(sel.size === points.length ? [] : points.map(spKey)))}>
+                    {sel.size === points.length ? 'none' : 'all'}
+                  </button>
+                </span>
+              </div>
+              <div className="sp-export-fmts">
+                {(['png', 'svg', 'zip'] as SeriesFormat[]).map((f) => (
+                  <label key={f} className="sp-export-fmt">
+                    <input type="checkbox" checked={fmt.has(f)} onChange={() => toggleFmt(f)} />
+                    {f.toUpperCase()}
+                  </label>
+                ))}
+              </div>
+              <button type="button" className="sp-export-btn"
+                disabled={!!exporting || sel.size === 0 || fmt.size === 0}
+                onClick={() => void doExport()}
+                title="Render each selected snapshot and stitch them side-by-side">
+                {exporting || `⤓ Export ${sel.size || ''} side-by-side`}
+              </button>
+              <div className="sp-export-note">
+                Renders each selected snapshot in turn — the graph will cycle through them.
+              </div>
+              {err && <div className="sp-err">{err}</div>}
+            </div>
           )}
         </div>
       )}
