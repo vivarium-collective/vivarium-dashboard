@@ -1,81 +1,72 @@
 # syntax=docker/dockerfile:1
 #
-# vivarium-workbench DEMO image (combined). Approach A from docs/REFACTOR-PLAN.md
-# §2B: the workbench must import the workspace's package (`v2ecoli`, via
-# build_core) IN-PROCESS to render, so it needs the *same* environment v2ecoli
-# runs in. Pulls that environment from the workspace's OWN published, per-commit
-# image (WORKSPACE_IMAGE below — see backlog item 39, "Fix B") rather than
-# git-cloning its source, then overlays THIS repo's workbench into that venv
-# and serves.
+# vivarium-workbench server image — the TOOL, not the science environment.
 #
-# NOT baked (workbench renders; it does not run sims — those go to sms-api/Batch):
-# the upstream vEcoli checkout + Cython, the AWS CLI, and the Ray-on-Batch
-# entrypoint from v2ecoli's Dockerfile are intentionally omitted. Add V2E_VECOLI_DIR
-# + the upstream checkout only if the demo renders an upstream-`vecoli` composite.
+# This image contains the workbench and its own declared dependencies, built
+# from THIS repo's uv.lock. It deliberately does NOT contain a workspace
+# package (v2ecoli) or a science/compute stack.
 #
-# Build (from this repo root):
-#   docker build --build-arg WORKSPACE_IMAGE=<ecr-ref>:<commit-sha> \
-#     -t ghcr.io/vivarium-collective/vivarium-workbench:dev .
-
-# ─── workspace locked environment: COPIED from a published image, never
-#     git-cloned (backlog item 39, Fix B) ─────────────────────────────────
+# ─── why (issue #932) ────────────────────────────────────────────────────────
+# The previous design installed the workbench INTO the v2ecoli venv, copied out
+# of a published per-commit workspace image (WORKSPACE_IMAGE). That welded the
+# tool to the science environment and had four consequences:
 #
-# Historically this stage `git clone`d a workspace repo at build time (first
-# vivarium-collective/v2ecoli hardcoded, later a parameterized
-# WORKSPACE_REPO_URL ARG defaulting to CovertLabEcoli/sms-ecoli — see git
-# history / tests/test_dockerfile_workspace_repo.py's own docstring for that
-# incident). Both were the wrong LAYER: whichever repo got cloned into this
-# build-time venv is what lib/study_run_post.py's build_analysis_options()
-# used to import ANALYSIS_REGISTRY from — completely disconnected from
-# whichever commit is actually being DISPATCHED at runtime, so any analysis
-# name outside that stale build-time snapshot's registry got silently
-# dropped with zero error surfaced anywhere. The real fix for THAT bug is in
-# application code (build_analysis_options now takes ws_root and prepends
-# the LIVE served workspace to sys.path before importing — see
-# lib/study_run_post.py). Once that's fixed, this stage no longer needs to
-# get the "right" repo at all for correctness — but it still needs A
-# reasonably current, working sms-ecoli environment as the DEFAULT
-# (unbound-session) serving target, and `git clone`-ing an arbitrary
-# workspace repo at image-build time has a structural problem of its own:
-# it requires this image's build environment to hold real git credentials
-# for whatever repo is configured (this broke CI outright once sms-ecoli
-# went private — GitHub Actions has no credential for it and none of this
-# ecosystem's existing secret mechanisms bridge into GH Actions without
-# inventing new OIDC infra from scratch).
+#   1. ~4.5 GB of GPU/ML stack the server never touches (nvidia 2.7 GB, torch
+#      1.1 GB, triton 689 MB, ray 190 MB) rode along in a container that serves
+#      a web UI and spawns subprocesses.
+#   2. The same 7.2 GB environment was paid for TWICE — once baked in, once on
+#      the PVC as <workspace>/.venv, which is the copy that actually runs the
+#      science (see below).
+#   3. Building required pulling a base from a GovCloud ECR repo, for which no
+#      GitHub Actions credential exists (no OIDC federation into that account).
+#   4. The build-time smoke test did `import v2ecoli` -> polars, which needs
+#      AVX/AVX2/FMA/BMI. QEMU does not emulate those, so a cross-build from an
+#      ARM Mac ALWAYS died with "Illegal instruction" — there was no working
+#      path to build this image from Apple Silicon at all.
 #
-# Fix B: stop git-cloning ANY workspace repo. sms-ecoli already publishes a
-# real, versioned, per-commit image to ECR (docker/build-and-push-ecr.sh,
-# 476270107793.dkr.ecr.us-gov-west-1.amazonaws.com/v2ecoli:<commit-sha> —
-# the SAME image viva-api's own dispatch pulls for actual simulation jobs).
-# Pulling a container image is a standard, already-solved auth pattern
-# (`docker login`/`aws ecr get-login-password`) — a git-clone of an
-# arbitrary private repo is not. WORKSPACE_IMAGE has NO default on purpose:
-# this ecosystem deliberately publishes per-commit tags only, no floating
-# `:main`/`:latest` (see sms-cdk/scripts/README.md) — a guessed default here
-# would silently go stale exactly like the two hardcoded repo URLs before
-# it. Every build must pass an explicit, intentional value. To resolve a
-# current one: `atlantis simulator latest --repo-url
-# https://github.com/CovertLabEcoli/sms-ecoli --branch main` (ensures a
-# build for the current main tip exists, per this ecosystem's own canonical
-# simulator-build protocol) and use the commit sha it reports.
-ARG WORKSPACE_IMAGE
-FROM ${WORKSPACE_IMAGE} AS workspace
+# None of it was load-bearing. `EnvironmentResolver.resolve_interpreter()`
+# already sends every env worker to the WORKSPACE's own interpreter — verified
+# live on sms-api-stanford-test: `/workspace/.venv/bin/python`, while the server
+# process ran on the baked `/app/v2ecoli/.venv/bin/python`. All 10 `v2ecoli`
+# imports in env_worker.py sit inside `try:` blocks ("best-effort
+# self-registration; kept separate so absent/faked v2ecoli"), so nothing
+# hard-depends on it.
+#
+# ─── the contract this creates ───────────────────────────────────────────────
+# The workspace supplies the science environment; this image supplies the tool
+# and spawns workers into that environment. `<workspace>/.venv` is therefore
+# REQUIRED, not a nice-to-have — see lib/env_resolver.py, which now says so
+# loudly rather than silently falling back to this thin server venv.
+#
+# ─── on the `--no-deps` chain this replaces ──────────────────────────────────
+# The old build used `--no-deps` throughout and then force-pinned
+# process-bigraph/bigraph-schema to specific commits, because the venv came
+# from sms-ecoli's lock and a real re-resolve risked upgrading substrate
+# packages sms-ecoli was not tested against (backlog item 44 was a live
+# production crash from exactly that skew: ModuleNotFoundError
+# 'process_bigraph.artifacts').
+#
+# Building from THIS repo's own uv.lock removes that entire class of bug
+# structurally — there is no foreign lock to skew against, so the floors in
+# pyproject.toml (`process-bigraph>=1.8.2`, `bigraph-schema>=1.4.3`) are simply
+# what gets installed. tests/test_process_bigraph_pin.py, which asserted the
+# Dockerfile's hand-pins matched uv.lock, no longer has pins to guard.
 
 FROM python:3.12-bookworm
 
-# uv (pinned binary) for fast, lock-faithful installs — same as v2ecoli.
+# uv (pinned binary) for fast, lock-faithful installs.
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Build toolchain for v2ecoli's vendored Cython extensions + git for the git-main
-# deps + Node/npm to build the vendored bigraph-loom bundle (Task 8; see the
-# "vendored bigraph-loom" step below). git is also needed at RUNTIME (the live
-# served /workspace is a real git working copy the app commits to).
+# build-essential: some deps still build C extensions from sdist.
+# git: needed for the git-sourced deps at BUILD time, and at RUNTIME too (the
+#      live served /workspace is a real git working copy the app commits to).
+# Node/npm: builds the vendored bigraph-loom bundle below.
 #
-# NodeSource's legacy `curl setup_20.x | bash -` piped installer was deprecated and
-# now no-ops silently on some runners, leaving `apt-get install nodejs` to resolve
-# Debian bookworm's nodejs — which ships WITHOUT npm (a separate package) → the loom
-# build later died on `npm: command not found`. Use NodeSource's supported keyring +
-# apt-repo method instead (stable, node 20 WITH npm), and assert node+npm exist at
+# NodeSource's legacy `curl setup_20.x | bash -` piped installer was deprecated
+# and now no-ops silently on some runners, leaving `apt-get install nodejs` to
+# resolve Debian bookworm's nodejs — which ships WITHOUT npm (a separate
+# package) → the loom build died on `npm: command not found`. Use NodeSource's
+# supported keyring + apt-repo method instead, and assert node+npm exist at
 # build time so a future regression fails loudly here, not 60 layers later.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential git ca-certificates curl gnupg \
@@ -91,137 +82,68 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Self-contained venv (real wheel copies, not links into the BuildKit cache mount).
 ENV UV_LINK_MODE=copy
 
-# The published workspace image built its own locked venv (mirrors
-# ../sms-ecoli/Dockerfile: `uv sync` under /app/v2ecoli, requires-python
-# ==3.12.12 fetched via `uv python install`). Copy BOTH the project directory
-# (source + .venv — an editable/local-package install can reference the
-# source tree, not just site-packages) AND uv's managed-Python install dir
-# (the venv's own `bin/python` resolves into
-# /root/.local/share/uv/python/..., NOT a self-contained copy — omitting this
-# would leave a dangling interpreter symlink). The build-time sanity check
-# below fails loudly if either copy is incomplete, rather than shipping a
-# silently broken interpreter.
-COPY --from=workspace /app/v2ecoli /app/v2ecoli
-COPY --from=workspace /root/.local/share/uv/python /root/.local/share/uv/python
-WORKDIR /app/v2ecoli
-ENV PATH="/app/v2ecoli/.venv/bin:${PATH}"
-
-# ─── patch the copied workspace venv: process-bigraph/bigraph-schema version
-#     floor (backlog item 44) ─────────────────────────────────────────────────
-# sms-ecoli's own lock (which built the copied venv above) pins these to
-# whatever IT needs — historically far below what vivarium-workbench itself
-# requires (see backlog items 44/45 and memory
-# workbench-image-process-bigraph-version-floor-risk). The `--no-deps`
-# installs below never enforce vivarium-workbench's own floor
-# (pyproject.toml's `process-bigraph>=1.8.2`, `bigraph-schema>=1.4.3`), so
-# without this step the shipped image silently keeps whatever sms-ecoli
-# locked — which is EXACTLY what caused a real production crash
-# (`ModuleNotFoundError: No module named 'process_bigraph.artifacts'`, item
-# 44): sms-ecoli's process-bigraph 1.5.0 predates that submodule by about a
-# month. bigraph-schema needs the same treatment even though no direct
-# ImportError surfaced yet: process-bigraph 1.8.2's OWN pyproject.toml
-# requires bigraph-schema>=1.4.5 (stricter than vivarium-workbench's own
-# floor), and 1.4.5 fixed a real, dated bug ("a link's config is a value,
-# not a schema") in exactly the resolve/default path Composite construction
-# calls directly — sms-ecoli's locked 1.4.2 predates that fix too.
-#
-# Deliberately NOT a bare `--no-deps .` re-resolve of vivarium-workbench's
-# full tree (that would risk upgrading OTHER shared substrate packages
-# sms-ecoli's own code wasn't tested against — see the memory above for why
-# `--no-deps` exists at all): pin to the EXACT commits vivarium-workbench's
-# OWN uv.lock already resolved, so this only touches the two packages
-# actually needed, no wider blast radius. tests/test_process_bigraph_pin.py
-# asserts both pins stay in sync with uv.lock — update all three together
-# if either ever needs to change.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps \
-        "process-bigraph @ git+https://github.com/vivarium-collective/process-bigraph.git@8b9830f9128b0506d72c0ab2e2f885654efd9d21" \
-        "bigraph-schema @ git+https://github.com/vivarium-collective/bigraph-schema.git@c45cd66e76472fe3f61664d350dc6caf92a6db99"
-
-# ─── overlay THIS repo's workbench code ───────────────────────────────────────
-# `--no-deps`: PyPI-published dependencies were already resolved by the sync
-# above (avoiding a version-skew risk — see workbench-image-process-bigraph-
-# version-floor-risk), so this only swaps the pinned git-main workbench for the
-# exact code in this build context, and installs the `vivarium-workbench` /
-# `vwb` console scripts into the venv.
 WORKDIR /app/vivarium-workbench
 COPY . .
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps .
 
-# ─── vivarium-workbench's own non-PyPI, git-sourced core dependencies ─────────
-# The workspace image's build EXCLUDES vivarium-workbench entirely (sms-ecoli's
-# own Dockerfile: `uv sync --no-install-package vivarium-workbench`, since
-# sms-ecoli doesn't need the workbench to run simulations) — so nothing unique
-# to vivarium-workbench's own dependency tree ever lands in the pulled venv,
-# on ANY build, regardless of how recently sms-ecoli was rebuilt (confirmed:
-# WORKSPACE_IMAGE's pinned commit postdates viva-workspace's adoption below by
-# days — this is a structural gap, not a staleness one). The `--no-deps`
-# install above only swaps in this repo's own code; it can't pull these in.
-# Found 2026-08-12: `viva-workspace` was the first of these to actually get
-# exercised by a real build (every earlier build attempt failed even earlier,
-# for unrelated reasons) — installing all non-PyPI core deps here together,
-# not just the one that happened to surface first, per pyproject.toml's own
-# [tool.uv.sources] (the single source of truth for these refs — keep this
-# list in sync with that section, not the other way around).
-# `investigation-contracts` is pinned to a specific rev, NOT `main`, matching
-# pyproject.toml's own deliberate choice there — a floating branch ref is
-# exactly what hid a breaking pbg-superpowers change for ~3 weeks once already
-# (issue #483); do not change this to `@main`.
+# The workbench + its own declared dependencies, straight from this repo's
+# uv.lock. `--frozen` uses the lock as-is (a drifted lock fails the build rather
+# than silently re-resolving); `--no-dev` keeps test/lint tooling out of the
+# shipped image.
+#
+# This does NOT pull a workspace package: v2ecoli sits in the optional `demo`
+# extra, not in [project.dependencies], and is not requested here. Every core
+# dependency resolves from a git source declared in [tool.uv.sources], so no
+# private registry is involved.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps \
-        "viva-superpowers @ git+https://github.com/vivarium-collective/viva-superpowers.git@1dd4adc43fbcd5a7dfaf80b4e5dee070f0abeeca" \
-        "pbg-basic-processes @ git+https://github.com/vivarium-collective/pbg-basic-processes.git@main" \
-        "viva-marketplace @ git+https://github.com/vivarium-collective/viva-marketplace.git@main" \
-        "viva-workspace @ git+https://github.com/vivarium-collective/viva-workspace.git@main" \
-        "investigation-contracts @ git+https://github.com/vivarium-collective/investigation-contracts.git@65c793fd231d952e49a9cfe4244797dadde1bedc"
+    uv sync --frozen --no-dev
 
-# ─── overlay the Pathway Tools Omics-Viewer plugin (pbg-ptools) ───────────────
-# The workbench discovers this at runtime via its pbg-* distribution scan and
-# renders the PTools viewer (self-gated on ui.ptools_server_url). It MUST be
-# installed explicitly: the `--no-deps` workbench install above does not pull the
-# `ptools` extra, so without this line the viewer would be absent. `--no-deps`
-# again because its deps (vivarium-workbench, pyyaml) are already in the venv.
+ENV PATH="/app/vivarium-workbench/.venv/bin:${PATH}"
+
+# This image ships only the workbench and its own dependencies, so
+# EnvironmentResolver must NOT silently fall back to it for workspace work —
+# that would run analysis code in an interpreter that cannot import the
+# workspace package and fail deep inside a worker call. Require each workspace
+# to bring its own .venv and fail loudly at the seam instead (#932).
+ENV VIVARIUM_WORKBENCH_REQUIRE_WORKSPACE_VENV=1
+
+# The Omics-Viewer plugin. Deliberately NOT a dependency in pyproject.toml: the
+# dependency arrow runs pbg-ptools -> vivarium-workbench (leaf -> host), so the
+# workbench must not depend back on it. `--no-deps` keeps its own
+# vivarium-workbench requirement from resolving a SECOND copy over the one just
+# installed from this build context.
 ARG PBG_PTOOLS_REF=main
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /app/v2ecoli/.venv/bin/python --no-deps \
+    uv pip install --no-deps \
         "pbg-ptools @ git+https://github.com/vivarium-collective/pbg-ptools.git@${PBG_PTOOLS_REF}"
 
-# ─── build the vendored bigraph-loom bundle (embedded state-tree explorer, served
-#     at /loom-explore) ──────────────────────────────────────────────────────
-# Task 8 vendored bigraph-loom's source into vivarium_workbench/loom/ and
-# dropped the external `bigraph-loom @ git+...` dependency (it used to be
-# installed as a separate package here because v2ecoli's lock never declared
-# it). `_dist` (the Vite build output) is gitignored — a generated artifact —
-# so it must be built now, from the source copied in by `COPY . .` above.
-# `lib/static_serving.resolve_loom_asset()` / `publish.py` resolve it via
-# `vivarium_workbench.loom_assets.asset_dir()`; a missing `_dist` would pass
-# the build-time sanity import below and only 500 at runtime (the
-# always-visible loom panel fires a loom-asset request for ANY composite).
+# ─── vendored bigraph-loom bundle ────────────────────────────────────────────
+# Built here so a missing bundle fails the BUILD rather than shipping a silent
+# runtime 500 (the always-visible loom panel fires a loom-asset request for ANY
+# composite).
 RUN bash scripts/build_loom.sh
 
-# Sanity: the workspace package, the workbench, the viewer plugin, and the loom
-# explorer all import in one interpreter (the plugin's top-level imports exercise
-# the workbench too). `vivarium_workbench.api.app` is imported explicitly and
-# separately — it's the actual module chain that crashed in production (item 44):
-# a bare `import vivarium_workbench` alone doesn't eagerly pull in `api.app`, so
-# this exact class of regression previously shipped silently past this check and
-# only surfaced as a live CrashLoopBackOff. loom_assets is added here so a
-# regression fails the BUILD rather than shipping a silent runtime
-# ModuleNotFoundError (see the loom build above), and confirm the built bundle
-# actually landed on disk.
+# Sanity: everything the SERVER itself imports resolves in one interpreter, and
+# the loom bundle actually landed on disk. `vivarium_workbench.api.app` is
+# imported explicitly and separately — it is the exact module chain that crashed
+# in production (item 44); a bare `import vivarium_workbench` does not eagerly
+# pull it in, so that regression previously shipped silently past this check and
+# surfaced only as a live CrashLoopBackOff.
+#
+# `import v2ecoli` is deliberately GONE (#932): the workspace package is not in
+# this image, is imported best-effort at runtime from the mounted workspace, and
+# was the line that made this build impossible under QEMU.
 RUN python -c "\
-import v2ecoli, vivarium_workbench, pbg_ptools.workbench_viewers; \
+import vivarium_workbench, pbg_ptools.workbench_viewers; \
 import vivarium_workbench.api.app; \
 from vivarium_workbench.loom_assets import asset_dir; \
 d = asset_dir(); \
 assert (d / 'index.html').is_file(), f'loom bundle missing: {d}'; \
-print('combined env ok')"
+print('workbench server env ok')"
 
 # ─── serve ───────────────────────────────────────────────────────────────────
-# The workspace (v2ecoli's workspace.yaml + studies/investigations/.git/runs.db)
-# is mounted from the private EBS PVC at /workspace (see deploy/). SMS_API_BASE is
-# set by the overlay to the in-cluster sms-api service. Bind 0.0.0.0 in-container.
+# The workspace (workspace.yaml + studies/investigations/.git/runs.db AND its
+# own .venv) is mounted from the private EBS PVC at /workspace (see deploy/).
+# SMS_API_BASE is set by the overlay to the in-cluster sms-api service.
 WORKDIR /app
 EXPOSE 8000
 ENTRYPOINT ["vivarium-workbench"]

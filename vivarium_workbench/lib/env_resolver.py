@@ -15,8 +15,16 @@ lifecycle; this resolver is where that adapter plugs in.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
+
+from vivarium_workbench.lib.env_compat import get_env
+
+_log = logging.getLogger(__name__)
+
+#: Workspaces already warned about (one line per workspace, not per call).
+_warned_no_venv: set[str] = set()
 
 # venv interpreter relative paths — POSIX first (macOS/Linux, day one), then the
 # Windows layout (materialization-lifecycle §2b: Windows is a later target).
@@ -75,4 +83,48 @@ def resolve_interpreter(workspace: Path | str) -> str:
     managed = materialization.cached_interpreter_for(ws)
     if managed is not None:
         return managed
+    return _fallback_interpreter(ws)
+
+
+def _fallback_interpreter(ws: Path) -> str:
+    """The running interpreter — with a guard for environments that can't serve.
+
+    Falling back to ``sys.executable`` is correct wherever the running
+    interpreter genuinely has the workspace's dependencies: the test fixtures,
+    and local development from a venv that installed them.
+
+    It is NOT correct in the slim server image (#932), which deliberately ships
+    only the workbench and its own dependencies — no workspace package, no
+    science stack. There, a silent fallback would run analysis code in an
+    interpreter that cannot import what it needs, and fail deep inside a worker
+    call with a confusing ModuleNotFoundError instead of at the seam that made
+    the wrong choice.
+
+    So the image sets ``VIVARIUM_WORKBENCH_REQUIRE_WORKSPACE_VENV=1`` and gets a
+    loud, actionable failure; everywhere else keeps today's behavior plus a
+    one-time warning naming the workspace.
+    """
+    strict = (get_env("REQUIRE_WORKSPACE_VENV", "") or "").strip().lower() \
+        not in ("", "0", "false", "no")
+    if strict:
+        # EnvWorkerUnavailable (not a novel exception type) so existing callers
+        # degrade the route as they already do for an unusable worker, rather
+        # than 500ing on something they've never seen.
+        from vivarium_workbench.lib.env_worker_client import EnvWorkerUnavailable
+        raise EnvWorkerUnavailable(
+            f"workspace has no .venv: {ws}\n"
+            "This deployment requires each workspace to provide its own "
+            "environment (VIVARIUM_WORKBENCH_REQUIRE_WORKSPACE_VENV is set). The "
+            "server image ships only the workbench and its own dependencies, so "
+            "falling back to it would run workspace code in an interpreter that "
+            "cannot import the workspace package.\n"
+            f"Provision one with: uv sync --project {ws}"
+        )
+    if str(ws) not in _warned_no_venv:
+        _warned_no_venv.add(str(ws))
+        _log.warning(
+            "workspace %s has no .venv; env workers will run on the workbench's "
+            "own interpreter (%s). That works only if it already has the "
+            "workspace's dependencies.", ws, sys.executable,
+        )
     return sys.executable
