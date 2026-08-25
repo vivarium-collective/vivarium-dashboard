@@ -865,12 +865,22 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
         report_cards_html = render_report_cards_section(ws_root, name)
     except Exception:  # noqa: BLE001
         report_cards_html = ""
-    # Result figure: inline the study's primary dynamics SVG so the Overview shows
+    # Result figure: show the study's primary dynamics SVG so the Overview shows
     # the visual result, not just prose. Prefer the closed-loop "*-dynamics.svg";
     # degrade silently to no figure. Trusted (workspace-authored) SVG.
+    #
+    # Rendered as an <img> data-URI, NOT inline <svg> markup — mirrors the
+    # Visualizations tab's _svgImg (study-detail.js): bigraph-loom figures embed
+    # their nodes as <foreignObject> HTML, and WebKit renders foreignObject at
+    # intrinsic size (ignoring the viewBox->viewport scale) when the SVG is
+    # inlined, so `max-width:100%` on the <svg> does NOT stop it overflowing the
+    # .ctr-figure card. As an <img> the browser rasterizes the whole document
+    # (foreignObject included) and scales it with plain `max-width` — correct in
+    # every engine, shrink-only. quote() (not base64) keeps UTF-8 math glyphs.
     result_figure = ""
     try:
         import re as _re
+        from urllib.parse import quote as _urlquote
         sdir = next((b / name for b in (ws_root / "workspace" / "studies",
                                         ws_root / "studies") if (b / name).is_dir()), None)
         vizzes = spec.get("visualizations") or []
@@ -883,11 +893,11 @@ def render_study_detail_html(ws_root: Path, name: str, spec: dict, *, base_path:
             if f.is_file():
                 svg = _re.sub(r"<\?xml.*?\?>\s*|<!DOCTYPE.*?>\s*", "",
                               f.read_text(encoding="utf-8", errors="replace"), flags=_re.S).lstrip()
-                svg = _re.sub(r"<svg\b[^>]*>",
-                              lambda m: _re.sub(r'\s(width|height)="[^"]*"', "", m.group(0))[:-1]
-                              + ' style="max-width:100%;height:auto" preserveAspectRatio="xMidYMid meet">',
-                              svg, count=1)
-                result_figure = svg
+                result_figure = (
+                    '<img class="ctr-figure-img" alt="result figure" loading="lazy" '
+                    'style="display:block;max-width:100%;height:auto" '
+                    'src="data:image/svg+xml,' + _urlquote(svg) + '">'
+                )
     except Exception:
         result_figure = ""
     html = tpl.render(study=spec, name=name, result_figure=result_figure,

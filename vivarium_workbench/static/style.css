@@ -5016,6 +5016,10 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
   border: 1px solid var(--line, #e5e7eb); border-radius: 12px; max-width: 720px;
 }
 .study-overview .ctr-figure svg { display: block; width: 100%; height: auto; }
+/* The centerpiece is an <img> data-URI (see study_page.render_study_detail_html):
+   loom figures embed <foreignObject> HTML that overflows an inlined <svg>, so it
+   is rasterized to an <img> and scaled shrink-only. */
+.study-overview .ctr-figure img.ctr-figure-img { display: block; max-width: 100%; height: auto; }
 :root[data-theme="dark"] .study-overview .ctr-figure,
 .theme-dark .study-overview .ctr-figure { background: #0f1720; border-color: #2b3a4f; }
 
