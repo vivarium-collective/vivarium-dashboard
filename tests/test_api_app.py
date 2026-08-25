@@ -603,6 +603,68 @@ def test_composite_resolve_in_openapi(client):
     assert "CompositeResolvePayload" in spec["components"]["schemas"]
 
 
+# ---------------------------------------------------------------------------
+# /api/composite-config-translate (item 86)
+# ---------------------------------------------------------------------------
+
+def test_composite_config_translate_happy_path(client, monkeypatch):
+    """The route resolves the composite, adapts config_json against its
+    declared params, and returns {params, unmatched}."""
+    import vivarium_workbench.lib.composite_resolve as _composite_resolve
+
+    monkeypatch.setattr(
+        _composite_resolve,
+        "resolve_composite_for_request",
+        lambda ws, spec_id, overrides=None: {
+            "id": spec_id,
+            "parameters": {"n_cells": {"type": "int", "default": 2}},
+        },
+    )
+    r = client.post(
+        "/api/composite-config-translate",
+        json={"composite_id": "pbg_ws.composites.my_comp", "config_json": {"n_cells": 7}},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["params"] == {"n_cells": 7}
+    assert body["unmatched"] == []
+
+
+def test_composite_config_translate_bad_json_shape_422(client):
+    r = client.post(
+        "/api/composite-config-translate",
+        json={"composite_id": "pbg_ws.composites.my_comp", "config_json": "not-a-dict"},
+    )
+    assert r.status_code == 422
+
+
+def test_composite_config_translate_survives_readonly(monkeypatch):
+    """Non-mutating — must stay reachable even on a read-only deployment,
+    the same class of always-available computation as composite-resolve."""
+    import vivarium_workbench.lib.composite_resolve as _composite_resolve
+    from vivarium_workbench.api import app as _app_mod
+
+    monkeypatch.setattr(
+        _composite_resolve,
+        "resolve_composite_for_request",
+        lambda ws, spec_id, overrides=None: {"id": spec_id, "parameters": {}},
+    )
+    app = create_app()
+    _app_mod._apply_readonly_filter(app)
+    app.dependency_overrides[get_workspace] = lambda: Path("/tmp")
+    rc = TestClient(app)
+    r = rc.post(
+        "/api/composite-config-translate",
+        json={"composite_id": "x", "config_json": {}},
+    )
+    assert r.status_code == 200
+
+
+def test_composite_config_translate_in_openapi(client):
+    spec = client.get("/openapi.json").json()
+    assert "/api/composite-config-translate" in spec["paths"]
+
+
 def test_composite_resolve_validation_failure_degrades_not_500(client, monkeypatch):
     """A resolver payload that fails CompositeResolvePayload validation (e.g.
     missing required fields) degrades to the standard wiring_status:

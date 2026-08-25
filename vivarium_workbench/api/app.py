@@ -141,6 +141,7 @@ from vivarium_workbench.lib import loop_provenance_views as _loop_provenance_vie
 from vivarium_workbench.lib import chain_views as _chain_views
 from vivarium_workbench.lib import study_variants as _study_variants
 from vivarium_workbench.lib.composite_resolve import resolve_composite_for_request, _degraded_result
+from vivarium_workbench.lib import composite_config_adapt as _composite_config_adapt
 from vivarium_workbench.lib.composites_query import composites_via_subprocess
 from vivarium_workbench.lib.models import (
     BibEntry,
@@ -256,6 +257,7 @@ from vivarium_workbench.lib.models import (
     ISetCloseResult,
     FeedbackRecordActionResult,
     BandProvenanceSetBody,
+    CompositeConfigTranslateBody,
     # DELETE-route request-body models
     SimulationDeleteBody,
     SimulationRunDeleteBody,
@@ -498,6 +500,9 @@ _READONLY_ALLOWED_MUTATIONS = {
     "/api/auth/github/start", "/api/auth/github/logout",
     # benign UI telemetry
     "/api/click",
+    # item 86: non-mutating config computation, same class of usefulness as
+    # the always-available GET /api/composite-resolve
+    "/api/composite-config-translate",
 }
 
 
@@ -1434,6 +1439,34 @@ def create_app() -> FastAPI:
             return CompositeResolvePayload.model_validate(
                 _degraded_result(id, e, kind=kind)
             )
+
+    @app.post(
+        "/api/composite-config-translate",
+        tags=["Composites"],
+        summary="Adapt a JSON config document onto a composite's declared params",
+    )
+    def composite_config_translate(
+        req: CompositeConfigTranslateBody,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Item 86: the "external config" JSON-spec input mode.
+
+        Body: ``{composite_id, config_json}``. Resolves ``composite_id``'s
+        declared parameters (the same lookup ``GET /api/composite-resolve``
+        uses) and matches ``config_json``'s top-level keys against them —
+        exact-name matches pass through; a small, fixed set of known
+        process-injection keys nest into a declared ``injected_processes``-
+        shaped map param when present. Non-mutating — no write side effects,
+        the caller applies the returned params into its own form state.
+
+        Returns ``{"params": {...}, "unmatched": [...]}`` (200), or
+        ``{"error": ...}`` at 400 (missing composite_id) / 404 (unknown
+        composite) / 422 (config_json not a JSON object).
+        """
+        body, status = _composite_config_adapt.composite_config_translate(
+            ws, req.model_dump()
+        )
+        return JSONResponse(status_code=status, content=body)
 
     def _composite_state_response(
         ref: str, fresh: Optional[str], ws: Path
