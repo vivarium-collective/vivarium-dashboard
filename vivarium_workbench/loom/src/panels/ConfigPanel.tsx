@@ -9,7 +9,7 @@
 // bottom run bar runs with whatever config was last Applied.
 import { useEffect, useMemo, useState } from 'react';
 import type { ParameterDecl } from '../api';
-import { resolveComposite } from '../api';
+import { resolveComposite, translateExternalConfig } from '../api';
 import { _initialValue, _castFormValue } from './SetupRunPanel';
 
 type FormValue = string | number | boolean;
@@ -203,6 +203,61 @@ export function ConfigPanel(props: ConfigPanelProps) {
     setError(null);
   }
 
+  // ---- External config (item 86) ------------------------------------------
+  // Upload or paste an arbitrary JSON document; the server matches its keys
+  // onto this composite's own declared params and returns them adapted. The
+  // result populates the SAME `values` state the per-field form edits, so the
+  // existing Apply button (unchanged) is what actually applies it — this is
+  // an alternate way to SET the fields, not a second, parallel data path.
+  const [extConfigOpen, setExtConfigOpen] = useState(false);
+  const [extConfigText, setExtConfigText] = useState('');
+  const [extConfigApplying, setExtConfigApplying] = useState(false);
+  const [extConfigError, setExtConfigError] = useState<string | null>(null);
+  const [extConfigResult, setExtConfigResult] = useState<string | null>(null);
+
+  function handleExtConfigFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    file.text().then(setExtConfigText).catch((err) => setExtConfigError(String(err)));
+  }
+
+  async function handleApplyExtConfig() {
+    if (!props.compositeId) return;
+    setExtConfigError(null);
+    setExtConfigResult(null);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(extConfigText);
+    } catch (e) {
+      setExtConfigError('Not valid JSON: ' + (e instanceof Error ? e.message : String(e)));
+      return;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      setExtConfigError('Config must be a JSON object (not an array or scalar)');
+      return;
+    }
+    setExtConfigApplying(true);
+    try {
+      const res = await translateExternalConfig(props.compositeId, parsed as Record<string, unknown>);
+      setValues((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(res.params)) {
+          const pdef = props.parameters[k];
+          if (pdef) next[k] = _initialValue(pdef, v);
+        }
+        return next;
+      });
+      setApplied(false);
+      let msg = `✓ set ${Object.keys(res.params).length} field(s) — click Apply to use them`;
+      if (res.unmatched.length) msg += `. Ignored (no matching param): ${res.unmatched.join(', ')}`;
+      setExtConfigResult(msg);
+    } catch (e) {
+      setExtConfigError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExtConfigApplying(false);
+    }
+  }
+
   // ---- Inputs (editable input-store state) --------------------------------
   const inputStores = useMemo(() => _extractInputStores(props.state), [props.state]);
   const inputKeys = Object.keys(inputStores);
@@ -310,7 +365,36 @@ export function ConfigPanel(props: ConfigPanelProps) {
             title="Revert fields to the composite's declared defaults">
             Reset
           </button>
+          <button type="button" className="cfg-json-toggle cfg-extconfig-toggle"
+            onClick={() => setExtConfigOpen((o) => !o)} disabled={props.readOnly}
+            title="Upload or paste a JSON config document to set several parameters at once">
+            📄 External config
+          </button>
         </div>
+        {extConfigOpen && (
+          <div className="cfg-extconfig">
+            <div className="cfg-extconfig-divider cfg-note">— OR: load an external JSON config —</div>
+            <input type="file" accept=".json,application/json" disabled={props.readOnly}
+              onChange={handleExtConfigFile} />
+            <textarea
+              className="sr-input cfg-input cfg-extconfig-box"
+              spellCheck={false}
+              rows={Math.min(12, Math.max(4, extConfigText.split('\n').length))}
+              placeholder="{ …a JSON config document… } — matched against this composite's declared params"
+              value={extConfigText}
+              disabled={props.readOnly}
+              onChange={(e) => { setExtConfigText(e.target.value); setExtConfigError(null); setExtConfigResult(null); }}
+            />
+            {extConfigError && <div className="cfg-error">{extConfigError}</div>}
+            {extConfigResult && !extConfigError && <div className="cfg-applied">{extConfigResult}</div>}
+            <div className="cfg-actionbar">
+              <button className="sr-run-btn cfg-apply-btn" onClick={handleApplyExtConfig}
+                disabled={extConfigApplying || props.readOnly || !props.compositeId || !extConfigText.trim()}>
+                {extConfigApplying ? 'Matching…' : 'Apply config'}
+              </button>
+            </div>
+          </div>
+        )}
         </>
       )}
 

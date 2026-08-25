@@ -229,6 +229,29 @@ export async function resolveComposite(
   return body as ResolveResponse;
 }
 
+export interface TranslateConfigResponse {
+  params: Record<string, unknown>;
+  unmatched: string[];
+  error?: string;
+}
+
+/** Item 86: match an arbitrary JSON document's keys onto a composite's own
+ *  declared parameters — the "external config" input mode alongside the
+ *  per-field Configure form. Non-mutating. */
+export async function translateExternalConfig(
+  compositeId: string,
+  configJson: Record<string, unknown>,
+): Promise<TranslateConfigResponse> {
+  const r = await fetch('/api/composite-config-translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ composite_id: compositeId, config_json: configJson }),
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+  return body as TranslateConfigResponse;
+}
+
 /** Start a detached composite run. Resolves with {run_id}; rejects on non-2xx
  *  (notably 429 when the concurrency cap is hit) with the server's error text. */
 export async function startRun(args: StartRunArgs): Promise<StartRunResponse> {
