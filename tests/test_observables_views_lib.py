@@ -102,6 +102,46 @@ def test_study_observable_check_uncomputable_422(demo_ws):
     assert lib_status == 422
 
 
+def test_study_observable_check_honors_nested_workspace_layout(tmp_path):
+    """A workspace.yaml that nests studies under workspace/studies (v2ecoli
+    layout) must still resolve the study — not 404 'study not found' (#913)."""
+    (tmp_path / "workspace.yaml").write_text(yaml.safe_dump({
+        "name": "ws",
+        "layout": {"studies": "workspace/studies",
+                   "investigations": "workspace/investigations"},
+    }))
+    sd = tmp_path / "workspace" / "studies" / "demo"
+    sd.mkdir(parents=True)
+    # No baseline -> the worker returns 422 (found, but no composite), proving
+    # the study was RESOLVED via the layout rather than 404'd.
+    (sd / "study.yaml").write_text(yaml.safe_dump({"name": "demo", "readouts": []}))
+
+    body, status = ov.build_study_observable_check(tmp_path, "demo")
+    assert status != 404, body
+    assert status == 422, body  # found via layout, but no baseline composite
+    assert body.get("error") != "study not found: demo"
+
+
+def test_study_observable_check_extracts_v4_conditions_baseline(tmp_path):
+    """A schema_version 4 study carries its baseline composite under
+    conditions.baseline.composite — the worker must project it (not 422 with
+    'study has no baseline composite') (#913)."""
+    sd = tmp_path / "studies" / "v4demo"
+    sd.mkdir(parents=True)
+    (sd / "study.yaml").write_text(yaml.safe_dump({
+        "schema_version": 4,
+        "name": "v4demo",
+        "conditions": {"baseline": {"composite": "some.composite.ref"}},
+        "readouts": [],
+    }))
+    body, status = ov.build_study_observable_check(tmp_path, "v4demo")
+    # Baseline extraction must succeed (not 400 parse / not "no baseline"); the
+    # ref then fails to build in a bare tmp workspace -> 422 with a note.
+    assert body.get("error") != "study has no baseline composite", body
+    assert status == 422, body
+    assert body.get("composite") == "some.composite.ref", body
+
+
 # ---------------------------------------------------------------------------
 # linkage-index — build-free paths
 # ---------------------------------------------------------------------------
