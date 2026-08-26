@@ -79,7 +79,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && node --version && npm --version \
  && rm -rf /var/lib/apt/lists/*
 
-# Self-contained venv (real wheel copies, not links into the BuildKit cache mount).
+# BUILD-time only: real wheel copies, not links into the BuildKit cache mount.
+# Reset to uv's Linux default (hardlink) at the end of this file so it does NOT
+# ship in the runtime image -- see the note above the ENTRYPOINT.
 ENV UV_LINK_MODE=copy
 
 WORKDIR /app/vivarium-workbench
@@ -139,6 +141,25 @@ from vivarium_workbench.loom_assets import asset_dir; \
 d = asset_dir(); \
 assert (d / 'index.html').is_file(), f'loom bundle missing: {d}'; \
 print('workbench server env ok')"
+
+# ─── runtime link mode ───────────────────────────────────────────────────────
+# Undo the build-time UV_LINK_MODE=copy above so it is not baked into the image.
+#
+# At RUNTIME uv is used to provision a venv per served workspace (workbench#937,
+# REFACTOR-PLAN §2A.7). `copy` defeats the sharing that makes that affordable:
+# measured in this image, three venvs installing the same wheels cost 299 MB
+# under `copy` versus 103 MB under the default `hardlink` -- N x versus ~1 x,
+# where the marginal cost of a workspace is only what genuinely differs from the
+# ones already present. `copy` was only ever here to keep wheels from linking
+# into a BuildKit cache mount, which has no bearing on a persistent PVC.
+#
+# PRECONDITION, easy to get wrong: hardlinking requires the uv CACHE and the
+# target venv on the SAME filesystem. In the deployment the venvs live on the
+# workbench PVC, so the cache must be moved there too (a subPath mount over
+# ~/.cache/uv) -- otherwise uv silently falls back to copying and this setting
+# buys nothing. Verified 2026-08-26 that the default cache (/root/.cache/uv) is
+# on the container's ephemeral overlay fs, a DIFFERENT device from /workspace.
+ENV UV_LINK_MODE=hardlink
 
 # ─── serve ───────────────────────────────────────────────────────────────────
 # The workspace (workspace.yaml + studies/investigations/.git/runs.db AND its
