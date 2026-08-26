@@ -106,7 +106,12 @@ export function applySavedPositions(nodes: Node[], saved: LayoutPositions): Node
   return nodes.map((n) => {
     const p = saved[n.id];
     if (!p) return n;
-    const node: Node = { ...n, position: { x: p.x, y: p.y } };
+    // Pin the position ONLY when the entry carries one — a `pc`-only (or
+    // size-only) entry keeps the node at its auto-layout spot, so a view can set
+    // just the port-column / collapse for a process without hand-placing it.
+    const node: Node = (p.x != null && p.y != null)
+      ? { ...n, position: { x: p.x, y: p.y } }
+      : { ...n };
     // Restore hand-set node size + port-column width onto data so the node
     // re-renders at them.
     if ((p.w && p.h) || p.pc != null) {
