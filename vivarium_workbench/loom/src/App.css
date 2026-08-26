@@ -499,7 +499,9 @@ body {
 .process-node-config,
 .process-node-contract,
 .process-node-full {
-  width: 620px;
+  /* Default 620px; a render can widen single-card views via ?cardw=N (App sets
+     --proc-card-w) so a text-heavy contract card wraps less and reads shorter. */
+  width: var(--proc-card-w, 620px);
   /* Height is CONTENT-driven: the card is exactly as tall as its shown detail
      needs (min-content), so it can be squeezed short and grows automatically as
      more detail is added — text never overflows and never scrolls. */

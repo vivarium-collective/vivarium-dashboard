@@ -197,6 +197,15 @@ export default function App() {
     () => new URLSearchParams(window.location.search).get('nopersist') === '1',
     [],
   );
+  // ?cardw=N widens process cards (App.css --proc-card-w) so a text-heavy
+  // single-card figure (e.g. Fig 3b/6b contract cards) wraps less and reads
+  // wider + shorter. Applied once from the URL to the document root.
+  useEffect(() => {
+    const w = new URLSearchParams(window.location.search).get('cardw');
+    if (w && /^\d+$/.test(w)) {
+      document.documentElement.style.setProperty('--proc-card-w', `${w}px`);
+    }
+  }, []);
   // Transparent export: with ?bg=transparent (or ?transparent=1), SVG/PNG export
   // omits the white backdrop so a figure composited onto a colored panel lets the
   // panel background show through. Default stays white.
