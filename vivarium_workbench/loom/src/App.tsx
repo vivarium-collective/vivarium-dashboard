@@ -2262,6 +2262,9 @@ export default function App() {
                   frameIdx,
                   frameCount: trajectory.length,
                   frameTime: trajectory[frameIdx]?.time,
+                  // Per-frame times, so the snapshot export can label each frame
+                  // with WHEN it is (not just its index).
+                  frameTimes: trajectory.map((r) => r.time),
                   playing,
                   onPrev: () => { setPlaying(false); setFrameIdx((i) => Math.max(0, (i ?? 0) - 1)); },
                   onNext: () => { setPlaying(false); setFrameIdx((i) => Math.min(trajectory.length - 1, (i ?? 0) + 1)); },

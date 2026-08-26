@@ -2172,6 +2172,17 @@ textarea.sr-input {
 /* Folded INTO the run bar: run + step are one unified control. Re-theme the
    transport light so it reads as part of the (light) run bar, not a dark strip. */
 .explore-runbar-div { width: 1px; align-self: stretch; background: #e2e8f0; margin: 2px 0; }
+.explore-runbar-snap { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.explore-runbar-snap input {
+  width: 44px; height: 24px; box-sizing: border-box; text-align: center;
+  border: 1px solid #d1d5db; border-radius: 5px; font-size: 12px;
+}
+.explore-runbar-snap button {
+  height: 24px; padding: 0 9px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  color: #0d6e6b; background: #ecfdf9; border: 1px solid #0d6e6b; border-radius: 5px; cursor: pointer;
+}
+.explore-runbar-snap button:hover:not(:disabled) { background: #d5f2ee; }
+.explore-runbar-snap button:disabled { opacity: .6; cursor: default; }
 .explore-runbar .topo-transport {
   flex: 1 1 260px; background: transparent; color: #374151;
   border-top: 0; padding: 0; gap: 7px;
