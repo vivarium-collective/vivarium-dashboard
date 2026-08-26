@@ -52,7 +52,15 @@ class EnvWorkerUnavailable(EnvWorkerError):
 
 
 class EnvWorker:
-    """A live connection to one env-worker subprocess. Serial (spec §8)."""
+    """A live connection to one env-worker. Serial (spec §8).
+
+    Both are Optional because the two transports differ in what they own: a
+    dial-back worker has no local process (``_proc is None``), and ``close()``
+    drops the socket so ``alive()`` stays honest for a worker we cannot poll.
+    """
+
+    _proc: subprocess.Popen[bytes] | None
+    _sock: socket.socket | None
 
     def __init__(self, workspace: Path | str, *, interpreter: str | None = None,
                  log_path: Path | str | None = None, timeout: float = 60.0):
