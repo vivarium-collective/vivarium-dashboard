@@ -331,6 +331,9 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const [openSection, setOpenSection] = useState<'config' | 'contract' | null>(null);
   const toggleSection = (s: 'config' | 'contract') =>
     setOpenSection((cur) => (cur === s ? null : s));
+  // Live width while dragging the port-label column resizer (null = not dragging).
+  const [dragCol, setDragCol] = useState<number | null>(null);
+  const dragColRef = useRef(0);
 
   // The card's minimum height must fit BOTH its text (CSS min-content) AND its
   // evenly-spaced port rows. Ports are absolutely positioned (out of flow), so
@@ -347,7 +350,10 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
   const bigPorts = t === 'ports' || t === 'types' || t === 'config';  // 24px names (App.css)
   const nameFont = `650 ${bigPorts ? 24 : 19}px Inter, system-ui, sans-serif`;
   const typeFont = `${bigPorts ? 17 : 15}px ui-monospace, monospace`;
-  const labelCap = bigPorts ? 150 : 140;   // .port-in-name / .port-in-type max-width
+  // Auto column caps the widest label so a runaway name can't blow out the card.
+  // Raised well past the old 140/150 so ordinary long port names ("mechanical_ext",
+  // "nucleic_acids") show in FULL under auto; a hand-set _portCol overrides it.
+  const labelCap = bigPorts ? 320 : 300;
   let widestLabel = 0;
   if (show.ports) {
     const measurePort = (p: string, isOut: boolean, types: Record<string, unknown>) => {
@@ -365,7 +371,41 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
     outputPorts.forEach((p) => measurePort(p, true, outTypes));
   }
   // 13px = the .port-in-label left/right offset; +10px clearance from the center.
-  const portCol = show.ports ? Math.round(13 + Math.min(labelCap, widestLabel) + 10) : 14;
+  const autoCol = Math.round(13 + Math.min(labelCap, widestLabel) + 10);
+  // _portCol: undefined = auto; 0 = ports COLLAPSED (hidden for this process);
+  // >0 = a hand-set width (drag). During a drag, dragCol is the live value.
+  const savedPortCol = (data as { _portCol?: number })._portCol;
+  const effPortCol = dragCol != null ? dragCol : savedPortCol;
+  const portsCollapsed = show.ports && effPortCol === 0;
+  const showPortLabels = show.ports && !portsCollapsed;
+  const portCol = !show.ports ? 14
+    : portsCollapsed ? 16
+      : (effPortCol != null && effPortCol > 0 ? effPortCol : autoCol);
+  const commitPortCol = (data as { _commitPortCol?: (id: string, pc: number) => void })._commitPortCol;
+  const startColDrag = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!_nodeId || !commitPortCol) return;
+    const start = (savedPortCol != null && savedPortCol > 0) ? savedPortCol : autoCol;
+    const startX = e.clientX;
+    const zoom = (_rf.getViewport?.().zoom) || 1;
+    dragColRef.current = start;
+    const move = (ev: MouseEvent) => {
+      let w = Math.round(start + (ev.clientX - startX) / zoom);
+      if (w < 28) w = 0;                              // dragged fully shut → collapse
+      else w = Math.max(48, Math.min(600, w));
+      dragColRef.current = w;
+      setDragCol(w);
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      commitPortCol(_nodeId, dragColRef.current);
+      setDragCol(null);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
 
   return (
     <div
@@ -416,8 +456,21 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
       {outputPorts.map((p, i) => borderHandle(p, true, i, outputPorts.length, outTypes))}
 
       {/* Port-name columns INSIDE the card: inputs left, outputs right. */}
-      {show.ports && inputPorts.map((p, i) => insideLabel(p, inTypes, false, i, inputPorts.length))}
-      {show.ports && outputPorts.map((p, i) => insideLabel(p, outTypes, true, i, outputPorts.length))}
+      {showPortLabels && inputPorts.map((p, i) => insideLabel(p, inTypes, false, i, inputPorts.length))}
+      {showPortLabels && outputPorts.map((p, i) => insideLabel(p, outTypes, true, i, outputPorts.length))}
+      {/* Port-column resizer: drag to widen the port-label column (labels stop
+          truncating); drag fully shut to COLLAPSE (hide) this process's ports.
+          The width (or the collapsed state) is saved as part of the view. */}
+      {show.ports && commitPortCol && (
+        <div
+          className={`port-col-resizer nodrag nopan${portsCollapsed ? ' is-collapsed' : ''}`}
+          style={{ left: 'var(--port-col)' }}
+          onMouseDown={startColDrag}
+          title={portsCollapsed
+            ? 'Ports hidden for this process — drag right to show them'
+            : 'Drag to widen the port-label column; drag fully left to hide this process’s ports (saved in the view)'}
+        />
+      )}
 
       {/* Center channel — margined clear of the port columns. Reads top-down:
           config (from above) → title → the contract (what inputs become). The

@@ -526,6 +526,25 @@ export default function App() {
       }).catch(() => {});
     }, [setNodes, NO_PERSIST, compositeId, layoutMode.modeId]);
 
+  // Commit a hand-set port-label column width (or 0 = collapse/hide the ports)
+  // for one process node — same immediate-persist path as commitNodeSize, so a
+  // saved/default view restores how wide each process shows its port labels.
+  const commitPortCol = useCallback(
+    (id: string, pc: number) => {
+      setNodes((ns: any[]) => ns.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, _portCol: pc } } : n));
+      if (NO_PERSIST || !compositeId) return;
+      const updated = (nodesRef.current || []).map((n: any) =>
+        n.id === id ? { ...n, data: { ...n.data, _portCol: pc } } : n);
+      const positions = positionsFromNodes(updated as any);
+      saveLayout(compositeId, positions, layoutMode.modeId);
+      void fetch('/api/composite-layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: compositeId, mode: layoutMode.modeId, positions }),
+      }).catch(() => {});
+    }, [setNodes, NO_PERSIST, compositeId, layoutMode.modeId]);
+
   // Semantic-zoom tier, driven by the live viewport zoom (process-column mode
   // only). The tier decides how much detail each process card shows AND how
   // tall it is, so the column must re-flow when it changes. `tierForZoom`'s
@@ -1122,6 +1141,7 @@ export default function App() {
             _rootId: rootIdRef.current,
             _hops: drillHops,
             _commitSize: commitNodeSize,
+            _commitPortCol: commitPortCol,
           },
         };
       }
@@ -1136,6 +1156,7 @@ export default function App() {
           ...n.data, _tier: effTier, _detailOverrides: detailOverrides, _isHub: isHub,
           _dim: L._dim, _lineage: L._lineage, _wired: L._wired,
           _readers: wiring.readers, _writers: wiring.writers, _commitSize: commitNodeSize,
+          _commitPortCol: commitPortCol,
         },
       };
     });
