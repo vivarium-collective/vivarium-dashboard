@@ -1,5 +1,5 @@
-"""Env-worker client — the workbench side of the ``EnvironmentResolver`` local
-transport.
+"""Env-worker client — the workbench side of the ``EnvironmentResolver``
+transport (local *and* dial-back).
 
 Spawns the env worker (``vivarium_workbench/env_worker.py``) over a
 ``socket.socketpair()`` and speaks the length-prefixed JSON-RPC of
@@ -13,6 +13,12 @@ interpreter selection (workspace-store §8), and the environment methods land in
 later slices. ``interpreter`` defaults to the current Python so the transport is
 provable today; it becomes the workspace venv's interpreter once
 ``EnvironmentResolver`` materializes venvs.
+
+**Two transports, one protocol.** ``EnvWorker(...)`` spawns a local subprocess
+over a ``socketpair`` (spec §5). ``EnvWorker.from_socket(...)`` adopts a socket a
+*remote* worker dialled back on — see ``env_worker_dialback`` and REFACTOR-PLAN
+§2A.8. Everything after the connection is shared verbatim, which is the point:
+the transport is an adapter, the message schema is the contract.
 """
 from __future__ import annotations
 
@@ -72,10 +78,37 @@ class EnvWorker:
             )
         finally:
             child.close()  # the child holds its own inherited copy
-        parent.settimeout(timeout)
-        self._sock = parent
+        self._attach(parent)
+
+    def _attach(self, sock: socket.socket) -> None:
+        """Bind a connected socket + per-instance protocol state.
+
+        Shared by both transports: everything below this line — framing, the
+        serial call loop, error mapping — is transport-independent (spec §2), so
+        a dial-back socket is driven by exactly the same code as a socketpair.
+        """
+        sock.settimeout(self.timeout)
+        self._sock = sock
         self._id = 0
         self._lock = threading.Lock()
+
+    @classmethod
+    def from_socket(cls, sock: socket.socket, workspace: Path | str, *,
+                    timeout: float = 60.0) -> "EnvWorker":
+        """Wrap an already-connected worker socket (the dial-back transport).
+
+        There is no subprocess here: the worker runs in its own pod and its
+        lifecycle belongs to whoever created it (viva-api deletes the Job). So
+        ``close()`` shuts the protocol down and drops the socket, but does not —
+        and must not — try to reap a local process.
+        """
+        self = cls.__new__(cls)
+        self.workspace = str(workspace)
+        self.timeout = timeout
+        self._proc = None
+        self._log = subprocess.DEVNULL
+        self._attach(sock)
+        return self
 
     # -- protocol -----------------------------------------------------------
     def call(self, method: str, params: dict | None = None) -> Any:
@@ -104,10 +137,12 @@ class EnvWorker:
             self.call("shutdown")
         except EnvWorkerError:
             pass
-        try:
-            self._sock.close()
-        except OSError:
-            pass
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except OSError:
+                pass
+            self._sock = None   # so alive() is honest for a remote worker too
         self._terminate()
         if not isinstance(self._log, int):   # a real file, not subprocess.DEVNULL
             try:
@@ -116,6 +151,8 @@ class EnvWorker:
                 pass
 
     def _terminate(self) -> None:
+        if self._proc is None:
+            return          # remote worker: its Job is viva-api's to delete
         try:
             self._proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
@@ -123,10 +160,18 @@ class EnvWorker:
             self._proc.wait(timeout=5)
 
     def alive(self) -> bool:
+        if self._proc is None:
+            # Remote: the socket is the only liveness signal we own.
+            return self._sock is not None
         return self._proc.poll() is None
 
     # -- framing (spec §5) --------------------------------------------------
     def _send(self, obj: dict) -> None:
+        if self._sock is None:
+            # Already closed. Surface as the protocol's own error type so
+            # close()'s idempotency (and any late caller) sees a clean failure
+            # rather than an AttributeError.
+            raise EnvWorkerUnavailable("worker connection is closed")
         body = json.dumps(obj).encode("utf-8")
         try:
             self._sock.sendall(struct.pack(">I", len(body)) + body)
@@ -146,6 +191,8 @@ class EnvWorker:
         return json.loads(body.decode("utf-8"))
 
     def _recv_exact(self, n: int) -> bytes | None:
+        if self._sock is None:
+            raise EnvWorkerUnavailable("worker connection is closed")
         buf = bytearray()
         while len(buf) < n:
             try:

@@ -21,7 +21,10 @@ Invocation (spec §4/§5)::
     <python> <path>/env_worker.py --socket-fd <n> --workspace <dir>
 
 ``--socket-fd`` is the inherited end of a ``socket.socketpair()`` (passed via
-``subprocess(pass_fds=...)``); ``stdout``/``stderr`` are for logs, never the
+``subprocess(pass_fds=...)``). ``--connect-to HOST:PORT`` is the alternative
+dial-back transport for a worker running in its own pod, where there is no
+parent process to inherit a socket from (REFACTOR-PLAN §2A.8). Either way the
+served protocol is identical. ``stdout``/``stderr`` are for logs, never the
 protocol (spec §5).
 """
 from __future__ import annotations
@@ -2879,16 +2882,48 @@ def _serve(sock: socket.socket) -> None:
                          "traceback_tail": traceback.format_exc()[-2000:]}}})
 
 
+def _dial_back(target: str, token: str | None, timeout: float) -> socket.socket:
+    """Connect to the workbench and prove the token (dial-back transport).
+
+    The workbench listens; we connect. Its first-frame handshake is a transport
+    concern and deliberately sits *below* the protocol — the workbench closes the
+    connection on a bad token before any JSON-RPC is exchanged, so an unauthorized
+    peer never reaches the method catalog.
+    """
+    if not token:
+        raise SystemExit("--connect-to requires --token or $VIVARIUM_ENV_WORKER_TOKEN")
+    host, _, port = target.rpartition(":")
+    if not host or not port.isdigit():
+        raise SystemExit(f"--connect-to expects HOST:PORT, got {target!r}")
+    sock = socket.create_connection((host, int(port)), timeout=timeout)
+    body = json.dumps({"token": token}).encode("utf-8")
+    sock.sendall(struct.pack(">I", len(body)) + body)
+    return sock
+
+
 def main(argv=None) -> int:
     global _workspace
     parser = argparse.ArgumentParser(prog="env_worker")
-    parser.add_argument("--socket-fd", type=int, required=True)
+    # Exactly one transport. --socket-fd is the local adapter (spec §5): an
+    # inherited socketpair end. --connect-to is the dial-back adapter used when
+    # the worker runs in its own pod from the simulator image (REFACTOR-PLAN
+    # §2A.8): there is no parent to inherit from, so the worker connects out.
+    transport = parser.add_mutually_exclusive_group(required=True)
+    transport.add_argument("--socket-fd", type=int)
+    transport.add_argument("--connect-to", metavar="HOST:PORT")
+    parser.add_argument("--token", default=os.environ.get("VIVARIUM_ENV_WORKER_TOKEN"),
+                        help="dial-back handshake token; defaults to $VIVARIUM_ENV_WORKER_TOKEN "
+                             "so it need not appear in the pod's command line")
+    parser.add_argument("--connect-timeout", type=float, default=30.0)
     parser.add_argument("--workspace", required=True)
     args = parser.parse_args(argv)
     _workspace = args.workspace
 
-    # Wrap the inherited fd as an AF_UNIX stream socket (the socketpair peer).
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, fileno=args.socket_fd)
+    if args.connect_to is not None:
+        sock = _dial_back(args.connect_to, args.token, args.connect_timeout)
+    else:
+        # Wrap the inherited fd as an AF_UNIX stream socket (the socketpair peer).
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, fileno=args.socket_fd)
     try:
         _serve(sock)
     finally:
