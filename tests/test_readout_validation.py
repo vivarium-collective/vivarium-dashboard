@@ -234,3 +234,68 @@ def test_requires_available_or_state():
     """Calling with neither available nor state is a usage error."""
     with pytest.raises(ValueError):
         validate_readouts({"readouts": []})
+
+
+# ---------------------------------------------------------------------------
+# bulk_id selectors must not exempt the declared store_path from the
+# never-fabricate guard (the `index_by: bulk_id` free pass).
+# ---------------------------------------------------------------------------
+
+# `environment.external_concentrations` models a store written only in a
+# Process's next_update: at build time the PARENT node exists but the store
+# itself has no leaves yet. It must NOT be reported as fabricated.
+AVAILABLE_WITH_EMPTY_RUNTIME_STORE = {
+    "leaves": AVAILABLE["leaves"] + ["environment.media_id"],
+    "catalogs": dict(AVAILABLE["catalogs"]),
+}
+
+
+def test_bulk_id_with_fabricated_store_path_is_not_in_structure():
+    """A bulk_id selector must not exempt its store_path from the guard.
+
+    Regression for the free pass: `index_by.type: bulk_id` replaced the declared
+    store_path with the run-time 'bulk' catalog and returned `aspirational`
+    without ever testing the path, so a wholly fabricated subtree passed the
+    never-fabricate gate. `agents.0.metabolism.*` is the real-world shape --
+    the process key is `ecoli-metabolism`, so no `metabolism` node exists.
+    """
+    spec = {"readouts": [{
+        "name": "metabolism_o2_uptake_flux",
+        "store_path": "agents.0.metabolism.external_exchange_fluxes",
+        "index_by": {"type": "bulk_id", "value": "OXYGEN-MOLECULE[p]"},
+    }]}
+    r = _status(spec, "metabolism_o2_uptake_flux")
+    assert r["status"] == "not_in_structure"
+    assert "not exposed by the composite" in r["detail"]
+
+
+def test_bulk_id_store_path_empty_at_build_stays_aspirational():
+    """Build-time absence is not fabrication.
+
+    `available_observables` walks the BUILT state, so a store populated only in
+    next_update has no leaves at t=0. Its parent node is present, which is what
+    separates it from a typo -- it must stay `aspirational`, not be flagged.
+    Without this distinction the fix above would invent a new false-positive
+    class for every coupler-written store.
+    """
+    spec = {"readouts": [{
+        "name": "external_glucose",
+        "store_path": "environment.external_concentrations",
+        "index_by": {"type": "bulk_id", "value": "GLC[p]"},
+    }]}
+    results = validate_readouts(
+        spec, available=AVAILABLE_WITH_EMPTY_RUNTIME_STORE
+    )
+    assert results[0]["status"] == "aspirational"
+    assert "run-time" in results[0]["detail"]
+
+
+def test_bulk_id_with_real_store_path_stays_aspirational():
+    """An existing store_path is still only run-time verifiable for its VALUE."""
+    spec = {"readouts": [{
+        "name": "dnaA_protein_count",
+        "store_path": "listeners.monomer_counts",
+        "index_by": {"type": "bulk_id", "value": "SOME-ID[c]"},
+    }]}
+    r = _status(spec, "dnaA_protein_count")
+    assert r["status"] == "aspirational"
