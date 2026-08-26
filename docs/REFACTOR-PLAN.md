@@ -537,6 +537,15 @@ weakest → strongest:
   never in the pod — retiring the synchronous in-process study-run
   post-processing. Drops `v2ecoli` / `3.12.12` from the workbench lock. See §2A.7.
 
+- **Hosted execution environment = the simulator's image** (2026-08-26, §2A.8,
+  #942) — a hosted deployment obtains an environment ONE way: the prebuilt
+  `(repo, commit)` image run as the env worker. No venv is built on the workbench
+  PVC. #937's per-workspace `uv sync` becomes **local-only**, deliberately NOT a
+  hosted bridge, since a second environment-production path is the drift this
+  decision exists to prevent. Selection is by deployment **topology**, not
+  developer preference, at one composition root. Creates the invariant that every
+  hosted served workspace must be **image-backed**; retires the §0A.5 base-venv
+  borrow.
 - **Statelessness shipped** (2026-07-22, see §0A.2) — env-worker migration of
   every `/api/*` in-process workspace import (#530–#536), `os.chdir` (#529) and
   the boot-time `sys.path.insert` (#536) removed; §2A.6/§2A.7 realized in code.
@@ -732,7 +741,11 @@ clone + `uv sync` → a per-workspace venv (materialized alongside the §2A.6
 `WorkspaceStore` staging area); the env worker runs `<venv>/bin/python`. **Cloud
 adapter later:** the viva-api-built **image for `(repo, commit)`** as the
 environment's source of truth, queried behind the *same* surface (RPC to viva-api,
-or the image itself run as the worker). Local-first keeps local integration
+or the image itself run as the worker). *(**Decided 2026-08-26 — §2A.8, #942:**
+the image run as the worker, and hosted's ONLY environment path. "Local adapter
+first" therefore stays local-ONLY rather than also becoming the hosted default;
+the cloud step is an adapter swap as anticipated, but not a bridge — hosted never
+builds a venv.)* Local-first keeps local integration
 simple and shrinks the cloud step to one adapter swap. Bonus: the workbench
 process stops importing the workspace env entirely, so **`v2ecoli` and the
 `==3.12.12` pin leave the workbench's own lock** — resolving the §2A.5 "relax the
@@ -742,7 +755,146 @@ Python pin" item.
 lifecycle owned by the `WorkspaceContext`, §2A.6) → **Phase 2** (the job owns
 simulate + analyze, retiring the synchronous engine — shared work with
 `RunBackend`), and *completes* the `EnvironmentResolver` port. The cloud
-`(repo, commit)`-image adapter behind the same surface is **Phase 3**.
+`(repo, commit)`-image adapter behind the same surface is **Phase 3** —
+specified in **§2A.8**, tracked as #942.
+
+### 2A.8 The hosted execution environment IS the simulator's image (2026-08-26)
+
+**Decision.** On a hosted deployment there is **exactly one way to obtain an
+execution environment: run the simulator's own prebuilt image as the env
+worker.** No venv is ever built on the workbench PVC. This realizes the cloud
+adapter §2A.7 named — *"the image for `(repo, commit)` as the environment's
+source of truth … or the image itself run as the worker"* — and closes the
+question §2A.7 left open by deferring it. Tracked as **#942**.
+
+**Why the image rather than a per-workspace venv.** #937 diagnosed the
+shared-venv problem correctly: only the *home* workspace has a `.venv`, so every
+materialized build runs against the home environment — item 44's failure mode
+generalized across workspaces. Its proposed fix was a `uv sync` venv per
+workspace. But that reconstructs, on the PVC, an environment we **already have,
+prebuilt, from the exact commit**. The image *is* the environment coordinate
+§2A.2 describes; rebuilding it locally is a second source of truth that can
+drift from the one the science actually ran under.
+
+Verified viable on the live deployment, not aspirationally: `sms-ecoli @ 234dc76`
+→ `v2ecoli:234dc76` in ECR and already cached on a node; the home workspace
+`v2ecoli @ 70b5ec39` → `v2ecoli:70b5ec3`; images amd64, nodes amd64.
+
+**What this deletes rather than fixes.** The 0.3.57 base-venv borrow (§0A.5)
+retires. The base venv's interpreter symlinked into ephemeral storage stops
+mattering. Cross-lineage dependency mismatch becomes *structurally impossible* —
+each commit runs its own image — where under a shared venv it was a live defect
+(a `sms-ecoli` build failing `import viva_superpowers` against a `v2ecoli` base;
+#937). And the PVC stops carrying 7.2 GB of environment.
+
+#### One implementation per deployment — chosen by topology, not preference
+
+The standing risk with ports-and-adapters is that developers — and agent
+sessions — cherry-pick whichever adapter suits the task, and the two drift. This
+is avoided by making the choice **structural rather than optional**:
+
+| | |
+|---|---|
+| **Hosted** | image-as-worker, the only path. No venv-building code exists in the hosted composition root. |
+| **Local** | the workspace's own checked-out venv on the same filesystem (today's subprocess adapter); converging later on laptop-spawned Docker image-as-worker. |
+
+One wiring decision at the composition root (§5C.4), enforceable by the existing
+import-linter gate. Both sides speak the **same protocol** —
+[`docs/env-worker-protocol.md`](env-worker-protocol.md) §2: *"The message schema
+is the contract; the transport is an adapter."* Local is not a permanent second
+peer; it is the same destination reached later, because a laptop has no EKS and
+`vivarium-workbench serve` on a laptop must keep working (§1).
+
+`uv sync`-per-workspace is therefore **local-only**, and not a hosted bridge. It
+is deliberately *not* adopted hosted even as a temporary measure, because a
+bridge here would be a second environment-production path — the exact thing this
+decision exists to prevent.
+
+#### Invariant: every hosted served workspace must be image-backed
+
+A workspace carrying science code but no built image has no way to answer an
+environment question. Two consequences worth stating so they are not
+rediscovered:
+
+- It decides what a **minimal day-0 seed** can be (#937): a scaffold with *no*
+  science code has nothing to introspect and needs no worker — consistent. A
+  *partial* workspace, code but no image, is the case to prohibit.
+- It makes the simulator record the gate for serving a workspace, which is
+  already how `materialize_build` selects one.
+
+#### The worker never mounts the record
+
+§2A.2's composite-code boundary rule does the work here: a `.composite.yaml`
+**spec is science** (in the record); a `@composite_generator` **is engine** (in
+the environment). So the worker holds the engine — the image — and **specs
+travel in protocol messages**.
+
+Three consequences follow, and together they are what makes the design fit the
+cluster at all:
+
+- the worker needs only an **`emptyDir`** working directory;
+- it **never mounts the PVC**, which sidesteps the `ReadWriteOnce` constraint
+  below entirely rather than working around it;
+- a spec the user edited a moment ago is correct **by construction**, because it
+  is in the request rather than read from a possibly-stale copy.
+
+#### Constraints (measured on the deployment, 2026-08-26)
+
+| | |
+|---|---|
+| **PVC is `ReadWriteOnce`** | It binds to one node; a worker pod scheduled elsewhere *cannot* mount it. This is why the worker must be stateless with respect to the record — not a preference. |
+| **RBAC** | viva-api's service account (`batch-submit`) can create/delete/get **Jobs** and read pods; it **cannot** create pods or Services. The workbench has no cluster access at all (§2B.2), so it cannot spawn workers itself — viva-api does, preserving the credential boundary. |
+| **Addressing** | No Services ⇒ no stable DNS. Either read `status.podIP` or have the worker **dial back**. Reverse-connect is preferred: no inbound addressing and no pod-get from the workbench. It inverts the protocol's current client/server assumption, so it is an explicit choice. |
+| **Cold start** | A **capacity parameter, not a design risk.** Images are prebuilt and frequently already on a node; a pull is one-time per (node, image), and `ImageLocality` scheduling already prefers nodes holding the image. Nodes carry 15.4 / 25.7 GiB of images against **95 GiB allocatable** — roughly 10–14 simulator images before kubelet image GC churns. The lever is a bounded warm set, not avoiding pulls. |
+| **Arch** | Images are amd64; nodes are amd64. No barrier. |
+
+#### Storage consequence
+
+The workbench PVC stops holding environments. Measured on dev: of 9.4 GiB used,
+`.venv` is **7.2 GiB** — the volume is ~77% execution environment. What remains
+is ~2.2 GiB: the scientific record, `.git` (943 MB), and materialized source
+trees (882 MB).
+
+Note precisely *why* source code remains on the PVC: **not** because the
+workbench executes it (under this decision it never does), but because §5A keeps
+the workspace a **single fused repo** with the Q2 science/environment split
+deferred to §5B Phase 3 — `studies/` and `investigations/` are directories
+*inside* the simulator repo, so a writable git working copy of the record drags
+the code along. Image-as-worker removes the environment from the **runtime**
+path; Q2 later removes the code from the **disk**. This decision is a step
+toward that split, not a substitute for it.
+
+Consequence already taken: viva-api#284 (uv cache on the PVC + a one-way
+20Gi → 200Gi expansion) was **closed** — both halves were premised on hosted
+building venvs.
+
+#### Workstreams
+
+1. **Protocol transport adapter** — `socketpair` → TCP/reverse-connect; §§6–11
+   messages untouched. *S*
+2. **viva-api env-worker lifecycle endpoints** — create/delete/status a Job, TTL
+   backstop. Reuses `K8sJobService` and the `V1Job` pattern in
+   `simulation_service_k8s.py`. *M*
+3. **Worker pod spec** — simulator image + `emptyDir` + `PYTHONPATH`-injected
+   worker module (the workspace venv deliberately excludes `vivarium-workbench`,
+   and protocol §2 requires that it need no such dependency) + dial-back. *M*
+4. **Workspace registry in viva-api** — table + migration (+ a
+   `LEGACY_FINGERPRINTS` marker per the contract) + endpoints + cutover from
+   `~/.pbg/workspaces.json`, retiring the failure class fixed in viva-api#282. *M*
+5. **Workbench remote `EnvironmentResolver`** + composition-root wiring. *S–M*
+6. **Lifecycle, GC, warm-set policy** — session end, idle reaping, orphan Jobs,
+   node image pressure. Where this bites in production. *M*
+7. **Observability** — worker logs surfaced; failures as *handled* errors per the
+   protocol's goals, never a hung HTTP worker. *S–M*
+
+≈8–12 PRs across three repos, with a dependency chain before the first
+user-visible win — offset by the machinery this deletes rather than builds.
+
+**Interim behavior, to be chosen deliberately.** Until this lands, hosted
+environment questions on materialized builds are unanswered; today that surfaces
+loudly as `EnvWorkerUnavailable`. Failing loudly is the right interim posture —
+but it should be a decision on the record, not drift.
+
 
 ---
 
@@ -1184,6 +1336,12 @@ gets its own import-linter rule.** Phase 0 (§5A) built `AuthoredRecord`; the re
   path-retirement migration are in [`docs/run-backend.md`](run-backend.md).
 
 ### Phase 3 — Cloud storage + the science/environment repo split *(completes `AuthoredRecord` cloud adapter, `EnvironmentResolver`, `RunStore`; executes Q2)*
+
+> **The `EnvironmentResolver` half is now specified — §2A.8** (image-as-worker,
+> #942). Note how it relates to Q2: image-as-worker removes the environment from
+> the **runtime** path; the repo split removes the code from the **disk**. The
+> first is a step toward the second, not a substitute — source remains on the PVC
+> only because §5A keeps the workspace a single fused repo.
 - **Where it goes:** the instance becomes cattle (destroy/recreate, no data loss),
   and the boundary graduates from path-allow-list to **repo/IAM-enforced**.
 - **How (rough):** `AuthoredRecord` cloud adapter = **git-as-engine with the
