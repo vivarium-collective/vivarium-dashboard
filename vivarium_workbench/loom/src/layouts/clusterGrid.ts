@@ -73,7 +73,7 @@ export function fullFootprint(n: Node): { w: number; h: number } {
     return { w: FULL.cardWidth, h: FULL.cardHeight + nPorts * PORT_ROW_H };
   }
   const d = n.data as {
-    value?: unknown; valueType?: unknown; figure?: unknown;
+    label?: unknown; value?: unknown; valueType?: unknown; figure?: unknown;
     _readers?: unknown; _writers?: unknown; _emitted?: unknown;
   } | undefined;
   const nRW = (Array.isArray(d?._readers) ? d!._readers.length : 0)
@@ -86,7 +86,16 @@ export function fullFootprint(n: Node): { w: number; h: number } {
     + (d?.figure ? 52 : 0)                                         // illustration / icon block
     + (nRW > 0 ? 20 : 0)                                           // "N read · M write" badge
     + (d?._emitted ? 16 : 0);                                      // "emitted" tag
-  return { w: STORE_W, h: Math.max(STORE_H, contentH) };
+  // Auto-width stores (App.css: width max-content, min 168, max 360) render
+  // wider than STORE_W for a long name — but React Flow hasn't MEASURED them on
+  // the first layout pass, so reserve width from the label length here or sibling
+  // nodes overlap ("chromosome 0" / "chromosome 1"). ~15px/char at the 27px label
+  // font + padding; clamped to the same [168, 360] the CSS enforces.
+  const label = typeof d?.label === 'string' ? d.label : '';
+  const vtype = typeof d?.valueType === 'string' ? d.valueType : '';
+  const textW = Math.max(label.length * 15, vtype.length * 13) + 28;
+  const w = Math.min(360, Math.max(STORE_W, textW));
+  return { w, h: Math.max(STORE_H, contentH) };
 }
 
 export interface Box { id: string; x: number; y: number; w: number; h: number }

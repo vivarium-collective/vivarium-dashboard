@@ -39,6 +39,7 @@ import ViewsMenu from './panels/ViewsMenu';
 import LayoutMenu from './panels/LayoutMenu';
 import DetailMenu from './panels/DetailMenu';
 import { getDefaultView, decodeView, fetchView, normalizeView, shareableUrl, type View } from './viewStore';
+import { isPlaybackStep } from './topoPlayback';
 import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
 import { ProcessPanel } from './panels/ProcessPanel';
 import { NodesPanel } from './panels/NodesPanel';
@@ -196,6 +197,15 @@ export default function App() {
     () => new URLSearchParams(window.location.search).get('nopersist') === '1',
     [],
   );
+  // ?cardw=N widens process cards (App.css --proc-card-w) so a text-heavy
+  // single-card figure (e.g. Fig 3b/6b contract cards) wraps less and reads
+  // wider + shorter. Applied once from the URL to the document root.
+  useEffect(() => {
+    const w = new URLSearchParams(window.location.search).get('cardw');
+    if (w && /^\d+$/.test(w)) {
+      document.documentElement.style.setProperty('--proc-card-w', `${w}px`);
+    }
+  }, []);
   // Transparent export: with ?bg=transparent (or ?transparent=1), SVG/PNG export
   // omits the white backdrop so a figure composited onto a colored panel lets the
   // panel background show through. Default stays white.
@@ -282,6 +292,17 @@ export default function App() {
   const frameIdxRef = useRef(frameIdx);
   useEffect(() => { isTopoTrajRef.current = isTopoTraj; }, [isTopoTraj]);
   useEffect(() => { frameIdxRef.current = frameIdx; }, [frameIdx]);
+  // Set by applyView so the next layout-effect pass does a FULL apply of the
+  // view's saved positions, even while a topology trajectory is armed. Without
+  // it the topo-playback branch below would keep the current on-screen positions
+  // and silently drop the applied view — "restore default does nothing on a live
+  // run" (see applyView). Consumed (reset) once the effect applies it.
+  const applyingViewRef = useRef(false);
+  // Set (via window.__loomSetFreshLayout) while exporting a snapshot series in
+  // "clean layout" mode: each frame is laid out FRESH (ignore both the playback
+  // keep-positions branch and any saved/dragged positions), so every snapshot is
+  // a tidy tree rather than the accumulated on-screen playback arrangement.
+  const freshLayoutRef = useRef(false);
   // A new topology trajectory arms the transport at frame 0 (pristine state
   // captured so we can restore it on exit).
   useEffect(() => {
@@ -505,6 +526,25 @@ export default function App() {
       if (NO_PERSIST || !compositeId) return;
       const updated = (nodesRef.current || []).map((n: any) =>
         n.id === id ? { ...n, data: { ...n.data, _size: size } } : n);
+      const positions = positionsFromNodes(updated as any);
+      saveLayout(compositeId, positions, layoutMode.modeId);
+      void fetch('/api/composite-layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: compositeId, mode: layoutMode.modeId, positions }),
+      }).catch(() => {});
+    }, [setNodes, NO_PERSIST, compositeId, layoutMode.modeId]);
+
+  // Commit a hand-set port-label column width (or 0 = collapse/hide the ports)
+  // for one process node — same immediate-persist path as commitNodeSize, so a
+  // saved/default view restores how wide each process shows its port labels.
+  const commitPortCol = useCallback(
+    (id: string, pc: number) => {
+      setNodes((ns: any[]) => ns.map((n) =>
+        n.id === id ? { ...n, data: { ...n.data, _portCol: pc } } : n));
+      if (NO_PERSIST || !compositeId) return;
+      const updated = (nodesRef.current || []).map((n: any) =>
+        n.id === id ? { ...n, data: { ...n.data, _portCol: pc } } : n);
       const positions = positionsFromNodes(updated as any);
       saveLayout(compositeId, positions, layoutMode.modeId);
       void fetch('/api/composite-layout', {
@@ -829,13 +869,16 @@ export default function App() {
       const { nodes: laidOut } = await layoutMode.runLayout(
         visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
       );
-      let withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      // Clean-layout snapshot export: ignore saved/dragged positions so the
+      // frame lays out FRESH (a tidy tree), not the accumulated arrangement.
+      const effectiveSaved = freshLayoutRef.current ? {} : saved;
+      let withSaved = applySavedPositions(laidOut as any, effectiveSaved) as any[];
       // Milner view: settle each hyperedge vertex to the centroid of the ports it
       // links, so the dashed spokes fan naturally from the middle instead of from
       // the collapsed process's old corner. Pinned (saved-position) vertices stay.
       if (hyperedgeMode) {
         withSaved = relaxHyperedgePositions(
-          withSaved, visibleEdges as any[], new Set(Object.keys(saved)));
+          withSaved, visibleEdges as any[], new Set(Object.keys(effectiveSaved)));
       }
       if (cancelled) return;
       // Apply the CURRENT hidden set to the freshly-rebuilt nodes + edges (read
@@ -851,7 +894,11 @@ export default function App() {
         // space (no overlap). A full re-layout here would jitter stable cards
         // and, mixed with saved/dragged positions, stack cards on top of each
         // other — the overlap the user sees while stepping through a run.
-        if (isTopoTrajRef.current && frameIdxRef.current !== null && prev.length > 0) {
+        // EXCEPT when applyView asked for a full apply (restore/apply a saved
+        // view): then fall through so `withSaved` (the view's positions) wins,
+        // instead of pinning the current on-screen mess.
+        if (isPlaybackStep(
+          isTopoTrajRef.current, frameIdxRef.current, prev.length, applyingViewRef.current)) {
           const merged = withSaved.map((n) => {
             const p = prevById.get(n.id);
             const h = hiddenIds.has(n.id);
@@ -884,6 +931,9 @@ export default function App() {
         const h = hiddenIds.has(e.source) || hiddenIds.has(e.target);
         return h ? { ...e, hidden: true } : e;
       }));
+      // Consumed: a one-shot full-apply requested by applyView has now been
+      // applied; later passes (frame steps) go back to keep-position playback.
+      applyingViewRef.current = false;
     })();
 
     return () => { cancelled = true; };
@@ -1100,6 +1150,7 @@ export default function App() {
             _rootId: rootIdRef.current,
             _hops: drillHops,
             _commitSize: commitNodeSize,
+            _commitPortCol: commitPortCol,
           },
         };
       }
@@ -1114,6 +1165,7 @@ export default function App() {
           ...n.data, _tier: effTier, _detailOverrides: detailOverrides, _isHub: isHub,
           _dim: L._dim, _lineage: L._lineage, _wired: L._wired,
           _readers: wiring.readers, _writers: wiring.writers, _commitSize: commitNodeSize,
+          _commitPortCol: commitPortCol,
         },
       };
     });
@@ -1308,6 +1360,11 @@ export default function App() {
   // and toggle visibility. Then re-fit so the saved arrangement is framed.
   const applyView = useCallback((view: View) => {
     if (!compositeId || !view) return;
+    // Ask the layout effect to do a FULL apply of this view's positions on its
+    // next pass — otherwise, while a topology trajectory is armed, the
+    // keep-position playback branch would ignore the view (restore/apply a saved
+    // view "does nothing" on a live run).
+    applyingViewRef.current = true;
     // Legacy views carry no mode and resolve to the default, 'hierarchy' —
     // which is the arrangement they were captured in.
     // A view can also name a mode THIS build does not register — a `?view=`
@@ -1510,6 +1567,8 @@ export default function App() {
   // are unreliable to capture headlessly. Same framing/font-embedding as the
   // Download → svg path. Returns null if the graph has not rendered yet.
   useEffect(() => {
+    // Toggle clean-layout mode for the snapshot-series export (ExploreRunBar).
+    (window as any).__loomSetFreshLayout = (b: boolean) => { freshLayoutRef.current = !!b; };
     (window as any).__loomExportSvg = async (): Promise<string | null> => {
       if (nodes.length === 0) return null;
       setExporting(true);
@@ -2243,6 +2302,9 @@ export default function App() {
                   frameIdx,
                   frameCount: trajectory.length,
                   frameTime: trajectory[frameIdx]?.time,
+                  // Per-frame times, so the snapshot export can label each frame
+                  // with WHEN it is (not just its index).
+                  frameTimes: trajectory.map((r) => r.time),
                   playing,
                   onPrev: () => { setPlaying(false); setFrameIdx((i) => Math.max(0, (i ?? 0) - 1)); },
                   onNext: () => { setPlaying(false); setFrameIdx((i) => Math.min(trajectory.length - 1, (i ?? 0) + 1)); },

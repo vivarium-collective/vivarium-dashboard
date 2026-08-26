@@ -196,9 +196,10 @@ body {
 
 .store-label {
   font-weight: 600; color: #1e293b; font-size: 15px; text-align: center;
-  /* Never break a term mid-word ("chromoso me"); keep it whole and hyphenate
-     only if it genuinely must wrap. */
-  overflow-wrap: normal; word-break: keep-all; hyphens: auto; text-wrap: balance;
+  /* Never break a term mid-word ("chromoso me") and never hyphenate
+     ("bacteri-um") — keep every word whole. The auto-width box (above) grows to
+     fit, so a name only wraps at real spaces once it hits the 360px cap. */
+  overflow-wrap: normal; word-break: keep-all; hyphens: none; text-wrap: balance;
 }
 
 .store-value {
@@ -239,13 +240,18 @@ body {
 .store-node.store-node-config,
 .store-node.store-node-contract,
 .store-node.store-node-full {
-  width: 168px;
+  /* Auto-width to the name: the box grows to fit its label on one line (so
+     "bacterium 0" never wraps to "bacteri-um 0"), keeping the familiar 168px as
+     a floor and capping very long names at 360px (they wrap at spaces there).
+     The layout reserves each store's LIVE measured width (treeFlow.withMeasured),
+     so wider boxes get spaced apart correctly. */
+  width: max-content;
   height: auto;
   min-height: 120px;
-  min-width: 0;
-  max-width: 168px;
+  min-width: 168px;
+  max-width: 360px;
   box-sizing: border-box;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   padding: 8px 10px;
   border-radius: 28px;
   display: flex;
@@ -493,7 +499,9 @@ body {
 .process-node-config,
 .process-node-contract,
 .process-node-full {
-  width: 620px;
+  /* Default 620px; a render can widen single-card views via ?cardw=N (App sets
+     --proc-card-w) so a text-heavy contract card wraps less and reads shorter. */
+  width: var(--proc-card-w, 620px);
   /* Height is CONTENT-driven: the card is exactly as tall as its shown detail
      needs (min-content), so it can be squeezed short and grows automatically as
      more detail is added — text never overflows and never scrolls. */
@@ -526,12 +534,25 @@ body {
 .port-in-label.is-open .port-in-name { color: #4f46e5; }
 .port-in-name {
   font-size: 19px; font-weight: 650; color: #334155;
-  max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(var(--port-col, 140px) - 13px); overflow: hidden; text-overflow: ellipsis;
 }
 .port-in-label.is-out .port-in-name { color: #0f766e; }
 .port-in-type {
   font-family: ui-monospace, monospace; font-size: 15px; color: #94a3b8;
-  max-width: 140px; overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(var(--port-col, 140px) - 13px); overflow: hidden; text-overflow: ellipsis;
+}
+/* Port-column resizer: a thin drag bar at the inner edge of the port columns.
+   Positioned by an inline `left: var(--port-col)`; drag widens the column,
+   drag fully shut collapses the ports (see ProcessNode). Hover-revealed. */
+.port-col-resizer {
+  position: absolute; top: 10px; bottom: 10px; width: 8px;
+  transform: translateX(-4px); cursor: ew-resize; z-index: 6;
+  opacity: 0; border-radius: 3px; transition: opacity .1s;
+}
+.process-node:hover .port-col-resizer { opacity: 1; background: rgba(99, 102, 241, 0.18); }
+.port-col-resizer:hover { background: rgba(99, 102, 241, 0.45) !important; }
+.port-col-resizer.is-collapsed {
+  opacity: 1; background: transparent; border-left: 2px dashed #6366f1; width: 2px; transform: none;
 }
 
 /* Port info popover — opens on click, shows where the port connects + its type. */
@@ -642,8 +663,11 @@ body {
   background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px;
   padding: 2px 9px; font-size: 15px; max-width: 100%;
 }
-.config-chip .config-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 15ch; }
-.config-chip .config-key { color: #7e22ce; font-weight: 600; }
+/* The value must never be shrunk below its content (a short "3.3" was being
+   flex-squeezed to "3…"); let the chip grow/wrap instead. Only genuinely long
+   values (a dict/list) ellipsize at a generous cap. */
+.config-chip .config-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24ch; flex: 0 0 auto; }
+.config-chip .config-key { color: #7e22ce; font-weight: 600; flex: 0 0 auto; }
 .config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
 /* Config param TYPE (shown once ports show types) — muted mono, like a port type. */
 .config-chip .config-type { color: #94a3b8; font-family: ui-monospace, monospace; font-size: 0.9em; }
@@ -685,10 +709,10 @@ body {
    inside the widened side clearance so they never reach the centered name. */
 .process-node-ports .port-in-name,
 .process-node-types .port-in-name,
-.process-node-config .port-in-name { font-size: 24px; max-width: 150px; }
+.process-node-config .port-in-name { font-size: 24px; max-width: calc(var(--port-col, 158px) - 15px); }
 .process-node-ports .port-in-type,
 .process-node-types .port-in-type,
-.process-node-config .port-in-type { font-size: 17px; max-width: 150px; }
+.process-node-config .port-in-type { font-size: 17px; max-width: calc(var(--port-col, 158px) - 15px); }
 /* The "draft process" line + address, enlarged to fill the body at these tiers. */
 .process-node-ports .process-node-meta,
 .process-node-types .process-node-meta,
@@ -2172,6 +2196,17 @@ textarea.sr-input {
 /* Folded INTO the run bar: run + step are one unified control. Re-theme the
    transport light so it reads as part of the (light) run bar, not a dark strip. */
 .explore-runbar-div { width: 1px; align-self: stretch; background: #e2e8f0; margin: 2px 0; }
+.explore-runbar-snap { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.explore-runbar-snap input {
+  width: 44px; height: 24px; box-sizing: border-box; text-align: center;
+  border: 1px solid #d1d5db; border-radius: 5px; font-size: 12px;
+}
+.explore-runbar-snap button {
+  height: 24px; padding: 0 9px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  color: #0d6e6b; background: #ecfdf9; border: 1px solid #0d6e6b; border-radius: 5px; cursor: pointer;
+}
+.explore-runbar-snap button:hover:not(:disabled) { background: #d5f2ee; }
+.explore-runbar-snap button:disabled { opacity: .6; cursor: default; }
 .explore-runbar .topo-transport {
   flex: 1 1 260px; background: transparent; color: #374151;
   border-top: 0; padding: 0; gap: 7px;
@@ -2384,3 +2419,30 @@ textarea.sr-input {
 .sp-item-actions button:hover { border-color: #4bb3ae; color: #0d6e6b; }
 .sp-item-actions .sp-rerun { color: #0d6e6b; border-color: #b7ebe3; background: #ecfdf9; }
 .sp-item-actions .sp-del:hover { border-color: #fca5a5; color: #dc2626; }
+.sp-pick { flex: none; margin: 0 1px 0 0; cursor: pointer; accent-color: #0d6e6b; }
+.sp-export {
+  margin-top: 8px; padding-top: 8px; border-top: 1px solid #e5e7eb;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.sp-export-h {
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: #94a3b8;
+}
+.sp-export-sel { display: flex; align-items: center; gap: 6px; text-transform: none; letter-spacing: 0; font-weight: 600; color: #64748b; }
+.sp-export-all {
+  border: 1px solid #e2e8f0; background: #fff; border-radius: 5px; cursor: pointer;
+  font-size: 10px; color: #0d6e6b; padding: 1px 6px;
+}
+.sp-export-all:hover { border-color: #4bb3ae; }
+.sp-export-fmts { display: flex; gap: 12px; }
+.sp-export-fmt { display: flex; align-items: center; gap: 4px; font-size: 12px; color: #475569; cursor: pointer; }
+.sp-export-fmt input { accent-color: #0d6e6b; cursor: pointer; }
+.sp-export-btn {
+  border: 1px solid #0d6e6b; background: #ecfdf9; color: #0d6e6b;
+  border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer;
+}
+.sp-export-btn:hover:not(:disabled) { background: #d5f2ee; }
+.sp-export-btn:disabled { opacity: .55; cursor: default; }
+.sp-export-note { font-size: 10px; color: #94a3b8; font-style: italic; }
+.explore-runbar-snap-clean { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #6b7280; cursor: pointer; }
+.explore-runbar-snap-clean input { accent-color: #0d6e6b; cursor: pointer; }

@@ -23,9 +23,11 @@ import type { Node } from '@xyflow/react';
 // persist under :v2.
 const KEY_PREFIX = 'bigraph-loom:layout:v2:';
 
-// Per-node saved layout: position (x,y) plus optional hand-set size (w,h) from
-// the node resizer, so a saved view restores BOTH placement and node sizes.
-export type LayoutPositions = Record<string, { x: number; y: number; w?: number; h?: number }>;
+// Per-node saved layout: position (x,y), optional hand-set size (w,h) from the
+// node resizer, and optional hand-set port-label column width (pc) from the port
+// column resizer — so a saved view restores placement, node size, AND how wide
+// the port labels are allowed to be.
+export type LayoutPositions = Record<string, { x: number; y: number; w?: number; h?: number; pc?: number }>;
 
 function keyFor(compositeId: string | null | undefined, modeId = 'hierarchy'): string | null {
   if (!compositeId) return null;
@@ -83,10 +85,14 @@ export function positionsFromNodes(nodes: Node[]): LayoutPositions {
   const out: LayoutPositions = {};
   for (const n of nodes) {
     if (!n.position) continue;
-    const entry: { x: number; y: number; w?: number; h?: number } = { x: n.position.x, y: n.position.y };
+    const entry: { x: number; y: number; w?: number; h?: number; pc?: number } = { x: n.position.x, y: n.position.y };
     // Hand-set node size (from the resizer) lives on data._size — persist it too.
     const s = (n.data as { _size?: { width: number; height: number } } | undefined)?._size;
     if (s && s.width && s.height) { entry.w = s.width; entry.h = s.height; }
+    // Hand-set port-label column width (from the port-column resizer): a width
+    // in px, or 0 meaning the ports were collapsed (hidden) for this process.
+    const pc = (n.data as { _portCol?: number } | undefined)?._portCol;
+    if (pc != null && pc >= 0) entry.pc = pc;
     out[n.id] = entry;
   }
   return out;
@@ -100,10 +106,20 @@ export function applySavedPositions(nodes: Node[], saved: LayoutPositions): Node
   return nodes.map((n) => {
     const p = saved[n.id];
     if (!p) return n;
-    const node: Node = { ...n, position: { x: p.x, y: p.y } };
-    // Restore hand-set node size onto data._size so the node re-renders at it.
-    if (p.w && p.h) {
-      node.data = { ...(n.data as object), _size: { width: p.w, height: p.h } };
+    // Pin the position ONLY when the entry carries one — a `pc`-only (or
+    // size-only) entry keeps the node at its auto-layout spot, so a view can set
+    // just the port-column / collapse for a process without hand-placing it.
+    const node: Node = (p.x != null && p.y != null)
+      ? { ...n, position: { x: p.x, y: p.y } }
+      : { ...n };
+    // Restore hand-set node size + port-column width onto data so the node
+    // re-renders at them.
+    if ((p.w && p.h) || p.pc != null) {
+      node.data = {
+        ...(n.data as object),
+        ...(p.w && p.h ? { _size: { width: p.w, height: p.h } } : {}),
+        ...(p.pc != null ? { _portCol: p.pc } : {}),
+      };
     }
     return node;
   });

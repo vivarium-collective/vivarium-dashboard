@@ -8,6 +8,20 @@ import { useState } from 'react';
 import { useCompositeRun, phaseLabel } from '../hooks/useCompositeRun';
 import { TopoTransport } from './TopoTransport';
 import { SavePointsMenu } from './SavePointsMenu';
+import { exportSeries, type SeriesPanel } from '../snapshotSeries';
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const fmtTime = (t: number | undefined) =>
+  t == null ? '' : (Number.isInteger(t) ? String(t) : t.toFixed(2).replace(/\.?0+$/, ''));
+
+/** Evenly spread `n` frame indices across [0, count-1] (inclusive endpoints). */
+function evenFrames(count: number, n: number): number[] {
+  if (count <= 0) return [];
+  const k = Math.max(1, Math.min(n, count));
+  if (k === 1) return [count - 1];
+  const idx = Array.from({ length: k }, (_, i) => Math.round((i * (count - 1)) / (k - 1)));
+  return [...new Set(idx)];
+}
 
 export interface ExploreRunBarProps {
   compositeId: string | null;
@@ -27,6 +41,7 @@ export interface ExploreRunBarProps {
     frameIdx: number;
     frameCount: number;
     frameTime?: number;
+    frameTimes?: (number | undefined)[];
     playing: boolean;
     onPrev: () => void;
     onNext: () => void;
@@ -61,6 +76,52 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
   const isSteps = run.stepMode === 'steps';
   const [whyOpen, setWhyOpen] = useState(false);
   const [emitOpen, setEmitOpen] = useState(false);
+  const [snapN, setSnapN] = useState(3);
+  const [snapFresh, setSnapFresh] = useState(true);
+  const [snapBusy, setSnapBusy] = useState<string | null>(null);
+
+  // Export N evenly-spaced snapshots across the run as ONE side-by-side series.
+  // Scrubs the transport to each chosen frame, grabs the loom's headless
+  // SVG/PNG, and stitches them (labelled with each frame's TIME). Restores the
+  // frame you were on when done.
+  const exportSnapshots = async () => {
+    const t = props.transport;
+    const w = window as unknown as {
+      __loomExportSvg?: () => Promise<string | null>;
+      __loomExportPng?: () => Promise<string | null>;
+      __loomSetFreshLayout?: (b: boolean) => void;
+    };
+    if (!t || !w.__loomExportSvg) return;
+    const frames = evenFrames(t.frameCount, snapN);
+    const original = t.frameIdx;
+    const panels: SeriesPanel[] = [];
+    // "clean" mode: lay out each frame fresh (a tidy tree) instead of the
+    // accumulated on-screen playback arrangement.
+    if (snapFresh) w.__loomSetFreshLayout?.(true);
+    try {
+      for (let j = 0; j < frames.length; j++) {
+        const i = frames[j];
+        setSnapBusy(`Rendering ${j + 1}/${frames.length}…`);
+        t.onScrub(i);
+        await sleep(650);                 // let the frame render + settle
+        const svg = await w.__loomExportSvg();
+        const png = w.__loomExportPng ? await w.__loomExportPng() : null;
+        const time = t.frameTimes?.[i];
+        panels.push({
+          svg, png,
+          label: time != null ? `t = ${fmtTime(time)}` : `frame ${i}`,
+          sub: `frame ${i}/${t.frameCount - 1}`,
+        });
+      }
+      setSnapBusy('Composing…');
+      const base = (props.compositeId?.split('.').pop() || 'composite') + '-snapshots';
+      await exportSeries(panels, new Set(['png', 'svg', 'zip']), base);
+    } catch { /* best-effort */ } finally {
+      w.__loomSetFreshLayout?.(false);
+      t.onScrub(original);
+      setSnapBusy(null);
+    }
+  };
   const emitLabel = (k: string) => k.split('.').pop() || k;
   const failText = (run.status?.status === 'failed' || run.status?.status === 'orphaned')
     ? (run.status?.error?.trim() || (run.status?.log_path ? 'See log: ' + run.status.log_path : ''))
@@ -100,6 +161,23 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
         <>
           <span className="explore-runbar-div" aria-hidden="true" />
           <TopoTransport {...props.transport} />
+          {!props.readOnly && (
+            <span className="explore-runbar-snap"
+              title="Export N evenly-spaced snapshots across the run as one side-by-side series (PNG + SVG + zip), each labelled with its time">
+              <input type="number" min={1} max={props.transport.frameCount}
+                value={snapN} disabled={!!snapBusy}
+                onChange={(e) => { const v = parseInt(e.target.value, 10); setSnapN(Number.isFinite(v) && v > 0 ? v : 1); }} />
+              <label className="explore-runbar-snap-clean"
+                title="Lay out each snapshot fresh (a tidy tree) instead of the on-screen playback arrangement">
+                <input type="checkbox" checked={snapFresh} disabled={!!snapBusy}
+                  onChange={(e) => setSnapFresh(e.target.checked)} />
+                clean
+              </label>
+              <button type="button" onClick={() => void exportSnapshots()} disabled={!!snapBusy}>
+                {snapBusy || '⤓ snapshots'}
+              </button>
+            </span>
+          )}
         </>
       )}
 
