@@ -1,21 +1,25 @@
 name: Build and Push Image
 
-# Builds the combined workbench+v2ecoli image (linux/amd64, for the EKS nodes) and
-# pushes it to ghcr.io. Manual only (workflow_dispatch) — runs natively on an
-# amd64 runner so there is no local QEMU cross-build. The image is ~15 GB, so we
-# free runner disk first.
+# Builds the vivarium-workbench server image (linux/amd64, for the EKS nodes) and
+# pushes it to ghcr.io.
 #
-# NOT triggered by publishing a GitHub Release. Backlog item 39 "Fix B" replaced
-# the build-time `git clone` of a workspace repo with a multi-stage COPY from the
-# workspace's own already-published, per-commit image (WORKSPACE_IMAGE) — this
-# runner has no credential to pull that image (it lives in a GovCloud ECR repo;
-# no OIDC federation from GitHub Actions into that account exists anywhere in
-# this ecosystem, and building one is real, separate infra work, not a CI-config
-# fix). A release-triggered run would fail immediately with no value ever able
-# to resolve automatically, which is exactly how v0.3.38 shipped a real,
-# confirmed-broken tag+Release. Build+push manually instead
-# (`WORKSPACE_IMAGE=<ecr-ref>:<sms-ecoli-commit-sha> deploy/build-and-push.sh`,
-# same command this workflow runs) or via this workflow's own manual dispatch.
+# Since #932 the image contains only the workbench and its own locked
+# dependencies -- no workspace package, no science stack. That removed the two
+# things that made this workflow unusable:
+#
+#   * It no longer copies a venv out of a per-commit sms-ecoli/v2ecoli image, so
+#     there is nothing to pull from GovCloud ECR -- for which this runner has no
+#     credential (no OIDC federation from GitHub Actions into that account
+#     exists, and building one is real, separate infra work). The
+#     `workspace_image` input is therefore GONE, not merely optional.
+#   * The build no longer imports v2ecoli -> polars, so it does not need AVX and
+#     is not tied to a native amd64 runner for correctness (it still runs on one,
+#     which is simply faster than emulation).
+#
+# Release-triggering is still deliberately absent. v0.3.38 shipped a real,
+# confirmed-broken tag+Release from an automatic run; cutting a Release here is
+# documentation, and the image is published by this manual dispatch (or by
+# `deploy/build-and-push.sh`, the same command this workflow runs).
 on:
   workflow_dispatch:
     inputs:
@@ -23,9 +27,10 @@ on:
         description: "Image tag to build+push (default: git short sha)"
         required: false
         default: ""
-      workspace_image:
-        description: "WORKSPACE_IMAGE build-arg (e.g. <ecr-ref>:<sms-ecoli-commit-sha>) — required, no safe default (this ecosystem publishes per-commit tags only)"
-        required: true
+      pbg_ptools_ref:
+        description: "git ref for the pbg-ptools Omics-Viewer plugin (default: main)"
+        required: false
+        default: "main"
 
 jobs:
   build-and-push:
@@ -34,7 +39,8 @@ jobs:
       contents: read
       packages: write   # push to ghcr.io
     steps:
-      - name: Free disk space (image is ~15 GB)
+      # Kept but no longer critical: the image is ~744 MB since #932 (was ~15 GB).
+      - name: Free disk space
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -58,7 +64,7 @@ jobs:
 
       - name: Build + push (linux/amd64)
         env:
-          WORKSPACE_IMAGE: ${{ inputs.workspace_image }}
+          PBG_PTOOLS_REF: ${{ inputs.pbg_ptools_ref }}
         run: |
           set -euo pipefail
           chmod +x deploy/build-and-push.sh
