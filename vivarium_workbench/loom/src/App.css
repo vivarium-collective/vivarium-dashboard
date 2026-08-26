@@ -196,9 +196,10 @@ body {
 
 .store-label {
   font-weight: 600; color: #1e293b; font-size: 15px; text-align: center;
-  /* Never break a term mid-word ("chromoso me"); keep it whole and hyphenate
-     only if it genuinely must wrap. */
-  overflow-wrap: normal; word-break: keep-all; hyphens: auto; text-wrap: balance;
+  /* Never break a term mid-word ("chromoso me") and never hyphenate
+     ("bacteri-um") — keep every word whole. The auto-width box (above) grows to
+     fit, so a name only wraps at real spaces once it hits the 360px cap. */
+  overflow-wrap: normal; word-break: keep-all; hyphens: none; text-wrap: balance;
 }
 
 .store-value {
@@ -239,13 +240,18 @@ body {
 .store-node.store-node-config,
 .store-node.store-node-contract,
 .store-node.store-node-full {
-  width: 168px;
+  /* Auto-width to the name: the box grows to fit its label on one line (so
+     "bacterium 0" never wraps to "bacteri-um 0"), keeping the familiar 168px as
+     a floor and capping very long names at 360px (they wrap at spaces there).
+     The layout reserves each store's LIVE measured width (treeFlow.withMeasured),
+     so wider boxes get spaced apart correctly. */
+  width: max-content;
   height: auto;
   min-height: 120px;
-  min-width: 0;
-  max-width: 168px;
+  min-width: 168px;
+  max-width: 360px;
   box-sizing: border-box;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
   padding: 8px 10px;
   border-radius: 28px;
   display: flex;
