@@ -39,6 +39,7 @@ import ViewsMenu from './panels/ViewsMenu';
 import LayoutMenu from './panels/LayoutMenu';
 import DetailMenu from './panels/DetailMenu';
 import { getDefaultView, decodeView, fetchView, normalizeView, shareableUrl, type View } from './viewStore';
+import { isPlaybackStep } from './topoPlayback';
 import { DockContainer, type DockPanelSpec } from './panels/DockContainer';
 import { ProcessPanel } from './panels/ProcessPanel';
 import { NodesPanel } from './panels/NodesPanel';
@@ -282,6 +283,12 @@ export default function App() {
   const frameIdxRef = useRef(frameIdx);
   useEffect(() => { isTopoTrajRef.current = isTopoTraj; }, [isTopoTraj]);
   useEffect(() => { frameIdxRef.current = frameIdx; }, [frameIdx]);
+  // Set by applyView so the next layout-effect pass does a FULL apply of the
+  // view's saved positions, even while a topology trajectory is armed. Without
+  // it the topo-playback branch below would keep the current on-screen positions
+  // and silently drop the applied view — "restore default does nothing on a live
+  // run" (see applyView). Consumed (reset) once the effect applies it.
+  const applyingViewRef = useRef(false);
   // A new topology trajectory arms the transport at frame 0 (pristine state
   // captured so we can restore it on exit).
   useEffect(() => {
@@ -851,7 +858,11 @@ export default function App() {
         // space (no overlap). A full re-layout here would jitter stable cards
         // and, mixed with saved/dragged positions, stack cards on top of each
         // other — the overlap the user sees while stepping through a run.
-        if (isTopoTrajRef.current && frameIdxRef.current !== null && prev.length > 0) {
+        // EXCEPT when applyView asked for a full apply (restore/apply a saved
+        // view): then fall through so `withSaved` (the view's positions) wins,
+        // instead of pinning the current on-screen mess.
+        if (isPlaybackStep(
+          isTopoTrajRef.current, frameIdxRef.current, prev.length, applyingViewRef.current)) {
           const merged = withSaved.map((n) => {
             const p = prevById.get(n.id);
             const h = hiddenIds.has(n.id);
@@ -884,6 +895,9 @@ export default function App() {
         const h = hiddenIds.has(e.source) || hiddenIds.has(e.target);
         return h ? { ...e, hidden: true } : e;
       }));
+      // Consumed: a one-shot full-apply requested by applyView has now been
+      // applied; later passes (frame steps) go back to keep-position playback.
+      applyingViewRef.current = false;
     })();
 
     return () => { cancelled = true; };
@@ -1308,6 +1322,11 @@ export default function App() {
   // and toggle visibility. Then re-fit so the saved arrangement is framed.
   const applyView = useCallback((view: View) => {
     if (!compositeId || !view) return;
+    // Ask the layout effect to do a FULL apply of this view's positions on its
+    // next pass — otherwise, while a topology trajectory is armed, the
+    // keep-position playback branch would ignore the view (restore/apply a saved
+    // view "does nothing" on a live run).
+    applyingViewRef.current = true;
     // Legacy views carry no mode and resolve to the default, 'hierarchy' —
     // which is the arrangement they were captured in.
     // A view can also name a mode THIS build does not register — a `?view=`
