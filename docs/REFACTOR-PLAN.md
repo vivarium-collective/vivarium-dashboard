@@ -23,6 +23,14 @@
 > reshaped, the **three competing "Phase" numbering schemes** now in circulation,
 > and the new hurdles the burst surfaced. The body of the RFC is left as written
 > (it is the record of the 2026-07-07 design); read §0A first for current truth.
+>
+> **⚠ Extended 2026-08-26 — §0A.5/§0A.6.** A second reconciliation covers the
+> 2026-08-24 → 08-26 window: the `ui.*` **deployment-config layer** shipping across
+> three repos (#471's third bucket, finally built) and the **slim image / venv
+> model** arc, which retires §0A.3's hurdles 1–2 and reverses one entry in §2A.5's
+> decision log. From this point the body is **no longer untouched**: four inline
+> corrections now sit at the entries that became wrong, each marked and dated in
+> place. Read §0A.5 for current truth.
 
 ---
 
@@ -52,12 +60,17 @@ sequences the work accordingly.
 
 ---
 
-## 0A. Status reconciliation (2026-08-13)
+## 0A. Status reconciliation (2026-08-13, extended 2026-08-26)
 
-> Written after the 2026-07-24 → 2026-08-13 burst (~250 PRs, v0.3.4 → v0.3.42).
-> This section is the *only* part of the RFC updated; everything below it reads
-> as of 2026-07-21. Where a phase's reality diverged from the plan, that is
-> stated plainly rather than retrofitted.
+> §0A.1–0A.4 were written after the 2026-07-24 → 2026-08-13 burst (~250 PRs,
+> v0.3.4 → v0.3.42); **§0A.5–0A.6** extend them through 2026-08-26. Where a
+> phase's reality diverged from the plan, that is stated plainly rather than
+> retrofitted.
+>
+> The original rule — "this section is the only part of the RFC updated" — held
+> until 2026-08-26. It no longer does: where a statement in the body became
+> **factually wrong** (not merely dated), a marked inline correction now sits at
+> it, pointing here. Everything else below still reads as of 2026-07-21.
 
 ### 0A.1 Disambiguation first — three "Phase" numbering schemes now exist
 
@@ -84,6 +97,9 @@ Phase 2; "Layer 2" is the umbrella spec, **not** this RFC's Phase/§ numbering.
 | **5. Multi-tenant** | Untouched (as planned). |
 
 ### 0A.3 New hurdles surfaced by the burst (not anticipated above)
+
+> **⚠ Hurdles 1 and 2 are RETIRED as of 2026-08-26** — the slim image (#932/#933)
+> removed the copied workspace env that caused both. Read them as history; see **§0A.5**.
 
 1. **The canonical workspace went private and moved** — `CovertLabEcoli/sms-ecoli`
    replaced `vivarium-collective/v2ecoli`. Build-time `git clone` in the image
@@ -137,6 +153,156 @@ Phase 2; "Layer 2" is the umbrella spec, **not** this RFC's Phase/§ numbering.
   (the relocate-server-side-then-delete pattern, worth repeating), `app.py` keeps
   growing; without a ratchet (e.g. a lines-per-file CI warning or a routers-split
   milestone) the exit criterion will keep receding.
+
+
+### 0A.5 Second reconciliation (2026-08-26) — the deployment-config layer and the venv model
+
+> Written after the 2026-08-24 → 08-26 window (sms-api 0.9.53→0.9.56, workbench
+> 0.3.55→0.3.57). Two arcs landed, both driven from the *operational* side, and
+> both came to rest on ground this RFC had already mapped. Where they contradict
+> what §0A.3 and §2A.5 say, the correction is stated here and inline at the
+> original entry rather than retrofitted.
+
+**1. The `ui.*` deployment-config layer shipped — §471's third bucket, across three repos.**
+
+§5A's 2026-07-16 refinement named a **third** category beside science and
+compute-environment: *deployment / integration bindings* (`ui.ptools_server_url`
+et al.), belonging to "a deployment-config layer, *neither* port," with
+`workspace.yaml` called a three-way straddler that "eventually wants `ui.*`
+lifted out." That is now built. The mental model it establishes:
+
+> **`workspace.yaml ui:`** = what this thing needs to work on a laptop.
+> **`deploy.yaml ui:`** = what this *site* substitutes instead.
+
+The problem it removes: the deployment used to **rewrite `/workspace/workspace.yaml`
+at pod start** (sms-api's `seed-workspace` initContainer) — three mutations, one of
+them a deletion. `workspace.yaml` is **git-tracked in both `v2ecoli` and
+`sms-ecoli`**, so a workspace carried the identity of whichever site it last ran
+on, and the committed "local-dev defaults" were shared values a developer had to
+edit in a science repo they may not own.
+
+| Phase | Repo | Status |
+|---|---|---|
+| 1. `lib/deploy_config.py` resolver; `build_ui_config` routed through it (a deliberate no-op) | vivarium-workbench **#930** | done 2026-08-25 |
+| 2. Mount the ConfigMap on stanford-test **alongside** the seed, with identical values | viva-api **#278** | done 2026-08-25 |
+| 3. Route the `pbg-ptools` viewer's config reads through the resolver | **pbg-ptools #2** | done 2026-08-26 |
+| 4. Stop the seed mutations | viva-api | **dev done 2026-08-26; prod gated** |
+| 5. Lock local dev with a regression test | vivarium-workbench | **not started** |
+
+Three design decisions worth not relitigating:
+
+- **Sources are an ordered list, not a two-way merge** — a future per-user layer
+  (`~/.vivarium-workbench/config_ui.yaml`, XDG as *fallback*) is a one-line
+  insertion. Deployment must stay top: a hosted pod must not be reconfigurable by
+  whatever sits in `/root`, and the container runs as root.
+- **The overlay is shallow, at the `ui.*` key level.** A source declaring a mapping
+  (`viz_viewer_urls`) supplies the whole map. Deep-merging would make it impossible
+  for a site to *remove* an entry the workspace declares.
+- **YAML `null` unsets a key.** This is the load-bearing one: it is what lets a
+  declarative ConfigMap express the seed script's imperative `ui.pop("ptools_data_dir")`.
+  Without it the layer cannot replace the script.
+
+**Phase 4's shape was corrected on 2026-08-26, and the correction matters.** The
+obvious reading — delete the mutations from sms-api's shared `base/workbench` — is
+wrong. Those mutations are already **env-gated and default to `""`** ("empty =
+leave the workspace untouched"); they fire only because each overlay patches real
+values in. So phase 4 is *per-overlay*: delete the **dev overlay's** env patch and
+the base code stays and no-ops. Prod (`sms-api-stanford-workbench`) still patches
+it, has **no** deploy-config ConfigMap, and runs a workbench predating the 0.3.56
+resolver — deleting the base code outright would silently kill prod's Omics
+Viewer, which **self-gates** (no error; the button simply stops rendering). Phase 4
+completes when prod migrates: delete its patch, then the dead base code. **Prod
+version lag is therefore a gate on this phase**, which §5C.2's dev/prod split
+predicts but does not name.
+
+Design record, including the investigation behind it: the *Lifting `ui.*` Into a
+ConfigMap* proposal — https://claude.ai/code/artifact/feb2ec29-0bfc-4794-b373-91fe2ca19994
+
+Two findings from that investigation are worth carrying, because neither is a
+config question:
+
+- **The `pbg-ptools` launcher URL is inert and appears never to have worked.** All
+  query-string parsing in the ptools webroot funnels through one helper; enumerating
+  every parameter any served JS reads gives 21 names, and the four the launcher
+  sends (`omics`, `url`, `class`, `column1`) are **read by none**. Confirmed against
+  both PT 30.0 and 29.5 — not a regression. ptools' own chooser instead uses
+  **register-then-`datakey`**, which is *session-scoped* and sends no CORS headers,
+  so it works only same-origin. The hosted site satisfies that (one path-routed
+  ALB); **local dev does not** (`:1555` vs `:8771`) — the inverse of the usual
+  "works locally, breaks in prod". Tracked as viva-ptools #1; it is a topology
+  decision, not a config one. This qualifies §4.F.2's ship criterion, which
+  asserts the PTools card "renders from `pbg-ptools` on a PTools-configured
+  workspace": it renders, but its overlay never applied.
+- **A binding that can only be overridden must be set explicitly, everywhere.**
+  ptools' zero-config default points at a *defunct* host, compiled into
+  `pathway-tools-runtime.dxl` and unfixable locally. It answers 200 with
+  real-looking data, so the unconfigured path looks healthy while reading a dead
+  deployment. Third instance of the same pattern the layer exists to fix.
+
+**2. The slim image retired §0A.3 hurdles 1–2 — and cost one live regression.**
+
+**#932/#933 (v0.3.56)** stopped installing the workbench into v2ecoli's venv and
+now `uv sync`s from **this repo's own lock**: **15.3 GB → 744 MB**, and the image
+became buildable on Apple Silicon *at all* (the old build imported polars, which
+needs instructions QEMU won't emulate — there was no working path from a Mac). It
+killed a bug **class**, not a bug: the `--no-deps` chain and the hand-pinned
+process-bigraph/bigraph-schema commits existed *only* because the venv came from
+sms-ecoli's lock.
+
+This **supersedes two entries above** — see the inline notes at §2A.5's
+"Workspace-image supply chain reworked" and at §0A.3 hurdles 1–2. `WORKSPACE_IMAGE`
+is gone from the Dockerfile, the build script, the workflow and the tests.
+
+**The cost (#936).** `EnvironmentResolver`'s fallback to `sys.executable` was only
+safe because the fat image happened to contain the science stack. #932 added a
+strict guard to turn that silence into a loud failure — verified against the *home*
+workspace only. But `materialize_build()` extracts a tarball and **never provisions
+an environment**, so no workspace under `build-cache/` has a `.venv` (0 of 2 on
+dev). Switch-to-build had been silently borrowing the baked venv for its whole
+existence. The guard behaved exactly as designed; the assumption behind it was wrong.
+
+**The bridge (0.3.57) is an explicit, dated exception to §2A.2.** A workspace with
+no venv now borrows the **base** workspace's interpreter. That deliberately
+reintroduces the property §2A.2 rules out — *"you can upgrade a simulator and
+re-run an old study against it because the study references, not owns, the
+engine"* — since a build pinned to an older commit runs under the base workspace's
+dependencies. It is recorded as a bridge in its own docstring, and its **retirement
+condition is #937**, not "later".
+
+**#937 is §2A.7's local-first adapter, arrived at from the other direction.**
+Per-workspace environments (clone + `uv sync` → a per-workspace venv) is precisely
+what §2A.7 specified and what §0A.4 named as its top sequencing recommendation.
+What is new is a **forcing function and a price**: hardlinking makes isolation
+nearly free — measured **103 MB actual for 3 venvs vs 299 MB** under the image's
+`UV_LINK_MODE=copy`.
+
+**Day-0 seeding follows from it, in a forced order.** The agreed target is a
+**minimal base workspace** — a one-line `workspace.yaml`, ~24 KB, already
+generatable by `vivarium-workbench scaffold-workspace` — which removes the 9.4 GB
+image copy and makes "where does the seed's source come from" moot rather than
+answered. But under the 0.3.57 bridge a minimal base breaks *both* paths (nothing
+for it to borrow, nothing for builds to borrow from it), and giving it its own
+small venv does not rescue it — builds would borrow an environment without
+`v2ecoli` and fail deep inside a worker instead of at the seam. **So #937 lands
+first, minimal seed second.**
+
+### 0A.6 What 0A.5 changes about sequencing
+
+- **The `==3.12.12` pin item (§2A.5, "Still open") is now half-triggered.** Its
+  stated condition was that the workbench's lock stop inheriting v2ecoli's
+  interpreter pin. #933 did exactly that for the *image*, but
+  `pyproject.toml` still carries `environments = ["python_full_version == '3.12.12'"]`
+  and `demo = ["v2ecoli", "pbg-ptools"]` still pulls v2ecoli editable. Re-dated
+  inline; finishing it is now a small, unblocked task rather than a dependency.
+- **§G needs a sentence about `deploy.yaml`.** §G targets "one typed settings
+  object (pydantic-settings) validated at boot"; the deployment-config layer is a
+  *second*, deliberately different mechanism — a YAML file behind an env-var
+  pointer, an ordered source chain, and a resolver that never raises. The working
+  position is that they stay distinct (app settings vs. workspace-scoped `ui.*`
+  bindings), but §G is where a reader looks and it currently says nothing.
+- **#937 is now the critical path for three things at once** — the #936 bridge's
+  retirement, the minimal seed, and §2A.7's dormant managed materialization. It is
+  the highest-leverage unstarted item in this RFC as of this writing.
 
 ---
 
@@ -389,6 +555,11 @@ weakest → strongest:
   #786/#791–#793, #802) — the image no longer git-clones a workspace repo; it
   COPYs the per-commit ECR image named by a mandatory `WORKSPACE_IMAGE` arg, and
   the release auto-build trigger is gone. See §0A.3 hurdles 1–2.
+  **⚠ REVERSED 2026-08-26 (#932/#933, v0.3.56).** The image no longer copies a
+  workspace env at all — it `uv sync`s from this repo's own lock (15.3 GB → 744 MB),
+  and `WORKSPACE_IMAGE` is gone from the Dockerfile, build script, workflow and
+  tests. This entry is kept as the record of what was decided in 2026-08; see
+  **§0A.5** for what replaced it and what it cost (#936/#937).
 - **Ecosystem rebrand `pbg-*` → `viva-*`** (2026-07/08) — superpowers (#577),
   emitters (#801), template (#702); new shared deps `viva-workspace` (#762,
   deletes the duplicated `WorkspacePaths`) and `viva-marketplace` (#711). The
@@ -403,10 +574,14 @@ weakest → strongest:
   Accepted short-term (pre-demo). Broaden back to `>=3.11` once the
   `EnvironmentResolver` port (§2A) resolves the runtime env over a boundary
   instead of importing v2ecoli in-process — at which point the workbench's lock
-  no longer inherits v2ecoli's interpreter pin. *(Status 2026-08-13: still open
-  and biting harder — the managed materialization adapter remains dormant while
-  the image now force-patches lock skew by hand; see §0A.3 hurdles 1–2 and
-  §0A.4.)*
+  no longer inherits v2ecoli's interpreter pin. *(Status 2026-08-26: **half
+  triggered**. #933 made the image build from this repo's own lock, so the
+  force-patching described below is gone — but `pyproject.toml` still carries
+  `environments = ["python_full_version == '3.12.12'"]` and the `demo` extra still
+  pulls v2ecoli editable. Finishing this is now small and unblocked rather than
+  dependent on the port. Previously, 2026-08-13: still open and biting harder — the
+  managed materialization adapter remains dormant while the image now force-patches
+  lock skew by hand; see §0A.3 hurdles 1–2 and §0A.4.)*
 - **Science/environment *repo* split** (Q2 target): when, and its pbg-template
   blast radius (how `build_core()` discovery changes when env is its own repo).
 - **"Make work permanent" under an S3 record:** keep the branch + PR *review*
@@ -786,8 +961,12 @@ repo** (peer of `pbg-copasi`/`pbg-parsimony`), package `pbg_ptools/`, module
 `pbg_ptools/workbench_viewers.py` exposing `get_viewers(ws_root)`, with
 `dependencies = ["vivarium-workbench"]`. The workbench discovers it purely by it
 being pip-installed (the `pbg-*` distribution scan), independent of which workspace
-is served, and it **self-gates** on `ui.ptools_server_url` in `workspace.yaml` (a
-dormant built-in for non-PTools workspaces).
+is served, and it **self-gates** on `ui.ptools_server_url` (a
+dormant built-in for non-PTools workspaces). *(Updated 2026-08-26: it self-gates on
+the **resolved** value — `workspace.yaml` overlaid by the deployment-config layer,
+deployment winning — not on `workspace.yaml` alone; pbg-ptools #2. And see §0A.5:
+the URL the launcher builds is inert, so the card renders but its overlay never
+applied.)*
 
 - **Producer / viewer split (the clean seam):** v2ecoli **keeps** the *producers*
   (`v2ecoli/workflow/analyses/ptools_*.py`, which write the TSVs — they are bound
