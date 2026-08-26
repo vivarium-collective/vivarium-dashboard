@@ -526,12 +526,12 @@ body {
 .port-in-label.is-open .port-in-name { color: #4f46e5; }
 .port-in-name {
   font-size: 19px; font-weight: 650; color: #334155;
-  max-width: calc(var(--port-col, 140px) - 24px); overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(var(--port-col, 140px) - 13px); overflow: hidden; text-overflow: ellipsis;
 }
 .port-in-label.is-out .port-in-name { color: #0f766e; }
 .port-in-type {
   font-family: ui-monospace, monospace; font-size: 15px; color: #94a3b8;
-  max-width: calc(var(--port-col, 140px) - 24px); overflow: hidden; text-overflow: ellipsis;
+  max-width: calc(var(--port-col, 140px) - 13px); overflow: hidden; text-overflow: ellipsis;
 }
 /* Port-column resizer: a thin drag bar at the inner edge of the port columns.
    Positioned by an inline `left: var(--port-col)`; drag widens the column,
@@ -698,10 +698,10 @@ body {
    inside the widened side clearance so they never reach the centered name. */
 .process-node-ports .port-in-name,
 .process-node-types .port-in-name,
-.process-node-config .port-in-name { font-size: 24px; max-width: calc(var(--port-col, 158px) - 30px); }
+.process-node-config .port-in-name { font-size: 24px; max-width: calc(var(--port-col, 158px) - 15px); }
 .process-node-ports .port-in-type,
 .process-node-types .port-in-type,
-.process-node-config .port-in-type { font-size: 17px; max-width: calc(var(--port-col, 158px) - 30px); }
+.process-node-config .port-in-type { font-size: 17px; max-width: calc(var(--port-col, 158px) - 15px); }
 /* The "draft process" line + address, enlarged to fill the body at these tiers. */
 .process-node-ports .process-node-meta,
 .process-node-types .process-node-meta,
