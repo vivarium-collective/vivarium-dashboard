@@ -26,6 +26,9 @@ _log = logging.getLogger(__name__)
 #: Workspaces already warned about (one line per workspace, not per call).
 _warned_no_venv: set[str] = set()
 
+#: Workspaces already warned about borrowing the base venv.
+_warned_borrowed: set[str] = set()
+
 # venv interpreter relative paths — POSIX first (macOS/Linux, day one), then the
 # Windows layout (materialization-lifecycle §2b: Windows is a later target).
 _VENV_INTERPRETERS = (".venv/bin/python", ".venv/Scripts/python.exe")
@@ -86,6 +89,44 @@ def resolve_interpreter(workspace: Path | str) -> str:
     return _fallback_interpreter(ws)
 
 
+def _base_workspace_interpreter(ws: Path) -> str | None:
+    """The venv of the workspace this server was STARTED with, if it has one.
+
+    A workspace materialized under ``build-cache/`` (a pinned remote run, a
+    session build) has no venv of its own -- ``materialize_build`` extracts a
+    tarball and never provisions an environment. Before 0.3.56 such a workspace
+    fell through to ``sys.executable``, which in the old fat image WAS the full
+    science environment, so switch-to-build silently borrowed it and worked.
+    The slim image removed that, and the strict guard turned the silence into a
+    hard failure (#936).
+
+    Borrowing the BASE workspace's venv restores that behaviour deliberately
+    rather than by accident: a build materialized from the same simulator shares
+    its dependency tree, which is exactly what the baked venv used to provide.
+
+    This is explicitly a bridge, not the destination. It reintroduces the
+    property that a build pinned to an older commit runs under the base
+    workspace's dependencies -- item 44's failure mode across workspaces. #937
+    tracks the real fix: give every materialized workspace its own venv, which
+    hardlinking makes nearly free.
+
+    Deliberately NOT ``_root.get_workspace_root()``: that returns the *active*
+    root, which is the switched-to workspace itself -- circular. This is the
+    boot workspace (``--workspace`` / ``VIVARIUM_WORKBENCH_WORKSPACE``).
+    """
+    base = (get_env("WORKSPACE", "") or "").strip()
+    if not base:
+        return None
+    base_path = Path(base)
+    if base_path == ws:          # the base itself has no venv; nothing to borrow
+        return None
+    for rel in _VENV_INTERPRETERS:
+        cand = base_path / rel
+        if cand.is_file():
+            return str(cand)
+    return None
+
+
 def _fallback_interpreter(ws: Path) -> str:
     """The running interpreter — with a guard for environments that can't serve.
 
@@ -104,6 +145,17 @@ def _fallback_interpreter(ws: Path) -> str:
     loud, actionable failure; everywhere else keeps today's behavior plus a
     one-time warning naming the workspace.
     """
+    borrowed = _base_workspace_interpreter(ws)
+    if borrowed is not None:
+        if str(ws) not in _warned_borrowed:
+            _warned_borrowed.add(str(ws))
+            _log.warning(
+                "workspace %s has no .venv; borrowing the base workspace's "
+                "interpreter (%s). Correct only while that workspace's "
+                "dependencies match -- see issue #937.", ws, borrowed,
+            )
+        return borrowed
+
     strict = (get_env("REQUIRE_WORKSPACE_VENV", "") or "").strip().lower() \
         not in ("", "0", "false", "no")
     if strict:
