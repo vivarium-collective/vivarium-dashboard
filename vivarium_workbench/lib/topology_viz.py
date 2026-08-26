@@ -86,7 +86,7 @@ def render_topology_viz(*, db_file: str, run_id: str) -> dict[str, str]:
         controls |= set(c)
         per_frame.append({
             "step": f.get("step"), "time": f.get("time"),
-            "counts": dict(c), "nodes": _nodes_by_control(tree),
+            "counts": dict(c), "tree": _tree_nodes(tree),
         })
     controls_ordered = sorted(controls)
     return {f"Topology — {store_key}": _html_doc(store_key, per_frame, controls_ordered)}
@@ -128,22 +128,75 @@ def _count_chart(per_frame: list[dict], controls: list[str]) -> str:
     return "".join(parts)
 
 
-def _frame_svg(nodes: list[tuple[str, str]]) -> str:
-    """A tiny place-graph glyph for one frame: the root with its child nodes."""
-    cols = 4
-    cw, ch, r = 34, 30, 60
-    rows = (len(nodes) + cols - 1) // cols or 1
-    W = cols * cw + 12
-    H = r + rows * ch + 10
-    parts = [f'<svg viewBox="0 0 {W} {H}" class="tv-frame">']
-    # root store
-    parts.append(f'<rect x="6" y="6" width="{W-12}" height="{H-12}" rx="7" '
-                 f'fill="#f8fafc" stroke="#cbd5e1" stroke-dasharray="3,3"/>')
-    for i, (_k, ctrl) in enumerate(nodes):
-        fill, stroke = _color(ctrl)
-        cx = 6 + (i % cols) * cw + cw / 2
-        cy = r - 18 + (i // cols) * ch + ch / 2
-        parts.append(f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="9" fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
+def _tree_nodes(tree: dict) -> list[dict]:
+    """Recursive [{ctrl, children:[...]}] for a tree[node]'s labelled child nodes
+    (a node is one carrying a `_control`); scalar leaves like `dna`/`biomass` are
+    not nodes and are omitted, so the glyph shows the place-graph NESTING."""
+    out: list[dict] = []
+    for k, v in (tree or {}).items():
+        if k.startswith("_") or not isinstance(v, dict):
+            continue
+        ctrl = v.get("_control")
+        if not ctrl:
+            continue
+        contents = v.get("contents")
+        src = contents if isinstance(contents, dict) else v
+        out.append({"ctrl": str(ctrl), "children": _tree_nodes(src)})
+    return out
+
+
+def _frame_svg(tree_nodes: list[dict]) -> str:
+    """A compact NESTED place-graph glyph for one frame: a tidy tree of the
+    frame's nodes (root store at top, its nested children below), coloured by
+    `_control` — so the actual topology (colony › cell › chromosome, or
+    env › biofilm › cell) is visible, not just a row of dots."""
+    LEAF_W, LEVEL_H, R, PAD = 24, 26, 6, 6
+    laid: list[dict] = []          # {ctrl, depth, x}
+    edges: list[tuple[int, int]] = []
+    leafx = [0]
+
+    def place(nodes: list[dict], depth: int, parent_idx: int | None) -> None:
+        for nd in nodes:
+            idx = len(laid)
+            laid.append({"ctrl": nd["ctrl"], "depth": depth, "x": 0.0})
+            if parent_idx is not None:
+                edges.append((parent_idx, idx))
+            if nd["children"]:
+                place(nd["children"], depth + 1, idx)
+                kids = [laid[c]["x"] for (p, c) in edges if p == idx]
+                laid[idx]["x"] = sum(kids) / len(kids)
+            else:
+                laid[idx]["x"] = leafx[0] * LEAF_W + LEAF_W / 2
+                leafx[0] += 1
+
+    laid.append({"ctrl": "_root", "depth": 0, "x": 0.0})   # the store itself
+    place(tree_nodes, 1, 0)
+    top = [laid[c]["x"] for (p, c) in edges if p == 0]
+    laid[0]["x"] = (sum(top) / len(top)) if top else LEAF_W / 2
+
+    maxx = max((n["x"] for n in laid), default=LEAF_W)
+    maxd = max((n["depth"] for n in laid), default=0)
+    W = maxx + LEAF_W / 2 + PAD
+    H = maxd * LEVEL_H + 2 * R + 2 * PAD
+
+    def X(n: dict) -> float:
+        return n["x"] + PAD
+
+    def Y(n: dict) -> float:
+        return R + PAD + n["depth"] * LEVEL_H
+
+    parts = [f'<svg viewBox="0 0 {W:.0f} {H:.0f}" class="tv-frame">']
+    for p, c in edges:
+        parts.append(f'<line x1="{X(laid[p]):.1f}" y1="{Y(laid[p]):.1f}" '
+                     f'x2="{X(laid[c]):.1f}" y2="{Y(laid[c]):.1f}" stroke="#cbd5e1" stroke-width="1"/>')
+    for n in laid:
+        if n["ctrl"] == "_root":
+            parts.append(f'<circle cx="{X(n):.1f}" cy="{Y(n):.1f}" r="{R-1}" '
+                         f'fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>')
+        else:
+            fill, stroke = _color(n["ctrl"])
+            parts.append(f'<circle cx="{X(n):.1f}" cy="{Y(n):.1f}" r="{R}" '
+                         f'fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>')
     parts.append("</svg>")
     return "".join(parts)
 
@@ -159,7 +212,7 @@ def _html_doc(store_key: str, per_frame: list[dict], controls: list[str]) -> str
         idx = [round(i * (len(fr) - 1) / 23) for i in range(24)]
         fr = [per_frame[i] for i in sorted(set(idx))]
     strip = "".join(
-        f'<figure class="tv-cell">{_frame_svg(f["nodes"])}'
+        f'<figure class="tv-cell">{_frame_svg(f["tree"])}'
         f'<figcaption>{("t=%g" % f["time"]) if f.get("time") is not None else ("#%s" % f.get("step"))}'
         f' · {sum(f["counts"].values())}</figcaption></figure>'
         for f in fr)
@@ -174,7 +227,7 @@ def _html_doc(store_key: str, per_frame: list[dict], controls: list[str]) -> str
       .tv-ax {{ font-size:10px; fill:#94a3b8; }}
       .tv-strip {{ display:flex; gap:8px; overflow-x:auto; padding:6px 2px 10px; }}
       .tv-cell {{ margin:0; flex:none; text-align:center; }}
-      .tv-frame {{ width:78px; height:auto; display:block; }}
+      .tv-frame {{ height:104px; width:auto; max-width:240px; display:block; }}
       .tv-cell figcaption {{ font-size:10px; color:#64748b; margin-top:2px; font-variant-numeric:tabular-nums; }}
       .tv-h {{ font-size:11px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:#94a3b8; margin:14px 0 4px; }}
     </style></head><body>
