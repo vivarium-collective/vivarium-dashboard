@@ -661,8 +661,11 @@ body {
   background: #faf5ff; border: 1px solid #e9d5ff; border-radius: 6px;
   padding: 2px 9px; font-size: 15px; max-width: 100%;
 }
-.config-chip .config-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 15ch; }
-.config-chip .config-key { color: #7e22ce; font-weight: 600; }
+/* The value must never be shrunk below its content (a short "3.3" was being
+   flex-squeezed to "3…"); let the chip grow/wrap instead. Only genuinely long
+   values (a dict/list) ellipsize at a generous cap. */
+.config-chip .config-val { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 24ch; flex: 0 0 auto; }
+.config-chip .config-key { color: #7e22ce; font-weight: 600; flex: 0 0 auto; }
 .config-chip .config-val { color: #6b7280; font-family: ui-monospace, monospace; }
 /* Config param TYPE (shown once ports show types) — muted mono, like a port type. */
 .config-chip .config-type { color: #94a3b8; font-family: ui-monospace, monospace; font-size: 0.9em; }

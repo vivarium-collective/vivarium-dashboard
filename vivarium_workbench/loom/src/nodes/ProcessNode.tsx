@@ -483,6 +483,11 @@ function ProcessNode({ data }: NodeProps & { data: ProcessNodeData }) {
             {realCfg.slice(0, 10).map((c) => (
               <span key={c.name} className="config-chip" title={`${c.name}: ${c.type || '—'}${c.value ? ' = ' + c.value : ''}`}>
                 <span className="config-key">{c.name}</span>
+                {/* Show the set VALUE inline (e.g. pmf_volts = 0.15) — the numeric
+                    parametrization, not just the parameter surface. */}
+                {c.scalar && c.value && c.value !== '—' && (
+                  <span className="config-val">= {c.value}</span>
+                )}
                 {/* Types ride the port-detail level: shown once ports show types. */}
                 {show.types && c.type && <span className="config-type">{c.type}</span>}
               </span>
