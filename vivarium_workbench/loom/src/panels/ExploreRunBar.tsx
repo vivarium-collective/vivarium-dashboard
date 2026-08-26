@@ -77,6 +77,7 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
   const [whyOpen, setWhyOpen] = useState(false);
   const [emitOpen, setEmitOpen] = useState(false);
   const [snapN, setSnapN] = useState(3);
+  const [snapFresh, setSnapFresh] = useState(true);
   const [snapBusy, setSnapBusy] = useState<string | null>(null);
 
   // Export N evenly-spaced snapshots across the run as ONE side-by-side series.
@@ -88,11 +89,15 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
     const w = window as unknown as {
       __loomExportSvg?: () => Promise<string | null>;
       __loomExportPng?: () => Promise<string | null>;
+      __loomSetFreshLayout?: (b: boolean) => void;
     };
     if (!t || !w.__loomExportSvg) return;
     const frames = evenFrames(t.frameCount, snapN);
     const original = t.frameIdx;
     const panels: SeriesPanel[] = [];
+    // "clean" mode: lay out each frame fresh (a tidy tree) instead of the
+    // accumulated on-screen playback arrangement.
+    if (snapFresh) w.__loomSetFreshLayout?.(true);
     try {
       for (let j = 0; j < frames.length; j++) {
         const i = frames[j];
@@ -112,6 +117,7 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
       const base = (props.compositeId?.split('.').pop() || 'composite') + '-snapshots';
       await exportSeries(panels, new Set(['png', 'svg', 'zip']), base);
     } catch { /* best-effort */ } finally {
+      w.__loomSetFreshLayout?.(false);
       t.onScrub(original);
       setSnapBusy(null);
     }
@@ -161,6 +167,12 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
               <input type="number" min={1} max={props.transport.frameCount}
                 value={snapN} disabled={!!snapBusy}
                 onChange={(e) => { const v = parseInt(e.target.value, 10); setSnapN(Number.isFinite(v) && v > 0 ? v : 1); }} />
+              <label className="explore-runbar-snap-clean"
+                title="Lay out each snapshot fresh (a tidy tree) instead of the on-screen playback arrangement">
+                <input type="checkbox" checked={snapFresh} disabled={!!snapBusy}
+                  onChange={(e) => setSnapFresh(e.target.checked)} />
+                clean
+              </label>
               <button type="button" onClick={() => void exportSnapshots()} disabled={!!snapBusy}>
                 {snapBusy || '⤓ snapshots'}
               </button>

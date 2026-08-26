@@ -289,6 +289,11 @@ export default function App() {
   // and silently drop the applied view — "restore default does nothing on a live
   // run" (see applyView). Consumed (reset) once the effect applies it.
   const applyingViewRef = useRef(false);
+  // Set (via window.__loomSetFreshLayout) while exporting a snapshot series in
+  // "clean layout" mode: each frame is laid out FRESH (ignore both the playback
+  // keep-positions branch and any saved/dragged positions), so every snapshot is
+  // a tidy tree rather than the accumulated on-screen playback arrangement.
+  const freshLayoutRef = useRef(false);
   // A new topology trajectory arms the transport at frame 0 (pristine state
   // captured so we can restore it on exit).
   useEffect(() => {
@@ -836,13 +841,16 @@ export default function App() {
       const { nodes: laidOut } = await layoutMode.runLayout(
         visibleNodes as any, visibleEdges as any, compositeId, LAYOUT_TIER,
       );
-      let withSaved = applySavedPositions(laidOut as any, saved) as any[];
+      // Clean-layout snapshot export: ignore saved/dragged positions so the
+      // frame lays out FRESH (a tidy tree), not the accumulated arrangement.
+      const effectiveSaved = freshLayoutRef.current ? {} : saved;
+      let withSaved = applySavedPositions(laidOut as any, effectiveSaved) as any[];
       // Milner view: settle each hyperedge vertex to the centroid of the ports it
       // links, so the dashed spokes fan naturally from the middle instead of from
       // the collapsed process's old corner. Pinned (saved-position) vertices stay.
       if (hyperedgeMode) {
         withSaved = relaxHyperedgePositions(
-          withSaved, visibleEdges as any[], new Set(Object.keys(saved)));
+          withSaved, visibleEdges as any[], new Set(Object.keys(effectiveSaved)));
       }
       if (cancelled) return;
       // Apply the CURRENT hidden set to the freshly-rebuilt nodes + edges (read
@@ -1529,6 +1537,8 @@ export default function App() {
   // are unreliable to capture headlessly. Same framing/font-embedding as the
   // Download → svg path. Returns null if the graph has not rendered yet.
   useEffect(() => {
+    // Toggle clean-layout mode for the snapshot-series export (ExploreRunBar).
+    (window as any).__loomSetFreshLayout = (b: boolean) => { freshLayoutRef.current = !!b; };
     (window as any).__loomExportSvg = async (): Promise<string | null> => {
       if (nodes.length === 0) return null;
       setExporting(true);

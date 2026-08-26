@@ -2420,3 +2420,5 @@ textarea.sr-input {
 .sp-export-btn:hover:not(:disabled) { background: #d5f2ee; }
 .sp-export-btn:disabled { opacity: .55; cursor: default; }
 .sp-export-note { font-size: 10px; color: #94a3b8; font-style: italic; }
+.explore-runbar-snap-clean { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: #6b7280; cursor: pointer; }
+.explore-runbar-snap-clean input { accent-color: #0d6e6b; cursor: pointer; }
