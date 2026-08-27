@@ -1,7 +1,13 @@
 import os, importlib.util, pytest
 
 FORK = os.environ.get("V2E_VECOLI_DIR", "")
-_have_translator = importlib.util.find_spec("v2ecoli.library.config_to_composite") is not None
+try:
+    # find_spec raises ModuleNotFoundError (not returns None) when the *parent*
+    # package `v2ecoli` isn't installed — which is the case in workbench CI,
+    # where v2ecoli is not a dependency. Treat that as "translator unavailable".
+    _have_translator = importlib.util.find_spec("v2ecoli.library.config_to_composite") is not None
+except ModuleNotFoundError:
+    _have_translator = False
 
 @pytest.mark.skipif(not (FORK and os.path.isdir(FORK) and _have_translator),
                     reason="needs the vEcoli fork + the v2ecoli translator (post-#605 sync)")
