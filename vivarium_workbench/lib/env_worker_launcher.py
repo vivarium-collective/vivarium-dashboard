@@ -39,12 +39,19 @@ REMOTE_START_TIMEOUT = 300.0
 class WorkerLauncher(Protocol):
     """Create one worker for a workspace. The pool decides when; this decides how."""
 
+    #: Distinguishes workers in the pool's key. A local and a remote worker for
+    #: the same (workspace, interpreter) are different environments and must not
+    #: share a pool entry.
+    kind: str
+
     def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> EnvWorker:
         ...
 
 
 class LocalWorkerLauncher:
     """Spawn a subprocess against the workspace's interpreter (today's behavior)."""
+
+    kind = "local"
 
     def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> EnvWorker:
         return EnvWorker(workspace, interpreter=interpreter, timeout=timeout)
@@ -78,6 +85,8 @@ class RemoteWorkerLauncher:
     deployment supplies (Downward API). We do not discover it: viva-api would need
     pod-get to look it up, and we already know it.
     """
+
+    kind = "remote"
 
     def __init__(self, client, *, advertise_host: str, bind_host: str = "0.0.0.0"):
         self._client = client
