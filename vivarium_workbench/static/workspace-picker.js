@@ -154,17 +154,21 @@
     function openWs(ws, newTab) {
       close();
       _wsRecordUsed(ws && ws.path);   // stamp before we navigate/switch away
+      // EVERY navigation below needs this. report.py's _base_path_shim patches
+      // fetch / EventSource / XMLHttpRequest, but NOT window.open or
+      // window.location — so a root-absolute URL escapes the workbench: under
+      // `--base-path /workbench` it hits the ALB root, which serves PTools.
+      var BP = window.__BASE_PATH__ || "";
       if (ws && ws.kind === "remote") {
         // Same URL shape branch-source.js's Open button already uses —
         // session.js's ?build= bootstrap materializes it and binds this new
         // tab's session, honoring the base path behind the shared ALB.
-        var bp = window.__BASE_PATH__ || "";
-        window.open(bp + "/?build=" + encodeURIComponent(ws.simulator_id), "_blank");
+        window.open(BP + "/?build=" + encodeURIComponent(ws.simulator_id), "_blank");
         return;
       }
       if (newTab) {
         var url = ws && ws.url ? ws.url
-          : (ws && ws.name ? "/?workspace=" + encodeURIComponent(ws.name) : null);
+          : (ws && ws.name ? BP + "/?workspace=" + encodeURIComponent(ws.name) : null);
         if (url) window.open(url, "_blank");
         else window.alert("No running server for \"" + ((ws && (ws.label || ws.name)) || "this workspace") +
           "\" to open in a new tab. Start it from that repo, then it'll appear here.");
@@ -176,7 +180,7 @@
           .then(function (r) { if (r.ok) location.reload(); else window.alert("Switch failed."); })
           .catch(function () { window.alert("Switch failed (network)."); });
       } else if (ws && ws.name) {
-        window.location.assign("/?workspace=" + encodeURIComponent(ws.name));
+        window.location.assign(BP + "/?workspace=" + encodeURIComponent(ws.name));
       }
     }
 
