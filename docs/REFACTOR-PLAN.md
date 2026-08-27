@@ -323,8 +323,14 @@ about a **local subprocess worker**, which needs an interpreter off the PVC.
 own prebuilt image, whose Python and dependency tree come from the image. It asks
 the PVC for nothing. So on a hosted deployment:
 
-- The base workspace is the **authoring** surface — studies, investigations, git —
-  and never the science environment.
+- The base workspace is a **landing shell** — the thing you switch *from* — and
+  never the science environment. A brand-new deployment shows an empty dashboard
+  until the user picks a build; that is correct, not a gap.
+- **A hosted deployment is not where work is authored** (confirmed 2026-08-27).
+  Studies and composites are written on *local laptop deployments*, against
+  ordinary GitHub workspaces with the author's own git credentials. Hosted **runs
+  and inspects** that work against image-backed builds. This is why an empty base
+  costs nothing: there is no authored state that would have lived in it.
 - A minimal seed is *consistent* with the §2A.8 invariant above rather than
   blocked by it: a scaffold with no science code has nothing to introspect, and a
   workspace that does carry science code is image-backed by the same rule that
