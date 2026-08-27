@@ -43,7 +43,7 @@ def server(tmp_path):
     env = os.environ.copy()
     env["PYTHONPATH"] = os.pathsep.join(
         [str(_REPO_ROOT), str(ws), env.get("PYTHONPATH", "")])
-    env["PBG_HOME"] = str(pbg_home)
+    env["VIVA_HOME"] = str(pbg_home)
     proc = subprocess.Popen(
         [sys.executable, "-m", "vivarium_workbench.cli", "serve",
          "--workspace", str(ws), "--port", str(port)],

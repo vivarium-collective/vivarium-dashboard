@@ -24,6 +24,52 @@ for fixture_ws in _FIXTURES.iterdir() if _FIXTURES.is_dir() else []:
             sys.path.insert(0, p)
 
 # ---------------------------------------------------------------------------
+# Global catalog isolation
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_viva_home(tmp_path_factory):
+    """Point the GLOBAL workspace catalog at a temp dir for the whole run.
+
+    ``cli serve`` calls ``workspace_catalog.add(workspace)`` on every boot so the
+    workspace shows up in other dashboards' switchers. That add is idempotent by
+    PATH — and every test workspace is a fresh ``tmp_path``, so each spawned
+    server appended a new entry to the developer's REAL ``~/.pbg/workspaces.json``.
+    ``dashboard_client`` spawns one per test across 34 files, and nothing ever
+    removed them: an observed catalog had **9,116 entries, 9,113 of them dead
+    pytest temp dirs**, dating back months. The switcher dropdown reads this file,
+    so the leak eventually made the real UI unusable.
+
+    ``viva_superpowers.workspace_catalog`` resolves its home as
+    ``$VIVA_HOME or $PBG_HOME or ~/.pbg``, so setting an env var is the supported
+    way to redirect it. Set in ``os.environ`` (not via monkeypatch, which is
+    function-scoped) because ``dashboard_client`` passes ``os.environ.copy()`` to
+    the server subprocess — the actual writer.
+
+    Uses ``VIVA_HOME``, the canonical name, and every test that redirects the
+    catalog for itself uses the same key — so an override is a plain replacement
+    and precedence never enters into it. (``PBG_HOME`` is the deprecated alias and
+    is intentionally unused in tests: a session default on one variable and
+    per-test overrides on the *other* would mean the higher-precedence one wins
+    regardless of who set it last.)
+
+    Session-scoped rather than per-test to preserve today's behaviour exactly: one
+    catalog accumulating across the run, just not in the user's home.
+    """
+    home = tmp_path_factory.mktemp("viva_home")
+    previous = os.environ.get("VIVA_HOME")
+    os.environ["VIVA_HOME"] = str(home)
+    try:
+        yield home
+    finally:
+        if previous is None:
+            os.environ.pop("VIVA_HOME", None)
+        else:
+            os.environ["VIVA_HOME"] = previous
+
+
+# ---------------------------------------------------------------------------
 # Shared dashboard_client fixture
 # ---------------------------------------------------------------------------
 

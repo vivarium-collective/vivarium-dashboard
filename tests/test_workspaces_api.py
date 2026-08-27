@@ -33,7 +33,7 @@ def _get(url):
 
 @pytest.fixture
 def server(tmp_path):
-    """Spin up the dashboard against the fixture workspace with an isolated PBG_HOME."""
+    """Spin up the dashboard against the fixture workspace with an isolated VIVA_HOME."""
     if not FIXTURE_WORKSPACE.is_dir():
         pytest.skip(f"Fixture workspace not present at {FIXTURE_WORKSPACE}")
     ws = tmp_path / "ws"
@@ -45,7 +45,7 @@ def server(tmp_path):
     env["PYTHONPATH"] = os.pathsep.join(
         [str(_REPO_ROOT), str(ws), env.get("PYTHONPATH", "")]
     )
-    env["PBG_HOME"] = str(pbg_home)
+    env["VIVA_HOME"] = str(pbg_home)
     proc = subprocess.Popen(
         [
             sys.executable, "-m", "vivarium_workbench.cli", "serve",
@@ -470,7 +470,7 @@ def test_post_workspaces_start_spawns_dashboard(server, tmp_path):
     # cmd_serve renders reports; the directory must exist.
     (other_ws / "reports").mkdir()
 
-    # Add the workspace to the catalog via the running server (shares PBG_HOME).
+    # Add the workspace to the catalog via the running server (shares VIVA_HOME).
     _post_json(
         f"{server['url']}/api/workspaces/add",
         {"path": str(other_ws)},
@@ -498,7 +498,7 @@ def test_post_workspaces_start_spawns_dashboard(server, tmp_path):
             except ProcessLookupError:
                 pass
             # Poll for the child's atexit to unregister itself. Up to 3 s.
-            # workspace_catalog.find_entry uses PBG_HOME from os.environ, which
+            # workspace_catalog.find_entry uses VIVA_HOME from os.environ, which
             # is NOT set in the test process — so check the servers/ directory
             # directly via the fixture's pbg_home path instead.
             pbg_home = server["pbg_home"]
@@ -600,7 +600,7 @@ def test_post_workspaces_stop_happy_path(server, tmp_path):
     (victim_ws / "workspace.yaml").write_text("name: victim-ws\npackage: pbg_victim\n")
 
     # Add the victim workspace to the catalog (via the running dashboard
-    # subprocess, which shares PBG_HOME).
+    # subprocess, which shares VIVA_HOME).
     _post_json(f"{server['url']}/api/workspaces/add", {"path": str(victim_ws)})
 
     # Spawn a real subprocess that will:
