@@ -162,6 +162,12 @@ def default_launcher() -> WorkerLauncher:
     if not host.strip():
         return LocalWorkerLauncher()
     from vivarium_workbench.lib.sms_api_client import SmsApiClient
+    from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
-    logger.info("env workers: REMOTE (image-as-worker), dial-back to %s", host)
-    return RemoteWorkerLauncher(SmsApiClient(), advertise_host=host.strip())
+    # The SAME accessor every other viva-api call site uses (VIVA_API_BASE, else
+    # SMS_API_BASE). Constructing SmsApiClient() bare would silently take its
+    # localhost:8080 default — which in a pod is the workbench itself, not the
+    # api Service, so every worker launch would fail to reach viva-api.
+    base = _sms_api_base()
+    logger.info("env workers: REMOTE (image-as-worker), dial-back to %s, api at %s", host, base)
+    return RemoteWorkerLauncher(SmsApiClient(base), advertise_host=host.strip())
