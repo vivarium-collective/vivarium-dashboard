@@ -978,7 +978,7 @@ seven PRs, not the 8–12 estimated. A worker pod ran the prebuilt image for
      method. #952 first split it per method — interactive remote, job-class local —
      which inverted `env_worker_launcher`'s own rule and could not work on hosted
      at all: nothing there has a `.venv`, so every job-class call raised
-     `workspace has no .venv`. §2a of the design records why "local" stopped
+     `workspace has no .venv`. §2.1 of the design records why "local" stopped
      meaning what it used to once contexts became switchable.
    - **Step 2 — NOT STARTED, and it is now the load-bearing step.** Its shape
      changed once step 1 stopped conflating transport with cost. Two parts:

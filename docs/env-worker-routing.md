@@ -68,15 +68,26 @@ exceeding them is, by definition, not an interactive query.
 choke point all 25 sites pass through. §2A.7's distinction is method-shaped
 (`registry_catalog` vs `run_study`), so encode it there.
 
-> **Corrected 2026-08-27 — see "Transport is not the axis" below.** As first
+> **Corrected 2026-08-27 — see §2.1 below.** As first
 > implemented this routed job-class methods to a **local worker** and interactive
 > ones to the deployment's launcher. That was the wrong axis, and it could not work
 > on a hosted deployment at all. `is_job_class` survives; what it selects does not.
 
-`is_job_class` marks the calls a **scale precheck** inspects (step 3). It does not
+`is_job_class` marks the calls a **scale precheck** inspects (§4). It does not
 choose a transport.
 
-### 2a. Transport is not the axis
+**Two corrections to that classification (2026-08-27, #957), both from having read
+the call sites instead of the method names:**
+
+- **`run_process` is not job-class.** `env_worker._run_process` builds one class
+  from the registry, fills its input ports and runs a **single `update()`**,
+  degrading to `{ok: False, stage, error}` rather than raising. That is the
+  Composite Explorer's "try this process" probe. It was classified on the `run_`
+  prefix.
+- **`JOB_CLASS_METHODS` is not one class but two.** See §3: the methods governed by
+  the *run target* are a strict subset of the ones governed by *scale*.
+
+### 2.1 Why transport is not the axis
 
 "Local" meant *a subprocess inside the workbench pod*. That was trivially right
 when one workbench process was bound to one workspace, and stopped being right
@@ -120,14 +131,48 @@ run-target gate at all**. What changed is that an untraced site now lands in a
 correctly-provisioned environment that may be too small, rather than in one that
 cannot run the code at all.
 
-### 3. Precheck declared scale where it exists
+### 3. Honor the run target that already exists
+
+`remote_pinned.resolve_run_target` (backlog item 18) is already **the** authoritative
+local-vs-deployment answer, and its docstring is emphatic: every run entrypoint must
+resolve it the same way, *"never by which button happened to be clicked"*. It returns
+`"deployment"` when the workspace carries `.viv-build.json` (the workspace picker
+stamped a materialized build) **or** the deployment sets
+`VIVARIUM_WORKBENCH_REMOTE_PINNED`.
+
+This section exists because the original proposal buried it under "What this does not
+fix" as leftover application work. It is not leftover — it is the **first** thing to
+get right, and it needed no inference at all. Measured 2026-08-27:
+
+| | pin | base workspace | materialized build |
+|---|---|---|---|
+| hosted (`sms-api-stanford-test`) | **on** | `deployment` | `deployment` |
+| laptop | off | `local` | `deployment` |
+
+So on a pinned deployment **every** study run was bypassing the target, and on a
+laptop it bypassed the moment you switched to a build: you pick a remote build
+expecting the deployment, and the study runs in a worker.
+
+**Which methods this governs is narrower than job-class.** `RUN_ENTRYPOINT_METHODS =
+{run_study}`. `run_study_analyses` and `run_investigation_analysis` are post-run
+analysis over output that already exists — heavy, therefore job-class, but heaviness
+is §4's axis, not a question of where a *run* executes. Gating them here would stop
+post-run analysis outright on any pinned deployment.
+
+**Refuse before dispatching.** #957 raises on `"deployment"` rather than dispatching,
+because dispatching from inside a `process_bigraph` Step is a genuine design
+question — does the Step block on a Batch job, or does the investigation composite
+become async? Raising honors the choice (work does not silently run in the wrong
+place) and leaves that decision visible instead of guessed.
+
+### 4. Precheck declared scale where it exists
 
 On the study path, multiply `n_seeds × n_generations` **before** starting and
 route or refuse above a configured threshold. Exact, cheap, and it catches the
 10,000-sim case *up front* — failing after forty minutes is far worse than failing
 immediately.
 
-### 4. Make the budget failure say what to do
+### 5. Make the budget failure say what to do
 
 Where scale is not declared, the timeout is the only honest mechanism — but it
 should surface as *"this exceeded the interactive budget; dispatch it via …"*
@@ -143,15 +188,23 @@ invites raising the ceiling again.
 
 ## What this does not fix
 
-Routing is not dispatch. Application paths written when a study run was small
-still need to resolve the run target the way the study-run path already does —
-`resolve_run_target()` exists precisely for this, and backlog item 18 records the
-same failure once before: *"a deployment-wide pin with no session build silently
-fell through to a local subprocess on the study-run path."* `investigation_steps`
-is the known instance; the remaining 4 untraced job-class sites should be audited.
+Routing is not dispatch. **§3 closed the bypass; it did not build the dispatch.**
+`investigation_steps` — the known instance — now refuses on a `deployment` target
+instead of silently running in a worker (#957), but nothing yet *sends* that study
+to viva-api. An investigation on a pinned deployment stops rather than dispatching.
 
-That is application work, separate from this. **A loud refusal at the pool is what
-makes it discoverable rather than silent.**
+Still open here:
+
+- **Auto-dispatch from inside a composite Step**, which needs the blocking-vs-async
+  decision named in §3 before it can be written.
+- **The 4 untraced job-class call sites.** `run_study_analyses` and
+  `run_investigation_analysis` are not run entrypoints, so they are not bypassing
+  the run target — but they are unaudited for scale.
+
+Backlog item 18 records the same class of failure once before: *"a deployment-wide
+pin with no session build silently fell through to a local subprocess on the
+study-run path."* That is why §3 leads with refusal — **a loud refusal is what makes
+the remaining application work discoverable rather than silent.**
 
 ## Open question — let the author declare it
 
@@ -163,12 +216,21 @@ proxy for it.
 
 ## Suggested order
 
-1. ~~Method classification at the pool + the refusal message~~ **done, then
-   corrected** (0.3.61 → 0.3.63). `is_job_class` marks the calls a precheck will
-   inspect; transport follows deployment topology for every method (§2a).
-2. **Declared-scale precheck on the study path** — now the load-bearing step. With
-   transport no longer standing in for a cost policy, this is the only thing
-   separating a small run in-context from a 10,000-sim run that must dispatch.
-3. Budget-failure message
-4. Audit the remaining job-class call sites for run-target resolution
+1. ~~Method classification at the pool~~ — **done, then corrected**
+   (0.3.61 → 0.3.63, #952/#954). Transport follows deployment topology for every
+   method (§2.1); `is_job_class` marks what a precheck will inspect.
+2. **a.** ~~Honor the run target~~ — **done** (0.3.64, #957), §3. Deployed to
+   `sms-api-stanford-test`, where the pin makes it apply to every workspace.
+   Subsumes what was step 4 below, for run entrypoints.
+   **b. Declared-scale precheck** (§4) — **not started, and now load-bearing.**
+   With transport no longer standing in for a cost policy, this is the only thing
+   separating a small in-context run from a 10,000-sim run that must dispatch.
+3. Budget-failure message (§5)
+4. ~~Audit job-class call sites for run-target resolution~~ — folded into 2a for
+   run entrypoints; what remains is auditing the analysis methods for **scale**,
+   which is 2b's problem, not the run target's.
 5. *(separate)* author-declared execution class
+
+> **Heads-up on numbering.** §2.1 of this document ("why transport is not the axis")
+> is unrelated to **step 2a** ("honor the run target"). The former was briefly
+> numbered `2a` and renamed to remove the collision.
