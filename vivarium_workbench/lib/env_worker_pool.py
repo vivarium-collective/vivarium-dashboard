@@ -66,14 +66,11 @@ class WorkerPool:
                  call_timeout: float | None = None, launcher=None):
         # HOW a worker is created is the launcher's business; the pool owns only
         # WHEN (lazy spawn, idle-TTL eviction, LRU cap). Local subprocess or
-        # remote image-as-worker is one deployment-wide decision made at the
+        # remote image-as-worker is ONE deployment-wide decision made at the
         # composition root — see env_worker_launcher.default_launcher (§2A.8).
-        # Defaults to local so existing callers and tests are unchanged.
-        # `launcher`, when given, is used for EVERY method (tests, and any caller
-        # that wants one explicit transport). When it is None the pool routes per
-        # method — see _launcher_for and §2A.8 workstream 8.
+        # `launcher`, when given, overrides it (tests, and any caller that wants
+        # one explicit transport).
         self._launcher: WorkerLauncher | None = launcher
-        self._local_launcher: WorkerLauncher | None = None
         self._deployment_launcher: WorkerLauncher | None = None
         self._warned: set[tuple[str, str]] = set()
         # K and T_idle (seconds), config-overridable (plan §G).
@@ -110,44 +107,63 @@ class WorkerPool:
             return self._acquire(ws, interp, launcher).call(method, params)
 
     def _launcher_for(self, method: str, ws: str):
-        """Interactive methods follow the deployment; job-class methods stay local.
+        """EVERY method runs in the active context's own environment.
 
-        §2A.7 puts simulations and heavy analyses in a *job*, not a worker call, and
-        a hosted worker pod is sized for interaction (2 GiB). Routing a study that
-        declares 1000 seeds x 10 generations there is an OOMKill, so job-class
-        methods keep today's local subprocess even on a hosted deployment.
+        Transport is not a per-method choice. `env_worker_launcher` states the rule
+        this restores -- "selected by deployment topology, not preference" -- and an
+        earlier version of this method broke it by pinning job-class methods to a
+        local subprocess even on a hosted deployment.
 
-        That is deliberately NOT a refusal: a small study run locally is a
-        legitimate hosted use case, and the scale precheck that could tell small
-        from large is step 2 of the design. Until then this logs once per
-        (method, workspace) so the gap is discoverable rather than silent -- the
-        failure backlog item 18 already recorded once, on this same path.
+        **Why that was wrong, and not merely badly tuned.** "Local" meant "a
+        subprocess inside the workbench pod". That was trivially right when one
+        workbench process was bound to one workspace, and stopped being right when
+        contexts became switchable. A session now gets its own exclusive workspace
+        dir (`materialize_session_build`) stamped with one `(simulator_id, commit)`,
+        so the active context has BOTH halves of an environment: its data is that
+        dir on the PVC, and its computation is the worker-as-image for that commit.
+        Those are two halves of one thing, which is exactly what this pool keys on.
+        A subprocess in the workbench pod is not "local" to that context at all --
+        it is a *different* environment that happened to be nearby.
+
+        Concretely it could not work: the pod's own interpreter cannot import the
+        workspace package (#932's slim image), and the 0.3.57 bridge that let a
+        venv-less build borrow the base workspace's venv died when the base became
+        a scaffold. Every job-class call on a hosted deployment raised "workspace
+        has no .venv" -- advice pointing at the very thing §2A.8 removed.
+
+        Running job-class work in the build's own image is not a compromise; it is
+        *more* correct than the subprocess ever was, because it is the same image
+        the simulation itself runs in.
+
+        What genuinely does not belong in a worker is work too large for one --
+        1000 seeds x 10 generations. That is a question about SCALE, not about
+        method identity or transport, and it dispatches to viva-api rather than
+        choosing a different launcher. `is_job_class` marks the candidates for that
+        precheck (step 2); until it exists this warns once per (method, workspace)
+        so the gap stays discoverable.
         """
         if self._launcher is not None:
             return self._launcher
-        from vivarium_workbench.lib.env_worker_launcher import (
-            LocalWorkerLauncher, default_launcher)
-        if is_job_class(method):
-            if self._local_launcher is None:
-                self._local_launcher = LocalWorkerLauncher()
-            if self._deployment_kind() == "remote" and (method, ws) not in self._warned:
-                self._warned.add((method, ws))
-                logger.warning(
-                    "%s runs in a LOCAL worker on a deployment configured for remote "
-                    "env workers. Small runs are fine; anything at deployment scale "
-                    "should dispatch to viva-api instead (see remote_pinned."
-                    "resolve_run_target / remote_run_views.remote_run_submit). "
-                    "REFACTOR-PLAN §2A.8 workstream 8.", method)
-            return self._local_launcher
         if self._deployment_launcher is None:
+            from vivarium_workbench.lib.env_worker_launcher import default_launcher
             self._deployment_launcher = default_launcher()
-        return self._deployment_launcher
-
-    def _deployment_kind(self) -> str:
-        from vivarium_workbench.lib.env_worker_launcher import default_launcher
-        if self._deployment_launcher is None:
-            self._deployment_launcher = default_launcher()
-        return getattr(self._deployment_launcher, "kind", "local")
+        launcher = self._deployment_launcher
+        # Warn only where the budget is real. "Sized for interaction" is a property
+        # of a hosted worker POD (1 CPU / 2 GiB); a laptop subprocess has no such
+        # ceiling, and running a study there is the ordinary, expected path — so
+        # warning on it would be noise telling the user to dispatch work that has
+        # nowhere better to go. Once per (method, workspace).
+        if (getattr(launcher, "kind", "local") == "remote"
+                and is_job_class(method) and (method, ws) not in self._warned):
+            self._warned.add((method, ws))
+            logger.warning(
+                "%s runs in this context's env worker, which is sized for "
+                "interaction. Work at deployment scale should dispatch to viva-api "
+                "instead (see remote_pinned.resolve_run_target / "
+                "remote_run_views.remote_run_submit); the scale precheck that would "
+                "decide automatically is REFACTOR-PLAN §2A.8 workstream 8 step 2.",
+                method)
+        return launcher
 
     def size(self) -> int:
         with self._lock:

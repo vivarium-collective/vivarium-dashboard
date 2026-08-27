@@ -66,17 +66,59 @@ exceeding them is, by definition, not an interactive query.
 
 `WorkerPool.call(workspace, method, params)` sees the method name and is the single
 choke point all 25 sites pass through. §2A.7's distinction is method-shaped
-(`registry_catalog` vs `run_study`), so encode it there:
+(`registry_catalog` vs `run_study`), so encode it there.
 
-- **interactive** → the deployment's launcher (remote when hosted)
-- **job-class** (`run_study`, `run_study_analyses`, `run_investigation_analysis`,
-  `run_process`, …) → **local worker, or refuse on hosted** with a message naming
-  the dispatch path
+> **Corrected 2026-08-27 — see "Transport is not the axis" below.** As first
+> implemented this routed job-class methods to a **local worker** and interactive
+> ones to the deployment's launcher. That was the wrong axis, and it could not work
+> on a hosted deployment at all. `is_job_class` survives; what it selects does not.
 
-This is deliberately robust to an incomplete audit: a call site nobody traced
-still cannot route heavy work into an undersized pod. (Of the 8 job-class sites,
-4 have been traced; `investigation_steps` dispatches `run_study` to the worker with
-**no run-target gate at all**.)
+`is_job_class` marks the calls a **scale precheck** inspects (step 3). It does not
+choose a transport.
+
+### 2a. Transport is not the axis
+
+"Local" meant *a subprocess inside the workbench pod*. That was trivially right
+when one workbench process was bound to one workspace, and stopped being right
+once contexts became switchable.
+
+A session now gets its **own exclusive workspace dir** (`materialize_session_build`)
+stamped with one `(simulator_id, commit)`. So the active context already supplies
+both halves of an environment:
+
+| half | is |
+|---|---|
+| data | that session's dir on the PVC |
+| computation | the worker-as-image named by its build stamp |
+
+They are two halves of one thing — which is exactly what the pool keys on
+(`env_key` → `image:<commit>`). A subprocess in the workbench pod is not "local" to
+that context at all; it is a *different* environment that happened to be nearby.
+
+It also could not work. The pod's interpreter cannot import the workspace package
+(#932's slim image), and the 0.3.57 bridge that let a venv-less build borrow the
+base workspace's venv died when the base became a scaffold. Every job-class call on
+a hosted deployment raised `workspace has no .venv` — advice pointing at the one
+thing §2A.8 removed. Running job-class work in the build's own image is not a
+compromise: it is the same image the simulation itself runs in.
+
+So there are **two independent axes**, and the original step 1 conflated them:
+
+| axis | decided by | values |
+|---|---|---|
+| transport | deployment topology | subprocess (laptop) / worker-as-image (hosted) |
+| scale | the work itself | run in-context / dispatch to viva-api → Batch |
+
+Transport follows topology for every method, restoring the rule
+`env_worker_launcher` already states — *"selected by deployment topology, not
+preference"*. Scale is what sends a 1000-seed study to Batch, and it is the only
+thing that should.
+
+The audit gap is unchanged and still real: of the 8 job-class sites, 4 have been
+traced, and `investigation_steps` dispatches `run_study` to the worker with **no
+run-target gate at all**. What changed is that an untraced site now lands in a
+correctly-provisioned environment that may be too small, rather than in one that
+cannot run the code at all.
 
 ### 3. Precheck declared scale where it exists
 
@@ -121,9 +163,12 @@ proxy for it.
 
 ## Suggested order
 
-1. Method classification at the pool + the refusal message *(small, safe, and it
-   makes everything below discoverable)*
-2. Declared-scale precheck on the study path
+1. ~~Method classification at the pool + the refusal message~~ **done, then
+   corrected** (0.3.61 → 0.3.63). `is_job_class` marks the calls a precheck will
+   inspect; transport follows deployment topology for every method (§2a).
+2. **Declared-scale precheck on the study path** — now the load-bearing step. With
+   transport no longer standing in for a cost policy, this is the only thing
+   separating a small run in-context from a 10,000-sim run that must dispatch.
 3. Budget-failure message
 4. Audit the remaining job-class call sites for run-target resolution
 5. *(separate)* author-declared execution class
