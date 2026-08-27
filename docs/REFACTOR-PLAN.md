@@ -286,6 +286,11 @@ small venv does not rescue it — builds would borrow an environment without
 `v2ecoli` and fail deep inside a worker instead of at the seam. **So #937 lands
 first, minimal seed second.**
 
+> **Superseded 2026-08-27 by §2A.8 — see §0A.7.** The forced order above assumed
+> every worker is a local subprocess needing an interpreter off the PVC. Image-as-
+> worker removed that assumption for hosted deployments, and with it the reason a
+> minimal seed had to wait for #937.
+
 ### 0A.6 What 0A.5 changes about sequencing
 
 - **The `==3.12.12` pin item (§2A.5, "Still open") is now half-triggered.** Its
@@ -303,6 +308,51 @@ first, minimal seed second.**
 - **#937 is now the critical path for three things at once** — the #936 bridge's
   retirement, the minimal seed, and §2A.7's dormant managed materialization. It is
   the highest-leverage unstarted item in this RFC as of this writing.
+  *(Revised 2026-08-27: §2A.8 took the minimal seed off this list — see §0A.7.)*
+
+### 0A.7 What §2A.8 changes about #937 (2026-08-27)
+
+§0A.5 concluded "#937 lands first, minimal seed second". **That no longer holds,
+and it is worth being precise about why, because the claim outlived the reasoning
+that produced it by about two weeks and blocked work on its own.**
+
+The argument was: a venv-less base workspace has nothing to borrow and nothing for
+materialized builds to borrow *from*, so both paths break. Every step of that is
+about a **local subprocess worker**, which needs an interpreter off the PVC.
+§2A.8 gave hosted deployments a different kind of worker entirely — the simulator's
+own prebuilt image, whose Python and dependency tree come from the image. It asks
+the PVC for nothing. So on a hosted deployment:
+
+- The base workspace is the **authoring** surface — studies, investigations, git —
+  and never the science environment.
+- A minimal seed is *consistent* with the §2A.8 invariant above rather than
+  blocked by it: a scaffold with no science code has nothing to introspect, and a
+  workspace that does carry science code is image-backed by the same rule that
+  already gates serving it.
+- #937 remains real and remains worth doing, but its scope narrowed to what it
+  always actually was: **a local-launcher concern** (and the #936 bridge's
+  retirement, which is likewise local-only).
+
+**What was actually blocking the clean seed**, found when this was re-derived
+rather than re-cited:
+
+1. **`WorkerPool.call` resolved an interpreter before choosing a launcher**
+   (fixed 0.3.62). The remote launcher ignores `interpreter` outright, but a
+   venv-less workspace under `REQUIRE_WORKSPACE_VENV` made `resolve_interpreter`
+   *raise* before the launcher was picked — so every interactive call died asking
+   a question that path never needed answered. Launchers now name their own
+   environment (`env_key`): an interpreter for local, `image:<commit>` for remote.
+2. **The deployment's seed initContainer had been a silent no-op since #932**
+   (viva-api#293). It copies the base workspace out of `/app/v2ecoli`; the slim
+   image stopped shipping that directory. It never failed loudly because it only
+   runs when `workspace.yaml` is absent, which on a live PVC it never is. That —
+   not #937 — is why the PVC could not be re-seeded, and why a 7.2 GiB fat-image
+   venv that cannot `import v2ecoli` survived on it for seven weeks.
+
+**The generalizable lesson**: a recorded blocker is a claim about the system at a
+date. §0A.5's was sound when written and wrong six commits later, and nothing in
+the surrounding prose made that visible. Sequencing claims in this document should
+be re-derived against the code before they are used to defer work, not cited.
 
 ---
 
@@ -816,9 +866,12 @@ A workspace carrying science code but no built image has no way to answer an
 environment question. Two consequences worth stating so they are not
 rediscovered:
 
-- It decides what a **minimal day-0 seed** can be (#937): a scaffold with *no*
-  science code has nothing to introspect and needs no worker — consistent. A
-  *partial* workspace, code but no image, is the case to prohibit.
+- It decides what a **minimal day-0 seed** can be: a scaffold with *no* science
+  code has nothing to introspect and needs no worker — consistent. A *partial*
+  workspace, code but no image, is the case to prohibit. This invariant is what
+  *unblocked* the minimal seed rather than gating it on #937 (§0A.7); the seed's
+  own blocker was elsewhere — a deployment initContainer that had silently
+  stopped copying anything (viva-api#293).
 - It makes the simulator record the gate for serving a workspace, which is
   already how `materialize_build` selects one.
 

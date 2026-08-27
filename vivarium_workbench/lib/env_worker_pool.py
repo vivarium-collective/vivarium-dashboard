@@ -20,13 +20,20 @@ environment coordinate once materialization lands.
 """
 from __future__ import annotations
 
-import sys
+import logging
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from vivarium_workbench.lib.env_compat import get_env
+
+logger = logging.getLogger(__name__)
 from vivarium_workbench.lib.env_worker_client import EnvWorker, EnvWorkerUnavailable
+from vivarium_workbench.lib.env_worker_routing import is_job_class
+
+if TYPE_CHECKING:  # launchers import the pool's callers; keep it type-only
+    from vivarium_workbench.lib.env_worker_launcher import WorkerLauncher
 
 
 def _int_env(name: str, default: int) -> int:
@@ -62,10 +69,13 @@ class WorkerPool:
         # remote image-as-worker is one deployment-wide decision made at the
         # composition root — see env_worker_launcher.default_launcher (§2A.8).
         # Defaults to local so existing callers and tests are unchanged.
-        if launcher is None:
-            from vivarium_workbench.lib.env_worker_launcher import LocalWorkerLauncher
-            launcher = LocalWorkerLauncher()
-        self._launcher = launcher
+        # `launcher`, when given, is used for EVERY method (tests, and any caller
+        # that wants one explicit transport). When it is None the pool routes per
+        # method — see _launcher_for and §2A.8 workstream 8.
+        self._launcher: WorkerLauncher | None = launcher
+        self._local_launcher: WorkerLauncher | None = None
+        self._deployment_launcher: WorkerLauncher | None = None
+        self._warned: set[tuple[str, str]] = set()
         # K and T_idle (seconds), config-overridable (plan §G).
         self.max_workers = max_workers if max_workers is not None else _int_env("ENV_WORKER_POOL_MAX", 8)
         self.idle_ttl = idle_ttl if idle_ttl is not None else _int_env("ENV_WORKER_IDLE_TTL", 900)
@@ -75,7 +85,7 @@ class WorkerPool:
         # EnvWorkerUnavailable → one respawn → fail. Config-overridable so such
         # workloads can raise it; default unchanged (backward-compatible).
         self.call_timeout = call_timeout if call_timeout is not None else _int_env("ENV_WORKER_CALL_TIMEOUT", 60)
-        self._entries: dict[tuple[str, str], _Entry] = {}
+        self._entries: dict[tuple[str, str, str], _Entry] = {}
         self._lock = threading.Lock()
 
     # -- public -------------------------------------------------------------
@@ -84,26 +94,83 @@ class WorkerPool:
         """Query the warm worker for this environment. On a worker that died or
         was evicted mid-flight, drop it and respawn once (protocol §9).
 
-        When ``interpreter`` is not given, ``EnvironmentResolver`` picks it from
-        the workspace — its own ``.venv`` if present, else the running Python — so
-        a workspace with a provisioned venv builds under *its* interpreter.
+        When ``interpreter`` is not given, the LAUNCHER names the environment
+        (``env_key``): the workspace's own interpreter for a local worker, the
+        image's commit for a remote one. Order matters — resolving an interpreter
+        first asks a venv-less workspace a question the remote path never needed
+        answered, and under REQUIRE_WORKSPACE_VENV that raises instead of routing.
         """
-        from vivarium_workbench.lib import env_resolver
         ws = str(Path(workspace))
-        interp = interpreter or env_resolver.resolve_interpreter(workspace)
+        launcher = self._launcher_for(method, ws)
+        interp = interpreter or launcher.env_key(ws)
         try:
-            return self._acquire(ws, interp).call(method, params)
+            return self._acquire(ws, interp, launcher).call(method, params)
         except EnvWorkerUnavailable:
-            self._drop(ws, interp)
-            return self._acquire(ws, interp).call(method, params)
+            self._drop(ws, interp, launcher.kind)
+            return self._acquire(ws, interp, launcher).call(method, params)
+
+    def _launcher_for(self, method: str, ws: str):
+        """Interactive methods follow the deployment; job-class methods stay local.
+
+        §2A.7 puts simulations and heavy analyses in a *job*, not a worker call, and
+        a hosted worker pod is sized for interaction (2 GiB). Routing a study that
+        declares 1000 seeds x 10 generations there is an OOMKill, so job-class
+        methods keep today's local subprocess even on a hosted deployment.
+
+        That is deliberately NOT a refusal: a small study run locally is a
+        legitimate hosted use case, and the scale precheck that could tell small
+        from large is step 2 of the design. Until then this logs once per
+        (method, workspace) so the gap is discoverable rather than silent -- the
+        failure backlog item 18 already recorded once, on this same path.
+        """
+        if self._launcher is not None:
+            return self._launcher
+        from vivarium_workbench.lib.env_worker_launcher import (
+            LocalWorkerLauncher, default_launcher)
+        if is_job_class(method):
+            if self._local_launcher is None:
+                self._local_launcher = LocalWorkerLauncher()
+            if self._deployment_kind() == "remote" and (method, ws) not in self._warned:
+                self._warned.add((method, ws))
+                logger.warning(
+                    "%s runs in a LOCAL worker on a deployment configured for remote "
+                    "env workers. Small runs are fine; anything at deployment scale "
+                    "should dispatch to viva-api instead (see remote_pinned."
+                    "resolve_run_target / remote_run_views.remote_run_submit). "
+                    "REFACTOR-PLAN §2A.8 workstream 8.", method)
+            return self._local_launcher
+        if self._deployment_launcher is None:
+            self._deployment_launcher = default_launcher()
+        return self._deployment_launcher
+
+    def _deployment_kind(self) -> str:
+        from vivarium_workbench.lib.env_worker_launcher import default_launcher
+        if self._deployment_launcher is None:
+            self._deployment_launcher = default_launcher()
+        return getattr(self._deployment_launcher, "kind", "local")
 
     def size(self) -> int:
         with self._lock:
             return len(self._entries)
 
     def discard(self, workspace, *, interpreter: str | None = None) -> None:
-        """Evict this environment's worker (e.g. on a session switch)."""
-        self._drop(str(Path(workspace)), interpreter or sys.executable)
+        """Evict this environment's worker(s) (e.g. on a session switch).
+
+        Drops every worker for the workspace, whatever its environment key: methods
+        route per class, so one workspace can hold a remote worker (interactive) and
+        a local one (job-class) at once, and a switch must not leave either behind.
+
+        Matching on the workspace alone — rather than reconstructing the key — is
+        what makes that reliable. The keys are the launchers' to mint (a resolved
+        interpreter, an image commit); guessing one here missed them and quietly
+        left warm workers pinned to the old session.
+        """
+        ws = str(Path(workspace))
+        with self._lock:
+            keys = [k for k in self._entries
+                    if k[0] == ws and (interpreter is None or k[1] == interpreter)]
+        for key in keys:
+            self._drop(*key)
 
     def close_all(self) -> None:
         with self._lock:
@@ -113,8 +180,11 @@ class WorkerPool:
             _safe_close(w)
 
     # -- internals ----------------------------------------------------------
-    def _acquire(self, ws: str, interp: str) -> EnvWorker:
-        key = (ws, interp)
+    def _acquire(self, ws: str, interp: str, launcher) -> EnvWorker:
+        # Keyed by kind as well: a local and a remote worker for the same
+        # (workspace, interpreter) are DIFFERENT environments and must never
+        # share a pool entry.
+        key = (ws, interp, launcher.kind)
         to_close: list[EnvWorker] = []
         with self._lock:
             to_close.extend(self._reap_idle_locked())
@@ -129,15 +199,15 @@ class WorkerPool:
                     to_close.append(self._pop_lru_locked())  # LRU cap (protocol §17)
                 # lazy spawn (local: Popen is ~ms; remote: a pod dialling back —
                 # build_core is on the first call either way)
-                worker = self._launcher.launch(ws, interpreter=interp, timeout=self.call_timeout)
+                worker = launcher.launch(ws, interpreter=interp, timeout=self.call_timeout)
                 self._entries[key] = _Entry(worker)
         for w in to_close:
             _safe_close(w)
         return worker
 
-    def _drop(self, ws: str, interp: str) -> None:
+    def _drop(self, ws: str, interp: str, kind: str = "local") -> None:
         with self._lock:
-            entry = self._entries.pop((ws, interp), None)
+            entry = self._entries.pop((ws, interp, kind), None)
         if entry is not None:
             _safe_close(entry.worker)
 
