@@ -1991,6 +1991,21 @@ class CompositeConfigTranslateBody(BaseModel):
     config_json: Optional[dict] = None
 
 
+class ConfigToCompositeBody(BaseModel):
+    """POST /api/config-to-composite {config_json}
+
+    Translates a vEcoli config JSON document into a loom-renderable composite
+    document via the workspace env worker's ``config_to_composite`` method.
+    ``config_json`` is typed ``Any`` (not ``dict``) so a non-object payload
+    reaches :func:`~vivarium_workbench.lib.config_to_composite_views.build_config_composite`
+    for its own 422, rather than being rejected by pydantic validation first.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    config_json: Any = None
+
+
 class VisualizationDeleteBody(BaseModel):
     """DELETE /api/visualization {name}"""
 

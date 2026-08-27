@@ -258,6 +258,7 @@ from vivarium_workbench.lib.models import (
     FeedbackRecordActionResult,
     BandProvenanceSetBody,
     CompositeConfigTranslateBody,
+    ConfigToCompositeBody,
     # DELETE-route request-body models
     SimulationDeleteBody,
     SimulationRunDeleteBody,
@@ -1466,6 +1467,30 @@ def create_app() -> FastAPI:
         body, status = _composite_config_adapt.composite_config_translate(
             ws, req.model_dump()
         )
+        return JSONResponse(status_code=status, content=body)
+
+    @app.post(
+        "/api/config-to-composite",
+        tags=["Composites"],
+        summary="Translate a vEcoli config JSON into a loom-renderable composite document",
+    )
+    def config_to_composite_route(
+        req: ConfigToCompositeBody,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Body: ``{config_json}``. Routes to the workspace env worker's
+        ``config_to_composite`` method (the fork + translator live on the
+        workspace interpreter) and shapes the result into the same
+        ``{state, schema, kind}`` envelope the loom already renders.
+
+        Returns ``{"state": ..., "schema": ..., "kind": "config-composite"}``
+        (200), or ``{"error": ...}`` at 422 (``config_json`` not a JSON
+        object) / 400 (translator error) / 501 (translator not available in
+        this workspace) / 503 (env worker unavailable).
+        """
+        from vivarium_workbench.lib.config_to_composite_views import build_config_composite
+
+        body, status = build_config_composite(ws, req.config_json)
         return JSONResponse(status_code=status, content=body)
 
     def _composite_state_response(
