@@ -961,35 +961,49 @@ seven PRs, not the 8–12 estimated. A worker pod ran the prebuilt image for
 `sms-ecoli@234dc76`, dialled back, answered `initialize`/`ping`, and
 `list_generators` returned 33 workspace-scoped generators.
 
-> **⚠ NOT YET IN USE, and this is the honest status.** `default_launcher()` is
-> called by **nothing in production code**: `get_pool()` constructs `WorkerPool()`
-> with no launcher, and the pool defaults to `LocalWorkerLauncher`. So all **25**
-> `get_pool()` call sites still spawn local subprocesses, on hosted deployments
-> too. The remote path has only ever run from explicit calls.
->
-> Closing that is **not** a one-line default flip. Those call sites include
-> `run_study_analyses`, `render_viz_doc` and `viz_preview`; §2A.7 says heavy
-> analysis belongs in a *job*, not a worker call, and a worker pod is sized for
-> interactive queries (2 GiB). Flipping the default would route heavy work into
-> pods never sized for it, and turn each new `(workspace, interpreter)` key from a
-> millisecond `Popen` into a pod schedule. **Which call sites go remote, and what
-> happens to the heavy ones, is the next real decision** — workstream 8.
+> **⚠ Superseded 2026-08-27 — the pool is now wired.** This block said
+> `default_launcher()` was called by nothing in production code and all 25
+> `get_pool()` call sites spawned local subprocesses. That was true when written
+> and was closed by #952 (wire) and #954 (correct the axis). Kept for the reasoning
+> it records, which still holds: flipping a default would have routed heavy work
+> into pods never sized for it, and the *"which call sites, and what happens to the
+> heavy ones"* question was indeed the real one. What changed is the answer —
+> transport turned out not to be the axis that answers it. See step 1 below.
 
-8. **Wire the pool to the composition root** — decide per call site (or split
-   interactive vs heavy), size the warm set against node image pressure, then make
-   `get_pool()` consult `default_launcher()`. **NOT STARTED — design written up in
-   [`env-worker-routing.md`](env-worker-routing.md).** Its conclusion, in short:
-   classify by **method** at the pool (the single choke point, robust to an
-   incomplete call-site audit), precheck **declared** scale on the study path
-   (`n_seeds × n_generations` — exact, and it catches the 10,000-sim case before
-   it starts), treat the call timeout and pod memory as the stated cost policy
-   rather than a prediction, and **do not** guess expense from a composite
-   reference.
+8. **Wire the pool to the composition root** — **IN PROGRESS.** Design in
+   [`env-worker-routing.md`](env-worker-routing.md).
 
-**Interim behavior.** On **prod**, hosted environment questions on materialized
-builds remain unanswered and surface loudly as `EnvWorkerUnavailable` — the right
-posture, and now a decision on the record rather than drift. On **dev**, workers
-are available but unused by request paths until workstream 8.
+   - **Step 1 — DONE (#952, corrected by #954, 0.3.63).** `get_pool()` consults
+     `default_launcher()`, so transport follows deployment topology for every
+     method. #952 first split it per method — interactive remote, job-class local —
+     which inverted `env_worker_launcher`'s own rule and could not work on hosted
+     at all: nothing there has a `.venv`, so every job-class call raised
+     `workspace has no .venv`. §2a of the design records why "local" stopped
+     meaning what it used to once contexts became switchable.
+   - **Step 2 — NOT STARTED, and it is now the load-bearing step.** Its shape
+     changed once step 1 stopped conflating transport with cost. Two parts:
+     - **2a. Honor the run target that already exists.** `resolve_run_target`
+       (item 18) is the authoritative local-vs-deployment choice, set by which
+       workspace the user picked — a session build stamps `.viv-build.json` →
+       `"deployment"`. **None of the six job-class worker call sites consult it**
+       (`study_run_post`, `composite_flush`, `cli_runs`, `investigation_steps` ×2,
+       `api/app.py:1288`). Traced end to end: investigation composite →
+       `StudyStep.update()` → `_run_study_hook` → `get_pool().call(…, "run_study")`,
+       with no run-target resolution anywhere. So a user who picked a remote build,
+       expecting simulations on viva-api, still gets them executed in a worker. This
+       is a live defect, not a missing optimization — and it subsumes step 4 of the
+       design's order.
+     - **2b. Precheck declared scale** (`n_seeds × n_generations`) for what remains
+       genuinely local, so a 10,000-sim run fails up front rather than after forty
+       minutes.
+
+   With transport no longer standing in for a cost policy — badly, but it *was*
+   doing something — nothing currently separates a small in-context run from one
+   that must dispatch. That gap is live wherever step 1 is deployed.
+
+**Interim behavior.** On **prod** (workbench 0.3.55), hosted environment questions
+on materialized builds remain unanswered and surface loudly as
+`EnvWorkerUnavailable`. On **dev**, request paths now reach real workers.
 
 
 ---
