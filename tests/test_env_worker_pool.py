@@ -105,8 +105,13 @@ def test_pool_passes_call_timeout_to_envworker(monkeypatch, tmp_path):
         def close(self):
             pass
 
+    # Patched on the LAUNCHER, which is where workers are now constructed: the
+    # pool owns when a worker is created, env_worker_launcher owns how (local
+    # subprocess vs remote image-as-worker, §2A.8). The property under test is
+    # unchanged — call_timeout must reach the worker — and this still exercises
+    # the real pool -> launcher -> EnvWorker chain rather than stubbing it out.
     monkeypatch.setattr(
-        "vivarium_workbench.lib.env_worker_pool.EnvWorker", _FakeWorker)
+        "vivarium_workbench.lib.env_worker_launcher.EnvWorker", _FakeWorker)
     p = WorkerPool(call_timeout=1234)
     p.call(tmp_path, "ping", interpreter="/usr/bin/python3")
     assert captured["timeout"] == 1234

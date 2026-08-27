@@ -56,6 +56,36 @@ class SmsApiClient:
             "git_repo_url": repo_url, "git_branch": branch, "git_commit_hash": commit,
         })
 
+    # -- env workers (REFACTOR-PLAN §2A.8, #942) ----------------------------
+    # The workbench cannot create Jobs (§2B.2 gives it no cluster access), so it
+    # asks viva-api to run a simulator image as a worker. We tell it where to
+    # dial back and with what token — we already know our own address, so
+    # viva-api needs to discover nothing.
+
+    def start_env_worker(self, *, commit: str, callback_host: str, callback_port: int,
+                         token: str, workspace: str | None = None,
+                         session_key: str | None = None) -> dict:
+        """POST /env-worker/v1/workers — run the prebuilt image for ``commit``."""
+        body: dict = {
+            "commit": commit,
+            "callback_host": callback_host,
+            "callback_port": callback_port,
+            "token": token,
+        }
+        if workspace:
+            body["workspace"] = workspace
+        if session_key:
+            body["session_key"] = session_key
+        return self._post("/env-worker/v1/workers", json_body=body)
+
+    def env_worker_status(self, job_name: str, *, include_logs: bool = False) -> dict:
+        return self._get(f"/env-worker/v1/workers/{job_name}",
+                         {"include_logs": "true"} if include_logs else None)
+
+    def stop_env_worker(self, job_name: str) -> dict:
+        """DELETE /env-worker/v1/workers/{job_name} — idempotent."""
+        return self._delete(f"/env-worker/v1/workers/{job_name}")
+
     def simulator_status(self, simulator_id: int) -> dict:
         return self._get("/core/v1/simulator/status", {"simulator_id": simulator_id})
 
@@ -154,6 +184,18 @@ class SmsApiClient:
         if names:
             params["names"] = ",".join(names)
         return self._get(f"/api/v1/simulations/{simulation_id}/observables", params)
+
+    def _delete(self, path: str) -> dict:
+        url = self.base_url + path
+        req = Request(url, method="DELETE", headers={"Accept": "application/json"})
+        try:
+            with urlopen(req, timeout=self.timeout) as r:  # noqa: S310 — fixed scheme, internal tunnel
+                body = r.read().decode()
+                return json.loads(body) if body else {}
+        except HTTPError as e:
+            raise SmsApiError(f"DELETE {url} -> {e.code}", status=e.code) from e
+        except (URLError, OSError) as e:
+            raise SmsApiError(f"DELETE {url} failed (sms-api unreachable): {e}") from e
 
     def _post(self, path: str, params: dict | None = None, json_body: dict | None = None) -> dict:
         # doseq=True so list-valued params become repeated keys (?observables=a&observables=b)

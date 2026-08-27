@@ -56,7 +56,16 @@ class WorkerPool:
     """A bounded pool of warm env workers keyed by ``(workspace, interpreter)``."""
 
     def __init__(self, *, max_workers: int | None = None, idle_ttl: float | None = None,
-                 call_timeout: float | None = None):
+                 call_timeout: float | None = None, launcher=None):
+        # HOW a worker is created is the launcher's business; the pool owns only
+        # WHEN (lazy spawn, idle-TTL eviction, LRU cap). Local subprocess or
+        # remote image-as-worker is one deployment-wide decision made at the
+        # composition root — see env_worker_launcher.default_launcher (§2A.8).
+        # Defaults to local so existing callers and tests are unchanged.
+        if launcher is None:
+            from vivarium_workbench.lib.env_worker_launcher import LocalWorkerLauncher
+            launcher = LocalWorkerLauncher()
+        self._launcher = launcher
         # K and T_idle (seconds), config-overridable (plan §G).
         self.max_workers = max_workers if max_workers is not None else _int_env("ENV_WORKER_POOL_MAX", 8)
         self.idle_ttl = idle_ttl if idle_ttl is not None else _int_env("ENV_WORKER_IDLE_TTL", 900)
@@ -118,7 +127,9 @@ class WorkerPool:
                     to_close.append(self._entries.pop(key).worker)
                 while len(self._entries) >= self.max_workers and self._entries:
                     to_close.append(self._pop_lru_locked())  # LRU cap (protocol §17)
-                worker = EnvWorker(ws, interpreter=interp, timeout=self.call_timeout)  # lazy spawn (Popen is ~ms; build_core is on first call)
+                # lazy spawn (local: Popen is ~ms; remote: a pod dialling back —
+                # build_core is on the first call either way)
+                worker = self._launcher.launch(ws, interpreter=interp, timeout=self.call_timeout)
                 self._entries[key] = _Entry(worker)
         for w in to_close:
             _safe_close(w)
