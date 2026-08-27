@@ -871,29 +871,59 @@ building venvs.
 #### Workstreams
 
 1. **Protocol transport adapter** — `socketpair` → TCP/reverse-connect; §§6–11
-   messages untouched. *S*
+   messages untouched. **DONE** (#945; specified as protocol §5A).
 2. **viva-api env-worker lifecycle endpoints** — create/delete/status a Job, TTL
    backstop. Reuses `K8sJobService` and the `V1Job` pattern in
-   `simulation_service_k8s.py`. *M*
+   `simulation_service_k8s.py`. **DONE** (viva-api#288).
 3. **Worker pod spec** — simulator image + `emptyDir` + `PYTHONPATH`-injected
    worker module (the workspace venv deliberately excludes `vivarium-workbench`,
-   and protocol §2 requires that it need no such dependency) + dial-back. *M*
+   and protocol §2 requires that it need no such dependency) + dial-back.
+   **DONE** (viva-api#288). A ConfigMap carrying only `env_worker.py` was
+   considered and rejected: it lazily imports `vivarium_workbench.lib.*` inside
+   method bodies, so it would pass `initialize` and fail inside `list_generators`.
+   An initContainer stages `__init__.py` + `env_worker.py` + `lib/` — 6.1 MB of a
+   215 MB package, the bulk being the `loom` bundle.
 4. **Workspace registry in viva-api** — table + migration (+ a
    `LEGACY_FINGERPRINTS` marker per the contract) + endpoints + cutover from
-   `~/.pbg/workspaces.json`, retiring the failure class fixed in viva-api#282. *M*
-5. **Workbench remote `EnvironmentResolver`** + composition-root wiring. *S–M*
+   `~/.pbg/workspaces.json`, retiring the failure class fixed in viva-api#282.
+   **NOT STARTED** — never was on the critical path.
+5. **Workbench remote `EnvironmentResolver`** + composition-root wiring.
+   **DONE** (#946) — but see the wiring gap below.
 6. **Lifecycle, GC, warm-set policy** — session end, idle reaping, orphan Jobs,
-   node image pressure. Where this bites in production. *M*
+   node image pressure. **NOT STARTED**, and GC is *blocked on #944*
+   (`WorkspaceStore.persist()`): reaping without it destroys unpushed work.
 7. **Observability** — worker logs surfaced; failures as *handled* errors per the
-   protocol's goals, never a hung HTTP worker. *S–M*
+   protocol's goals, never a hung HTTP worker. **PARTIAL** — a worker that never
+   dials back is deleted and its logs are attached to the raised error (#946);
+   Job logs are available via `GET /env-worker/v1/workers/{name}?include_logs=true`.
 
-≈8–12 PRs across three repos, with a dependency chain before the first
-user-visible win — offset by the machinery this deletes rather than builds.
+**Status 2026-08-26: built, deployed to `sms-api-stanford-test`, and proven** —
+seven PRs, not the 8–12 estimated. A worker pod ran the prebuilt image for
+`sms-ecoli@234dc76`, dialled back, answered `initialize`/`ping`, and
+`list_generators` returned 33 workspace-scoped generators.
 
-**Interim behavior, to be chosen deliberately.** Until this lands, hosted
-environment questions on materialized builds are unanswered; today that surfaces
-loudly as `EnvWorkerUnavailable`. Failing loudly is the right interim posture —
-but it should be a decision on the record, not drift.
+> **⚠ NOT YET IN USE, and this is the honest status.** `default_launcher()` is
+> called by **nothing in production code**: `get_pool()` constructs `WorkerPool()`
+> with no launcher, and the pool defaults to `LocalWorkerLauncher`. So all **25**
+> `get_pool()` call sites still spawn local subprocesses, on hosted deployments
+> too. The remote path has only ever run from explicit calls.
+>
+> Closing that is **not** a one-line default flip. Those call sites include
+> `run_study_analyses`, `render_viz_doc` and `viz_preview`; §2A.7 says heavy
+> analysis belongs in a *job*, not a worker call, and a worker pod is sized for
+> interactive queries (2 GiB). Flipping the default would route heavy work into
+> pods never sized for it, and turn each new `(workspace, interpreter)` key from a
+> millisecond `Popen` into a pod schedule. **Which call sites go remote, and what
+> happens to the heavy ones, is the next real decision** — workstream 8.
+
+8. **Wire the pool to the composition root** — decide per call site (or split
+   interactive vs heavy), size the warm set against node image pressure, then make
+   `get_pool()` consult `default_launcher()`. **NOT STARTED.**
+
+**Interim behavior.** On **prod**, hosted environment questions on materialized
+builds remain unanswered and surface loudly as `EnvWorkerUnavailable` — the right
+posture, and now a decision on the record rather than drift. On **dev**, workers
+are available but unused by request paths until workstream 8.
 
 
 ---
