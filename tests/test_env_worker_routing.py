@@ -199,6 +199,20 @@ def test_job_class_survives_a_venvless_workspace_on_a_hosted_deployment(
         assert pool.call(tmp_path, method)["served_by"] == "remote"
 
 
+def test_no_scale_warning_on_a_laptop(tmp_path, caplog, monkeypatch):
+    """"Sized for interaction" is a property of a hosted worker POD. A laptop
+    subprocess has no such ceiling and running a study there is the ordinary path,
+    so warning would tell the user to dispatch work that has nowhere better to go.
+    Caught by actually running the workbench locally, not by a unit test."""
+    local = _FakeLauncher("local")
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.env_worker_launcher.default_launcher", lambda: local)
+    pool = WorkerPool()
+    with caplog.at_level("WARNING"):
+        pool.call(tmp_path, "run_study")
+    assert not [r for r in caplog.records if "dispatch to viva-api" in r.getMessage()]
+
+
 def test_scale_is_a_separate_axis_from_transport(routed, tmp_path, caplog):
     """`is_job_class` no longer picks a transport; it marks the calls a scale
     precheck will inspect (step 2). Until that exists the gap must be visible,

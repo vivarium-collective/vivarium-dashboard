@@ -144,7 +144,17 @@ class WorkerPool:
         """
         if self._launcher is not None:
             return self._launcher
-        if is_job_class(method) and (method, ws) not in self._warned:
+        if self._deployment_launcher is None:
+            from vivarium_workbench.lib.env_worker_launcher import default_launcher
+            self._deployment_launcher = default_launcher()
+        launcher = self._deployment_launcher
+        # Warn only where the budget is real. "Sized for interaction" is a property
+        # of a hosted worker POD (1 CPU / 2 GiB); a laptop subprocess has no such
+        # ceiling, and running a study there is the ordinary, expected path — so
+        # warning on it would be noise telling the user to dispatch work that has
+        # nowhere better to go. Once per (method, workspace).
+        if (getattr(launcher, "kind", "local") == "remote"
+                and is_job_class(method) and (method, ws) not in self._warned):
             self._warned.add((method, ws))
             logger.warning(
                 "%s runs in this context's env worker, which is sized for "
@@ -153,10 +163,7 @@ class WorkerPool:
                 "remote_run_views.remote_run_submit); the scale precheck that would "
                 "decide automatically is REFACTOR-PLAN §2A.8 workstream 8 step 2.",
                 method)
-        if self._deployment_launcher is None:
-            from vivarium_workbench.lib.env_worker_launcher import default_launcher
-            self._deployment_launcher = default_launcher()
-        return self._deployment_launcher
+        return launcher
 
     def size(self) -> int:
         with self._lock:
