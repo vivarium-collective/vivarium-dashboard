@@ -918,7 +918,14 @@ seven PRs, not the 8–12 estimated. A worker pod ran the prebuilt image for
 
 8. **Wire the pool to the composition root** — decide per call site (or split
    interactive vs heavy), size the warm set against node image pressure, then make
-   `get_pool()` consult `default_launcher()`. **NOT STARTED.**
+   `get_pool()` consult `default_launcher()`. **NOT STARTED — design written up in
+   [`env-worker-routing.md`](env-worker-routing.md).** Its conclusion, in short:
+   classify by **method** at the pool (the single choke point, robust to an
+   incomplete call-site audit), precheck **declared** scale on the study path
+   (`n_seeds × n_generations` — exact, and it catches the 10,000-sim case before
+   it starts), treat the call timeout and pod memory as the stated cost policy
+   rather than a prediction, and **do not** guess expense from a composite
+   reference.
 
 **Interim behavior.** On **prod**, hosted environment questions on materialized
 builds remain unanswered and surface loudly as `EnvWorkerUnavailable` — the right

@@ -167,6 +167,8 @@ code — `get_pool()` builds `WorkerPool()` with no launcher, so the pool defaul
 to `LocalWorkerLauncher` and all 25 `get_pool()` call sites still spawn local
 subprocesses, hosted or not.
 
+**Design for closing it: [`env-worker-routing.md`](env-worker-routing.md).**
+
 Closing that is a real decision, not a default flip: those call sites include
 `run_study_analyses`, `render_viz_doc` and `viz_preview`, and §2A.7 puts heavy
 analysis in a *job* rather than a worker call sized for interactive queries. See
