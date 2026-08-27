@@ -504,6 +504,10 @@ _READONLY_ALLOWED_MUTATIONS = {
     # item 86: non-mutating config computation, same class of usefulness as
     # the always-available GET /api/composite-resolve
     "/api/composite-config-translate",
+    # config->composite translation: also non-mutating (routes to the env
+    # worker's config_to_composite method, no write side effects) — same
+    # class as composite-config-translate above
+    "/api/config-to-composite",
 }
 
 
