@@ -21,16 +21,19 @@ environment coordinate once materialization lands.
 from __future__ import annotations
 
 import logging
-import sys
 import threading
 import time
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from vivarium_workbench.lib.env_compat import get_env
 
 logger = logging.getLogger(__name__)
 from vivarium_workbench.lib.env_worker_client import EnvWorker, EnvWorkerUnavailable
 from vivarium_workbench.lib.env_worker_routing import is_job_class
+
+if TYPE_CHECKING:  # launchers import the pool's callers; keep it type-only
+    from vivarium_workbench.lib.env_worker_launcher import WorkerLauncher
 
 
 def _int_env(name: str, default: int) -> int:
@@ -69,9 +72,9 @@ class WorkerPool:
         # `launcher`, when given, is used for EVERY method (tests, and any caller
         # that wants one explicit transport). When it is None the pool routes per
         # method — see _launcher_for and §2A.8 workstream 8.
-        self._launcher = launcher
-        self._local_launcher = None
-        self._deployment_launcher = None
+        self._launcher: WorkerLauncher | None = launcher
+        self._local_launcher: WorkerLauncher | None = None
+        self._deployment_launcher: WorkerLauncher | None = None
         self._warned: set[tuple[str, str]] = set()
         # K and T_idle (seconds), config-overridable (plan §G).
         self.max_workers = max_workers if max_workers is not None else _int_env("ENV_WORKER_POOL_MAX", 8)
@@ -91,14 +94,15 @@ class WorkerPool:
         """Query the warm worker for this environment. On a worker that died or
         was evicted mid-flight, drop it and respawn once (protocol §9).
 
-        When ``interpreter`` is not given, ``EnvironmentResolver`` picks it from
-        the workspace — its own ``.venv`` if present, else the running Python — so
-        a workspace with a provisioned venv builds under *its* interpreter.
+        When ``interpreter`` is not given, the LAUNCHER names the environment
+        (``env_key``): the workspace's own interpreter for a local worker, the
+        image's commit for a remote one. Order matters — resolving an interpreter
+        first asks a venv-less workspace a question the remote path never needed
+        answered, and under REQUIRE_WORKSPACE_VENV that raises instead of routing.
         """
-        from vivarium_workbench.lib import env_resolver
         ws = str(Path(workspace))
-        interp = interpreter or env_resolver.resolve_interpreter(workspace)
         launcher = self._launcher_for(method, ws)
+        interp = interpreter or launcher.env_key(ws)
         try:
             return self._acquire(ws, interp, launcher).call(method, params)
         except EnvWorkerUnavailable:
@@ -152,14 +156,21 @@ class WorkerPool:
     def discard(self, workspace, *, interpreter: str | None = None) -> None:
         """Evict this environment's worker(s) (e.g. on a session switch).
 
-        Drops BOTH kinds: since methods route per class, one workspace can hold a
-        remote worker (interactive) and a local one (job-class) at the same time,
-        and a switch must not leave either behind.
+        Drops every worker for the workspace, whatever its environment key: methods
+        route per class, so one workspace can hold a remote worker (interactive) and
+        a local one (job-class) at once, and a switch must not leave either behind.
+
+        Matching on the workspace alone — rather than reconstructing the key — is
+        what makes that reliable. The keys are the launchers' to mint (a resolved
+        interpreter, an image commit); guessing one here missed them and quietly
+        left warm workers pinned to the old session.
         """
         ws = str(Path(workspace))
-        interp = interpreter or sys.executable
-        for kind in ("local", "remote"):
-            self._drop(ws, interp, kind)
+        with self._lock:
+            keys = [k for k in self._entries
+                    if k[0] == ws and (interpreter is None or k[1] == interpreter)]
+        for key in keys:
+            self._drop(*key)
 
     def close_all(self) -> None:
         with self._lock:

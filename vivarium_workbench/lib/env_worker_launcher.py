@@ -44,6 +44,19 @@ class WorkerLauncher(Protocol):
     #: share a pool entry.
     kind: str
 
+    def env_key(self, workspace: str) -> str:
+        """Identify the environment this launcher would give the workspace.
+
+        The pool keys warm workers on it, so it must distinguish environments that
+        differ and match ones that don't. It is the launcher's to answer because
+        only the launcher knows what the environment IS: a local worker's is the
+        interpreter it spawns, a remote worker's is the image it runs — and asking
+        the workspace for an interpreter it will never use is what broke the
+        venv-less hosted workspace (a strict-mode resolve raised before the remote
+        launcher, which ignores interpreters, was ever chosen).
+        """
+        ...
+
     def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> EnvWorker:
         ...
 
@@ -52,6 +65,10 @@ class LocalWorkerLauncher:
     """Spawn a subprocess against the workspace's interpreter (today's behavior)."""
 
     kind = "local"
+
+    def env_key(self, workspace: str) -> str:
+        from vivarium_workbench.lib import env_resolver
+        return env_resolver.resolve_interpreter(workspace)
 
     def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> EnvWorker:
         return EnvWorker(workspace, interpreter=interpreter, timeout=timeout)
@@ -93,7 +110,17 @@ class RemoteWorkerLauncher:
         self._advertise_host = advertise_host
         self._bind_host = bind_host
 
-    def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> EnvWorker:
+    def env_key(self, workspace: str) -> str:
+        """The image, named by the commit its build stamp pins.
+
+        NOT the interpreter: the worker runs the simulator image's own Python and
+        never sees a path from this filesystem. Keying on the commit also keeps a
+        re-materialized workspace from being served by a warm worker still running
+        the image it was pinned to before.
+        """
+        return f"image:{self._require_commit(workspace)}"
+
+    def _require_commit(self, workspace: str) -> str:
         commit = _commit_for_workspace(workspace)
         if not commit:
             # Hosted requires every served workspace to be image-backed (§2A.8).
@@ -102,6 +129,10 @@ class RemoteWorkerLauncher:
                 f"workspace {workspace} has no build stamp (.viv-build.json); a hosted "
                 "env worker runs the simulator's prebuilt image and needs its commit"
             )
+        return commit
+
+    def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> EnvWorker:
+        commit = self._require_commit(workspace)
         with DialBackListener(bind_host=self._bind_host) as listener:
             handle = self._client.start_env_worker(
                 commit=commit,

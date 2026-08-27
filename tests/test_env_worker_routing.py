@@ -33,6 +33,9 @@ class _FakeLauncher:
         self.kind = kind
         self.launched = 0
 
+    def env_key(self, workspace):
+        return f"{self.kind}:{workspace}"
+
     def launch(self, workspace, *, interpreter, timeout):
         self.launched += 1
         return _FakeWorker(self.kind)
@@ -112,3 +115,47 @@ def test_every_declared_capability_is_accounted_for():
     # pre-design"), so their presence here is a decision, not an oversight.
     for viz in ("render_viz_doc", "viz_preview", "validate_generated_visualization"):
         assert viz in caps and not is_job_class(viz)
+
+
+# --- the venv-less workspace -------------------------------------------------
+
+def test_interactive_call_survives_a_workspace_with_no_venv(routed, tmp_path, monkeypatch):
+    """The blocker for a minimal seed workspace (#937's supposed dependency).
+
+    A hosted workspace with no `.venv` makes `resolve_interpreter` RAISE under
+    REQUIRE_WORKSPACE_VENV. That must not reach an interactive call: the remote
+    worker runs the simulator image's own Python and never wanted an interpreter
+    from this filesystem. The pool used to resolve one before choosing a launcher,
+    so the strict guard fired on the path that needed it least.
+    """
+    from vivarium_workbench.lib.env_worker_client import EnvWorkerUnavailable
+
+    def _no_venv(ws):
+        raise EnvWorkerUnavailable(f"workspace has no .venv: {ws}")
+
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.env_resolver.resolve_interpreter", _no_venv)
+    pool, local, remote = routed
+    assert pool.call(tmp_path, "registry_catalog")["served_by"] == "remote"
+
+
+def test_the_launcher_names_the_environment_not_the_workspace(routed, tmp_path):
+    """Pool keys come from `env_key`, so the two kinds key on different things —
+    an interpreter for local, an image for remote."""
+    pool, local, remote = routed
+    pool.call(tmp_path, "registry_catalog")
+    pool.call(tmp_path, "run_study")
+    assert {k[1] for k in pool._entries} == {
+        f"remote:{tmp_path}", f"local:{tmp_path}"}
+
+
+def test_discard_without_an_interpreter_evicts_everything_for_the_workspace(routed, tmp_path):
+    """Callers don't know the keys — the launchers mint them. Guessing one (the
+    old `sys.executable` default) matched nothing and left workers pinned to the
+    previous session."""
+    pool, local, remote = routed
+    pool.call(tmp_path, "registry_catalog")
+    pool.call(tmp_path, "run_study")
+    assert pool.size() == 2
+    pool.discard(tmp_path)
+    assert pool.size() == 0
