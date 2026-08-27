@@ -848,7 +848,7 @@
     // Also load the investigation list so the panel can offer a picker when no
     // investigation is branch-current — the user chooses which investigation to
     // load sources INTO (its own sources, not the repo-wide shared sources).
-    var _pList = fetch('/api/investigation-summaries')
+    var _pList = fetch(_api('/api/investigation-summaries'))
       .then(function(r) { return r.json(); })
       .then(function(d) { return (d && d.investigations) || []; })
       .catch(function() { return []; });
@@ -8824,7 +8824,7 @@
       ' <button class="btn-mini" onclick="_rerunInvestigation()" ' +
         'title="Re-run every member study\'s CURRENT baseline spec (re-derives from each study\'s study.yaml)">▶ Run current spec</button>');
     if (name) {
-      fetch('/api/investigation-summaries', {headers: {Accept: 'application/json'}})
+      fetch(_api('/api/investigation-summaries'), {headers: {Accept: 'application/json'}})
         .then(function (r) { return r.json(); })
         .then(function (j) {
           var me = ((j && j.investigations) || []).filter(function (i) { return i.name === name; })[0];
