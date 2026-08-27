@@ -1968,6 +1968,7 @@ export default function App() {
           onApplied={handleApplied}
           state={state}
           onInputsApplied={(s) => setState(s)}
+          onBigraphDocument={(s) => setState(s)}
         />
       ),
     },

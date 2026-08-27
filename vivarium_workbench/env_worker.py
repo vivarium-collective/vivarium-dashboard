@@ -89,7 +89,7 @@ def _write_frame(sock: socket.socket, obj: dict) -> None:
 
 _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
                  "run_process", "process_template",
-                 "viz_classes", "resolve_composite_state", "observables",
+                 "viz_classes", "resolve_composite_state", "config_to_composite", "observables",
                  "study_readout_check", "attach_process_docs", "discover_composites", "composites_full",
                  "validate_generated_visualization", "run_study_analyses", "run_study", "run_investigation_analysis", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
 
@@ -1014,6 +1014,35 @@ def _render_port_schemas(doc):
         walk(doc)
     except Exception:  # noqa: BLE001
         pass
+
+
+def _config_to_composite(params: dict) -> dict:
+    """Translate a vEcoli-style config into a loom-renderable {state, schema}
+    document, in the workspace interpreter (the fork + translator live here).
+
+    Guarded import: a workspace without the v2ecoli-family translator returns
+    ``{"__unavailable__": True}`` so the route can answer cleanly rather than 500.
+    """
+    if _workspace and _workspace not in sys.path:
+        sys.path.insert(0, _workspace)
+    _import_workspace_package(_workspace)
+    try:
+        from v2ecoli.library.config_to_composite import (
+            config_to_composite, register_declared_processes)
+    except Exception:  # noqa: BLE001 — no translator in this workspace
+        return {"__unavailable__": True}
+    try:
+        from v2ecoli.core import build_core
+        cfg = (params or {}).get("config") or {}
+        core = build_core()
+        register_declared_processes(core, cfg)
+        doc = config_to_composite(cfg)
+        # numpy-free already (declared-layer shapes are plain JSON); summarize
+        # defensively in case a process_config carried an array.
+        doc = _summarize_large_values(doc)
+        return {"state": doc.get("state", {}), "schema": doc.get("schema", {})}
+    except Exception as e:  # noqa: BLE001
+        return {"__error__": str(e)}
 
 
 def _resolve_composite_state(params: dict) -> dict:
@@ -2820,6 +2849,8 @@ def _handle(method: str, params: dict) -> dict:
         return _list_visualizations()
     if method == "resolve_composite_state":
         return _resolve_composite_state(params)
+    if method == "config_to_composite":
+        return _config_to_composite(params)
     if method == "resolve_inner_composite_state":
         return _resolve_inner_composite_state(params)
     if method == "observables":

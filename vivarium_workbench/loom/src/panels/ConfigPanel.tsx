@@ -9,7 +9,7 @@
 // bottom run bar runs with whatever config was last Applied.
 import { useEffect, useMemo, useState } from 'react';
 import type { ParameterDecl } from '../api';
-import { resolveComposite, translateExternalConfig } from '../api';
+import { resolveComposite, translateExternalConfig, configToComposite } from '../api';
 import { _initialValue, _castFormValue } from './SetupRunPanel';
 
 type FormValue = string | number | boolean;
@@ -144,6 +144,10 @@ export interface ConfigPanelProps {
   /** Apply Inputs: hand back the full state with edited input stores merged in,
    *  so App re-renders the graph (values manifest) and the JSON reflects it. */
   onInputsApplied?: (state: unknown) => void;
+  /** View as bigraph: hand back the document rendered from an external config's
+   *  OWN declared structure (via /api/config-to-composite) — NOT a build, and
+   *  distinct from Apply/onApplied (which resolves this composite's config). */
+  onBigraphDocument?: (state: unknown) => void;
 }
 
 export function ConfigPanel(props: ConfigPanelProps) {
@@ -214,6 +218,7 @@ export function ConfigPanel(props: ConfigPanelProps) {
   const [extConfigApplying, setExtConfigApplying] = useState(false);
   const [extConfigError, setExtConfigError] = useState<string | null>(null);
   const [extConfigResult, setExtConfigResult] = useState<string | null>(null);
+  const [viewingBigraph, setViewingBigraph] = useState(false);
 
   function handleExtConfigFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -221,21 +226,30 @@ export function ConfigPanel(props: ConfigPanelProps) {
     file.text().then(setExtConfigText).catch((err) => setExtConfigError(String(err)));
   }
 
-  async function handleApplyExtConfig() {
-    if (!props.compositeId) return;
-    setExtConfigError(null);
-    setExtConfigResult(null);
+  /** Parse + validate `extConfigText` as a JSON object, setting `extConfigError`
+   *  on failure. Shared by "Apply config" (match onto this composite's params)
+   *  and "View as bigraph" (render the config's own declared structure). */
+  function _parseExtConfigText(): Record<string, unknown> | null {
     let parsed: unknown;
     try {
       parsed = JSON.parse(extConfigText);
     } catch (e) {
       setExtConfigError('Not valid JSON: ' + (e instanceof Error ? e.message : String(e)));
-      return;
+      return null;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       setExtConfigError('Config must be a JSON object (not an array or scalar)');
-      return;
+      return null;
     }
+    return parsed as Record<string, unknown>;
+  }
+
+  async function handleApplyExtConfig() {
+    if (!props.compositeId) return;
+    setExtConfigError(null);
+    setExtConfigResult(null);
+    const parsed = _parseExtConfigText();
+    if (!parsed) return;
     setExtConfigApplying(true);
     try {
       const res = await translateExternalConfig(props.compositeId, parsed as Record<string, unknown>);
@@ -255,6 +269,26 @@ export function ConfigPanel(props: ConfigPanelProps) {
       setExtConfigError(e instanceof Error ? e.message : String(e));
     } finally {
       setExtConfigApplying(false);
+    }
+  }
+
+  /** View as bigraph: render the config's OWN declared structure — no build,
+   *  distinct from "Apply config" (which matches keys onto THIS composite's
+   *  params) and from Apply/resolveComposite. */
+  async function handleViewAsBigraph() {
+    setExtConfigError(null);
+    setExtConfigResult(null);
+    const parsed = _parseExtConfigText();
+    if (!parsed) return;
+    setViewingBigraph(true);
+    try {
+      const res = await configToComposite(parsed);
+      props.onBigraphDocument?.(res.state);
+      setExtConfigResult('✓ Rendered as bigraph document.');
+    } catch (e) {
+      setExtConfigError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setViewingBigraph(false);
     }
   }
 
@@ -391,6 +425,11 @@ export function ConfigPanel(props: ConfigPanelProps) {
               <button className="sr-run-btn cfg-apply-btn" onClick={handleApplyExtConfig}
                 disabled={extConfigApplying || props.readOnly || !props.compositeId || !extConfigText.trim()}>
                 {extConfigApplying ? 'Matching…' : 'Apply config'}
+              </button>
+              <button type="button" className="cfg-reset-btn" onClick={handleViewAsBigraph}
+                disabled={viewingBigraph || props.readOnly || !extConfigText.trim() || !props.onBigraphDocument}
+                title="Render this config's own declared structure as a bigraph document — no build">
+                {viewingBigraph ? 'Rendering…' : 'View as bigraph'}
               </button>
             </div>
           </div>
