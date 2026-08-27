@@ -1,9 +1,18 @@
-"""Method-class routing at the pool — §2A.8 workstream 8 step 1.
+"""Method-class routing at the pool — §2A.8 workstream 8 step 1 (corrected).
 
-The pool is the one choke point all 25 `get_pool()` call sites pass through, and
-it already sees the method name. These tests pin the property that makes that
-worth doing: **a job-class method cannot reach a remote worker**, whatever the
-deployment is configured for and whichever call site issued it.
+The first version of step 1 pinned job-class methods to a LOCAL subprocess even
+on a hosted deployment. That inverted the rule `env_worker_launcher` states —
+"selected by deployment topology, not preference" — by making transport a
+per-method choice, and on a hosted deployment it could not work at all: the
+workbench pod's interpreter cannot import the workspace package, and the bridge
+that let a venv-less build borrow the base workspace's venv died when the base
+became a scaffold.
+
+These tests pin the corrected property: **transport follows the deployment, for
+every method**, and a session's context supplies both halves of its environment
+(its dir on the PVC, the image its build stamp names). What separates a study
+from a catalog query is SCALE, which dispatches to viva-api — a different axis
+entirely, not a different launcher.
 """
 import re
 from pathlib import Path
@@ -55,13 +64,15 @@ def routed(monkeypatch):
 # --- the property worth having ----------------------------------------------
 
 @pytest.mark.parametrize("method", sorted(JOB_CLASS_METHODS))
-def test_job_class_methods_never_reach_a_remote_worker(routed, tmp_path, method):
-    """A worker pod is sized for interaction (2 GiB). A study on this system
-    declares 1000 seeds x 10 generations — that must not land there."""
+def test_job_class_methods_run_in_the_deployments_own_environment(routed, tmp_path, method):
+    """Job-class work runs in the active context's environment, like everything
+    else. On a hosted deployment that is the build's own image — the same image
+    the simulation itself runs in, and strictly more correct than a subprocess in
+    the workbench pod, which cannot import the workspace package at all."""
     pool, local, remote = routed
     r = pool.call(tmp_path, method, interpreter="/usr/bin/python3")
-    assert r["served_by"] == "local"
-    assert remote.launched == 0
+    assert r["served_by"] == "remote"
+    assert local.launched == 0
 
 
 @pytest.mark.parametrize("method", ["registry_catalog", "discover_composites",
@@ -72,21 +83,24 @@ def test_interactive_methods_follow_the_deployment(routed, tmp_path, method):
     assert r["served_by"] == "remote"
 
 
-def test_one_workspace_can_hold_both_kinds_at_once(routed, tmp_path):
-    """Keyed by kind: a local and a remote worker for the same (ws, interpreter)
-    are different environments and must not share a pool entry."""
+def test_one_workspace_holds_one_worker_across_method_classes(routed, tmp_path):
+    """The corrected routing means a study and a catalog query share the context's
+    single environment, instead of splitting it into two transports. The pool key
+    still carries `kind`, so a deployment that genuinely runs both remains
+    representable — nothing here routes to two at once any more."""
     pool, local, remote = routed
     assert pool.call(tmp_path, "registry_catalog", interpreter="/x")["served_by"] == "remote"
-    assert pool.call(tmp_path, "run_study", interpreter="/x")["served_by"] == "local"
-    assert pool.size() == 2
-    assert (local.launched, remote.launched) == (1, 1)
+    assert pool.call(tmp_path, "run_study", interpreter="/x")["served_by"] == "remote"
+    assert pool.size() == 1
+    assert (local.launched, remote.launched) == (0, 1)
 
 
-def test_discard_evicts_both_kinds(routed, tmp_path):
-    """A session switch must not leave the other kind behind."""
+def test_discard_evicts_every_kind(routed, tmp_path):
+    """A session switch must not leave a worker of any kind behind — still true
+    when a pool holds entries from an explicit launcher alongside the deployment's."""
     pool, local, remote = routed
     pool.call(tmp_path, "registry_catalog", interpreter="/x")
-    pool.call(tmp_path, "run_study", interpreter="/x")
+    pool._acquire(str(tmp_path), "/x", local)  # simulate a local entry for the same ws
     assert pool.size() == 2
     pool.discard(tmp_path, interpreter="/x")
     assert pool.size() == 0
@@ -140,13 +154,13 @@ def test_interactive_call_survives_a_workspace_with_no_venv(routed, tmp_path, mo
 
 
 def test_the_launcher_names_the_environment_not_the_workspace(routed, tmp_path):
-    """Pool keys come from `env_key`, so the two kinds key on different things —
-    an interpreter for local, an image for remote."""
+    """Pool keys come from `env_key`, so the environment is named by whatever the
+    deployment's launcher says it is — an image on hosted, an interpreter on a
+    laptop — never by asking the workspace for something that transport ignores."""
     pool, local, remote = routed
     pool.call(tmp_path, "registry_catalog")
     pool.call(tmp_path, "run_study")
-    assert {k[1] for k in pool._entries} == {
-        f"remote:{tmp_path}", f"local:{tmp_path}"}
+    assert {k[1] for k in pool._entries} == {f"remote:{tmp_path}"}
 
 
 def test_discard_without_an_interpreter_evicts_everything_for_the_workspace(routed, tmp_path):
@@ -155,7 +169,45 @@ def test_discard_without_an_interpreter_evicts_everything_for_the_workspace(rout
     previous session."""
     pool, local, remote = routed
     pool.call(tmp_path, "registry_catalog")
-    pool.call(tmp_path, "run_study")
+    pool._acquire(str(tmp_path), "/other", local)
     assert pool.size() == 2
     pool.discard(tmp_path)
     assert pool.size() == 0
+
+
+def test_job_class_survives_a_venvless_workspace_on_a_hosted_deployment(
+        routed, tmp_path, monkeypatch):
+    """The concrete breakage the correction removes.
+
+    On a hosted deployment nothing has a `.venv`: the slim image ships none, the
+    base workspace is a scaffold, and `materialize_build` extracts a tarball
+    without provisioning one. Pinning job-class to a local subprocess therefore
+    made every study, analysis and process run raise "workspace has no .venv" —
+    advice pointing at the one thing §2A.8 deliberately removed.
+
+    Routing by topology never asks the question, so the call goes through.
+    """
+    from vivarium_workbench.lib.env_worker_client import EnvWorkerUnavailable
+
+    def _no_venv(ws):
+        raise EnvWorkerUnavailable(f"workspace has no .venv: {ws}")
+
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.env_resolver.resolve_interpreter", _no_venv)
+    pool, local, remote = routed
+    for method in sorted(JOB_CLASS_METHODS):
+        assert pool.call(tmp_path, method)["served_by"] == "remote"
+
+
+def test_scale_is_a_separate_axis_from_transport(routed, tmp_path, caplog):
+    """`is_job_class` no longer picks a transport; it marks the calls a scale
+    precheck will inspect (step 2). Until that exists the gap must be visible,
+    and warned once per (method, workspace) rather than on every call."""
+    pool, local, remote = routed
+    with caplog.at_level("WARNING"):
+        pool.call(tmp_path, "run_study")
+        pool.call(tmp_path, "run_study")
+        pool.call(tmp_path, "registry_catalog")
+    warnings = [r for r in caplog.records if "dispatch to viva-api" in r.getMessage()]
+    assert len(warnings) == 1, [r.getMessage() for r in warnings]
+    assert "run_study" in warnings[0].getMessage()
