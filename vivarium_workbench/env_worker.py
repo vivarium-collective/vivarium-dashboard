@@ -2919,6 +2919,22 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     _workspace = args.workspace
 
+    # A workspace that does not exist is not a workspace. Without this the worker
+    # starts happily and _list_generators() falls through to discover_generators()
+    # -- a GLOBAL scan of everything installed in the image -- so a mistyped or
+    # unmounted path yields a populated, plausible, WRONG answer rather than an
+    # error. Observed on dev: a bogus path returned 53 generators (19 of them from
+    # an unrelated package) where the real workspace returns 33.
+    #
+    # Checked only for the dial-back transport: a local worker is spawned by a
+    # parent that already resolved the path, and tests spawn against tmp dirs.
+    if args.connect_to is not None and not os.path.isdir(args.workspace):
+        raise SystemExit(
+            f"env_worker: --workspace {args.workspace!r} is not a directory. "
+            "A hosted worker reads the simulator image's own checkout; check "
+            "ENV_WORKER_WORKSPACE_PATH on the deployment."
+        )
+
     if args.connect_to is not None:
         sock = _dial_back(args.connect_to, args.token, args.connect_timeout)
     else:
