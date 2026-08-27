@@ -5,6 +5,9 @@ holds a workspace's compute environment (`build_core()`, the generator
 `_REGISTRY`, the workspace package, `v2ecoli`) and answers the workbench's
 interactive queries out-of-process.
 
+Operational view (both transports end to end, with a lifecycle sequence diagram):
+[`env-worker-runtime.md`](env-worker-runtime.md).
+
 Context and the decisions this realizes: `docs/REFACTOR-PLAN.md` **§2A.7**
 (`EnvironmentResolver` as a per-session warm env worker) and **§2A.6**
 (`WorkspaceContext` / `WorkspaceStore`, which owns the worker's lifecycle). This
