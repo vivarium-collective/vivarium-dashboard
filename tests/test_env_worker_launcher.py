@@ -71,6 +71,17 @@ def test_deployment_that_declares_a_dial_back_host_gets_the_remote_launcher(monk
     assert isinstance(default_launcher(), RemoteWorkerLauncher)
 
 
+def test_remote_launcher_talks_to_the_configured_api_not_localhost(monkeypatch):
+    """A bare SmsApiClient() takes its localhost:8080 default, which inside a pod
+    is the workbench itself — every launch would fail to reach viva-api. Caught
+    on the live dev pod, where SMS_API_BASE is http://api:8000."""
+    monkeypatch.setenv("VIVARIUM_WORKBENCH_ENV_WORKER_ADVERTISE_HOST", "10.99.45.175")
+    monkeypatch.setenv("SMS_API_BASE", "http://api:8000")
+    monkeypatch.delenv("VIVA_API_BASE", raising=False)
+    launcher = default_launcher()
+    assert launcher._client.base_url == "http://api:8000"
+
+
 def test_blank_host_is_treated_as_unset_not_as_a_dial_back_target(monkeypatch):
     """An empty env var is how a manifest says "not configured" — it must not
     produce a remote launcher that tells workers to dial back to ''."""
