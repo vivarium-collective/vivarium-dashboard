@@ -23,10 +23,40 @@ _RUN_ORDER: list | None = None
 
 
 def _run_study_hook(workspace: str, study_slug: str) -> dict:
-    """Run one study: skeleton-record order, or dispatch to the env worker."""
+    """Run one study: skeleton-record order, or dispatch to the env worker.
+
+    Honors ``remote_pinned.resolve_run_target`` first (§2A.8 workstream 8 step
+    2a). ``run_study`` is a **run entrypoint**, and item 18 made that function
+    THE authoritative local-vs-deployment answer for every one of them
+    "never by which button happened to be clicked". This path was clicking a
+    button: it called the worker unconditionally, so a user who picked a
+    materialized remote build — or a deployment that pins remote runs — still
+    had studies executed in an env worker. `study_runs.launch_into_study`
+    already threads the target into `run_core.invoke_run`; this did not.
+
+    On ``deployment`` it raises rather than dispatching. Dispatching from inside
+    a ``process_bigraph`` Step is a real design question — whether the Step
+    blocks on a Batch job or the investigation composite itself becomes async —
+    and inventing an answer here would bury it. Raising keeps the user's choice
+    honored (their work does not silently run in the wrong place) and puts the
+    decision where it can be made deliberately.
+    """
     if _RUN_ORDER is not None:
         _RUN_ORDER.append(study_slug)
         return {"study": study_slug, "ran": True}
+
+    from pathlib import Path
+
+    from vivarium_workbench.lib import remote_pinned
+
+    if remote_pinned.resolve_run_target(Path(workspace)) == "deployment":
+        raise RuntimeError(
+            f"study {study_slug!r} resolves to the 'deployment' run target, so it "
+            "must not run in an env worker. Run it through the study-run path "
+            "(study_runs.launch_into_study -> run_core.invoke_run), which threads "
+            "the target and dispatches to viva-api. Investigation composites do "
+            "not dispatch yet — REFACTOR-PLAN §2A.8 workstream 8 step 2a."
+        )
 
     from vivarium_workbench.lib.env_worker_pool import get_pool
 
