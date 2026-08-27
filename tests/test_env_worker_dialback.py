@@ -202,3 +202,25 @@ def test_worker_refuses_dial_back_without_a_token(tmp_path):
                        capture_output=True, text=True, env={"PATH": "/usr/bin:/bin"})
     assert r.returncode != 0
     assert "token" in r.stderr.lower()
+
+
+def test_dial_back_worker_refuses_a_workspace_that_does_not_exist(listener, tmp_path):
+    """Otherwise the worker starts fine and _list_generators() silently falls back
+    to a GLOBAL scan of installed packages — a populated, plausible, wrong answer.
+    Seen on dev: a bogus path returned 53 generators vs the real workspace's 33."""
+    env = {**os.environ, "VIVARIUM_ENV_WORKER_TOKEN": listener.token}
+    r = subprocess.run(
+        [sys.executable, WORKER, "--connect-to", f"127.0.0.1:{listener.port}",
+         "--workspace", str(tmp_path / "nope")],
+        capture_output=True, text=True, env=env,
+    )
+    assert r.returncode != 0
+    assert "not a directory" in r.stderr
+
+
+def test_local_transport_still_accepts_any_workspace(tmp_path):
+    """The guard is dial-back only: a local worker's parent already resolved the
+    path, and the existing suite spawns against bare tmp dirs."""
+    from vivarium_workbench.lib.env_worker_client import EnvWorker
+    with EnvWorker(tmp_path) as w:
+        assert w.call("ping")["ok"] is True
