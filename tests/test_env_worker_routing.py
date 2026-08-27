@@ -225,3 +225,58 @@ def test_scale_is_a_separate_axis_from_transport(routed, tmp_path, caplog):
     warnings = [r for r in caplog.records if "dispatch to viva-api" in r.getMessage()]
     assert len(warnings) == 1, [r.getMessage() for r in warnings]
     assert "run_study" in warnings[0].getMessage()
+
+
+# --- run entrypoints honor the run target (step 2a) --------------------------
+
+def test_run_process_is_not_job_class():
+    """`env_worker._run_process` builds one class, fills its ports and runs a
+    SINGLE `update()`, degrading to {ok: False, stage, error} rather than raising.
+    That is the Composite Explorer's "try this process" probe, not a job. It was
+    classified on the `run_` prefix rather than on what it does."""
+    from vivarium_workbench.lib.env_worker_routing import is_job_class
+    assert not is_job_class("run_process")
+
+
+def test_run_entrypoints_are_narrower_than_job_class():
+    """`resolve_run_target` governs run ENTRYPOINTS. Post-run analyses are
+    job-class (heavy) but are not entrypoints — gating them on the run target
+    would stop post-run analysis outright on any pinned deployment."""
+    from vivarium_workbench.lib.env_worker_routing import (
+        JOB_CLASS_METHODS, RUN_ENTRYPOINT_METHODS, is_run_entrypoint)
+    assert RUN_ENTRYPOINT_METHODS < JOB_CLASS_METHODS
+    assert is_run_entrypoint("run_study")
+    for m in ("run_study_analyses", "run_investigation_analysis"):
+        assert not is_run_entrypoint(m)
+
+
+def test_study_step_refuses_to_run_a_deployment_target_in_a_worker(tmp_path, monkeypatch):
+    """The step-2a defect: a user picks a remote build (or the deployment pins
+    remote runs), and the investigation composite runs the study in a worker
+    anyway — silently ignoring the choice they made."""
+    from vivarium_workbench.lib import investigation_steps
+
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.remote_pinned.resolve_run_target", lambda p: "deployment")
+
+    def _boom(*a, **k):
+        raise AssertionError("must not reach the env worker on a deployment target")
+
+    monkeypatch.setattr("vivarium_workbench.lib.env_worker_pool.get_pool", _boom)
+    with pytest.raises(RuntimeError, match="must not run in an env worker"):
+        investigation_steps._run_study_hook(str(tmp_path), "some-study")
+
+
+def test_study_step_still_uses_the_worker_on_a_local_target(tmp_path, monkeypatch):
+    """The local path is unchanged — this gate must not cost a laptop its runs."""
+    from vivarium_workbench.lib import investigation_steps
+
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.remote_pinned.resolve_run_target", lambda p: "local")
+
+    class _Pool:
+        def call(self, ws, method, params=None):
+            return {"ran": method}
+
+    monkeypatch.setattr("vivarium_workbench.lib.env_worker_pool.get_pool", lambda: _Pool())
+    assert investigation_steps._run_study_hook(str(tmp_path), "s")["ran"] == "run_study"

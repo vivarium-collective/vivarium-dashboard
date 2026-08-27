@@ -32,8 +32,30 @@ JOB_CLASS_METHODS = frozenset({
     "run_study",                  # a study's simulation(s)
     "run_study_analyses",         # the post-run v2ecoli analysis pass
     "run_investigation_analysis",  # an investigation's analysis step
-    "run_process",                # an arbitrary process/composite, N steps
 })
+# `run_process` was here and is NOT job-class: `env_worker._run_process` builds one
+# class from the registry, fills its input ports and runs a SINGLE `update()`,
+# degrading to `{ok: False, stage, error}` rather than raising. That is a probe —
+# the Composite Explorer's "try this process" button — not a job. It was
+# classified on the `run_` prefix rather than on what it does, which is the
+# mistake this comment exists to stop being repeated.
+
+
+#: Methods that are a *run entrypoint*, where `resolve_run_target` (item 18) is
+#: authoritative. Its own docstring names exactly this class: "every dashboard run
+#: entrypoint (Composites tab, Study tab, CLI, batch worker, rerun)".
+#:
+#: Deliberately NARROWER than JOB_CLASS_METHODS. `run_study_analyses` and
+#: `run_investigation_analysis` are post-run analysis over output that already
+#: exists. They can be heavy — but heaviness is the SCALE axis (step 2b), not a
+#: question of where a *run* executes. Gating them on the run target would stop
+#: post-run analysis outright on any pinned deployment, for no principled reason.
+RUN_ENTRYPOINT_METHODS = frozenset({"run_study"})
+
+
+def is_run_entrypoint(method: str) -> bool:
+    """Whether ``remote_pinned.resolve_run_target`` governs this method."""
+    return method in RUN_ENTRYPOINT_METHODS
 
 
 def is_job_class(method: str) -> bool:
