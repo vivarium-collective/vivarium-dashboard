@@ -1,5 +1,16 @@
 // study-detail.js — wires the six-card Study Detail page to /api/study-* routes.
 (function() {
+  // Snapshot detection — authoritative and race-free. The body.snapshot class
+  // is only added on DOMContentLoaded (walkthrough.js), so any resolve that
+  // fires during initial render can read it as false and fall through to the
+  // LIVE /api/…?query route, which 404s in a static bundle (→ "Could not
+  // resolve"). __DASH_CONFIG__.mode is set synchronously in the inline config
+  // script before any async work, so prefer it and keep the class as a
+  // fallback. Mirrors the robust check in configure-run.js.
+  function _isSnapshot() {
+    return document.body.classList.contains('snapshot')
+      || !!(window.__DASH_CONFIG__ && window.__DASH_CONFIG__.mode === 'snapshot');
+  }
   // ── G3: shared outcome vocabulary (Fable §10.1, §14.1(4)) ────────────────
   // JS mirror of vivarium_workbench/lib/study_page.py's outcome_label/_class/
   // _glyph — SAME token map, so client-rendered outcomes (e.g. verdict pills
@@ -887,7 +898,7 @@
       var baselineInput = block.querySelector('.baseline-composite-input');
       var baselineName = baselineInput ? baselineInput.getAttribute('data-baseline-name') : '';
       var _cfgApi = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
-      var _cfgUrl = document.body.classList.contains('snapshot')
+      var _cfgUrl = _isSnapshot()
         ? _cfgApi('/api/composite-resolve/' + encodeURIComponent(composite) + '.json')
         : '/api/composite-resolve?id=' + encodeURIComponent(composite) + '&overrides=' + encodeURIComponent(overridesJson);
       fetch(_cfgUrl)
@@ -978,7 +989,7 @@
       // Snapshot-aware: a read-only bundle has no live /api/composite-resolve,
       // so publish.py bakes the card payload to api/composite-resolve/<id>.json.
       var _mcApi = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
-      var _mcUrl = document.body.classList.contains('snapshot')
+      var _mcUrl = _isSnapshot()
         ? _mcApi('/api/composite-resolve/' + encodeURIComponent(entry.id) + '.json')
         : '/api/composite-resolve?id=' + encodeURIComponent(entry.id) + '&overrides=' + encodeURIComponent(entry.overridesJson);
       fetch(_mcUrl)
@@ -2075,7 +2086,7 @@
   function _assuranceUrl(endpoint, slug) {
     var api = (window.DataSource && window.DataSource.apiUrl)
       ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
-    return document.body.classList.contains('snapshot')
+    return _isSnapshot()
       ? api('/api/' + endpoint + '/' + encodeURIComponent(slug) + '.json')
       : '/api/' + endpoint + '?study=' + encodeURIComponent(slug);
   }
