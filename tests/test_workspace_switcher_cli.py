@@ -15,7 +15,7 @@ import pytest
 @pytest.fixture
 def pbg_home(tmp_path, monkeypatch):
     home = tmp_path / "pbg-home"
-    monkeypatch.setenv("PBG_HOME", str(home))
+    monkeypatch.setenv("VIVA_HOME", str(home))
     return home
 
 
@@ -39,7 +39,7 @@ def test_cmd_serve_registers_on_boot(pbg_home, workspace_dir):
     """Spawning `vivarium-dashboard serve` should write ~/.pbg/servers/<name>.json
     within a few seconds, and remove it after we SIGTERM the process."""
     port = _free_port()
-    env = {**os.environ, "PBG_HOME": str(pbg_home)}
+    env = {**os.environ, "VIVA_HOME": str(pbg_home)}
     proc = subprocess.Popen(
         [sys.executable, "-m", "vivarium_workbench.cli",
          "serve", "--workspace", str(workspace_dir), "--port", str(port)],
@@ -108,7 +108,7 @@ def test_cmd_serve_continues_when_registration_fails(tmp_path, workspace_dir):
                        "--port", {str(port)!r}]))
     """))
 
-    env = {**os.environ, "PBG_HOME": str(pbg_home)}
+    env = {**os.environ, "VIVA_HOME": str(pbg_home)}
     proc = subprocess.Popen(
         [sys.executable, str(wrapper)],
         env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
