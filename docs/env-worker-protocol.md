@@ -5,12 +5,17 @@ holds a workspace's compute environment (`build_core()`, the generator
 `_REGISTRY`, the workspace package, `v2ecoli`) and answers the workbench's
 interactive queries out-of-process.
 
+Operational view (both transports end to end, with a lifecycle sequence diagram):
+[`env-worker-runtime.md`](env-worker-runtime.md).
+
 Context and the decisions this realizes: `docs/REFACTOR-PLAN.md` **§2A.7**
 (`EnvironmentResolver` as a per-session warm env worker) and **§2A.6**
 (`WorkspaceContext` / `WorkspaceStore`, which owns the worker's lifecycle). This
 doc specifies the wire contract those sections left open.
 
-Status: **in progress.** Transport + lifecycle and the `initialize` / `ping` /
+Status: **in progress.** BOTH transports are implemented — the local
+`socketpair` (§5) and the dial-back cloud adapter (§5A, 2026-08-26). Transport +
+lifecycle and the `initialize` / `ping` /
 `list_generators` / `registry_catalog` / `viz_classes` / `resolve_composite_state`
 / `observables` / `study_readout_check` / `shutdown` methods are implemented
 (`vivarium_workbench/env_worker.py`, warm-pooled via `lib/env_worker_pool.py`);
@@ -47,9 +52,13 @@ local), never worker calls — see §12.
 - The HTTP process imports **no** workspace Python; every environment fact comes
   through this protocol.
 - The **message schema is the contract**; the transport is an adapter. The same
-  messages ride a local socket (local adapter) or HTTP-to-viva-api (cloud
-  adapter) — so `EnvironmentResolver`'s local→cloud swap is a transport change,
-  not a re-design.
+  messages ride a local socket (local adapter) or a **dial-back TCP connection
+  from a worker running in its own pod** (cloud adapter) — so
+  `EnvironmentResolver`'s local→cloud swap is a transport change, not a
+  re-design. *(Realized 2026-08-26; §5A. Note this doc originally predicted the
+  cloud adapter as "HTTP-to-viva-api". It is not: viva-api creates and deletes the
+  worker's **Job**, but the protocol itself rides a direct socket, and §§6–11 were
+  not touched — which is the claim this bullet makes, and it held.)*
 - A broken workspace (bad `build_core`, a generator that raises or hangs) is a
   **handled, surfaced error**, never a hung or crashed HTTP worker.
 - The workspace venv needs **no** `vivarium-workbench` dependency (§4).
@@ -146,7 +155,7 @@ workspace `pbg_<project>` package, `v2ecoli`). It never imports
   sanitization, §10) must be **self-contained / stdlib-only** in the worker
   module, since the workbench package isn't importable there.
 
-## 5. Transport & framing (local adapter)
+## 5. Transport & framing (local adapter — see §5A for the cloud adapter)
 
 - **Channel:** one `AF_UNIX` `socketpair()`. The parent keeps one end and passes
   the other to the child via `subprocess(..., pass_fds=[fd])` after
@@ -165,6 +174,36 @@ workspace `pbg_<project>` package, `v2ecoli`). It never imports
   large and may be pretty-printed elsewhere; read-exactly-N is robust.
 - **Max frame size:** a configured cap (e.g. 64 MiB) → over-cap is a protocol
   error, not an OOM.
+
+## 5A. Transport — dial-back (cloud adapter)
+
+Implemented 2026-08-26 (vivarium-workbench#945, REFACTOR-PLAN §2A.8). A hosted
+worker runs in **its own pod, from the simulator's own prebuilt image**, so there
+is no parent to inherit a socketpair from.
+
+- **Direction: the worker dials back.** The workbench listens on an ephemeral
+  port; the worker connects out (`--connect-to HOST:PORT`). Not a style choice:
+  viva-api's service account may create **Jobs but not Services**, so a worker pod
+  has no stable DNS name to dial, and the alternative (reading `status.podIP`)
+  needs pod-get on the workbench side plus a race against scheduling. Dial-back
+  also keeps the workbench free of cluster API access entirely (§2B.2).
+- **Handshake, below the protocol.** A listening port is an attack surface, so the
+  worker's first frame must carry a one-time token (compared with
+  `compare_digest`); anything else is closed **before reaching the method
+  catalog**. The token travels in the environment
+  (`VIVARIUM_ENV_WORKER_TOKEN`), never in argv — a pod's command line is
+  world-readable. Use an **alphanumeric** token: a base64url one can begin with
+  `-` and is then parsed as a flag by any argv consumer (~2% of spawns, measured).
+- **Framing and messages are identical** — the same `uint32` length prefix and the
+  same §§6–11 JSON-RPC. `EnvWorker.from_socket()` drives a dial-back socket with
+  exactly the code the socketpair uses.
+- **Lifecycle differs in one respect:** there is no local process. `alive()`
+  reports the socket, and terminating is *not* the client's business — viva-api
+  owns the Job. Closing the worker deletes it.
+- **The worker is stateless w.r.t. the record:** specs travel in messages
+  (§2A.2's composite-code boundary rule), so the pod needs only an `emptyDir` and
+  never mounts the workspace PVC — which is what frees it from that volume's
+  `ReadWriteOnce` single-node binding.
 
 ## 6. Message model — JSON-RPC 2.0 (subset)
 

@@ -256,7 +256,7 @@ This spec's comparison is a *consumer* of that pattern, not its driver.
 
 | Repo | Evidence |
 |---|---|
-| vivarium-workbench | HTTP process purged of workspace Python (env workers, #530–#536); session-isolated build clones (#729/#763); the workbench image takes the workspace env from the workspace's **own per-commit image** (item 39 / Fix B) |
+| vivarium-workbench | HTTP process purged of workspace Python (env workers, #530–#536); session-isolated build clones (#729/#763); the workbench image takes the workspace env from the workspace's **own per-commit image** (item 39 / Fix B) — *superseded 2026-08-26 by #932/#933: the image now builds from the workbench's own lock (15.3 GB → 744 MB) and `WORKSPACE_IMAGE` is gone; the per-commit image is instead run directly as an env worker, REFACTOR-PLAN §2A.8* |
 | viva-api | Everything executes as **per-commit container jobs on AWS Batch**; Array jobs + `dependsOn` chaining landed and fixed against real AWS (#226/#229, in prod since 0.9.40); chain-dispatch campaigns with per-seed progress (item 6 — its workbench half was #853); **vEcoli already runs as its own image** (`vecoli:ray` in Batch MNP job definitions; a `vecoli-github-pat` build secret; "ensure the vEcoli repo is cloned and image is built") |
 | sms-ecoli | **Item 71** (2026-08-18): the self-contained simulation *software* image — no baked data, ParCa computed/fetched at job time, "workload-owned, like vEcoli's image" |
 
