@@ -10886,7 +10886,8 @@
         var pop = document.getElementById('dag-followups-popover');
         if (pop) pop.remove();
         alert('Created: ' + res.body.new_study_name + '\nOpening it now.');
-        window.location.href = '/studies/' + encodeURIComponent(res.body.new_study_name);
+        window.location.href = (window.__BASE_PATH__ || '') + '/studies/' +
+          encodeURIComponent(res.body.new_study_name);
       });
   }
   window._seedFollowupAndOpen = _seedFollowupAndOpen;

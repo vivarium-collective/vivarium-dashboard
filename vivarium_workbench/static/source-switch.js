@@ -27,7 +27,14 @@
     _close();
     var name = ws && ws.name;
     if (name) {
-      window.open("/?workspace=" + encodeURIComponent(name), "_blank");
+      // Prefix the deployment's base path. `report.py`'s _base_path_shim patches
+      // fetch/EventSource/XMLHttpRequest, but NOT window.open — so a root-absolute
+      // URL here escapes the workbench entirely. Under `--base-path /workbench` it
+      // opened the ALB root, which serves PTools: the new tab showed another app
+      // and the browser reported 404/504 for workbench assets that were never
+      // there. Same pattern branch-source.js already uses for its spawn URL.
+      var BP = window.__BASE_PATH__ || "";
+      window.open(BP + "/?workspace=" + encodeURIComponent(name), "_blank");
     } else {
       _switch(ws.path);
     }

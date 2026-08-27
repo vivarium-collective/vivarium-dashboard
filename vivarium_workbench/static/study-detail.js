@@ -1299,7 +1299,8 @@
           return;
         }
         alert('Created: ' + res.body.new_study_name + '\nOpening it now.');
-        window.location.href = '/studies/' + encodeURIComponent(res.body.new_study_name);
+        window.location.href = (window.__BASE_PATH__ || '') + '/studies/' +
+          encodeURIComponent(res.body.new_study_name);
       });
   }
   window._seedFollowupStudy = _seedFollowupStudy;
@@ -1323,7 +1324,8 @@
           return;
         }
         alert('Created: ' + res.body.new_study_name + '\nOpening it now.');
-        window.location.href = '/studies/' + encodeURIComponent(res.body.new_study_name);
+        window.location.href = (window.__BASE_PATH__ || '') + '/studies/' +
+          encodeURIComponent(res.body.new_study_name);
       });
   }
   window._seedFollowupProposal = _seedFollowupProposal;
