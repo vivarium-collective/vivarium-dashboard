@@ -69,12 +69,39 @@ function _coerce(prev: unknown, next: string): unknown {
   return next;
 }
 
+/** Enumerate the group (nested-node) path strings under `node`, mirroring how
+ *  InputTree walks it (contents-unwrapped, hidden + typed-leaf + empty skipped).
+ *  Used to seed / expand-all the collapse state so the tree is navigable. */
+function collectGroupPaths(node: unknown, path: string[] = []): string[] {
+  const out: string[] = [];
+  if (!node || typeof node !== 'object') return out;
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+    if (HIDDEN_KEYS.has(k)) continue;
+    if (k === 'contents' && v && typeof v === 'object') {
+      out.push(...collectGroupPaths(v, [...path, k]));
+      continue;
+    }
+    if (_isTypedLeaf(v)) continue;
+    if (v !== null && typeof v === 'object') {
+      if (Object.keys(v as object).filter((ck) => !HIDDEN_KEYS.has(ck)).length === 0) continue;
+      const p = [...path, k];
+      out.push(p.join('.'));
+      out.push(...collectGroupPaths(v, p));
+    }
+  }
+  return out;
+}
+
 /** Structured, marker-free editor for the input-store tree: name→value rows for
- *  leaves, indented groups for nested nodes, with `_type`/`_control` hidden and
- *  the `contents` wrapper unwrapped — so a user edits "dna = 1", not plumbing. */
-function InputTree({ node, path, onEdit, readOnly }: {
+ *  leaves, collapsible groups for nested nodes, with `_type`/`_control` hidden
+ *  and the `contents` wrapper unwrapped — so a user edits "dna = 1", not
+ *  plumbing. Groups collapse (see isOpen/onToggle) so a big state stays
+ *  navigable instead of one long scroll. */
+function InputTree({ node, path, onEdit, readOnly, isOpen, onToggle }: {
   node: unknown; path: string[];
   onEdit: (p: string[], v: unknown) => void; readOnly?: boolean;
+  isOpen: (pathStr: string) => boolean;
+  onToggle: (pathStr: string) => void;
 }) {
   if (!node || typeof node !== 'object') return null;
   const entries = Object.entries(node as Record<string, unknown>).filter(([k]) => !HIDDEN_KEYS.has(k));
@@ -82,7 +109,7 @@ function InputTree({ node, path, onEdit, readOnly }: {
     <>
       {entries.map(([k, v]) => {
         if (k === 'contents' && v && typeof v === 'object') {
-          return <InputTree key={k} node={v} path={[...path, k]} onEdit={onEdit} readOnly={readOnly} />;
+          return <InputTree key={k} node={v} path={[...path, k]} onEdit={onEdit} readOnly={readOnly} isOpen={isOpen} onToggle={onToggle} />;
         }
         // Typed-leaf store → one editable value at `_value` (hide _type/_figure).
         if (_isTypedLeaf(v)) {
@@ -99,13 +126,24 @@ function InputTree({ node, path, onEdit, readOnly }: {
           );
         }
         if (v !== null && typeof v === 'object') {
-          if (Object.keys(v as object).filter((ck) => !HIDDEN_KEYS.has(ck)).length === 0) return null;
+          const childCount = Object.keys(v as object).filter((ck) => !HIDDEN_KEYS.has(ck)).length;
+          if (childCount === 0) return null;
+          const pathStr = [...path, k].join('.');
+          const open = isOpen(pathStr);
           return (
             <div className="cfg-in-group" key={k}>
-              <div className="cfg-in-group-h">{k}</div>
-              <div className="cfg-in-children">
-                <InputTree node={v} path={[...path, k]} onEdit={onEdit} readOnly={readOnly} />
-              </div>
+              <button type="button" className={'cfg-in-group-h' + (open ? ' open' : '')}
+                onClick={() => onToggle(pathStr)} aria-expanded={open}
+                title={open ? 'Collapse' : 'Expand'}>
+                <span className="cfg-in-chevron" aria-hidden="true">{open ? '▾' : '▸'}</span>
+                <span className="cfg-in-group-name">{k}</span>
+                <span className="cfg-in-group-count">{childCount}</span>
+              </button>
+              {open && (
+                <div className="cfg-in-children">
+                  <InputTree node={v} path={[...path, k]} onEdit={onEdit} readOnly={readOnly} isOpen={isOpen} onToggle={onToggle} />
+                </div>
+              )}
             </div>
           );
         }
@@ -207,15 +245,12 @@ export function ConfigPanel(props: ConfigPanelProps) {
     setError(null);
   }
 
-  // ---- External config (item 86) ------------------------------------------
-  // Upload or paste an arbitrary JSON document; the server matches its keys
-  // onto this composite's own declared params and returns them adapted. The
-  // result populates the SAME `values` state the per-field form edits, so the
-  // existing Apply button (unchanged) is what actually applies it — this is
-  // an alternate way to SET the fields, not a second, parallel data path.
-  const [extConfigOpen, setExtConfigOpen] = useState(false);
+  // ---- Configure JSON document (edit-as-JSON / load-a-config) --------------
+  // The JSON-mode textarea. On Apply the server matches its keys onto this
+  // composite's own declared params (translate), populating the SAME `values`
+  // the per-field form edits — one data path, two views (see handleApplyConfigure
+  // + toConfigJson below).
   const [extConfigText, setExtConfigText] = useState('');
-  const [extConfigApplying, setExtConfigApplying] = useState(false);
   const [extConfigError, setExtConfigError] = useState<string | null>(null);
   const [extConfigResult, setExtConfigResult] = useState<string | null>(null);
   const [viewingBigraph, setViewingBigraph] = useState(false);
@@ -242,34 +277,6 @@ export function ConfigPanel(props: ConfigPanelProps) {
       return null;
     }
     return parsed as Record<string, unknown>;
-  }
-
-  async function handleApplyExtConfig() {
-    if (!props.compositeId) return;
-    setExtConfigError(null);
-    setExtConfigResult(null);
-    const parsed = _parseExtConfigText();
-    if (!parsed) return;
-    setExtConfigApplying(true);
-    try {
-      const res = await translateExternalConfig(props.compositeId, parsed as Record<string, unknown>);
-      setValues((prev) => {
-        const next = { ...prev };
-        for (const [k, v] of Object.entries(res.params)) {
-          const pdef = props.parameters[k];
-          if (pdef) next[k] = _initialValue(pdef, v);
-        }
-        return next;
-      });
-      setApplied(false);
-      let msg = `✓ set ${Object.keys(res.params).length} field(s) — click Apply to use them`;
-      if (res.unmatched.length) msg += `. Ignored (no matching param): ${res.unmatched.join(', ')}`;
-      setExtConfigResult(msg);
-    } catch (e) {
-      setExtConfigError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setExtConfigApplying(false);
-    }
   }
 
   /** View as bigraph: render the config's OWN declared structure — no build,
@@ -316,6 +323,81 @@ export function ConfigPanel(props: ConfigPanelProps) {
     setInputsErr(null);
     setInputsApplied(false);
   }, [inputStores]);
+
+  // ---- Configure: Fields ⇄ JSON mode (parity with the Inputs editor) -------
+  // JSON mode shows the current param values as an editable / pasteable document
+  // and reuses the external-config translate path on Apply — so "load a JSON
+  // config" and "edit as JSON" become the SAME affordance the Inputs tab offers,
+  // instead of a separate load-from-JSON control.
+  const [configMode, setConfigMode] = useState<'fields' | 'json'>('fields');
+  function _valuesAsJson(): string {
+    const obj: Record<string, unknown> = {};
+    for (const k of paramKeys) obj[k] = _castFormValue(props.parameters[k], values[k]);
+    return JSON.stringify(obj, null, 2);
+  }
+  function toConfigJson() {
+    if (!extConfigText.trim()) setExtConfigText(_valuesAsJson());
+    setExtConfigError(null); setExtConfigResult(null);
+    setConfigMode('json');
+  }
+  // Apply from the Configure tab, mode-aware. JSON mode translates the document
+  // onto this composite's params and resolves in one step; fields mode resolves
+  // directly (handleApply).
+  async function handleApplyConfigure() {
+    if (!props.compositeId) return;
+    if (configMode === 'fields') { await handleApply(); return; }
+    setApplying(true); setError(null); setApplied(false);
+    setExtConfigError(null); setExtConfigResult(null);
+    try {
+      const parsed = _parseExtConfigText();
+      if (!parsed) return;
+      const tr = await translateExternalConfig(props.compositeId, parsed);
+      const nextValues = { ...values };
+      for (const [k, v] of Object.entries(tr.params)) {
+        const pdef = props.parameters[k];
+        if (pdef) nextValues[k] = _initialValue(pdef, v) as FormValue;
+      }
+      setValues(nextValues);
+      const ov: Record<string, unknown> = { ...props.overrides };
+      for (const [k, pdef] of Object.entries(props.parameters)) ov[k] = _castFormValue(pdef, nextValues[k]);
+      const res = await resolveComposite(props.compositeId, ov);
+      if (res.error) { setError(res.error); return; }
+      props.onApplied(ov, res.state);
+      setApplied(true);
+      if (tr.unmatched.length) setExtConfigResult(`Ignored (no matching param): ${tr.unmatched.join(', ')}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  // ---- Inputs: load-from-file (parity with Configure's JSON load) ----------
+  function handleInputsFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    file.text().then((t) => { setInputsText(t); setInputsApplied(false); setInputsErr(null); })
+      .catch((err) => setInputsErr(String(err)));
+  }
+
+  // ---- Inputs tree collapse state ------------------------------------------
+  // Groups deeper than DEFAULT_OPEN_DEPTH start collapsed, so the high-level
+  // shape is visible and a big input state isn't one long scroll.
+  const DEFAULT_OPEN_DEPTH = 2;
+  const allGroupPaths = useMemo(() => collectGroupPaths(inputStores), [inputStores]);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    setOpenGroups(new Set(allGroupPaths.filter((p) => p.split('.').length <= DEFAULT_OPEN_DEPTH)));
+  }, [allGroupPaths]);
+  const isGroupOpen = (pathStr: string) => openGroups.has(pathStr);
+  const toggleGroup = (pathStr: string) => setOpenGroups((prev) => {
+    const next = new Set(prev);
+    if (next.has(pathStr)) next.delete(pathStr); else next.add(pathStr);
+    return next;
+  });
+  const expandAllGroups = () => setOpenGroups(new Set(allGroupPaths));
+  const collapseAllGroups = () => setOpenGroups(new Set());
+  const allExpanded = allGroupPaths.length > 0 && openGroups.size >= allGroupPaths.length;
 
   function handleApplyInputs() {
     try {
@@ -364,43 +446,44 @@ export function ConfigPanel(props: ConfigPanelProps) {
           zero-param composite opens straight on Inputs (no dead tab/note). */}
       {hasConfig && tab === 'config' && (
         <>
-        {/* Load from JSON config — pinned to the TOP of Configure so it's the
-            first thing you reach (was previously buried below the fields). */}
-        <div className="cfg-extconfig-top">
-          <button type="button" className={'cfg-json-toggle cfg-extconfig-toggle' + (extConfigOpen ? ' open' : '')}
-            onClick={() => setExtConfigOpen((o) => !o)} disabled={props.readOnly}
-            title="Upload or paste a JSON config document to set several parameters at once">
-            📄 Load from JSON config
-          </button>
-          {extConfigOpen && (
-            <div className="cfg-extconfig">
+        {/* Fields ⇄ JSON toolbar — the SAME control the Inputs tab uses, so
+            "edit fields" and "load / edit as JSON" are one consistent affordance
+            (was a separate "Load from JSON config" button). */}
+        <div className="cfg-toolbar">
+          <span className="cfg-toolbar-hint">Composite parameters — edit and Apply.</span>
+          <div className="cfg-modeseg" role="tablist" aria-label="Configure editor mode">
+            <button type="button" role="tab" aria-selected={configMode === 'fields'}
+              className={'cfg-modeseg-btn' + (configMode === 'fields' ? ' active' : '')}
+              onClick={() => setConfigMode('fields')}>⊞ Fields</button>
+            <button type="button" role="tab" aria-selected={configMode === 'json'}
+              className={'cfg-modeseg-btn' + (configMode === 'json' ? ' active' : '')}
+              onClick={toConfigJson}>{'{ } JSON'}</button>
+          </div>
+        </div>
+        {configMode === 'json' ? (
+          <div className="cfg-jsonbox">
+            <label className="cfg-fileload">Load a JSON file
               <input type="file" accept=".json,application/json" disabled={props.readOnly}
                 onChange={handleExtConfigFile} />
-              <textarea
-                className="sr-input cfg-input cfg-extconfig-box"
-                spellCheck={false}
-                rows={Math.min(12, Math.max(4, extConfigText.split('\n').length))}
-                placeholder="{ …a JSON config document… } — matched against this composite's declared params"
-                value={extConfigText}
-                disabled={props.readOnly}
-                onChange={(e) => { setExtConfigText(e.target.value); setExtConfigError(null); setExtConfigResult(null); }}
-              />
-              {extConfigError && <div className="cfg-error">{extConfigError}</div>}
-              {extConfigResult && !extConfigError && <div className="cfg-applied">{extConfigResult}</div>}
-              <div className="cfg-actionbar">
-                <button className="sr-run-btn cfg-apply-btn" onClick={handleApplyExtConfig}
-                  disabled={extConfigApplying || props.readOnly || !props.compositeId || !extConfigText.trim()}>
-                  {extConfigApplying ? 'Matching…' : 'Apply config'}
-                </button>
-                <button type="button" className="cfg-reset-btn" onClick={handleViewAsBigraph}
-                  disabled={viewingBigraph || props.readOnly || !extConfigText.trim() || !props.onBigraphDocument}
-                  title="Render this config's own declared structure as a bigraph document — no build">
-                  {viewingBigraph ? 'Rendering…' : 'View as bigraph'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
+            </label>
+            <textarea
+              className="sr-input cfg-input cfg-json-area"
+              spellCheck={false}
+              rows={Math.min(20, Math.max(6, extConfigText.split('\n').length))}
+              placeholder="{ …a JSON config document… } — matched onto this composite's declared params"
+              value={extConfigText}
+              disabled={props.readOnly}
+              onChange={(e) => { setExtConfigText(e.target.value); setExtConfigError(null); setExtConfigResult(null); }}
+            />
+            {props.onBigraphDocument && (
+              <button type="button" className="cfg-linkbtn" onClick={handleViewAsBigraph}
+                disabled={viewingBigraph || props.readOnly || !extConfigText.trim()}
+                title="Render this config's own declared structure as a bigraph document — no build">
+                {viewingBigraph ? 'Rendering…' : 'View as bigraph'}
+              </button>
+            )}
+          </div>
+        ) : (
         <div className="cfg-fields">
           {paramKeys.map((k) => {
             const pdef = props.parameters[k];
@@ -450,10 +533,13 @@ export function ConfigPanel(props: ConfigPanelProps) {
             );
           })}
         </div>
+        )}
         {error && <div className="cfg-error">Could not apply: {error}</div>}
         {applied && !error && <div className="cfg-applied">✓ Graph rebuilt with this config.</div>}
+        {extConfigError && !error && <div className="cfg-error">{extConfigError}</div>}
+        {extConfigResult && !error && !extConfigError && <div className="cfg-applied">{extConfigResult}</div>}
         <div className="cfg-actionbar">
-          <button className="sr-run-btn cfg-apply-btn" onClick={handleApply}
+          <button className="sr-run-btn cfg-apply-btn" onClick={handleApplyConfigure}
             disabled={applying || props.readOnly || !props.compositeId}>
             {applying ? 'Applying…' : 'Apply'}
           </button>
@@ -465,41 +551,58 @@ export function ConfigPanel(props: ConfigPanelProps) {
         </>
       )}
 
-      {/* ---- Inputs: the composite's editable input-store state, as a
-           marker-free field editor (JSON toggle for power users). Applied
-           SEPARATELY (inputs can follow config); re-renders Explore live. */}
+      {/* ---- Inputs: the composite's editable input-store state — same
+           Fields ⇄ JSON toolbar as Configure, and a COLLAPSIBLE tree so a big
+           state stays navigable. Applied SEPARATELY (inputs can follow config). */}
       {tab === 'inputs' && (
       <>
-      <div className="cfg-group-h cfg-group-h-inputs">
-        <span>Inputs</span>
+      <div className="cfg-toolbar">
+        <span className="cfg-toolbar-hint">Input-store values a run reads — edit and Apply.</span>
         {inputKeys.length > 0 && (
-          <button type="button" className="cfg-json-toggle"
-            onClick={() => setInputsMode((m) => (m === 'fields' ? 'json' : 'fields'))}
-            title={inputsMode === 'fields' ? 'Edit as raw JSON' : 'Edit as fields'}>
-            {inputsMode === 'fields' ? '{ } JSON' : '▤ Fields'}
-          </button>
+          <div className="cfg-modeseg" role="tablist" aria-label="Inputs editor mode">
+            <button type="button" role="tab" aria-selected={inputsMode === 'fields'}
+              className={'cfg-modeseg-btn' + (inputsMode === 'fields' ? ' active' : '')}
+              onClick={() => setInputsMode('fields')}>⊞ Fields</button>
+            <button type="button" role="tab" aria-selected={inputsMode === 'json'}
+              className={'cfg-modeseg-btn' + (inputsMode === 'json' ? ' active' : '')}
+              onClick={() => setInputsMode('json')}>{'{ } JSON'}</button>
+          </div>
         )}
       </div>
       {inputKeys.length === 0 ? (
         <p className="cfg-note">This composite has no editable input stores.</p>
       ) : (
         <>
-          <p className="cfg-note cfg-inputs-hint">
-            Input-store values a run reads — edit and Apply to see them on the graph.
-          </p>
           {inputsMode === 'fields' ? (
-            <div className="cfg-in-tree">
-              <InputTree node={inputsObj} path={[]} onEdit={handleTreeEdit} readOnly={props.readOnly} />
-            </div>
+            <>
+              {allGroupPaths.length > 0 && (
+                <div className="cfg-tree-controls">
+                  <button type="button" className="cfg-linkbtn"
+                    onClick={allExpanded ? collapseAllGroups : expandAllGroups}>
+                    {allExpanded ? '⊟ Collapse all' : '⊞ Expand all'}
+                  </button>
+                </div>
+              )}
+              <div className="cfg-in-tree">
+                <InputTree node={inputsObj} path={[]} onEdit={handleTreeEdit} readOnly={props.readOnly}
+                  isOpen={isGroupOpen} onToggle={toggleGroup} />
+              </div>
+            </>
           ) : (
-            <textarea
-              className="sr-input cfg-input cfg-inputs-json"
-              spellCheck={false}
-              rows={Math.min(18, Math.max(4, inputsText.split('\n').length))}
-              value={inputsText}
-              disabled={props.readOnly}
-              onChange={(e) => { setInputsText(e.target.value); setInputsApplied(false); setInputsErr(null); }}
-            />
+            <div className="cfg-jsonbox">
+              <label className="cfg-fileload">Load a JSON file
+                <input type="file" accept=".json,application/json" disabled={props.readOnly}
+                  onChange={handleInputsFile} />
+              </label>
+              <textarea
+                className="sr-input cfg-input cfg-json-area"
+                spellCheck={false}
+                rows={Math.min(20, Math.max(6, inputsText.split('\n').length))}
+                value={inputsText}
+                disabled={props.readOnly}
+                onChange={(e) => { setInputsText(e.target.value); setInputsApplied(false); setInputsErr(null); }}
+              />
+            </div>
           )}
           {inputsErr && <div className="cfg-error">Invalid JSON: {inputsErr}</div>}
           {inputsApplied && !inputsErr && <div className="cfg-applied">✓ Graph updated with these inputs.</div>}
