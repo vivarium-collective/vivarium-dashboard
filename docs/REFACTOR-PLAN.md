@@ -1001,6 +1001,19 @@ seven PRs, not the 8–12 estimated. A worker pod ran the prebuilt image for
    doing something — nothing currently separates a small in-context run from one
    that must dispatch. That gap is live wherever step 1 is deployed.
 
+   - **Step 2a turned out to be narrower than the defect.** Gating the pool caught
+     `investigation_steps`, but `/api/investigation-run` never touches
+     `WorkerPool` — it builds an inline subprocess script and has **zero**
+     references to `resolve_run_target`. That is the limit of the
+     choke-point argument: it protects worker calls, and this path makes none.
+     Three orchestrators now disagree about where work runs, and
+     [`run-orchestration-consolidation.md`](run-orchestration-consolidation.md)
+     is the plan for collapsing them onto `run_jobs` — which already dispatches
+     correctly and is already async, so "auto-dispatch" needs no new machinery.
+     [`workbench-api-survey.md`](workbench-api-survey.md) is the dated snapshot of
+     the API those three paths live in — routes, state tiers, config, and the
+     local-vs-hosted split — written as refactoring input, not as a spec.
+
 **Interim behavior.** On **prod** (workbench 0.3.55), hosted environment questions
 on materialized builds remain unanswered and surface loudly as
 `EnvWorkerUnavailable`. On **dev**, request paths now reach real workers.
