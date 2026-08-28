@@ -429,6 +429,22 @@ compose: submit → `/simulation/{id}/status` → `/simulation/{id}/results`, wi
 `/simulations/status/batch` for bulk polling. "Let sms-api handle it" is reuse of
 a proven mechanism rather than a new one in the workbench.
 
+**It also makes the worker's capabilities part of the product API.** This is
+arguably the strongest argument for (e) and is not an implementation detail.
+Today the worker's **26 capabilities** — `list_generators`, `registry_catalog`,
+`discover_composites`, `run_study`, `config_to_composite`, … — are reachable
+*only* through the workbench, because the workbench holds the socket. **Zero of
+them appear in the Atlantis CLI**, whose commands stop at the compose surface
+(`simulator_*`, `simulation_*`).
+
+That breaks the stated EUTE model, in which the CLI, TUI and Marimo GUI are three
+clients of one REST API: environment introspection and workspace-scoped execution
+are currently workbench-only plumbing rather than product surface. Proxying
+through sms-api turns each capability into an HTTP endpoint any client can call —
+so the CLI could script these workflows, and so could CI, a notebook, or a
+third-party tool. None of the other four options change this; they all leave the
+socket where it is.
+
 It also **subsumes §C rather than depending on it**. The relay was scoped as a
 laptop-only bridge so a laptop could reach worker-as-image; making the proxy
 universal means there is *one* path, and the laptop case falls out. And it
