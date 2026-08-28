@@ -7,7 +7,7 @@
 // poll just retries on the next tick.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  postRunComplete, startRun, fetchRunStatus, fetchRunTrajectory,
+  postRunComplete, startRun, stopRun, fetchRunStatus, fetchRunTrajectory,
   type RunStatus,
 } from '../api';
 
@@ -50,6 +50,9 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
   const [runId, setRunId] = useState<string | null>(null);
   const [status, setStatus] = useState<RunStatus | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  // True from the moment Stop is clicked until the poll observes a terminal
+  // status — lets the button read "Stopping…" without a spurious extra state.
+  const [stopping, setStopping] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const inInvestigation = !!(args.runContext && args.runContext.startsWith('investigation:'));
@@ -102,6 +105,7 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
         void loadTrajectory(id);
       } else {
         stopPolling();
+        setStopping(false);
         void loadTrajectory(id);
         sessionStorage.removeItem(ACTIVE_RUN_KEY);
         // The run is over: publish the viz result unconditionally so the panel
@@ -144,6 +148,7 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
     }
     setStartError(null);
     setStatus(null);
+    setStopping(false);
     onTrajectoryRef.current?.([]);
     onVizHtmlRef.current?.(null);
     const overrides = buildOverridesRef.current?.() ?? {};
@@ -174,13 +179,26 @@ export function useCompositeRun(args: UseCompositeRunArgs) {
   const runFromState = useCallback(
     (seedState: Record<string, unknown>) => runWith(seedState), [runWith]);
 
+  // Stop the live run and keep the results computed so far. The worker is
+  // SIGTERM'd and marked `cancelled`; the next poll routes through the terminal
+  // branch (stops polling + loads the final partial trajectory). Idempotent, so
+  // a lost/failed request just gets reconciled by the poll loop.
+  const handleStop = useCallback(() => {
+    if (!runId) return;
+    setStopping(true);
+    void (async () => {
+      try { await stopRun(runId); }
+      catch { /* already terminal or transient — the poll loop reconciles */ }
+    })();
+  }, [runId]);
+
   const pct = status && status.n_steps
     ? Math.min(100, Math.round((status.progress_step / status.n_steps) * 100))
     : 0;
 
   return {
-    steps, setSteps, runId, status, startError,
-    isRunning, isWorkflow, canRun, inInvestigation, pct, handleRun, runFromState,
+    steps, setSteps, runId, status, startError, stopping,
+    isRunning, isWorkflow, canRun, inInvestigation, pct, handleRun, handleStop, runFromState,
     // 'steps' = discrete step network (integer, steppable); 'duration' = temporal.
     stepMode: (isWorkflow ? 'steps' : 'duration') as 'steps' | 'duration',
   };

@@ -154,6 +154,15 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
       <button className="sr-run-btn explore-run-btn" onClick={run.handleRun} disabled={run.isRunning || !run.canRun}>
         {run.isRunning ? 'Running…' : hasTransport ? '↻ Re-run' : (isSteps ? '▶ Run steps' : '▶ Run')}
       </button>
+      {/* Stop a live run and keep whatever it has already computed (the partial
+          trajectory is preserved; the run is marked "stopped"). */}
+      {run.isRunning && (
+        <button type="button" className="sr-stop-btn explore-stop-btn"
+          onClick={run.handleStop} disabled={run.stopping}
+          title="Stop the run now and keep the results computed so far">
+          {run.stopping ? 'Stopping…' : '■ Stop'}
+        </button>
+      )}
 
       {/* Run + step are ONE control: once a run yields a steppable trajectory the
           playback transport lives right here in the run bar. */}
@@ -214,6 +223,11 @@ export function ExploreRunBar(props: ExploreRunBarProps) {
       )}
       {run.isRunning && !run.status && <span className="explore-runbar-status">Starting…</span>}
       {run.status?.status === 'completed' && <span className="explore-runbar-done">✓ complete</span>}
+      {run.status?.status === 'cancelled' && (
+        <span className="explore-runbar-stopped" title="Run stopped — the results computed up to this point are kept below.">
+          ■ stopped — partial results kept
+        </span>
+      )}
       {(run.status?.status === 'failed' || run.status?.status === 'orphaned') && (
         <span className="explore-runbar-fail">
           Run {run.status.status}

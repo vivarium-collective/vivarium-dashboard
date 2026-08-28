@@ -1825,6 +1825,22 @@ textarea.sr-input {
   cursor: not-allowed;
 }
 
+/* Stop = halt a live run and keep partial results. Amber-red so it reads as an
+   interrupt distinct from the teal Run/Apply actions, without alarming like a
+   destructive delete. */
+.sr-stop-btn {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  background: #fff;
+  color: #b45309;
+  border: 1px solid #f59e0b;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.sr-stop-btn:hover:not(:disabled) { background: #fffbeb; border-color: #d97706; }
+.sr-stop-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
 /* ---- Explore: Config sidebar (left dock panel) --------------------------- */
 /* Same wash as the run bar so the side panel + bar + dock read as one chrome
    frame around the canvas, not three disconnected surfaces. */
@@ -1970,6 +1986,8 @@ textarea.sr-input {
 .explore-runbar-kind.is-steps { color: #7c3aed; background: #f3effe; border: 1px solid #ddd0fb; }
 .explore-runbar-kind.is-time { color: #0d6e6b; background: #ecfdf9; border: 1px solid #b7ebe3; }
 .explore-run-btn { padding: 6px 16px; font-size: 13px; }
+.explore-stop-btn { padding: 6px 14px; font-size: 13px; }
+.explore-runbar-stopped { color: #b45309; display: inline-flex; align-items: center; gap: 6px; }
 .explore-runbar-status { color: #6b7280; display: inline-flex; align-items: center; gap: 6px; }
 .explore-runbar-progress { display: inline-flex; align-items: center; gap: 8px; }
 .explore-runbar-track { width: 120px; height: 8px; background: #e5e7eb; border-radius: 4px; overflow: hidden; }
