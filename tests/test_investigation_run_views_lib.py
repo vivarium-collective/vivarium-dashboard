@@ -228,3 +228,60 @@ def test_run_one_composite_error_marker_returns_failed(tmp_path, monkeypatch, fa
                      state_doc={"state": {"foo": 1}})
     assert result["status"] == "failed"
     assert result["error"].endswith("ValueError: boom")
+
+
+# ---------------------------------------------------------------------------
+# §2A.8 workstream 8 step 2a — the deployment-target gate
+# ---------------------------------------------------------------------------
+
+def test_deployment_target_refuses_409(tmp_path, monkeypatch, fake_registry):
+    """The step-2a defect: this route ran every simulation on the workbench host
+    even when the user's workspace resolved to the deployment target.
+
+    It refuses rather than dispatching because the route is *synchronous* —
+    `run_investigation` orchestrates inline in the request — so a gateway-fronted
+    deployment would kill it at 60 s even with the target honored.
+    """
+    ws = _make_ws(tmp_path)
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.remote_pinned.resolve_run_target",
+        lambda p: "deployment")
+
+    def _boom(*a, **k):
+        raise AssertionError("run_investigation must not be reached")
+
+    monkeypatch.setattr(investigations, "run_investigation", _boom)
+
+    body, status = views.investigation_run(ws, {"name": "demo"})
+    assert status == 409
+    assert body["run_target"] == "deployment"
+    assert body["name"] == "demo"
+    # the hint must name the route that actually works, not just say "no"
+    assert "/api/investigation-run-unblocked" in body["hint"]
+
+
+def test_local_target_is_unchanged(tmp_path, monkeypatch, fake_registry):
+    """A laptop keeps working: no pin and no build stamp means `local`, and the
+    route behaves exactly as before the gate."""
+    ws = _make_ws(tmp_path)
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.remote_pinned.resolve_run_target",
+        lambda p: "local")
+    monkeypatch.setattr(
+        investigations, "run_investigation",
+        lambda ws_root, name, **kw: {"ran": name})
+
+    body, status = views.investigation_run(ws, {"name": "demo"})
+    assert (status, body) == (200, {"ran": "demo"})
+
+
+def test_missing_name_still_400_under_a_deployment_target(tmp_path, monkeypatch):
+    """Ordering: validation comes first, so a malformed request is still a 400
+    rather than being masked by the gate."""
+    ws = _make_ws(tmp_path)
+    monkeypatch.setattr(
+        "vivarium_workbench.lib.remote_pinned.resolve_run_target",
+        lambda p: "deployment")
+    body, status = views.investigation_run(ws, {})
+    assert status == 400
+    assert body == {"error": "name is required"}
