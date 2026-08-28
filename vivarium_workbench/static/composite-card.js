@@ -734,6 +734,9 @@
               '<div class="pcard-contract-meta" data-role="contract-meta">composite · <strong>' + nCfg + '</strong> param' + (nCfg === 1 ? '' : 's') + '</div>' +
               (function () { var s = _regStatsHtml(c); return s ? '<div class="reg-card-stats pcard-usage">' + s + '</div>' : ''; })() +
               (desc ? '<p class="loom-desc pcard-desc-clamp" onclick="_pcardToggleDesc(this)" title="Click to expand / collapse">' + _esc(desc) + '</p>' : '') +
+              // Same copy-pasteable "how to run this" chip as the grid card, so
+              // the high-zoom (full-card) list also surfaces the terminal command.
+              _runCmdChip(c.run_command) +
             '</div>' +
           '</div>' +
           '<div class="pcard-json-view" data-role="composite-json" hidden>' +
