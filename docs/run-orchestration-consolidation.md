@@ -65,7 +65,9 @@ construction, and a dispatched run is an item that takes longer.
 1. **`run_jobs` is canonical.** The pbg composite stays reachable from
    `prepare-investigation` but is not the default.
 2. **Durable, with reconcile on boot.** A dispatched Batch run still in flight
-   after a restart is re-attached, not orphaned.
+   after a restart is re-attached, not orphaned. *(Revised by A0b: the cheaper
+   route to this is to stop holding a thread per run at all, so there is nothing
+   to orphan — viva-api already holds the state, keyed by `simulation_id`.)*
 3. **The viva-api relay is in scope as a design**, gated on a real need before
    being built.
 
@@ -155,6 +157,77 @@ load-bearing — `run_unblocked_views._worker` drives runs through the *lib*
 function `study_runs.run_study_variant`. **Convergence should target lib
 functions, not routes.** Routes are one entry point; the `lib/*_views.py` builders
 are the reuse surface.
+
+### A0b — The async model already exists, and Batch is already async *(2026-08-28)*
+
+Two questions — *"isn't there an async version?"* and *"shouldn't this go to Batch,
+which is inherently async?"* — turn out to have the same answer, and it revises
+A2 and A3 more than A1.
+
+**There is a complete async remote-run API, built and in use.** A thin-client
+three-phase family, with `study-detail.js` as its caller:
+
+| route | role |
+|---|---|
+| `POST /api/remote-run-build` | phase 1 — push + register the simulator build |
+| `POST /api/remote-run-submit` | phase 2 — issue the run; **`202 {simulation_id, phase:"running"}`** |
+| `GET /api/remote-run-poll` | on-demand status (build / run / analysis phase) |
+| `POST /api/remote-run-land` | phase 3 — download + land a completed run |
+
+`remote_run_submit` contains **zero blocking polls**, and its docstring is
+explicit: it "returns as soon as sms-api hands back a `database_id` … in seconds
+regardless of campaign size", because viva-api moved the per-seed submission loop
+off the response path (backlog item 51). The JS panel polls for progress. This is
+the correct shape, already implemented.
+
+**But the other dispatch path throws that away.** `run_runner._execute_remote` →
+`remote_run.run_remote` does:
+
+```
+sim_id = client.compose_submit(...)        # returns immediately — Batch is async
+status = _poll_until_terminal(...)         # BLOCKS for the life of the job
+results = client.download_compose_results(sim_id, dest)
+```
+
+So there are **two dispatch idioms**, and the plan had been consolidating onto the
+wrong one:
+
+| idiom | shape | used by |
+|---|---|---|
+| thin-client phases | submit → 202 → client polls → land. Never blocks. | `study-detail.js` |
+| `invoke_run` → `run_runner._execute_remote` → `run_remote` | submit **then block polling** then download | `study_runs`, `composite-test-run`, and therefore `run_jobs` |
+
+**`run_jobs` is async only at the HTTP layer.** Its `_worker` calls
+`study_runs.run_study_baseline`, which blocks through `_launch_run_and_flush`'s
+"full 7-stage flush tail", which for a `deployment` target blocks inside
+`run_remote`. So a daemon thread is held for the entire life of a Batch job — to
+babysit work AWS is already tracking.
+
+**That reframes A2 and A3.** They were solving symptoms of holding threads:
+
+- **A2 (durable job state + reconcile) shrinks.** You need durable thread state
+  because you are holding threads. Adopt the thin-client shape — record
+  `simulation_id`, return — and there is no thread to lose across a restart.
+  **viva-api becomes the durable state**, and `sim_id` the handle. What survives
+  from A2 is exactly the small part: persist the dispatch ref and poll it, using
+  `GET /simulations/status/batch?ids=…` (§A0.4).
+- **A3 (concurrency) largely dissolves.** A bounded pool exists to cap
+  simultaneously-*blocked* threads. Non-blocking submits need no pool; Batch
+  provides the parallelism. Dependency ordering (prereqs) remains real.
+
+**Revised destination:** not "make `run_jobs` durable and concurrent", but
+"make the run path non-blocking, the way `remote-run-submit` already is, and let
+`run_jobs` track `simulation_id`s rather than threads."
+
+Open questions this raises, which the plan should not pretend to settle:
+
+- `run_remote`'s blocking poll also performs **`download_compose_results`** —
+  landing results is a real step the thin-client family gives its own phase
+  (`remote-run-land`). A non-blocking run path needs somewhere for landing to
+  happen; that is what phase 3 is for, and what `run_jobs` would have to drive.
+- The local (`target == "local"`) branch is genuinely synchronous — a subprocess
+  on this host. Non-blocking dispatch is a *remote*-target property, so the two
+  branches stop being symmetric and the job model must carry both.
 
 ### A1 — Refuse a deployment-target run on the synchronous route *(live defect)*
 
@@ -300,9 +373,13 @@ platform-appropriate rather than identical.
 
 1. **A1** — refuse a `deployment`-target run on the synchronous route.
 2. **A4** — verify dispatch end-to-end via "Run unblocked" (no code).
-3. **A2** — durability + reconcile (`compose_status_batch` wrapper is the new
-   piece), before concurrency multiplies what a restart can lose.
-4. **A3** — concurrency, then prereq ordering.
+3. **A2′** — *revised by A0b.* Make the remote-target run path **non-blocking**
+   (the shape `remote-run-submit` already has), record `simulation_id`, and poll
+   via `GET /simulations/status/batch?ids=…`. This replaces "durable thread
+   state + reconcile" — with no thread held, there is far less to lose.
+4. **A3′** — prereq ordering. *Concurrency largely dissolves with A2′*: a
+   bounded pool exists to cap simultaneously-blocked threads, and Batch supplies
+   the parallelism once submits stop blocking.
 5. **A5** — converge the "Run" button onto `run_jobs`, once A2/A3 make it a
    superset. Target the **lib functions**, not the routes.
 6. **B** — the scale precheck.
