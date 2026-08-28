@@ -28,16 +28,24 @@ def test_remote_run_start_requires_login(monkeypatch, tmp_path):
     assert code == 401
 
 
-def test_test_suite_cannot_reach_a_live_deployment(dashboard_client, tmp_path):
+def test_test_suite_cannot_reach_a_live_deployment(
+    dashboard_client, tmp_path, _isolate_viva_api_base
+):
     """The isolation itself, asserted — otherwise it can regress silently and
     the only symptom is tests quietly talking to real infrastructure again.
 
     Checks the property where it actually matters: inside the SPAWNED server
     subprocess, which is the process that resolves builds and dispatches runs.
     Its base must be conftest's closed port, never the localhost:8080 default
-    that a developer's SSM tunnel to sms-api-stanford-test occupies."""
+    that a developer's SSM tunnel to sms-api-stanford-test occupies.
+
+    Takes the expected value by REQUESTING the autouse fixture (which yields
+    it) rather than importing the module constant. `from tests.conftest import
+    ...` works locally but not in CI, where a dependency ships its own
+    top-level `tests` package and the import resolves to
+    site-packages/tests/__init__.py -> ModuleNotFoundError: No module named
+    'nose'. The fixture is the same value with no import-path ambiguity."""
     import json
-    from tests.conftest import UNREACHABLE_VIVA_API_BASE
 
     ws = tmp_path / "ws"
     ws.mkdir()
@@ -47,5 +55,5 @@ def test_test_suite_cannot_reach_a_live_deployment(dashboard_client, tmp_path):
     res = client.get("/api/source/remote-health")
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["base_url"] == UNREACHABLE_VIVA_API_BASE, json.dumps(body)
+    assert body["base_url"] == _isolate_viva_api_base, json.dumps(body)
     assert body["reachable"] is False
