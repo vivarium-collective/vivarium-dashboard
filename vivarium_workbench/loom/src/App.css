@@ -1847,10 +1847,37 @@ textarea.sr-input {
 }
 .cfg-tab:hover { border-color: #4bb3ae; color: #0d6e6b; }
 .cfg-tab-active { background: #0d6e6b; border-color: #0d6e6b; color: #fff; }
-/* "📄 Load from JSON config" pinned to the top of the Configure tab. */
-.cfg-extconfig-top { margin: 0 0 12px; }
-.cfg-extconfig-top .cfg-extconfig-toggle { width: 100%; text-align: left; padding: 5px 8px; }
-.cfg-extconfig-top .cfg-extconfig-toggle.open { border-color: #4bb3ae; color: #0d6e6b; background: #f0fdfa; }
+/* Shared Configure/Inputs toolbar: a hint on the left, the Fields⇄JSON
+   segmented control on the right — the SAME affordance on both tabs. */
+.cfg-toolbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0 0 9px; padding: 0 2px;
+}
+.cfg-toolbar-hint { font-size: 11px; font-style: italic; color: #6b7280; min-width: 0; }
+.cfg-modeseg { display: inline-flex; flex: none; border: 1px solid #d1d5db; border-radius: 6px; overflow: hidden; background: #fff; }
+.cfg-modeseg-btn {
+  border: none; background: #fff; cursor: pointer; padding: 3px 10px;
+  font-size: 11px; font-weight: 700; color: #64748b; white-space: nowrap;
+}
+.cfg-modeseg-btn + .cfg-modeseg-btn { border-left: 1px solid #d1d5db; }
+.cfg-modeseg-btn:hover { color: #0d6e6b; }
+.cfg-modeseg-btn.active { background: #0d6e6b; color: #fff; }
+/* JSON-mode body (both tabs): file-load line + editable/pasteable textarea. */
+.cfg-jsonbox { display: flex; flex-direction: column; gap: 7px; }
+.cfg-fileload {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  font-size: 11px; font-weight: 600; color: #475569;
+}
+.cfg-fileload input[type="file"] { font-size: 11px; color: #64748b; }
+.cfg-json-area { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+/* Small text-style secondary actions (View as bigraph, Expand/Collapse all). */
+.cfg-linkbtn {
+  align-self: flex-start; border: 1px solid #d1d5db; background: #fff; border-radius: 5px;
+  cursor: pointer; font-size: 11px; font-weight: 600; color: #475569; padding: 3px 9px;
+}
+.cfg-linkbtn:hover:not(:disabled) { border-color: #4bb3ae; color: #0d6e6b; }
+.cfg-linkbtn:disabled { opacity: .5; cursor: default; }
+.cfg-tree-controls { display: flex; justify-content: flex-end; margin: 0 2px 4px; }
 /* Section headers for the two groups in the Configure & Inputs panel. */
 .cfg-group-h {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -1869,8 +1896,19 @@ textarea.sr-input {
 /* Structured input-store editor: indented name→value rows. */
 .cfg-in-tree { display: flex; flex-direction: column; gap: 5px; padding: 2px 4px; }
 .cfg-in-group { display: flex; flex-direction: column; gap: 4px; }
+/* Collapsible group header — a full-width clickable row: chevron · name · count. */
 .cfg-in-group-h {
-  font-size: 11px; font-weight: 700; color: #334155; padding: 2px 0;
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  font-size: 11px; font-weight: 700; color: #334155; padding: 3px 4px;
+  background: none; border: none; border-radius: 4px; cursor: pointer; text-align: left;
+}
+.cfg-in-group-h:hover { background: #eef2f5; color: #0d6e6b; }
+.cfg-in-chevron { flex: none; font-size: 9px; color: #94a3b8; width: 10px; }
+.cfg-in-group-h:hover .cfg-in-chevron { color: #0d6e6b; }
+.cfg-in-group-name { flex: 1 1 auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.cfg-in-group-count {
+  flex: none; font-size: 10px; font-weight: 600; color: #64748b;
+  background: #eef2f5; border-radius: 8px; padding: 0 7px; min-width: 18px; text-align: center;
 }
 .cfg-in-children {
   display: flex; flex-direction: column; gap: 5px;
