@@ -358,6 +358,50 @@ def _launch_run_and_flush(ws_root, study_dir, spec_id, params, n_steps, *,
     return response, code
 
 
+#: Largest number of simulations a LOCAL study run may declare, read via
+#: ``env_compat.get_env`` (so the full variable is
+#: ``VIVARIUM_WORKBENCH_LOCAL_RUN_MAX_SIMULATIONS``). Config-overridable in the
+#: spirit of ENV_WORKER_CALL_TIMEOUT — a stated policy, not a prediction.
+#: 0 or negative disables the check.
+_SCALE_BUDGET_SUFFIX = "LOCAL_RUN_MAX_SIMULATIONS"
+_SCALE_BUDGET_ENV = "VIVARIUM_WORKBENCH_" + _SCALE_BUDGET_SUFFIX
+_SCALE_BUDGET_DEFAULT = 50
+
+
+def _declared_scale_exceeds_budget(params) -> "tuple[int, int] | None":
+    """``(declared, budget)`` when a study declares more simulations than a local
+    run may take, else ``None``.
+
+    Declared scale is ``n_seeds x n_generations`` — the two knobs the deployment
+    path already forwards to viva-api (`study_runs`' dispatch reads exactly these
+    from the same dict). Absent knobs mean 1, so an undeclared study is never
+    blocked: silence is not a claim of scale.
+
+    Deliberately arithmetic on DECLARED values, never inference. The cost of a
+    composite cannot be predicted from its reference, which is why this covers
+    studies and nothing else.
+    """
+    from vivarium_workbench.lib.env_compat import get_env
+
+    raw = (get_env(_SCALE_BUDGET_SUFFIX, "") or "").strip()
+    try:
+        budget = int(raw) if raw else _SCALE_BUDGET_DEFAULT
+    except ValueError:
+        budget = _SCALE_BUDGET_DEFAULT
+    if budget <= 0:                      # explicitly disabled
+        return None
+
+    def _count(key: str) -> int:
+        try:
+            v = int((params or {}).get(key) or 1)
+        except (TypeError, ValueError):
+            return 1
+        return v if v > 0 else 1
+
+    declared = _count("n_seeds") * _count("n_generations")
+    return (declared, budget) if declared > budget else None
+
+
 def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
                       emitter=None, emit_paths=None, runtime=None, label=None,
                       dry_run=False, reran_from=None, skip_analyses=False,
@@ -433,6 +477,33 @@ def launch_into_study(ws_root, study, spec_id, params, n_steps, *, seed=None,
     if getattr(plan, "target", None) == "deployment":
         return {"error": "Study baseline runs on a remote build are not available "
                          "on this path yet (SP-D/G1)."}, 409
+
+    # §2A.8 workstream 8 step 2b — the declared-scale precheck.
+    #
+    # Reached only on a LOCAL target (a deployment one returned above), which is
+    # exactly the gap: the deployment path is sized for scale, this one is a
+    # subprocess on whichever host is serving. Until step 1 removed the
+    # per-method transport pin, that pin was accidentally acting as a cost
+    # policy; nothing has separated a 1x1 run from a 1000x10 one since.
+    #
+    # Uses the scale the study DECLARES rather than inferring cost: exact, free,
+    # and it refuses up front instead of after forty minutes. Bare composites are
+    # deliberately not covered — a @composite_generator is arbitrary Python and
+    # `steps` bounds the loop, not the per-step cost (env-worker-routing.md §4).
+    if not dry_run:
+        too_big = _declared_scale_exceeds_budget(params)
+        if too_big is not None:
+            declared, budget = too_big
+            return {
+                "error": "declared run scale exceeds the local budget",
+                "declared_simulations": declared,
+                "budget": budget,
+                "hint": "This is a local run — a subprocess on the machine serving "
+                        "the workbench. Dispatch it instead: switch this session to "
+                        "a materialized build (or set VIVARIUM_WORKBENCH_REMOTE_PINNED) "
+                        "so the run resolves to the 'deployment' target and goes to "
+                        f"Batch. Raise {_SCALE_BUDGET_ENV} to override.",
+            }, 409
 
     # Workspace package name + defaults (best-effort — a workspace.yaml-less
     # caller, e.g. a hermetic test or an early rerun-replay context, must
