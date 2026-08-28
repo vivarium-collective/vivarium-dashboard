@@ -15,6 +15,9 @@ inline and returns the summary directly.  All other outcomes are reproduced
 byte-identically:
 
   * missing name                 → ``({"error": "name is required"}, 400)``
+  * ``deployment`` run target    → ``({error, name, run_target, hint}, 409)`` —
+                                   added by §2A.8 workstream 8 step 2a; this
+                                   route is synchronous and cannot honor it
   * core build fails             → ``({"error": "failed to build core: …"}, 500)``
   * ``InvestigationSpecError``   → ``({"error": "spec error: …"}, 400)``
   * ``FileNotFoundError``        → ``({"error": "<str(e)>"}, 404)``
@@ -75,6 +78,36 @@ def investigation_run(ws_root: Path, body: dict) -> "tuple[dict, int]":
     name = study_crud_mutations._study_name_from_body(body)
     if not name:
         return {"error": "name is required"}, 400
+
+    # §2A.8 workstream 8 step 2a: this route must not run work the user asked to
+    # run on the deployment. `resolve_run_target` is item 18's authoritative
+    # local-vs-deployment answer -- "never by which button happened to be
+    # clicked" -- and this path never consulted it, so on a pinned deployment
+    # (or any tab switched to a materialized build) every simulation ran on the
+    # workbench host regardless of that choice.
+    #
+    # It REFUSES rather than dispatching, for a reason beyond routing: this
+    # route is synchronous -- `run_investigation` orchestrates inline in the
+    # request -- and a gateway-fronted deployment kills a silent request at 60 s
+    # (measured on smsvpctest; prod is 600 s). So it could not carry a real
+    # investigation to completion even with the target honored. The async route
+    # already exists, already dispatches, and already has a UI: "Run unblocked".
+    #
+    # 409 mirrors `catalog_install_views`' system-deps gate -- a real pre-run
+    # gate with a structured body and an actionable hint -- rather than the
+    # 400/404 dispatch at the tail of this function, which classifies *failures*.
+    from vivarium_workbench.lib import remote_pinned
+    if remote_pinned.resolve_run_target(Path(ws_root)) == "deployment":
+        return {
+            "error": "investigation resolves to the 'deployment' run target",
+            "name": name,
+            "run_target": "deployment",
+            "hint": "POST /api/investigation-run-unblocked instead: it submits a "
+                    "background job (202 + job_id, poll "
+                    "/api/investigation-run-unblocked-status) and dispatches to "
+                    "viva-api. This route runs inline and cannot honor a "
+                    "deployment target.",
+        }, 409
 
     # Resolve workspace package
     ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8"))

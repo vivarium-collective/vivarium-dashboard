@@ -6705,9 +6705,14 @@ def create_app() -> FastAPI:
 
         Status codes (byte-identical to the legacy handler, via
         ``lib.investigation_run_views.investigation_run``, modulo the deferred
-        commit):
+        commit and the 409 below):
           - 400  missing name / ``InvestigationSpecError`` (spec error)
           - 404  ``FileNotFoundError`` (composite/spec file missing)
+          - 409  the workspace resolves to the ``deployment`` run target —
+                 this route is SYNCHRONOUS and cannot honor it; the body's
+                 ``hint`` names ``POST /api/investigation-run-unblocked``,
+                 which submits a background job and dispatches to viva-api
+                 (REFACTOR-PLAN §2A.8 workstream 8 step 2a)
           - 500  workspace core build failed
           - 200  the run/render summary dict
         """
