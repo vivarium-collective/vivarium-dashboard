@@ -770,7 +770,7 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 }
 .viv-rail-brand-link:hover .viv-rail-brand strong{ text-decoration:underline; }
 .viv-rail-logo{
-  width:46px; height:46px; flex:0 0 46px;
+  width:38px; height:38px; flex:0 0 38px;
   border-radius:8px;
   display:block;
   object-fit:contain;
