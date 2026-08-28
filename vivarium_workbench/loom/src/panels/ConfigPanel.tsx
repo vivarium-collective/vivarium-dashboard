@@ -299,6 +299,9 @@ export function ConfigPanel(props: ConfigPanelProps) {
   const [inputsErr, setInputsErr] = useState<string | null>(null);
   const [inputsApplied, setInputsApplied] = useState(false);
   const [inputsMode, setInputsMode] = useState<'fields' | 'json'>('fields');
+  // Selected Configure/Inputs tab; null = "not chosen yet" → derive a sensible
+  // default in render (Configure if the composite has params, else Inputs).
+  const [tabSel, setTabSel] = useState<'config' | 'inputs' | null>(null);
   // Parsed view of the current inputs text for the structured field editor.
   let inputsObj: unknown = {};
   try { inputsObj = JSON.parse(inputsText); } catch { /* JSON mode shows the error */ }
@@ -328,17 +331,76 @@ export function ConfigPanel(props: ConfigPanelProps) {
     }
   }
 
+  // Which section is showing. A composite with no declared params opens straight
+  // on Inputs (no empty Configure tab); otherwise Configure leads. `tabSel` is
+  // the user's explicit choice, `tab` the effective one (derived when unset).
+  const hasConfig = paramKeys.length > 0;
+  const tab: 'config' | 'inputs' = tabSel ?? (hasConfig ? 'config' : 'inputs');
+
   return (
     <div className="cfg-panel">
       {props.readOnly && (
         <p className="cfg-note">Read-only preview — editing config requires a live dashboard.</p>
       )}
 
+      {/* Tab switcher — jump between Configure and Inputs without scrolling the
+          whole stacked panel. Sticky (see .cfg-tabs) so it stays reachable. */}
+      <div className="cfg-tabs" role="tablist">
+        {hasConfig && (
+          <button type="button" role="tab" aria-selected={tab === 'config'}
+            className={'cfg-tab' + (tab === 'config' ? ' cfg-tab-active' : '')}
+            onClick={() => setTabSel('config')}>
+            Configure{paramKeys.length ? ' · ' + paramKeys.length : ''}
+          </button>
+        )}
+        <button type="button" role="tab" aria-selected={tab === 'inputs'}
+          className={'cfg-tab' + (tab === 'inputs' ? ' cfg-tab-active' : '')}
+          onClick={() => setTabSel('inputs')}>
+          Inputs{inputKeys.length ? ' · ' + inputKeys.length : ''}
+        </button>
+      </div>
+
       {/* Configure — only when the composite actually declares parameters, so a
-          zero-param composite opens straight on Inputs (no dead header/note). */}
-      {paramKeys.length > 0 && (
+          zero-param composite opens straight on Inputs (no dead tab/note). */}
+      {hasConfig && tab === 'config' && (
         <>
-        <div className="cfg-group-h">Configure</div>
+        {/* Load from JSON config — pinned to the TOP of Configure so it's the
+            first thing you reach (was previously buried below the fields). */}
+        <div className="cfg-extconfig-top">
+          <button type="button" className={'cfg-json-toggle cfg-extconfig-toggle' + (extConfigOpen ? ' open' : '')}
+            onClick={() => setExtConfigOpen((o) => !o)} disabled={props.readOnly}
+            title="Upload or paste a JSON config document to set several parameters at once">
+            📄 Load from JSON config
+          </button>
+          {extConfigOpen && (
+            <div className="cfg-extconfig">
+              <input type="file" accept=".json,application/json" disabled={props.readOnly}
+                onChange={handleExtConfigFile} />
+              <textarea
+                className="sr-input cfg-input cfg-extconfig-box"
+                spellCheck={false}
+                rows={Math.min(12, Math.max(4, extConfigText.split('\n').length))}
+                placeholder="{ …a JSON config document… } — matched against this composite's declared params"
+                value={extConfigText}
+                disabled={props.readOnly}
+                onChange={(e) => { setExtConfigText(e.target.value); setExtConfigError(null); setExtConfigResult(null); }}
+              />
+              {extConfigError && <div className="cfg-error">{extConfigError}</div>}
+              {extConfigResult && !extConfigError && <div className="cfg-applied">{extConfigResult}</div>}
+              <div className="cfg-actionbar">
+                <button className="sr-run-btn cfg-apply-btn" onClick={handleApplyExtConfig}
+                  disabled={extConfigApplying || props.readOnly || !props.compositeId || !extConfigText.trim()}>
+                  {extConfigApplying ? 'Matching…' : 'Apply config'}
+                </button>
+                <button type="button" className="cfg-reset-btn" onClick={handleViewAsBigraph}
+                  disabled={viewingBigraph || props.readOnly || !extConfigText.trim() || !props.onBigraphDocument}
+                  title="Render this config's own declared structure as a bigraph document — no build">
+                  {viewingBigraph ? 'Rendering…' : 'View as bigraph'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
         <div className="cfg-fields">
           {paramKeys.map((k) => {
             const pdef = props.parameters[k];
@@ -399,47 +461,15 @@ export function ConfigPanel(props: ConfigPanelProps) {
             title="Revert fields to the composite's declared defaults">
             Reset
           </button>
-          <button type="button" className="cfg-json-toggle cfg-extconfig-toggle"
-            onClick={() => setExtConfigOpen((o) => !o)} disabled={props.readOnly}
-            title="Upload or paste a JSON config document to set several parameters at once">
-            📄 External config
-          </button>
         </div>
-        {extConfigOpen && (
-          <div className="cfg-extconfig">
-            <div className="cfg-extconfig-divider cfg-note">— OR: load an external JSON config —</div>
-            <input type="file" accept=".json,application/json" disabled={props.readOnly}
-              onChange={handleExtConfigFile} />
-            <textarea
-              className="sr-input cfg-input cfg-extconfig-box"
-              spellCheck={false}
-              rows={Math.min(12, Math.max(4, extConfigText.split('\n').length))}
-              placeholder="{ …a JSON config document… } — matched against this composite's declared params"
-              value={extConfigText}
-              disabled={props.readOnly}
-              onChange={(e) => { setExtConfigText(e.target.value); setExtConfigError(null); setExtConfigResult(null); }}
-            />
-            {extConfigError && <div className="cfg-error">{extConfigError}</div>}
-            {extConfigResult && !extConfigError && <div className="cfg-applied">{extConfigResult}</div>}
-            <div className="cfg-actionbar">
-              <button className="sr-run-btn cfg-apply-btn" onClick={handleApplyExtConfig}
-                disabled={extConfigApplying || props.readOnly || !props.compositeId || !extConfigText.trim()}>
-                {extConfigApplying ? 'Matching…' : 'Apply config'}
-              </button>
-              <button type="button" className="cfg-reset-btn" onClick={handleViewAsBigraph}
-                disabled={viewingBigraph || props.readOnly || !extConfigText.trim() || !props.onBigraphDocument}
-                title="Render this config's own declared structure as a bigraph document — no build">
-                {viewingBigraph ? 'Rendering…' : 'View as bigraph'}
-              </button>
-            </div>
-          </div>
-        )}
         </>
       )}
 
       {/* ---- Inputs: the composite's editable input-store state, as a
            marker-free field editor (JSON toggle for power users). Applied
            SEPARATELY (inputs can follow config); re-renders Explore live. */}
+      {tab === 'inputs' && (
+      <>
       <div className="cfg-group-h cfg-group-h-inputs">
         <span>Inputs</span>
         {inputKeys.length > 0 && (
@@ -485,6 +515,8 @@ export function ConfigPanel(props: ConfigPanelProps) {
             </button>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );
