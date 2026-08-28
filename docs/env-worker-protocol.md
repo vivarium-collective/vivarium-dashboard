@@ -182,11 +182,24 @@ worker runs in **its own pod, from the simulator's own prebuilt image**, so ther
 is no parent to inherit a socketpair from.
 
 - **Direction: the worker dials back.** The workbench listens on an ephemeral
-  port; the worker connects out (`--connect-to HOST:PORT`). Not a style choice:
-  viva-api's service account may create **Jobs but not Services**, so a worker pod
-  has no stable DNS name to dial, and the alternative (reading `status.podIP`)
-  needs pod-get on the workbench side plus a race against scheduling. Dial-back
-  also keeps the workbench free of cluster API access entirely (§2B.2).
+  port; the worker connects out (`--connect-to HOST:PORT`). viva-api's service
+  account creates **Jobs but not Services**, so a worker pod has no stable DNS
+  name to dial, and the alternative (reading `status.podIP`) needs pod-get on the
+  workbench side plus a race against scheduling. Dial-back also keeps the
+  workbench free of cluster API access entirely (§2B.2).
+
+  > **Corrected 2026-08-28.** This bullet used to open "Not a style choice",
+  > presenting the ServiceAccount's lack of `services` as a fixed constraint. It
+  > is **a three-line edit to `kustomize/base/rbac-jobs.yaml`** (which grants
+  > `jobs`, `jobs/status`, `configmaps`, `pods`, `pods/log`). Stating it as a law
+  > let it harden into a premise that went unexamined for weeks and shaped this
+  > section. Granting `services` and dialling *in* is a live option — see
+  > [`run-orchestration-consolidation.md`](run-orchestration-consolidation.md)
+  > §E(f), which also measures what it would take to reach a worker from a laptop
+  > (a `NodePort` plus one security-group rule; a ClusterIP does **not** route
+  > from the SSM tunnel host, which is not an EKS node). The remaining reasons
+  > above — the podIP race, and keeping the workbench out of the cluster API —
+  > are real and survive the correction; the RBAC one does not.
 - **Handshake, below the protocol.** A listening port is an attack surface, so the
   worker's first frame must carry a one-time token (compared with
   `compare_digest`); anything else is closed **before reaching the method
