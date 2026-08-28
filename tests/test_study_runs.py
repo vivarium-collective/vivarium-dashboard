@@ -71,10 +71,18 @@ def test_study_run_baseline_pinned_deployment_409_over_real_http(
     assert res.status_code == 409, res.text
     # item 83: this exact scenario (default baseline entry, deployment target)
     # now attempts REAL delegation to remote_run_submit first (the proven
-    # dispatch mechanism) — this test's spawned subprocess has no real sms-api
-    # to reach, so that resolution degrades cleanly to this specific error
-    # rather than the old generic launch_into_study 409. Still never falls
-    # through to a local subprocess (the property this test exists to prove).
+    # dispatch mechanism); with no sms-api reachable that resolution degrades
+    # cleanly to this specific error rather than the old generic
+    # launch_into_study 409. Still never falls through to a local subprocess
+    # (the property this test exists to prove).
+    #
+    # "No sms-api reachable" is GUARANTEED by conftest's
+    # _isolate_viva_api_base, not assumed. This comment used to assert it as a
+    # fact about the subprocess; it was really a fact about CI. On a laptop
+    # with the dev SSM tunnel up, _sms_api_base()'s localhost:8080 default IS
+    # that tunnel, the spawned server resolved a real simulator from the live
+    # deployment, and this line failed with a 400 from a stage it never meant
+    # to reach.
     assert "no remote build resolved" in res.json().get("error", "").lower()
 
 

@@ -1544,25 +1544,36 @@ def test_post_composite_test_run_accepts_generator_id(workspace_server):
         return {"state": {"x_value": x}}
 
     expected_id = f"{__name__}.vix-endpoints-gen"
-    try:
-        assert expected_id in _REGISTRY, "decorator must register the generator"
-        code, j = _post(
-            workspace_server.url + "/api/composite-test-run",
-            {"id": expected_id, "overrides": {"x": 1.0}, "steps": 1},
-        )
-        # The key assertion: we must NOT hit the file-lookup 404.
-        assert not (code == 404 and "spec file not found" in (j.get("error") or "")), (
-            f"Generator id {expected_id} should not fall through to "
-            f"file-based 'spec file not found'; got code={code} body={j}"
-        )
-        # Acceptable outcomes: 202 (detached run accepted + spawned — the
-        # normal case now), 200 (legacy/synchronous), or any non-404-spec-
-        # lookup error (run failure, parse failure, etc.).
-        assert code == 202 or code == 200 or code >= 400, (
-            f"unexpected status: {code} {j}"
-        )
-    finally:
-        _REGISTRY.pop(expected_id, None)
+    assert expected_id in _REGISTRY, "decorator must register the generator"
+    code, j = _post(
+        workspace_server.url + "/api/composite-test-run",
+        {"id": expected_id, "overrides": {"x": 1.0}, "steps": 1},
+    )
+    # The key assertion: we must NOT hit the file-lookup 404.
+    assert not (code == 404 and "spec file not found" in (j.get("error") or "")), (
+        f"Generator id {expected_id} should not fall through to "
+        f"file-based 'spec file not found'; got code={code} body={j}"
+    )
+    # Acceptable outcomes: 202 (detached run accepted + spawned — the
+    # normal case now), 200 (legacy/synchronous), or any non-404-spec-
+    # lookup error (run failure, parse failure, etc.).
+    assert code == 202 or code == 200 or code >= 400, (
+        f"unexpected status: {code} {j}"
+    )
+    # No manual registry cleanup here. `_REGISTRY` is a _RegistryView, a live
+    # view over process_bigraph's composite-spec registry, and it implements
+    # neither `pop` nor `__delitem__` -- the backing registry offers no per-key
+    # removal at all, only `clear_registry()`. So the old
+    # `finally: _REGISTRY.pop(expected_id, None)` raised
+    # `AttributeError: '_RegistryView' object has no attribute 'pop'` from the
+    # finally clause, which both failed the test and, being a teardown error,
+    # obscured whether the assertions above had passed. They had.
+    #
+    # conftest's autouse `_restore_composite_spec_registry` already
+    # snapshot/restores the whole process-global registry around every test --
+    # the correct scope for a process-global registry, and exactly what this
+    # hand-rolled cleanup was reaching for. The long comment above that fixture
+    # calls out this same missing-`__delitem__` trap.
 
 
 # ---------------------------------------------------------------------------

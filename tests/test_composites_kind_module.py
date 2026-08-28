@@ -122,34 +122,44 @@ def test_get_composite_doc_handles_generator_entry():
         return {"state": {"x_value": x}}
 
     expected_id = f"{__name__}.kind-module-test-gen"
-    try:
-        assert expected_id in _REGISTRY, "decorator must register the generator"
-        entry = _REGISTRY[expected_id]
-        assert entry.module == __name__
-        assert entry.parameters == {"x": {"type": "float", "default": 0.5}}
+    assert expected_id in _REGISTRY, "decorator must register the generator"
+    entry = _REGISTRY[expected_id]
+    assert entry.module == __name__
+    assert entry.parameters == {"x": {"type": "float", "default": 0.5}}
 
-        # build_generator should call the function with merged kwargs.
-        built = build_generator(entry, overrides={"x": 1.25})
-        assert built == {"state": {"x_value": 1.25}}
+    # build_generator should call the function with merged kwargs.
+    built = build_generator(entry, overrides={"x": 1.25})
+    assert built == {"state": {"x_value": 1.25}}
 
-        # discover_all_composites should merge generator entries when
-        # pbg-superpowers is importable. We can't easily invoke it against
-        # a workspace path without polluting it, so verify directly via the
-        # discover_all bridge that composite_lookup uses.
-        from process_bigraph.composite_discovery import discover_all
-        merged = discover_all()
-        assert expected_id in merged, (
-            f"discover_all must surface the registered generator; "
-            f"saw keys: {sorted(merged.keys())[:5]}..."
-        )
-        rec = merged[expected_id]
-        assert rec["kind"] == "generator"
-        assert rec["module"] == __name__
-        assert rec["name"] == "kind-module-test-gen"
-        assert rec["parameters"] == {"x": {"type": "float", "default": 0.5}}
-    finally:
-        # Clean up: keep the registry pristine between tests.
-        _REGISTRY.pop(expected_id, None)
+    # discover_all_composites should merge generator entries when
+    # pbg-superpowers is importable. We can't easily invoke it against
+    # a workspace path without polluting it, so verify directly via the
+    # discover_all bridge that composite_lookup uses.
+    from process_bigraph.composite_discovery import discover_all
+    merged = discover_all()
+    assert expected_id in merged, (
+        f"discover_all must surface the registered generator; "
+        f"saw keys: {sorted(merged.keys())[:5]}..."
+    )
+    rec = merged[expected_id]
+    assert rec["kind"] == "generator"
+    assert rec["module"] == __name__
+    assert rec["name"] == "kind-module-test-gen"
+    assert rec["parameters"] == {"x": {"type": "float", "default": 0.5}}
+    # No manual registry cleanup here. `_REGISTRY` is a _RegistryView, a live
+    # view over process_bigraph's composite-spec registry, and it implements
+    # neither `pop` nor `__delitem__` -- the backing registry offers no per-key
+    # removal at all, only `clear_registry()`. So the old
+    # `finally: _REGISTRY.pop(expected_id, None)` raised
+    # `AttributeError: '_RegistryView' object has no attribute 'pop'` from the
+    # finally clause, which both failed the test and, being a teardown error,
+    # obscured whether the assertions above had passed. They had.
+    #
+    # conftest's autouse `_restore_composite_spec_registry` already
+    # snapshot/restores the whole process-global registry around every test --
+    # the correct scope for a process-global registry, and exactly what this
+    # hand-rolled cleanup was reaching for. The long comment above that fixture
+    # calls out this same missing-`__delitem__` trap.
 
 
 def test_discover_all_composites_propagates_default_n_steps(tmp_path, monkeypatch):

@@ -70,6 +70,67 @@ def _isolate_viva_home(tmp_path_factory):
 
 
 # ---------------------------------------------------------------------------
+# Live-deployment isolation
+# ---------------------------------------------------------------------------
+
+#: Where an unconfigured viva-api client is pointed for the whole test run.
+#: Port 1 is not bindable by an ordinary process, so a connection there is
+#: refused immediately and deterministically — the same failure CI already
+#: gets, just no longer contingent on what happens to be listening.
+UNREACHABLE_VIVA_API_BASE = "http://127.0.0.1:1"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _isolate_viva_api_base():
+    """Point the viva-api client at a closed port for the whole run.
+
+    ``workspace_deps_views._sms_api_base()`` falls back to
+    ``http://localhost:8080`` when neither ``VIVA_API_BASE`` nor
+    ``SMS_API_BASE`` is set — and **8080 is exactly where a developer's SSM
+    tunnel to the live dev deployment listens** (``sms-proxy.sh -s smsvpctest``,
+    the documented way to reach it). So on a laptop with the tunnel up, any
+    test that resolves a build talked to the real ``sms-api-stanford-test``.
+
+    That is how ``test_study_run_baseline_pinned_deployment_409_over_real_http``
+    came to fail locally while CI stayed green: its spawned server resolved a
+    **real** simulator from the live deployment instead of degrading to "no
+    remote build resolved", so the response was ``400 num_generations is
+    required`` from a stage the test never meant to reach. The test's docstring
+    had recorded "this test's spawned subprocess has no real sms-api to reach"
+    as a property of the test; it was really a property of the machine.
+
+    Read the near-miss, because it is the actual reason this fixture exists
+    rather than a one-line fix in that test: the only thing that stopped the
+    run from being **dispatched to real AWS Batch** was that this study
+    declares no ``n_generations``/``n_seeds``, so ``remote_run_submit``
+    refused at its own guard. A fixture study carrying those two knobs would
+    have submitted a real, billable campaign from a unit test.
+
+    Set in ``os.environ`` rather than via monkeypatch for the same reason as
+    :func:`_isolate_viva_home`: ``dashboard_client`` hands
+    ``os.environ.copy()`` to the server subprocess, which is the process that
+    actually makes these calls. Both names are set because ``_sms_api_base``
+    reads ``VIVA_API_BASE`` first and ``SMS_API_BASE`` as the legacy alias —
+    setting only one leaves the other free to point somewhere real.
+
+    Tests that want a specific base still ``monkeypatch.setenv`` it (function
+    scope wins over this); tests that want the *unconfigured* default must
+    delete **both** names, which is what "unconfigured" has always meant.
+    """
+    previous = {k: os.environ.get(k) for k in ("VIVA_API_BASE", "SMS_API_BASE")}
+    for k in previous:
+        os.environ[k] = UNREACHABLE_VIVA_API_BASE
+    try:
+        yield UNREACHABLE_VIVA_API_BASE
+    finally:
+        for k, v in previous.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+# ---------------------------------------------------------------------------
 # Shared dashboard_client fixture
 # ---------------------------------------------------------------------------
 

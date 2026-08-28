@@ -28,6 +28,10 @@ class _DownClient:
 
 
 def test_remote_health_reachable(monkeypatch):
+    # Clear the canonical name: _sms_api_base reads VIVA_API_BASE first, and
+    # conftest's _isolate_viva_api_base sets both. This test exercises the
+    # legacy alias specifically (cf. test_env_worker_launcher, same pattern).
+    monkeypatch.delenv("VIVA_API_BASE", raising=False)
     monkeypatch.setenv("SMS_API_BASE", "http://sms-api.example:8080")
     monkeypatch.setattr(sac, "SmsApiClient", _OkClient)
     assert wdv.remote_health() == {
@@ -40,6 +44,10 @@ def test_remote_health_reachable(monkeypatch):
 
 
 def test_remote_health_unreachable_does_not_raise(monkeypatch):
+    # Clear the canonical name: _sms_api_base reads VIVA_API_BASE first, and
+    # conftest's _isolate_viva_api_base sets both. This test exercises the
+    # legacy alias specifically (cf. test_env_worker_launcher, same pattern).
+    monkeypatch.delenv("VIVA_API_BASE", raising=False)
     monkeypatch.setenv("SMS_API_BASE", "http://sms-api.example:8080")
     monkeypatch.setattr(sac, "SmsApiClient", _DownClient)
     h = wdv.remote_health()
@@ -50,6 +58,9 @@ def test_remote_health_unreachable_does_not_raise(monkeypatch):
 
 
 def test_remote_health_unconfigured_uses_default_and_flags_it(monkeypatch):
+    # Both names, not just the legacy alias — see the note in
+    # test_remote_run_endpoints.test_sms_api_base_default_and_override.
+    monkeypatch.delenv("VIVA_API_BASE", raising=False)
     monkeypatch.delenv("SMS_API_BASE", raising=False)
     monkeypatch.setattr(sac, "SmsApiClient", _DownClient)
     h = wdv.remote_health()
