@@ -157,6 +157,33 @@ def _result(name: str, status: str, detail: str) -> dict:
     return {"name": name, "status": status, "detail": detail}
 
 
+def _in_structure(path: str, leaves: list[str]) -> bool:
+    """True if ``path`` is an emittable leaf OR an existing branch above one."""
+    if path in leaves:
+        return True
+    prefix = path + "."
+    return any(l.startswith(prefix) for l in leaves)
+
+
+def _parent_in_structure(path: str, leaves: list[str]) -> bool:
+    """True if ``path``'s immediate parent exists in the structure.
+
+    This is what separates a *fabricated* selector from one merely pointing at a
+    store that is **empty at build time**.  ``available_observables`` walks the
+    BUILT state, so a store written only in a Process's ``next_update`` (e.g. a
+    coupler writing ``environment.external_concentrations`` each tick) has no
+    leaves yet and would otherwise look identical to a typo.  Its PARENT node,
+    however, is present in both cases -- whereas a fabricated subtree
+    (``agents.0.metabolism.*`` where the process key is ``ecoli-metabolism``) has
+    no parent either.  Build-time absence is not fabrication; absence all the way
+    up the path is.
+    """
+    parent = path.rpartition(".")[0]
+    if not parent:
+        return True  # a bare top-level name has no parent to check
+    return _in_structure(parent, leaves)
+
+
 def _validate_element(
     name: str,
     index_by: dict,
@@ -209,6 +236,23 @@ def _validate_element(
             return _result(
                 name, "not_in_structure",
                 f"{value!r} not in static {obs!r} catalog",
+            )
+        # never-fabricate: the run-time catalog cannot verify the VALUE, but the
+        # readout's declared store_path is ordinary structure and must exist.
+        # Without this, a readout carrying `index_by: {type: bulk_id}` gets a free
+        # pass on a fabricated store_path -- the catalog-backed branch below
+        # already guards this via `if obs in leaves`. Only flag when the path is
+        # absent AND its parent is too, so a store that is legitimately empty at
+        # build time is not mistaken for a typo (see _parent_in_structure).
+        if (
+            observable
+            and not _in_structure(observable, leaves)
+            and not _parent_in_structure(observable, leaves)
+        ):
+            return _result(
+                name, "not_in_structure",
+                f"{itype} {value!r}: observable {observable!r} is not exposed by "
+                "the composite (neither it nor its parent is in the structure)",
             )
         return _result(
             name, "aspirational",
