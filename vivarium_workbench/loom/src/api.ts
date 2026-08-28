@@ -156,7 +156,7 @@ export async function fetchInnerComposite(
 
 // --- Run lifecycle (start-then-poll) -------------------------------------
 
-export type RunStatusValue = 'running' | 'completed' | 'failed' | 'orphaned';
+export type RunStatusValue = 'running' | 'completed' | 'failed' | 'orphaned' | 'cancelled';
 
 export interface StartRunArgs {
   id: string;
@@ -295,4 +295,24 @@ export async function fetchRunTrajectory(runId: string): Promise<RunTrajectory> 
   const body = await r.json();
   if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
   return body as RunTrajectory;
+}
+
+export interface StopRunResponse {
+  run_id: string;
+  outcome: string;   // signalled | already_terminal | no_pid | dead | not_found
+  status?: string;   // 'cancelled' once stopped
+}
+
+/** Stop an in-flight run: SIGTERMs the detached worker's process group and marks
+ *  it `cancelled`. Whatever the run emitted up to the stop stays readable via
+ *  fetchRunTrajectory — so the caller keeps the results computed so far.
+ *  Idempotent: stopping an already-finished run is a 200 no-op. */
+export async function stopRun(runId: string): Promise<StopRunResponse> {
+  const r = await fetch(`/api/composite-run/${runId}/stop`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
+  return body as StopRunResponse;
 }

@@ -132,4 +132,30 @@ describe('run lifecycle fetch helpers', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/composite-run/r-1');
     expect(res.trajectory).toHaveLength(1);
   });
+
+  it('stopRun POSTs to the stop endpoint and returns the outcome', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ run_id: 'r-1', outcome: 'signalled', status: 'cancelled' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { stopRun } = await import('../api');
+    const res = await stopRun('r-1');
+    expect(fetchMock).toHaveBeenCalledWith('/api/composite-run/r-1/stop', expect.objectContaining({
+      method: 'POST',
+    }));
+    expect(res).toEqual({ run_id: 'r-1', outcome: 'signalled', status: 'cancelled' });
+  });
+
+  it('stopRun surfaces a server error', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'not_found' }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { stopRun } = await import('../api');
+    await expect(stopRun('nope')).rejects.toThrow(/not_found/);
+  });
 });
