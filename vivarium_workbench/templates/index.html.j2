@@ -808,7 +808,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
             <rect x="15.8" y="14.8" width="4.4" height="4.4" rx="0.3"/>
           </svg>
         </span>
-        <span class="viv-rail-link-label">Registry</span>
+        <span class="viv-rail-link-label">Catalog</span>
       </a>
       <!-- Processes: a tall process box with an arrow feeding in (left) and an
            arrow exiting (right), both outside the box — input → process → output.
@@ -999,7 +999,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         <h2>How to use it</h2>
         <ul class="about-steps">
           <li><strong>Resources</strong> — the datasets, references, and expert notes your work draws on.</li>
-          <li><strong>Registry / Processes</strong> — browse every Composite and Process. Open a card to
+          <li><strong>Catalog / Processes</strong> — browse every Composite and Process. Open a card to
             <em>Configure</em> its parameters, choose <em>Observables</em> and an emitter, <em>Explore</em> its
             bigraph, and <em>Run</em> it — the run's progress and figures appear under <em>Outputs</em>.</li>
           <li><strong>Studies</strong> — organize runs into investigations that pose a question and gate on an
@@ -1007,7 +1007,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
           <li><strong>Runs</strong> — every simulation you've launched, with its results and artifacts.</li>
           <li><strong>Analysis</strong> — tools and viewers matched to what your runs produced.</li>
         </ul>
-        <p class="about-fineprint">Tip: start on <strong>Registry → Composites</strong>, open
+        <p class="about-fineprint">Tip: start on <strong>Catalog → Composites</strong>, open
           <code>ecoli_baseline</code> (or any composite), set <strong>Steps</strong>, and hit <strong>▶ Run</strong>.</p>
       </section>
 
@@ -1034,7 +1034,6 @@ a.viv-bs-commit:hover { text-decoration: underline; }
 <!-- ===== PAGE: ANALYSIS TOOLS ===== -->
 <section id="page-visualizations" class="page" data-page="visualizations">
   <div class="panel">
-    <h3>Tools <span id="viz-count" class="count-badge"></span></h3>
     <div id="analyses-gallery" class="analyses-gallery">
       <p class="empty-state">Loading saved visualizations&hellip;</p>
     </div>
@@ -1802,7 +1801,7 @@ a.viv-bs-commit:hover { text-decoration: underline; }
 <div id="modal-inv-add-composite" class="modal-overlay">
   <div class="modal-box">
     <button class="modal-close" onclick="closeModal('modal-inv-add-composite')">&times;</button>
-    <h3>Add composite from Registry</h3>
+    <h3>Add composite from Catalog</h3>
     <form id="form-inv-add-composite"
           onsubmit="event.preventDefault(); _submitAddComposite(this)">
       <label>Composite (workspace catalog)

@@ -1546,7 +1546,7 @@
       '<h4 style="margin:0 0 8px;font-size:0.95em;text-transform:uppercase;letter-spacing:0.06em;color:#374151">Visualizations' +
       ' <span class="count-badge" style="font-size:0.8em">' + vizzes.length + '</span></h4>';
     if (vizzes.length === 0) {
-      html += '<p class="empty-state muted" style="margin:0">No Visualization classes found. Install a pbg-* package that provides one (Registry tab &rarr; Available modules).</p>';
+      html += '<p class="empty-state muted" style="margin:0">No Visualization classes found. Install a pbg-* package that provides one (Catalog tab &rarr; Available modules).</p>';
     } else {
       html += vizzes.map(_renderClassCard).join('');
     }
@@ -1860,7 +1860,7 @@
 
   function _renderKindPicker(items, container, kind) {
     if (!items || items.length === 0) {
-      container.innerHTML = '<p class="empty-state">No ' + kind + 's registered. Install a pbg-* package that provides one (Registry tab &rarr; Available modules).</p>';
+      container.innerHTML = '<p class="empty-state">No ' + kind + 's registered. Install a pbg-* package that provides one (Catalog tab &rarr; Available modules).</p>';
       return;
     }
     // Sort: in_workspace → framework → environment_only, then alpha by name.

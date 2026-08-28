@@ -106,6 +106,33 @@ def test_parsimony_viewer_kept_when_no_contributed_3d_viewer(monkeypatch):
     assert {m["ref"] for m in tools["parsimony-viewer"]["matched"]} == {"ecoli-3d"}
 
 
+def test_workspace_can_exclude_a_tool(monkeypatch):
+    # A workspace opts a tool out via ui.analysis_tools_exclude — the suppressed
+    # tool is dropped from BOTH the contributed-viewer and built-in branches even
+    # when it otherwise matches. Here sms-ecoli suppresses the Parsimony Viewer
+    # while keeping a 3d_pack (so it WOULD match without the exclude).
+    monkeypatch.setattr(at, "_excluded_tool_ids", lambda ws: {"parsimony-viewer", "omics"})
+    monkeypatch.setattr(at, "viewers_public",
+        lambda ws: [{"id": "omics", "title": "Omics", "requires": [],
+                     "targets": [{"study": "s1", "label": "s1"}]},
+                    {"id": "pathway-tools", "title": "PTools", "requires": [],
+                     "targets": [{"study": "s1", "label": "s1"}]}])
+    monkeypatch.setattr(at, "_run_candidates", lambda ws: [])
+    monkeypatch.setattr(at, "_pack_candidates",
+        lambda ws: [{"ref": "ecoli-3d", "label": "ecoli-3d", "capabilities": ["3d_pack"]}])
+    ids = {t["id"] for t in at.build_analysis_tools("/ws")}
+    assert "parsimony-viewer" not in ids   # built-in suppressed despite a 3d_pack
+    assert "omics" not in ids               # contributed viewer suppressed
+    assert "pathway-tools" in ids           # a non-excluded viewer still shows
+
+
+def test_no_exclude_by_default(monkeypatch, tmp_path):
+    # Missing/blank ui.analysis_tools_exclude → nothing suppressed (default).
+    (tmp_path / "workspace.yaml").write_text("name: x\nui: {}\n")
+    assert at._excluded_tool_ids(tmp_path) == set()
+    assert at._excluded_tool_ids(tmp_path / "nonexistent") == set()
+
+
 def test_run_label_strips_module_prefix():
     # a run's dropdown label should be the concise, unique id — not the verbose
     # stored param-dump label.
