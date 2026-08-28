@@ -68,8 +68,13 @@ construction, and a dispatched run is an item that takes longer.
    after a restart is re-attached, not orphaned. *(Revised by A0b: the cheaper
    route to this is to stop holding a thread per run at all, so there is nothing
    to orphan — viva-api already holds the state, keyed by `simulation_id`.)*
-3. **The viva-api relay is in scope as a design**, gated on a real need before
-   being built.
+3. ~~**The viva-api relay is in scope as a design**, gated on a real need before
+   being built.~~ **Superseded by 4.**
+4. **DECIDED 2026-08-28 — §E option (e): proxy env-worker traffic through
+   sms-api**, which owns queuing, durability and status. This settles the
+   intermediate tier *and* §C: the relay is no longer gated on bit-identical
+   local execution, because it is now the transport for a product decision —
+   putting the worker's 26 capabilities on an API every client can call.
 
 ---
 
@@ -458,16 +463,30 @@ Costs, stated plainly:
   outage for hosted introspection — a new coupling that does not exist now.
 - **A hop on every interactive call.** In-cluster that is cheap; over SSM from a
   laptop it is not, and interactive latency is the thing users feel.
-- **A duplex transport sms-api does not have.** There are no WebSocket endpoints
-  in viva-api today (§1 of the API survey); this introduces the first, plus ALB
-  upgrade handling and auth.
+- ~~**A duplex transport sms-api does not have.**~~ **Overstated — corrected
+  2026-08-28.** The interactive tier needs **no WebSocket**. Because *sms-api*
+  would hold the worker socket, the client→sms-api leg is plain request/response:
+  `POST /env-worker/v1/workers/{name}/call {method, params}` → sms-api forwards
+  over the socket → returns the result. `EnvWorkerService.start` already takes
+  `callback_host` / `callback_port`, so pointing the worker at sms-api instead of
+  the workbench is **configuration, not redesign**. A streaming transport is only
+  needed if something wants push, and nothing does today.
+- **The gateway's 60 s ceiling moves in front of every worker call.** Proxied
+  calls traverse the ALB, so the measured 60 s limit (§A0) now applies to them.
+  That is survivable for interactive work — `ENV_WORKER_CALL_TIMEOUT` is *also*
+  60 s, so the budgets coincide — but it makes the intermediate tier
+  **necessarily task-based**: a long call cannot be a long HTTP request. This
+  constrains the design rather than blocking it.
 - **Local subprocess workers must not proxy.** A laptop routing to itself via the
   cloud is absurd, so the local/remote asymmetry stays and the proxy is a property
   of the *remote* transport only.
 
 ### Where this lands
 
-**(c) and (e) are the real candidates, and the choice is coupled to §C.**
+**DECIDED: (e).** The reasoning below is kept because it records *why*, and
+because the §C coupling it identified is what the decision turns on.
+
+**(c) and (e) were the real candidates, and the choice was coupled to §C.**
 
 - If the **relay is built** (§C), the transport cost is already paid, and (e) is
   then mostly "put a queue and a table behind it" — making it the natural
@@ -485,6 +504,46 @@ Either way, three things stay unsettled and should not be hand-waved: **where
 results land** (the same question §A0b raises about
 `download_compose_results`), **what the idle-TTL reaper must know** so it does not
 reap a worker mid-job, and **which methods qualify** — the same scale axis as §B.
+
+### What (e) means for the rest of this plan
+
+The decision reaches back into sections written before it.
+
+- **§C is no longer gated.** The relay is the transport for (e). Its cost is
+  lower than §C assumed, since the interactive tier is request/response, not a
+  duplex stream.
+- **§A2′ moves repositories.** Durable job state stops being a workbench concern:
+  sms-api records the task in Postgres alongside `ORMHpcRun` / `ORMAnalysis`. The
+  workbench keeps `simulation_id`-shaped handles, not threads.
+- **§A3′ loses most of its concurrency work.** sms-api must serialize calls
+  **per worker** to honor the worker's serial FIFO contract — the queue that
+  `EnvWorker.call`'s mutex provides today, moved somewhere durable. Cross-worker
+  parallelism is then a scheduling property of sms-api, not a thread pool.
+- **§B is unchanged but better placed.** The scale precheck still decides which
+  tier work belongs in; with three tiers it now has three answers instead of two.
+
+### Open questions (e) does not answer
+
+Recorded so they are decided deliberately rather than by the first commit:
+
+1. **Where the serialization point lives.** sms-api must not issue two concurrent
+   calls down one worker socket. Per-worker lock, per-worker queue, or a single
+   consumer per worker — each has different failure behavior when sms-api itself
+   restarts.
+2. **Whether interactive calls are also task-based.** Uniformity argues yes;
+   latency argues no (an extra round trip on `list_generators` is felt). A split
+   contract — sync under the budget, task-based over it — is more code but
+   matches how the tiers actually differ.
+3. **Auth on the call endpoint.** The worker↔sms-api leg has the dial-back token
+   (§5A). The client→sms-api leg has whatever protects viva-api generally, which
+   is a different question and is now on the path of every workspace query.
+4. **What happens to the local subprocess launcher.** It must *not* proxy — a
+   laptop routing to itself through the cloud is absurd — so `LocalWorkerLauncher`
+   keeps its direct socket and the two transports stay asymmetric. The pool's
+   `env_key` / `kind` split already models this.
+5. **Migration order.** The workbench's `RemoteWorkerLauncher` and
+   `DialBackListener` both move to sms-api. Whether that is a flag-gated parallel
+   path or a cutover determines whether dev can run both shapes during the change.
 
 ## D. Loose ends
 
