@@ -75,6 +75,12 @@ construction, and a dispatched run is an item that takes longer.
    intermediate tier *and* §C: the relay is no longer gated on bit-identical
    local execution, because it is now the transport for a product decision —
    putting the worker's 26 capabilities on an API every client can call.
+5. **OPEN, worth revisiting — §E option (f): a Service per env-worker Job.**
+   Not a competitor to (e): it addresses the *in-cluster* leg (sms-api → worker)
+   where (e) addresses the client leg. Adopting both would retire dial-back and
+   make local and remote transports symmetric. Deferred, not rejected — and the
+   RBAC objection that shaped the original design was **wrong**: it is a
+   three-line Role edit.
 
 ---
 
@@ -480,6 +486,54 @@ Costs, stated plainly:
 - **Local subprocess workers must not proxy.** A laptop routing to itself via the
   cloud is absurd, so the local/remote asymmetry stays and the proxy is a property
   of the *remote* transport only.
+
+**(f) Give each env-worker Job a Kubernetes Service, and dial *in*.**
+
+*Raised in review 2026-08-28, and it corrects a framing error of mine.* Dial-back
+(§5A) exists because "viva-api's ServiceAccount can create Jobs but not Services"
+— which I repeatedly stated as a constraint. It is a **three-line RBAC gap, not a
+law**: `kustomize/base/rbac-jobs.yaml` grants `jobs`, `jobs/status`, `configmaps`,
+`pods`, `pods/log`, and adding `services: [create, get, delete]` is an edit, not
+an architecture.
+
+**What it genuinely buys — symmetry.** Today the two transports are inverted: for
+a local worker the workbench connects to a subprocess it spawned; for a remote
+one the *worker* connects out to the workbench. With a Service both become
+"connect to an address", and the dial-back machinery disappears —
+`DialBackListener`, the advertise-host, the one-time token in the first frame, and
+the `ENV_WORKER_ADVERTISE_HOST`-selects-the-launcher trick. `EnvWorker.from_socket`
+already exists, so the launchers would differ only in how they *obtain* an
+address. **The worker gets simpler, not more complex** — it becomes a plain
+listener. The complexity moves into Kubernetes object lifecycle: a Service per
+Job, garbage-collected via `ownerReferences` so it dies with the Job the way
+`ttl_seconds_after_finished` already handles the Job itself.
+
+**What it does not buy — laptop reach.** A ClusterIP Service is routable only
+inside the cluster network. The SSM tunnel forwards to the internal **ALB**,
+which is an address the bastion can reach; a bastion EC2 in the VPC cannot
+generally reach a ClusterIP, because kube-proxy programs that on cluster nodes.
+Making a worker reachable from a laptop would need a NodePort or a load balancer
+**per ephemeral worker** — minutes of provisioning for a pod that may live for
+one query. So a Service alone leaves the laptop where it is; a stable rendezvous
+is still required, which is what (e) provides.
+
+**What it costs relative to (e).** A direct workbench→worker path bypasses sms-api
+entirely, so it forgoes exactly what (e) was chosen for: durable task records,
+per-worker queuing, status, and reaching the worker's 26 capabilities from the
+Atlantis CLI.
+
+**(e) and (f) are not exclusive, and the combination may be the real end state.**
+They address different legs:
+
+| leg | mechanism |
+|---|---|
+| client (workbench, CLI, CI) → sms-api | (e) — HTTP, queued, durable, product API |
+| sms-api → worker, in-cluster | **(f) — a Service, dialled in** |
+
+In that pairing (f) replaces dial-back for the leg where it is awkward — sms-api
+would no longer bind a listener and hand out its own host/port — while (e) keeps
+the outside world on one durable, addressable API. Worth revisiting on those
+terms rather than as a competitor to (e).
 
 ### Where this lands
 
