@@ -89,9 +89,46 @@ The two orchestrators are two *buttons* with different shapes, both in
 | "Run" (investigation detail) | `/api/investigation-run` | **blocking fetch** — `_runInvestigation` disables the button, sets "Running…", and waits for every simulation |
 
 The handler runs the orchestration **inline in the request**. The dev ALB's idle
-timeout is **60 s** (`smsvpc-Inter-…`, measured; prod's is 600 s). So on a
-gateway-fronted deployment this route cannot complete for any real investigation
-*regardless of the run target* — it is broken by shape, not only by routing.
+timeout is **60 s** (`smsvpc-Inter-…`; prod's is 600 s). So on a gateway-fronted
+deployment a synchronous route cannot complete for any real investigation
+*regardless of the run target* — broken by shape, not only by routing.
+
+**Verified on dev, 2026-08-28**, and the limit turns out to be broader than this
+route. `GET /api/investigations` against a **freshly materialized build** was
+measured through the tunnel:
+
+```
+client:  HTTP 504 Gateway Time-out  after 60.1 s
+server:  GET /api/investigations -> 200 (126037.0 ms)
+         GET /api/investigations -> 200 (172071.4 ms)
+         GET /api/investigations -> 200 (200191.4 ms)
+```
+
+The server **succeeded** — at 126 s, 172 s and 200 s — while the client got a 504
+at 60.1 s. (A synthetic silent request was dropped at 60.1 s too, so the ceiling
+is exact and applies end-to-end through the SSM tunnel.) It is cold-start
+dominated: warm retries returned 200 in 32 s, then 9.9 s.
+
+Two consequences:
+
+- **This is not only an orchestration problem.** *Any* endpoint slower than 60 s
+  is unusable on this deployment, and the first thing a user does after switching
+  to a build — list its investigations — is one of them. That deserves its own
+  issue (cache/warm the discovery, or make the endpoint incremental); it is not
+  fixed by anything in this plan.
+- **It compounds with the run route.** A synchronous `/api/investigation-run` is
+  the same failure with a far longer tail.
+
+**Still inferred, not observed:** that `/api/investigation-run` *specifically*
+exceeds 60 s. It could not be tested on dev — the base workspace is a scaffold
+with zero investigations, and running one on a materialized build would execute
+real simulations. The shape argument (inline orchestration + measured 60 s
+ceiling) is strong, but it is an inference.
+
+It also revises an earlier diagnosis: the 504 reported when switching workspaces
+was attributed wholly to the base-path bug (#960). That bug was real and proven
+— `/?workspace=…` serves PTools — but this is a **second, independent** cause of
+504s in the same flow, and stopping at the first explanation missed it.
 
 **2. That changes A1.** Plumbing dispatch through the `run_one_composite` seam
 would fix the target on a route whose synchronous shape still cannot survive the
