@@ -355,6 +355,121 @@ One mechanism would then cover hosted and laptop, making #937 largely redundant.
 cheaper — local, fast after first sync, no moving network parts, but
 platform-appropriate rather than identical.
 
+**§E raises the stakes on this gate.** If the relay is built, option (e) there —
+proxying *all* env-worker traffic through sms-api, which then owns queuing,
+durability and status — becomes the natural destination, collapsing the relay,
+the missing intermediate tier, and durable job state into one mechanism on a
+substrate that already exists (Postgres, `JobStatus`, `ORMHpcRun`). So this is
+not only a laptop question.
+
+## E. The missing middle: jobs that are neither interactive nor Batch-scale
+
+*(2026-08-28. Raised as a question — "do we need a path for intermediate jobs
+>60 s, and if the worker is single-threaded, does sms-api queue them or do we add
+thread pools?" — recorded with what the code actually constrains.)*
+
+Two tiers exist and nothing sits between them:
+
+| tier | mechanism | bound |
+|---|---|---|
+| interactive | env-worker call | `ENV_WORKER_CALL_TIMEOUT`, default **60 s** |
+| deployment-scale | viva-api → AWS Batch | async; minutes to hours |
+
+**sms-api cannot queue env-worker calls as things stand, because it is not on
+that path.** Dial-back (§5A) means the *workbench* holds a direct socket to the
+worker; viva-api only creates and deletes the Job
+(`/env-worker/v1/workers`). It never sees a method call. Queueing already happens
+one layer earlier, in the workbench.
+
+**Both ends are serial by explicit design.** `env_worker._serve` is a *"Serial
+request loop (spec §8): one request at a time, FIFO."* `EnvWorker.call` holds a
+mutex across send+recv — *"holds the lock so the next frame read is unambiguously
+this call's reply."*
+
+**The binding constraint is monopolization, not the timeout.** The pool keys
+workers `(workspace, env_key, kind)`, so a workspace has **exactly one** worker;
+`ENV_WORKER_POOL_MAX=8` caps *distinct* environments, not concurrency within one.
+So **any long call blocks every other call for that workspace, including
+interactive ones** — an intermediate tier cannot be "an interactive call with a
+bigger timeout".
+
+### Options
+
+**(a) Thread pool inside `env_worker`.** Requires a protocol change — serial FIFO
+is spec §8 and the client's mutex assumes the next frame is its reply, so
+responses would need id-multiplexing and a reader thread. Worse, the worker holds
+**process-global mutable state** built lazily (`_WS_CORE`, `_VIZ_CORE`,
+`_OBS_LINEAGE_AGENT_RE`) and mutates `sys.path`, all written assuming serial
+execution; workspace science code (process-bigraph, numpy) adds its own
+assumptions. **Highest risk.**
+
+**(b) More than one worker per workspace.** Add an instance slot to the pool key.
+No protocol change; concurrency = worker count. But each remote worker is a
+**pod** (1 CPU / 2 GiB), so N-way concurrency costs N pods and the LRU cap becomes
+a concurrency cap. Cheap to build, expensive to run.
+
+**(c) Async submit/poll *over* the serial protocol.** A `submit`-shaped method
+starts work in one background thread and returns a handle; a `poll` retrieves it.
+Every protocol call stays fast, so the worker is never monopolized, and the FIFO
+loop is preserved. Same shape `remote-run-submit` already uses one layer up
+(§A0b). Cheap — but the job state lives **in the worker**, so an evicted,
+idle-reaped or crashed worker loses it, and results have nowhere durable to land.
+
+**(d) Send it to Batch anyway.** Correct for anything genuinely large; Batch
+startup (image pull, queue wait) dominates a 90-second job.
+
+**(e) Proxy every env-worker request through sms-api, and let sms-api own
+queuing, durability and status.** The workbench stops holding a socket to the
+worker; sms-api brokers each call.
+
+This is the option that puts the queue where a queue can actually be durable.
+sms-api already has the substrate — PostgreSQL, a `JobStatus` model,
+`ORMHpcRun` / `ORMAnalysis` — and **already implements exactly this pattern** for
+compose: submit → `/simulation/{id}/status` → `/simulation/{id}/results`, with
+`/simulations/status/batch` for bulk polling. "Let sms-api handle it" is reuse of
+a proven mechanism rather than a new one in the workbench.
+
+It also **subsumes §C rather than depending on it**. The relay was scoped as a
+laptop-only bridge so a laptop could reach worker-as-image; making the proxy
+universal means there is *one* path, and the laptop case falls out. And it
+answers (c)'s weak spot directly: worker death or idle-reap stops losing the job,
+because the record is in Postgres, not in the worker.
+
+Costs, stated plainly:
+
+- **sms-api becomes a hard dependency of every remote env-worker call**, where
+  today it only creates the Job. An sms-api outage would become a workbench
+  outage for hosted introspection — a new coupling that does not exist now.
+- **A hop on every interactive call.** In-cluster that is cheap; over SSM from a
+  laptop it is not, and interactive latency is the thing users feel.
+- **A duplex transport sms-api does not have.** There are no WebSocket endpoints
+  in viva-api today (§1 of the API survey); this introduces the first, plus ALB
+  upgrade handling and auth.
+- **Local subprocess workers must not proxy.** A laptop routing to itself via the
+  cloud is absurd, so the local/remote asymmetry stays and the proxy is a property
+  of the *remote* transport only.
+
+### Where this lands
+
+**(c) and (e) are the real candidates, and the choice is coupled to §C.**
+
+- If the **relay is built** (§C), the transport cost is already paid, and (e) is
+  then mostly "put a queue and a table behind it" — making it the natural
+  destination, and collapsing three separate mechanisms (relay, intermediate
+  tier, durable job state) into one.
+- If the **relay is not built**, (e) is a large change to carry on its own, and
+  **(c)** is the cheap tier that needs no new transport — with its durability gap
+  accepted as the price.
+
+So §C's gating question — does bit-identical local execution matter? — turns out
+to decide more than the laptop case. It decides whether the intermediate tier is
+a workbench feature or an sms-api one.
+
+Either way, three things stay unsettled and should not be hand-waved: **where
+results land** (the same question §A0b raises about
+`download_compose_results`), **what the idle-TTL reaper must know** so it does not
+reap a worker mid-job, and **which methods qualify** — the same scale axis as §B.
+
 ## D. Loose ends
 
 - `remote_run._DEFAULT_POLL_TIMEOUT = 7200` (2 h). A study outliving it fails the
