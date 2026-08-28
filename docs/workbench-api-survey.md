@@ -1,6 +1,9 @@
 # The workbench API as it stands
 
 **Snapshot taken 2026-08-27** against `main` at the merge of #962.
+Client-side companion: [`ui-api-consumption-survey.md`](ui-api-consumption-survey.md)
+— which of these routes the shipped UI actually calls, and which no live client
+touches.
 
 **This is a description, not a specification.** It records what the API *does*
 today so refactoring can start from fact rather than memory. Where behavior looks
