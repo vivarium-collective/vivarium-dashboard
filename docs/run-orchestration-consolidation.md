@@ -75,12 +75,15 @@ construction, and a dispatched run is an item that takes longer.
    intermediate tier *and* §C: the relay is no longer gated on bit-identical
    local execution, because it is now the transport for a product decision —
    putting the worker's 26 capabilities on an API every client can call.
-5. **OPEN, worth revisiting — §E option (f): a Service per env-worker Job.**
-   Not a competitor to (e): it addresses the *in-cluster* leg (sms-api → worker)
-   where (e) addresses the client leg. Adopting both would retire dial-back and
-   make local and remote transports symmetric. Deferred, not rejected — and the
-   RBAC objection that shaped the original design was **wrong**: it is a
-   three-line Role edit.
+5. **OPEN — §E option (f): a Service per env-worker Job.** *Revised twice; it is
+   a genuine competitor to (e), not only a complement.* Measured: a laptop cannot
+   reach a worker today (the tunnel host is not an EKS node, so ClusterIP does
+   not route), **but a `NodePort` Service plus one security-group rule would do
+   it** — the hosts share a VPC. Every blocker here is configuration: the RBAC
+   objection that shaped the original design is a three-line Role edit, and the
+   network gap is one SG rule. What (f) gives up is what (e) was chosen for:
+   queuing, durability, status, and the worker's 26 capabilities as a product API
+   the Atlantis CLI can call.
 
 ---
 
@@ -503,19 +506,57 @@ one the *worker* connects out to the workbench. With a Service both become
 `DialBackListener`, the advertise-host, the one-time token in the first frame, and
 the `ENV_WORKER_ADVERTISE_HOST`-selects-the-launcher trick. `EnvWorker.from_socket`
 already exists, so the launchers would differ only in how they *obtain* an
-address. **The worker gets simpler, not more complex** — it becomes a plain
-listener. The complexity moves into Kubernetes object lifecycle: a Service per
+address. The worker becomes a plain listener — though **less simple than first
+claimed**: dial-back's one-time token was doing double duty, identifying *and*
+authorizing. An inbound listener reachable by anything that can route to the port
+still needs that check, so the token survives; what is dropped is the
+connect-out choreography, not the authentication. The complexity moves into Kubernetes object lifecycle: a Service per
 Job, garbage-collected via `ownerReferences` so it dies with the Job the way
 `ttl_seconds_after_finished` already handles the Job itself.
 
-**What it does not buy — laptop reach.** A ClusterIP Service is routable only
-inside the cluster network. The SSM tunnel forwards to the internal **ALB**,
-which is an address the bastion can reach; a bastion EC2 in the VPC cannot
-generally reach a ClusterIP, because kube-proxy programs that on cluster nodes.
-Making a worker reachable from a laptop would need a NodePort or a load balancer
-**per ephemeral worker** — minutes of provisioning for a pod that may live for
-one query. So a Service alone leaves the laptop where it is; a stable rendezvous
-is still required, which is what (e) provides.
+**Laptop reach — measured 2026-08-28.** My first pass said a Service "does not buy
+laptop reach" and treated that as settling it. Verified against `smsvpctest`, the
+accurate statement is narrower: **it does not buy it *as currently configured*,
+and both blockers are configuration rather than architecture.**
+
+| fact | value |
+|---|---|
+| tunnel target (`SubmitNodeInstanceId`) | `i-08ed6714f3ecbc962`, `t4g.medium`, SG `smsvpctest-batch-BatchSubmitSg…` |
+| its tags | CloudFormation + `Name` only — **no `aws:eks:cluster-name`, no `eks:nodegroup-name`** |
+| an EKS node | `i-09567f64f405e546e`, SG `eks-cluster-sg-smsvpctest-eks-blueprint…` |
+| VPC | **same** for both — `vpc-013f0c1012b271b06` |
+| EKS SG ← submit SG | **no rule** |
+| EKS SG, NodePort range 30000–32767 | **not open** to anything |
+
+So:
+
+- **ClusterIP is not routable from the tunnel host.** The submit node is not a
+  cluster node, so kube-proxy does not program its iptables. This part of the
+  original objection holds.
+- **NodePort would work, and is two config changes away.** The hosts share a VPC,
+  so they are IP-routable; what is missing is a `NodePort` Service and **one
+  security-group rule** admitting the Batch submit SG to the node port range.
+  That is the same weight as the three-line RBAC edit — configuration, not
+  architecture.
+
+**So (f) is a genuine competitor to (e), not only a complement.** With a suitable
+exposure it delivers a laptop→worker path that is lighter than proxying
+everything through sms-api, and it removes dial-back rather than relocating it.
+
+**What choosing (f) *instead of* (e) gives up** — worth being explicit, because it
+is the same list (e) was chosen for:
+
+- **queuing and durability** — a direct path has neither; a worker that dies takes
+  its work with it;
+- **status** — nothing durable to poll;
+- **the product API** — and this is the big one. The worker's **26 capabilities**
+  stay reachable only by whoever holds a socket, so the Atlantis CLI, CI and
+  notebooks still cannot call them. That was the strongest argument for (e), and
+  (f) does not provide it at any exposure level.
+
+The trade, stated plainly: **(f) buys a lighter transport and true local/remote
+symmetry; (e) buys durability and an API surface.** They are not the same kind of
+win, which is why the pairing below is worth preferring to either alone.
 
 **What it costs relative to (e).** A direct workbench→worker path bypasses sms-api
 entirely, so it forgoes exactly what (e) was chosen for: durable task records,
