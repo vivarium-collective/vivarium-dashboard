@@ -1833,6 +1833,24 @@ textarea.sr-input {
    line with the ⇄ / ‹ dock buttons but a touch wider for its label. */
 .cfg-full-btn { width: auto; padding: 0 7px; font-size: 11px; white-space: nowrap; }
 .cfg-note { color: #6b7280; font-size: 12px; padding: 2px 4px 6px; margin: 0; }
+/* Configure ⇄ Inputs tab switcher — sticky at the top of the (scrolling) panel
+   so you can swap sections instantly instead of scrolling past every field. */
+.cfg-tabs {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; gap: 4px; margin: 0 0 10px; padding: 2px 0 6px;
+  background: #f8fafc; border-bottom: 1px solid #e2e8f0;
+}
+.cfg-tab {
+  flex: 1 1 0; border: 1px solid #d1d5db; background: #fff; border-radius: 5px;
+  cursor: pointer; padding: 5px 8px; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: #64748b;
+}
+.cfg-tab:hover { border-color: #4bb3ae; color: #0d6e6b; }
+.cfg-tab-active { background: #0d6e6b; border-color: #0d6e6b; color: #fff; }
+/* "📄 Load from JSON config" pinned to the top of the Configure tab. */
+.cfg-extconfig-top { margin: 0 0 12px; }
+.cfg-extconfig-top .cfg-extconfig-toggle { width: 100%; text-align: left; padding: 5px 8px; }
+.cfg-extconfig-top .cfg-extconfig-toggle.open { border-color: #4bb3ae; color: #0d6e6b; background: #f0fdfa; }
 /* Section headers for the two groups in the Configure & Inputs panel. */
 .cfg-group-h {
   display: flex; align-items: center; justify-content: space-between; gap: 8px;

@@ -36,7 +36,7 @@ describe('ConfigPanel external config', () => {
   it('toggle reveals the panel, hidden by default', () => {
     render(<ConfigPanel {...BASE_PROPS} parameters={PARAMS} />);
     expect(screen.queryByPlaceholderText(/matched against this composite/i)).toBeNull();
-    fireEvent.click(screen.getByText('📄 External config'));
+    fireEvent.click(screen.getByText('📄 Load from JSON config'));
     expect(screen.getByPlaceholderText(/matched against this composite/i)).toBeTruthy();
   });
 
@@ -46,7 +46,7 @@ describe('ConfigPanel external config', () => {
       unmatched: [],
     });
     render(<ConfigPanel {...BASE_PROPS} parameters={PARAMS} />);
-    fireEvent.click(screen.getByText('📄 External config'));
+    fireEvent.click(screen.getByText('📄 Load from JSON config'));
     const box = screen.getByPlaceholderText(/matched against this composite/i);
     fireEvent.change(box, { target: { value: '{"n_cells":7,"fork_repo":"https://example.invalid/x.git"}' } });
     fireEvent.click(screen.getByText('Apply config'));
@@ -65,7 +65,7 @@ describe('ConfigPanel external config', () => {
   it('reports unmatched keys without failing', async () => {
     mockTranslateFetch({ params: { n_cells: 3 }, unmatched: ['totally_unknown_key'] });
     render(<ConfigPanel {...BASE_PROPS} parameters={PARAMS} />);
-    fireEvent.click(screen.getByText('📄 External config'));
+    fireEvent.click(screen.getByText('📄 Load from JSON config'));
     const box = screen.getByPlaceholderText(/matched against this composite/i);
     fireEvent.change(box, { target: { value: '{"n_cells":3,"totally_unknown_key":1}' } });
     fireEvent.click(screen.getByText('Apply config'));
@@ -76,7 +76,7 @@ describe('ConfigPanel external config', () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy as unknown as typeof fetch);
     render(<ConfigPanel {...BASE_PROPS} parameters={PARAMS} />);
-    fireEvent.click(screen.getByText('📄 External config'));
+    fireEvent.click(screen.getByText('📄 Load from JSON config'));
     const box = screen.getByPlaceholderText(/matched against this composite/i);
     fireEvent.change(box, { target: { value: '{not valid json' } });
     fireEvent.click(screen.getByText('Apply config'));
@@ -87,7 +87,22 @@ describe('ConfigPanel external config', () => {
 
   it('readOnly disables the external-config toggle', () => {
     render(<ConfigPanel {...BASE_PROPS} parameters={PARAMS} readOnly />);
-    const btn = screen.getByText('📄 External config') as HTMLButtonElement;
+    const btn = screen.getByText('📄 Load from JSON config') as HTMLButtonElement;
     expect(btn.disabled).toBe(true);
+  });
+
+  it('tabs switch between Configure and Inputs without scrolling', () => {
+    render(<ConfigPanel {...BASE_PROPS} parameters={PARAMS} />);
+    // Composite has params → Configure is the default tab; its fields + the
+    // load-from-JSON toggle (now pinned to the top) are visible.
+    expect(document.getElementById('explore-cfg-n_cells')).toBeTruthy();
+    expect(screen.getByText('📄 Load from JSON config')).toBeTruthy();
+    // Switching to Inputs hides the Configure fields (they're not just scrolled).
+    fireEvent.click(screen.getByRole('tab', { name: /Inputs/ }));
+    expect(document.getElementById('explore-cfg-n_cells')).toBeNull();
+    expect(screen.queryByText('📄 Load from JSON config')).toBeNull();
+    // And back.
+    fireEvent.click(screen.getByRole('tab', { name: /Configure/ }));
+    expect(document.getElementById('explore-cfg-n_cells')).toBeTruthy();
   });
 });
