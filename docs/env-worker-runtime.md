@@ -9,10 +9,15 @@ contract (§5 local transport, §5A dial-back); `REFACTOR-PLAN.md` **§2A.7** de
 the worker model and **§2A.8** decided that hosted runs the simulator's own image.
 This doc is the *operational* view those two leave implicit.
 
-> **Status (2026-08-26).** Both mechanisms are implemented and the hosted one is
-> proven on `sms-api-stanford-test`. It is **not yet wired into request paths** —
-> see [Current status](#current-status) before assuming a running deployment uses
-> it.
+> **Status (2026-08-28).** Both mechanisms are implemented, proven on
+> `sms-api-stanford-test`, and now **wired into request paths** (#952, corrected
+> by #954; deployed as 0.3.63–0.3.65). See [Current status](#current-status).
+>
+> A further decision is on record but **not built**: env-worker traffic is to be
+> proxied through sms-api, which would own queuing, durability and status — see
+> [`run-orchestration-consolidation.md`](run-orchestration-consolidation.md) §E.
+> Nothing below describes that yet; this doc still documents the direct
+> dial-back runtime as it runs today.
 
 ---
 
@@ -162,14 +167,23 @@ scan. Run a **second** launch too — that is what catches Job-name collisions.
 ## Current status
 
 Workstreams 1–3 and 5 of §2A.8 are done and deployed to `sms-api-stanford-test`.
-**Workstream 8 is not:** `default_launcher()` is called by nothing in production
-code — `get_pool()` builds `WorkerPool()` with no launcher, so the pool defaults
-to `LocalWorkerLauncher` and all 25 `get_pool()` call sites still spawn local
-subprocesses, hosted or not.
 
-**Design for closing it: [`env-worker-routing.md`](env-worker-routing.md).**
+**Workstream 8 step 1 is now done too** (#952, corrected by #954). `get_pool()`
+consults `default_launcher()`, so **transport follows deployment topology for
+every method** — the earlier note here, that `default_launcher()` was called by
+nothing and all 25 call sites spawned local subprocesses, is superseded.
 
-Closing that is a real decision, not a default flip: those call sites include
-`run_study_analyses`, `render_viz_doc` and `viz_preview`, and §2A.7 puts heavy
-analysis in a *job* rather than a worker call sized for interactive queries. See
-§2A.8 workstream 8.
+#952 first routed *per method* — interactive remote, job-class local — which
+inverted this doc's own rule and could not work on a hosted deployment at all:
+nothing there has a `.venv`, so every job-class call raised
+`workspace has no .venv`. #954 corrected the axis.
+
+**Step 2a** (#957, 0.3.64) makes run entrypoints honor
+`remote_pinned.resolve_run_target`. **Step 2b**, the declared-scale precheck, is
+**not started and is now load-bearing**: with transport no longer standing in for
+a cost policy, nothing separates a small in-context run from one that must
+dispatch.
+
+Design: [`env-worker-routing.md`](env-worker-routing.md). Wider plan, including
+the decision to proxy through sms-api:
+[`run-orchestration-consolidation.md`](run-orchestration-consolidation.md).
