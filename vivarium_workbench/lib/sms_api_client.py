@@ -11,6 +11,7 @@ import json
 import shutil
 from pathlib import Path
 from urllib.error import HTTPError, URLError
+from typing import Any
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -37,7 +38,7 @@ class SmsApiClient:
     def _get(self, path: str, params: dict | None = None) -> dict:
         url = self.base_url + path
         if params:
-            url = f"{url}?{urlencode(params)}"
+            url = f"{url}?{urlencode(params, doseq=True)}"
         req = Request(url, method="GET", headers={"Accept": "application/json"})
         try:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310 — fixed scheme, internal tunnel
@@ -355,6 +356,21 @@ class SmsApiClient:
     def compose_status(self, task_id: int) -> dict:
         """GET /compose/v1/simulation/{id}/status — poll run status."""
         return self._get(f"/compose/v1/simulation/{task_id}/status")
+
+    def compose_status_batch(self, ids: "list[int]") -> "list[dict]":
+        """GET /compose/v1/simulations/status/batch?ids=… — many runs, one call.
+
+        viva-api returns a JSON **list** here (``list[ComposeHpcRun]``), unlike
+        every other endpoint on this client, so the ``_get`` result is widened
+        rather than trusted as a dict. Existing to serve reconcile-style polling:
+        a caller holding N in-flight ``simulation_id``s asks once instead of N
+        times (REFACTOR-PLAN §2A.8 / run-orchestration-consolidation §A2').
+        """
+        if not ids:
+            return []
+        raw: Any = self._get("/compose/v1/simulations/status/batch",
+                             {"ids": [int(i) for i in ids]})
+        return [r for r in raw if isinstance(r, dict)] if isinstance(raw, list) else []
 
     def download_compose_results(self, sim_id: int, dest: Path, timeout: float | None = None) -> Path:
         """GET /compose/v1/simulation/{id}/results — stream results.zip to dest.

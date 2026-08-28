@@ -5963,6 +5963,16 @@ def create_app() -> FastAPI:
         (``_run_jobs.manager``) so tests can monkeypatch it.  Library-backed via
         the pure ``lib.job_status_views.job_status``.
         """
+        # Resolve any `submitted` items against viva-api before reporting. A
+        # deployment-target dispatch returns 202 + simulation_id and the run
+        # continues on Batch, so the truth lives upstream — this refreshes it on
+        # READ rather than from a polling thread, so nothing is held open on the
+        # workbench side (run-orchestration-consolidation §A2'). Best-effort:
+        # unreachable viva-api leaves the items `submitted`.
+        if job_id:
+            _job = _run_jobs.manager.get(job_id)
+            if _job is not None:
+                _run_jobs.refresh_submitted(_job)
         body, status = _job_status_views.job_status(_run_jobs.manager, job_id)
         if status != 200:
             return JSONResponse(status_code=status, content=body)

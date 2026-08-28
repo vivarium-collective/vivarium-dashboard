@@ -156,6 +156,17 @@ def investigation_run_unblocked(ws_root: Path, body: dict) -> tuple[dict, int]:
                 if code == 200:
                     job.update_item(idx, status="done",
                                     run_id=resp.get("run_id", ""))
+                elif code == 202:
+                    # A 202 is a SUCCESSFUL async dispatch, not a failure. On a
+                    # deployment target `study_runs.run_study_baseline` returns
+                    # `remote_run_views.remote_run_submit` verbatim — 202 with a
+                    # `simulation_id`, no polling — so the run is on Batch and
+                    # still going. Accepting only 200 recorded every such
+                    # dispatch as failed with the error text "HTTP 202", and
+                    # discarded the simulation_id, leaving nothing to poll.
+                    job.update_item(idx, status="submitted",
+                                    simulation_id=resp.get("simulation_id"),
+                                    phase=resp.get("phase", "running"))
                 else:
                     job.update_item(idx, status="failed",
                                     error=resp.get("error", f"HTTP {code}"))

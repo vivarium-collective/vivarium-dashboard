@@ -34,6 +34,16 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+#: Item statuses that mean "this item will not change again".
+#:
+#: ``submitted`` is deliberately NOT here: it means the work was dispatched to
+#: viva-api and is running on Batch, carrying a ``simulation_id`` that can still
+#: resolve to done or failed. Treating it as terminal is what made a successful
+#: async dispatch look finished (or, before this, look *failed* — the worker only
+#: accepted HTTP 200 and `remote_run_submit` answers 202).
+TERMINAL_STATUSES = frozenset({"done", "failed", "skipped"})
+
+
 class RunJob:
     def __init__(self, investigation: str, items: list[dict]):
         self.job_id = uuid.uuid4().hex[:12]
@@ -61,9 +71,11 @@ class RunJob:
 
     def _progress_locked(self) -> dict:
         n = len(self.items)
-        done = sum(1 for it in self.items if it.get("status") in ("done", "failed", "skipped"))
+        done = sum(1 for it in self.items if it.get("status") in TERMINAL_STATUSES)
         running = sum(1 for it in self.items if it.get("status") == "running")
-        return {"total": n, "done": done, "running": running}
+        submitted = sum(1 for it in self.items if it.get("status") == "submitted")
+        return {"total": n, "done": done, "running": running,
+                "submitted": submitted}
 
     def update_item(self, idx: int, **fields) -> None:
         with self._lock:
@@ -95,9 +107,17 @@ class RunJobManager:
                     job.status = "running"
                 worker_fn(job)
                 with job._lock:
-                    if all(it.get("status") in ("done", "failed", "skipped") for it in job.items):
+                    if all(it.get("status") in TERMINAL_STATUSES for it in job.items):
                         any_failed = any(it.get("status") == "failed" for it in job.items)
                         job.status = "failed" if any_failed else "done"
+                    elif any(it.get("status") == "submitted" for it in job.items):
+                        # The worker is finished dispatching, but work it handed to
+                        # Batch is still running. The job is NOT done — its items
+                        # resolve when their simulation_ids do. Reporting "done"
+                        # here (as the old else-branch did unconditionally) would
+                        # tell the UI a 10,000-sim campaign had completed the moment
+                        # it was submitted.
+                        job.status = "submitted"
                     else:
                         job.status = "done"
             except BaseException as e:  # noqa: BLE001
@@ -132,6 +152,61 @@ manager = RunJobManager()
 # ---------------------------------------------------------------------------
 # Investigation-level "run unblocked" planner
 # ---------------------------------------------------------------------------
+
+#: viva-api ``ComposeJobStatus`` values that mean the run is over.
+#: Anything not listed — waiting/queued/running/pending/suspended, or an absent
+#: status — leaves the item ``submitted``: an unknown state is not a finished one.
+_UPSTREAM_DONE = frozenset({"completed"})
+_UPSTREAM_FAILED = frozenset({"failed", "cancelled", "out_of_memory", "timeout"})
+
+
+def refresh_submitted(job, client=None) -> None:
+    """Resolve a job's ``submitted`` items against viva-api, in ONE call.
+
+    ``submitted`` means the work was dispatched to Batch and viva-api holds the
+    truth about it, keyed by ``simulation_id``. This asks for all of them at once
+    (``GET /compose/v1/simulations/status/batch``) rather than per item, and is
+    called on **status read** rather than from a polling thread — so nothing is
+    held open on the workbench side while Batch works.
+
+    Best-effort by design: if viva-api is unreachable the items stay
+    ``submitted``, which is what they are. Losing the poll must not turn a
+    running campaign into a failed one — that is the mistake this whole change
+    exists to undo.
+    """
+    with job._lock:
+        pending = [(i, it.get("simulation_id")) for i, it in enumerate(job.items)
+                   if it.get("status") == "submitted" and it.get("simulation_id")]
+    if not pending:
+        return
+    if client is None:
+        from vivarium_workbench.lib.sms_api_client import SmsApiClient
+        from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
+        client = SmsApiClient(_sms_api_base())
+    try:
+        rows = client.compose_status_batch([sid for _, sid in pending])
+    except Exception:  # noqa: BLE001 — a poll must never fail a running job
+        return
+    by_sim = {r.get("sim_id"): r for r in rows if isinstance(r, dict)}
+    for idx, sid in pending:
+        row = by_sim.get(sid)
+        if not row:
+            continue
+        upstream = (row.get("status") or "").lower()
+        if upstream in _UPSTREAM_DONE:
+            job.update_item(idx, status="done")
+        elif upstream in _UPSTREAM_FAILED:
+            job.update_item(idx, status="failed",
+                            error=row.get("error_message") or f"upstream: {upstream}")
+        else:
+            job.update_item(idx, phase=upstream or "running")
+    with job._lock:
+        if all(it.get("status") in TERMINAL_STATUSES for it in job.items):
+            any_failed = any(it.get("status") == "failed" for it in job.items)
+            job.status = "failed" if any_failed else "done"
+            if job.completed_at is None:
+                job.completed_at = _now()
+
 
 def enumerate_unblocked(spec: dict) -> tuple[list[dict], list[dict]]:
     """Return (runnable_items, blocked_items) for one study's spec.
