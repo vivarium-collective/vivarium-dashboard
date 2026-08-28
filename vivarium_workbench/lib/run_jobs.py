@@ -165,47 +165,62 @@ def refresh_submitted(job, client=None) -> None:
 
     ``submitted`` means the work was dispatched to Batch and viva-api holds the
     truth about it, keyed by ``simulation_id``. This asks for all of them at once
-    (``GET /compose/v1/simulations/status/batch``) rather than per item, and is
-    called on **status read** rather than from a polling thread — so nothing is
-    held open on the workbench side while Batch works.
+    (``GET /compose/v1/simulations/status/batch``) rather than per item, and runs
+    on **status read** rather than from a polling thread — so nothing is held
+    open on the workbench side while Batch works.
 
-    Best-effort by design: if viva-api is unreachable the items stay
+    Uses only the job's PUBLIC surface (``items`` + ``update_item``), because
+    jobs here are duck-typed: the suite drives workers with a minimal stand-in
+    that has neither ``_lock`` nor job-level status, and the status route calls
+    this on whatever the manager returns.
+
+    Total by design — it never raises. If viva-api is unreachable the items stay
     ``submitted``, which is what they are. Losing the poll must not turn a
-    running campaign into a failed one — that is the mistake this whole change
-    exists to undo.
+    running campaign into a failed one, nor 500 a status page.
     """
-    with job._lock:
-        pending = [(i, it.get("simulation_id")) for i, it in enumerate(job.items)
-                   if it.get("status") == "submitted" and it.get("simulation_id")]
-    if not pending:
-        return
-    if client is None:
-        from vivarium_workbench.lib.sms_api_client import SmsApiClient
-        from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
-        client = SmsApiClient(_sms_api_base())
     try:
+        items = list(getattr(job, "items", None) or [])
+        pending = [(i, it.get("simulation_id")) for i, it in enumerate(items)
+                   if it.get("status") == "submitted" and it.get("simulation_id")]
+        if not pending:
+            return
+        if client is None:
+            from vivarium_workbench.lib.sms_api_client import SmsApiClient
+            from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
+            client = SmsApiClient(_sms_api_base())
         rows = client.compose_status_batch([sid for _, sid in pending])
+        by_sim = {r.get("sim_id"): r for r in rows if isinstance(r, dict)}
+        for idx, sid in pending:
+            row = by_sim.get(sid)
+            if not row:
+                continue
+            upstream = (row.get("status") or "").lower()
+            if upstream in _UPSTREAM_DONE:
+                job.update_item(idx, status="done")
+            elif upstream in _UPSTREAM_FAILED:
+                job.update_item(idx, status="failed",
+                                error=row.get("error_message") or f"upstream: {upstream}")
+            else:
+                job.update_item(idx, phase=upstream or "running")
+        _settle_if_complete(job)
     except Exception:  # noqa: BLE001 — a poll must never fail a running job
         return
-    by_sim = {r.get("sim_id"): r for r in rows if isinstance(r, dict)}
-    for idx, sid in pending:
-        row = by_sim.get(sid)
-        if not row:
-            continue
-        upstream = (row.get("status") or "").lower()
-        if upstream in _UPSTREAM_DONE:
-            job.update_item(idx, status="done")
-        elif upstream in _UPSTREAM_FAILED:
-            job.update_item(idx, status="failed",
-                            error=row.get("error_message") or f"upstream: {upstream}")
-        else:
-            job.update_item(idx, phase=upstream or "running")
-    with job._lock:
-        if all(it.get("status") in TERMINAL_STATUSES for it in job.items):
-            any_failed = any(it.get("status") == "failed" for it in job.items)
-            job.status = "failed" if any_failed else "done"
-            if job.completed_at is None:
-                job.completed_at = _now()
+
+
+def _settle_if_complete(job) -> None:
+    """Roll a job up to terminal once every item has resolved.
+
+    Silently skips a job that carries no job-level status — again, duck typing:
+    the test stand-ins have ``items`` and ``update_item`` and nothing else.
+    """
+    items = list(getattr(job, "items", None) or [])
+    if not items or not all(it.get("status") in TERMINAL_STATUSES for it in items):
+        return
+    if not hasattr(job, "status"):
+        return
+    job.status = "failed" if any(it.get("status") == "failed" for it in items) else "done"
+    if getattr(job, "completed_at", None) is None:
+        job.completed_at = _now()
 
 
 def enumerate_unblocked(spec: dict) -> tuple[list[dict], list[dict]]:
