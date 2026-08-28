@@ -1,7 +1,9 @@
 # Consolidating run orchestration
 
 **Status:** proposed 2026-08-27, **revised 2026-08-28** against the two API
-surveys — see [§A0](#a0--what-the-surveys-changed-added-2026-08-28) for what
+surveys, and **kept current as steps land** — A1, A4, A2′ and B are done and
+deployed to `sms-api-stanford-test` (workbench 0.3.67); see the Order section for
+what each turned out to be, which differed from the plan in three of the four — see [§A0](#a0--what-the-surveys-changed-added-2026-08-28) for what
 changed and why. Follows §2A.8 workstream 8 steps 1 and 2a (#952, #954, #957),
 which are built and deployed to `sms-api-stanford-test`.
 
@@ -323,7 +325,20 @@ would mean re-implementing `run_investigation` under pressure to fix a defect.
 
 Do **not** invest in making `StudySteps` non-blocking; superseded by A1–A3.
 
-## B. Workstream 8 step 2b — declared-scale precheck
+## B. Workstream 8 step 2b — declared-scale precheck  ✅ **DONE**
+
+> **Landed 2026-08-28.** `_declared_scale_exceeds_budget` in `lib/study_runs.py`,
+> called from **`launch_into_study`** — a better seam than this section proposed.
+> Both `run_study_baseline` and `run_study_variant` funnel through it, it already
+> resolves the target and already refuses a `deployment` one, so the check sits
+> immediately after that: reached **only** on a local target, by construction,
+> with no duplication at two call sites.
+>
+> `n_seeds × n_generations` over a budget (`VIVARIUM_WORKBENCH_LOCAL_RUN_MAX_SIMULATIONS`,
+> default 50, `0` disables) returns **409** with `declared_simulations`, `budget`
+> and a hint naming how to reach the deployment target. Dry runs are exempt — a
+> preview declares scale without spending it. Absent or unparseable knobs never
+> block: silence is not a claim of scale.
 
 The only thing separating a small in-context run from one that must dispatch, now
 that step 1 removed the transport pin that had been acting as an accidental cost
@@ -656,19 +671,30 @@ Recorded so they are decided deliberately rather than by the first commit:
 
 ## Order
 
-1. **A1** — refuse a `deployment`-target run on the synchronous route.
-2. **A4** — verify dispatch end-to-end via "Run unblocked" (no code).
-3. **A2′** — *revised by A0b.* Make the remote-target run path **non-blocking**
-   (the shape `remote-run-submit` already has), record `simulation_id`, and poll
-   via `GET /simulations/status/batch?ids=…`. This replaces "durable thread
-   state + reconcile" — with no thread held, there is far less to lose.
+1. ~~**A1** — refuse a `deployment`-target run on the synchronous route.~~
+   **DONE** (#968, deployed 0.3.66). 409 naming `/api/investigation-run-unblocked`.
+2. ~~**A4** — verify dispatch end-to-end.~~ **DONE**, and by a route this plan did
+   not anticipate: a ~500-byte toy `.pbg` through `compose_submit` completes on
+   Batch in ~1 min warm (49 s startup; 211 s cold). That also **confirmed A2′'s
+   wire shape on real responses** — `sim_id`, `status`, `error_message`, with
+   `pending → running → completed` and `→ failed` all observed.
+3. ~~**A2′** — make the remote-target path non-blocking.~~ **DONE** (#970,
+   deployed 0.3.67) — *and it was a different defect than described.* That path
+   was **already** non-blocking; the job layer above it accepted only HTTP 200,
+   so every successful 202 dispatch was recorded `failed` with the error text
+   `"HTTP 202"` and its `simulation_id` discarded. Items are now `submitted`,
+   keep the handle, and resolve via one batched status call **on read**.
 4. **A3′** — prereq ordering. *Concurrency largely dissolves with A2′*: a
    bounded pool exists to cap simultaneously-blocked threads, and Batch supplies
    the parallelism once submits stop blocking.
 5. **A5** — converge the "Run" button onto `run_jobs`, once A2/A3 make it a
    superset. Target the **lib functions**, not the routes.
-6. **B** — the scale precheck.
-7. **C** — the relay, gated.
+6. ~~**B** — the scale precheck.~~ **DONE** (see §B). The seam is
+   `launch_into_study`, not the study-run entry this plan named.
+7. **C** — the relay, gated. *Two prerequisites cleared 2026-08-28:* the ALB now
+   routes `/compose` **and `/env-worker`** (sms-cdk#42, deployed to dev) — both
+   previously fell through to PTools, so the client leg (e) needs did not exist;
+   and dev's 60 s gateway ceiling is retired (600 s, sms-cdk#36 finally deployed).
 
 A0 raises A5's value: it is not only consolidation, it is what makes the "Run"
 button work at all on a gateway-fronted deployment.
