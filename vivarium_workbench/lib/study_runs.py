@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 
 import yaml
 
@@ -786,8 +787,52 @@ def run_study_variant(ws_root, body):
         cfg = build_workflow_config(variant, run_id, str(out_dir))
         cfg_path = out_dir / "config.json"
         cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        # An ensemble run had NO runs.db row, and nothing anywhere wrote one.
+        # The single-run path below gets its row from run_composite_subprocess;
+        # this path hands the whole sweep to v2ecoli-workflow, which knows
+        # nothing about runs.db. So study_outcomes.sync in the tail — which
+        # merges runs.db INTO study.yaml runs[] — had nothing to merge, and a
+        # completed `kind: seeds`/`kind: sweep` variant returned 200 while
+        # leaving no record of itself anywhere a user looks: absent from runs[],
+        # invisible in the Runs tab, and run_params.write_run_params failing
+        # with "no run named <id> in runs[] (found: [])".
+        #
+        # Recorded through cr, the workbench's own runs_meta seam, rather than
+        # viva_superpowers.backfill_runs.backfill_study_runs — which
+        # test_ensemble_records_one_run's docstring names as the intended step,
+        # but which is dead code (referenced nowhere in this repo) and would
+        # widen the declared plugin-import surface that
+        # test_plugin_import_allowlist locks down. cr is also strictly better
+        # here: save_metadata carries the source provenance (manifest ->
+        # code_version) that backfill's bare INSERT does not, and records at
+        # the real start/finish rather than inferring both from file mtimes.
+        try:
+            conn = cr.connect(study_dir / "runs.db")
+            try:
+                cr.save_metadata(conn, spec_id=spec_id, run_id=run_id,
+                                 params=full_params, label=variant_name,
+                                 started_at=time.time(), n_steps=params_n_steps or 0,
+                                 workspace=ws_root, study_slug=spec.get("name"))
+            finally:
+                conn.close()
+        except Exception as exc:  # never block a real run on a bookkeeping row
+            print(f"[runs_meta] ensemble pre-record failed: {exc}", file=sys.stderr)
         response, code = composite_subprocess.invoke_v2ecoli_workflow(
             str(cfg_path), out_dir, ws_root, timeout_s)
+        # emitter_path is the packed store v2ecoli-workflow just wrote; recording
+        # it is what makes study_outcomes fold this into ONE ensemble runs[]
+        # entry whose emitter.store points at out/<run_id>.
+        try:
+            conn = cr.connect(study_dir / "runs.db")
+            try:
+                cr.complete_metadata(
+                    conn, run_id=run_id, n_steps=params_n_steps or 0,
+                    status="completed" if code == 200 else "failed",
+                    workspace=ws_root, emitter_path=f"out/{run_id}")
+            finally:
+                conn.close()
+        except Exception as exc:  # never fail a successful run on a record error
+            print(f"[runs_meta] ensemble completion record failed: {exc}", file=sys.stderr)
     else:
         full_params = dict(generator_overrides)
         if params_n_steps is not None:

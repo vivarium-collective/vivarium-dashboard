@@ -35,6 +35,34 @@ if [[ "${1:-}" == "--only-known" ]]; then
     exit 0
   fi
 
+  # STALE IDS FIRST. A quarantined id whose test was deleted or renamed makes
+  # pytest abort during COLLECTION ("file or directory not found") without
+  # running anything -- and the `|| true` below then swallows that, no id is
+  # ever seen as PASSED, and this job reports "all still failing, as expected,
+  # nothing to do". That is the most dangerous output a watch can produce: it
+  # is indistinguishable from real work, and it is what this script printed for
+  # all 41 ids on 2026-08-28 while running exactly zero tests. Ten of those ids
+  # pointed at tests that no longer existed.
+  #
+  # So: collect first, and treat an id that cannot be collected as a hard
+  # failure of the WATCH (not of the suite). Unlike an expected test failure, a
+  # stale id is never self-correcting -- it can only ever be deleted by hand,
+  # and until it is, every result this job prints is meaningless.
+  collected="$(mktemp)"
+  python -m pytest --collect-only -q --no-header "${ids[@]}" 2>/dev/null \
+    | grep '::' | sort > "$collected" || true
+  stale=()
+  for id in "${ids[@]}"; do
+    grep -qxF "$id" "$collected" || stale+=("$id")
+  done
+  if [[ ${#stale[@]} -gt 0 ]]; then
+    summary "### Quarantine watch — ${#stale[@]} STALE id(s) in tests/known_failures.txt\n"
+    summary "These name tests that no longer exist, so nothing can be measured "
+    summary "until they are deleted from the file:\n"
+    for id in "${stale[@]}"; do summary "- \`${id}\`"; done
+    exit 1
+  fi
+
   report="$(mktemp)"
   # `|| true`: a non-zero exit is the EXPECTED outcome here.
   python -m pytest -q --no-header -rA "${ids[@]}" > "$report" 2>&1 || true

@@ -67,6 +67,10 @@ class TestBuildSourceBuilds:
             def __init__(self, base: str) -> None:
                 seen_base.append(base)
 
+        # Clear the canonical name: _sms_api_base reads VIVA_API_BASE first, and
+        # conftest's _isolate_viva_api_base sets both. This test exercises the
+        # legacy alias specifically (cf. test_env_worker_launcher, same pattern).
+        monkeypatch.delenv("VIVA_API_BASE", raising=False)
         monkeypatch.setenv("SMS_API_BASE", "http://myproxy:9090")
         monkeypatch.setattr(
             "vivarium_workbench.lib.sms_api_client.SmsApiClient",

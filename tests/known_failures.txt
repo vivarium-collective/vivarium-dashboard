@@ -15,26 +15,48 @@
 # caused by the change that introduced this file.
 #
 # Format: one pytest node id per line. `#` comments and blank lines ignored.
+#
+# AUDITED 2026-08-28 — the list had rotted in both directions, unnoticed because
+# the watch that was supposed to catch it was broken (a stale id aborted pytest
+# at collection; the watch swallowed that and reported "all still failing,
+# nothing to do" while running zero tests — now a hard error, see
+# scripts/pytest_gate.sh). Of 41 entries: 10 named tests that no longer existed
+# (deleted here — `--deselect` accepts unknown ids silently, so nothing ever
+# complained), 9 already PASSED, 3 only ever SKIP (no `duckdb`), and 19 really
+# failed. Two of the 19 are fixed below and retired with a third that was
+# already passing, leaving 28 here: 8 passing, 3 skipping, 17 failing.
+#
+# The 8 + 3 are deliberately left quarantined rather than retired on the spot.
+# They pass on ONE developer machine, and several were quarantined for behavior
+# under sharded CI load in the first place — so the now-honest watch, running in
+# CI where that evidence actually lives, is what should retire them.
+#
+# The 17 are mostly not broken tests: they are stale assertions against product
+# that deliberately moved (snapshot-readonly.css rules that no longer exist,
+# `_setStudyTab('visualizations')` gone from study-detail.js, loom-explore
+# renamed bigraph-loom, spine templates restructured). Retiring those means
+# deciding what the assertion SHOULD say now, one at a time — real work, not
+# bookkeeping.
+#
+# Beware the comments as much as the ids. Both test_composites_kind_module
+# entries were annotated "flaky, times out under CI load, passes locally".
+# Neither was a timeout. Both ran `finally: _REGISTRY.pop(id, None)` against a
+# `_RegistryView`, which implements neither `pop` nor `__delitem__` (the backing
+# registry has no per-key removal at all) -- so TEARDOWN raised AttributeError,
+# the test went red, and the recorded diagnosis blamed CI load. A third test,
+# test_visualization_endpoints::test_post_composite_test_run_accepts_generator_id,
+# was quarantined for the same reason under a different heading. All three are
+# fixed and retired: conftest's autouse `_restore_composite_spec_registry`
+# already does that cleanup, at the right scope for a process-global registry.
 
 # ── Viz / endpoints / misc ────────────────────────────────────────────────────
-tests/test_composites_kind_module.py::test_get_composite_doc_handles_generator_entry
-# Flaky: composite-discovery subprocess re-imports the workspace package; under
-# 4-shard CI load it exceeds the test's request timeout (TimeoutError) though it
-# passes locally (~9s). Failed identically across PRs #604/#605 with unrelated
-# diffs. Quarantine until the discovery path is warmed/pooled like the registry.
-tests/test_composites_kind_module.py::test_get_composites_includes_kind_and_module
-# Same flaky class: another live-server /api/composites test that times out
-# under CI load (cold composite-discovery subprocess ~8s x parallel shards);
-# passes locally. Root fix = pool/warm composite discovery like the registry.
 tests/test_composite_explorer_api.py::test_api_composites_includes_default_n_steps
 tests/test_investigation_run_e2e.py::test_detail_after_run
 tests/test_registry_source_tagging.py::test_registry_environment_packages_not_in_workspace
 tests/test_remote_run_panel.py::test_view_run_button_routes_to_visualizations_not_dead_route
 tests/test_sp1_investigation_hook.py::test_study_sync_endpoint_rolls_up_investigation_acceptance
 tests/test_study_page_lib.py::TestRenderStudyDetailHtml::test_render_produces_html_with_tab_scaffold
-tests/test_study_run_variant_ensemble.py::test_ensemble_records_one_run
 tests/test_visualization_endpoints.py::test_get_catalog_marks_out_of_sync_when_import_fails
-tests/test_visualization_endpoints.py::test_post_composite_test_run_accepts_generator_id
 tests/test_visualization_endpoints.py::test_post_create_from_composite_creates_v2_spec
 
 # ── Snapshot/publish + loom serving ───────────────────────────────────────────
@@ -44,7 +66,6 @@ tests/test_loom_explore_serve.py::test_loom_explore_index_served
 tests/test_loom_explore_serve.py::test_loom_explore_root_redirects_to_index
 tests/test_loom_explore_serve.py::test_ui_config_default_is_loom_explore
 tests/test_publish.py::test_walkthrough_composite_popout_is_snapshot_aware
-tests/test_refresh_viz_mirror.py::test_vendored_refresh_viz_matches_canonical
 
 # ── Emitter/store selection — asserts sqlite where the default is now xarray/zarr
 tests/test_emitters_run_with_emitter.py::test_run_with_emitter_short_run_does_not_silently_empty
@@ -61,19 +82,10 @@ tests/test_study_charts_parquet.py::test_extract_paths_from_parquet_subsamples_l
 
 # ── Template drift (page/tab markup changed; assertions never updated) ────────
 tests/test_investigation_page_declutter.py::test_header_export_cluster_and_icon_refresh
-tests/test_spine_present_c_summary.py::test_study_detail_js_renders_spine_summary
 tests/test_spine_present_c_unbury.py::test_discovery_implications_elevated_above_conclusion_text
 tests/test_spine_present_c_unbury.py::test_purpose_is_not_collapsed_by_default
 tests/test_spine_present_c_unbury.py::test_secondary_content_stays_collapsible
 tests/test_study_detail_page.py::test_full_study_renders_all_tabs
-tests/test_study_detail_page.py::test_runs_tab_does_not_render_charts_panel
-tests/test_study_detail_page.py::test_runs_tab_has_richer_columns
-tests/test_study_detail_page.py::test_runs_table_renders_param_overrides
-tests/test_study_detail_page.py::test_runs_table_renders_started_and_duration_from_runs_db
-tests/test_study_detail_page.py::test_runs_table_tolerates_missing_runs_db
-tests/test_study_detail_page.py::test_runs_table_tolerates_orphan_runs
-tests/test_study_detail_page.py::test_study_detail_has_skeptic_toggle
-tests/test_study_detail_page.py::test_study_detail_page_has_eight_tabs
 tests/test_study_detail_page.py::test_visualizations_panel_present
 tests/test_study_detail_template.py::test_panel_sections_no_premature_close
 tests/test_study_tabs_structure.py::test_panels_unchanged_all_eleven_present
