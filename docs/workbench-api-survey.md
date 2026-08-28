@@ -157,7 +157,13 @@ are not centralized — they are spread across the variables above.
 | reachability | direct | SSM tunnel, outbound-only — nothing can dial *in* |
 
 **The `READONLY` allowlist is the clearest statement of the hosted model** — a
-reader/displayer of git-committed content that can still *trigger* things. It
+reader/displayer of git-committed content that can still *trigger* things —
+**but no overlay actually sets it** (checked across `kustomize/`, 2026-08-28), so
+today it is a designed posture rather than an enforced one, and the hosted
+deployment registers the full authoring surface. What the hosted overlay *does*
+set is `--base-path /workbench`, `SMS_API_BASE=http://api:8000`,
+`REMOTE_PINNED` + `REMOTE_REPO_URL`, and `ENV_WORKER_ADVERTISE_HOST`. The
+allowlist
 keeps run launches (`/api/investigation-run*`, `/api/study-run-*`,
 `/api/composite-test-run`, the `remote-run-*` chain), the source-switch and
 remote-build flow, GitHub auth, and two non-mutating translators. Everything else
