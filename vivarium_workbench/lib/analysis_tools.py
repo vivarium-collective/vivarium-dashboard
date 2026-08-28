@@ -6,8 +6,30 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from vivarium_workbench.lib.analysis_viewers import viewers_public
 from vivarium_workbench.lib.simulations_index import build_simulations_data
+
+
+def _excluded_tool_ids(ws_root) -> set[str]:
+    """Tool ids this workspace opts out of, from ``workspace.yaml``
+    ``ui.analysis_tools_exclude`` (a list of tool ids).
+
+    Lets a workspace suppress a built-in or contributed Analysis Tool by id
+    without a code change — e.g. sms-ecoli descoped the 3D/structural layer
+    (moved to a separate repo) but keeps a hosted 3D pack, so it excludes
+    ``parsimony-viewer`` while still advertising the pack. Read directly from
+    workspace.yaml, mirroring ``analysis_tools_3d._hosted_viewer_urls``."""
+    try:
+        ws = yaml.safe_load(
+            (Path(ws_root) / "workspace.yaml").read_text(encoding="utf-8")
+        ) or {}
+    except Exception:  # noqa: BLE001
+        return set()
+    ui = ws.get("ui") or {}
+    excl = ui.get("analysis_tools_exclude") or []
+    return {str(x) for x in excl} if isinstance(excl, (list, tuple)) else set()
 
 
 def match(requires, candidates: list[dict]) -> list[dict]:
@@ -67,6 +89,7 @@ def build_analysis_tools(ws_root) -> list[dict]:
     ws_root = Path(ws_root)
     runs = _run_candidates(ws_root)
     packs = _pack_candidates(ws_root)
+    excluded = _excluded_tool_ids(ws_root)
     tools: list[dict] = []
 
     pack_ids = {c["ref"] for c in packs}
@@ -80,6 +103,8 @@ def build_analysis_tools(ws_root) -> list[dict]:
     native_3d = bool(packs)
     for v in viewers_public(ws_root):
         v = dict(v)
+        if v.get("id") in excluded:
+            continue  # workspace opted this tool out (ui.analysis_tools_exclude)
         v.setdefault("requires", [])
         tgts = v.get("targets") or []
         if (native_3d and not v["requires"] and tgts
@@ -95,6 +120,8 @@ def build_analysis_tools(ws_root) -> list[dict]:
     # than showing a dead "No compatible runs" card.
     for t in builtin_tools():
         t = dict(t)
+        if t.get("id") in excluded:
+            continue  # workspace opted this tool out (ui.analysis_tools_exclude)
         cands = packs if "3d_pack" in t["requires"] else runs
         t["matched"] = match(t["requires"], cands)
         if not t["matched"]:
