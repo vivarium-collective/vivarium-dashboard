@@ -103,6 +103,30 @@ class WorkerPool:
         try:
             return self._acquire(ws, interp, launcher).call(method, params)
         except EnvWorkerUnavailable:
+            # Respawn-and-retry is protocol §9 for a worker that died or was
+            # evicted mid-flight, and it is right for an interactive call: the
+            # work was a query, it did not happen, doing it again is free.
+            #
+            # It is WRONG for a job-class method, and was silently running every
+            # real study twice. ENV_WORKER_CALL_TIMEOUT is a SOCKET timeout
+            # (env_worker_client.py: `sock.settimeout`), not a deadline with
+            # cancellation -- nothing tells the worker to stop. `_run_study`
+            # runs a study's baseline and every declared variant to completion
+            # through blocking subprocesses, so it exceeds 60s as a matter of
+            # course; the timeout fired, this line re-ran the whole study, and
+            # the FIRST run carried on writing to the same runs.db. Two
+            # concurrent simulations, one of them orphaned and unattributable.
+            #
+            # A job-class failure is therefore reported, never repeated. The
+            # caller learns the truth -- the work may well still be running --
+            # instead of being handed a second copy of it.
+            if is_job_class(method):
+                raise EnvWorkerUnavailable(
+                    f"{method} lost its worker connection. It was NOT retried: "
+                    f"this call may still be running in the worker, and running "
+                    f"it again would duplicate its writes. Check the study's "
+                    f"runs.db before resubmitting."
+                ) from None
             self._drop(ws, interp, launcher.kind)
             return self._acquire(ws, interp, launcher).call(method, params)
 
