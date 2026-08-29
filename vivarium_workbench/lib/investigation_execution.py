@@ -34,23 +34,20 @@ from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 def _study_prereqs(ws: WorkspacePaths, slug: str) -> list[str]:
     """Study-slugs ``slug`` must run after, read STRICTLY from
     ``pipeline_gate.prerequisites`` — NOT the legacy ``parent_studies`` fallback.
-    Mirrors ``prepare_investigation._study_prereqs`` (#712, 5126f15b): each entry
-    is a dict ``{study: X, ...}`` or a bare string ``X``. Keying strictly on this
-    field makes reading a no-``pipeline_gate`` study.yaml a no-op (empty list)
-    rather than silently picking up legacy ``parent_studies`` edges."""
-    p = ws.studies / slug / "study.yaml"
-    if not p.exists():
-        return []
-    spec = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    gate = spec.get("pipeline_gate") or {}
-    prereqs = gate.get("prerequisites") or []
-    out: list[str] = []
-    for e in prereqs:
-        if isinstance(e, dict) and e.get("study"):
-            out.append(e["study"])
-        elif isinstance(e, str) and e:
-            out.append(e)
-    return out
+
+    Now a thin delegation to :func:`run_jobs.study_prereqs`, which is the same
+    function lifted so the ``run_jobs`` path can read prerequisites too (plan
+    §A3′). Kept as a module-level name because this module's own tests and
+    readers refer to it, and because the composite path's call site reads better
+    with the private alias.
+
+    Behaviour is unchanged, with one deliberate widening: the lifted version
+    treats a MALFORMED study.yaml as "no prerequisites" instead of raising, so
+    one bad file cannot take down the ordering of every other study.
+    """
+    from vivarium_workbench.lib.run_jobs import study_prereqs
+
+    return study_prereqs(ws, slug)
 
 
 def build_investigation_composite(ws_root: Path | str, inv_slug: str) -> dict:

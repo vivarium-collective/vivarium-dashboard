@@ -223,6 +223,102 @@ def _settle_if_complete(job) -> None:
         job.completed_at = _now()
 
 
+def study_prereqs(ws, slug: str) -> list[str]:
+    """Study slugs ``slug`` must run after, read STRICTLY from
+    ``pipeline_gate.prerequisites`` — never the legacy ``parent_studies``.
+
+    Each entry is ``{study: X, ...}`` or a bare string ``X``. Keying strictly on
+    this field makes a study.yaml with no ``pipeline_gate`` a no-op (empty list)
+    rather than silently picking up legacy ``parent_studies`` edges.
+
+    Lifted here (plan §A3′) from ``investigation_execution._study_prereqs``,
+    which still calls it, so the pbg-composite path and the ``run_jobs`` path
+    read prerequisites through ONE function. They had no reason to diverge and
+    every reason not to: an investigation whose composite orders A before B, but
+    whose "Run" button does not, is the kind of disagreement this plan exists to
+    remove.
+
+    ``ws`` is a ``WorkspacePaths``. Total: an unreadable or malformed study.yaml
+    yields no edges rather than raising, because a missing prerequisite must not
+    take down the enumeration of every OTHER study in the investigation.
+    """
+    import yaml
+
+    p = ws.studies / slug / "study.yaml"
+    if not p.exists():
+        return []
+    try:
+        spec = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 — see docstring: never break enumeration
+        return []
+    gate = spec.get("pipeline_gate") or {}
+    out: list[str] = []
+    for e in gate.get("prerequisites") or []:
+        if isinstance(e, dict) and e.get("study"):
+            out.append(e["study"])
+        elif isinstance(e, str) and e:
+            out.append(e)
+    return out
+
+
+def order_items_by_prereqs(items: list[dict], ws) -> list[dict]:
+    """Stable topological sort of run items so a study's prerequisites come first.
+
+    Items carry a ``study`` slug; several items (baseline + variants) can share
+    one. Edges come from :func:`study_prereqs`, **filtered to studies actually
+    present in this batch** — a prerequisite outside the investigation (or
+    excluded by the request's ``studies`` filter) cannot be waited for here, so
+    it is not an edge. That mirrors ``build_investigation_composite``, which
+    filters prereqs to ``member_set`` for the same reason.
+
+    Stable: studies with no ordering constraint between them keep their declared
+    order, which is the investigation's own member order and the only
+    deterministic tiebreak available. Items within one study keep their relative
+    order (baseline before its variants).
+
+    A prerequisite CYCLE is not an error here — it is left in declared order and
+    reported by the caller's own means. Refusing to run an investigation because
+    two studies name each other would convert a metadata mistake into an outage,
+    and the pbg path does not refuse either.
+
+    **This orders; it does not gate.** On a local target that is sufficient,
+    because each run blocks until it finishes. On a deployment target it is NOT:
+    an item dispatched to Batch returns ``submitted`` immediately, so a
+    dependent still starts while its prerequisite is mid-flight. Closing that
+    needs a release-on-completion mechanism — see the plan's §A3′ open question.
+    """
+    if not items:
+        return items
+    present = {it.get("study") for it in items if it.get("study")}
+    order: dict[str, int] = {}
+    for i, it in enumerate(items):
+        order.setdefault(it.get("study"), i)
+    deps = {
+        s: [p for p in study_prereqs(ws, s) if p in present and p != s]
+        for s in present
+    }
+
+    ranked: list[str] = []
+    seen: set[str] = set()
+    visiting: set[str] = set()
+
+    def visit(s: str) -> None:
+        if s in seen or s in visiting:
+            return  # already placed, or a cycle — leave declared order to win
+        visiting.add(s)
+        for d in sorted(deps.get(s, ()), key=lambda x: order.get(x, 0)):
+            visit(d)
+        visiting.discard(s)
+        seen.add(s)
+        ranked.append(s)
+
+    for s in sorted(present, key=lambda x: order.get(x, 0)):
+        visit(s)
+
+    rank = {s: i for i, s in enumerate(ranked)}
+    return sorted(items, key=lambda it: rank.get(it.get("study"), len(rank)))
+
+
 def enumerate_unblocked(spec: dict) -> tuple[list[dict], list[dict]]:
     """Return (runnable_items, blocked_items) for one study's spec.
 
