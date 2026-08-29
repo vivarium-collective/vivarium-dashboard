@@ -750,9 +750,32 @@ Recorded so they are decided deliberately rather than by the first commit:
    latency argues no (an extra round trip on `list_generators` is felt). A split
    contract — sync under the budget, task-based over it — is more code but
    matches how the tiers actually differ.
-3. **Auth on the call endpoint.** The worker↔sms-api leg has the dial-back token
-   (§5A). The client→sms-api leg has whatever protects viva-api generally, which
-   is a different question and is now on the path of every workspace query.
+3. ~~**Auth on the call endpoint.**~~ **DECIDED 2026-08-29 — accepted as is, for
+   now.** The access-control boundary is **reachability of the AWS account**, and
+   nothing finer.
+
+   That is a real boundary rather than an absence of one, and it is worth being
+   precise about what enforces it: the ALB is **internal** (`internal-alb-stack.ts`
+   — no `internetFacing`), so it is reachable only from inside the VPC, and a
+   laptop gets there through `aws ssm start-session
+   --document-name AWS-StartPortForwardingSessionToRemoteHost`, which requires
+   AWS credentials for the account. The worker↔viva-api leg keeps its dial-back
+   token (§5A) on top of that.
+
+   **What is deliberately NOT there:** individual identity, per-user
+   authorization, and per-person attribution. Anyone who can reach the account
+   can start and call env workers and query any workspace; audit trails
+   attribute to the account, not to a person. That is an accepted short-term
+   posture, not an oversight.
+
+   **What would have to change if that stops being acceptable**, recorded so the
+   decision can be revisited rather than rediscovered: this is the leg that would
+   need real authn/authz, and it is now on the path of *every* workspace query —
+   so retrofitting it later touches far more than the relay did. The cost of
+   deferring is that the surface keeps growing under the same assumption.
+
+   **It no longer gates (e).** Q3 was the one open question standing in front of
+   option (e); it is answered.
 4. **What happens to the local subprocess launcher.** It must *not* proxy — a
    laptop routing to itself through the cloud is absurd — so `LocalWorkerLauncher`
    keeps its direct socket and the two transports stay asymmetric. The pool's
