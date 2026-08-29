@@ -387,7 +387,7 @@ policy.
 - Do **not** infer cost for bare composites — [`env-worker-routing.md`](env-worker-routing.md)
   §4 rules that out (a `@composite_generator` is arbitrary Python).
 
-## C. Env-worker relay through viva-api *(design only)*
+## C. Env-worker relay through viva-api *(design settled 2026-08-28; see §C1)*
 
 A laptop cannot use worker-as-image today: the worker dials **out** to the
 workbench, and the SSM tunnel (`AWS-StartPortForwardingSessionToRemoteHost`) is
@@ -422,6 +422,80 @@ durability and status — becomes the natural destination, collapsing the relay,
 the missing intermediate tier, and durable job state into one mechanism on a
 substrate that already exists (Postgres, `JobStatus`, `ORMHpcRun`). So this is
 not only a laptop question.
+
+### C1 — The design, with §E's open questions answered *(2026-08-28)*
+
+Written after tracing both sides. Four of §E's five open questions turn out to
+have answers that fall out of what already exists; only the fifth is a real
+choice.
+
+**The contract is request/response, because the protocol already is.**
+`EnvWorker.call` is JSON-RPC over length-prefixed frames, **serial by
+construction** — it holds a mutex so "the next frame read is unambiguously this
+call's reply". So the relay does not need a duplex stream, a WebSocket, or ALB
+upgrade handling, which is what §C priced it at. It needs one endpoint:
+
+```
+POST /env-worker/workers/{job_name}/call   {method, params} -> {result} | {error}
+```
+
+viva-api holds the socket; the laptop holds nothing but a URL. The `/env-worker`
+ALB rule that landed today (sms-cdk#42) is already the route.
+
+**Q1 — where serialization lives: answered.** It is the mutex `EnvWorker.call`
+*already* holds, moved to viva-api, one per held socket. Nothing new is invented;
+the per-worker FIFO contract is preserved by keeping the same lock next to the
+same socket. A viva-api restart drops the sockets, which is the same failure the
+workbench has today — not a regression, and the reason Q1 asked.
+
+**Q2 — task-based or sync: sync, bounded.** With dev's ceiling now 600 s
+(retired today) and interactive methods measured in seconds, a synchronous call
+is honest and cheaper by one round trip on exactly the calls where latency is
+felt (`list_generators`). The existing `ENV_WORKER_CALL_TIMEOUT` is the bound.
+Long work does not belong on this tier at all — that is §B's scale axis, and its
+answer is Batch.
+
+**Q3 — auth: nothing new for the first slice.** The worker→viva-api leg keeps
+the dial-back token it already has (§5A). The client→viva-api leg inherits
+whatever protects viva-api, which is a pre-existing question this does not
+change — though it *does* put that question on the path of every workspace
+query, which is worth stating before this reaches prod.
+
+**Q4 — the local launcher: unchanged, and must stay so.** A laptop routing to
+itself through the cloud is absurd. `LocalWorkerLauncher` keeps its socketpair;
+the pool's `kind` already models the split, so this needs no work — only a test
+that pins it.
+
+**Q5 — migration order: the one real choice.** See below; it decides the shape
+of the first commit, not just its sequence.
+
+**What moves.** `DialBackListener` moves to viva-api (ported, not imported —
+viva-api does not depend on the workbench package). The workbench gains a third
+transport that is a thin HTTP client — no socket, no listener, no cluster access
+— which is why this also fixes the laptop case §C was originally about.
+
+**Q5 — migration order: flag-gated parallel path.** Decided 2026-08-28. The two
+repos deploy independently, so a cutover has an unavoidable window in which the
+workbench expects a viva-api that has not rolled — and env workers are how the
+dashboard lists generators, so that window is user-visible.
+
+```
+default_launcher()
+  ENV_WORKER_PROXY_BASE set     -> ProxyWorkerLauncher   (new, HTTP to viva-api)
+  ENV_WORKER_ADVERTISE_HOST set -> RemoteWorkerLauncher  (today, dial-back)
+  neither                       -> LocalWorkerLauncher   (subprocess)
+```
+
+Proxy is checked **first**: a site switching over may still carry
+`ADVERTISE_HOST` from its dial-back configuration, and being silently shadowed
+by it is a bug that presents as a hung worker.
+
+**Status: both halves built.** viva-api ships the relay *inert* (503 until
+`ENV_WORKER_RELAY_ADVERTISE_HOST` is set, from the Downward API `status.podIP`);
+the workbench ships `ProxyWorkerLauncher` behind `ENV_WORKER_PROXY_BASE`. Neither
+changes any existing behaviour until a deployment sets those two vars. Nothing is
+enabled on dev yet — that is the next step, and it is a config change, not a
+code one.
 
 ## E. The missing middle: jobs that are neither interactive nor Batch-scale
 
