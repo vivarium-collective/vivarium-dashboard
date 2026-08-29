@@ -43,6 +43,20 @@ def _now() -> str:
 #: accepted HTTP 200 and `remote_run_submit` answers 202).
 TERMINAL_STATUSES = frozenset({"done", "failed", "skipped"})
 
+#: An item held back because a prerequisite study has not finished (plan §A3′,
+#: option (c)). Like ``submitted`` it is deliberately NOT terminal — it is work
+#: that still has to happen.
+#:
+#: ``waiting`` exists because ordering alone does not sequence a DEPLOYMENT
+#: target: A2′ made dispatch return ``submitted`` immediately, so without a gate
+#: a dependent starts while its prerequisite is still running on Batch. The two
+#: rejected alternatives are worth recording — blocking the worker until prereqs
+#: settle reinstates the hours-long held thread A0b identified as the original
+#: defect, and releasing inside the status GET makes progress depend on somebody
+#: keeping a browser tab open. This option keeps the worker short-lived and makes
+#: the release an explicit, observable act (:meth:`RunJobManager.redrive`).
+WAITING = "waiting"
+
 
 class RunJob:
     def __init__(self, investigation: str, items: list[dict]):
@@ -54,6 +68,8 @@ class RunJob:
         self.completed_at: str | None = None
         self.error: str | None = None
         self._worker: threading.Thread | None = None
+        #: The worker callable, kept so RunJobManager.redrive can re-run it.
+        self._worker_fn: Callable[[RunJob], None] | None = None
         self._lock = threading.Lock()
 
     def to_dict(self) -> dict:
@@ -74,8 +90,9 @@ class RunJob:
         done = sum(1 for it in self.items if it.get("status") in TERMINAL_STATUSES)
         running = sum(1 for it in self.items if it.get("status") == "running")
         submitted = sum(1 for it in self.items if it.get("status") == "submitted")
+        waiting = sum(1 for it in self.items if it.get("status") == WAITING)
         return {"total": n, "done": done, "running": running,
-                "submitted": submitted}
+                "submitted": submitted, "waiting": waiting}
 
     def update_item(self, idx: int, **fields) -> None:
         with self._lock:
@@ -98,8 +115,57 @@ class RunJobManager:
     ) -> RunJob:
         """Create a RunJob, start its background worker, return the handle."""
         job = RunJob(investigation, items)
+        job._worker_fn = worker_fn   # kept so redrive() can run it again
         with self._lock:
             self._jobs[job.job_id] = job
+        self._start(job, worker_fn)
+        return job
+
+    def redrive(self, job_id: str) -> dict:
+        """Re-run a job's worker to release items whose prerequisites finished.
+
+        This is option (c) of §A3′: the worker marks a gated item ``waiting``
+        and returns instead of blocking on a Batch job, so *something* has to
+        come back and start it once the prerequisite lands. That something is an
+        explicit call — a route the UI hits, or an operator — rather than a
+        thread parked for hours (rejected: A0b's defect) or a side effect of a
+        status GET (rejected: progress would depend on a browser tab being open).
+
+        Idempotent and safe to call at any time: the worker only touches items in
+        ``queued``/``waiting``, and a still-running worker is left alone rather
+        than duplicated, so a caller that polls this cannot double-dispatch.
+
+        Returns ``{redriven: bool, reason: str, waiting: int}`` — ``redriven``
+        false is an ordinary outcome (nothing was waiting, or a worker is already
+        going), not an error.
+        """
+        job = self.get(job_id)
+        if job is None:
+            return {"redriven": False, "reason": "no such job", "waiting": 0}
+        with job._lock:
+            waiting = sum(1 for it in job.items if it.get("status") == WAITING)
+            alive = job._worker is not None and job._worker.is_alive()
+            worker_fn = getattr(job, "_worker_fn", None)
+        if alive:
+            return {"redriven": False, "reason": "worker already running",
+                    "waiting": waiting}
+        if not waiting:
+            return {"redriven": False, "reason": "nothing waiting", "waiting": 0}
+        if worker_fn is None:
+            # Pre-redrive jobs (or a hand-built stand-in) have no stored worker.
+            return {"redriven": False, "reason": "job has no re-runnable worker",
+                    "waiting": waiting}
+        self._start(job, worker_fn)
+        return {"redriven": True, "reason": f"released {waiting} waiting item(s)",
+                "waiting": waiting}
+
+    def _start(self, job: RunJob, worker_fn: Callable[[RunJob], None]) -> None:
+        """Run ``worker_fn`` against ``job`` on a fresh daemon thread.
+
+        Extracted from :meth:`submit` so :meth:`redrive` starts a worker the
+        same way rather than growing a second, subtly-different copy of the
+        status accounting below.
+        """
 
         def _run():
             try:
@@ -110,6 +176,12 @@ class RunJobManager:
                     if all(it.get("status") in TERMINAL_STATUSES for it in job.items):
                         any_failed = any(it.get("status") == "failed" for it in job.items)
                         job.status = "failed" if any_failed else "done"
+                    elif any(it.get("status") == WAITING for it in job.items):
+                        # Items are gated behind a prerequisite that has not
+                        # finished. The job is emphatically NOT done — it needs a
+                        # redrive() once those prerequisites land, and saying
+                        # "done" here would strand them silently.
+                        job.status = WAITING
                     elif any(it.get("status") == "submitted" for it in job.items):
                         # The worker is finished dispatching, but work it handed to
                         # Batch is still running. The job is NOT done — its items
@@ -131,7 +203,6 @@ class RunJobManager:
         t = threading.Thread(target=_run, daemon=True, name=f"runjob-{job.job_id}")
         job._worker = t
         t.start()
-        return job
 
     def get(self, job_id: str) -> RunJob | None:
         with self._lock:

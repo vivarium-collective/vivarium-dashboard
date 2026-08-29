@@ -5978,6 +5978,41 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=status, content=body)
         return JobStatusPayload.model_validate(body)
 
+    @app.post(
+        "/api/investigation-run-redrive",
+        tags=["Rigor & jobs"],
+        summary="Release run items whose prerequisites have now completed",
+    )
+    def investigation_run_redrive(payload: dict = Body(default={})) -> JSONResponse:
+        """Re-run a job's worker so items gated on a prerequisite can start.
+
+        The counterpart to the ``waiting`` status (plan §A3′ option (c)). A
+        dependent study is held back rather than run against a prerequisite that
+        is still mid-flight on Batch; the worker then RETURNS instead of parking
+        a thread for hours, so releasing those items is an explicit act. This is
+        that act.
+
+        Deliberately a POST and not folded into the status GET: making progress a
+        side effect of somebody watching the page is exactly the failure this
+        option was chosen to avoid. ``refresh_submitted`` runs first, because the
+        prerequisite that just finished is normally a ``submitted`` item whose
+        completion is only known upstream.
+
+        Idempotent — ``{"redriven": false, "reason": "nothing waiting"}`` is an
+        ordinary answer, not an error, so a caller may poll this safely; a
+        worker already running is left alone rather than duplicated.
+        """
+        job_id = ((payload or {}).get("job_id") or "").strip()
+        if not job_id:
+            return JSONResponse(status_code=400,
+                                content={"error": "job_id is required"})
+        job = _run_jobs.manager.get(job_id)
+        if job is None:
+            return JSONResponse(status_code=404, content={"error": "job not found"})
+        _run_jobs.refresh_submitted(job)
+        return JSONResponse(status_code=200,
+                            content=_run_jobs.manager.redrive(job_id))
+
     @app.get(
         "/api/remote-run-status",
         response_model=JobStatusPayload,

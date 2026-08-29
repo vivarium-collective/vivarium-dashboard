@@ -699,18 +699,36 @@ Recorded so they are decided deliberately rather than by the first commit:
    back to declared order rather than refusing — a metadata typo must not become
    an outage, and the pbg path does not refuse either.
 
-   **What was found while doing it, and is NOT solved:** ordering alone is
-   sufficient only on a **local** target, where each run blocks until it
-   finishes. On a **deployment** target A2′ made dispatch return `submitted`
-   immediately, so a dependent still *starts* while its prerequisite is
-   mid-flight on Batch — correct order, no gate. Closing that needs a
-   release-on-completion mechanism, and the obvious implementation (block the
-   worker thread polling until prereqs settle) walks straight back into what A0b
-   identified as the original defect: holding a daemon thread for the life of a
-   Batch job. `refresh_submitted` resolves `submitted` items **on status read**,
-   which is the natural release point but is a GET handler, not a scheduler.
-   **This is the open design question of A3′** and should be decided before it is
-   built.
+   **The gate, decided and built — option (c).** Ordering alone sequences only a
+   **local** target, where each run blocks until it finishes. On a **deployment**
+   target A2′ made dispatch return `submitted` immediately, so a dependent
+   *started* while its prerequisite was mid-flight on Batch — correct order, no
+   gate. Three ways to close it, and the choice mattered:
+
+   | | shape | why not |
+   |---|---|---|
+   | (a) | block the worker polling until prereqs settle | reinstates the hours-long held thread **A0b** identified as the original defect |
+   | (b) | release inside the status GET (`refresh_submitted` already settles there) | progress would depend on somebody keeping a browser tab open |
+   | **(c)** | mark `waiting`, release by an **explicit** re-drive | chosen |
+
+   Built: a non-terminal `waiting` status carrying the blocking study's name; a
+   `_gate` in the worker that holds a dependent whose prerequisites are not all
+   `done`; `RunJobManager.redrive(job_id)` re-running the *same* worker closure
+   (the worker now picks up `waiting` as well as `queued`); and
+   `POST /api/investigation-run-redrive`, which calls `refresh_submitted` first
+   — the prerequisite that just finished is normally a `submitted` item whose
+   completion is only known upstream.
+
+   Two details that are load-bearing rather than incidental: a prerequisite is
+   satisfied only when **every** item of that study is `done` (a study is its
+   baseline *plus* its variants), and a dependent whose prerequisite `failed` or
+   was `skipped` is **`skipped`, not `waiting`** — waiting on something that can
+   never arrive is indistinguishable from a hang, and the redrive loop would spin
+   on it.
+
+   **Still open:** nothing *calls* the re-drive automatically. That is the
+   deliberate shape of (c) — the release is an explicit act — but it means the UI
+   (or an operator) must poll it. Wiring a caller is the remaining piece.
 5. **A5** — converge the "Run" button onto `run_jobs`, once A2/A3 make it a
    superset. Target the **lib functions**, not the routes.
 6. ~~**B** — the scale precheck.~~ **DONE** (see §B). The seam is
