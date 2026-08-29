@@ -52,7 +52,7 @@ import { OutputsPanel } from './panels/OutputsPanel';
 import { EmitContext } from './EmitContext';
 import {
   postReady, postInspect, postEmitChanged, onCompositeLoad, decodeUrlComposite,
-  resolveComposite, fetchInnerComposite,
+  resolveComposite, fetchInnerComposite, parseUrlOverrides,
 } from './api';
 import type { ExploreInspectMsg, ParameterDecl } from './api';
 
@@ -238,7 +238,13 @@ export default function App() {
   const [activeTabKey, setActiveTabKey] = useState<string>('');
   // Composite parameters + current overrides (for the Configure tab).
   const [parameters, setParameters] = useState<Record<string, ParameterDecl>>({});
-  const [overrides, setOverrides] = useState<Record<string, unknown>>({});
+  // ?overrides=<json>: a study deep-links its composite with the study's real
+  // config (conditions.baseline.params) as overrides. Parse once so the Configure
+  // panel shows the STUDY config (not the composite's bare defaults) and the live
+  // resolve builds the composite WITH it. Absent/invalid → {}.
+  const urlOverrides = useMemo<Record<string, unknown>>(
+    () => parseUrlOverrides(window.location.search), []);
+  const [overrides, setOverrides] = useState<Record<string, unknown>>(urlOverrides);
   // From the composite_generator decorator's `default_n_steps=` argument.
   // SetupRunPanel seeds its steps input from this when a new composite loads.
   const [defaultSteps, setDefaultSteps] = useState<number | undefined>(undefined);
@@ -728,7 +734,7 @@ export default function App() {
     if (STATIC || !compositeId) return;
     if (Object.keys(parameters).length > 0) return;   // already have config
     let cancelled = false;
-    resolveComposite(compositeId)
+    resolveComposite(compositeId, urlOverrides)
       .then((res) => {
         if (cancelled || !res || res.error) return;
         if (res.parameters) setParameters(res.parameters);
@@ -739,7 +745,7 @@ export default function App() {
       })
       .catch(() => { /* leave Setup & Run with Steps + Run only */ });
     return () => { cancelled = true; };
-  }, [STATIC, compositeId, parameters]);
+  }, [STATIC, compositeId, parameters, urlOverrides]);
 
   // Debounced save of current node positions to localStorage. Built once;
   // stable across re-renders. The callback closes over `compositeId` via the
@@ -1968,7 +1974,6 @@ export default function App() {
           onApplied={handleApplied}
           state={state}
           onInputsApplied={(s) => setState(s)}
-          onBigraphDocument={(s) => setState(s)}
         />
       ),
     },
