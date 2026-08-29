@@ -252,20 +252,20 @@ export async function translateExternalConfig(
   return body as TranslateConfigResponse;
 }
 
-/** View-as-bigraph (workbench-glue Task 3): render an arbitrary config JSON's
- *  declared structure as a composite document — no build, unlike
- *  `resolveComposite`/Apply. */
-export async function configToComposite(
-  configJson: Record<string, unknown>,
-): Promise<{ state: unknown; schema: unknown }> {
-  const r = await fetch('/api/config-to-composite', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config_json: configJson }),
-  });
-  const data = await r.json();
-  if (!r.ok) throw new Error(data?.error || `config-to-composite failed (${r.status})`);
-  return data as { state: unknown; schema: unknown };
+/** Parse a `?overrides=<json>` query value into an overrides object. A study
+ *  deep-links its composite with the study's real config (conditions.baseline.
+ *  params) here, so the Configure panel shows the study config rather than the
+ *  composite's bare defaults. Absent, non-object, or invalid JSON → `{}`. */
+export function parseUrlOverrides(search: string): Record<string, unknown> {
+  try {
+    const raw = new URLSearchParams(search).get('overrides');
+    if (!raw) return {};
+    const o = JSON.parse(raw) as unknown;
+    return (o && typeof o === 'object' && !Array.isArray(o))
+      ? (o as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
 }
 
 /** Start a detached composite run. Resolves with {run_id}; rejects on non-2xx

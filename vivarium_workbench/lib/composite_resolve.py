@@ -423,6 +423,11 @@ def resolve_composite(
         return {
             "id": spec_id, "name": spec.name, "description": spec.description,
             "parameters": spec.parameters, "state": state, "schema": spec.schema,
+            # Echo the caller's overrides so a study viewer opening its composite
+            # with the study's real config (conditions.baseline.params) can show
+            # them in the Configure panel — the panel merges these onto the
+            # declared parameter defaults. Empty for a bare (default) resolve.
+            "overrides": overrides or {},
             "requires": spec.requires, "tags": spec.tags,
             "visualizations": spec.visualizations, "analyses": spec.analyses,
             "emitters": spec.emitters, "kind": spec.kind, "module": spec.module,

@@ -159,3 +159,18 @@ describe('run lifecycle fetch helpers', () => {
     await expect(stopRun('nope')).rejects.toThrow(/not_found/);
   });
 });
+
+describe('parseUrlOverrides', () => {
+  it('parses a valid ?overrides= JSON object', async () => {
+    const { parseUrlOverrides } = await import('../api');
+    expect(parseUrlOverrides('?id=x&overrides=%7B%22n_generations%22%3A7%7D'))
+      .toEqual({ n_generations: 7 });
+  });
+  it('returns {} for absent / invalid / non-object overrides', async () => {
+    const { parseUrlOverrides } = await import('../api');
+    expect(parseUrlOverrides('?id=x')).toEqual({});
+    expect(parseUrlOverrides('?overrides=not-json')).toEqual({});
+    expect(parseUrlOverrides('?overrides=%5B1%2C2%5D')).toEqual({}); // a JSON array
+    expect(parseUrlOverrides('?overrides=42')).toEqual({});         // a scalar
+  });
+});

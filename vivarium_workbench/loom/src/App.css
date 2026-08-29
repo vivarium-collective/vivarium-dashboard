@@ -1886,7 +1886,7 @@ textarea.sr-input {
 }
 .cfg-fileload input[type="file"] { font-size: 11px; color: #64748b; }
 .cfg-json-area { width: 100%; box-sizing: border-box; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
-/* Small text-style secondary actions (View as bigraph, Expand/Collapse all). */
+/* Small text-style secondary actions (Expand/Collapse all). */
 .cfg-linkbtn {
   align-self: flex-start; border: 1px solid #d1d5db; background: #fff; border-radius: 5px;
   cursor: pointer; font-size: 11px; font-weight: 600; color: #475569; padding: 3px 9px;
