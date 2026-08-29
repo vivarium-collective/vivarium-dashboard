@@ -730,6 +730,95 @@ def _validate_variants_list(spec: dict) -> None:
                 )
 
 
+def _find_config_file(ref: str, study_dir: Path) -> Optional[Path]:
+    """Resolve a condition's ``config_file`` reference to an existing path.
+
+    Order: absolute path as-is → relative to the study dir (co-located
+    ``run_config.json``) → relative to the workspace root (a shared
+    ``configs/foo.json``). Returns ``None`` if nothing resolves — the caller
+    leaves ``params`` untouched and the linter flags the dangling reference.
+    """
+    p = Path(ref)
+    if p.is_absolute():
+        return p if p.is_file() else None
+    cand = study_dir / p
+    if cand.is_file():
+        return cand
+    try:
+        from vivarium_workbench.lib._root import workspace_root
+        cand2 = workspace_root() / p
+        if cand2.is_file():
+            return cand2
+    except Exception:
+        pass
+    return None
+
+
+def _load_config_doc(fp: Path) -> dict:
+    """Load a config file (JSON or YAML by suffix) as a dict; ``_``-prefixed
+    keys (author comments like ``_note``) are dropped so they never leak into
+    the composite override params."""
+    import json as _json
+    text = fp.read_text(encoding="utf-8")
+    if fp.suffix.lower() in (".yaml", ".yml"):
+        doc = yaml.safe_load(text) or {}
+    else:
+        doc = _json.loads(text)
+    if not isinstance(doc, dict):
+        return {}
+    return {k: v for k, v in doc.items() if not str(k).startswith("_")}
+
+
+def _fold_config_file_into_params(cond_entry: dict, study_dir: Path) -> None:
+    """If ``cond_entry`` (a baseline/variant condition) carries a
+    ``config_file`` reference, load it and merge it UNDER the inline ``params``
+    (inline params win, key by key), writing the result back to
+    ``cond_entry["params"]``.
+
+    This is what lets a study carry its real, reproducible run-config by
+    reference to a canonical file (e.g. ``configs/foo.json``) instead of
+    inlining every field — the merged params then flow, unchanged, through the
+    v4→legacy projection into BOTH the Configure panel (``composite-resolve``
+    overrides) and the run path (``run_study_baseline`` overrides). Never
+    raises: a missing/malformed file leaves ``params`` as authored.
+    """
+    if not isinstance(cond_entry, dict):
+        return
+    ref = cond_entry.get("config_file")
+    if not ref:
+        return
+    fp = _find_config_file(str(ref), study_dir)
+    if fp is None:
+        return
+    try:
+        doc = _load_config_doc(fp)
+    except Exception:
+        return
+    inline = cond_entry.get("params") or {}
+    if not isinstance(inline, dict):
+        inline = {}
+    cond_entry["params"] = {**doc, **inline}
+
+
+def _resolve_condition_config_files(spec: dict, study_path: Path) -> None:
+    """Fold every condition's ``config_file`` into its ``params`` in place.
+
+    Covers both the v4 shape (``conditions.baseline`` + ``conditions.variants``)
+    and the legacy v3 shape (``baseline[]`` + ``variants[]``), so a study on
+    either schema can carry its config by reference.
+    """
+    study_dir = Path(study_path).parent
+    cond = spec.get("conditions")
+    if isinstance(cond, dict):
+        _fold_config_file_into_params(cond.get("baseline") or {}, study_dir)
+        for v in (cond.get("variants") or []):
+            _fold_config_file_into_params(v, study_dir)
+    for b in (spec.get("baseline") or []) if isinstance(spec.get("baseline"), list) else []:
+        _fold_config_file_into_params(b, study_dir)
+    for v in (spec.get("variants") or []) if isinstance(spec.get("variants"), list) else []:
+        _fold_config_file_into_params(v, study_dir)
+
+
 def load_spec(path: Path) -> dict:
     """Parse + validate ``investigations/<name>/spec.yaml``.
 
@@ -784,6 +873,12 @@ def load_spec(path: Path) -> dict:
     # name is always required
     if not spec.get("name"):
         raise InvestigationSpecError("missing required field: name")
+
+    # Fold any condition ``config_file`` reference into its ``params`` before
+    # the v4 projection / v3 handling below, so a study can carry its real
+    # run-config by reference to a canonical file. Merged params then flow
+    # unchanged into both the Configure panel and the run path.
+    _resolve_condition_config_files(spec, path)
 
     # ``study_card`` is rendered by walkthrough.js as a multi-row table reading
     # sc.goal / sc.mechanism / sc.why_before_next / sc.expected_result /
