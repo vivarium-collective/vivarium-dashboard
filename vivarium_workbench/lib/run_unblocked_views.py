@@ -37,7 +37,7 @@ import yaml as _yaml
 from vivarium_workbench.lib import comparative_runs
 from vivarium_workbench.lib import study_runs
 from vivarium_workbench.lib.run_jobs import (
-    enumerate_unblocked, manager, order_items_by_prereqs,
+    WAITING, enumerate_unblocked, manager, order_items_by_prereqs, study_prereqs,
 )
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
@@ -153,11 +153,63 @@ def investigation_run_unblocked(ws_root: Path, body: dict) -> tuple[dict, int]:
 
     # Worker: walk through queued items in order, fire each via the
     # lib study-run orchestrators (E4); then render comparative viz (E5).
+    # §A3′ option (c): the gate that ORDERING alone cannot provide. Ordering is
+    # enough on a local target, where every run blocks until it finishes; on a
+    # deployment target A2′ made dispatch return `submitted` at once, so without
+    # this a dependent starts while its prerequisite is still running on Batch.
+    _paths = WorkspacePaths.load(ws_root)
+    _present = {it.get("study") for it in items if it.get("study")}
+    _prereqs = {
+        s: [p for p in study_prereqs(_paths, s) if p in _present and p != s]
+        for s in _present
+    }
+
+    def _gate(job, study):
+        """``(None, None)`` to run; else ``(status, reason)`` for this item.
+
+        A prerequisite is satisfied only when EVERY item of that study is
+        ``done`` — a study is its baseline plus its variants, and a dependent
+        that reads its outputs needs all of them, not the first.
+
+        A prerequisite that ``failed`` or was ``skipped`` can never become done,
+        so the dependent is ``skipped`` rather than left ``waiting`` forever.
+        Waiting on something that will never arrive is indistinguishable from a
+        hang, and it is the redrive loop that would spin on it.
+        """
+        by_study: dict = {}
+        for it in job.items:
+            by_study.setdefault(it.get("study"), []).append(it.get("status"))
+        dead, pending = [], []
+        for pre in _prereqs.get(study, ()):
+            statuses = by_study.get(pre) or []
+            if any(st in ("failed", "skipped") for st in statuses):
+                dead.append(pre)
+            elif not all(st == "done" for st in statuses):
+                pending.append(pre)
+        if dead:
+            return "skipped", f"prerequisite did not complete: {', '.join(sorted(dead))}"
+        if pending:
+            return WAITING, f"waiting on: {', '.join(sorted(pending))}"
+        return None, None
+
     def _worker(job):
+        # `waiting` as well as `queued`: a redrive re-runs this same closure, and
+        # the items it exists to release are the waiting ones.
         for idx, item in enumerate(list(job.items)):
-            if item.get("status") != "queued":
+            if item.get("status") not in ("queued", WAITING):
                 continue
-            job.update_item(idx, status="running")
+            gated, why = _gate(job, item.get("study"))
+            if gated is not None:
+                job.update_item(idx, status=gated, error=why)
+                continue
+            # Clear a stale gate reason ONLY when there is one. A redriven item
+            # still carries its "waiting on: a" text and would keep showing it
+            # after succeeding; but writing `error: None` unconditionally adds
+            # the key to every item, and a successful dispatch is specified to
+            # carry no `error` at all (test_worker_records_a_202_as_submitted_
+            # not_failed asserts absence, not None).
+            job.update_item(idx, status="running",
+                            **({"error": None} if item.get("error") else {}))
             study_slug = item["study"]
             variant_name = item["variant"]
             try:
