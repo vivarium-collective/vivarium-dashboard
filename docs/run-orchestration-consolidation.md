@@ -726,9 +726,24 @@ Recorded so they are decided deliberately rather than by the first commit:
    never arrive is indistinguishable from a hang, and the redrive loop would spin
    on it.
 
-   **Still open:** nothing *calls* the re-drive automatically. That is the
-   deliberate shape of (c) — the release is an explicit act — but it means the UI
-   (or an operator) must poll it. Wiring a caller is the remaining piece.
+   **Caller wired.** `walkthrough.js`'s run-progress poll is the natural one — it
+   is already watching the same job — and it fires the re-drive **on change, not
+   every tick**: the status GET resolves `submitted` items upstream, so a
+   prerequisite completing on Batch surfaces here as `progress.done` increasing,
+   and that edge is exactly when a re-drive can accomplish anything. Polling it
+   blindly every 2 s would spawn a worker thread per tick for the life of a
+   multi-hour campaign, each re-parking the same items.
+
+   The same pass fixed a rendering gap: the progress panel's icon map predated
+   both `submitted` (A2′) and `waiting` (A3′), so a dispatched Batch run and a
+   gated dependent each rendered `?` — indistinguishable from a bug. Both now
+   render, and the headline counts them.
+
+   Guarded by `tests/js/test_run_redrive_poll.js`, which lifts the real
+   `maybeRedrive` out of `walkthrough.js` and drives it (the file is one large
+   IIFE with no exports, so extraction is the only way to execute the *shipped*
+   function rather than a copy that can drift). Verified non-vacuous by deleting
+   the re-drive call and confirming the test fails.
 5. **A5** — converge the "Run" button onto `run_jobs`, once A2/A3 make it a
    superset. Target the **lib functions**, not the routes.
 6. ~~**B** — the scale precheck.~~ **DONE** (see §B). The seam is
