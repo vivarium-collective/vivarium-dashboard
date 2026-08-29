@@ -790,7 +790,8 @@ Recorded so they are decided deliberately rather than by the first commit:
    so every successful 202 dispatch was recorded `failed` with the error text
    `"HTTP 202"` and its `simulation_id` discarded. Items are now `submitted`,
    keep the handle, and resolve via one batched status call **on read**.
-4. **A3′** — prereq ordering. **ORDERING DONE**; *gating still open* (below).
+4. ~~**A3′** — prereq ordering **and** the gate.~~ **DONE** (#978 ordering,
+   #979 gate + re-drive, #980 the UI caller).
    *Concurrency largely dissolves with A2′*: a bounded pool exists to cap
    simultaneously-blocked threads, and Batch supplies the parallelism once
    submits stop blocking.
@@ -857,13 +858,66 @@ Recorded so they are decided deliberately rather than by the first commit:
    path. See §A5.
 6. ~~**B** — the scale precheck.~~ **DONE** (see §B). The seam is
    `launch_into_study`, not the study-run entry this plan named.
-7. **C** — the relay, gated. *Two prerequisites cleared 2026-08-28:* the ALB now
-   routes `/compose` **and `/env-worker`** (sms-cdk#42, deployed to dev) — both
-   previously fell through to PTools, so the client leg (e) needs did not exist;
-   and dev's 60 s gateway ceiling is retired (600 s, sms-cdk#36 finally deployed).
+7. ~~**C** — the relay.~~ **BUILT AND LIVE ON DEV 2026-08-29** (viva-api#309 the
+   relay, workbench#982 `ProxyWorkerLauncher`, viva-api#310 the config). Its two
+   prerequisites had cleared the day before: the ALB routes `/compose` **and
+   `/env-worker`** (sms-cdk#42) — both previously fell through to PTools, so the
+   client leg did not exist — and dev's 60 s gateway ceiling is retired (600 s,
+   sms-cdk#36).
+
+   **It cost far less than this section priced it.** §C budgeted a WebSocket, ALB
+   upgrade handling and a duplex bridge; none was needed, because the worker
+   protocol is JSON-RPC over length-prefixed frames and *already serial by
+   construction*. Request/response HTTP is a faithful carrier for it, so the
+   relay is three ordinary endpoints. That also answered §E's Q1 (serialization
+   lives in the mutex that already existed, moved next to the same socket).
+
+   **Verified from a laptop through the SSM tunnel**, which is the case the relay
+   exists for and which was structurally impossible before: worker started in
+   **1.6 s** (`connected: true`), `list_generators` returned **33 generators**
+   with the `spatio_flux = 0` health marker, and warm calls round-tripped in
+   **~0.12 s**. That last number revises this section's other cost estimate —
+   "every worker call crosses SSM (~224 s for a tarball)" is true of a tarball,
+   not of a JSON-RPC call.
+
+   Flag-gated, per §E Q5: `ENV_WORKER_PROXY_BASE` selects it,
+   `ENV_WORKER_ADVERTISE_HOST` is left set and inert, so rollback is deleting one
+   line with no image change.
 
 A0 raises A5's value: it is not only consolidation, it is what makes the "Run"
 button work at all on a gateway-fronted deployment.
+
+---
+
+## Where this leaves the plan *(2026-08-29)*
+
+**Every numbered step is done**, and all of it is on **dev only**. What remains
+is not in the ordered list:
+
+- **Expose `/env-worker` through the atlantis CLI.** The relay is reachable from
+  a laptop today only by hand-rolled `curl` — which is how it was verified, and
+  is not a tooling experience. sms-api's CLI is where this belongs, because the
+  relay is now an sms-api capability and `CLAUDE.md`'s EUTE rule is explicit that
+  end-user-facing paths are exercised **through atlantis, not curl**. Roughly
+  `atlantis worker start <commit>` / `call <job> <method>` / `stop <job>` /
+  `list`, over the same `--base-url` the rest of the CLI uses, and then the same
+  capability in the TUI and marimo GUI so the three clients stay the one workflow
+  in three media. Generated-client support already exists — `make api_client`
+  emitted `start_relayed_env_worker` / `call_relayed_env_worker` /
+  `stop_relayed_env_worker` when #309 landed.
+
+- **§E option (e) proper.** C built the *transport*; (e) is the rest — sms-api
+  owning queuing, durability and status on a substrate that already exists
+  (Postgres, `JobStatus`, `ORMHpcRun`). §E's Q2/Q4 are answered, **Q3 (auth) is
+  not**, and it now sits on the path of every workspace query.
+- **Retiring the dial-back path** (the second half of Q5's migration). Both
+  transports are live; deleting `RemoteWorkerLauncher` is a later, deliberate
+  step, not a side effect.
+- **§D loose ends**, untouched: `remote_run._DEFAULT_POLL_TIMEOUT` (2 h),
+  `composite_subprocess`'s `sys.executable` vs `env_resolver.resolve_interpreter`,
+  stale hash-suffixed ConfigMaps.
+- **Prod.** Still api 0.9.57 / workbench 0.3.55 — behind dev by everything above,
+  and a large jump whenever it happens.
 
 Steps 1–2 stand alone: they close the defect that makes "Run investigation"
 ignore the deployment pin.
