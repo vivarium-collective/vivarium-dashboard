@@ -24,7 +24,7 @@ import logging
 import threading
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import Any, Protocol, cast, TYPE_CHECKING
 
 from vivarium_workbench.lib.env_compat import get_env
 
@@ -42,6 +42,36 @@ def _int_env(name: str, default: int) -> int:
         return int(v) if v is not None else default
     except (TypeError, ValueError):
         return default
+
+
+class _TaskCapable(Protocol):
+    """A worker whose transport can record a call as a durable task.
+
+    Only the proxy qualifies: viva-api owns the socket there, so it can keep
+    working after the client stops waiting and can write down what happened. A
+    local subprocess and a dial-back worker are both held by THIS process, so a
+    task record would have nowhere to survive.
+
+    Expressed as a protocol rather than an isinstance check on ProxyEnvWorker so
+    the pool keeps knowing nothing about transports -- which is the property that
+    let a third one be added without touching this file.
+    """
+
+    supports_tasks: bool
+
+    def call_task(self, method: str, params: dict | None = None) -> Any: ...
+
+
+def _task_capable(worker: object) -> "_TaskCapable | None":
+    """The worker, narrowed, if it can run tasks — else None.
+
+    The attribute is checked rather than assumed because `WorkerLauncher.launch`
+    is typed as returning an `EnvWorker`, and two of the three transports return
+    exactly that.
+    """
+    if getattr(worker, "supports_tasks", False) and callable(getattr(worker, "call_task", None)):
+        return cast("_TaskCapable", worker)
+    return None
 
 
 def _safe_close(worker: EnvWorker) -> None:
@@ -100,8 +130,26 @@ class WorkerPool:
         ws = str(Path(workspace))
         launcher = self._launcher_for(method, ws)
         interp = interpreter or launcher.env_key(ws)
+        worker = self._acquire(ws, interp, launcher)
+
+        # Plan §E option (e), step 5. A job-class method runs a study to
+        # completion; holding a socket open for that is what the double-run bug
+        # was made of. Where the transport can record the call durably -- only
+        # the proxy can, because only there does viva-api own the socket -- run
+        # it as a TASK instead: the caller still waits, but on short status
+        # reads rather than one socket held for hours, so the timeout that used
+        # to fire mid-study has nothing to fire on.
+        #
+        # Not a fallback and not a retry. If this path is available it is the
+        # only path taken; step 1's refusal still guards the transports that
+        # have no task tier (a local subprocess and a dial-back worker are both
+        # held by THIS process, so there is nowhere durable to put the record).
+        task_worker = _task_capable(worker)
+        if is_job_class(method) and task_worker is not None:
+            return task_worker.call_task(method, params)
+
         try:
-            return self._acquire(ws, interp, launcher).call(method, params)
+            return worker.call(method, params)
         except EnvWorkerUnavailable:
             # Respawn-and-retry is protocol §9 for a worker that died or was
             # evicted mid-flight, and it is right for an interactive call: the

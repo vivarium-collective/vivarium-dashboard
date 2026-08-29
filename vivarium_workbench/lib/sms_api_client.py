@@ -125,6 +125,26 @@ class SmsApiClient:
         """DELETE /env-worker/v1/relay/workers/{job_name} — idempotent."""
         return self._delete(f"/env-worker/v1/relay/workers/{job_name}")
 
+    # -- the task tier (plan §E option (e)) ---------------------------------
+    #
+    # For calls that cannot be a synchronous HTTP request. `run_study` runs a
+    # study's baseline and every variant to completion; holding a socket open
+    # for that is what produced the double-run bug, because the socket timeout
+    # fired and the pool re-ran the whole study.
+
+    def submit_env_worker_task(self, job_name: str, *, method: str,
+                               params: dict | None = None) -> dict:
+        """POST /env-worker/v1/tasks — 202 with a task_id; the row exists first."""
+        return self._post("/env-worker/v1/tasks", json_body={
+            "job_name": job_name, "method": method, "params": params or {},
+        })
+
+    def get_env_worker_task(self, task_id: int) -> dict:
+        return self._get(f"/env-worker/v1/tasks/{task_id}")
+
+    def cancel_env_worker_task(self, task_id: int) -> dict:
+        return self._delete(f"/env-worker/v1/tasks/{task_id}")
+
     def simulator_status(self, simulator_id: int) -> dict:
         return self._get("/core/v1/simulator/status", {"simulator_id": simulator_id})
 
