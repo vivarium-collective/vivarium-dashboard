@@ -894,6 +894,18 @@ button work at all on a gateway-fronted deployment.
 **Every numbered step is done**, and all of it is on **dev only**. What remains
 is not in the ordered list:
 
+- **Expose `/env-worker` through the atlantis CLI.** The relay is reachable from
+  a laptop today only by hand-rolled `curl` — which is how it was verified, and
+  is not a tooling experience. sms-api's CLI is where this belongs, because the
+  relay is now an sms-api capability and `CLAUDE.md`'s EUTE rule is explicit that
+  end-user-facing paths are exercised **through atlantis, not curl**. Roughly
+  `atlantis worker start <commit>` / `call <job> <method>` / `stop <job>` /
+  `list`, over the same `--base-url` the rest of the CLI uses, and then the same
+  capability in the TUI and marimo GUI so the three clients stay the one workflow
+  in three media. Generated-client support already exists — `make api_client`
+  emitted `start_relayed_env_worker` / `call_relayed_env_worker` /
+  `stop_relayed_env_worker` when #309 landed.
+
 - **§E option (e) proper.** C built the *transport*; (e) is the rest — sms-api
   owning queuing, durability and status on a substrate that already exists
   (Postgres, `JobStatus`, `ORMHpcRun`). §E's Q2/Q4 are answered, **Q3 (auth) is
