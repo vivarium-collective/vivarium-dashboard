@@ -9987,6 +9987,30 @@
 
   function _vivPollRunProgress(jobId) {
     if (_vivRunUnblockedTimer) clearTimeout(_vivRunUnblockedTimer);
+    // Plan §A3′ option (c): an item gated behind an unfinished prerequisite is
+    // parked `waiting` and its worker RETURNS, rather than holding a thread for
+    // the life of a Batch job. Something has to come back and release it once
+    // the prerequisite lands, and this poll is the natural caller — it is
+    // already here, already watching the same job.
+    //
+    // Fired on CHANGE, not every tick. The status GET resolves `submitted`
+    // items against viva-api, so a prerequisite completing on Batch shows up
+    // here as `progress.done` increasing; that edge is exactly when a redrive
+    // can accomplish something. Polling it blindly every 2s would spawn a
+    // worker thread per tick for the whole life of a multi-hour campaign, each
+    // one re-parking the same items.
+    var lastDone = -1;
+    function maybeRedrive(job) {
+      var prog = job.progress || {};
+      if (!prog.waiting) { lastDone = (prog.done || 0); return; }
+      if ((prog.done || 0) === lastDone) return;   // nothing settled since last look
+      lastDone = (prog.done || 0);
+      fetch(_api('/api/investigation-run-redrive'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId })
+      }).catch(function() { /* best-effort: the next change re-tries */ });
+    }
     function tick() {
       fetch('/api/investigation-run-unblocked-status?job_id=' + encodeURIComponent(jobId))
         .then(function(r) { return r.json().then(function(j) { return {ok: r.ok, body: j}; }); })
@@ -10002,6 +10026,7 @@
             }
             return;
           }
+          maybeRedrive(res.body);
           _vivRunUnblockedTimer = setTimeout(tick, 2000);
         });
     }
@@ -10013,8 +10038,11 @@
     if (!panel) return;
     var items = (job.items || []).map(function(it) {
       var statusCls = 'inv-run-item inv-run-' + (it.status || 'queued');
+      // `submitted` (A2′) and `waiting` (A3′) both post-date this map, so both
+      // rendered as '?' — a dispatched Batch run and a gated dependent looked
+      // like a bug rather than the two normal states they are.
       var icon = ({queued: '⋯', running: '▶', done: '✓', failed: '✗',
-                   blocked: '⛔', skipped: '—'})[it.status] || '?';
+                   blocked: '⛔', skipped: '—', submitted: '☁', waiting: '⏸'})[it.status] || '?';
       var err = it.error ? ' <span class="inv-run-err">' + _h(it.error) + '</span>' : '';
       return '<div class="' + statusCls + '">'
         + '<span class="inv-run-icon">' + icon + '</span>'
@@ -10032,7 +10060,9 @@
       headline = '<strong>✗ Job failed.</strong> ' + prog.done + ' / ' + prog.total + ' attempted.';
     } else {
       headline = '<strong>Running…</strong> ' + prog.done + ' / ' + prog.total + ' complete' +
-                 (prog.running ? ' · ' + prog.running + ' in flight' : '');
+                 (prog.running ? ' · ' + prog.running + ' in flight' : '') +
+                 (prog.submitted ? ' · ' + prog.submitted + ' on Batch' : '') +
+                 (prog.waiting ? ' · ' + prog.waiting + ' waiting on prerequisites' : '');
     }
     panel.innerHTML = '<div class="inv-run-progress-banner">' + headline + '</div>'
                     + '<div class="inv-run-list">' + items + '</div>';
