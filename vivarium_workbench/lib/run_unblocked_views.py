@@ -36,7 +36,9 @@ import yaml as _yaml
 
 from vivarium_workbench.lib import comparative_runs
 from vivarium_workbench.lib import study_runs
-from vivarium_workbench.lib.run_jobs import enumerate_unblocked, manager
+from vivarium_workbench.lib.run_jobs import (
+    enumerate_unblocked, manager, order_items_by_prereqs,
+)
 from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 from vivarium_workbench.lib.investigation_members import investigation_member_slugs
 
@@ -110,6 +112,20 @@ def investigation_run_unblocked(ws_root: Path, body: dict) -> tuple[dict, int]:
         runnable, blocked = enumerate_unblocked(spec)
         items.extend(runnable)
         items.extend(blocked)
+    # Plan §A3′: order by declared prerequisites before the worker walks them.
+    # Until now this loop emitted items in investigation-member order and the
+    # worker ran them in that order, so a study declaring
+    # `pipeline_gate.prerequisites` could run BEFORE the study it depends on —
+    # while the pbg composite path, building the same investigation, ordered it
+    # correctly. Same investigation, two answers.
+    #
+    # Stable, so the 7-of-9 investigations that declare no prerequisites keep
+    # exactly the declared order they have today (which is also what the
+    # composite path's synthetic serial edges produce).
+    #
+    # `skipped` is appended AFTER ordering on purpose: those items have no
+    # study.yaml to read prerequisites from, and they never run.
+    items = order_items_by_prereqs(items, WorkspacePaths.load(ws_root))
     items.extend(skipped)
 
     if not any(it.get("status") == "queued" for it in items):

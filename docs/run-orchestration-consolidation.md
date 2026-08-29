@@ -684,9 +684,33 @@ Recorded so they are decided deliberately rather than by the first commit:
    so every successful 202 dispatch was recorded `failed` with the error text
    `"HTTP 202"` and its `simulation_id` discarded. Items are now `submitted`,
    keep the handle, and resolve via one batched status call **on read**.
-4. **A3′** — prereq ordering. *Concurrency largely dissolves with A2′*: a
-   bounded pool exists to cap simultaneously-blocked threads, and Batch supplies
-   the parallelism once submits stop blocking.
+4. **A3′** — prereq ordering. **ORDERING DONE**; *gating still open* (below).
+   *Concurrency largely dissolves with A2′*: a bounded pool exists to cap
+   simultaneously-blocked threads, and Batch supplies the parallelism once
+   submits stop blocking.
+
+   Landed: `_study_prereqs` lifted out of `investigation_execution` into
+   `run_jobs.study_prereqs` (that module now delegates to it, so both paths read
+   prerequisites through one function), plus `order_items_by_prereqs` — a
+   **stable** topological sort applied in `run_unblocked_views` before the job is
+   submitted. Stability matters: **7 of 9** v2ecoli investigations declare no
+   prerequisites, and declared order is exactly what the composite path's
+   synthetic serial edges already produce, so those are untouched. A cycle falls
+   back to declared order rather than refusing — a metadata typo must not become
+   an outage, and the pbg path does not refuse either.
+
+   **What was found while doing it, and is NOT solved:** ordering alone is
+   sufficient only on a **local** target, where each run blocks until it
+   finishes. On a **deployment** target A2′ made dispatch return `submitted`
+   immediately, so a dependent still *starts* while its prerequisite is
+   mid-flight on Batch — correct order, no gate. Closing that needs a
+   release-on-completion mechanism, and the obvious implementation (block the
+   worker thread polling until prereqs settle) walks straight back into what A0b
+   identified as the original defect: holding a daemon thread for the life of a
+   Batch job. `refresh_submitted` resolves `submitted` items **on status read**,
+   which is the natural release point but is a GET handler, not a scheduler.
+   **This is the open design question of A3′** and should be decided before it is
+   built.
 5. **A5** — converge the "Run" button onto `run_jobs`, once A2/A3 make it a
    superset. Target the **lib functions**, not the routes.
 6. ~~**B** — the scale precheck.~~ **DONE** (see §B). The seam is
