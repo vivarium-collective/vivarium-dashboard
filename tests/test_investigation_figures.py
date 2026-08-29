@@ -107,6 +107,40 @@ def test_study_zip_contents(tmp_path):
     assert figs.build_study_figures_zip(ws, "no-such-study") is None
 
 
+def _make_html_ws(tmp_path):
+    """Investigation whose member study declares only INTERACTIVE (html) charts,
+    the way a v2ecoli comparison study does (address: html:viz/<file>.html)."""
+    _write(tmp_path / "investigations" / "inv" / "investigation.yaml",
+           yaml.safe_dump({"name": "inv", "title": "Inv", "studies": ["html-01"]}))
+    _write(tmp_path / "studies" / "html-01" / "study.yaml", yaml.safe_dump({
+        "name": "html-01", "title": "HTML charts",
+        "visualizations": [
+            {"name": "mass", "address": "html:viz/mass.html", "chart": "html"},
+            {"name": "flux", "address": "html:viz/flux.html", "chart": "html"},
+        ],
+    }))
+    _write(tmp_path / "studies" / "html-01" / "viz" / "mass.html", "<html>mass</html>")
+    _write(tmp_path / "studies" / "html-01" / "viz" / "flux.html", "<html>flux</html>")
+    return tmp_path
+
+
+def test_html_charts_count_as_figures(tmp_path):
+    # An investigation of interactive HTML charts still reports a figure total
+    # (drives n_figures → the `↓ figures` button shows) even with no image viz.
+    r = figs.build_investigation_figures(_make_html_ws(tmp_path), "inv")
+    arcs = {f["arcname"] for f in r["files"]}
+    assert arcs == {"html-01/mass.html", "html-01/flux.html"}
+    assert r["n_composites"] == 0            # html is a panel, never a stitched composite
+
+
+def test_html_charts_ride_along_in_zip(tmp_path):
+    # …and the `↓ figures` zip carries the HTML files (type-agnostic bundle).
+    blob = figs.build_figures_zip(_make_html_ws(tmp_path), "inv")
+    assert blob
+    names = set(zipfile.ZipFile(io.BytesIO(blob)).namelist())
+    assert names == {"html-01/mass.html", "html-01/flux.html"}
+
+
 def test_study_outputs_zip_includes_html_report(tmp_path):
     # A study whose output is an HTML dashboard (declared via embed_visualizations),
     # with a sibling asset in its viz/ dir. `↓ outputs` must bundle both.
