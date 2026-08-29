@@ -16,6 +16,7 @@ lifecycle; this resolver is where that adapter plugs in.
 from __future__ import annotations
 
 import logging
+import subprocess
 import sys
 from pathlib import Path
 
@@ -87,6 +88,72 @@ def resolve_interpreter(workspace: Path | str) -> str:
     if managed is not None:
         return managed
     return _fallback_interpreter(ws)
+
+
+#: Interpreters already checked for `vivarium_workbench`, so the probe below
+#: costs one subprocess per interpreter per process, not one per run.
+_run_capable: dict[str, bool] = {}
+
+
+def resolve_run_interpreter(workspace: Path | str) -> str:
+    """The interpreter a RUN subprocess should use — which is not the same
+    question :func:`resolve_interpreter` answers, and the difference is why the
+    two paths had drifted.
+
+    `composite_subprocess` spawned with a bare ``sys.executable`` while env
+    workers went through ``resolve_interpreter``, so the same workspace could be
+    served by two different environments (plan §D, and seam #2 of the API
+    survey). The obvious repair — just call ``resolve_interpreter`` — is WRONG,
+    and quietly so:
+
+    * an **env worker** needs only the workspace's own stack, because its worker
+      module is staged separately from the workbench image (that is what
+      ``ENV_WORKER_MODULE_IMAGE`` is for, and why it must equal the workbench
+      tag);
+    * a **run child** additionally does ``from vivarium_workbench.lib import
+      emitters / composite_runs / result_fingerprint / generation`` inside the
+      generated script. A workspace ``.venv`` provisions the *workspace's*
+      dependencies and generally does **not** carry the workbench itself, so
+      switching wholesale would trade one broken case for another —
+      ``ModuleNotFoundError: vivarium_workbench`` deep inside a child.
+
+    So: prefer the resolved interpreter, but only if it can actually import the
+    workbench; otherwise keep ``sys.executable`` and say why, once. That gets the
+    workspace's real dependency tree wherever the venv is complete, keeps every
+    existing local setup working, and removes the *silent* divergence.
+
+    The check is a real import in a real subprocess because that is the only
+    thing that answers it — a venv can exist, be on the right path, and still not
+    have the package.
+    """
+    resolved = resolve_interpreter(workspace)
+    if resolved == sys.executable:
+        return resolved
+    ok = _run_capable.get(resolved)
+    if ok is None:
+        try:
+            ok = subprocess.run(
+                [resolved, "-c", "import vivarium_workbench"],
+                capture_output=True, timeout=60, check=False,
+            ).returncode == 0
+        except (OSError, subprocess.SubprocessError):
+            ok = False
+        _run_capable[resolved] = ok
+    if ok:
+        return resolved
+    if resolved not in _warned_run_fallback:
+        _warned_run_fallback.add(resolved)
+        _log.warning(
+            "run subprocess: %s resolves to %s, which cannot import "
+            "vivarium_workbench; using this server's interpreter instead. The "
+            "child needs BOTH the workspace's dependencies and the workbench, "
+            "so a workspace venv without the workbench cannot serve a run.",
+            workspace, resolved,
+        )
+    return sys.executable
+
+
+_warned_run_fallback: set[str] = set()
 
 
 def _base_workspace_interpreter(ws: Path) -> str | None:

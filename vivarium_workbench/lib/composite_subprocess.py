@@ -27,7 +27,6 @@ import json
 import os
 import sqlite3
 import subprocess
-import sys
 import textwrap
 import time
 from pathlib import Path
@@ -232,7 +231,15 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     except ImportError:
         pass
 
-    py = sys.executable
+    # Plan §D / API-survey seam #2: this used to be a bare `sys.executable`
+    # while env workers resolved an interpreter for the same workspace, so one
+    # workspace could be served by two different environments. resolve_run_
+    # interpreter closes that — and does NOT simply defer to the env worker's
+    # rule, because a run child imports vivarium_workbench itself and a
+    # workspace venv generally does not carry it. See its docstring.
+    from vivarium_workbench.lib import env_resolver as _env_resolver
+
+    py = _env_resolver.resolve_run_interpreter(ws_root)
     import tempfile as _tempfile
     from bigraph_schema.json_codec import BigraphJSONEncoder
 
