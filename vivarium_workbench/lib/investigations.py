@@ -730,7 +730,7 @@ def _validate_variants_list(spec: dict) -> None:
                 )
 
 
-def _find_config_file(ref: str, study_dir: Path) -> Optional[Path]:
+def _find_config_file(ref: str, study_dir: Path) -> "Path | None":
     """Resolve a condition's ``config_file`` reference to an existing path.
 
     Order: absolute path as-is → relative to the study dir (co-located
