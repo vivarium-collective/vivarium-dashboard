@@ -96,6 +96,44 @@ def investigation_run(ws_root: Path, body: dict) -> "tuple[dict, int]":
     # 409 mirrors `catalog_install_views`' system-deps gate -- a real pre-run
     # gate with a structured body and an actionable hint -- rather than the
     # 400/404 dispatch at the tail of this function, which classifies *failures*.
+    # §A5 — converge onto run_jobs, for the investigations that CAN converge.
+    #
+    # The two "orchestrators" this plan set out to merge turn out to read
+    # different spec shapes, which is why they never merged on their own:
+    #
+    #   this route            investigations/<name>/spec.yaml   (v2: composites+runs
+    #                         (fallback study.yaml)              or composite+simulations)
+    #   run-unblocked         investigations/<name>/investigation.yaml  (v3: members ->
+    #                                                            studies/<slug>/study.yaml)
+    #
+    # `vwb migrate-investigations` is the one-way v2 -> v3 rewrite, and the real
+    # v2ecoli build carries **11 investigations, all investigation.yaml, zero
+    # spec.yaml** (checked 2026-08-28). So for every investigation anyone
+    # actually has, this route's loader finds nothing and 404s — it is not a
+    # rival orchestrator so much as the v2 one, still wired to a button.
+    #
+    # Convergence is therefore a delegation, not a merge: a v3 investigation is
+    # handed to `investigation_run_unblocked` — the LIB function, per §A0's
+    # "convergence should target lib functions, not routes" — and this route
+    # answers 202 + job_id, the same async contract "Run unblocked" already has.
+    # That is what makes the button work at all on a gateway-fronted deployment
+    # (§A0.1: a synchronous route cannot outlive the ALB's idle timeout), and it
+    # inherits the run-target honouring, prereq ordering and gating built in
+    # A1–A3′ rather than reimplementing any of it.
+    #
+    # A v2 spec keeps today's synchronous behaviour, including the deployment
+    # refusal below. Nothing translates a v2 spec into studies, and inventing
+    # that translation here would be a migration wearing a run button.
+    from vivarium_workbench.lib.workspace_paths import WorkspacePaths
+    inv_dir = WorkspacePaths.load(Path(ws_root)).investigations / name
+    if ((inv_dir / "investigation.yaml").is_file()
+            and not (inv_dir / "spec.yaml").is_file()
+            and not (inv_dir / "study.yaml").is_file()):
+        from vivarium_workbench.lib.run_unblocked_views import (
+            investigation_run_unblocked,
+        )
+        return investigation_run_unblocked(ws_root, {"investigation": name})
+
     from vivarium_workbench.lib import remote_pinned
     if remote_pinned.resolve_run_target(Path(ws_root)) == "deployment":
         return {

@@ -316,12 +316,44 @@ is acceptable if concurrency lands first.
 Nothing to build; verify. After A1 every investigation path runs through
 `study_runs` → `invoke_run` → `run_runner`, whose `deployment` branch dispatches.
 
-### A5 — Converge the remaining orchestrators
+### A5 — Converge the remaining orchestrators  ✅ **DONE**
 
-A1 fixes correctness without merging anything. Converge only once `run_jobs` has
-A2/A3, by making `/api/investigation-run` a thin wrapper that submits to
-`run_jobs` and returns its `job_id`. Deferring is deliberate — converging first
-would mean re-implementing `run_investigation` under pressure to fix a defect.
+> **Landed 2026-08-28**, and the shape is a *delegation*, not the merge this
+> section imagined — because the premise was wrong in a way worth recording.
+
+**The two orchestrators read different spec shapes.** That is why they never
+merged on their own, and it was not visible from either one alone:
+
+| route | reads | model |
+|---|---|---|
+| `/api/investigation-run` | `investigations/<n>/spec.yaml` (fallback `study.yaml`) | **v2** — `composites:`+`runs:`, or `composite:`+`simulations:` |
+| `/api/investigation-run-unblocked` | `investigations/<n>/investigation.yaml` | **v3** — `members:` → `studies/<slug>/study.yaml` |
+
+`vwb migrate-investigations` is the one-way v2 → v3 rewrite, and the real
+v2ecoli build carries **11 investigations, all `investigation.yaml`, zero
+`spec.yaml`** (checked 2026-08-28). So the "rival orchestrator" is the **v2**
+one, still wired to a button, and for every investigation anyone actually has,
+its loader finds nothing and 404s.
+
+So convergence is: a **v3** investigation is handed to the *lib* function
+`investigation_run_unblocked` (per §A0's "target lib functions, not routes") and
+this route answers **202 + `job_id`** — the same async contract "Run unblocked"
+already has. It inherits run-target honouring, prereq ordering and gating from
+A1–A3′ instead of reimplementing any of it, and it is what makes the button work
+at all on a gateway-fronted deployment (§A0.1: a synchronous route cannot outlive
+the ALB idle timeout, whatever the run target).
+
+A **v2** spec keeps today's synchronous behaviour, including A1's deployment
+refusal — nothing translates a v2 spec into studies, and inventing that here
+would be a migration wearing a run button. A directory holding **both** shapes
+(mid-migration) keeps the v2 path: `spec.yaml` is what its loader understands,
+and delegating would silently run a *different* set of simulations than the spec
+the user is looking at.
+
+Client side, `_runInvestigation` hands a 202 to `_vivPollRunProgress` — reusing
+the progress panel rather than inventing a second async UX (§A0.3), so a
+delegated run gets item rendering, Batch resolution and the prerequisite
+re-drive for free.
 
 Do **not** invest in making `StudySteps` non-blocking; superseded by A1–A3.
 
@@ -744,8 +776,11 @@ Recorded so they are decided deliberately rather than by the first commit:
    IIFE with no exports, so extraction is the only way to execute the *shipped*
    function rather than a copy that can drift). Verified non-vacuous by deleting
    the re-drive call and confirming the test fails.
-5. **A5** — converge the "Run" button onto `run_jobs`, once A2/A3 make it a
-   superset. Target the **lib functions**, not the routes.
+5. ~~**A5** — converge the "Run" button onto `run_jobs`.~~ **DONE** — as a
+   *delegation*, because the two orchestrators turned out to read different spec
+   shapes (v2 `spec.yaml` vs v3 `investigation.yaml`); the real build has zero of
+   the former. v3 delegates and answers 202 + `job_id`; v2 keeps its synchronous
+   path. See §A5.
 6. ~~**B** — the scale precheck.~~ **DONE** (see §B). The seam is
    `launch_into_study`, not the study-run entry this plan named.
 7. **C** — the relay, gated. *Two prerequisites cleared 2026-08-28:* the ALB now
