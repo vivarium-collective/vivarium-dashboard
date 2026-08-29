@@ -87,6 +87,44 @@ class SmsApiClient:
         """DELETE /env-worker/v1/workers/{job_name} — idempotent."""
         return self._delete(f"/env-worker/v1/workers/{job_name}")
 
+    # -- relay (plan §C) ----------------------------------------------------
+    #
+    # The three above run the IN-CLUSTER shape: we tell viva-api where to dial
+    # back, because we can be dialled. A laptop cannot — its SSM tunnel is
+    # laptop-initiated with no inbound path — so these hand the socket to
+    # viva-api instead and reach the worker over HTTP.
+
+    def start_relayed_env_worker(self, *, commit: str, workspace: str | None = None,
+                                 session_key: str | None = None,
+                                 accept_timeout: float | None = None) -> dict:
+        """POST /env-worker/v1/relay/workers — viva-api holds the connection.
+
+        Note what is ABSENT versus ``start_env_worker``: no callback host, port
+        or token. viva-api binds its own listener and mints its own token, which
+        is the whole point — we have no address a worker could dial.
+        """
+        body: dict = {"commit": commit}
+        if workspace:
+            body["workspace"] = workspace
+        if session_key:
+            body["session_key"] = session_key
+        if accept_timeout is not None:
+            body["accept_timeout"] = accept_timeout
+        return self._post("/env-worker/v1/relay/workers", json_body=body)
+
+    def call_relayed_env_worker(self, job_name: str, *, method: str,
+                                params: dict | None = None,
+                                timeout: float | None = None) -> dict:
+        """POST /env-worker/v1/relay/workers/{job}/call — one JSON-RPC call."""
+        body: dict = {"method": method, "params": params or {}}
+        if timeout is not None:
+            body["timeout"] = timeout
+        return self._post(f"/env-worker/v1/relay/workers/{job_name}/call", json_body=body)
+
+    def stop_relayed_env_worker(self, job_name: str) -> dict:
+        """DELETE /env-worker/v1/relay/workers/{job_name} — idempotent."""
+        return self._delete(f"/env-worker/v1/relay/workers/{job_name}")
+
     def simulator_status(self, simulator_id: int) -> dict:
         return self._get("/core/v1/simulator/status", {"simulator_id": simulator_id})
 

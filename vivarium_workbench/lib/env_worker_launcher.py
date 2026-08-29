@@ -121,15 +121,10 @@ class RemoteWorkerLauncher:
         return f"image:{self._require_commit(workspace)}"
 
     def _require_commit(self, workspace: str) -> str:
-        commit = _commit_for_workspace(workspace)
-        if not commit:
-            # Hosted requires every served workspace to be image-backed (§2A.8).
-            # Say which workspace and why, rather than failing later inside a call.
-            raise EnvWorkerUnavailable(
-                f"workspace {workspace} has no build stamp (.viv-build.json); a hosted "
-                "env worker runs the simulator's prebuilt image and needs its commit"
-            )
-        return commit
+        # Hosted requires every served workspace to be image-backed (§2A.8).
+        # Shared with ProxyWorkerLauncher: both run the prebuilt image, so both
+        # refuse an unstamped workspace identically rather than drifting.
+        return _require_commit(workspace)
 
     def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> EnvWorker:
         commit = self._require_commit(workspace)
@@ -159,6 +154,114 @@ class RemoteWorkerLauncher:
         worker._client = self._client
         logger.info("remote env worker ready for %s (commit %s, job %s)", workspace, commit, job_name)
         return worker
+
+
+class ProxyEnvWorker:
+    """A worker whose socket is held by viva-api, reached over HTTP (plan §C).
+
+    Duck-typed rather than an ``EnvWorker`` subclass, deliberately: ``EnvWorker``
+    IS a socket and its framing, and this has neither. What the pool actually
+    needs is three methods — ``call``, ``close``, ``alive`` — so that is the
+    surface implemented, and inheriting would only drag in state that must never
+    be used.
+
+    The message layer is unchanged. Spec §§6-11 are transport-independent by
+    design; this is one more transport for the same method catalog.
+    """
+
+    def __init__(self, client, job_name: str, workspace: str, *, timeout: float):
+        self._client = client
+        self._job_name = job_name
+        self.workspace = workspace
+        self._timeout = timeout
+        self._alive = True
+
+    def call(self, method: str, params: dict | None = None):
+        """Forward one call. viva-api holds the per-worker lock, so the FIFO
+        contract is preserved on its side and needs no lock here."""
+        if not self._alive:
+            raise EnvWorkerUnavailable(f"relayed worker {self._job_name} is closed")
+        try:
+            resp = self._client.call_relayed_env_worker(
+                self._job_name, method=method, params=params, timeout=self._timeout)
+        except Exception as e:  # noqa: BLE001 — normalized below
+            # A relayed worker that has gone away must look to the pool exactly
+            # like a dead local one, or the pool will keep handing it out. 404
+            # (never registered) and 410 (socket dropped) both mean that; any
+            # other failure is a transport fault and is reported as unavailable
+            # too, because we cannot tell whether the call ran.
+            self._alive = False
+            raise EnvWorkerUnavailable(f"relayed call {method!r} failed: {e}") from e
+        return (resp or {}).get("result")
+
+    def alive(self) -> bool:
+        return self._alive
+
+    def close(self) -> None:
+        """Drop the connection and delete the Job. Idempotent, never raises."""
+        self._alive = False
+        try:
+            self._client.stop_relayed_env_worker(self._job_name)
+        except Exception as e:  # noqa: BLE001 — teardown must not raise into the pool
+            logger.warning("relayed env-worker Job %s not deleted: %s", self._job_name, e)
+
+
+class ProxyWorkerLauncher:
+    """Ask viva-api to run the image AND hold the socket; talk to it over HTTP.
+
+    The third transport (plan §C/§C1). It exists because a laptop cannot be
+    dialled: the SSM tunnel is laptop-initiated with no inbound path, so
+    ``RemoteWorkerLauncher``'s dial-back — which requires an address the worker
+    can reach — has nothing to advertise. Here the workbench binds no listener
+    at all and needs no reachable address, only a URL it can call out to.
+
+    ``kind`` differs from ``"remote"`` on purpose. The pool keys warm workers on
+    ``(workspace, env_key, kind)``, and a dial-back worker and a relayed one are
+    reached by different means even when they run the identical image; sharing a
+    pool entry would hand a caller a handle it cannot use.
+    """
+
+    kind = "proxy"
+
+    def __init__(self, client, *, session_key: str | None = None):
+        self._client = client
+        self._session_key = session_key
+
+    def env_key(self, workspace: str) -> str:
+        """Same key as the remote launcher: the image IS the environment.
+
+        Identical by design — the environment does not change because the bytes
+        take a different route to it. ``kind`` is what separates the two in the
+        pool, and that is the honest place for the distinction.
+        """
+        return f"image:{_require_commit(workspace)}"
+
+    def launch(self, workspace: str, *, interpreter: str | None, timeout: float) -> ProxyEnvWorker:
+        commit = _require_commit(workspace)
+        handle = self._client.start_relayed_env_worker(
+            commit=commit, session_key=self._session_key,
+            accept_timeout=REMOTE_START_TIMEOUT)
+        job_name = (handle or {}).get("job_name", "")
+        if not job_name:
+            raise EnvWorkerUnavailable(
+                f"viva-api accepted the relay start for {commit} but returned no job_name")
+        logger.info("relayed env worker ready for %s (commit %s, job %s)", workspace, commit, job_name)
+        return ProxyEnvWorker(self._client, job_name, workspace, timeout=timeout)
+
+
+def _require_commit(workspace: str) -> str:
+    """The commit whose image IS this workspace's environment.
+
+    Shared by the remote and proxy launchers: both run the prebuilt image, and
+    both must refuse a workspace with no build stamp for the same reason.
+    """
+    commit = _commit_for_workspace(workspace)
+    if not commit:
+        raise EnvWorkerUnavailable(
+            f"workspace {workspace} has no build stamp (.viv-build.json); a hosted "
+            "env worker runs the simulator's prebuilt image and needs its commit"
+        )
+    return commit
 
 
 def _commit_for_workspace(workspace: str) -> str | None:
@@ -198,11 +301,27 @@ def default_launcher() -> WorkerLauncher:
     Remote when this deployment declares where workers should dial back to;
     local otherwise. Deliberately not a per-call or per-workspace switch.
     """
+    from vivarium_workbench.lib.sms_api_client import SmsApiClient
+    from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
+
+    # PROXY first (plan §C/§C1). It is the only transport that works where the
+    # workbench cannot be dialled — a laptop behind an SSM tunnel — so a
+    # deployment that sets it means it, and it must not be shadowed by an
+    # ADVERTISE_HOST left over from the dial-back configuration.
+    #
+    # Both are read so a site can be switched either way without a cross-repo
+    # release window in which env workers are broken: viva-api's relay ships
+    # inert, this flag turns it on, and unsetting it returns to dial-back with no
+    # redeploy of either image.
+    proxy_base = (get_env("ENV_WORKER_PROXY_BASE", "") or "").strip()
+    if proxy_base:
+        base = proxy_base if proxy_base.lower() not in ("1", "true", "yes") else _sms_api_base()
+        logger.info("env workers: PROXY (relayed through viva-api at %s)", base)
+        return ProxyWorkerLauncher(SmsApiClient(base))
+
     host = get_env("ENV_WORKER_ADVERTISE_HOST", "") or ""
     if not host.strip():
         return LocalWorkerLauncher()
-    from vivarium_workbench.lib.sms_api_client import SmsApiClient
-    from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
     # The SAME accessor every other viva-api call site uses (VIVA_API_BASE, else
     # SMS_API_BASE). Constructing SmsApiClient() bare would silently take its
