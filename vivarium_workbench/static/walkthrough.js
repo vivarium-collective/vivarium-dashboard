@@ -14602,9 +14602,25 @@
     fetch('/api/investigation-run', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({name: name}),
-    }).then(function(r) { return r.json().then(function(j) { return [r.ok, j]; }); })
+    }).then(function(r) { return r.json().then(function(j) { return [r.ok, j, r.status]; }); })
       .then(function(parts) {
-        var ok = parts[0], j = parts[1];
+        var ok = parts[0], j = parts[1], code = parts[2];
+        // §A5: a v3 investigation is now delegated server-side to the SAME
+        // background job machinery "Run unblocked" uses, so this answers
+        // 202 + job_id instead of blocking until every simulation finishes.
+        // Hand it to the existing progress poll rather than inventing a second
+        // async UX — that poll already renders items, resolves Batch dispatches
+        // and drives the prerequisite re-drive.
+        //
+        // This is also what makes the button usable on a gateway-fronted
+        // deployment at all: the synchronous shape could not outlive the ALB's
+        // idle timeout regardless of where the work ran.
+        if (code === 202 && j && j.job_id) {
+          if (typeof _vivPollRunProgress === 'function') _vivPollRunProgress(j.job_id);
+          if (btn) { btn.disabled = false; btn.textContent = 'Run'; }
+          _openInvestigation(name);
+          return;
+        }
         if (!ok) { alert('Run failed: ' + (j.error || 'unknown')); }
         // Refresh both the list (status update) and the detail panel
         window._investigationsLoaded = false;

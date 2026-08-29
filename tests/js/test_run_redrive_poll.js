@@ -95,3 +95,29 @@ function run() {
 }
 
 run();
+
+// --- §A5: the Run button hands a 202 to the async progress poll ------------ //
+//
+// The server now delegates a v3 investigation to the same background job
+// machinery "Run unblocked" uses, so this button answers 202 + job_id instead
+// of blocking. If the client does not hand that to _vivPollRunProgress, the run
+// proceeds invisibly: no progress panel, no prerequisite re-drive, and the user
+// sees a button that flicked back to idle with nothing to show.
+function runA5() {
+  const fn = extract('_runInvestigation');
+  assert.match(fn, /202/,
+    '_runInvestigation ignores the 202 async contract');
+  assert.match(fn, /_vivPollRunProgress\s*\(\s*j\.job_id\s*\)/,
+    '_runInvestigation does not hand job_id to the progress poll — a delegated ' +
+    'run would proceed with no panel and no prerequisite re-drive');
+  // The 202 branch must return before the synchronous refresh path, or the
+  // panel is torn down by _loadInvestigations the moment it appears.
+  const idx202 = fn.indexOf('202');
+  const idxReturn = fn.indexOf('return;', idx202);
+  const idxAlert = fn.indexOf("alert('Run failed", idx202);
+  assert.ok(idxReturn !== -1 && idxReturn < idxAlert,
+    'the 202 branch must return before the synchronous failure/refresh path');
+  console.log('test_run_redrive_poll.js: A5 ok');
+}
+
+runA5();
