@@ -234,6 +234,42 @@ def run_composite_subprocess(
     from vivarium_workbench.lib import composite_runs as cr
     from vivarium_workbench.lib.workspace_paths import WorkspacePaths
 
+    # Both script templates below open with `from {pkg}.core import build_core`
+    # and then call `build_core()` -- the workspace package's core is what
+    # registers its processes and types, so there is no running a composite
+    # without it.
+    #
+    # `pkg` is allowed to be None upstream, deliberately: study_runs degrades it
+    # to None so a workspace.yaml-less caller (a hermetic test, an early
+    # rerun-replay context) "must never block the launch". That is right for
+    # callers that never reach a subprocess. It is not right here, and nothing
+    # checked -- so None was interpolated into the source and the child died on
+    #
+    #     File "<string>", line 3
+    #         from None.core import build_core
+    #     SyntaxError: invalid syntax
+    #
+    # which reached the caller as "could not parse run output". Observed on a
+    # real deployment: /app/v2ecoli/workspace has studies/ and investigations/
+    # but no workspace.yaml, so every study run there failed this way and said
+    # nothing about why.
+    #
+    # Refuse at the seam that knows, with the fact the caller needs: which
+    # workspace, and what is missing from it.
+    if not pkg:
+        return (
+            {
+                "simulation_id": run_id,
+                "error": (
+                    f"workspace {ws_root} has no package: its workspace.yaml is "
+                    "missing, or declares neither `package_path` nor `name`. A "
+                    "composite run imports `<package>.core.build_core`, so it "
+                    "cannot proceed without one."
+                ),
+            },
+            400,
+        )
+
     # Emitter kind actually persisted for this run — recorded on runs_meta /
     # the JSONL run log below. Only the legacy (non-generator) path resolves
     # this synchronously here (Task 5); the generator path's emitter choice
