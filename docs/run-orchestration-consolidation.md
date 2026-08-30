@@ -912,6 +912,74 @@ button work at all on a gateway-fronted deployment.
 
 ---
 
+### What a caller can actually tell apart *(measured 2026-08-30)*
+
+The question (e) had to answer for real: **can a caller distinguish "the
+simulation failed" from "the job failed"?** Answered by manufacturing a true
+partial on dev — a study whose baseline succeeds while two variants fail, for two
+different reasons — rather than by reading the code.
+
+**Yes, and the discriminator is the envelope, not the payload.**
+
+| what happened | `task.status` | `result` | `error_message` |
+|---|---|---|---|
+| the job died | `failed` | `null` | why, incl. `(worker pod: OOMKilled (exit 137))` |
+| the science failed | `completed` | present, `errors[]` non-empty | `null` |
+
+Inside a `completed` harvest, the *kind* of stage failure is legible too:
+
+```jsonc
+"errors": [
+  { "stage": "variant:fails-missing-composite", "status": 400,
+    "error": "composite '...' not found in either the @composite_generator registry OR ..." },
+  { "stage": "variant:fails-bad-param", "status": 502,
+    "error": "run failed",
+    "traceback": "...ValueError: unknown parameter(s) for ...: ['definitely_not_a_real_kwarg']" }
+],
+"run_refs": [
+  { "label": "monod",           "status": "completed", "n_steps": 5 },
+  { "label": "fails-bad-param", "status": "failed",    "n_steps": 0 }
+]
+```
+
+- **400 = never ran** (resolution failed) and has **no `run_ref` at all**.
+- **502 = ran and died** and **does** have one, `status: failed`, `n_steps: 0`.
+
+So `run_refs` counts *stages that reached a runner*, not successes — an earlier
+guess that `len(run_refs)` indicated success was wrong, and the partial disproved
+it.
+
+**Five defects had to be fixed before this run was even possible**, none of which
+any unit test had caught:
+
+1. **workbench#995** — `run_composite_subprocess` interpolated `from {pkg}.core
+   import build_core` without checking `pkg`, so a workspace with no
+   `workspace.yaml` produced `from None.core import` and a `SyntaxError` the
+   caller saw only as "could not parse run output". *(The run that hit this was
+   also operator error — `/app/v2ecoli/workspace`, the layout subdir, instead of
+   the root `/app/v2ecoli`. The guard is what makes that mistake say so.)*
+2. **viva-api#325** — the worker's **2Gi** limit, sized when a worker only
+   answered queries. The task tier made it the thing that *runs* a study; every
+   composite run was `OOMKilled` within ~60 s, twice, once with no logs at all.
+   Now **8Gi**, and a setting, because the ceiling belongs to the site's nodes.
+3. **viva-api#325** — `"worker closed the connection"` describes an OOM kill, a
+   segfault and a `kubectl delete` identically. `TaskRunner` now appends the
+   pod's terminated state.
+4. **viva-api#325** — the worker container sets **no locale**, so Python's
+   default text encoding was ASCII and each of the workbench's ~130 unqualified
+   text reads/writes broke on the first em dash. Two had been fixed at the call
+   site (0.3.70, 0.3.71) before the fault was recognised as environmental;
+   `PYTHONUTF8=1` fixes the class.
+5. **workbench#996** — 0.3.71 carried `stderr`/`stdout`, but the 502 path emits
+   `traceback`. A real partial came back as `{"error": "run failed", "status":
+   502}` and nothing else.
+
+**Still open, flagged not fixed:** the conclusion card read `"overall":
+"within_tol"` on a harvest with two failed stages — the verdict is computed as
+though nothing went wrong. Whether a failed stage should invalidate a verdict is
+a science question, not a plumbing one, so it is recorded here rather than
+guessed at.
+
 ## Where this leaves the plan *(2026-08-29)*
 
 **Every numbered step is done**, and all of it is on **dev only**. What remains
