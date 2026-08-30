@@ -4,6 +4,34 @@
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
     return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]; }); }
 
+  // Run-kind labelling (resolve payload's `run_kind`): a TEMPORAL composite has
+  // Processes advancing in simulated time, so "Steps" = timesteps; a WORKFLOW is
+  // a one-shot Step pipeline (e.g. ParCa) where a step count is not a duration.
+  // Makes the single "Steps" box mean the right thing instead of confusing the two.
+  function _stepsLabel(d) {
+    return d && d.run_kind === "temporal" ? "time steps"
+         : d && d.run_kind === "workflow" ? "pipeline ticks"
+         : "steps";
+  }
+  function _stepsHint(d) {
+    return d && d.run_kind === "temporal"
+      ? "Number of simulated timesteps to run (each step ≈ one time unit)."
+      : d && d.run_kind === "workflow"
+        ? "This is a one-shot pipeline — one run computes its full result. The count is not a simulated duration."
+        : "How many steps to run.";
+  }
+  function _runKindNote(d) {
+    var k = d && d.run_kind;
+    if (k === "temporal")
+      return '<p class="cfg-kind muted">⏱ <strong>Temporal composite</strong> — its Processes advance in simulated time. ' +
+             '“Steps” below is the number of <strong>timesteps</strong> to simulate (each ≈ one time unit).</p>';
+    if (k === "workflow")
+      return '<p class="cfg-kind muted">⚙ <strong>Workflow</strong> — a one-shot Step pipeline' +
+             (d.default_n_steps != null ? ' (' + esc(d.default_n_steps) + ' stages)' : '') +
+             ', not a timed simulation. One run computes its full result; the count below ticks the pipeline and is <em>not</em> a simulated duration.</p>';
+    return '';
+  }
+
   // Build a config form from composite-resolve's parameters:
   // {name: {type:"string"|"float"|"int"|"bool"|"integer"|"boolean", default, description}}. May be null/{}.
   // Accepts both legacy aliases (int/bool) and canonical vocabulary (integer/boolean).
@@ -77,9 +105,10 @@
         }
         box.innerHTML =
           '<h4>' + esc(d.name || id) + '</h4>' +
+          _runKindNote(d) +
           '<form class="cfg-form">' + _buildConfigForm(d.parameters) + '</form>' +
-          '<label class="cfg-row"><span class="cfg-name">steps</span>' +
-          '<input type="number" class="cfg-steps" value="' + esc(d.default_n_steps != null ? d.default_n_steps : 5) + '"></label>' +
+          '<label class="cfg-row"><span class="cfg-name">' + _stepsLabel(d) + '</span>' +
+          '<input type="number" class="cfg-steps" title="' + esc(_stepsHint(d)) + '" value="' + esc(d.default_n_steps != null ? d.default_n_steps : 5) + '"></label>' +
           (isSnapshot
             ? '<div class="cfg-actions"><button type="button" class="btn-mini" disabled title="Run on a live dashboard">▶ Run</button>' +
               ' <span class="muted">read-only preview — open this composite on a live dashboard to configure &amp; run</span></div>'
@@ -114,6 +143,37 @@
   }
   function _status(el, html) { var s = el.querySelector(".cfg-status"); if (s) { s.hidden = false; s.innerHTML = html; } }
 
+  // Render the "Running…" line with a Stop control (issue #754): a frozen run
+  // (e.g. memory climbing, never finishing) can be terminated without
+  // force-quitting the whole Python process. Wires the button after each
+  // re-render since _status replaces innerHTML.
+  function _running(el, phase) {
+    _status(el, 'Running… (' + esc(phase || "queued") + ') ' +
+      '<button type="button" class="btn-mini cfg-stop-btn">■ Stop</button>');
+    var sb = el.querySelector(".cfg-stop-btn");
+    if (sb) sb.onclick = function () { _stopRun(el, sb); };
+  }
+
+  function _stopRun(el, sb) {
+    var run = el._lastRunId || "";
+    if (!run) return;
+    sb.disabled = true; sb.textContent = "Stopping…";
+    _post(_api("/api/composite-run/" + encodeURIComponent(run) + "/stop"), {})
+      .then(function (res) {
+        if (res.status !== 200) {
+          sb.disabled = false; sb.textContent = "■ Stop";
+          _status(el, '<span class="inv-run-err">stop failed: ' +
+            esc((res.body && (res.body.error || res.body.outcome)) || res.status) + '</span>');
+        }
+        // On success the poll loop sees status 'cancelled' and renders the
+        // terminal line; nothing more to do here.
+      })
+      .catch(function (e) {
+        sb.disabled = false; sb.textContent = "■ Stop";
+        _status(el, '<span class="inv-run-err">' + esc(String(e)) + '</span>');
+      });
+  }
+
   function _poll(el, statusUrl) {
     var tries = 0;
     var ticks = 0;
@@ -134,7 +194,7 @@
           _reenableBtn();
           return;
         }
-        _status(el, "Running… (" + esc(phase || "queued") + ")");
+        _running(el, phase);
         setTimeout(tick, 2500);
       }).catch(function () { tries += 1; if (tries < 4) setTimeout(tick, 3000); else { _status(el, '<span class="inv-run-err">poll error</span>'); _reenableBtn(); } });
     }
@@ -162,13 +222,36 @@
     };
   }
 
+  // item 20a: mirrors study-detail.js's _dispatchRemotePinned — before a
+  // remote-pinned deployment dispatches to AWS Batch, fetch the server-
+  // resolved repo/branch/commit/simulator_id and require explicit
+  // confirmation, so a workspace-identity mismatch is caught here, before
+  // money gets spent, not discovered afterward via aws batch describe-jobs.
+  // A plain local-engine run (unchanged, pre-existing behavior) fires with no
+  // confirm, same as before this fix.
+  function _confirmRemoteDispatchMsg(cfg) {
+    return "Dispatch to AWS Batch:\n\n" +
+      "  repo:    " + (cfg.repo_url || "(unknown)") + "\n" +
+      "  branch:  " + (cfg.branch || "(unknown)") + "\n" +
+      "  commit:  " + ((cfg.commit || "(unknown)").slice(0, 12)) + "\n" +
+      "  simulator id: " + (cfg.simulator_id != null ? cfg.simulator_id : "(unknown)") + "\n\n" +
+      "Proceed?";
+  }
+
   function _runAdhoc(el, id, overrides, steps) {
     function _reenableBtn() { var b = el.querySelector(".cfg-run-btn"); if (b) b.disabled = false; }
-    _post(_api("/api/composite-test-run"), { id: id, overrides: overrides, steps: steps }).then(function (res) {
-      if (res.status !== 202 || !res.body.run_id) { _status(el, '<span class="inv-run-err">' + esc((res.body && res.body.error) || res.status) + '</span>'); _reenableBtn(); return; }
-      el._lastRunId = res.body.run_id;
-      _poll(el, _api("/api/composite-run/" + encodeURIComponent(res.body.run_id) + "/status"));
-    }).catch(function (e) { _status(el, '<span class="inv-run-err">' + esc(String(e)) + '</span>'); _reenableBtn(); });
+    function _fire() {
+      _post(_api("/api/composite-test-run"), { id: id, overrides: overrides, steps: steps }).then(function (res) {
+        if (res.status !== 202 || !res.body.run_id) { _status(el, '<span class="inv-run-err">' + esc((res.body && res.body.error) || res.status) + '</span>'); _reenableBtn(); return; }
+        el._lastRunId = res.body.run_id;
+        _poll(el, _api("/api/composite-run/" + encodeURIComponent(res.body.run_id) + "/status"));
+      }).catch(function (e) { _status(el, '<span class="inv-run-err">' + esc(String(e)) + '</span>'); _reenableBtn(); });
+    }
+    fetch(_api("/api/remote-run-config")).then(function (r) { return r.json(); }).catch(function () { return {}; }).then(function (cfg) {
+      cfg = cfg || {};
+      if (cfg.pinned && !confirm(_confirmRemoteDispatchMsg(cfg))) { _status(el, "Cancelled."); _reenableBtn(); return; }
+      _fire();
+    });
   }
 
   function _runStudy(el, overrides, steps) {

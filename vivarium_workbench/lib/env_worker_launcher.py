@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Protocol
 
 from vivarium_workbench.lib.env_compat import get_env
-from vivarium_workbench.lib.env_worker_client import EnvWorker, EnvWorkerUnavailable
+from vivarium_workbench.lib.env_worker_client import EnvWorker, EnvWorkerError, EnvWorkerUnavailable
 from vivarium_workbench.lib.env_worker_dialback import DialBackError, DialBackListener
 
 logger = logging.getLogger(__name__)
@@ -193,6 +193,75 @@ class ProxyEnvWorker:
             self._alive = False
             raise EnvWorkerUnavailable(f"relayed call {method!r} failed: {e}") from e
         return (resp or {}).get("result")
+
+    #: This transport can run a call as a durable TASK rather than a held
+    #: request. Only the proxy can: viva-api owns the socket, so viva-api is the
+    #: only party able to keep working after the client stops waiting. A local
+    #: subprocess and a dial-back worker are both held by the workbench, so
+    #: there is nowhere for a task record to live.
+    supports_tasks = True
+
+    #: How long to wait for a task to finish, and how often to ask. Generous
+    #: because the work is a study: the point of the task tier is that nothing
+    #: is held open, so a long wait costs a poll every few seconds rather than a
+    #: socket. Distinct from ENV_WORKER_CALL_TIMEOUT, which bounds a single
+    #: interactive request.
+    TASK_POLL_INTERVAL = 5.0
+    TASK_TIMEOUT = 24 * 3600.0
+
+    def call_task(self, method: str, params: dict | None = None):
+        """Run one call as a durable task: submit, poll, return its result.
+
+        The caller still waits — this is not an async API to the workbench — but
+        what it waits on is a sequence of short status reads rather than one
+        socket held open for hours. That difference is the whole fix: the socket
+        timeout that used to fire mid-study, and cause the pool to re-run it,
+        has nothing to fire on.
+
+        A failure here is reported, never retried. The task record is the
+        authority on what happened, and it survives this process.
+        """
+        import time
+
+        if not self._alive:
+            raise EnvWorkerUnavailable(f"relayed worker {self._job_name} is closed")
+        try:
+            submitted = self._client.submit_env_worker_task(
+                self._job_name, method=method, params=params)
+        except Exception as e:  # noqa: BLE001 — normalized for the pool
+            self._alive = False
+            raise EnvWorkerUnavailable(f"could not submit {method!r} as a task: {e}") from e
+
+        task_id = (submitted or {}).get("task_id")
+        if task_id is None:
+            raise EnvWorkerUnavailable(
+                f"viva-api accepted {method!r} but returned no task_id")
+
+        deadline = time.monotonic() + self.TASK_TIMEOUT
+        while True:
+            time.sleep(self.TASK_POLL_INTERVAL)
+            try:
+                task = self._client.get_env_worker_task(int(task_id))
+            except Exception as e:  # noqa: BLE001
+                # A lost poll is not a lost task: the record is durable, so say
+                # what is true -- we stopped watching -- and name the id so it
+                # can be looked up rather than presumed dead.
+                raise EnvWorkerUnavailable(
+                    f"lost track of task {task_id} ({method}): {e}. "
+                    f"The work may still be running; check the task, not runs.db."
+                ) from e
+            status = (task.get("status") or "").lower()
+            if status == "completed":
+                return task.get("result")
+            if status in ("failed", "cancelled", "timeout"):
+                raise EnvWorkerError(
+                    task.get("error_message") or f"task {task_id} ended {status}")
+            if time.monotonic() > deadline:
+                raise EnvWorkerUnavailable(
+                    f"task {task_id} ({method}) still {status} after "
+                    f"{self.TASK_TIMEOUT:.0f}s; it was NOT cancelled and may "
+                    f"still be running -- check or cancel it explicitly."
+                )
 
     def alive(self) -> bool:
         return self._alive

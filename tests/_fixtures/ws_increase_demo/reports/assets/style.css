@@ -131,6 +131,17 @@ th{background:rgba(0,0,0,0.03)}
 .json-tree summary{cursor:pointer;user-select:none}
 code{font-family:ui-monospace,Menlo,monospace;background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:3px}
 img{max-width:100%}
+
+/* Study Visualizations tab — keep figure media inside its column. Committed
+   figures render as INLINE SVG (large loom diagrams / multi-panel figures);
+   an <svg> has no intrinsic width cap, so without this the big ones render at
+   natural size, overflow their card, and bleed across the study layout (over
+   the sticky header while scrolling). iframes/imgs get the same containment. */
+.figure-card{ max-width:100%; overflow-x:auto }
+.figure-card svg{ display:block; max-width:100%; height:auto }
+.figure-media-frame{ display:block; width:100%; max-width:100%; border:0 }
+.figure-card img, .chart-img, .figure-media{ max-width:100%; height:auto }
+
 .stage-label{
   display:inline-block;
   font-size:0.7em;
@@ -759,7 +770,7 @@ body.viv-rail-resizing-active{ cursor:col-resize !important; user-select:none; }
 }
 .viv-rail-brand-link:hover .viv-rail-brand strong{ text-decoration:underline; }
 .viv-rail-logo{
-  width:46px; height:46px; flex:0 0 46px;
+  width:38px; height:38px; flex:0 0 38px;
   border-radius:8px;
   display:block;
   object-fit:contain;
@@ -1837,11 +1848,15 @@ textarea.loom-in-field{
 
 /* header "{ } JSON" toggle + the revealed spec viewer */
 .pcard-json-btn{
-  margin-left:auto; flex:none; align-self:center;
+  margin-left:6px; flex:none; align-self:center;
   background:none; border:1px solid #e2e8f0; border-radius:6px; cursor:pointer;
   color:#64748b; font-size:0.72em; font-weight:600; padding:2px 8px;
   font-family:ui-monospace,Menlo,monospace; letter-spacing:0.02em;
 }
+/* Only the FIRST action button (Share, right after the address) pushes the whole
+   cluster — Share · JSON · fullscreen · pop-out — to the right so they read as
+   one group, instead of each auto-margin spreading them apart. */
+.pcard-header .loom-addr + .pcard-json-btn{ margin-left:auto; }
 .pcard-json-btn:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
 .pcard-json-btn.active{ background:#2563eb; color:#fff; border-color:#2563eb; }
 .pcard-header .pcard-json-btn + .pcard-popout{ margin-left:6px; }   /* sit side by side */
@@ -1861,9 +1876,9 @@ textarea.loom-in-field{
   background:none; border:1px solid transparent; border-radius:5px; cursor:pointer;
   color:#94a3b8; font-size:0.95em; line-height:1; padding:2px 7px;
 }
-.pcard-maximize{ margin-left:auto; }                 /* push the pair to the right */
+.pcard-maximize{ margin-left:6px; }                  /* sit beside JSON, one group */
 .pcard-maximize + .pcard-popout{ margin-left:6px; }  /* pop-out sits beside maximize */
-.pcard-popout{ margin-left:auto; }                   /* still right-aligned when alone */
+.pcard-popout{ margin-left:6px; }                    /* grouped with the rest */
 .pcard-maximize:hover,
 .pcard-popout:hover{ background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
 .pcard-maximized .pcard-maximize{ background:#2563eb; color:#fff; border-color:#2563eb; }
@@ -1983,6 +1998,51 @@ body.pcard-sec-resizing{ cursor:ns-resize; user-select:none; }
 .pcard-sec-feature > .pcard-sec-head:hover{ background:#f4efff; }
 .pcard-sec-feature > .pcard-sec-head .pcard-sec-caret{ color:#7c3aed; }
 .pcard-sec-feature > .pcard-sec-head .pcard-sec-name{ color:#6d28d9; }
+/* Unified composite header IS the single loom toggle: hide the separate
+   "Explore" accordion strip on composite cards; the header caret drives it. */
+.pcard-composite .pcard-sec-explore > .pcard-sec-head{ display:none; }
+.pcard-composite .pcard-sec-feature{ background:transparent; }
+/* Obvious Explore button (replaces the tiny caret). */
+.pcard-explore-btn{
+  border:1px solid #b7ebe3; background:#ecfdf9; color:#0d6e6b; cursor:pointer;
+  font-size:12px; font-weight:700; line-height:1; padding:4px 11px; border-radius:6px;
+  flex:none; align-self:center; margin-right:2px; white-space:nowrap;
+}
+.pcard-explore-btn:hover{ background:#d5f2ee; border-color:#4bb3ae; }
+.pcard-loom-open .pcard-explore-btn{ background:#fff; color:#475569; border-color:#e5e7eb; }
+/* Collapse-the-bar button (⤢): only useful once the loom is open. */
+.pcard-hdr-collapse{
+  border:1px solid #e5e7eb; background:#fff; color:#64748b; cursor:pointer;
+  font-size:12px; line-height:1; padding:3px 8px; border-radius:6px; flex:none;
+  align-self:center; margin-left:auto;
+}
+.pcard-hdr-collapse:hover{ border-color:#4bb3ae; color:#0d6e6b; }
+.pcard-loom-open:not(.pcard-hdr-hidden) .pcard-hdr-collapse{ display:inline-block; }
+/* Restore strip — visible only while the bar is collapsed (the restore button
+   itself lives inside .pcard-top, so hide the header/summary, not the wrapper). */
+.pcard-hdr-restore{ display:none; }
+.pcard-hdr-hidden .pcard-header,
+.pcard-hdr-hidden .pcard-summary,
+.pcard-hdr-hidden .pcard-json-view{ display:none; }
+.pcard-hdr-hidden .pcard-hdr-restore{
+  display:block; width:100%; text-align:left; border:none; border-bottom:1px solid #e5e7eb;
+  background:#f8fafc; color:#0d6e6b; cursor:pointer; font:inherit; font-size:11px;
+  font-weight:700; padding:4px 12px;
+}
+.pcard-hdr-hidden .pcard-hdr-restore:hover{ background:#eef6f4; }
+/* Popped-out card: "Pop back in" sits in the header action row (top-right),
+   where the now-hidden ↗ pop-out button was. */
+.popcard-mode .pcard-popout{ display:none; }
+.popcard-backin-hdr{
+  border:1px solid #b7ebe3; background:#ecfdf9; color:#0d6e6b; cursor:pointer;
+  font-size:12px; font-weight:700; line-height:1; padding:4px 11px; border-radius:6px;
+  margin-left:8px; flex:none; white-space:nowrap;
+}
+.popcard-backin-hdr:hover{ background:#d5f2ee; border-color:#4bb3ae; }
+/* (Study→Model maximize fills the whole window by setting the embed iframe's
+   geometry via INLINE !important in walkthrough.js's pcard-maximize handler —
+   an id-selector !important rule on #study-detail-frame can't be beaten from a
+   class rule, so this is done inline rather than in CSS.) */
 .pcard-sec-hint{
   font-size:0.78em; font-weight:600; color:#7c3aed;
   background:#f1e9ff; border:1px solid #e2d3ff; border-radius:999px;
@@ -2363,10 +2423,16 @@ body.pcard-splitting iframe{ pointer-events:none; }
  * readable over content underneath. The -webkit-sticky prefix is
  * still needed for older Safari versions. */
 .study-tabs {
+  /* ACTRAIL fix: rows of `.act-cluster` columns (each cluster carries its
+   * own label + tabs — see the act-rail block below), not a single stacked
+   * column of two independent sibling rows. `overflow-x: auto` lets the
+   * clusters scroll sideways on narrow viewports instead of overflowing the
+   * page; `align-items: flex-end` keeps every cluster's tab row baseline-
+   * aligned even though act labels vary in height. */
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  align-items: flex-end;
+  gap: 20px;
+  overflow-x: auto;
   border-bottom: 1px solid #e5e7eb;
   margin: 0 0 20px;
   position: -webkit-sticky;
@@ -3233,6 +3299,22 @@ body.col-resizing .col-resizer::after { background: #6366f1; }
 @keyframes inv-run-pulse {
   0%, 100% { opacity: 1; } 50% { opacity: 0.4; }
 }
+:root[data-theme="dark"] .inv-run-progress{ background:var(--surface-2); border-color:var(--border); }
+:root[data-theme="dark"] .inv-run-progress-banner{ color:var(--text); }
+:root[data-theme="dark"] .inv-run-progress-banner.inv-run-error,
+:root[data-theme="dark"] .inv-run-err{ color:#fca5a5; }
+:root[data-theme="dark"] .inv-run-item{ background:var(--surface); border-color:var(--border); }
+:root[data-theme="dark"] .inv-run-arrow{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-run-queued{ background:var(--surface); border-color:var(--border); color:var(--text-muted); }
+:root[data-theme="dark"] .inv-run-queued .inv-run-icon{ color:var(--text-muted); }
+:root[data-theme="dark"] .inv-run-running{ background:rgba(59,130,246,0.16); border-color:rgba(59,130,246,0.4); color:#93c5fd; }
+:root[data-theme="dark"] .inv-run-running .inv-run-icon{ color:#93c5fd; }
+:root[data-theme="dark"] .inv-run-done{ background:rgba(22,163,74,0.16); border-color:rgba(22,163,74,0.4); color:#86efac; }
+:root[data-theme="dark"] .inv-run-done .inv-run-icon{ color:#86efac; }
+:root[data-theme="dark"] .inv-run-failed{ background:rgba(220,38,38,0.16); border-color:rgba(220,38,38,0.4); color:#fca5a5; }
+:root[data-theme="dark"] .inv-run-failed .inv-run-icon{ color:#fca5a5; }
+:root[data-theme="dark"] .inv-run-blocked{ background:rgba(245,158,11,0.15); color:#fcd34d; border-color:rgba(245,158,11,0.35); }
+:root[data-theme="dark"] .inv-run-skipped{ background:var(--surface-3); border-color:var(--border); color:var(--text-muted); }
 
 /* ─── Investigation-level comparative viz strip ─────────────────────── */
 .inv-comparative-viz {
@@ -3987,7 +4069,7 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .tool-matches { display: flex; flex-direction: column; gap: 4px; }
 .tool-row + .tool-row { margin-top: 8px; }
 .viewer-target-list { display: flex; flex-direction: column; gap: 4px; }
-.explorer { display:flex; flex-direction:column; gap:10px; }
+
 /* top bar: run picker · view tabs · pop-out */
 .exp-topbar { display:flex; flex-wrap:wrap; gap:10px; align-items:center;
   padding-bottom:8px; border-bottom:1px solid #2a313c; }
@@ -4012,12 +4094,11 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .exp-view { flex:1 1 auto; min-width:0; min-height:460px;
   background:#0e1116; border:1px solid #1d2530; border-radius:6px; }
 .exp-view svg { display:block; margin:0 auto; }
-.explorer-loading { color:#8896a5; font-size:0.9em; padding:8px 0; }
+
 /* full-window standalone page */
-.explorer-standalone { position:fixed; inset:0; padding:14px 18px; box-sizing:border-box;
-  display:flex; flex-direction:column; background:#0b0e12; }
-.explorer-standalone .explorer { flex:1 1 auto; min-height:0; }
-.explorer-standalone .exp-body { flex:1 1 auto; min-height:0; }
+
+.explorer-standalone 
+
 .explorer-standalone .exp-view { height:100%; }
 .exp-rail #ts-obs, .exp-rail #ts-search { width:100%; }
 .exp-rail #ts-obs { height:220px; }
@@ -4027,11 +4108,44 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 .al-bc { cursor:pointer; color:#9db4d6; }
 .al-bc:hover { color:#fff; text-decoration:underline; }
 
-/* Two-level study nav: 5 pillars over a per-pillar sub-nav (tab consolidation). */
-.study-pillars { display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 2px; }
+/* ACTRAIL fix (Fable G1 originally shipped `.act-rail` labels and
+ * `.study-pillars` tabs as two independent sibling rows with no shared
+ * columns, so the labels never lined up over the tabs they group — user
+ * feedback picked "grouped clusters, aligned"). Each act is now one
+ * `.act-cluster` flex column: its `.act-header` (label + gate dot) sits
+ * directly above its own `.act-tabs`, in the SAME column, so the label
+ * always sits over its own tabs — alignment is structural, not hand-tuned
+ * spacing. The gap between `.act-cluster`s (on `.study-tabs`) is the
+ * inter-act separation; tabs within one cluster sit tight together via the
+ * small `.act-tabs` gap, so the five acts still read as distinct groups.
+ * Each act label carries a `.act-gate-dot`: a 6px dot that renders
+ * neutral/grey here (`data-gate-state="not-assessed"`) — Fable G2 recolors
+ * it per the six-gate state without touching this markup. Task E4 removed
+ * the Exports/Record cluster (and its `.act-cluster-record` divider style)
+ * once its panel had nothing left in it — all remaining clusters are
+ * narrative acts with a gate dot. */
+.act-cluster { display: flex; flex-direction: column; }
+.act-header {
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 2px 5px; border-bottom: 1px solid var(--border);
+  margin-bottom: 1px;
+}
+.act-label {
+  font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #94a3b8; white-space: nowrap;
+}
+.act-gate-dot {
+  flex: 0 0 auto; width: 6px; height: 6px; border-radius: 50%;
+  background: #cbd5e1; box-shadow: inset 0 0 0 1px #b6c2cf;
+}
+
+/* Tabs within one act cluster (tab consolidation: the pillar row used to be
+ * its own top-level nav — `.act-tabs` is now the per-cluster tab row). */
+.act-tabs { display: flex; gap: 2px; flex-wrap: nowrap; }
 .study-pillar {
   border: 0; background: none; cursor: pointer; padding: 8px 14px;
   font-weight: 700; font-size: 0.95rem; color: #64748b; border-bottom: 3px solid transparent;
+  white-space: nowrap;
 }
 .study-pillar:hover { color: #334155; }
 .study-pillar.active { color: #1e293b; border-bottom-color: #2563eb; }
@@ -4409,18 +4523,14 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 /* Rail toggle switch (sun ↔ moon sliding pill). */
 .viv-rail-footer{ padding:10px 16px; border-top:1px solid #ececec; display:flex; }
 .viv-rail.viv-rail-collapsed .viv-rail-footer{ justify-content:center; padding:10px 4px; }
-/* Theme-toggle footer only: a compact, low-key corner. The pill is invisible
-   until the corner is hovered (or keyboard-focused), so it's unobtrusive and
-   gives the studies list more room. Its own class so the shared .viv-rail-footer
-   (reused by the GitHub account chip) is untouched. */
+/* Theme-toggle footer. Previously dimmed-until-hover (and invisible-until-hover
+   before that) on the theory that a quiet corner control is "unobtrusive" —
+   in practice a real user reported not finding it at either opacity; a control
+   nobody can find is not a control. Full opacity at rest, always. Its own class
+   so the shared .viv-rail-footer (reused by the GitHub account chip) is
+   untouched. */
 .viv-rail-theme-footer{ padding:0 16px 6px; border-top:none; align-items:center; }
 .viv-rail.viv-rail-collapsed .viv-rail-theme-footer{ padding:0 4px 6px; }
-.viv-rail-theme-footer .viv-theme-toggle{
-  opacity:0; transform:scale(0.94); transform-origin:left center;
-  transition:opacity .16s ease, transform .16s ease;
-}
-.viv-rail-theme-footer:hover .viv-theme-toggle,
-.viv-rail-theme-footer:focus-within .viv-theme-toggle{ opacity:1; transform:none; }
 .viv-theme-toggle{
   position:relative; display:inline-flex; align-items:center; justify-content:space-between;
   width:56px; height:26px; padding:0 7px; border-radius:14px;
@@ -4644,7 +4754,17 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
    pills, finding-id, status chips) are left as readable badges. */
 :root[data-theme="dark"] .study-tabs,
 :root[data-theme="dark"] .finding-card{ background:var(--surface) !important; border-color:var(--border) !important; }
-:root[data-theme="dark"] .spine-summary,
+/* Act rail (Fable G1; ACTRAIL fix regrouped `.act-group` into `.act-header`
+   inside each `.act-cluster`) */
+:root[data-theme="dark"] .act-header{ border-bottom-color:var(--border) !important; }
+:root[data-theme="dark"] .act-label{ color:var(--text-muted) !important; }
+:root[data-theme="dark"] .act-gate-dot{ background:var(--surface-3); box-shadow:inset 0 0 0 1px var(--border-2); }
+/* Fable G2: per-gate-state dot colors (§9.3 palette) win over the neutral
+   dark default above — same selector specificity, later in the cascade. */
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="passed"]{ background:#10b981; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="passed-with-conditions"]{ background:#f59e0b; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="blocked"]{ background:#ef4444; box-shadow:none; }
+:root[data-theme="dark"] .act-gate-dot[data-gate-state="waived"]{ background:#8b5cf6; box-shadow:none; }
 :root[data-theme="dark"] .status-detail,
 :root[data-theme="dark"] .status-detail-panel,
 :root[data-theme="dark"] .overview-section,
@@ -4656,17 +4776,13 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .finding-next{ background:#0f2417 !important; border-color:#1c3a28 !important; }
 /* Container text → tokens (small pills keep their own colors). */
 :root[data-theme="dark"] .study-name,
-:root[data-theme="dark"] .spine-val,
 :root[data-theme="dark"] .study-pillar,
 :root[data-theme="dark"] .finding-statement,
 :root[data-theme="dark"] .finding-explanation,
 :root[data-theme="dark"] .finding-title,
 :root[data-theme="dark"] .overview-section h2,
-:root[data-theme="dark"] .overview-section h3,
-:root[data-theme="dark"] .spine-at-glance-head{ color:var(--heading) !important; }
+:root[data-theme="dark"] .overview-section h3{ color:var(--heading) !important; }
 :root[data-theme="dark"] .status-detail-axis,
-:root[data-theme="dark"] .spine-summary-head,
-:root[data-theme="dark"] .spine-key,
 :root[data-theme="dark"] .narrative-label,
 :root[data-theme="dark"] .finding-evidence,
 :root[data-theme="dark"] .finding-expected,
@@ -4683,7 +4799,23 @@ details.overview-section[open] > summary.overview-label{ margin-bottom:8px; }
 :root[data-theme="dark"] .finding-kind{ background:#1e2547 !important; color:#a5b4fc !important; border-color:#2c3566 !important; }
 :root[data-theme="dark"] .classification-pill.classification-primary{ background:#3a1518 !important; color:#fca5a5 !important; border-color:#5a2226 !important; }
 :root[data-theme="dark"] .classification-pill.classification-supporting{ background:#14243f !important; color:#93c5fd !important; border-color:#22375c !important; }
-:root[data-theme="dark"] .readiness-banner{ background:#2a2113 !important; color:#fcd34d !important; border-color:#3d3418 !important; }
+/* Fable G4: Tests → Acceptance criteria band (§10.1 band 1). Outcome chips
+   reuse the shared four-value vocabulary (outcome_label/_class/_glyph); dark
+   overrides mirror the gate-status/classification-pill tinted-badge idiom
+   above (dark bg + light coloured text). */
+:root[data-theme="dark"] .acceptance-criteria-band{ background:transparent !important; }
+:root[data-theme="dark"] .acceptance-criterion-item{ background:var(--surface-2) !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-met{ background:#12351f !important; color:#86efac !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-conditional{ background:#3a2a0d !important; color:#fcd34d !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-not-met{ background:#3a1518 !important; color:#fca5a5 !important; }
+:root[data-theme="dark"] .outcome-chip.outcome-not-assessable{ background:var(--surface-3) !important; color:var(--text-muted) !important; }
+/* Task 5: readiness moved from a banner to a quiet inline link (span when
+   ready, <details><summary> when there are gaps to expand). Override its
+   JS-computed inline color for legibility on a dark surface, and the
+   expanded body's light-mode border/background. */
+:root[data-theme="dark"] .readiness-inline,
+:root[data-theme="dark"] .readiness-inline summary{ color:#fcd34d !important; }
+:root[data-theme="dark"] .readiness-inline-body{ background:var(--surface-2) !important; border-color:var(--border) !important; }
 :root[data-theme="dark"] .finding-next,
 :root[data-theme="dark"] .finding-next strong,
 :root[data-theme="dark"] .finding-next *{ color:#86efac !important; }
@@ -4813,3 +4945,108 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
 :root[data-theme="dark"] .about-block h2{ color:#93c5fd; }
 :root[data-theme="dark"] .about-link-ghost{ color:#93c5fd; }
 :root[data-theme="dark"] .about-link-ghost:hover{ background:rgba(59,130,246,.12); }
+
+/* Study Overview — Claim / Test / Result spine (study-ui) */
+.study-overview .ctr-block { margin: 0 0 30px; }
+.study-overview .ctr-h { margin: 0 0 9px; }
+.study-overview .ctr-text {
+  font-size: 1.06em; line-height: 1.68; color: var(--ink, #1e293b);
+  max-width: none; margin: 0;
+}
+.study-overview .ctr-result {
+  border-left: 3px solid var(--accent, #10b981);
+  padding-left: 16px; margin-left: -1px;
+}
+.study-overview .ctr-evidence { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.study-overview .ctr-chip {
+  display: inline-flex; flex-direction: column; gap: 1px;
+  background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 6px 11px;
+}
+.study-overview .ctr-chip-k {
+  font-size: 0.64em; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--gray, #64748b); font-weight: 700;
+}
+.study-overview .ctr-chip-v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.82em; color: #1e293b; }
+:root[data-theme="dark"] .study-overview .ctr-chip,
+.theme-dark .study-overview .ctr-chip { background: #1a2433; border-color: #2b3a4f; }
+:root[data-theme="dark"] .study-overview .ctr-chip-v,
+.theme-dark .study-overview .ctr-chip-v { color: #e2e8f0; }
+
+/* Overview enrich: context / meta / findings (study-ui) */
+.study-overview .ctr-context {
+  margin-top: 12px; font-size: 0.95em; line-height: 1.62;
+  color: var(--gray, #64748b); padding-left: 14px; border-left: 2px solid var(--line, #e5e7eb);
+}
+.study-overview .ctr-meta { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+.study-overview .ctr-meta-row { font-size: 0.9em; color: var(--ink-2, #475569); }
+.study-overview .ctr-meta-k {
+  display: inline-block; min-width: 74px; font-size: 0.72em; text-transform: uppercase;
+  letter-spacing: 0.05em; color: var(--gray, #94a3b8); font-weight: 700;
+}
+.study-overview .ctr-meta-item { color: var(--ink-2, #475569); }
+.study-overview .ctr-dot { color: var(--line, #cbd5e1); margin: 0 6px; }
+.study-overview .ctr-findings { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+.study-overview .ctr-find {
+  position: relative; padding-left: 22px; font-size: 0.98em; line-height: 1.55; color: var(--ink, #1e293b);
+}
+.study-overview .ctr-find::before {
+  content: "✓"; position: absolute; left: 0; top: 0; font-weight: 700; color: var(--accent, #10b981);
+}
+.study-overview .ctr-find-contradicts::before { content: "✗"; color: #dc2626; }
+.study-overview .ctr-find-partial::before { content: "◐"; color: #d97706; }
+.study-overview .ctr-find-novel::before { content: "◆"; color: #6366f1; }
+
+/* Overview: assessment badges (study-ui) */
+.study-overview .ctr-assess { margin-top: 16px; }
+.study-overview .ctr-badge {
+  display: inline-block; padding: 1px 9px; border-radius: 9999px; font-size: 0.74em;
+  font-weight: 700; letter-spacing: 0.02em; background: #e2e8f0; color: #475569; margin-right: 6px;
+}
+.study-overview .ctr-badge-accepted { background: #dcfce7; color: #166534; }
+.study-overview .ctr-badge-investigating { background: #fef9c3; color: #854d0e; }
+.study-overview .ctr-badge-refuted { background: #fee2e2; color: #991b1b; }
+.study-overview .ctr-vch {
+  display: inline-block; font-size: 0.76em; color: var(--gray, #64748b); font-family: ui-monospace, monospace;
+  background: #f1f5f9; border-radius: 5px; padding: 1px 7px; margin-right: 5px;
+}
+
+/* Overview: result figure (study-ui) */
+.study-overview .ctr-figure {
+  margin: 16px 0 4px; padding: 14px; background: #fff;
+  border: 1px solid var(--line, #e5e7eb); border-radius: 12px; max-width: 720px;
+}
+.study-overview .ctr-figure svg { display: block; width: 100%; height: auto; }
+/* The centerpiece is an <img> data-URI (see study_page.render_study_detail_html):
+   loom figures embed <foreignObject> HTML that overflows an inlined <svg>, so it
+   is rasterized to an <img> and scaled shrink-only. */
+.study-overview .ctr-figure img.ctr-figure-img { display: block; max-width: 100%; height: auto; }
+:root[data-theme="dark"] .study-overview .ctr-figure,
+.theme-dark .study-overview .ctr-figure { background: #0f1720; border-color: #2b3a4f; }
+
+/* Investigation intro — full what_is_this as prose (study-ui) */
+.inv-brief-intro { margin: 14px 0 6px; max-width: none; }
+.inv-brief-intro p { margin: 0 0 0.92em; line-height: 1.66; color: var(--ink-2, #334155); }
+.inv-brief-intro p:last-child { margin-bottom: 0; }
+.inv-brief-meta { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+.inv-brief-meta .inv-brief-meta-item { font-size: 0.9em; color: var(--gray, #64748b); }
+
+/* ── Composite tier badges (Draft / Executable / Live) + figure-group headers ── */
+.ccard-tier{
+  display:inline-block; font-size:0.62rem; font-weight:800; letter-spacing:.04em;
+  text-transform:uppercase; padding:1px 7px; border-radius:999px; vertical-align:middle;
+  margin-left:2px;
+}
+.ccard-tier-draft{ color:#7c3aed; background:#f3effe; border:1px solid #ddd0fb; }
+.ccard-tier-exec{  color:#0d6e6b; background:#ecfdf9; border:1px solid #b7ebe3; }
+.ccard-tier-live{  color:#b45309; background:#fef6e7; border:1px solid #fcd9a3; }
+.composite-figure-group{
+  grid-column:1 / -1; margin:16px 2px 2px; padding:0 0 4px;
+  border-bottom:2px solid #e5e7eb;
+}
+.composite-figure-group:first-child{ margin-top:2px; }
+.composite-figure-group span{
+  font-size:0.74rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase;
+  color:#0d6e6b;
+}
+:root[data-theme="dark"] .composite-figure-group{ border-bottom-color:var(--border); }
+:root[data-theme="dark"] .composite-figure-group span{ color:#5eead4; }
