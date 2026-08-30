@@ -1643,6 +1643,12 @@ def _run_investigation_analysis(params: dict) -> dict:
     return {"written": written, "errors": errors}
 
 
+#: How much of a failed launch's stdout/stderr to keep, from the END -- a
+#: traceback is at the tail, and the interesting part of a truncated log almost
+#: never is at the head.
+_LAUNCH_OUTPUT_TAIL = 4000
+
+
 def _declared_variant_names(ws_root, study_slug: str) -> list:
     """Best-effort: the variant names declared in a study's ``study.yaml``
     (v3 top-level ``variants:`` list, or v4 ``conditions.variants:`` projected
@@ -1789,6 +1795,22 @@ def _run_study(params: dict) -> dict:
             entry = {"stage": stage, "status": code}
             if isinstance(resp, dict):
                 entry["error"] = resp.get("error") or resp
+                # Carry the child's own output. `run_composite_subprocess`
+                # deliberately captures stdout/stderr on a parse failure and
+                # hands them up -- and this frame used to drop them, because
+                # `resp.get("error")` is truthy and the `or resp` fallback (which
+                # WOULD have kept everything) never fired. So the one path that
+                # needs a traceback reported "could not parse run output" and
+                # nothing else, leaving a failed study undiagnosable from its
+                # own result.
+                #
+                # Tail-bounded: a traceback is worth carrying, a multi-megabyte
+                # simulation log is not -- this lands in a JSONB column and in
+                # every status read of the task.
+                for key in ("stderr", "stdout"):
+                    text = resp.get(key)
+                    if text:
+                        entry[key] = str(text)[-_LAUNCH_OUTPUT_TAIL:]
             result["errors"].append(entry)
         if run_id:
             run_ids.append(run_id)
