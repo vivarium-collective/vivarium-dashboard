@@ -980,6 +980,59 @@ though nothing went wrong. Whether a failed stage should invalidate a verdict is
 a science question, not a plumbing one, so it is recorded here rather than
 guessed at.
 
+### Step 6a — the read-shaped endpoints, and what measuring changed *(2026-08-30)*
+
+**Done and deployed** (viva-api 0.9.69). Eight GETs under
+`/env-worker/v1/relay/workers/{job}/`: `generators`, `registry`, `composites`,
+`composites/full`, `visualizations`, `visualizations/inputs`, `core-snapshot`,
+`reexports`. All seven exercised live against a real worker; `composites/full`
+is the eighth and shares the path.
+
+**The value is not the URL, it is that in-band failure becomes a status.**
+Several worker methods answer failure inside a successful JSON-RPC `result` —
+`{"__unavailable__": true}`, `{"__error__": "..."}` — which `/call` hands back
+as HTTP 200. A caller who does not know the sentinel vocabulary reads a
+successful response containing no data. The named endpoints map
+`__unavailable__` → 501, `__not_registered__` → 404, and the five error
+sentinels → 422 (the same 422 a `WorkerCallError` gets, because it is the same
+event). `/call` stays raw: the workbench knows the sentinels and reads them.
+
+**Three corrections to this plan's own arithmetic**, all from reading the code
+rather than the prose:
+
+- Not 28 methods but **27 dispatched**, and **26 declared** in `_CAPABILITIES` —
+  `resolve_inner_composite_state` is dispatchable but unadvertised, so
+  `initialize`'s handshake under-reports the worker's surface.
+- Not "9 GET / 13 POST" but **8 / 13**: `resolve_inner_composite_state` takes
+  `hops` as a *list of node paths*, so it is document-shaped and belongs to 6b.
+- `list_generators` was listed as having no production caller. True of the
+  workbench — and it is still the only check that proves the workspace imported,
+  so it earns an endpoint as the diagnostic it actually is.
+
+**`data_sources_provider` is excluded, and the exclusion is tested.** It takes a
+caller-supplied `module:func`, imports it and calls it. In the workbench that
+string comes from the workspace's own `workspace.yaml` and never from a request;
+a named endpoint taking it as a parameter is arbitrary code execution on an API
+with no authentication. It needs a worker-side change (read your own
+`workspace.yaml`) plus §E Q3 before it gets a URL.
+
+**A regression this produced, worth recording because of how it hid.** Factoring
+the shared `_relay_call` helper out slid it *between* `@router.post(...)` and the
+endpoint it belonged to, so FastAPI generated `/call` from the helper's
+signature: `method` and `timeout` became query parameters and only `params`
+stayed in the body. Every behavioural test passed, `make check` passed, mypy
+passed. It showed in exactly one place — the generated client renamed
+`RelayCallRequest` to `call_relayed_env_worker_body_type_0`, one line inside a
+49-file regeneration diff. Fixed in 0.9.69 with three tests, the general one
+being **no endpoint whose name starts with an underscore may be a route**.
+
+**Not converted to an error, deliberately:** `report_core_snapshot` answers a
+bad `package_path` with 200 plus a `registry_warning` and a usable `document`.
+That is a designed partial — `lib/report.py` reads both — not a hidden failure,
+so it stays 200.
+
+**Still open from this step:** 6b, the 13 document-shaped POSTs.
+
 ## Where this leaves the plan *(2026-08-29)*
 
 **Every numbered step is done**, and all of it is on **dev only**. What remains
