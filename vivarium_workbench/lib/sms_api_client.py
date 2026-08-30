@@ -30,16 +30,73 @@ class SmsApiError(Exception):
         self.status = status
 
 
+#: Header viva-api reads caller identity from where a deployment names one
+#: (its IDENTITY_HEADER setting). Default matches oauth2-proxy's, which is what
+#: sms-api-stanford-test is configured for.
+IDENTITY_HEADER = "X-Auth-Request-Email"
+
+#: GitHub session sources that identify a PERSON. `token` is deliberately absent:
+#: it is `VIVARIUM_WORKBENCH_GH_TOKEN`, a shared machine credential supplied as a
+#: k8s Secret, and on a deployed workbench EVERY user resolves to it. Forwarding
+#: that would give every user the same identity -- so they could all cancel each
+#: other's tasks, while the record claimed a specific owner. That is worse than
+#: anonymous: it looks like attribution and provides none.
+_PERSONAL_SOURCES = ("device_flow", "gh_cli")
+
+
+def caller_identity() -> str | None:
+    """The signed-in GitHub login, when a PERSON is signed in. Else ``None``.
+
+    NOT authentication, and viva-api's own docs are explicit that its header is
+    not either: this is the best attribution the workbench can currently offer,
+    which is a real `@login` GitHub already verified, forwarded so a task has an
+    owner instead of being unowned and cancellable by anyone.
+
+    The proper answer is the `Principal` that `session_registry.SessionEntry`
+    already reserves space for -- a workbench identity that does not depend on a
+    user happening to have signed into GitHub for an unrelated reason.
+
+    Never raises. Identity is a nicety on every path that calls it, and an
+    unreachable keyring or a slow `gh` must not fail the request it decorates.
+    """
+    try:
+        from vivarium_workbench.lib import github_auth
+
+        session = github_auth.current_session()
+    except Exception:  # noqa: BLE001 - see docstring
+        return None
+    if session is None or session.source not in _PERSONAL_SOURCES:
+        return None
+    login = (session.login or "").strip()
+    # Qualify it: a bare `octocat` next to `you@example.com` in the same column
+    # reads as an email that lost its domain. This says where it came from.
+    return f"{login}@github" if login else None
+
+
 class SmsApiClient:
     def __init__(self, base_url: str = "http://localhost:8080", timeout: float = 30.0) -> None:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
+    def _headers(self, accept: str = "application/json") -> dict[str, str]:
+        """Request headers, carrying the caller's identity when there is one.
+
+        Sent on every request rather than only on task submits: viva-api ignores
+        an unrecognised header, and a client that identified itself for some
+        calls and not others would be harder to reason about than one that
+        always does.
+        """
+        headers = {"Accept": accept}
+        identity = caller_identity()
+        if identity:
+            headers[IDENTITY_HEADER] = identity
+        return headers
+
     def _get(self, path: str, params: dict | None = None) -> dict:
         url = self.base_url + path
         if params:
             url = f"{url}?{urlencode(params, doseq=True)}"
-        req = Request(url, method="GET", headers={"Accept": "application/json"})
+        req = Request(url, method="GET", headers=self._headers())
         try:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310 — fixed scheme, internal tunnel
                 return json.loads(r.read().decode())
@@ -171,7 +228,7 @@ class SmsApiClient:
         the client timeout) so a health check never hangs the UI.
         """
         url = self.base_url + "/version"
-        req = Request(url, method="GET", headers={"Accept": "application/json"})
+        req = Request(url, method="GET", headers=self._headers())
         try:
             with urlopen(req, timeout=timeout or min(self.timeout, 5.0)) as r:  # noqa: S310 — fixed scheme, internal tunnel
                 body = r.read().decode().strip()
@@ -216,7 +273,7 @@ class SmsApiClient:
         dest_dir.mkdir(parents=True, exist_ok=True)
         out_path = dest_dir / "workspace.tar.gz"
         url = f"{self.base_url}/api/v1/simulations/workspace?simulator_id={simulator_id}"
-        req = Request(url, method="GET", headers={"Accept": "application/gzip"})
+        req = Request(url, method="GET", headers=self._headers("application/gzip"))
         to = timeout if timeout is not None else self.timeout
         try:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
@@ -246,7 +303,7 @@ class SmsApiClient:
 
     def _delete(self, path: str) -> dict:
         url = self.base_url + path
-        req = Request(url, method="DELETE", headers={"Accept": "application/json"})
+        req = Request(url, method="DELETE", headers=self._headers())
         try:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310 — fixed scheme, internal tunnel
                 body = r.read().decode()
@@ -262,7 +319,7 @@ class SmsApiClient:
         if params:
             url = f"{url}?{urlencode(params, doseq=True)}"
         data = json.dumps(json_body).encode() if json_body is not None else None
-        headers = {"Accept": "application/json"}
+        headers = self._headers()
         if data is not None:
             headers["Content-Type"] = "application/json"
         req = Request(url, data=data, method="POST", headers=headers)
@@ -398,7 +455,7 @@ class SmsApiClient:
             url,
             data=body,
             method="POST",
-            headers={"Accept": "application/json", "Content-Type": content_type},
+            headers={**self._headers(), "Content-Type": content_type},
         )
         try:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310
@@ -442,7 +499,7 @@ class SmsApiClient:
         dest.mkdir(parents=True, exist_ok=True)
         out_path = dest / "results.zip"
         url = f"{self.base_url}/compose/v1/simulation/{sim_id}/results"
-        req = Request(url, method="GET", headers={"Accept": "application/zip"})
+        req = Request(url, method="GET", headers=self._headers("application/zip"))
         to = timeout if timeout is not None else self.timeout
         try:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
@@ -461,7 +518,7 @@ class SmsApiClient:
         dest_dir.mkdir(parents=True, exist_ok=True)
         out_path = dest_dir / f"sim_{simulation_id}.tar.gz"
         url = f"{self.base_url}/api/v1/simulations/{simulation_id}/data"
-        req = Request(url, data=b"", method="POST", headers={"Accept": "application/gzip"})
+        req = Request(url, data=b"", method="POST", headers=self._headers("application/gzip"))
         to = timeout if timeout is not None else self.timeout
         try:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
