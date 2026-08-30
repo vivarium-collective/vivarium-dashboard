@@ -1033,6 +1033,70 @@ so it stays 200.
 
 **Still open from this step:** 6b, the 13 document-shaped POSTs.
 
+### Step 6b — the document-shaped endpoints *(2026-08-30)*
+
+**Done and deployed** (viva-api 0.9.70). Twelve routes over eleven worker
+methods. `analysis_viewers` is **split** rather than wrapped: listing is a GET,
+launching is a POST with `uid` required, because one endpoint behind an `action`
+flag hides the difference between reading and invoking a contributor's callable.
+
+Bodies use the repo's passthrough-config convention — declare only what viva-api
+is authoritative about, forward the rest under `extra="allow"` — because the
+meaning of a config belongs to the workspace.
+
+**The worker has four ways of saying no and they disagree**, so the rules are
+per-endpoint, not global:
+
+| idiom | mapping |
+|---|---|
+| `__sentinel__` keys | the shared table from 6a |
+| `{"ok": false, stage, error}` | **422** for process-template/run; a documented **200** for `viz_preview` |
+| `{"status": "not_registered"}` | `viz_preview` only → 404 |
+| `{"result": {error, status}}` | `analysis_viewers` launch → that status |
+
+The fourth came from asking what a viewer launch actually returns. **It is not
+HTML.** `_av_resolve_launch` invokes the contributor's callable and returns its
+dict; the UI fetches that and opens the returned `{"url": ...}` in a new tab. So
+the payload is navigation instructions, and 404/400/500 were all arriving as
+200 — a caller could not tell "no such viewer" from "here is your link".
+
+`validate_generated_visualization` is excluded for the same reason as
+`data_sources_provider`: it interpolates caller-supplied `pkg`/`module` into a
+module name, imports it, and **reloads** it when already imported.
+
+### The registry is order-dependent, and a valid ref can 404 *(open)*
+
+Found exercising 6b live, and it is a **worker-side** defect rather than a
+viva-api one — but the named endpoints make it far easier to hit, because a
+client can now call `/composite-state` as its very first request.
+
+Measured on `/app/v2ecoli`, two fresh workers, same image:
+
+```
+worker A: /generators FIRST                   -> 33 generators, spatio_flux 0
+worker B: /composite-state first, then
+          /generators                         -> 53 generators, spatio_flux 19
+```
+
+And the consequence that matters:
+
+```
+cold worker: POST /composite-state {"ref": "spatio_flux…monod_kinetics"}  -> 404 not_registered
+after GET /generators: the IDENTICAL request                              -> 200
+```
+
+That ref is real — a study runs it. `_list_generators` and
+`_resolve_composite_state` carry the same `if not _REGISTRY:
+discover_generators()` guard, so a **non-empty but incomplete** registry is the
+suspect; not confirmed, and not worth a blind fix. The scan imports every
+installed distribution, so "always scan" has a cost that needs measuring before
+it is chosen.
+
+This also retires a health check that has now misled twice in one day: **the
+generator count proves nothing**, because it is a function of call order. What
+proves the workspace imported is running something that needs
+`<pkg>.core.build_core`.
+
 ## Where this leaves the plan *(2026-08-29)*
 
 **Every numbered step is done**, and all of it is on **dev only**. What remains
