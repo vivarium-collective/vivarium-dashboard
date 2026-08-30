@@ -1807,7 +1807,16 @@ def _run_study(params: dict) -> dict:
                 # Tail-bounded: a traceback is worth carrying, a multi-megabyte
                 # simulation log is not -- this lands in a JSONB column and in
                 # every status read of the task.
-                for key in ("stderr", "stdout"):
+                #
+                # "traceback" is FIRST because it is the key the failing path
+                # actually uses: composite_subprocess returns
+                # {"error": "run failed", "traceback": tb} on 502. The previous
+                # pass carried stderr/stdout and stopped there, so a real
+                # partial harvested on dev still read
+                #     {"error": "run failed", "status": 502}
+                # and nothing else -- the traceback was three feet away in the
+                # response dict, under a key nobody read.
+                for key in ("traceback", "stderr", "stdout"):
                     text = resp.get(key)
                     if text:
                         entry[key] = str(text)[-_LAUNCH_OUTPUT_TAIL:]
