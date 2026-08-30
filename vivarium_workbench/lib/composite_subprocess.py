@@ -53,9 +53,9 @@ def strip_process_instances(state):
     """
     if isinstance(state, dict):
         out = {}
-        is_edge = state.get('_type') in ('step', 'process')
+        is_edge = state.get("_type") in ("step", "process")
         for k, v in state.items():
-            if is_edge and k in ('instance', '_inputs', '_outputs'):
+            if is_edge and k in ("instance", "_inputs", "_outputs"):
                 continue
             out[k] = strip_process_instances(v)
         return out
@@ -64,8 +64,15 @@ def strip_process_instances(state):
     return state
 
 
-def inject_run_emitters(state: dict, *, spec_id: str, run_id: str,
-                        emit_paths: list[str] | None, workspace, db_file) -> dict:
+def inject_run_emitters(
+    state: dict,
+    *,
+    spec_id: str,
+    run_id: str,
+    emit_paths: list[str] | None,
+    workspace,
+    db_file,
+) -> dict:
     """Inject the live RAM emitter (from the UI's explicit-path selection)
     AND, when the composite declares one, its default Parquet emitter for
     persistence.
@@ -86,7 +93,8 @@ def inject_run_emitters(state: dict, *, spec_id: str, run_id: str,
     state = cr.inject_emitter_for_paths(state, list(emit_paths or []))
     out_dir = Path(workspace) / ".pbg" / "parquet-runs"
     state, declared_kind = cr.inject_declared_emitter(
-        state, spec_id=spec_id, run_id=run_id, out_dir=out_dir)
+        state, spec_id=spec_id, run_id=run_id, out_dir=out_dir
+    )
     if declared_kind is None:
         # Legacy path: no declared emitter — persist via SQLite as before,
         # using the caller's db_file (e.g. <study_dir>/runs.db), NOT a
@@ -115,20 +123,40 @@ def invoke_v2ecoli_workflow(cfg_path, out_dir, ws_root, timeout_s):
     exe = ws / ".venv" / "bin" / "v2ecoli-workflow"
     cmd = [str(exe), "--config", str(cfg_path), "--out", str(out_dir)]
     try:
-        result = subprocess.run(cmd, cwd=str(ws), capture_output=True,
-                                text=True, timeout=timeout_s)
+        result = subprocess.run(
+            cmd, cwd=str(ws), capture_output=True, text=True, timeout=timeout_s
+        )
     except subprocess.TimeoutExpired:
         return ({"simulation_id": run_id, "error": "ensemble run timed out"}, 504)
     except FileNotFoundError:
         # Defensive: delegation_available() should have gated this, but a venv
         # missing the console script must never raise uncaught (review FIX 2).
-        return ({"simulation_id": run_id,
-                 "error": "v2ecoli-workflow not found in the workspace venv"}, 502)
+        return (
+            {
+                "simulation_id": run_id,
+                "error": "v2ecoli-workflow not found in the workspace venv",
+            },
+            502,
+        )
     if result.returncode != 0:
-        return ({"simulation_id": run_id, "error": "ensemble run failed",
-                 "stdout": result.stdout, "stderr": result.stderr}, 502)
-    return ({"simulation_id": run_id, "ensemble": True,
-             "out_dir": str(out_dir), "steps": 0}, 200)
+        return (
+            {
+                "simulation_id": run_id,
+                "error": "ensemble run failed",
+                "stdout": result.stdout,
+                "stderr": result.stderr,
+            },
+            502,
+        )
+    return (
+        {
+            "simulation_id": run_id,
+            "ensemble": True,
+            "out_dir": str(out_dir),
+            "steps": 0,
+        },
+        200,
+    )
 
 
 def run_index_slugs_from_db_path(db_file) -> tuple[str | None, str | None]:
@@ -141,6 +169,7 @@ def run_index_slugs_from_db_path(db_file) -> tuple[str | None, str | None]:
     ``(None, None)`` for a non-study db (e.g. ``.pbg/composite-runs.db``).
     """
     from vivarium_workbench.lib.simulations_index import _study_slug_from_db_path
+
     study_slug = _study_slug_from_db_path(str(db_file))
     inv_slug = None
     parts = str(db_file).replace("\\", "/").split("/")
@@ -151,12 +180,26 @@ def run_index_slugs_from_db_path(db_file) -> tuple[str | None, str | None]:
     return study_slug, inv_slug
 
 
-def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spec_id,
-                             label, overrides=None, sim_name=None, timeout=1800,
-                             emit_paths=None, study_emitter=None,
-                             study_max_generations=None,
-                             study_single_daughters=None, manifest=None,
-                             reran_from=None):
+def run_composite_subprocess(
+    ws_root,
+    *,
+    pkg,
+    state,
+    steps,
+    db_file,
+    run_id,
+    spec_id,
+    label,
+    overrides=None,
+    sim_name=None,
+    timeout=1800,
+    emit_paths=None,
+    study_emitter=None,
+    study_max_generations=None,
+    study_single_daughters=None,
+    manifest=None,
+    reran_from=None,
+):
     """Run a resolved composite ``state`` for ``steps`` steps in a subprocess,
     persisting runs_meta + history (via an injected SQLiteEmitter) to
     ``db_file``.
@@ -212,7 +255,9 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     # running — can snapshot the declared fields, and this parent (after the
     # subprocess exits) can hash + store them the same way run_runner.execute
     # does.
-    fingerprint_fields = (manifest or {}).get("fingerprint_fields") or list(emit_paths or [])
+    fingerprint_fields = (manifest or {}).get("fingerprint_fields") or list(
+        emit_paths or []
+    )
     run_dir = str(WorkspacePaths.load(Path(ws_root)).pbg / "runs" / run_id)
 
     # Are we running a registered @composite_generator? If so, the child can
@@ -225,6 +270,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     use_generator_path = False
     try:
         from process_bigraph.composite_generator import _REGISTRY, discover_generators
+
         if spec_id not in _REGISTRY:
             discover_generators()
         use_generator_path = spec_id in _REGISTRY
@@ -257,8 +303,13 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
         # many-sims aggregation studies, sqlite for ones needing unstructured
         # state like unique-molecule snapshots for chromosome viz).
         try:
-            _ws_data = yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8")) or {}
-            _runtime = (_ws_data.get("runtime") or {}) if isinstance(_ws_data, dict) else {}
+            _ws_data = (
+                yaml.safe_load((ws_root / "workspace.yaml").read_text(encoding="utf-8"))
+                or {}
+            )
+            _runtime = (
+                (_ws_data.get("runtime") or {}) if isinstance(_ws_data, dict) else {}
+            )
             # Emitter NAME selection is centralized in the broker (Task 4/5):
             # resolve runtime.default_emitter through emitters.default_emitter so
             # every write path agrees on the default. Task 6 shipped: the global
@@ -270,6 +321,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
             # max_generations / single_daughters stay local — they drive the
             # v2ecoli colony/lineage run loop the broker does not own.
             from vivarium_workbench.lib import emitters as _emitters
+
             _default_emitter = _emitters.default_emitter({"runtime": _runtime}, None)
             _max_generations = int(_runtime.get("max_generations") or 3)
             _single_daughters = bool(_runtime.get("single_daughters") or False)
@@ -495,19 +547,32 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
         # Results view) and, when the composite declares one, its default
         # Parquet emitter for persistence — falling back to SQLite only
         # when nothing is declared.
-        _res = inject_run_emitters(state, spec_id=spec_id, run_id=run_id,
-                                   emit_paths=emit_paths, workspace=ws_root,
-                                   db_file=db_file)
+        _res = inject_run_emitters(
+            state,
+            spec_id=spec_id,
+            run_id=run_id,
+            emit_paths=emit_paths,
+            workspace=ws_root,
+            db_file=db_file,
+        )
         state = _res["state"]
         run_emitter_kind = _res["emitter"]
         state = strip_process_instances(state)
-        _state_fd, _state_path = _tempfile.mkstemp(suffix=".state.json", prefix="vivarium-run-")
+        _state_fd, _state_path = _tempfile.mkstemp(
+            suffix=".state.json", prefix="vivarium-run-"
+        )
         try:
-            with os.fdopen(_state_fd, "w") as _f:
+            # Explicit encoding here too. BigraphJSONEncoder escapes non-ASCII
+            # today (\u2014 rather than the character), so this write happens to
+            # be locale-safe -- but that is a property of an encoder in another
+            # package, not of this call. Stating utf-8 makes it true here.
+            with os.fdopen(_state_fd, "w", encoding="utf-8") as _f:
                 json.dump(state, _f, cls=BigraphJSONEncoder)
         except Exception:
-            try: os.unlink(_state_path)
-            except OSError: pass
+            try:
+                os.unlink(_state_path)
+            except OSError:
+                pass
             raise
 
         script = textwrap.dedent(f"""
@@ -573,6 +638,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
     _generation_id = None
     try:
         from vivarium_workbench.lib import generation as _gen
+
         _generation_id = _gen.current_generation_id(ws_root)
     except Exception:  # noqa: BLE001 — generation is advisory, never fatal
         _generation_id = None
@@ -587,26 +653,43 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
         # .pbg/runs.jsonl.
         _study_slug, _inv_slug = run_index_slugs_from_db_path(db_file)
         try:
-            cr.save_metadata(conn, spec_id=spec_id, run_id=run_id,
-                             params=overrides, label=label,
-                             started_at=time.time(), n_steps=steps,
-                             generation_id=_generation_id,
-                             workspace=ws_root, emitter=run_emitter_kind,
-                             study_slug=_study_slug,
-                             investigation_slug=_inv_slug,
-                             manifest=manifest)
+            cr.save_metadata(
+                conn,
+                spec_id=spec_id,
+                run_id=run_id,
+                params=overrides,
+                label=label,
+                started_at=time.time(),
+                n_steps=steps,
+                generation_id=_generation_id,
+                workspace=ws_root,
+                emitter=run_emitter_kind,
+                study_slug=_study_slug,
+                investigation_slug=_inv_slug,
+                manifest=manifest,
+            )
             if sim_name is not None:
-                conn.execute("UPDATE runs_meta SET sim_name=? WHERE run_id=?",
-                             (sim_name, run_id))
+                conn.execute(
+                    "UPDATE runs_meta SET sim_name=? WHERE run_id=?", (sim_name, run_id)
+                )
                 conn.commit()
         except sqlite3.IntegrityError:
-            return ({"simulation_id": run_id,
-                     "error": "duplicate run_id (rare timing collision) — retry"}, 500)
+            return (
+                {
+                    "simulation_id": run_id,
+                    "error": "duplicate run_id (rare timing collision) — retry",
+                },
+                500,
+            )
         if _generation_id is not None:
             try:
-                _gen.record_run(ws_root, _generation_id,
-                                study=(sim_name or label or spec_id),
-                                run_id=run_id, sim_name=sim_name)
+                _gen.record_run(
+                    ws_root,
+                    _generation_id,
+                    study=(sim_name or label or spec_id),
+                    run_id=run_id,
+                    sim_name=sim_name,
+                )
             except Exception:  # noqa: BLE001 — manifest index is best-effort
                 pass
 
@@ -617,15 +700,40 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
             _db_dir = os.path.dirname(os.path.abspath(db_file))
             _sims_dir = os.path.join(_db_dir, "sims")
             os.makedirs(_sims_dir, exist_ok=True)
-            with open(os.path.join(_sims_dir, f"{run_id}.subprocess.py"), "w") as _f:
+            # encoding="utf-8" is load-bearing, not tidiness. Without it this
+            # uses the LOCALE default, which in a container is ascii -- and the
+            # generated script carries non-ASCII (this module alone has 42 lines
+            # using em-dashes and arrows, which reach the script through its
+            # f-string templates). That raised
+            #     UnicodeEncodeError: 'ascii' codec can't encode '\u2014'
+            # on every hosted run.
+            with open(
+                os.path.join(_sims_dir, f"{run_id}.subprocess.py"),
+                "w",
+                encoding="utf-8",
+            ) as _f:
                 _f.write(script)
-        except OSError:
+        except Exception:  # noqa: BLE001
+            # Was `except OSError`, which does NOT catch UnicodeEncodeError (a
+            # ValueError). So the guard that exists to make this write
+            # best-effort let through the one error it actually threw, and a
+            # DEBUG CONVENIENCE killed the real study run.
+            #
+            # Nothing below this write depends on it: it saves a copy of the
+            # script for post-mortem reading. A best-effort artifact must never
+            # be able to fail the work it is describing, so the guard now covers
+            # anything.
             pass
 
         try:
             try:
-                result = subprocess.run([py, "-c", script], cwd=ws_root,
-                                        capture_output=True, text=True, timeout=timeout)
+                result = subprocess.run(
+                    [py, "-c", script],
+                    cwd=ws_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout,
+                )
             except subprocess.TimeoutExpired as exc:
                 try:
                     if exc.process is not None:
@@ -633,34 +741,48 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
                         exc.process.communicate(timeout=2)
                 except Exception:
                     pass
-                cr.complete_metadata(conn, run_id=run_id, n_steps=0, status="failed",
-                                     workspace=ws_root)
+                cr.complete_metadata(
+                    conn, run_id=run_id, n_steps=0, status="failed", workspace=ws_root
+                )
                 return ({"simulation_id": run_id, "error": "run timed out"}, 504)
         finally:
             if _state_path is not None:
-                try: os.unlink(_state_path)
-                except OSError: pass
+                try:
+                    os.unlink(_state_path)
+                except OSError:
+                    pass
 
         out = result.stdout
         if "@@@ERROR@@@" in out:
-            cr.complete_metadata(conn, run_id=run_id, n_steps=0, status="failed",
-                                 workspace=ws_root)
+            cr.complete_metadata(
+                conn, run_id=run_id, n_steps=0, status="failed", workspace=ws_root
+            )
             tb = out.split("@@@ERROR@@@", 1)[1].strip()
-            return ({"simulation_id": run_id, "error": "run failed",
-                     "traceback": tb}, 502)
+            return (
+                {"simulation_id": run_id, "error": "run failed", "traceback": tb},
+                502,
+            )
 
         try:
             from bigraph_schema.json_codec import bigraph_json_hook
+
             payload = json.loads(
                 out.split("@@@RESULTS@@@", 1)[1].strip(),
                 object_hook=bigraph_json_hook,
             )
         except (IndexError, json.JSONDecodeError):
-            cr.complete_metadata(conn, run_id=run_id, n_steps=0, status="failed",
-                                 workspace=ws_root)
-            return ({"simulation_id": run_id,
-                     "error": "could not parse run output",
-                     "stdout": out, "stderr": result.stderr}, 502)
+            cr.complete_metadata(
+                conn, run_id=run_id, n_steps=0, status="failed", workspace=ws_root
+            )
+            return (
+                {
+                    "simulation_id": run_id,
+                    "error": "could not parse run output",
+                    "stdout": out,
+                    "stderr": result.stderr,
+                },
+                502,
+            )
 
         # Subprocess emits {results, viz_html}; older versions emitted the
         # results dict directly. Handle both for forward/backward compat.
@@ -679,6 +801,7 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
         # otherwise-successful run.
         try:
             from vivarium_workbench.lib import result_fingerprint as rfp
+
             fingerprint = rfp.fingerprint_run(run_dir, fingerprint_fields)
             cr.set_result_fingerprint(conn, run_id=run_id, fingerprint=fingerprint)
         except Exception:
@@ -692,13 +815,20 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
         _emitter_path = None
         try:
             from vivarium_workbench.lib import run_store as _run_store
+
             _cand = _run_store.zarr_store_path_for_db(Path(db_file), run_id)
             if Path(_cand).exists():
                 _emitter_path = str(_cand)
         except Exception:  # noqa: BLE001 — best-effort; never blocks completion
             pass
-        cr.complete_metadata(conn, run_id=run_id, n_steps=steps, status="completed",
-                             workspace=ws_root, emitter_path=_emitter_path)
+        cr.complete_metadata(
+            conn,
+            run_id=run_id,
+            n_steps=steps,
+            status="completed",
+            workspace=ws_root,
+            emitter_path=_emitter_path,
+        )
 
         # reproducible-rerun-spine Task 4: this run itself is a recorded
         # reproduction of an earlier one — verify the two result_fingerprints
@@ -708,11 +838,19 @@ def run_composite_subprocess(ws_root, *, pkg, state, steps, db_file, run_id, spe
         if reran_from:
             try:
                 from vivarium_workbench.lib import rerun as rerun_mod
+
                 rerun_mod.verify_reproduction(ws_root, reran_from, run_id)
             except Exception:
                 pass
 
-        return ({"simulation_id": run_id, "results": results,
-                 "viz_html": viz_html, "steps": steps}, 200)
+        return (
+            {
+                "simulation_id": run_id,
+                "results": results,
+                "viz_html": viz_html,
+                "steps": steps,
+            },
+            200,
+        )
     finally:
         conn.close()
