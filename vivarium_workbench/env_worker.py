@@ -924,16 +924,12 @@ def _lazy_core_for_ref(ref):
         return None
     try:
         from process_bigraph.composite_generator import (
-            _REGISTRY, apply_core_extensions, discover_generators,
+            _REGISTRY, apply_core_extensions,
         )
     except Exception:  # noqa: BLE001
         return None
     _import_workspace_package(_workspace)
-    if not _REGISTRY:
-        try:
-            discover_generators()
-        except Exception:  # noqa: BLE001
-            return None
+    _ensure_generators_discovered()
     entry = _REGISTRY.get(ref)
     if entry is None:
         return None
@@ -1065,10 +1061,9 @@ def _resolve_composite_state(params: dict) -> dict:
     try:
         from process_bigraph.composite_generator import (
             _REGISTRY, apply_core_extensions, build_generator,
-            discover_generators, emitter_defaults,
+            emitter_defaults,
         )
-        if not _REGISTRY:
-            discover_generators()
+        _ensure_generators_discovered()
         entry = _REGISTRY.get(ref)
         if entry is not None:
             # Parameter overrides (from the Explore Config panel's Apply) — build
@@ -1131,17 +1126,13 @@ def _resolve_inner_composite_state(params: dict) -> dict:
     _import_workspace_package(_workspace)
     try:
         from process_bigraph.composite_generator import (
-            _REGISTRY, apply_core_extensions, build_generator, discover_generators,
+            _REGISTRY, apply_core_extensions, build_generator,
         )
         from bigraph_schema import allocate_core
         from process_bigraph import Composite
     except Exception as e:  # noqa: BLE001
         return {"__build_error__": str(e)}
-    if not _REGISTRY:
-        try:
-            discover_generators()
-        except Exception:  # noqa: BLE001
-            pass
+    _ensure_generators_discovered()
     entry = _REGISTRY.get(ref)
     if entry is None:
         return {"__not_registered__": True}
@@ -1261,14 +1252,9 @@ def _obs_available(params: dict) -> dict:
                 _REGISTRY,
                 apply_core_extensions as _ace,
                 build_generator as _bg,
-                discover_generators,
             )
             apply_core_extensions, build_generator = _ace, _bg
-            if not _REGISTRY:
-                try:
-                    discover_generators()
-                except Exception:  # noqa: BLE001
-                    pass
+            _ensure_generators_discovered()
             entry = _REGISTRY.get(ref)
             if entry is None:
                 canon = _obs_resolve_registry_ref(ref, _REGISTRY.keys())
@@ -1362,12 +1348,8 @@ def _discover_composites() -> dict:
 
     reg_keys: list = []
     try:
-        from process_bigraph.composite_generator import _REGISTRY, discover_generators
-        if not _REGISTRY:
-            try:
-                discover_generators()
-            except Exception:  # noqa: BLE001
-                pass
+        from process_bigraph.composite_generator import _REGISTRY
+        _ensure_generators_discovered()
         reg_keys = list(_REGISTRY.keys())
     except Exception:  # noqa: BLE001
         pass
@@ -2097,9 +2079,12 @@ def _build_viz_core():
         pass
 
     try:
-        from process_bigraph.composite_generator import discover_generators
         from process_bigraph.visualization import Visualization
-        discover_generators()  # force-load packages so @Visualization classes appear
+
+        # Same global scan, deduped: it is called here to force-load packages so
+        # @Visualization classes appear, and if some earlier call already scanned
+        # they are already loaded.
+        _ensure_generators_discovered()
 
         # Force-import the workspace's own <pkg>.visualizations submodules so
         # their Visualization subclasses become discoverable via __subclasses__
@@ -2662,6 +2647,44 @@ def _analysis_viewers(params: dict) -> dict:
     return {"viewers": [_av_public_spec(v, ws_root) for v in _av_discover_viewers(ws_root)]}
 
 
+_DISCOVERED = False
+
+
+def _ensure_generators_discovered() -> None:
+    """Run process-bigraph's global generator scan exactly once per process.
+
+    **Replaces `if not _REGISTRY: discover_generators()`, which was wrong at six
+    call sites.** That guard reads as "scan if we have not scanned", but
+    `_REGISTRY` is not a record of scanning — it is a record of anything having
+    registered, and `_import_workspace_package` always registers the workspace's
+    own generators *first*. Measured in the deployed image:
+
+        fresh import                0 generators
+        after `import v2ecoli`     33   <- registry now non-empty
+        after discover_generators()53   <- spatio_flux's 19 appear only here
+
+    So the guard was always False by the time it was reached, the scan never
+    ran, and a perfectly valid `spatio_flux...` reference came back
+    `__not_registered__`. The symptom looked like call-order dependence, which
+    sent two separate investigations chasing a caching bug that did not exist.
+
+    A non-empty registry is not a COMPLETE registry. Track the scan itself.
+    """
+    global _DISCOVERED
+    if _DISCOVERED:
+        return
+    from process_bigraph.composite_generator import discover_generators
+
+    try:
+        discover_generators()
+    except Exception:  # noqa: BLE001 - best-effort; a broken sibling package
+        # must not make the workspace's own generators unreachable.
+        pass
+    # Set even on failure: a scan that raised will raise again, and retrying it
+    # per call would turn one broken install into a per-request cost.
+    _DISCOVERED = True
+
+
 def _import_workspace_package(workspace: str) -> None:
     """Import the workspace's own package so its ``@composite_generator``s register
     into *this worker's* process registry. Best-effort — a workspace without a
@@ -2700,10 +2723,9 @@ def _list_generators() -> dict:
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
-    from process_bigraph.composite_generator import _REGISTRY, discover_generators
+    from process_bigraph.composite_generator import _REGISTRY
     try:
-        if not _REGISTRY:
-            discover_generators()
+        _ensure_generators_discovered()
     except Exception:  # noqa: BLE001 — best-effort; return whatever registered
         pass
     return {"generators": sorted(_REGISTRY.keys())}
