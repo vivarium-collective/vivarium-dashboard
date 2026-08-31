@@ -33,6 +33,7 @@ import argparse
 import json
 import os
 import socket
+import contextlib
 import struct
 import sys
 import time
@@ -3004,10 +3005,36 @@ def _handle(method: str, params: dict) -> dict:
     raise _MethodError(-32601, f"unknown method: {method!r}")
 
 
-def _serve(sock: socket.socket) -> None:
-    """Serial request loop (spec §8): one request at a time, FIFO."""
+def _serve(sock: socket.socket, idle_timeout: float | None = None) -> None:
+    """Serial request loop (spec §8): one request at a time, FIFO.
+
+    ``idle_timeout`` bounds only the wait for the NEXT REQUEST, and is cleared
+    for the duration of the call itself. That distinction is the whole point:
+    the plan's §E asked "what must the idle reaper know so it does not reap a
+    worker mid-job", and the answer is that idleness is the gap BETWEEN frames,
+    never the time spent inside one. A `run_study` that takes an hour is not
+    idle for any of it.
+
+    Reaping is also a clean exit, not a crash. The bug this replaces surfaced as
+    an unhandled ``TimeoutError`` traceback and a pod in ``Error`` — which reads
+    as a fault rather than as a worker that was no longer needed.
+    """
     while True:
-        req = _read_frame(sock)
+        # Idle window: waiting for a header, holding nothing.
+        with contextlib.suppress(OSError):
+            sock.settimeout(idle_timeout)
+        try:
+            req = _read_frame(sock)
+        except (TimeoutError, socket.timeout):
+            print(
+                f"env_worker: idle for {idle_timeout}s with no request; exiting cleanly",
+                file=sys.stderr,
+                flush=True,
+            )
+            return
+        # In-call window: a slow method must never look like an idle worker.
+        with contextlib.suppress(OSError):
+            sock.settimeout(None)
         if req is None:  # parent closed the connection
             return
         rid = req.get("id")
@@ -3043,6 +3070,21 @@ def _dial_back(target: str, token: str | None, timeout: float) -> socket.socket:
     sock = socket.create_connection((host, int(port)), timeout=timeout)
     body = json.dumps({"token": token}).encode("utf-8")
     sock.sendall(struct.pack(">I", len(body)) + body)
+    # `create_connection(timeout=...)` sets the timeout for the socket's WHOLE
+    # LIFE, not just the connect. Left in place it becomes an accidental idle
+    # deadline: `_serve` blocks in recv() waiting for the next request, and 30 s
+    # later the worker dies with an unhandled TimeoutError mid-session. That is
+    # exactly what was happening -- measured on dev at 30 s to the second, with
+    # `TimeoutError: timed out` raised out of `_recv_exact`.
+    #
+    # Clear it here. Idle is a policy decision that belongs to `_serve`, which
+    # knows whether a call is in flight; a connect timeout does not.
+    sock.settimeout(None)
+    # Notice a peer that dies without closing (a viva-api pod evicted, a node
+    # lost). Without this, a blocking recv on a half-open connection waits for
+    # the OS default, which is hours.
+    with contextlib.suppress(OSError):
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
     return sock
 
 
@@ -3059,7 +3101,14 @@ def main(argv=None) -> int:
     parser.add_argument("--token", default=os.environ.get("VIVARIUM_ENV_WORKER_TOKEN"),
                         help="dial-back handshake token; defaults to $VIVARIUM_ENV_WORKER_TOKEN "
                              "so it need not appear in the pod's command line")
-    parser.add_argument("--connect-timeout", type=float, default=30.0)
+    parser.add_argument("--connect-timeout", type=float, default=30.0,
+                        help="seconds to wait for the dial-back CONNECT only; it no longer "
+                             "leaks into the serve loop (see _dial_back)")
+    # 0 disables. Default matches the documented ENV_WORKER_IDLE_TTL so the two
+    # transports agree on what "idle" means; a worker nobody stops should not
+    # live forever, but 30s was never the intended number.
+    parser.add_argument("--idle-timeout", type=float,
+                        default=float(os.environ.get("VIVARIUM_ENV_WORKER_IDLE_TIMEOUT", "900")))
     parser.add_argument("--workspace", required=True)
     args = parser.parse_args(argv)
     _workspace = args.workspace
@@ -3086,7 +3135,7 @@ def main(argv=None) -> int:
         # Wrap the inherited fd as an AF_UNIX stream socket (the socketpair peer).
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM, fileno=args.socket_fd)
     try:
-        _serve(sock)
+        _serve(sock, idle_timeout=(args.idle_timeout if args.idle_timeout > 0 else None))
     finally:
         try:
             sock.close()
