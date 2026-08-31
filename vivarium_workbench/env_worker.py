@@ -1752,6 +1752,51 @@ def _study_precheck(params: dict) -> dict:
     }
 
 
+def _qualify_verdict_on_incomplete_evidence(result: dict) -> None:
+    """Stop a harvest presenting a verdict as if the failed runs had happened.
+
+    A conclusion card is computed by `build_conclusion_verdict`, which is pure
+    and spec-derived: it answers *what does this study's evidence chain say*, and
+    it is correct in that frame. A run harvest asks a different question —
+    *what did this run establish* — and answering the first while reporting
+    failures for the second is how a card reading `overall: within_tol` ended up
+    attached to a run where two of three conditions never executed.
+
+    Observed on dev: a study whose baseline succeeded and whose two variants both
+    failed came back with `"overall": "within_tol"`, because one spec-derived
+    track was PASS and `overall` is the worst of the tracks. Nothing lied; the
+    card simply was not answering the question its position implied.
+
+    So qualify it HERE, in the harvest, and leave the card on disk untouched —
+    the artifact is not wrong and rewriting someone else's science is not this
+    function's business. `overall` becomes `ungraded`, which is the existing
+    vocabulary's own word for "not graded", and the original is preserved so
+    nothing is lost.
+    """
+    verdict = result.get("verdict")
+    errors = result.get("errors") or []
+    if not isinstance(verdict, dict) or not errors:
+        return
+    stages = [e.get("stage") for e in errors if isinstance(e, dict) and e.get("stage")]
+    # A verdict is about the science. Failures in READING the verdict, or in
+    # harvesting run refs, say nothing about whether the runs happened — they are
+    # plumbing, and demoting the verdict for them would cry wolf.
+    science_stages = [st for st in stages if st not in ("read_verdict", "harvest_run_refs")]
+    if not science_stages:
+        return
+    verdict["evidence_incomplete"] = {
+        "failed_stages": science_stages,
+        "overall_before": verdict.get("overall"),
+        "note": (
+            f"{len(science_stages)} stage(s) of this run failed, so the evidence this "
+            "verdict describes is not the evidence this run produced. The card on disk "
+            "is unchanged; `overall` is reported as 'ungraded' here because a verdict "
+            "over runs that did not happen is not a verdict."
+        ),
+    }
+    verdict["overall"] = "ungraded"
+
+
 def _run_study(params: dict) -> dict:
     """Run a Study's baseline (plus any ``run_spec``-named variants) TO
     COMPLETION, synchronously, in this worker process.
@@ -1967,6 +2012,7 @@ def _run_study(params: dict) -> dict:
                 result["errors"].append({
                     "stage": "read_verdict", "error": f"{type(exc).__name__}: {exc}",
                 })
+        _qualify_verdict_on_incomplete_evidence(result)
 
     # 5. Per-study analyses — invoked DIRECTLY (store data-flow refactor,
     #    Task 1; design §1), the same way _run_investigation_analysis
