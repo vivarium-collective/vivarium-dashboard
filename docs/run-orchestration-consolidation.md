@@ -1097,6 +1097,90 @@ generator count proves nothing**, because it is a function of call order. What
 proves the workspace imported is running something that needs
 `<pkg>.core.build_core`.
 
+### The worker is not a runner — and (e) crossed that line *(2026-08-31)*
+
+Found while asking whether the ParCa cache is *meant* to be staged into env
+workers. It is not, and the reason reaches further than the cache.
+
+**Three independent statements say a worker does not run simulations:**
+
+> **Protocol §12**, titled *"the worker is not a runner"*: "The env worker
+> answers *interactive authoring/rendering* queries. It does **not** run
+> simulations or heavy analyses — those are **jobs**… Keeping heavy compute out
+> of the worker is what keeps queries bounded."
+
+> **`env-worker-runtime.md`**: "The worker answers interactive queries only…
+> **which is why a worker pod is sized for interaction: `250m`/`512Mi` requests,
+> `1`/`2Gi` limits.**"
+
+> **The Job spec's volumes**: both ephemeral, "the worker is stateless with
+> respect to the scientific record… nothing here needs the PVC."
+
+And `_parca_staging()` lives on the **Ray-on-Batch** service, feeding
+`RAY_STAGE_S3`/`RAY_STAGE_DIR` to the Batch entrypoint — a mechanism the
+env-worker Job has no counterpart to, by construction.
+
+**§E option (e) step 5 routes `run_study` — which `env_worker_routing` exists
+specifically to mark as job-class, i.e. *not* a worker call — into the worker.**
+When every composite run then OOMKilled at 2Gi, the limit was raised to 8Gi
+(viva-api#325). That was backwards: the sizing was correct and load-bearing, and
+raising it muffled the design telling us the boundary had been crossed. Grepping
+this plan for `§12`, "not a runner" or "interactive only" returns **nothing** —
+(e) never confronted the rule it overrode.
+
+### Two axes, and only one of them is now handled
+
+The fix chosen was **(3) split the tier by scale** — but investigating it showed
+scale is not the axis that actually broke:
+
+| axis | question | status |
+|---|---|---|
+| **Scale** | how many simulations does this declare? | **handled** — `study_precheck` (workbench#1002) + a 422 at submit (viva-api#344) |
+| **Environment capability** | does this composite need data the worker cannot stage? | **not handled, deliberately** |
+
+`basal` declares `n_seeds=None, n_generations=None` → **1 simulation**, far under
+the budget of 50. §B's check passes it happily, and it still cannot run in a
+worker, because `ecoli_baseline` needs a ParCa cache that is staged only onto the
+Batch path. Measured on dev:
+
+```
+generator build failed: Cache at 'out/cache' is stale or unversioned:
+out/cache/cache_version.json missing
+```
+
+and the directory does not exist in the image at all.
+
+**Capability is not inferable without breaking §B's own doctrine** — a
+`@composite_generator` is arbitrary Python (`env-worker-routing.md` §4), and
+"needs a staged cache" is something you learn by building it. So it is handled by
+**failing fast with a legible error**, which is what already happens and is
+arguably correct. Both new pieces say so in their docstrings, because the
+temptation to make the scale check guess at capability is real.
+
+**What the scale split actually buys**, since the check already existed inside
+`launch_into_study`: a refusal that arrives there comes back as an entry in a
+harvest's `errors[]` — which under this tier's own semantics reads as *the
+science failed*. It did not; the work was sent to the wrong tier. The tier
+deciding where work goes is what makes it a tier rather than a queue.
+
+### Dev acceptance run *(2026-08-31)*
+
+| Check | Result |
+|---|---|
+| **A2 restart honesty** — never re-run since step 5 | **Pass.** Task → `failed`, not stuck `running`: *"lost to a viva-api restart: the worker socket did not survive the process"*; boot log `settled 1 env-worker task(s) stranded by a restart` |
+| Identity end to end | **Pass** — `created_by` recorded and survived the restart |
+| `vwb smoke` | **Pass** — 4/4 |
+| Task tier through the CLI | **Pass** — submit, poll, batch status, named reads |
+| **A real whole-cell study** | **Blocked** — see the ParCa finding above |
+
+**The arc is verified; the workload is not.** Everything exercised end to end
+runs `spatio_flux` or hand-authored composites. That gap is the honest answer to
+"is the test site correct", and it should not be closed by assertion.
+
+Two known gaps got in the way during the run and remain open: **workers idle-die
+after ~2 minutes** (§E's own "what the idle-TTL reaper must know so it does not
+reap a worker mid-job", still unanswered), and the **order-dependent registry**.
+
 ## Where this leaves the plan *(2026-08-29)*
 
 **Every numbered step is done**, and all of it is on **dev only**. What remains
