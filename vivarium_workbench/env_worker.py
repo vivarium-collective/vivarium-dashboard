@@ -91,7 +91,7 @@ _CAPABILITIES = ["initialize", "ping", "list_generators", "registry_catalog",
                  "run_process", "process_template",
                  "viz_classes", "resolve_composite_state", "config_to_composite", "observables",
                  "study_readout_check", "attach_process_docs", "discover_composites", "composites_full",
-                 "validate_generated_visualization", "run_study_analyses", "run_study", "run_investigation_analysis", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
+                 "validate_generated_visualization", "study_precheck", "run_study_analyses", "run_study", "run_investigation_analysis", "viz_class_inputs", "render_viz_doc", "viz_preview", "report_core_snapshot", "reexport_map", "data_sources_provider", "analysis_viewers", "shutdown"]
 
 _FRAMEWORK_PKGS = {
     "process_bigraph", "bigraph_schema", "bigraph_viz",
@@ -1688,6 +1688,87 @@ def _declared_variant_names(ws_root, study_slug: str) -> list:
         return []
 
 
+def _study_precheck(params: dict) -> dict:
+    """Would this study be refused for scale if run here? Arithmetic only.
+
+    §12 says the worker is not a runner — this does not run anything. It reads a
+    study spec and multiplies two declared numbers, which is exactly the kind of
+    interactive question the worker exists to answer.
+
+    It exists because the SAME check already runs inside `launch_into_study`, and
+    by then it is too late to be useful: the worker is occupied, and the refusal
+    comes back as an entry in a harvest's ``errors[]`` — which under the task
+    tier's own semantics reads as "the science failed" when it actually means
+    "you sent this to the wrong tier". Asking first lets the tier refuse the
+    submission instead of mis-reporting it.
+
+    ``params``: ``{workspace, study_slug}``, plus any of the run knobs
+    (``n_seeds``, ``n_generations``) a caller intends to override with.
+
+    Returns ``{declared, budget, exceeds, hint}``. Never raises: a study that
+    cannot be read is reported as not-exceeding, because silence is not a claim
+    of scale (the same rule `_declared_scale_exceeds_budget` follows).
+    """
+    from pathlib import Path
+
+    import yaml
+
+    from vivarium_workbench.lib.study_runs import (
+        _SCALE_BUDGET_DEFAULT,
+        _SCALE_BUDGET_ENV,
+        _declared_scale_exceeds_budget,
+        _resolve_study_dir,
+    )
+
+    p = params or {}
+    slug = str(p.get("study_slug") or "").strip()
+    ws_root = Path(str(p.get("workspace") or _workspace or "."))
+
+    # Start from the caller's own knobs, then fall back to what the study
+    # declares. A caller overriding n_seeds upward must be judged on the value
+    # they sent, not on the spec's.
+    knobs = {k: p[k] for k in ("n_seeds", "n_generations") if p.get(k) is not None}
+    if slug and not knobs:
+        try:
+            spec_file = _resolve_study_dir(ws_root, slug) / "study.yaml"
+            spec = yaml.safe_load(spec_file.read_text(encoding="utf-8")) or {}
+            for entry in list(spec.get("baseline") or []) + list((spec.get("conditions") or {}).values()):
+                if not isinstance(entry, dict):
+                    continue
+                declared_params = entry.get("params") or {}
+                for key in ("n_seeds", "n_generations"):
+                    if declared_params.get(key) is not None and key not in knobs:
+                        knobs[key] = declared_params[key]
+        except Exception:  # noqa: BLE001 - an unreadable spec is not a scale claim
+            knobs = {}
+
+    exceeds = _declared_scale_exceeds_budget(knobs)
+    if exceeds is None:
+        def _one(key: str) -> int:
+            try:
+                return max(1, int(knobs.get(key) or 1))
+            except (TypeError, ValueError):
+                return 1
+
+        return {
+            "declared": _one("n_seeds") * _one("n_generations"),
+            "budget": _SCALE_BUDGET_DEFAULT,
+            "exceeds": False,
+            "hint": "",
+        }
+    declared, budget = exceeds
+    return {
+        "declared": declared,
+        "budget": budget,
+        "exceeds": True,
+        "hint": (
+            f"{slug or 'this study'} declares {declared} simulations, over the "
+            f"{budget} an env worker may take. Dispatch it to Batch instead, or "
+            f"raise {_SCALE_BUDGET_ENV}."
+        ),
+    }
+
+
 def _run_study(params: dict) -> dict:
     """Run a Study's baseline (plus any ``run_spec``-named variants) TO
     COMPLETION, synchronously, in this worker process.
@@ -2898,6 +2979,8 @@ def _handle(method: str, params: dict) -> dict:
         return _validate_generated_visualization(params)
     if method == "run_study_analyses":
         return _run_study_analyses(params)
+    if method == "study_precheck":
+        return _study_precheck(params)
     if method == "run_study":
         return _run_study(params)
     if method == "run_investigation_analysis":
