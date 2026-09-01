@@ -287,6 +287,34 @@ class SmsApiClient:
     def simulation_status(self, simulation_id: int) -> dict:
         return self._get(f"/api/v1/simulations/{simulation_id}/status")
 
+    def get_simulation(self, simulation_id: int) -> dict:
+        """GET /api/v1/simulations/{id} — the full simulation record sms-api
+        holds server-side: ``config`` (the actually-merged run config),
+        ``simulator_id``, ``parca_dataset_id``, ``experiment_id``, ``num_seeds``.
+
+        Unlike :meth:`simulation_status` (status/error_message only), this is
+        what the P1-11 remote-run-provenance fix reads to record the REAL
+        merged config and requested seed count sms-api resolved, instead of
+        recomputing/guessing them on the landing laptop (audit §3.9)."""
+        return self._get(f"/api/v1/simulations/{simulation_id}")
+
+    def simulator_commit(self, simulator_id: int) -> str | None:
+        """Resolve ``simulator_id`` -> the git commit sms-api actually built
+        and ran, from sms-api's OWN simulator registry (``GET
+        /core/v1/simulator/versions``) — never the landing laptop's local
+        checkout (that mismatch was the P1-11 "partly wrong" finding, audit
+        §3.9). ``None`` (not raised) when the id can't be resolved — e.g. an
+        old/pruned registry — since this is best-effort provenance and must
+        never block landing."""
+        try:
+            versions = self.list_simulators().get("versions") or []
+        except SmsApiError:
+            return None
+        for row in versions:
+            if isinstance(row, dict) and row.get("database_id") == simulator_id:
+                return row.get("git_commit_hash")
+        return None
+
     def simulation_chain_progress(self, simulation_id: int) -> dict:
         """Backlog item 6: real per-seed aggregate progress for a chain-dispatch
         campaign (viva-api PR #257) — {seeds_total, seeds_succeeded, seeds_failed,

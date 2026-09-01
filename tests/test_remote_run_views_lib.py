@@ -203,6 +203,18 @@ class _FakeThinClient:
         self.ran = kwargs
         return {"database_id": 199}
 
+    # -- P1-11 (audit §3.9): execution-provenance lookups land() reads --------
+    def get_simulation(self, simulation_id):
+        return {
+            "database_id": simulation_id,
+            "simulator_id": 66,
+            "config": {"generations": 1, "n_init_sims": 1},
+            "num_seeds": 1,
+        }
+
+    def simulator_commit(self, simulator_id):
+        return "deadbee1234"
+
     def download_data(self, simulation_id, dest_dir, timeout=None):
         self.downloaded = simulation_id
         p = Path(dest_dir) / f"sim_{simulation_id}.tar.gz"
@@ -472,6 +484,36 @@ def test_land_downloads_and_lands(monkeypatch, tmp_path):
     _study_dir, kw = captured["land"]
     assert kw["simulation_id"] == 199
     assert kw["spec_id"] == "my-comp"
+
+
+def test_land_sources_commit_image_and_config_hash_from_sms_api(monkeypatch, tmp_path):
+    """P1-11 (audit §3.9): remote_run_land must resolve commit/image/
+    merged_config_hash/expected_seeds from sms-api's OWN records
+    (_resolve_execution_provenance) and forward them into land_remote_run --
+    not leave land_remote_run to fall back to whatever body.get("commit")
+    happened to be (which no real caller has ever actually populated)."""
+    captured = _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    body, status = rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199})
+    assert status == 200
+    _study_dir, kw = captured["land"]
+    # _FakeThinClient.get_simulation/simulator_commit resolve to these fixture
+    # values -- NOT anything derived from the local workspace checkout.
+    assert kw["commit"] == "deadbee1234"
+    assert kw["image"] == "deadbee1234"
+    assert kw["merged_config_hash"]  # a real sha256 hex digest of the fixture config
+    assert kw["expected_seeds"] == 1
+
+
+def test_land_explicit_body_commit_wins_over_sms_api_lookup(monkeypatch, tmp_path):
+    """A caller that DOES supply a commit in the body is still honored -- the
+    sms-api lookup is a fallback for when nothing better is known, not an
+    override of an already-known-good value."""
+    captured = _wire_thin(monkeypatch, tmp_path)
+    monkeypatch.setattr(rrv, "SmsApiClient", _FakeThinClient)
+    rrv.remote_run_land(tmp_path, {"study": "s", "simulation_id": 199, "commit": "explicit-commit"})
+    _study_dir, kw = captured["land"]
+    assert kw["commit"] == "explicit-commit"
 
 
 def test_land_triggers_analysis_and_polls_real_status_when_spec_has_analyses(monkeypatch, tmp_path):
