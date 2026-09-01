@@ -612,6 +612,54 @@ def _run_xarray(*, state, run_id, emit_paths, out_dir, core, steps,
             "run_id": run_id, "composite": composite}
 
 
+def _inject_ram_for_paths(state: dict, emit_paths) -> dict:
+    """Inject the declared-path RAM ``user_emitter`` when ``emit_paths`` is non-empty.
+
+    Single locus for the ``if emit_paths: inject_emitter_for_paths(...)`` guard
+    that used to be duplicated across the ``sqlite``, ``ram``, and
+    ``also_sqlite_history`` parquet branches below. ``emit_paths`` empty/None is
+    a no-op — a run with nothing declared attaches no RAM emitter, consistent
+    with the declared-path emit-safety contract (emit DECLARED paths only,
+    never everything, to avoid the whole-cell OOM class — see #752/#776/#777/#483).
+    """
+    if not emit_paths:
+        return state
+    from vivarium_workbench.lib import composite_runs as cr
+    return cr.inject_emitter_for_paths(state, list(emit_paths))
+
+
+def _register_sqlite_emitter_link(core) -> None:
+    """Register the ``SQLiteEmitter`` link class, handling the pbg_emitters rename
+    (extracted from process-bigraph at 1.4.17 into the focused emitters library;
+    older process-bigraph still exposes it via ``process_bigraph.emitter``)."""
+    try:
+        from pbg_emitters.sqlite_emitter import SQLiteEmitter
+    except ImportError:  # process-bigraph < 1.4.17 (legacy location)
+        from process_bigraph.emitter import SQLiteEmitter
+    core.register_link("SQLiteEmitter", SQLiteEmitter)
+
+
+def _inject_ram_and_sqlite(state: dict, *, emit_paths, run_id, db_file, core) -> dict:
+    """Stack the RAM ``user_emitter`` + ``SQLiteEmitter`` — the ONE construction
+    locus for this pair, shared by the plain ``sqlite`` output_kind and the
+    Composite Explorer's parquet-with-history path (``also_sqlite_history=True``).
+    Both call sites need byte-identical wiring so the Results tab's sqlite
+    ``history`` table renders the same regardless of which branch built it.
+
+    Before this helper existed, ``run_with_emitter`` reimplemented this exact
+    ``inject_emitter_for_paths`` + ``inject_sqlite_emitter`` + ``register_link``
+    sequence twice (the ``sqlite`` branch and the parquet-with-history branch) —
+    the #754-class duplicated-emitter-stack-construction finding (audit §1.10).
+    Centralizing it here means there is exactly one place that decides how the
+    RAM+SQLite pair is built, with no repeated construction blocks to drift.
+    """
+    from vivarium_workbench.lib import composite_runs as cr
+    st = _inject_ram_for_paths(state, emit_paths)
+    st = cr.inject_sqlite_emitter(st, run_id=run_id, db_file=db_file)
+    _register_sqlite_emitter_link(core)
+    return st
+
+
 def run_with_emitter(name, *, state, run_id, emit_paths, out_dir, core, steps,
                      db_file=None, progress_cb=None, spec=None,
                      emitter_config=None, store_path=None,
@@ -671,7 +719,6 @@ def run_with_emitter(name, *, state, run_id, emit_paths, out_dir, core, steps,
         kind = "sqlite"
 
     if kind == "sqlite":
-        from vivarium_workbench.lib import composite_runs as cr
         st = state
         # MINOR 3 guard: when we fall back from the zarr path that ALREADY drove
         # a Composite built from this same `state`, deep-copy so the sqlite re-run
@@ -681,14 +728,8 @@ def run_with_emitter(name, *, state, run_id, emit_paths, out_dir, core, steps,
         # but it makes the fall-back robust to that not holding.)
         if zarr_drove_already:
             st = copy.deepcopy(st)
-        if emit_paths:
-            st = cr.inject_emitter_for_paths(st, list(emit_paths))
-        st = cr.inject_sqlite_emitter(st, run_id=run_id, db_file=db_file)
-        try:
-            from pbg_emitters.sqlite_emitter import SQLiteEmitter
-        except ImportError:  # process-bigraph < 1.4.17 (legacy location)
-            from process_bigraph.emitter import SQLiteEmitter
-        core.register_link("SQLiteEmitter", SQLiteEmitter)
+        st = _inject_ram_and_sqlite(
+            st, emit_paths=emit_paths, run_id=run_id, db_file=db_file, core=core)
         composite = Composite({"state": st}, core=core)
         # MINOR 3: on a zarr→sqlite fall-back the empty-store path already called
         # `progress_cb(1..steps)` once, and this re-drive calls it again — so the
@@ -729,14 +770,8 @@ def run_with_emitter(name, *, state, run_id, emit_paths, out_dir, core, steps,
                     core.register_link("ParquetEmitter", ParquetEmitter)
                 except ImportError:
                     pass
-            if emit_paths:
-                st = cr.inject_emitter_for_paths(st, list(emit_paths))
-            st = cr.inject_sqlite_emitter(st, run_id=run_id, db_file=db_file)
-            try:
-                from pbg_emitters.sqlite_emitter import SQLiteEmitter
-            except ImportError:  # process-bigraph < 1.4.17 (legacy location)
-                from process_bigraph.emitter import SQLiteEmitter
-            core.register_link("SQLiteEmitter", SQLiteEmitter)
+            st = _inject_ram_and_sqlite(
+                st, emit_paths=emit_paths, run_id=run_id, db_file=db_file, core=core)
         else:
             # Study / non-Explorer parquet runs keep the declared-sink install
             # (byte-identical to before).
@@ -749,11 +784,8 @@ def run_with_emitter(name, *, state, run_id, emit_paths, out_dir, core, steps,
                 "steps": steps, "run_id": run_id, "composite": composite}
 
     if kind == "ram":
-        from vivarium_workbench.lib import composite_runs as cr
         from process_bigraph.emitter import RAMEmitter
-        st = state
-        if emit_paths:
-            st = cr.inject_emitter_for_paths(st, list(emit_paths))
+        st = _inject_ram_for_paths(state, emit_paths)
         core.register_link("RAMEmitter", RAMEmitter)
         composite = Composite({"state": st}, core=core)
         _drive(composite, steps, progress_cb)

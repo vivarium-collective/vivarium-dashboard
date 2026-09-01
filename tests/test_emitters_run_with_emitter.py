@@ -73,6 +73,42 @@ def test_run_with_emitter_sqlite_writes_history(tmp_path):
     assert len(rows) >= steps
 
 
+def test_run_with_emitter_sqlite_stacks_ram_and_sqlite(tmp_path):
+    """Characterization of the sqlite output_kind's emitter STACK (P2-8 /
+    #754-class dedup): a declared ``emit_paths`` selection stacks a RAM
+    ``user_emitter`` feeding a ``sqlite_emitter`` — the same RAM+SQLite pair the
+    parquet-with-history path (``also_sqlite_history=True``) stacks. This must
+    hold identically before and after de-duplicating the construction logic in
+    ``run_with_emitter``."""
+    db_file = str(tmp_path / "runs.db")
+    prov = emitters.run_with_emitter(
+        "sqlite", state=_doc(), run_id="r-stack", emit_paths=["counter_store"],
+        out_dir=str(tmp_path), core=_core(), steps=3, db_file=db_file)
+
+    assert prov["output_kind"] == "sqlite"
+    st = prov["composite"].state
+    assert "user_emitter" in st
+    assert "sqlite_emitter" in st
+    assert st["sqlite_emitter"]["address"]["data"] == "SQLiteEmitter"
+    assert st["user_emitter"]["address"]["data"] == "RAMEmitter"
+
+
+def test_run_with_emitter_ram_stacks_ram_only(tmp_path):
+    """Characterization of the ram output_kind's emitter STACK: a declared
+    ``emit_paths`` selection stacks ONLY the RAM ``user_emitter`` — no
+    ``sqlite_emitter`` (unlike the ``sqlite`` and parquet-with-history kinds)."""
+    prov = emitters.run_with_emitter(
+        "ram", state=_doc(), run_id="r-ram", emit_paths=["counter_store"],
+        out_dir=str(tmp_path), core=_core(), steps=3,
+        db_file=str(tmp_path / "runs.db"))
+
+    assert prov["output_kind"] == "ram"
+    st = prov["composite"].state
+    assert "user_emitter" in st
+    assert st["user_emitter"]["address"]["data"] == "RAMEmitter"
+    assert "sqlite_emitter" not in st
+
+
 def test_run_with_emitter_default_name_is_xarray(tmp_path):
     """The framework DEFAULT is xarray as of Task 6 — a default run with a
     non-empty selection writes a zarr store that actually CONTAINS data.
