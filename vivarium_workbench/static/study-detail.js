@@ -1095,7 +1095,20 @@
           // Model tab is the study's model surface, but a study can declare
           // several composites, so eagerly mounting every loom is heavy; the
           // reader opens the one they want.
-          wrap.querySelector('p').replaceWith(cardHost.firstElementChild);
+          var cardEl = cardHost.firstElementChild;
+          wrap.querySelector('p').replaceWith(cardEl);
+          // The model file — each process's config formatted (for viva-smoldyn:
+          // species / reactions / bounds) — shown ABOVE the loom explorer.
+          var cfgHost = document.createElement('div');
+          _renderCompositeSource(cfgHost, body.state, esc);
+          if (cfgHost.firstChild) {
+            var head = document.createElement('div');
+            head.className = 'muted';
+            head.style.cssText = 'font-size:0.78em;font-weight:600;margin:2px 0 4px 2px;text-transform:uppercase;letter-spacing:0.02em';
+            head.textContent = 'Configuration';
+            wrap.insertBefore(cfgHost, cardEl);
+            wrap.insertBefore(head, cfgHost);
+          }
         })
         .catch(function () {
           var note = document.createElement('p');
