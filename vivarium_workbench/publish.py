@@ -497,6 +497,37 @@ def _export_saved_visualizations(ws_root: Path, out_dir: Path,
             shutil.copytree(str(src_meshes), str(dst_meshes))
 
 
+def _export_simularium_trajectories(ws_root: Path, out_dir: Path) -> None:
+    """Export the Simularium Viewer tool's assets into the static bundle so the
+    read-only site can open trajectories:
+
+      - ``simularium-viewer.html`` at the bundle root (the bundled player; it
+        resolves an absolute ``?traj=`` path relative to its own dir, so it works
+        under any hosting sub-path).
+      - each study's ``*.simularium`` trajectory copied verbatim, preserving its
+        workspace-relative path (the same path baked into analysis-tools.json).
+    """
+    from vivarium_workbench.lib.static_serving import STATIC_DIR
+    from vivarium_workbench.lib.analysis_tools_simularium import (
+        studies_with_simularium)
+
+    viewer_src = STATIC_DIR / "simularium-viewer.html"
+    if viewer_src.is_file():
+        shutil.copy2(viewer_src, out_dir / "simularium-viewer.html")
+
+    for s in studies_with_simularium(ws_root):
+        for t in s.get("trajectories") or []:
+            rel = str(t.get("url") or "").lstrip("/")
+            if not rel:
+                continue
+            src = ws_root / rel
+            if not src.is_file():
+                continue
+            dst = out_dir / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(src, dst)
+
+
 def _export_analysis_viewers(ws_root: Path, out_dir: Path) -> None:
     """Snapshot the Analyses-page analysis viewers into the static bundle.
 
@@ -1293,6 +1324,13 @@ def _do_build(
         _export_saved_visualizations(ws_root, out_dir, base_path)
     except Exception as exc:  # noqa: BLE001 — never abort a publish on the gallery
         print(f"  warn: saved-visualizations export failed: {exc}")
+
+    # simularium-viewer.html + each study's *.simularium — so the Analysis-tab
+    # Simularium Viewer tool opens trajectories on the read-only site.
+    try:
+        _export_simularium_trajectories(ws_root, out_dir)
+    except Exception as exc:  # noqa: BLE001 — never abort a publish on the viewer
+        print(f"  warn: simularium export failed: {exc}")
 
     # api/analysis-viewers.json — the Analyses-page viewer tools (PTools, 3d-ecoli,
     # …). Snapshotting this is what stops the read-only dashboard from throwing

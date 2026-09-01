@@ -40,7 +40,17 @@
     msg.hidden = false; msg.innerHTML = html; }
   if (!traj) { return fail("No <code>?traj=</code> trajectory URL given."); }
 
-  fetch(traj).then(function (r) {
+  // Resolve an absolute (/workspace/...) trajectory path relative to THIS page's
+  // own directory, so it works both live (served at /simularium-viewer.html) and
+  // in a read-only bundle hosted under a sub-path (e.g. /viva-smoldyn/…).
+  var trajUrl = traj;
+  if (traj.charAt(0) === "/") {
+    var dir = location.pathname.replace(/[^/]*$/, "").replace(/\/$/, "");
+    trajUrl = dir + traj;
+  }
+  dl.href = trajUrl;
+
+  fetch(trajUrl).then(function (r) {
     if (!r.ok) throw new Error("HTTP " + r.status);
     return r.arrayBuffer();
   }).then(function (buf) {
