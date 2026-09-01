@@ -49,6 +49,10 @@ def builtin_tools() -> list[dict]:
          "description": "3D molecular packing of a cell — saved views at "
                         "declared times.",
          "kind": "embed-3d", "requires": ["3d_pack"]},
+        {"id": "simularium-viewer", "title": "Simularium Viewer",
+         "description": "Play a run's particle trajectory in the Simularium "
+                        "viewer (agent positions over time).",
+         "kind": "embed-simularium", "requires": ["simularium"]},
     ]
 
 
@@ -85,10 +89,24 @@ def _pack_candidates(ws_root) -> list[dict]:
     return out
 
 
+def _simularium_candidates(ws_root) -> list[dict]:
+    from vivarium_workbench.lib.analysis_tools_simularium import (
+        studies_with_simularium)
+    out = []
+    for s in studies_with_simularium(ws_root):
+        trajs = s.get("trajectories") or []
+        names = ", ".join(t["name"] for t in trajs) or "trajectory"
+        out.append({"ref": s["study"], "label": s["study"],
+                    "detail": names, "capabilities": ["simularium"],
+                    "trajectories": trajs})
+    return out
+
+
 def build_analysis_tools(ws_root) -> list[dict]:
     ws_root = Path(ws_root)
     runs = _run_candidates(ws_root)
     packs = _pack_candidates(ws_root)
+    sims = _simularium_candidates(ws_root)
     excluded = _excluded_tool_ids(ws_root)
     tools: list[dict] = []
 
@@ -122,7 +140,12 @@ def build_analysis_tools(ws_root) -> list[dict]:
         t = dict(t)
         if t.get("id") in excluded:
             continue  # workspace opted this tool out (ui.analysis_tools_exclude)
-        cands = packs if "3d_pack" in t["requires"] else runs
+        if "3d_pack" in t["requires"]:
+            cands = packs
+        elif "simularium" in t["requires"]:
+            cands = sims
+        else:
+            cands = runs
         t["matched"] = match(t["requires"], cands)
         if not t["matched"]:
             continue
