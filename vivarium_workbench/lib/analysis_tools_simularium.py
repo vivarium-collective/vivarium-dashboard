@@ -24,14 +24,16 @@ def studies_with_simularium(ws_root) -> list[dict]:
     least one ``*.simularium`` under its dir (excluding raw ``parquet-runs``
     internals). Newest trajectory first within a study."""
     ws_root = Path(ws_root)
+    # Enumerate every study dir across studies/ and investigations/<inv>/studies/
+    # (nested layout), so a trajectory is found wherever its study lives.
     try:
-        studies_dir = WorkspacePaths.load(ws_root).studies
+        study_dirs = sorted(WorkspacePaths.load(ws_root).iter_study_dirs(),
+                            key=lambda p: p.name)
     except Exception:  # noqa: BLE001
-        studies_dir = ws_root / "studies"
+        sd = ws_root / "studies"
+        study_dirs = sorted((p for p in sd.iterdir() if p.is_dir())) if sd.is_dir() else []
     out: list[dict] = []
-    if not studies_dir.is_dir():
-        return out
-    for study_dir in sorted(p for p in studies_dir.iterdir() if p.is_dir()):
+    for study_dir in study_dirs:
         trajs = [t for t in study_dir.rglob("*.simularium")
                  if "parquet-runs" not in t.parts and t.is_file()]
         if not trajs:

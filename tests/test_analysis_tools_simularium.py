@@ -21,7 +21,10 @@ def _ws(tmp_path: Path) -> Path:
 
 
 def _study_with_traj(ws: Path, slug: str) -> Path:
-    d = ws / "workspace" / "studies" / slug / "viz" / "simularium"
+    sd = ws / "workspace" / "studies" / slug
+    (sd / "study.yaml").parent.mkdir(parents=True, exist_ok=True)
+    (sd / "study.yaml").write_text(yaml.safe_dump({"name": slug}), encoding="utf-8")
+    d = sd / "viz" / "simularium"
     d.mkdir(parents=True, exist_ok=True)
     (d / f"{slug}.simularium").write_text('{"trajectoryInfo": {}}', encoding="utf-8")
     return d
