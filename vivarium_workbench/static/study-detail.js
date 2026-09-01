@@ -904,16 +904,96 @@
       fetch(_cfgUrl)
         .then(function (r) { return r.json().then(function (b) { return { status: r.status, body: b }; }); })
         .then(function (res) {
-          if (res.status !== 200 || !res.body || !res.body.parameters) {
+          if (res.status !== 200 || !res.body) {
             mount.innerHTML = '<p class="muted" style="font-size:0.85em;margin:0">No resolvable configuration for this composite.</p>';
             return;
           }
+          mount.innerHTML = '';
           var overrides = {}; try { overrides = JSON.parse(overridesJson); } catch (e) {}
-          _renderModelConfig(mount, res.body.parameters, overrides, esc, composite, baselineName);
+          // Exposed parameters (templated knobs), when the composite declares any.
+          if (res.body.parameters && Object.keys(res.body.parameters).length) {
+            _renderModelConfig(mount, res.body.parameters, overrides, esc, composite, baselineName);
+          }
+          // Full model configuration — each process's config formatted (for a
+          // Smoldyn composite this is the model file: species, reactions, bounds).
+          _renderCompositeSource(mount, res.body.state, esc);
+          if (!mount.innerHTML) {
+            mount.innerHTML = '<p class="muted" style="font-size:0.85em;margin:0">No resolvable configuration for this composite.</p>';
+          }
         }).catch(function () { mount.innerHTML = ''; });
     });
   }
   window._loadModelConfig = _loadModelConfig;
+
+  // Minimal YAML pretty-printer for a config object (objects, arrays, scalars).
+  function _yamlish(v, indent) {
+    indent = indent || 0;
+    var pad = new Array(indent + 1).join('  ');
+    function scalar(x) {
+      if (x === null || x === undefined) return 'null';
+      if (typeof x === 'string') return x;
+      return String(x);
+    }
+    if (Array.isArray(v)) {
+      if (!v.length) return pad + '[]';
+      return v.map(function (item) {
+        if (item && typeof item === 'object') {
+          var inner = _yamlish(item, indent + 1);
+          return pad + '- ' + inner.replace(/^\s+/, '');
+        }
+        return pad + '- ' + scalar(item);
+      }).join('\n');
+    }
+    if (v && typeof v === 'object') {
+      var keys = Object.keys(v);
+      if (!keys.length) return pad + '{}';
+      return keys.map(function (k) {
+        var val = v[k];
+        var hasChildren = val && typeof val === 'object' &&
+          (Array.isArray(val) ? val.length : Object.keys(val).length);
+        if (hasChildren) {
+          // inline short arrays of scalars (e.g. bounds [0, 100]) for readability
+          if (Array.isArray(val) && val.every(function (x) { return typeof x !== 'object'; })) {
+            return pad + k + ': [' + val.map(scalar).join(', ') + ']';
+          }
+          return pad + k + ':\n' + _yamlish(val, indent + 1);
+        }
+        return pad + k + ': ' + scalar(val);
+      }).join('\n');
+    }
+    return pad + scalar(v);
+  }
+
+  // Render each process node's config as a formatted block — the model file
+  // (for viva-smoldyn: species / reactions / bounds that generate the run).
+  function _renderCompositeSource(mount, state, esc) {
+    if (!state || typeof state !== 'object') return;
+    var procs = [];
+    (function walk(node, name) {
+      if (!node || typeof node !== 'object') return;
+      if (node._type === 'process' && node.config) {
+        procs.push({ name: name, address: node.address || '', config: node.config });
+      }
+      Object.keys(node).forEach(function (k) {
+        if (k !== 'config') walk(node[k], k);
+      });
+    })(state, 'root');
+    if (!procs.length) return;
+    var html = '<div class="model-source">';
+    procs.forEach(function (p) {
+      var addr = String(p.address).split(':').pop();
+      html += '<div class="model-source-block">' +
+        '<div class="model-source-head"><strong>' + esc(p.name) + '</strong>' +
+        (addr ? ' <span class="muted">— ' + esc(addr) + '</span>' : '') + '</div>' +
+        '<pre class="model-source-pre">' + esc(_yamlish(p.config, 0)) + '</pre>' +
+        '</div>';
+    });
+    html += '</div>';
+    var wrap = document.createElement('div');
+    wrap.innerHTML = html;
+    mount.appendChild(wrap);
+  }
+  window._renderCompositeSource = _renderCompositeSource;
 
   // Model tab (study-spine reorg Task 6): the study's ACTUAL composite(s),
   // shown as the SAME rich card the Modules/Composites view uses — full
