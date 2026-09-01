@@ -262,8 +262,30 @@ def test_get_retries_on_5xx_then_succeeds(monkeypatch):
             raise HTTPError(req.full_url, 503, "Service Unavailable", {}, io.BytesIO(b""))
         return _Resp({"status": "completed"})
 
+    class _FakeTime:
+        """Stand-in for the ``time`` module, scoped to this module's own
+        name binding rather than the real stdlib module.
+
+        ``monkeypatch.setattr(".../sms_api_client.time.sleep", ...)`` looks
+        like it patches only this module, but ``sms_api_client.time`` IS the
+        process-wide ``time`` module object (there is only one in
+        ``sys.modules``) -- setting an attribute on it mutates ``time.sleep``
+        for every thread in the process for the duration of the test. A
+        leftover daemon thread from an earlier test's polling loop (e.g.
+        ``run_jobs``/``remote_run_jobs``) that is still spinning on
+        ``time.sleep(interval)`` would then have its sleep calls silently
+        become no-ops and get counted into this test's ``sleeps`` list,
+        which is how a real run produced 1125 recorded sleeps instead of 2.
+        Rebinding the module-level ``time`` *name* inside
+        ``sms_api_client`` instead leaves the real stdlib module (and any
+        other thread using it) untouched.
+        """
+
+        def sleep(self, s):
+            sleeps.append(s)
+
     monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
-    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.time", _FakeTime())
     c = SmsApiClient("http://h:8080")
     out = c.simulation_status(1)
     assert out["status"] == "completed"
@@ -282,8 +304,12 @@ def test_get_gives_up_after_max_retries(monkeypatch):
         calls["n"] += 1
         raise HTTPError(req.full_url, 503, "Service Unavailable", {}, io.BytesIO(b'{"detail": "db down"}'))
 
+    class _FakeTime:
+        def sleep(self, s):
+            pass
+
     monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
-    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.time.sleep", lambda s: None)
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.time", _FakeTime())
     c = SmsApiClient("http://h:8080")
     with pytest.raises(SmsApiError) as exc_info:
         c.simulation_status(1)

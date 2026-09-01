@@ -68,14 +68,22 @@ def test_download_workspace_honors_per_call_timeout(monkeypatch, tmp_path):
     assert seen["timeout"] == 600
 
 
-def test_download_workspace_defaults_to_client_timeout(monkeypatch, tmp_path):
+def test_download_workspace_defaults_to_download_timeout(monkeypatch, tmp_path):
+    """A multi-GB workspace tarball must not inherit the small client-wide
+    default (30s here) meant for status/JSON calls -- it should fall back to
+    the module's generous DOWNLOAD_TIMEOUT instead (CD2 pipeline audit
+    §3.12). This test previously asserted the OLD, buggy behavior (that the
+    download silently inherited the 30s client default); that was the bug
+    this PR fixes, so the assertion was updated to the intended contract
+    rather than the client's small default."""
     seen = {}
     def fake_urlopen(req, timeout=None):
         seen["timeout"] = timeout
         return _Resp(b"X")
     monkeypatch.setattr(sac, "urlopen", fake_urlopen)
     sac.SmsApiClient("http://x", timeout=30).download_workspace(45, tmp_path)
-    assert seen["timeout"] == 30
+    assert seen["timeout"] == sac.DOWNLOAD_TIMEOUT
+    assert sac.DOWNLOAD_TIMEOUT > 30
 
 
 def _make_tarball(path, top="org-repo-abc1234"):
