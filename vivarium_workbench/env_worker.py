@@ -1468,7 +1468,6 @@ def _run_study_analyses(params: dict) -> dict:
       v2ecoli's absence never blocks a generic-only study.
     """
     import time
-    from pathlib import Path
 
     p = params or {}
     entries = list(p.get("entries") or [])
