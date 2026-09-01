@@ -188,7 +188,7 @@ def test_run_remote_clamps_steps(tmp_path, monkeypatch, n_steps, expected):
     client = _CaptureClient()
     remote_run.run_remote(
         tmp_path, "some.composite", client=client,
-        poll_interval=0, dest=tmp_path, n_steps=n_steps)
+        poll_interval=0, dest=tmp_path, skip_preflight=True, n_steps=n_steps)
     assert client.interval_time == expected
 
 
@@ -234,7 +234,7 @@ def test_run_remote_pinned_derives_pip_url_from_built_commit(tmp_path, monkeypat
             "simulator_id": 7, "commit": "abcdef123456", "branch": branch, "repo_url": repo})
     client = _CaptureClient()
     remote_run.run_remote(tmp_path, "some.composite", client=client,
-                          poll_interval=0, dest=tmp_path, n_steps=5)
+                          poll_interval=0, dest=tmp_path, skip_preflight=True, n_steps=5)
     assert client.extra_pip_deps == [
         "git+https://github.com/vivarium-collective/v2ecoli.git@abcdef123456"]
 
@@ -253,7 +253,7 @@ def test_run_remote_pinned_normalizes_dotgit_repo_url(tmp_path, monkeypatch):
         lambda client, repo, branch: {"commit": "deadbeef", "repo_url": repo})
     client = _CaptureClient()
     remote_run.run_remote(tmp_path, "some.composite", client=client,
-                          poll_interval=0, dest=tmp_path, n_steps=5)
+                          poll_interval=0, dest=tmp_path, skip_preflight=True, n_steps=5)
     assert client.extra_pip_deps == [
         "git+https://github.com/vivarium-collective/v2ecoli.git@deadbeef"]
 
@@ -265,7 +265,7 @@ def test_run_remote_unpinned_falls_back_to_git_pip_url(tmp_path, monkeypatch):
     monkeypatch.setattr(remote_pinned, "pinned_config", lambda: None)
     client = _CaptureClient()
     remote_run.run_remote(tmp_path, "some.composite", client=client,
-                          poll_interval=0, dest=tmp_path, n_steps=5)
+                          poll_interval=0, dest=tmp_path, skip_preflight=True, n_steps=5)
     assert client.extra_pip_deps == ["git+file:///x@abc1234"]
 
 
@@ -287,5 +287,5 @@ def test_run_remote_pinned_no_build_raises(tmp_path, monkeypatch):
     client = _CaptureClient()
     with pytest.raises(remote_pinned.NoPinnedBuildError):
         remote_run.run_remote(tmp_path, "some.composite", client=client,
-                              poll_interval=0, dest=tmp_path, n_steps=5)
+                              poll_interval=0, dest=tmp_path, skip_preflight=True, n_steps=5)
     assert client.extra_pip_deps is None  # never submitted
