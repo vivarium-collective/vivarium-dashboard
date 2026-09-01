@@ -1453,33 +1453,142 @@ def _validate_generated_visualization(params: dict) -> dict:
 
 def _run_study_analyses(params: dict) -> dict:
     """Run a study's ``spec.analyses`` over its parquet output, in the workspace
-    env (v2ecoli ``ANALYSIS_REGISTRY`` scale lookup + ``run_analyses``). Returns
-    ``{"written": [paths], "errors": [dicts]}`` — never raises. Faithful port of
-    ``study_run_post.build_analysis_options`` + the v2ecoli half of
-    ``run_study_analyses``; the workbench keeps the parquet/sim_data path
-    resolution."""
+    env. Returns ``{"written": [paths], "errors": [dicts]}`` — never raises.
+
+    Two kinds of analysis are dispatched, partitioned by base class:
+
+    - **Generic** record-based analyses — ``viva_superpowers.post_sim.AnalysisStep``
+      subclasses (e.g. viva-simularium's ``SimulariumAnalysis``) — run directly
+      over a ``ResultsHandle`` built from the run's emitter output. These need no
+      v2ecoli, so a plain workspace's analyses run in the flush. See
+      ``_run_generic_analyses``.
+    - **v2ecoli** live-``conn`` analyses (``Analysis`` subclasses) — run through
+      v2ecoli's ``run_analyses`` scale machinery as before. See
+      ``_run_v2ecoli_analyses``; only reached when such an entry is present, so
+      v2ecoli's absence never blocks a generic-only study.
+    """
     import time
-    import traceback
-    from pathlib import Path
 
     p = params or {}
     entries = list(p.get("entries") or [])
     sweep_dir = p.get("sweep_dir")
     sim_data_path = p.get("sim_data_path")
+    # Generic (record-based) analyses read whatever persistent store the run
+    # wrote, via ResultsHandle: store_paths (parquet dir or sqlite .db) +
+    # simulation_id (for sqlite). Falls back to sweep_dir when not provided.
+    store_paths = list(p.get("store_paths") or ([sweep_dir] if sweep_dir else []))
+    simulation_id = p.get("simulation_id")
+    output_dir = p.get("output_dir")
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
     if not entries:
         return {"written": [], "errors": []}
 
-    # 1. build_analysis_options: map entries → {scale: {name: params}} via the registry.
+    t_start = time.time()
+
+    # Partition entries by base class. Resolve names from the shared
+    # viva_superpowers registry (into which BOTH record-based AnalysisStep and
+    # v2ecoli's live-conn Analysis subclasses register); a record-based
+    # AnalysisStep that is NOT a live-conn Analysis takes the generic path.
+    generic: list = []      # (name, params, cls)
+    remaining: list = []    # entries handed to the v2ecoli path
+    try:
+        from viva_superpowers.post_sim import (
+            ANALYSIS_REGISTRY as _VIVA_REG,
+            AnalysisStep as _AStep,
+            Analysis as _LiveAnalysis,
+        )
+    except Exception:  # noqa: BLE001 — viva_superpowers should be present; degrade to v2ecoli-only
+        _VIVA_REG, _AStep, _LiveAnalysis = {}, None, None
+
+    for entry in entries:
+        name = entry.get("name")
+        if not name:
+            continue
+        cls = _VIVA_REG.get(name) if _VIVA_REG else None
+        if (cls is not None and _AStep is not None
+                and issubclass(cls, _AStep)
+                and not (_LiveAnalysis is not None and issubclass(cls, _LiveAnalysis))):
+            generic.append((name, dict(entry.get("params") or {}), cls))
+        else:
+            remaining.append(entry)
+
+    written: list = []
+    errors: list = []
+
+    if generic:
+        gw, ge = _run_generic_analyses(
+            generic, store_paths, simulation_id, output_dir, sim_data_path, t_start)
+        written += gw
+        errors += ge
+
+    if remaining:
+        vw, ve = _run_v2ecoli_analyses(remaining, sweep_dir, sim_data_path, t_start)
+        written += vw
+        errors += ve
+
+    # De-dup written paths (generic + v2ecoli both scan sd/viz) preserving order.
+    seen: set = set()
+    written = [w for w in written if not (w in seen or seen.add(w))]
+    return {"written": written, "errors": errors}
+
+
+def _run_generic_analyses(generic: list, store_paths, simulation_id, output_dir,
+                          sim_data_path, t_start) -> tuple:
+    """Run record-based ``AnalysisStep`` analyses over a ``ResultsHandle`` built
+    from the run's persistent store — ``store_paths`` (a parquet dir or a sqlite
+    ``.db``, backend auto-detected) + ``simulation_id`` (for sqlite). Each writes
+    into ``output_dir`` (default ``output_path``), which the flush collects.
+    Returns ``(written, errors)``; each analysis is isolated so one failure never
+    blocks the others."""
+    from pathlib import Path
+    if not store_paths:
+        return [], [{"error": "no store path for generic analyses"}]
+    try:
+        from viva_superpowers.post_sim import ResultsHandle
+        from bigraph_schema import allocate_core
+    except Exception as exc:  # noqa: BLE001
+        return [], [{"error": f"viva_superpowers post-sim unavailable: {exc}"}]
+
+    if output_dir:
+        out_dir = Path(output_dir)
+    else:
+        base = Path(store_paths[0])
+        out_dir = (base if base.is_dir() else base.parent) / "viz"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    handle = ResultsHandle(paths=list(store_paths), sim_data_ref=sim_data_path,
+                           simulation_id=simulation_id)
+    core = allocate_core()
+
+    errors: list = []
+    for name, aparams, cls in generic:
+        # Default the output into the study's viz dir so it's collected + the
+        # Simularium tool finds it.
+        aparams.setdefault("output_path", str(out_dir / name))
+        try:
+            step = cls(aparams, core=core)
+            step.update({"results": handle})
+        except Exception as exc:  # noqa: BLE001 — isolate per analysis
+            import traceback
+            errors.append({"analysis": name,
+                           "error": f"{type(exc).__name__}: {exc}",
+                           "traceback": traceback.format_exc()})
+
+    written = [str(f) for f in out_dir.iterdir()
+               if f.is_file() and f.stat().st_mtime >= t_start]
+    return written, errors
+
+
+def _run_v2ecoli_analyses(entries: list, sweep_dir, sim_data_path, t_start) -> tuple:
+    """Run v2ecoli live-``conn`` analyses through the scale machinery. Returns
+    ``(written, errors)``. Unchanged behavior from the pre-generic dispatch,
+    reached only when a non-generic (v2ecoli) analysis entry is present."""
+    import traceback
+    from pathlib import Path
+
     # Import the analyses PACKAGE first (best-effort): ANALYSIS_REGISTRY is filled
-    # by each analysis module's import-time self-registration, so consulting only
-    # the `analysis` module below leaves it holding just the core few — every
-    # ported analysis (comparison_cards/matrix) would look up as "unknown". Kept
-    # SEPARATE + best-effort so an absent v2ecoli (or a test's faked registry,
-    # which injects only `v2ecoli.workflow.analysis`) still reaches the lookup
-    # below instead of short-circuiting here.
+    # by each analysis module's import-time self-registration.
     try:
         import v2ecoli.workflow.analyses  # noqa: F401
     except Exception:  # noqa: BLE001
@@ -1487,8 +1596,8 @@ def _run_study_analyses(params: dict) -> dict:
     try:
         from v2ecoli.workflow.analysis import ANALYSIS_REGISTRY
     except ImportError:
-        return {"written": [], "errors": [
-            {"error": "v2ecoli not installed; cannot resolve analysis scales"}]}
+        return [], [{"error": "v2ecoli not installed; cannot resolve analysis scales"}]
+
     analysis_options: dict = {}
     build_errors: list = []
     for entry in entries:
@@ -1507,13 +1616,10 @@ def _run_study_analyses(params: dict) -> dict:
             continue
         analysis_options.setdefault(scale, {})[name] = entry.get("params") or {}
     if not analysis_options:
-        return {"written": [], "errors": build_errors}
+        return [], build_errors
 
-    # 2. Run the analyses + collect written files (mtime newer than call start).
     try:
-        import v2ecoli.workflow.analyses  # noqa: F401 — register analysis ports
         from v2ecoli.workflow.analysis_runner import run_analyses
-        t_start = time.time()
         results = run_analyses(str(sweep_dir), analysis_options, sim_data_path=sim_data_path)
         written: list = []
         sd = Path(sweep_dir)
@@ -1532,11 +1638,10 @@ def _run_study_analyses(params: dict) -> dict:
                 for gstr, val in (groups or {}).items():
                     if isinstance(val, dict) and "error" in val:
                         errors.append({"analysis": aname, "group": gstr, "error": val["error"]})
-        return {"written": written, "errors": errors}
+        return written, errors
     except Exception as exc:  # noqa: BLE001 — never crash the run
-        return {"written": [], "errors": [
-            {"error": f"_run_study_analyses failed: {type(exc).__name__}: {exc}",
-             "traceback": traceback.format_exc()}]}
+        return [], [{"error": f"_run_study_analyses failed: {type(exc).__name__}: {exc}",
+                     "traceback": traceback.format_exc()}]
 
 
 def _run_investigation_analysis(params: dict) -> dict:

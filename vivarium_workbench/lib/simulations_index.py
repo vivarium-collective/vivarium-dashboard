@@ -179,13 +179,25 @@ def _study_pack_capabilities(study_slug) -> list[str]:
         ws = None
     if not ws:
         return []
+    caps: list[str] = []
     try:
         studies = WorkspacePaths.load(ws).studies
         if (studies / str(study_slug) / "viz" / "atlas" / "atlas.json").is_file():
-            return ["atlas_pack"]
+            caps.append("atlas_pack")
     except Exception:  # noqa: BLE001 — best-effort; never break capability derivation
         pass
-    return []
+    # A Simularium trajectory (viz/**/*.simularium) is a study-level artifact its
+    # runs produced — advertise it per-run so the Simularium Viewer tool matches
+    # the run in the Runs table + a study's Simulation table. Nested-aware via
+    # the same scanner the tool uses.
+    try:
+        from vivarium_workbench.lib.analysis_tools_simularium import (
+            studies_with_simularium)
+        if any(s["study"] == str(study_slug) for s in studies_with_simularium(ws)):
+            caps.append("simularium")
+    except Exception:  # noqa: BLE001
+        pass
+    return caps
 
 
 def _capabilities_for_row(row: dict, conn=None) -> list[str]:
@@ -196,17 +208,27 @@ def _capabilities_for_row(row: dict, conn=None) -> list[str]:
     unreadable — or derived before the workspace root was resolvable — is never
     permanently frozen at ``[]``. In-progress runs derive fresh every call and
     are never cached (a still-emitting run's tag set isn't final)."""
+    # Study-level pack capabilities are independent of any run store — a run that
+    # only wrote a pack/trajectory (no observable store) still advertises them.
+    # They are DYNAMIC (the artifact can appear after the run), so they are merged
+    # even into a cached (store-derived) capability set rather than frozen out.
+    pack_caps = _study_pack_capabilities(row.get("study_slug"))
+
+    def _with_pack(base: list[str]) -> list[str]:
+        out = list(base)
+        for c in pack_caps:
+            if c not in out:
+                out.append(c)
+        return out
+
     cached = row.get("capabilities_json")
     if cached:
         try:
             parsed = list(json.loads(cached))
             if parsed:  # only trust a non-empty cache; re-derive an empty one
-                return parsed
+                return _with_pack(parsed)
         except Exception:  # noqa: BLE001
             pass
-    # Study-level pack capabilities are independent of any run store — a run that
-    # only wrote a pack (no observable store) still advertises them.
-    pack_caps = _study_pack_capabilities(row.get("study_slug"))
     # `row` may carry any of these three; store_path/emitter_path are absent
     # on plain runs_meta dicts unless the caller added them. `store_path` is
     # not an actual runs_meta column (it's a value some callers synthesize
@@ -496,6 +518,10 @@ def _read_runs_meta(db_path: Path, db_path_str: str) -> list[dict]:
             d = _row_to_dict(r, db_path_str)
             rd = dict(r)  # sqlite3.Row -> dict (row_factory is sqlite3.Row)
             rd["db_path"] = db_path_str
+            # runs_meta carries no study_slug column; carry the one _row_to_dict
+            # derived from the db path so study-level pack caps (simularium /
+            # atlas_pack) resolve.
+            rd["study_slug"] = d.get("study_slug")
             d["capabilities"] = _capabilities_for_row(rd, conn=conn)
             out.append(d)
         return out
@@ -1715,6 +1741,16 @@ def _launch_url_for_matched_tool(tool: dict, row: dict) -> "str | None":
         if study and (cand is not None or not matched):
             models_url = f"/api/study/{_urlquote(str(study), safe='')}/3d/models.json"
             return f"/parsimony-viewer/index.html?models={_urlquote(models_url, safe='')}"
+        return None
+
+    if kind == "embed-simularium":
+        # Per-study tool: find this run's study among the tool's matched
+        # candidates and open its trajectory in the bundled Simularium viewer.
+        matched = tool.get("matched") or []
+        cand = next((m for m in matched if m.get("ref") == study), None) if study else None
+        trajs = (cand or {}).get("trajectories") or []
+        if trajs and trajs[0].get("url"):
+            return f"/simularium-viewer.html?traj={_urlquote(str(trajs[0]['url']), safe='')}"
         return None
 
     if kind != "launcher":

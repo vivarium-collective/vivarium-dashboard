@@ -5050,3 +5050,15 @@ body.col-resizing .registry-table.reg-table-fill th, body.col-resizing .registry
 }
 :root[data-theme="dark"] .composite-figure-group{ border-bottom-color:var(--border); }
 :root[data-theme="dark"] .composite-figure-group span{ color:#5eead4; }
+
+/* Model tab — formatted composite config ("the model file", e.g. Smoldyn). */
+.model-source{ margin-top:10px; display:flex; flex-direction:column; gap:12px; }
+.model-source-head{ font-size:0.85em; margin-bottom:4px; }
+.model-source-pre{
+  margin:0; padding:12px 14px; border:1px solid var(--border);
+  border-radius:8px; background:var(--surface-2, #f6f8fa);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size:12px; line-height:1.5; white-space:pre; overflow-x:auto;
+  color:var(--text, #1f2328); max-height:420px; overflow-y:auto;
+}
+:root[data-theme="dark"] .model-source-pre{ background:#0f141b; color:#d5dae2; }

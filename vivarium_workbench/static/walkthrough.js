@@ -1734,6 +1734,13 @@
           encodeURIComponent(base + '/api/study/' + encodeURIComponent(ref) + '/3d/models.json');
   }
 
+  function _buildSimulariumSrc(m) {
+    var base = _analysesBase();
+    var trajs = (m && m.trajectories) || [];
+    var url = trajs.length ? trajs[0].url : '';
+    return base + '/simularium-viewer.html?traj=' + encodeURIComponent(url);
+  }
+
   // Human-readable label for a matched run/study in a card's result dropdown.
   function _toolItemLabel(m) {
     m = m || {};
@@ -1800,6 +1807,8 @@
     var m = items[idx] || items[0]; if (!m) return;
     if (t.kind === 'embed-3d') {
       window.open(_build3dSrc(m), '_blank', 'noopener');
+    } else if (t.kind === 'embed-simularium') {
+      window.open(_buildSimulariumSrc(m), '_blank', 'noopener');
     } else if (m.href) {
       window.open(m.href, '_blank', 'noopener');
     } else {
