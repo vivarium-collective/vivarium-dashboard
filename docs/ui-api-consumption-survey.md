@@ -176,6 +176,89 @@ Observed, not proposed.
    enough (868 lines behind on one file) to be mistaken for current. They were
    useful here as an accidental archaeological record, which is not a good reason
    to keep them diverging.
+6. **But not every UI concern is entangled in that 819 KB.** The loom/composite
+   explorer and the editable-config runner are a **separable ~10% corner** of
+   `walkthrough.js` — see §8. "Any API refactor is a `walkthrough.js` refactor"
+   holds for the SPA at large; it does *not* mean every feature is equally
+   trapped inside it.
+
+## 8. The loom/config sub-surface
+
+**Snapshot 2026-09-01 against `main` at #988** (line refs are into the live
+`static/walkthrough.js`; they drift with the file — re-derive with the greps in
+§ *How to re-derive* below). Motivated by loom/config refactoring: given §2's
+claim that `walkthrough.js` *is* the client, is a loom/config change necessarily a
+whole-file change? Measured answer: **no.**
+
+Two facts reframe it before the count even matters:
+
+- **The loom explorer proper ships as its own bundle**, not from
+  `walkthrough.js`: `loom/_dist` (12 endpoints), `loom/bigraph_loom`, and
+  `loom-embed.js` (2), served at `/loom-explore` (bigraph drawing is client-side
+  JS). What lives in `walkthrough.js` is the **composite-explorer *wrapper*** that
+  feeds it structure/state/runs — the `_ce*` (composite-explorer) functions — not
+  loom itself.
+- The config concern is the **editable-config runner** (`_loadFullRunFields`,
+  `_mergeSchemaDefaults`, `_applyProcessConfig`, `_runRegistryProcess`) — the
+  config bar + input-port fields → Run → outputs panel.
+
+### 8a. Endpoint inventory
+
+**Loom / composite-explorer** (`_ce*` regions ~2440–2910, 4120–4290,
+7730–8012, 15860–15900):
+
+| endpoint | method | used for |
+|---|---|---|
+| `/api/composite-resolve` | GET | resolve a spec id → graph structure to draw |
+| `/api/composite-state` (+ `/{id}.json`) | GET | port/state values on the nodes |
+| `/api/composite-inner-state` | GET | live inner state of a nested composite (e.g. EcoliWCM) |
+| `/api/composites` | GET | list composites for the explorer/picker (`_loadComposites`) |
+| `/api/composite-run` (+ `/{id}/status`, `/{id}/state`) | POST + GET | dispatch a run from the explorer/card, poll/load results |
+| `/api/composite-runs` | GET | run-history list (`_ceHistoryFetching`) |
+| `/api/composite-test-run` | POST | quick in-worker test run (`_ceTestRun`, `_runComposite`) |
+| `/api/composite-promote-to-catalog` | POST | promote an explored composite into the catalog |
+| `/api/remote-run-config` | GET | remote-dispatch config for the run panel |
+
+**Config runner** (Registry full-view):
+
+| endpoint | method | used for |
+|---|---|---|
+| `/api/registry/process-template` | GET | resolved config defaults (`core.fill`) into the editable form |
+| `/api/registry/run-process` | POST | run the process with edited config + input-port JSON → outputs |
+
+(`/api/ui-config` is app-level UI settings — a different concern, not the
+process-config editor.)
+
+### 8b. Isolated, not entangled
+
+~11 of the file's ~120 endpoints (**~9–10%**), clustered in the three contiguous
+`_ce*` regions above rather than smeared through the study/investigation
+machinery. The study/investigation run flow uses a **disjoint** family —
+`study-run-baseline`, `simulation-run`, `simulations`, `study-reproduce`,
+`investigation-run`, `investigation-trigger` — that the loom/config code never
+touches, and vice-versa (`composite-run`/`composite-test-run` never appear in the
+study/investigation code). Lifting loom + config out is a local change.
+
+### 8c. The one shared contract to hold stable
+
+**`/api/composites` (GET) is the single genuine cross-cutting share** — the loom
+picker (`_loadComposites`) also backs dashboard load, study-create, and the
+investigation composite picker. Reshaping its response is the highest-risk touch
+in this set. Beyond it: `/api/composite-resolve` (§6's widest dependency, 8 files)
+and `/api/composite-state` (5 files) are wide but stay *within* the composite
+subsystem; `/api/registry` base and `/api/render` are general infrastructure, not
+loom-specific. The config runner's own subpaths (`registry/process-template`,
+`registry/run-process`) are used **only** by that panel — safe to change in place.
+
+### 8d. Cross-doc dependency: config-fed runs are on the blocking idiom
+
+[`run-orchestration-consolidation.md`](run-orchestration-consolidation.md) puts
+`composite-test-run` **and** `registry/process-template`/`run-process` on the
+*blocking* `invoke_run → _execute_remote → run_remote` path it wants to retire, in
+favor of the non-blocking thin-client submit→poll shape (`remote-run-submit`). Its
+Step 6b (viva-api 0.9.70, 2026-08-30) already moved `process-template`/`run` error
+semantics to **422**. So config work that dispatches runs should land on the
+non-blocking shape and expect the 422 contract, not the old blocking/200 one.
 
 ## How to re-derive
 
