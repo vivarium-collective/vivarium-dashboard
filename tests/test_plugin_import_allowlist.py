@@ -42,6 +42,7 @@ ALLOWED: dict[str, str] = {
     "test_audit": "core: deterministic test-sufficiency scoring rendered read-only by the Assurance>Audit panel (workbench-free; also run by /viva-audit-tests)",
     "loop_state": "core: model-build loop-state reader for the Assurance>Build panel (workbench-free; pure JSON at .pbg/loop/<study>.json)",
     "build_report": "core: aggregate a run's graded cards into a test_report/v1 (pure stdlib; the flush gates it via study_verdict.severity_gate)",
+    "post_sim": "core: post-sim Step family (AnalysisStep/ResultsHandle/Analysis); the study flush dispatches generic record-based analyses over a run's emitter output without v2ecoli",
     # --- STAY science modules (external-repo-imported) ---
     "feedback_tracking": "external-imported; deterministic feedback ledger",
     "hypotheses": "external-imported; hypothesis support log",
