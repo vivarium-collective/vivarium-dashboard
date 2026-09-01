@@ -232,6 +232,222 @@ def test_download_data_streams_to_file(monkeypatch, tmp_path):
     assert cap["url"] == "http://h:8080/api/v1/simulations/49/data"
 
 
+def test_non_200_surfaces_server_error_body(monkeypatch):
+    """CD2 pipeline audit §3.12: a FastAPI 422/500's JSON ``detail`` must reach
+    the raised SmsApiError, not just the bare status code."""
+    cap = {}
+
+    def fake_urlopen(req, timeout=None):
+        from urllib.error import HTTPError
+
+        cap["url"] = req.full_url
+        body = json.dumps({"detail": "num_generations must be >= 1"}).encode()
+        raise HTTPError(req.full_url, 422, "Unprocessable Entity", {}, io.BytesIO(body))
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://h:8080")
+    with pytest.raises(SmsApiError) as exc_info:
+        c.simulation_status(999)
+    assert "422" in str(exc_info.value)
+    assert "num_generations must be >= 1" in str(exc_info.value)
+    assert exc_info.value.status == 422
+
+
+def test_post_error_surfaces_server_error_body(monkeypatch):
+    def fake_urlopen(req, timeout=None):
+        from urllib.error import HTTPError
+
+        body = json.dumps({"detail": {"loc": ["body", "commit"], "msg": "field required"}}).encode()
+        raise HTTPError(req.full_url, 422, "Unprocessable Entity", {}, io.BytesIO(body))
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://h:8080")
+    with pytest.raises(SmsApiError) as exc_info:
+        c.upload_simulator({"git_commit_hash": "abc"})
+    assert "field required" in str(exc_info.value)
+
+
+def test_error_body_read_failure_does_not_mask_original_error(monkeypatch):
+    """A body that can't be read/decoded must not prevent the original error
+    from being raised (§3.12 fix must be strictly additive)."""
+
+    class _UnreadableHTTPError(Exception):
+        pass
+
+    def fake_urlopen(req, timeout=None):
+        from urllib.error import HTTPError
+
+        class _BrokenBody:
+            def read(self):
+                raise OSError("body already consumed")
+
+        e = HTTPError(req.full_url, 500, "err", {}, None)
+        e.fp = _BrokenBody()
+        raise e
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://h:8080")
+    with pytest.raises(SmsApiError) as exc_info:
+        c._get("/x")
+    assert "500" in str(exc_info.value)
+
+
+def test_get_retries_on_5xx_then_succeeds(monkeypatch):
+    """GET is idempotent -- a transient 5xx should be retried, not raised
+    immediately."""
+    from urllib.error import HTTPError
+
+    calls = {"n": 0}
+    sleeps: list[float] = []
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise HTTPError(req.full_url, 503, "Service Unavailable", {}, io.BytesIO(b""))
+        return _Resp({"status": "completed"})
+
+    class _FakeTime:
+        """Stand-in for the ``time`` module, scoped to this module's own
+        name binding rather than the real stdlib module.
+
+        ``monkeypatch.setattr(".../sms_api_client.time.sleep", ...)`` looks
+        like it patches only this module, but ``sms_api_client.time`` IS the
+        process-wide ``time`` module object (there is only one in
+        ``sys.modules``) -- setting an attribute on it mutates ``time.sleep``
+        for every thread in the process for the duration of the test. A
+        leftover daemon thread from an earlier test's polling loop (e.g.
+        ``run_jobs``/``remote_run_jobs``) that is still spinning on
+        ``time.sleep(interval)`` would then have its sleep calls silently
+        become no-ops and get counted into this test's ``sleeps`` list,
+        which is how a real run produced 1125 recorded sleeps instead of 2.
+        Rebinding the module-level ``time`` *name* inside
+        ``sms_api_client`` instead leaves the real stdlib module (and any
+        other thread using it) untouched.
+        """
+
+        def sleep(self, s):
+            sleeps.append(s)
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.time", _FakeTime())
+    c = SmsApiClient("http://h:8080")
+    out = c.simulation_status(1)
+    assert out["status"] == "completed"
+    assert calls["n"] == 3
+    assert len(sleeps) == 2  # two retries before success
+
+
+def test_get_gives_up_after_max_retries(monkeypatch):
+    """After the retry budget is exhausted, the last error is raised -- it
+    must not retry forever."""
+    from urllib.error import HTTPError
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise HTTPError(req.full_url, 503, "Service Unavailable", {}, io.BytesIO(b'{"detail": "db down"}'))
+
+    class _FakeTime:
+        def sleep(self, s):
+            pass
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.time", _FakeTime())
+    c = SmsApiClient("http://h:8080")
+    with pytest.raises(SmsApiError) as exc_info:
+        c.simulation_status(1)
+    assert calls["n"] == 3  # default retry budget, not unbounded
+    assert "db down" in str(exc_info.value)
+
+
+def test_get_does_not_retry_on_4xx(monkeypatch):
+    """A 4xx is a client error, not transient -- retrying it would just waste
+    time and could not possibly succeed."""
+    from urllib.error import HTTPError
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise HTTPError(req.full_url, 404, "Not Found", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://h:8080")
+    with pytest.raises(SmsApiError):
+        c.simulation_status(1)
+    assert calls["n"] == 1  # no retry
+
+
+def test_post_is_never_retried_on_5xx(monkeypatch):
+    """POST (submit/dispatch) must NOT be auto-retried -- a retried submit
+    could double-run a simulation."""
+    from urllib.error import HTTPError
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        raise HTTPError(req.full_url, 503, "Service Unavailable", {}, io.BytesIO(b""))
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://h:8080")
+    with pytest.raises(SmsApiError):
+        c.upload_simulator({"git_commit_hash": "abc"})
+    assert calls["n"] == 1  # single attempt, no retry
+
+
+def test_download_data_uses_generous_default_timeout(monkeypatch, tmp_path):
+    """Multi-GB native-store downloads must not inherit the 30s status-call
+    default (§3.12)."""
+    from vivarium_workbench.lib.sms_api_client import DOWNLOAD_TIMEOUT
+
+    cap = {}
+
+    class _RawResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def read(self, n=-1):
+            return b""
+
+    def fake_urlopen(req, timeout=None):
+        cap["timeout"] = timeout
+        return _RawResp()
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://h:8080", timeout=30.0)
+    c.download_data(49, tmp_path)
+    assert cap["timeout"] == DOWNLOAD_TIMEOUT
+    assert DOWNLOAD_TIMEOUT > c.timeout
+
+
+def test_download_data_explicit_timeout_overrides_default(monkeypatch, tmp_path):
+    cap = {}
+
+    class _RawResp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            pass
+
+        def read(self, n=-1):
+            return b""
+
+    def fake_urlopen(req, timeout=None):
+        cap["timeout"] = timeout
+        return _RawResp()
+
+    monkeypatch.setattr("vivarium_workbench.lib.sms_api_client.urlopen", fake_urlopen)
+    c = SmsApiClient("http://h:8080")
+    c.download_data(49, tmp_path, timeout=7200.0)
+    assert cap["timeout"] == 7200.0
+
+
 def test_analysis_status_gets_by_database_id(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"id": 7, "status": "completed", "error_log": None}):

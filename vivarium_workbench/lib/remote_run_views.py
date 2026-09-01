@@ -36,7 +36,7 @@ from vivarium_workbench.lib.remote_run_jobs import (
     run_remote_pipeline,
 )
 from vivarium_workbench.lib.remote_run_landing import land_remote_run
-from vivarium_workbench.lib.sms_api_client import SmsApiClient, SmsApiError
+from vivarium_workbench.lib.sms_api_client import DOWNLOAD_TIMEOUT, SmsApiClient, SmsApiError
 from vivarium_workbench.lib.workspace_deps_views import _sms_api_base
 
 # sms-api JobStatus terminal sets (relocated here from remote_run_jobs, which R5
@@ -530,7 +530,10 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
     expected_seeds = body.get("num_seeds") or exec_prov["expected_seeds"]
 
     with tempfile.TemporaryDirectory() as td:
-        tar_path = client.download_data(int(sim_id), Path(td))
+        # Explicit, generous timeout — this streams the run's whole native-store
+        # tar.gz, which can be multi-GB; the 30s status-call default would abort
+        # it mid-download (CD2 pipeline audit §3.12).
+        tar_path = client.download_data(int(sim_id), Path(td), timeout=DOWNLOAD_TIMEOUT)
         run_id = land_remote_run(
             study_spec.study_dir(ws_root, study),
             spec_id=spec_id,
