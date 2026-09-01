@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from typing import Any
@@ -28,6 +29,52 @@ class SmsApiError(Exception):
     def __init__(self, message: str, status: "int | None" = None) -> None:
         super().__init__(message)
         self.status = status
+
+
+#: Multi-GB native-store / results.zip / workspace-tarball downloads must not run
+#: on the same 30s default used for small JSON status calls (CD2 pipeline audit
+#: §3.12) — a slow SSM tunnel pulling a multi-GB store easily exceeds that.
+#: Callers can still pass an explicit ``timeout=`` per call.
+DOWNLOAD_TIMEOUT = 1800.0  # 30 minutes
+
+#: Bounded retry policy for idempotent GET/status calls ONLY. Never applied to
+#: POST (a retried `run_simulation`/`compose_submit`/`register_simulator` could
+#: double-submit a run) or DELETE. Exponential backoff between attempts:
+#: ``backoff * 2**attempt``.
+_GET_RETRIES = 3
+_RETRY_BACKOFF = 0.5
+
+
+def _http_error_detail(e: HTTPError, limit: int = 4000) -> str:
+    """Best-effort extraction of the server's error body for diagnostics.
+
+    Without this, a FastAPI 422/500 with a JSON ``{"detail": ...}`` body reaches
+    the operator as only ``"POST <url> -> 422"`` (CD2 pipeline audit §3.12) —
+    ``HTTPError.read()`` is never called. Returns a string like
+    ``": missing field 'foo'"`` ready to append to the summary message, or
+    ``""`` if the body couldn't be read/decoded (never raises — surfacing a
+    better error must not itself produce a worse one). Truncated so a stray
+    HTML error page (e.g. from a proxy in front of sms-api) can't blow up log
+    lines.
+    """
+    try:
+        raw = e.read()
+    except Exception:  # noqa: BLE001 — reading the error body must never mask the real error
+        return ""
+    if not raw:
+        return ""
+    text = raw.decode("utf-8", errors="replace").strip()
+    try:
+        parsed = json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    else:
+        if isinstance(parsed, dict) and "detail" in parsed:
+            detail = parsed["detail"]
+            text = detail if isinstance(detail, str) else json.dumps(detail)
+    if len(text) > limit:
+        text = text[:limit] + "... [truncated]"
+    return f": {text}" if text else ""
 
 
 #: Header viva-api reads caller identity from where a deployment names one
@@ -92,18 +139,41 @@ class SmsApiClient:
             headers[IDENTITY_HEADER] = identity
         return headers
 
-    def _get(self, path: str, params: dict | None = None) -> dict:
+    def _get(
+        self,
+        path: str,
+        params: dict | None = None,
+        *,
+        retries: int = _GET_RETRIES,
+        backoff: float = _RETRY_BACKOFF,
+    ) -> dict:
+        """GET a JSON endpoint, retrying transient failures.
+
+        GET is idempotent (unlike ``_post``), so a bounded exponential-backoff
+        retry is safe here: connection errors/timeouts and 5xx responses are
+        retried up to ``retries`` attempts total; a 4xx is a client error, not a
+        transient one, and is raised immediately without retrying.
+        """
         url = self.base_url + path
         if params:
             url = f"{url}?{urlencode(params, doseq=True)}"
         req = Request(url, method="GET", headers=self._headers())
-        try:
-            with urlopen(req, timeout=self.timeout) as r:  # noqa: S310 — fixed scheme, internal tunnel
-                return json.loads(r.read().decode())
-        except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
-        except (URLError, OSError) as e:
-            raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
+        attempt = 0
+        while True:
+            attempt += 1
+            try:
+                with urlopen(req, timeout=self.timeout) as r:  # noqa: S310 — fixed scheme, internal tunnel
+                    return json.loads(r.read().decode())
+            except HTTPError as e:
+                if e.code >= 500 and attempt < retries:
+                    time.sleep(backoff * (2 ** (attempt - 1)))
+                    continue
+                raise SmsApiError(f"GET {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
+            except (URLError, OSError) as e:
+                if attempt < retries:
+                    time.sleep(backoff * (2 ** (attempt - 1)))
+                    continue
+                raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
 
     def latest_simulator(self, repo_url: str, branch: str) -> dict:
         return self._get("/core/v1/simulator/latest", {"git_branch": branch, "git_repo_url": repo_url})
@@ -233,7 +303,7 @@ class SmsApiClient:
             with urlopen(req, timeout=timeout or min(self.timeout, 5.0)) as r:  # noqa: S310 — fixed scheme, internal tunnel
                 body = r.read().decode().strip()
         except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
+            raise SmsApiError(f"GET {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
         try:
@@ -274,12 +344,12 @@ class SmsApiClient:
         out_path = dest_dir / "workspace.tar.gz"
         url = f"{self.base_url}/api/v1/simulations/workspace?simulator_id={simulator_id}"
         req = Request(url, method="GET", headers=self._headers("application/gzip"))
-        to = timeout if timeout is not None else self.timeout
+        to = timeout if timeout is not None else DOWNLOAD_TIMEOUT
         try:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
                 shutil.copyfileobj(r, f)
         except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
+            raise SmsApiError(f"GET {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
         return out_path
@@ -309,7 +379,7 @@ class SmsApiClient:
                 body = r.read().decode()
                 return json.loads(body) if body else {}
         except HTTPError as e:
-            raise SmsApiError(f"DELETE {url} -> {e.code}", status=e.code) from e
+            raise SmsApiError(f"DELETE {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"DELETE {url} failed (sms-api unreachable): {e}") from e
 
@@ -327,7 +397,7 @@ class SmsApiClient:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310
                 return json.loads(r.read().decode())
         except HTTPError as e:
-            raise SmsApiError(f"POST {url} -> {e.code}", status=e.code) from e
+            raise SmsApiError(f"POST {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"POST {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
 
@@ -461,7 +531,7 @@ class SmsApiClient:
             with urlopen(req, timeout=self.timeout) as r:  # noqa: S310
                 data = json.loads(r.read().decode())
         except HTTPError as e:
-            raise SmsApiError(f"POST {url} -> {e.code}", status=e.code) from e
+            raise SmsApiError(f"POST {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(
                 f"POST {url} failed (sms-api unreachable — is the tunnel up?): {e}"
@@ -500,12 +570,12 @@ class SmsApiClient:
         out_path = dest / "results.zip"
         url = f"{self.base_url}/compose/v1/simulation/{sim_id}/results"
         req = Request(url, method="GET", headers=self._headers("application/zip"))
-        to = timeout if timeout is not None else self.timeout
+        to = timeout if timeout is not None else DOWNLOAD_TIMEOUT
         try:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
                 shutil.copyfileobj(r, f)
         except HTTPError as e:
-            raise SmsApiError(f"GET {url} -> {e.code}", status=e.code) from e
+            raise SmsApiError(f"GET {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(
                 f"GET {url} failed (sms-api unreachable — is the tunnel up?): {e}"
@@ -519,12 +589,12 @@ class SmsApiClient:
         out_path = dest_dir / f"sim_{simulation_id}.tar.gz"
         url = f"{self.base_url}/api/v1/simulations/{simulation_id}/data"
         req = Request(url, data=b"", method="POST", headers=self._headers("application/gzip"))
-        to = timeout if timeout is not None else self.timeout
+        to = timeout if timeout is not None else DOWNLOAD_TIMEOUT
         try:
             with urlopen(req, timeout=to) as r, open(out_path, "wb") as f:  # noqa: S310
                 shutil.copyfileobj(r, f)
         except HTTPError as e:
-            raise SmsApiError(f"POST {url} -> {e.code}", status=e.code) from e
+            raise SmsApiError(f"POST {url} -> {e.code}{_http_error_detail(e)}", status=e.code) from e
         except (URLError, OSError) as e:
             raise SmsApiError(f"POST {url} failed (sms-api unreachable — is the tunnel up?): {e}") from e
         return out_path
