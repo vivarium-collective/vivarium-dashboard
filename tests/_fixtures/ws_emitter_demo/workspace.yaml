@@ -1,0 +1,16 @@
+schema_version: 2
+name: ws_emitter_demo
+package_path: pbg_ws_emitter_demo
+# Fixture for the pbg_export regression test (test_C3_emitter_deepcopy): a
+# composite whose declared file-backed emitter is embedded into the document as
+# an already-constructed LIVE instance holding an un-deep-copyable resource (a
+# ThreadPoolExecutor), mirroring v2ecoli's generator-declared ParquetEmitter.
+# This is the shape that made export_composite_pbg crash under deepcopy before
+# strip_realized_edge_fields was reordered ahead of rewrite_local_addresses.
+phases: []
+observables: []
+visualizations: []
+simulations: []
+datasets: []
+server:
+  enabled: false
