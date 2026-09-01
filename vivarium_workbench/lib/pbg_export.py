@@ -198,10 +198,19 @@ def export_composite_pbg(
     # (run_runner build_generator(overrides=…)). CompositeSpec.to_document merges
     # them over the generator's parameter defaults and validates unknown keys.
     document = spec.to_document(overrides=overrides, core=core)
-    document = rewrite_local_addresses(document, core)
-    # Drop realized-edge runtime fields (instance / _inputs / _outputs) so the
-    # .pbg is a portable spec the remote runner can rebuild — see the helper.
+    # Drop realized-edge runtime fields (instance / _inputs / _outputs) FIRST —
+    # BEFORE rewrite_local_addresses, whose ``copy.deepcopy(document)`` would
+    # otherwise try to deep-copy the live Process/Step ``instance`` objects that
+    # ``to_document()`` embeds on realized edges. Some of those instances aren't
+    # deep-copyable: v2ecoli's generator-declared default ParquetEmitter (built
+    # eagerly inside ``_build_declared_emitter``) holds a ``ThreadPoolExecutor``
+    # whose ``_queue.SimpleQueue`` raises ``TypeError: cannot pickle
+    # '_queue.SimpleQueue' object`` under deepcopy — crashing the export before
+    # any ``.pbg`` is written. Since rewrite is about to throw those fields away
+    # anyway, strip them up front so the deepcopy only ever copies plain spec
+    # data. See ``strip_realized_edge_fields`` / ``_REALIZED_EDGE_FIELDS``.
     document = strip_realized_edge_fields(document)
+    document = rewrite_local_addresses(document, core)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(document, default=str), encoding="utf-8")
