@@ -1473,6 +1473,12 @@ def _run_study_analyses(params: dict) -> dict:
     entries = list(p.get("entries") or [])
     sweep_dir = p.get("sweep_dir")
     sim_data_path = p.get("sim_data_path")
+    # Generic (record-based) analyses read whatever persistent store the run
+    # wrote, via ResultsHandle: store_paths (parquet dir or sqlite .db) +
+    # simulation_id (for sqlite). Falls back to sweep_dir when not provided.
+    store_paths = list(p.get("store_paths") or ([sweep_dir] if sweep_dir else []))
+    simulation_id = p.get("simulation_id")
+    output_dir = p.get("output_dir")
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
@@ -1512,7 +1518,8 @@ def _run_study_analyses(params: dict) -> dict:
     errors: list = []
 
     if generic:
-        gw, ge = _run_generic_analyses(generic, sweep_dir, sim_data_path, t_start)
+        gw, ge = _run_generic_analyses(
+            generic, store_paths, simulation_id, output_dir, sim_data_path, t_start)
         written += gw
         errors += ge
 
@@ -1527,39 +1534,48 @@ def _run_study_analyses(params: dict) -> dict:
     return {"written": written, "errors": errors}
 
 
-def _run_generic_analyses(generic: list, sweep_dir, sim_data_path, t_start) -> tuple:
+def _run_generic_analyses(generic: list, store_paths, simulation_id, output_dir,
+                          sim_data_path, t_start) -> tuple:
     """Run record-based ``AnalysisStep`` analyses over a ``ResultsHandle`` built
-    from the run's emitter output. Each writes into ``<sweep_dir>/viz`` (default
-    ``output_path``), which the flush already collects. Returns
-    ``(written, errors)``; each analysis is isolated so one failure never blocks
-    the others."""
+    from the run's persistent store — ``store_paths`` (a parquet dir or a sqlite
+    ``.db``, backend auto-detected) + ``simulation_id`` (for sqlite). Each writes
+    into ``output_dir`` (default ``output_path``), which the flush collects.
+    Returns ``(written, errors)``; each analysis is isolated so one failure never
+    blocks the others."""
     from pathlib import Path
-    if not sweep_dir:
-        return [], [{"error": "no sweep_dir for generic analyses"}]
+    if not store_paths:
+        return [], [{"error": "no store path for generic analyses"}]
     try:
         from viva_superpowers.post_sim import ResultsHandle
         from bigraph_schema import allocate_core
     except Exception as exc:  # noqa: BLE001
         return [], [{"error": f"viva_superpowers post-sim unavailable: {exc}"}]
 
-    sd = Path(sweep_dir)
-    viz_dir = sd / "viz"
-    viz_dir.mkdir(parents=True, exist_ok=True)
-    handle = ResultsHandle(paths=[str(sd)], sim_data_ref=sim_data_path)
+    if output_dir:
+        out_dir = Path(output_dir)
+    else:
+        base = Path(store_paths[0])
+        out_dir = (base if base.is_dir() else base.parent) / "viz"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    handle = ResultsHandle(paths=list(store_paths), sim_data_ref=sim_data_path,
+                           simulation_id=simulation_id)
     core = allocate_core()
 
     errors: list = []
     for name, aparams, cls in generic:
-        # Default the output into the run's viz dir so it's collected below.
-        aparams.setdefault("output_path", str(viz_dir / name))
+        # Default the output into the study's viz dir so it's collected + the
+        # Simularium tool finds it.
+        aparams.setdefault("output_path", str(out_dir / name))
         try:
             step = cls(aparams, core=core)
             step.update({"results": handle})
         except Exception as exc:  # noqa: BLE001 — isolate per analysis
+            import traceback
             errors.append({"analysis": name,
-                           "error": f"{type(exc).__name__}: {exc}"})
+                           "error": f"{type(exc).__name__}: {exc}",
+                           "traceback": traceback.format_exc()})
 
-    written = [str(f) for f in viz_dir.iterdir()
+    written = [str(f) for f in out_dir.iterdir()
                if f.is_file() and f.stat().st_mtime >= t_start]
     return written, errors
 

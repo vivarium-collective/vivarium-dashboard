@@ -60,6 +60,39 @@ def _study_runtime_emitter(runtime_cfg):
     return runtime_cfg.get("emitter") or runtime_cfg.get("default_emitter")
 
 
+def _composite_declared_emit_paths(study_dir, spec) -> list:
+    """Union of the ``emitters: [{paths: [...]}]`` declarations across the
+    study's composite documents. The fallback emit set when a study declares no
+    observables — honors a composite that states what it emits. Scans the
+    study's ``composites/`` dir directly (the v2->v3 projection drops the per-
+    entry ``document`` path), falling back to any entry ``document`` paths."""
+    from pathlib import Path
+    from process_bigraph.composite_generator import emitter_defaults
+    from vivarium_workbench.lib.composite_resolve import declared_emit_paths
+    out: list = []
+    docs: list = []
+    comp_dir = Path(study_dir) / "composites"
+    if comp_dir.is_dir():
+        docs.extend(sorted(comp_dir.glob("*.yaml")))
+    for c in list(spec.get("composites") or []) + list(spec.get("baseline") or []):
+        docrel = c.get("document") if isinstance(c, dict) else None
+        if docrel:
+            docs.append(Path(study_dir) / docrel)
+    seen: set = set()
+    for docp in docs:
+        if docp in seen or not docp.is_file():
+            continue
+        seen.add(docp)
+        try:
+            doc = yaml.safe_load(docp.read_text(encoding="utf-8")) or {}
+        except (OSError, yaml.YAMLError):
+            continue
+        for p in declared_emit_paths(emitter_defaults(doc)):
+            if p not in out:
+                out.append(p)
+    return out
+
+
 def _resolve_study_dir(ws_root, name):
     """Resolve a study's directory honoring the workspace ``layout:`` map.
 
@@ -627,8 +660,13 @@ def run_study_baseline(ws_root, body):
     runtime_cfg = (spec.get("runtime") or {}) if isinstance(spec.get("runtime"), dict) else {}
     timeout_s = int(runtime_cfg.get("subprocess_timeout_s") or 1800)
     # v2ecoli friction #14: derive emit_paths from spec observables so the
-    # injected SQLiteEmitter captures real biology, not just ticks.
+    # injected emitter captures real biology, not just ticks. When the study
+    # declares no observable-driven paths, fall back to the baseline composite's
+    # own ``emitters:`` declaration — so a composite that says what it emits
+    # (positions, counts, …) is honored without the study restating it.
     emit_paths = cr.collect_emit_paths_from_spec(spec)
+    if not emit_paths:
+        emit_paths = _composite_declared_emit_paths(study_dir, spec)
     # Per-study overrides — all win over workspace defaults. Emitter precedence:
     # study runtime.emitter/default_emitter > investigation runtime.default_emitter > workspace.
     study_emitter = _study_runtime_emitter(runtime_cfg) or study_run_state.investigation_emitter_for_study(ws_root, spec.get("name"))

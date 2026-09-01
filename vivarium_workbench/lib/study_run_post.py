@@ -268,14 +268,29 @@ def run_study_analyses(study_dir: Path, spec: dict, run_id: str,
         if not entries:
             return [], []
 
-        # 1. Locate the most-recent parquet sweep dir (workbench-side FS).
+        # 1. Locate the run's persistent store — backend-agnostic. Prefer a
+        # parquet sweep dir (what the v2ecoli scale path needs); otherwise use
+        # the run's SQLite history (always written for in-process runs), which
+        # the generic record-based analyses read via viva_superpowers'
+        # ResultsHandle. A RAM-only run persists nothing, so it fails loudly:
+        # studies must use a persistent emitter (parquet/sqlite/xarray).
         from vivarium_workbench.lib.study_charts import _latest_parquet_for_study
         hive_root = _latest_parquet_for_study(study_dir)
-        if hive_root is None:
-            return [], [{"error": "no parquet run found under study dir; analyses need parquet emitter output"}]
-        # run_analyses globs history parquet under sweep_dir; the hive root is
-        # <exp>/history so its parent <exp> is the sweep_dir.
-        sweep_dir = hive_root.parent
+        sweep_dir = str(hive_root.parent) if hive_root is not None else None
+
+        store_paths: list[str] = []
+        simulation_id: str | None = None
+        if sweep_dir:
+            store_paths = [sweep_dir]
+        else:
+            runs_db = Path(study_dir) / "runs.db"
+            if runs_db.is_file():
+                store_paths = [str(runs_db)]
+                simulation_id = run_id
+        if not store_paths:
+            return [], [{"error": "no persistent run store found under study dir; "
+                         "studies must use a persistent emitter (parquet / sqlite / "
+                         "xarray), not RAM"}]
 
         # 2. Resolve workspace sim_data (optional — analyses that don't need it still run).
         sim_data_path: str | None = None
@@ -296,7 +311,9 @@ def run_study_analyses(study_dir: Path, spec: dict, run_id: str,
         from vivarium_workbench.lib.env_worker_pool import get_pool
         try:
             res = get_pool().call(ws_root, "run_study_analyses", {
-                "entries": entries, "sweep_dir": str(sweep_dir),
+                "entries": entries, "sweep_dir": sweep_dir,
+                "store_paths": store_paths, "simulation_id": simulation_id,
+                "output_dir": str(Path(study_dir) / "viz" / "simularium"),
                 "sim_data_path": sim_data_path})
         except EnvWorkerUnavailable:
             return [], [{"error": "environment worker unavailable; analyses not run"}]
