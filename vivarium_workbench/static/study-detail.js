@@ -255,10 +255,13 @@
     _readoutsDownloadPointerLoaded = true;
     var slug = studyName();
     if (!slug) { host.innerHTML = ''; return; }
-    fetch('/api/simulations?study=' + encodeURIComponent(slug), { headers: { Accept: 'application/json' } })
+    var _dsP = window.DataSource;
+    var _spUrl = (_dsP && _dsP.simulationsUrl) ? _dsP.apiUrl(_dsP.simulationsUrl(slug))
+      : '/api/simulations?study=' + encodeURIComponent(slug);
+    fetch(_spUrl, { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) {
-        var sims = (j && j.simulations) || [];
+        var sims = (_dsP && _dsP.simulationsFilter) ? _dsP.simulationsFilter((j && j.simulations) || [], slug) : ((j && j.simulations) || []);
         var withData = sims.filter(function (s) { return s.run_id && (s.store_path || s.db_path); });
         host.innerHTML = withData.length
           ? '<p class="muted">⬇ Download this study\'s raw run data → '
@@ -820,11 +823,12 @@
     _rawDataLoaded = true;
     var bulkBtn = document.getElementById('raw-data-download-all');
     var slug = studyName(), esc = window.SimTable ? window.SimTable.esc : function (x) { return String(x == null ? '' : x); };
-    var path = '/api/simulations?study=' + encodeURIComponent(slug);
-    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    var DS = window.DataSource;
+    var url = (DS && DS.simulationsUrl) ? DS.apiUrl(DS.simulationsUrl(slug))
+      : '/api/simulations?study=' + encodeURIComponent(slug);
     fetch(url).then(function (r) { return r.text(); }).then(function (t) {
       var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) {}
-      var rows = d.simulations || [];
+      var rows = (DS && DS.simulationsFilter) ? DS.simulationsFilter(d.simulations || [], slug) : (d.simulations || []);
       if (!rows.length) {
         mount.innerHTML = '<p class="empty-message">No runs with persisted data yet.</p>';
         if (bulkBtn) bulkBtn.style.display = 'none';
@@ -1241,11 +1245,13 @@
     _studySimsLoaded = true;
     var slug = studyName();
     mount.innerHTML = '<p class="muted" style="margin:0">Loading simulations…</p>';
-    var path = '/api/simulations?study=' + encodeURIComponent(slug);
-    var url = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl(path) : path;
+    var DS = window.DataSource;
+    var url = (DS && DS.simulationsUrl) ? DS.apiUrl(DS.simulationsUrl(slug))
+      : '/api/simulations?study=' + encodeURIComponent(slug);
     fetch(url).then(function (r) { return r.text(); }).then(function (t) {
       var d = {}; try { d = t ? JSON.parse(t) : {}; } catch (e) { d = {}; }
-      window.SimTable.renderTable(mount, d.simulations || [], { scope: 'study', onRowClick: _showRunDetail });
+      var rows = (DS && DS.simulationsFilter) ? DS.simulationsFilter(d.simulations || [], slug) : (d.simulations || []);
+      window.SimTable.renderTable(mount, rows, { scope: 'study', onRowClick: _showRunDetail });
     }).catch(function () {
       window.SimTable.renderTable(mount, [], { scope: 'study' });
     });
@@ -1820,10 +1826,13 @@
     var orig = btn.textContent;
     btn.disabled = true;
     btn.textContent = '… reproducing';
-    fetch('/api/simulations?study=' + encodeURIComponent(slug))
+    var _dsR = window.DataSource;
+    var _srUrl = (_dsR && _dsR.simulationsUrl) ? _dsR.apiUrl(_dsR.simulationsUrl(slug))
+      : '/api/simulations?study=' + encodeURIComponent(slug);
+    fetch(_srUrl)
       .then(function(r) { return r.json(); })
       .then(function(d) {
-        var sims = (d && d.simulations) || [];
+        var sims = (_dsR && _dsR.simulationsFilter) ? _dsR.simulationsFilter((d && d.simulations) || [], slug) : ((d && d.simulations) || []);
         var latest = sims.length ? (sims[0].run_id || '') : '';
         if (!latest) throw new Error('no runs recorded yet for this study');
         return api('POST', '/api/study-reproduce', { study: slug, run_id: latest });

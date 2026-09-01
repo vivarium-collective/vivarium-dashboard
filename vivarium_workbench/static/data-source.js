@@ -46,6 +46,21 @@
     return bp + path;
   }
 
+  // Simulations list. Snapshot mode has no query-filtered endpoint — publish.py
+  // bakes the WHOLE workspace list to /api/simulations.json — so callers fetch
+  // that and filter by study_slug client-side (simulationsFilter). Live keeps
+  // the server-side ?study= filter. (The generic apiUrl() can't do this: it only
+  // prefixes the base path, so `/api/simulations?study=X` 404s on a static host.)
+  function simulationsUrl(slug) {
+    return cfg().mode === "snapshot"
+      ? _base() + "/api/simulations.json"
+      : "/api/simulations" + (slug ? "?study=" + encodeURIComponent(slug) : "");
+  }
+  function simulationsFilter(rows, slug) {
+    if (!slug || cfg().mode !== "snapshot") return rows || [];
+    return (rows || []).filter(function (r) { return r && r.study_slug === slug; });
+  }
+
   async function _get(url) {
     // GitHub Pages / Fastly returns 429 (occasionally 503) under per-IP rate
     // limiting when the hosted snapshot fires its burst of parallel /api/*.json
@@ -202,6 +217,11 @@
 
     /** Prefix a root-absolute "/api/…" path with the base path (live + snapshot). */
     apiUrl: apiUrl,
+
+    /** Simulations-list URL (snapshot: full baked list; live: ?study= filtered). */
+    simulationsUrl: simulationsUrl,
+    /** Keep only a study's runs (snapshot returns the whole workspace). */
+    simulationsFilter: simulationsFilter,
 
     /**
      * Return the URL for the saved-visualizations payload (Analyses gallery).
