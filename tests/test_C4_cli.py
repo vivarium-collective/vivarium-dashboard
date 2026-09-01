@@ -133,7 +133,7 @@ def test_run_remote_calls_compose_submit(tmp_path):
 
     with patch("vivarium_workbench.lib.remote_run.export_composite_pbg", side_effect=fake_export), \
          patch("vivarium_workbench.lib.remote_run.git_pip_url", return_value="git+file:///r@abc123"):
-        result = run_remote(repo, "test-composite", client=mock_client)
+        result = run_remote(repo, "test-composite", client=mock_client, skip_preflight=True)
 
     mock_client.compose_submit.assert_called_once()
     call_kwargs = mock_client.compose_submit.call_args
@@ -162,7 +162,7 @@ def test_run_remote_passes_git_url_as_extra_dep(tmp_path):
 
     with patch("vivarium_workbench.lib.remote_run.export_composite_pbg", side_effect=fake_export), \
          patch("vivarium_workbench.lib.remote_run.git_pip_url", return_value=git_url):
-        run_remote(repo, "test-composite", client=mock_client)
+        run_remote(repo, "test-composite", client=mock_client, skip_preflight=True)
 
     call_kwargs = mock_client.compose_submit.call_args
     # extra_pip_deps should contain the git url
@@ -191,7 +191,7 @@ def test_run_remote_returns_results_path(tmp_path):
 
     with patch("vivarium_workbench.lib.remote_run.export_composite_pbg", side_effect=fake_export), \
          patch("vivarium_workbench.lib.remote_run.git_pip_url", return_value="git+file:///r@sha"):
-        result = run_remote(repo, "test-composite", client=mock_client)
+        result = run_remote(repo, "test-composite", client=mock_client, skip_preflight=True)
 
     assert result == expected_path
 

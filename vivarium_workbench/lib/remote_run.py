@@ -100,6 +100,8 @@ def run_remote(
     n_steps: int = 1,
     overrides: "dict | None" = None,
     poll_timeout: float = _DEFAULT_POLL_TIMEOUT,
+    skip_preflight: bool = False,
+    expected_variant_count: "int | None" = None,
 ) -> Path:
     """Export a composite, submit to sms-api, poll, and land results.zip.
 
@@ -121,6 +123,15 @@ def run_remote(
         Wall-clock ceiling (seconds) for the whole poll loop; raises
         :exc:`TimeoutError` if the run hasn't reached a terminal state by then.
         Pass ``<= 0`` to disable (wait indefinitely).  Defaults to 2 h.
+    skip_preflight:
+        Bypass the pre-spend preflight (:func:`preflight.preflight_composite_run`)
+        that validates the composite-id + overrides request LOCALLY before
+        dispatch. A preflight failure otherwise raises :exc:`PreflightError` and
+        aborts *before* any GovCloud spend. Only skip when the request has
+        already been validated.
+    expected_variant_count:
+        Forwarded to the preflight so a ``variants`` grid must expand to exactly
+        this many branches (e.g. 84 for Run-4 pathway-expression).
 
     Returns
     -------
@@ -161,6 +172,21 @@ def run_remote(
     else:
         pip_url = git_pip_url(ws_root)
     extra_pip_deps = [pip_url, *workspace_pinned_deps(ws_root)]
+
+    # Pre-spend preflight: validate the composite-id + overrides request LOCALLY
+    # before committing any GovCloud spend. Turns ~15 silent wrong-but-successful
+    # failure modes (a dropped process swap, a typo'd emit path, an empty variant
+    # grid, an incoherent step count) into a loud, aggregated local error. A
+    # failure raises PreflightError and aborts here — the dispatch never happens.
+    if not skip_preflight:
+        from vivarium_workbench.lib.preflight import preflight_composite_run
+
+        report = preflight_composite_run(
+            ws_root, composite_id, overrides,
+            n_steps=n_steps,
+            expected_variant_count=expected_variant_count,
+        )
+        print(report.summary())
 
     # Export composite to a temporary .pbg file
     with tempfile.NamedTemporaryFile(suffix=".pbg", delete=False) as tmp:
