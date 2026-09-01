@@ -71,6 +71,46 @@ def _poll_analysis_until_terminal(client: SmsApiClient, database_id: int) -> Non
         time.sleep(_ANALYSIS_POLL_INTERVAL_SECONDS)
 
 
+def _resolve_execution_provenance(client: SmsApiClient, simulation_id: int) -> dict:
+    """P1-11 (audit §3.9): the provenance of what sms-api actually ran for
+    ``simulation_id``, read from sms-api's OWN records — never inferred from
+    the landing laptop's checkout. Returns ``{commit, image, merged_config_hash,
+    expected_seeds}``; any field sms-api's current API can't answer (or a
+    reachability failure) comes back ``None`` rather than a locally-guessed
+    value, so :func:`land_remote_run` records an honest gap instead of a
+    fabricated one.
+
+    ``image`` is the ECR tag sms-api actually built and ran under — which
+    IS the commit itself (sms-api tags every image ``<repo>:<commit>``, see
+    ``simulation_service_ray.SimulationServiceRay._image_uri``), not a
+    laptop-side guess. Reconstructing the FULL image URI (registry account +
+    region) would need deployment config this client has no access to; that
+    stays a follow-up until sms-api's API surfaces it directly.
+    """
+    out: dict = {"commit": None, "image": None, "merged_config_hash": None, "expected_seeds": None}
+    try:
+        sim_record = client.get_simulation(simulation_id)
+    except SmsApiError:
+        return out
+    simulator_id = sim_record.get("simulator_id")
+    if simulator_id is not None:
+        commit = client.simulator_commit(int(simulator_id))
+        out["commit"] = commit
+        out["image"] = commit
+    out["expected_seeds"] = sim_record.get("num_seeds")
+    config = sim_record.get("config")
+    if config is not None:
+        import hashlib
+        import json as _json
+        try:
+            out["merged_config_hash"] = hashlib.sha256(
+                _json.dumps(config, sort_keys=True, default=str).encode()
+            ).hexdigest()
+        except (TypeError, ValueError):
+            pass
+    return out
+
+
 def _run_auth_ok() -> bool:
     """Gate for submit/land. A GitHub session satisfies it (stock build-first
     flow). Pinned mode ALSO satisfies it: those calls push nothing to GitHub, so
@@ -477,6 +517,18 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
                     # triggers post gap-3; kept as a safety net for anything else).
                     time.sleep(_ANALYSIS_LAND_WAIT_SECONDS)
 
+    # P1-11 (audit §3.9): every provenance field below is sourced from sms-api
+    # itself -- the server that actually ran this simulation -- not from the
+    # landing laptop's local checkout. `commit` previously defaulted to
+    # body.get("commit"), which no caller has ever actually supplied, so a
+    # landed run's recorded commit silently fell back to save_metadata's own
+    # local-workspace-HEAD inference (the found "partly wrong" bug). A caller
+    # that DOES pass a commit/expected_seeds in the body still wins -- this is
+    # a fallback for when sms-api's own lookup can't answer, not an override.
+    exec_prov = _resolve_execution_provenance(client, int(sim_id))
+    commit = body.get("commit") or exec_prov["commit"] or ""
+    expected_seeds = body.get("num_seeds") or exec_prov["expected_seeds"]
+
     with tempfile.TemporaryDirectory() as td:
         tar_path = client.download_data(int(sim_id), Path(td))
         run_id = land_remote_run(
@@ -484,10 +536,13 @@ def remote_run_land(ws_root: Path, body: dict) -> tuple[dict, int]:
             spec_id=spec_id,
             simulation_id=int(sim_id),
             experiment_id=body.get("experiment_id") or f"sim-{sim_id}-{study}",
-            commit=body.get("commit") or "",
+            commit=commit,
             tar_path=tar_path,
             ws_root=ws_root,
             s3_uri=body.get("s3_uri"),
+            image=exec_prov["image"],
+            merged_config_hash=exec_prov["merged_config_hash"],
+            expected_seeds=int(expected_seeds) if expected_seeds else None,
         )
     response: dict = {"run_id": run_id}
     if analysis_errors:

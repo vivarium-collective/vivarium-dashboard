@@ -3,7 +3,11 @@ import sqlite3
 import tarfile
 from pathlib import Path
 
-from vivarium_workbench.lib.remote_run_landing import land_remote_run
+from vivarium_workbench.lib.remote_run_landing import (
+    RemoteRunSeedCountMismatch,
+    _count_parquet_rows,
+    land_remote_run,
+)
 
 
 def _make_remote_zarr_tar(tmp_path: Path, seed: int = 0) -> Path:
@@ -379,3 +383,177 @@ def test_land_native_lineage_zarr_single_lineage_still_works(tmp_path: Path):
     )
     zarr_dir = study / f"runs.{run_id}.zarr"
     assert (zarr_dir / "experiment_id=exp-native" / "variant=0" / "lineage_seed=0").is_dir()
+
+
+# ---------------------------------------------------------------------------
+# P1-11 (audit §3.9): remote-run provenance was missing/wrong — image tag,
+# composite doc hash, merged config hash, real n_steps, and (most
+# importantly) the EXECUTED commit must all be recorded, sourced from
+# sms-api's own response rather than inferred from the landing laptop's
+# checkout. A seed-count mismatch (fewer/more seeds landed than requested)
+# must be flagged rather than silently recorded as a trustworthy complete run.
+# ---------------------------------------------------------------------------
+
+def test_land_records_full_execution_provenance_from_sms_api_response(tmp_path: Path):
+    """A landed run's record must carry the image tag/digest, composite doc
+    hash, merged config hash, real n_steps, and the SERVER-sourced commit —
+    fixture values mirror what remote_run_views._resolve_execution_provenance
+    reads from a real sms-api GET /simulations/{id} + simulator-registry
+    response, not anything inferred locally."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar(tmp_path)
+
+    run_id = land_remote_run(
+        study,
+        spec_id="v2ecoli.composites.baseline",
+        simulation_id=321,
+        experiment_id="exp-prov",
+        # The commit sms-api's OWN simulator registry resolved for the
+        # simulator_id that actually ran this simulation -- NOT the landing
+        # laptop's local git HEAD (that mismatch was the found bug).
+        commit="serverexecuted7",
+        tar_path=tar,
+        image="serverexecuted7",  # sms-api tags images <repo>:<commit>
+        composite_doc_hash="sha256:composite-doc-abc123",
+        merged_config_hash="sha256:merged-config-def456",
+        n_steps=2700,
+        expected_seeds=1,
+    )
+
+    conn = sqlite3.connect(str(study / "runs.db"))
+    try:
+        row = conn.execute(
+            "SELECT params_json, manifest_json, n_steps, status FROM runs_meta WHERE run_id=?",
+            (run_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+    params_json, manifest_json, n_steps, status = row
+    assert status == "completed"
+    assert n_steps == 2700
+
+    prov = json.loads(params_json)
+    assert prov["commit"] == "serverexecuted7"
+    assert prov["image"] == "serverexecuted7"
+    assert prov["composite_doc_hash"] == "sha256:composite-doc-abc123"
+    assert prov["merged_config_hash"] == "sha256:merged-config-def456"
+    assert prov["landed_seeds"] == 1
+
+    # The replay manifest's code_version/environments must ALSO reflect the
+    # server-sourced commit -- this is the field the Runs-tab Source column
+    # actually renders from, and it's what was silently overwritten with the
+    # local workspace's HEAD before this fix.
+    manifest = json.loads(manifest_json)
+    assert manifest["code_version"]["git_sha"] == "serverexecuted7"
+    assert manifest["code_version"]["image"] == "serverexecuted7"
+    assert manifest["environments"][0]["commit"] == "serverexecuted7"
+
+
+def test_land_manifest_commit_is_not_the_local_workspace_head(tmp_path: Path):
+    """Regression guard for the exact 'partly wrong' bug: passing a real
+    ws_root (a git repo with its OWN, DIFFERENT HEAD) must not leak that
+    local commit into the landed run's manifest -- only the server-sourced
+    `commit` argument may appear there."""
+    import subprocess
+
+    ws_root = tmp_path / "workspace"
+    study = ws_root / "studies" / "s"
+    study.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q"], cwd=ws_root, check=True)
+    subprocess.run(["git", "config", "user.email", "t@t.test"], cwd=ws_root, check=True)
+    subprocess.run(["git", "config", "user.name", "t"], cwd=ws_root, check=True)
+    (ws_root / "README.md").write_text("x")
+    subprocess.run(["git", "add", "."], cwd=ws_root, check=True)
+    subprocess.run(["git", "commit", "-q", "-m", "local"], cwd=ws_root, check=True)
+    local_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=ws_root, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    tar = _make_remote_zarr_tar(tmp_path)
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=322, experiment_id="e",
+        commit="totally-different-server-commit", tar_path=tar, ws_root=ws_root,
+    )
+    conn = sqlite3.connect(str(study / "runs.db"))
+    try:
+        manifest_json = conn.execute(
+            "SELECT manifest_json FROM runs_meta WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    manifest = json.loads(manifest_json)
+    assert manifest["code_version"]["git_sha"] == "totally-different-server-commit"
+    assert manifest["code_version"]["git_sha"] != local_head
+    assert local_head not in manifest_json  # the local HEAD never leaks in anywhere
+
+
+def test_land_seed_count_mismatch_raises_and_writes_nothing(tmp_path: Path):
+    """A dispatch that requested 3 seeds but only 2 landed (a real, observed
+    failure mode -- a seed's own container crashed silently, or the tar was
+    fetched before every seed finished writing) must be flagged, not recorded
+    as a trustworthy completed run."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar_multiseed(tmp_path, seeds=(0, 1))
+
+    import pytest
+
+    with pytest.raises(RemoteRunSeedCountMismatch):
+        land_remote_run(
+            study, spec_id="s", simulation_id=323, experiment_id="exp-mismatch",
+            commit="c", tar_path=tar, expected_seeds=3,
+        )
+
+    # Nothing was written: no zarr store landed, no runs.db row.
+    assert not any(study.glob("runs.*.zarr"))
+    db_path = study / "runs.db"
+    if db_path.exists():
+        conn = sqlite3.connect(str(db_path))
+        try:
+            count = conn.execute("SELECT COUNT(*) FROM runs_meta").fetchone()[0]
+        finally:
+            conn.close()
+        assert count == 0
+
+
+def test_land_seed_count_match_succeeds(tmp_path: Path):
+    """The matching case must land normally -- the check is a guard, not a
+    universal block."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar_multiseed(tmp_path, seeds=(0, 1))
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=324, experiment_id="exp-match",
+        commit="c", tar_path=tar, expected_seeds=2,
+    )
+    conn = sqlite3.connect(str(study / "runs.db"))
+    try:
+        status = conn.execute(
+            "SELECT status FROM runs_meta WHERE run_id=?", (run_id,)
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    assert status == "completed"
+
+
+def test_count_parquet_rows_returns_none_without_fabricating_zero(tmp_path: Path):
+    """No history/*.pq files (or pyarrow unavailable) must come back as
+    ``None`` -- never a fabricated 0 that a caller could mistake for a real,
+    verified zero-step run."""
+    empty_dir = tmp_path / "empty"
+    empty_dir.mkdir()
+    assert _count_parquet_rows(empty_dir) is None
+
+
+def test_land_without_expected_seeds_skips_the_check(tmp_path: Path):
+    """expected_seeds is optional -- existing callers that don't know the
+    requested count (or predate this fix) must be unaffected."""
+    study = tmp_path / "study"
+    study.mkdir()
+    tar = _make_remote_zarr_tar_multiseed(tmp_path, seeds=(0, 1, 2))
+    run_id = land_remote_run(
+        study, spec_id="s", simulation_id=325, experiment_id="exp-nocheck",
+        commit="c", tar_path=tar,
+    )
+    assert run_id  # lands without raising

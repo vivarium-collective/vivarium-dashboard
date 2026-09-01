@@ -43,6 +43,14 @@ from pathlib import Path
 from vivarium_workbench.lib import composite_runs as cr
 
 
+class RemoteRunSeedCountMismatch(RuntimeError):
+    """The number of seed/lineage stores actually found in a landed tar does
+    not match what was requested/expected for the dispatch (P1-11, audit
+    §3.9). Raised BEFORE anything is written to ``study_dir`` or ``runs.db``
+    -- a partially-arrived campaign must never be recorded as a completed,
+    trustworthy run."""
+
+
 def _fold_analyses(extract_root: Path, ws_root: Path, run_id: str) -> None:
     """Fold any standalone-analysis output already present in the landed tar into
     ``.pbg/runs/<run_id>/analyses.json`` -- the same local artifact contract
@@ -128,6 +136,29 @@ def _merge_zarr_tree(src: Path, dest: Path) -> None:
         # else: both exist and at least one is a file -- dest's version wins.
 
 
+def _count_parquet_rows(source_dir: Path) -> int | None:
+    """Best-effort REAL step count for a landed parquet store: the row count
+    of its own ``history/**/*.pq`` files (mirrors the same technique already
+    used by ``explorer_data.list_runs`` for locally-discovered parquet runs).
+    This is ground truth from the data that actually landed, not a guess —
+    returns ``None`` (never 0) when pyarrow isn't installed or no history
+    files are found, so a genuinely-unknown count isn't confused with a real
+    zero-step run."""
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        return None
+    total = 0
+    found = False
+    for f in sorted(source_dir.rglob("*.pq")):
+        try:
+            total += pq.read_metadata(str(f)).num_rows
+            found = True
+        except Exception:  # noqa: BLE001 — best-effort, never block landing
+            continue
+    return total if found else None
+
+
 def land_remote_run(
     study_dir: Path,
     *,
@@ -139,12 +170,50 @@ def land_remote_run(
     ws_root: Path | None = None,
     label: str | None = None,
     s3_uri: str | None = None,
+    image: str | None = None,
+    composite_doc_hash: str | None = None,
+    merged_config_hash: str | None = None,
+    n_steps: int | None = None,
+    expected_seeds: int | None = None,
 ) -> str:
     """Extract tar_path, place the native store(s) in study_dir, record runs_meta; return run_id.
 
     ``ws_root`` is optional (defaults to no analyses-folding) so existing callers
     that only land simulation output, with no analysis ever triggered for that
     run, are unaffected.
+
+    Provenance (P1-11, audit §3.9) — every one of these must be sourced from
+    sms-api (the server that actually executed the run), NEVER inferred from
+    the landing laptop's own checkout:
+
+    ``commit``
+        The commit sms-api actually built and ran (e.g. resolved from the
+        simulation's ``simulator_id`` against sms-api's own simulator
+        registry) — not the workspace's local HEAD. Recording the laptop's
+        HEAD here was the found bug: the two can differ any time the operator
+        has switched branches locally since dispatching.
+    ``image``
+        The tag/digest of the container image sms-api actually ran (e.g. the
+        commit-derived ECR tag sms-api registered for this ``simulator_id``).
+    ``composite_doc_hash`` / ``merged_config_hash``
+        Hashes of the composite document and the fully-merged run config
+        sms-api resolved server-side, when the caller has them (e.g. hashing
+        the ``config`` sms-api's own ``GET /simulations/{id}`` returns). Pass
+        ``None`` rather than a value recomputed from a local/possibly-stale
+        copy — an absent hash is honest; a wrong one is not.
+    ``n_steps``
+        The real number of steps executed. When the caller doesn't know it
+        (sms-api doesn't track it as a scalar today — see follow-up in
+        PR description), a parquet-landed run's real count is derived here
+        from the landed data itself (``_count_parquet_rows``); a zarr-landed
+        run without deps to read it back stays ``None`` rather than a
+        fabricated 0.
+    ``expected_seeds``
+        The seed count requested/expected for this dispatch. Checked against
+        the number of seed/lineage stores actually found in the tar; a
+        mismatch raises :class:`RemoteRunSeedCountMismatch` before anything
+        is written, so an incomplete campaign is never recorded as a
+        trustworthy, completed run.
     """
     study_dir = Path(study_dir)
     study_dir.mkdir(parents=True, exist_ok=True)
@@ -156,6 +225,9 @@ def land_remote_run(
         "simulation_id": simulation_id,
         "experiment_id": experiment_id,
         "commit": commit,
+        "image": image,
+        "composite_doc_hash": composite_doc_hash,
+        "merged_config_hash": merged_config_hash,
         "backend": "ray",
         "source": deployment,
         "s3_uri": s3_uri,
@@ -167,6 +239,17 @@ def land_remote_run(
         with tarfile.open(tar_path, "r:gz") as tar:
             tar.extractall(extract_root, filter="data")  # noqa: S202 — trusted internal artifact from our own API
         kind, sources = _detect_and_locate_all(extract_root)
+
+        landed_seeds = len(sources)
+        provenance["landed_seeds"] = landed_seeds
+        if expected_seeds is not None and landed_seeds != expected_seeds:
+            raise RemoteRunSeedCountMismatch(
+                f"simulation {simulation_id}: landed {landed_seeds} seed(s)/"
+                f"lineage(s) but {expected_seeds} were requested — refusing "
+                "to record this as a completed run (sms-api may still be "
+                "writing output, or a seed's dispatch failed silently)"
+            )
+
         if kind == "zarr":
             dest = study_dir / f"runs.{run_id}.zarr"
             if dest.exists():
@@ -182,12 +265,45 @@ def land_remote_run(
             if dest.exists():
                 shutil.rmtree(dest)
             shutil.copytree(sources[0], dest)
+            if n_steps is None:
+                n_steps = _count_parquet_rows(dest)
 
         if ws_root is not None:
             _fold_analyses(extract_root, ws_root, run_id)
 
     provenance["store_path"] = str(dest)
+    resolved_n_steps = n_steps if n_steps is not None else 0
     started = _time.time()
+
+    # Build the replay manifest OURSELVES, with ws_root=None -- a remote run
+    # never executed in the landing laptop's workspace checkout, so its
+    # code_version/environments must never be inferred from that checkout
+    # (the "partly wrong" half of the found bug). Passing this manifest
+    # explicitly to save_metadata also SKIPS its own auto-build-from-
+    # workspace fallback, which is what previously overwrote a correct
+    # `commit` with the local HEAD.
+    manifest = cr.build_run_manifest(
+        spec_id=spec_id, params=provenance, n_steps=resolved_n_steps,
+        emitter=kind, emit_paths=[], runtime={}, origin="remote",
+        study=None, generation_id=None, ws_root=None,
+    )
+    manifest["code_version"] = {
+        "git_sha": commit or None,
+        "package": None,
+        "repo": None,
+        "remote_url": None,
+        "image": image,
+    }
+    manifest["environments"] = [{
+        "role": "primary",
+        "repo": None,
+        "ref": None,
+        "commit": commit or None,
+        "remote_url": None,
+        "lockfile_hash": None,
+        "image": image,
+    }]
+
     conn = cr.connect(study_dir / "runs.db")
     try:
         cr.save_metadata(
@@ -197,16 +313,14 @@ def land_remote_run(
             params=provenance,
             label=label or f"Remote run ({deployment})",
             started_at=started,
-            n_steps=0,
-            # Pass the workspace so save_metadata auto-stamps a source-provenance
-            # manifest (repo + commit of the local checkout that landed this
-            # remote run) — otherwise the Runs table's Source column is blank
-            # for every remote/GovCloud run. (The row's remote_origin still comes
-            # from `provenance` (source/simulation_id); this only adds the
-            # manifest's code_version.)
+            n_steps=resolved_n_steps,
+            # Still pass the workspace (for the durable JSONL run-log append
+            # only) — `manifest` above is what makes save_metadata skip its
+            # own local-checkout-inferring auto-build.
             workspace=ws_root,
+            manifest=manifest,
         )
-        cr.complete_metadata(conn, run_id=run_id, n_steps=0, status="completed")
+        cr.complete_metadata(conn, run_id=run_id, n_steps=resolved_n_steps, status="completed")
         # item 84: remove the dispatch-time pending placeholder (remote_run_
         # submit's own `remote-pending-<simulation_id>` row, written so the
         # Runs tab shows the campaign immediately instead of only once landed)

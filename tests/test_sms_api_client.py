@@ -118,6 +118,50 @@ def test_run_simulation_omits_json_body_when_no_analysis_options(monkeypatch):
     assert cap["body"] is None
 
 
+def test_get_simulation_returns_full_record(monkeypatch):
+    """GET /api/v1/simulations/{id} -- the full record (config, simulator_id,
+    num_seeds), used by P1-11's execution-provenance lookup. Distinct from
+    simulation_status(), which only returns id/status/error_message."""
+    cap = {}
+    payload = {
+        "database_id": 199,
+        "simulator_id": 66,
+        "config": {"generations": 2, "n_init_sims": 4},
+        "num_seeds": 4,
+        "experiment_id": "exp-199",
+    }
+    with _patch_urlopen(monkeypatch, cap, payload):
+        c = SmsApiClient("http://h:8080")
+        out = c.get_simulation(199)
+    assert out == payload
+    assert cap["url"] == "http://h:8080/api/v1/simulations/199"
+    assert cap["method"] == "GET"
+
+
+def test_simulator_commit_resolves_by_database_id(monkeypatch):
+    """simulator_commit looks the simulator_id up in sms-api's OWN registry
+    (GET /core/v1/simulator/versions) -- the server-sourced commit, never the
+    landing laptop's local checkout."""
+    cap = {}
+    payload = {"versions": [
+        {"database_id": 65, "git_commit_hash": "aaa1111"},
+        {"database_id": 66, "git_commit_hash": "bbb2222"},
+    ]}
+    with _patch_urlopen(monkeypatch, cap, payload):
+        c = SmsApiClient("http://h:8080")
+        assert c.simulator_commit(66) == "bbb2222"
+        assert c.simulator_commit(999) is None
+
+
+def test_simulator_commit_returns_none_when_unreachable(monkeypatch):
+    """Best-effort provenance: an unreachable/erroring sms-api must never
+    raise out of simulator_commit -- landing must still proceed."""
+    cap = {}
+    with _patch_urlopen(monkeypatch, cap, {}, status=502):
+        c = SmsApiClient("http://h:8080")
+        assert c.simulator_commit(66) is None
+
+
 def test_upload_simulator_sends_json_body(monkeypatch):
     cap = {}
     with _patch_urlopen(monkeypatch, cap, {"database_id": 16, "status": "running"}):
