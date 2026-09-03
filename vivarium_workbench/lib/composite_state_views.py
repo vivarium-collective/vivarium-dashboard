@@ -178,6 +178,17 @@ def build_composite_state(
 
     ws_root = Path(ws_root)
 
+    # An empty Configure field arrives as "" — the loom renders a parameter whose
+    # default is None as a blank text input and submits that blank on resolve/Apply.
+    # Treat a top-level "" as UNSET: drop it so the generator sees the parameter's
+    # DEFAULT, not an explicit empty string. Without this, ecoli_baseline's batch
+    # guard rejects e.g. match_simdata="" ("single-cell-only … not supported in
+    # batch mode") for a param the user never set, and the entire config-applied
+    # build falls back to the bare composite (injected processes vanish). Only
+    # top-level blanks are dropped; nested config values are left untouched.
+    if overrides:
+        overrides = {k: v for k, v in overrides.items() if v != ""}
+
     # Building a whole-cell composite (build_generator) takes ~3s and is re-run
     # on every explorer open / pop-out. Checked FIRST so a hit skips the
     # per-request sys.path + subprocess setup entirely. Bypass with ?fresh=1.
