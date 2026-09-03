@@ -124,6 +124,7 @@ export function innerCompositeKey(rootId: string, hops: string[][]): string {
 export async function fetchInnerComposite(
   rootId: string,
   hops: string[][],
+  overrides?: Record<string, unknown>,
 ): Promise<InnerCompositeResponse> {
   // Static (read-only bundle) mode: no live endpoint. Fetch the pre-built inner
   // state committed by publish under api/composite-inner-state/<key>.json.
@@ -148,6 +149,12 @@ export async function fetchInnerComposite(
     return (await r.json()) as InnerCompositeResponse;
   }
   const q = new URLSearchParams({ ref: rootId, hops: JSON.stringify(hops) });
+  // Forward the config overrides so the drill rebuilds the ROOT config-applied
+  // (e.g. n_generations>1 → the batch's `batch_runner` exists to navigate into),
+  // matching the graph the user is drilling from.
+  if (overrides && Object.keys(overrides).length) {
+    q.set('overrides', JSON.stringify(overrides));
+  }
   const r = await fetch('/api/composite-inner-state?' + q.toString());
   const body = await r.json();
   if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);

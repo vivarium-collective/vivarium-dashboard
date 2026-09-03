@@ -662,11 +662,18 @@ export default function App() {
     if (state) return;
     const params = new URLSearchParams(window.location.search);
     const stateUrl = params.get('stateUrl');
-    // Prefer a static state snapshot (?stateUrl=) — the only source available on
-    // GitHub Pages; otherwise the dashboard's /api/composite-state by ref.
+    // Forward the config overrides to the live state build so the GRAPH is
+    // config-applied (e.g. n_generations>1 → the batch `batch_runner` wiring,
+    // injected_processes wired) — matching the Configure form, which already
+    // resolves with overrides. A static ?stateUrl= snapshot has no live build,
+    // so it keeps its baked state.
+    const ovParam = (urlOverrides && Object.keys(urlOverrides).length)
+      ? '&overrides=' + encodeURIComponent(JSON.stringify(urlOverrides)) : '';
     const src = stateUrl
       ? stateUrl
-      : (compositeId ? '/api/composite-state?ref=' + encodeURIComponent(compositeId) : null);
+      : (compositeId
+          ? '/api/composite-state?ref=' + encodeURIComponent(compositeId) + ovParam
+          : null);
     if (!src) return;
     let cancelled = false;
     fetch(src)
@@ -724,7 +731,7 @@ export default function App() {
       })
       .catch(() => { /* fall through to postMessage path */ });
     return () => { cancelled = true; };
-  }, [compositeId, state]);
+  }, [compositeId, state, urlOverrides]);
 
   // Standardize Setup & Run: /api/composite-state carries the wiring but NOT the
   // config, so when a composite is opened by id (live mode) and no parameters
@@ -1737,7 +1744,7 @@ export default function App() {
     if (!root) return;
     const newHops = [...drillHops, data.path];
     try {
-      const res = await fetchInnerComposite(root, newHops);
+      const res = await fetchInnerComposite(root, newHops, urlOverrides);
       if (!res?.state) return;
       applyLoadedState(res.state);
       setDrillHops(newHops);
@@ -1757,7 +1764,7 @@ export default function App() {
     } catch (e) {
       console.error('[bigraph-loom] drill failed', e);
     }
-  }, [drillHops, drillCrumbs, applyLoadedState]);
+  }, [drillHops, drillCrumbs, applyLoadedState, urlOverrides]);
 
   // Switch to a drill tab (hops:[] = the root "Super-sim"). Re-fetches that
   // level so the shown state stays consistent (cached server-side).
@@ -1776,7 +1783,7 @@ export default function App() {
         setCompositeId(root);
         setName(rootNameRef.current);
       } else {
-        const res = await fetchInnerComposite(root, tab.hops);
+        const res = await fetchInnerComposite(root, tab.hops, urlOverrides);
         if (!res?.state) return;
         applyLoadedState(res.state);
         setDrillHops(tab.hops);
@@ -1789,7 +1796,7 @@ export default function App() {
     } catch (e) {
       console.error('[bigraph-loom] tab switch failed', e);
     }
-  }, [applyLoadedState]);
+  }, [applyLoadedState, urlOverrides]);
 
   // Close a drill tab; if it was active, fall back to the root "Super-sim".
   const closeTab = useCallback((key: string, e: { stopPropagation: () => void }) => {
