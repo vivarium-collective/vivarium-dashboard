@@ -1773,7 +1773,12 @@ export default function App() {
     if (!root) return;
     try {
       if (!tab.hops.length) {
-        const r = await fetch('/api/composite-state?ref=' + encodeURIComponent(root));
+        // Re-fetch the ROOT WITH overrides so switching back to the root tab
+        // restores the config-applied top-level view (e.g. the batch's
+        // batch_runner), not the bare default composite.
+        const ov = (urlOverrides && Object.keys(urlOverrides).length)
+          ? '&overrides=' + encodeURIComponent(JSON.stringify(urlOverrides)) : '';
+        const r = await fetch('/api/composite-state?ref=' + encodeURIComponent(root) + ov);
         const data = await r.json();
         const st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
         if (!st) return;
