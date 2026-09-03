@@ -8821,14 +8821,20 @@
     var isSnapshot = (window.__DASH_CONFIG__ || {}).mode === 'snapshot';
     var name = window._wsInvestigation || window._currentIset || '';
     // Match the investigation CARD's ↓ actions (↓ report / ↓ notebook / ↓ figures)
-    // instead of the old emoji buttons. ↓ figures is injected async, only when the
-    // investigation actually has figures (same n_figures gate as the card).
+    // instead of the old emoji buttons. ↓ figures ALWAYS shows here (so the
+    // affordance is discoverable) but starts DISABLED/greyed; the async summary
+    // upgrades it to an active download when the investigation actually has
+    // figures (same n_figures signal as the card).
+    var _figuresDisabled =
+      ' <button class="btn-mini" disabled ' +
+        'title="No figures yet — run this investigation\'s studies to generate them" ' +
+        'style="opacity:0.5;cursor:not-allowed">↓ figures</button>';
     actions.innerHTML =
       '<button class="btn-mini" onclick="_downloadInvestigationReport()" ' +
         'title="Download the shareable HTML report">↓ report</button> ' +
       '<button class="btn-mini" onclick="_downloadInvestigationNotebook()" ' +
         'title="Download a self-contained Jupyter notebook">↓ notebook</button>' +
-      '<span id="ws-actions-figures"></span>' +
+      '<span id="ws-actions-figures">' + _figuresDisabled + '</span>' +
       (isSnapshot ? '' :
       ' <button class="btn-mini" onclick="_rerunInvestigation()" ' +
         'title="Re-run every member study\'s CURRENT baseline spec (re-derives from each study\'s study.yaml)">▶ Run current spec</button>');
@@ -8843,6 +8849,7 @@
               'onclick="window._vivFiguresFromCard(event,\'' + _esc(name) + '\')" ' +
               'title="Download all figures (studies figures + post-study composites) as a zip">↓ figures</button>';
           }
+          // else: leave the disabled/greyed ↓ figures in place.
         }).catch(function () {});
     }
   }
@@ -10195,10 +10202,20 @@
   // study tab.
   function _dagDownloadControlsHtml(slug) {
     var lnk = 'font-size:0.66em;color:#3b82f6;text-decoration:none;white-space:nowrap';
+    // Show "↓ figures" only when the study actually has downloadable figures.
+    // The per-study status (from /api/investigation-trigger-status) carries
+    // has_figures; hide the link ONLY on an explicit false so that when the
+    // status is unavailable (snapshot bundle / fetch failed → no entry) we keep
+    // showing it rather than hiding a real download. ↓ notebook is always
+    // generatable, so it stays unconditional.
+    var _st = _dagTriggerBySlug[slug];
+    var _figures = (!_st || _st.has_figures !== false)
+      ? '<a href="#" title="Download this study\'s figures (and embedded HTML reports) as a zip" ' +
+          'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
+          'style="' + lnk + '">↓ figures</a>'
+      : '';
     return '<div class="dag-download-controls" style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">' +
-      '<a href="#" title="Download this study\'s figures (and embedded HTML reports) as a zip" ' +
-        'onclick="window._vivStudyFiguresFromCard(event,\'' + _esc(slug) + '\');return false;" ' +
-        'style="' + lnk + '">↓ figures</a>' +
+      _figures +
       '<a href="#" title="Download this study\'s own runnable notebook (composite + parameters + figures)" ' +
         'onclick="window._vivStudyNotebookFromCard(event,\'' + _esc(slug) + '\',\'' + _esc(_dagInvSlug || '') + '\');return false;" ' +
         'style="' + lnk + '">↓ notebook</a>' +

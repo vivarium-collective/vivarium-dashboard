@@ -1498,19 +1498,31 @@ def create_app() -> FastAPI:
         return JSONResponse(status_code=status, content=body)
 
     def _composite_state_response(
-        ref: str, fresh: Optional[str], ws: Path
+        ref: str, fresh: Optional[str], ws: Path, overrides: Optional[str] = None,
     ) -> Union[CompositeState, JSONResponse]:
         """Shared worker for both composite-state URL forms.
 
         Mirrors the legacy ``_get_composite_state``: no ref → 400; else build via
         the lib seam (TTL cache, subprocess generator build, static fallback,
         spec/path resolution) and carry the exact legacy status + body.
+
+        ``overrides`` (a JSON object string) is applied to a generator build so
+        the loom's GRAPH reflects the study's config — e.g. n_generations>1
+        resolves to the batch (batch_runner) wiring, injected_processes wire in —
+        matching the Configure form (which already resolves with overrides).
         """
         ref = (ref or "").strip()
         if not ref:
             return JSONResponse(status_code=400, content={"error": "ref required"})
+        ov = None
+        if overrides:
+            try:
+                _parsed = json.loads(overrides)
+                ov = _parsed if isinstance(_parsed, dict) else None
+            except Exception:  # noqa: BLE001 — a malformed overrides is ignored
+                ov = None
         body, status = _composite_state_views.build_composite_state(
-            ws, ref, fresh=fresh in ("1", "true", "yes")
+            ws, ref, fresh=fresh in ("1", "true", "yes") or bool(ov), overrides=ov,
         )
         if status == 200:
             return CompositeState.model_validate(body)
@@ -1525,6 +1537,7 @@ def create_app() -> FastAPI:
     def composite_state(
         ref: Optional[str] = None,
         fresh: Optional[str] = None,
+        overrides: Optional[str] = None,
         ws: Path = Depends(get_workspace),
     ) -> Union[CompositeState, JSONResponse]:
         """Composite-state document for a dotted spec ID or workspace-relative path.
@@ -1544,7 +1557,7 @@ def create_app() -> FastAPI:
 
         Library-backed via ``lib.composite_state_views.build_composite_state``.
         """
-        return _composite_state_response(ref or "", fresh, ws)
+        return _composite_state_response(ref or "", fresh, ws, overrides)
 
     @app.get(
         "/api/composite-state/{ref:path}",
@@ -1577,6 +1590,7 @@ def create_app() -> FastAPI:
     def composite_inner_state(
         ref: Optional[str] = None,
         hops: Optional[str] = None,
+        overrides: Optional[str] = None,
         ws: Path = Depends(get_workspace),
     ) -> Union[CompositeState, JSONResponse]:
         """Inner composite state for a Composite Process, for the loom's
@@ -1598,20 +1612,31 @@ def create_app() -> FastAPI:
             return JSONResponse(status_code=400, content={"error": "hops must be JSON"})
         if not isinstance(parsed, list):
             return JSONResponse(status_code=400, content={"error": "hops must be a list"})
+        ov = None
+        if overrides:
+            try:
+                _parsed_ov = json.loads(overrides)
+                ov = _parsed_ov if isinstance(_parsed_ov, dict) else None
+            except Exception:  # noqa: BLE001 — a malformed overrides is ignored
+                ov = None
         # Prefer a COMMITTED inner-state (reports/composite-inner-state/<key>.json)
         # over a live env-worker build: instant, deterministic, and robust to the
         # warm-pool being briefly unavailable or a few-second cold build — the same
         # cache the figure outputs / read-only bundle use. Fall through to a live
         # build when none is committed (or the committed file is unreadable).
-        try:
-            from vivarium_workbench.lib.composite_inner_states import inner_state_key
-            _committed = ws / "reports" / "composite-inner-state" / f"{inner_state_key(ref, parsed)}.json"
-            if _committed.exists():
-                return CompositeState.model_validate(json.loads(_committed.read_text()))
-        except Exception:  # noqa: BLE001 — corrupt/missing → live build below
-            pass
+        # BUT NOT when overrides are supplied: the committed file is the BARE
+        # (no-config) drill, so a config-applied drill (e.g. batch_runner → the
+        # single cell with injected processes) must live-build with the overrides.
+        if not ov:
+            try:
+                from vivarium_workbench.lib.composite_inner_states import inner_state_key
+                _committed = ws / "reports" / "composite-inner-state" / f"{inner_state_key(ref, parsed)}.json"
+                if _committed.exists():
+                    return CompositeState.model_validate(json.loads(_committed.read_text()))
+            except Exception:  # noqa: BLE001 — corrupt/missing → live build below
+                pass
         body, status = _composite_state_views.build_inner_composite_state(
-            ws, ref, parsed
+            ws, ref, parsed, overrides=ov
         )
         if status == 200:
             return CompositeState.model_validate(body)

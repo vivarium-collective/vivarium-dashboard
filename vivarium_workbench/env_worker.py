@@ -461,6 +461,11 @@ def _pd_class_for_address(address: str):
     if not isinstance(address, str) or not address:
         return None
     addr = address.split(":", 1)[1] if ":" in address else address
+    # A leading "!" is a bigraph serialization marker (e.g. a param-serialized
+    # process address like "!v2ecoli.cell_shape.ShapeStep") — strip it so the
+    # dotted path imports (otherwise the class, its docstring, and its contract
+    # never resolve and the node renders as a bare placeholder).
+    addr = addr.lstrip("!")
     if "." not in addr:
         return None  # bare registry name — can't import a dotted path
     module_path, _, cls_name = addr.rpartition(".")
@@ -1121,6 +1126,7 @@ def _resolve_inner_composite_state(params: dict) -> dict:
     composite process), or ``{__build_error__}`` (instantiation raised)."""
     ref = (params or {}).get("ref")
     hops = (params or {}).get("hops") or []
+    _raw_ov = (params or {}).get("overrides") or {}
     if _workspace and _workspace not in sys.path:
         sys.path.insert(0, _workspace)
     _import_workspace_package(_workspace)
@@ -1136,9 +1142,18 @@ def _resolve_inner_composite_state(params: dict) -> dict:
     entry = _REGISTRY.get(ref)
     if entry is None:
         return {"__not_registered__": True}
+    # Filter overrides to the generator's DECLARED params (a stray key like the
+    # config's `_note` makes build_generator raise) and drop ""-valued fields
+    # (an empty Configure field = unset) — same normalization as the
+    # composite-state build path.
+    overrides = ({k: v for k, v in _raw_ov.items()
+                  if k in (entry.parameters or {}) and v != ""} or None
+                 if isinstance(_raw_ov, dict) else None)
     try:
         core = apply_core_extensions(entry, allocate_core())
-        doc = build_generator(entry, core=core)
+        # Build the ROOT with overrides so its config-applied wiring (e.g. the
+        # batch's `batch_runner`) is present for `hops` to navigate into.
+        doc = build_generator(entry, overrides, core=core)
         state = doc["state"] if isinstance(doc, dict) and "state" in doc else doc
         cur = Composite({"state": state}, core=core)
         crumbs: list = []

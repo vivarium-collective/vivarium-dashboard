@@ -91,13 +91,16 @@ def composite_state_via_subprocess(
 
 
 def inner_composite_state_via_subprocess(
-    ws_root: Path, ref: str, hops: "list[list[str]]"
+    ws_root: Path, ref: str, hops: "list[list[str]]",
+    overrides: "dict | None" = None,
 ) -> "dict | None":
     """Drill into a Composite Process via the workspace env worker.
 
-    Routes ``resolve_inner_composite_state{ref, hops}`` to the warm pool, which
-    instantiates the generator ``ref``, walks ``hops`` (a list of node paths)
-    into successive inner composites, and returns the innermost composite's loom
+    Routes ``resolve_inner_composite_state{ref, hops, overrides}`` to the warm
+    pool, which instantiates the generator ``ref`` (WITH ``overrides`` so the
+    root's config-applied wiring — e.g. the batch's ``batch_runner`` — is present
+    for ``hops`` to navigate), walks ``hops`` (a list of node paths) into
+    successive inner composites, and returns the innermost composite's loom
     state. Returns ``{"state": <doc>, "crumbs": [...]}`` on success, a sentinel
     (``{"__not_registered__"}`` / ``{"__error__"}`` / ``{"__build_error__"}``),
     or ``None`` when the worker is unavailable. Mirrors
@@ -107,13 +110,15 @@ def inner_composite_state_via_subprocess(
 
     try:
         return get_pool().call(
-            ws_root, "resolve_inner_composite_state", {"ref": ref, "hops": hops})
+            ws_root, "resolve_inner_composite_state",
+            {"ref": ref, "hops": hops, "overrides": overrides or {}})
     except EnvWorkerUnavailable:
         return None
 
 
 def build_inner_composite_state(
-    ws_root: Path, ref: str, hops: "list[list[str]]"
+    ws_root: Path, ref: str, hops: "list[list[str]]",
+    overrides: "dict | None" = None,
 ) -> "tuple[dict, int]":
     """GET /api/composite-inner-state worker — ``(payload_dict, status)``.
 
@@ -126,12 +131,15 @@ def build_inner_composite_state(
     if not ref:
         return {"error": "ref required"}, 400
     ws_root = Path(ws_root)
-    ckey = (str(ws_root), ref, tuple(tuple(h) for h in hops))
+    if overrides:
+        overrides = {k: v for k, v in overrides.items() if v != ""}
+    _ovkey = json.dumps(overrides or {}, sort_keys=True, default=str)
+    ckey = (str(ws_root), ref, tuple(tuple(h) for h in hops), _ovkey)
     hit = _COMPOSITE_STATE_CACHE.get(ckey)
     if hit is not None and (time.time() - hit[0]) < _COMPOSITE_STATE_TTL_S:
         return {**hit[1], "cached": True}, 200
 
-    res = inner_composite_state_via_subprocess(ws_root, ref, hops)
+    res = inner_composite_state_via_subprocess(ws_root, ref, hops, overrides)
     if res is None:
         return {"error": "env worker unavailable"}, 503
     if "state" in res:
@@ -177,6 +185,17 @@ def build_composite_state(
         return {"error": "ref required"}, 400
 
     ws_root = Path(ws_root)
+
+    # An empty Configure field arrives as "" — the loom renders a parameter whose
+    # default is None as a blank text input and submits that blank on resolve/Apply.
+    # Treat a top-level "" as UNSET: drop it so the generator sees the parameter's
+    # DEFAULT, not an explicit empty string. Without this, ecoli_baseline's batch
+    # guard rejects e.g. match_simdata="" ("single-cell-only … not supported in
+    # batch mode") for a param the user never set, and the entire config-applied
+    # build falls back to the bare composite (injected processes vanish). Only
+    # top-level blanks are dropped; nested config values are left untouched.
+    if overrides:
+        overrides = {k: v for k, v in overrides.items() if v != ""}
 
     # Building a whole-cell composite (build_generator) takes ~3s and is re-run
     # on every explorer open / pop-out. Checked FIRST so a hit skips the

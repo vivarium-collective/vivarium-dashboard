@@ -246,6 +246,7 @@ def node_cache_status(ws_root: Path | str, inv_slug: str) -> dict:
     from process_bigraph.templates import (
         study_members, study_ancestors, study_address)
     from process_bigraph.artifacts import artifact_exists
+    from vivarium_workbench.lib.investigation_figures import study_output_files
 
     ws_root = Path(ws_root)
     document = build_investigation_document(ws_root, inv_slug)
@@ -264,6 +265,14 @@ def node_cache_status(ws_root: Path | str, inv_slug: str) -> dict:
             ancestors = study_ancestors(document, slug)
         except Exception:  # noqa: BLE001
             ancestors = []
+        # Whether this study has downloadable figure outputs, so the graph card
+        # can gate its "↓ figures" link (a run whose analyses produced nothing —
+        # e.g. failed viz — has none). Same predicate as the outputs.zip the link
+        # downloads; tolerant so a bad member never blanks the graph.
+        try:
+            has_figures = bool(study_output_files(ws_root, slug))
+        except Exception:  # noqa: BLE001
+            has_figures = False
         nodes.append({
             "slug": slug,
             "id": meta.get("id"),
@@ -271,6 +280,7 @@ def node_cache_status(ws_root: Path | str, inv_slug: str) -> dict:
             "cached": bool(cached),
             "artifact_id": address,
             "ancestors": ancestors,
+            "has_figures": has_figures,
         })
 
     return {"investigation": inv_slug, "commit": commit, "nodes": nodes}

@@ -87,6 +87,9 @@ def _resolve_class(address: str) -> Any:
     if not isinstance(address, str) or not address:
         return None
     addr = address.split(":", 1)[1] if ":" in address else address
+    # Strip a leading "!" bigraph serialization marker (e.g.
+    # "!v2ecoli.cell_shape.ShapeStep") so the dotted path imports.
+    addr = addr.lstrip("!")
     if "." not in addr:
         return None
     module_path, _, cls_name = addr.rpartition(".")
