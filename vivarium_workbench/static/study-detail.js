@@ -1117,6 +1117,22 @@
           // reader opens the one they want.
           var cardEl = cardHost.firstElementChild;
           wrap.querySelector('p').replaceWith(cardEl);
+          // Seed the Explore loom with the study's config overrides so its
+          // bigraph + Configure resolve CONFIG-APPLIED from the first open —
+          // the injected processes (permeability, gillespie, …), cache_dir, and
+          // knobs from the "Config used" panel above — instead of the bare
+          // composite. The loom embed consumes ._overrides on mount
+          // (_openCompositeLoomInline → ?id=&overrides=); without this seed the
+          // model tab showed the default composite and Apply defaulted to
+          // out/cache. Interactive Apply/Reset inside the card still take over.
+          try {
+            var _ov = (entry.overridesJson && entry.overridesJson !== '{}')
+              ? entry.overridesJson : '';
+            if (_ov && cardEl && cardEl.querySelector) {
+              var _emb = cardEl.querySelector('.ccard-loom-embed');
+              if (_emb) _emb._overrides = _ov;
+            }
+          } catch (e) { /* seeding is best-effort — bare loom still works */ }
           // The model file — each process's config formatted (for viva-smoldyn:
           // species / reactions / bounds) — shown ABOVE the loom explorer.
           var cfgHost = document.createElement('div');
