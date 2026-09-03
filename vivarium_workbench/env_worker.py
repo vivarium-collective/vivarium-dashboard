@@ -461,6 +461,11 @@ def _pd_class_for_address(address: str):
     if not isinstance(address, str) or not address:
         return None
     addr = address.split(":", 1)[1] if ":" in address else address
+    # A leading "!" is a bigraph serialization marker (e.g. a param-serialized
+    # process address like "!v2ecoli.cell_shape.ShapeStep") — strip it so the
+    # dotted path imports (otherwise the class, its docstring, and its contract
+    # never resolve and the node renders as a bare placeholder).
+    addr = addr.lstrip("!")
     if "." not in addr:
         return None  # bare registry name — can't import a dotted path
     module_path, _, cls_name = addr.rpartition(".")
