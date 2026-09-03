@@ -1066,8 +1066,24 @@
       wrap.className = 'model-composite-card-wrap';
       wrap.style.marginBottom = '12px';
       var esc = window.SimTable ? window.SimTable.esc : function (s) { return String(s == null ? '' : s); };
+      // The study's actual config that runs this composite — the run_config
+      // folded into the baseline condition's params (injected_processes,
+      // cache_dir, generations, …). The "Configuration" section below renders
+      // body.state, which IS the config for a model like Smoldyn (state == the
+      // model file) but NOT for ecoli_baseline, whose study-specific config lives
+      // in these overrides. Show it as a "Config used" panel ABOVE the card so a
+      // reader sees which config produced this model without opening the loom.
+      var _cfgObj = {}; try { _cfgObj = JSON.parse(entry.overridesJson || '{}'); } catch (e) {}
+      var _cfgUsedHtml = '';
+      if (_cfgObj && Object.keys(_cfgObj).length) {
+        _cfgUsedHtml = '<details class="model-config-used" open style="margin:0 0 8px 0">' +
+          '<summary class="muted" style="font-size:0.78em;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;cursor:pointer">Config used</summary>' +
+          '<pre style="font-size:0.8em;line-height:1.45;background:var(--surface-2,#f6f8fa);border:1px solid var(--border,#e1e4e8);border-radius:6px;padding:8px 10px;margin:4px 0 0;overflow:auto;max-height:360px">' +
+          esc(_yamlish(_cfgObj)) + '</pre></details>';
+      }
       wrap.innerHTML = '<div class="muted" style="font-size:0.78em;font-weight:600;margin:0 0 4px 2px;text-transform:uppercase;letter-spacing:0.02em">' +
         entry.labels.map(esc).join(' · ') + '</div>' +
+        _cfgUsedHtml +
         '<p class="muted" style="font-size:0.85em;margin:0">Resolving composite…</p>';
       mount.appendChild(wrap);
       // Snapshot-aware: a read-only bundle has no live /api/composite-resolve,
