@@ -2253,6 +2253,39 @@ def create_app() -> FastAPI:
                 },
             )
 
+    @app.get(
+        "/api/study-config-file",
+        tags=["Studies"],
+        summary="Parsed contents of a config file a study arm references (whole_config / config_file)",
+    )
+    def study_config_file_route(
+        study: str,
+        ref: str,
+        ws: Path = Depends(get_workspace),
+    ) -> JSONResponse:
+        """Return ``{ref, content}`` — the parsed JSON of a config file a study arm
+        references by path (e.g. the vecoli arm's ``whole_config``). Lets the Model
+        tab expand the reference to the ACTUAL config that runs instead of a bare
+        path. Resolves via ``_find_config_file`` (study dir → workspace root),
+        guarding against path traversal; 404 when it doesn't resolve."""
+        import json as _json
+        from vivarium_workbench.lib.investigations import _find_config_file
+        from vivarium_workbench.lib.study_runs import _resolve_study_dir
+        if not _study_spec.SLUG_RE.match(study):
+            return JSONResponse(status_code=400, content={"error": "invalid slug"})
+        # Traversal guard: no absolute paths, no parent-escape segments.
+        if not ref or Path(ref).is_absolute() or ".." in Path(ref).parts:
+            return JSONResponse(status_code=400, content={"error": "invalid ref"})
+        study_dir = _resolve_study_dir(ws, study)
+        fp = _find_config_file(ref, study_dir)
+        if fp is None or not fp.is_file():
+            return JSONResponse(status_code=404, content={"error": f"config not found: {ref}"})
+        try:
+            content = _json.loads(fp.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            return JSONResponse(status_code=500, content={"error": f"failed to read {ref}: {exc}"})
+        return JSONResponse(content={"ref": ref, "content": content})
+
     # -----------------------------------------------------------------------
     # Data explorer routes  (always HTTP 200 — error carried in body)
     # -----------------------------------------------------------------------
