@@ -578,6 +578,16 @@ def _validate_expected_behavior(spec: dict) -> None:
             raise InvestigationSpecError(
                 f"expected_behavior[{i}].name is required and must be non-empty"
             )
+        # Descriptive entries — the {name, observable, condition, rationale}
+        # shape most studies use — declare none of the structured-DSL fields.
+        # They already pass on the v4/conditions path (which skips this
+        # validator), so tolerate them here too: otherwise a comparison-type
+        # study (no `conditions:` block, routed through this v3 check) is
+        # rejected for a shape the rest of the app renders fine. Only enforce
+        # the full DSL when an entry OPTS IN by declaring at least one of
+        # en / measure / expect.
+        if not any(entry.get(k) is not None for k in ("en", "measure", "expect")):
+            continue
         if not entry.get("en"):
             raise InvestigationSpecError(
                 f"expected_behavior[{i}].en is required and must be non-empty"
