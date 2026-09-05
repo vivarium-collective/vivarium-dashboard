@@ -953,12 +953,17 @@
       if (!keys.length) return pad + '{}';
       return keys.map(function (k) {
         var val = v[k];
-        var hasChildren = val && typeof val === 'object' &&
-          (Array.isArray(val) ? val.length : Object.keys(val).length);
-        if (hasChildren) {
-          // inline short arrays of scalars (e.g. bounds [0, 100]) for readability
-          if (Array.isArray(val) && val.every(function (x) { return typeof x !== 'object'; })) {
-            return pad + k + ': [' + val.map(scalar).join(', ') + ']';
+        if (val && typeof val === 'object') {
+          // Empty collections must render literally — never fall through to
+          // scalar(), which stringifies {} to "[object Object]" and [] to "".
+          if (Array.isArray(val)) {
+            if (!val.length) return pad + k + ': []';
+            // inline short arrays of scalars (e.g. bounds [0, 100]) for readability
+            if (val.every(function (x) { return typeof x !== 'object'; })) {
+              return pad + k + ': [' + val.map(scalar).join(', ') + ']';
+            }
+          } else if (!Object.keys(val).length) {
+            return pad + k + ': {}';
           }
           return pad + k + ':\n' + _yamlish(val, indent + 1);
         }
@@ -975,7 +980,12 @@
     var procs = [];
     (function walk(node, name) {
       if (!node || typeof node !== 'object') return;
-      if (node._type === 'process' && node.config) {
+      // Only surface processes that actually carry config. A whole-cell
+      // composite (ecoli_baseline) exposes bookkeeping steps like global_clock
+      // with an empty {} config; rendering those as "Configuration" is pure
+      // noise (the study's real config is the "Config used" panel above).
+      if (node._type === 'process' && node.config &&
+          typeof node.config === 'object' && Object.keys(node.config).length) {
         procs.push({ name: name, address: node.address || '', config: node.config });
       }
       Object.keys(node).forEach(function (k) {
