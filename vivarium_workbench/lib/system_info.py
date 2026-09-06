@@ -143,6 +143,9 @@ def build_ui_config(ws_root: Path) -> dict:
 
     Keys returned:
       composite_view          — default "bigraph-loom"
+      auto_results            — default True; gates whether a composite run
+                                 auto-runs its declared analyses/visualizations
+                                 (see lib.composite_flush.run_flush)
     """
     ws_root = Path(ws_root)
     from vivarium_workbench.lib.deploy_config import resolve_ui_config
@@ -153,6 +156,7 @@ def build_ui_config(ws_root: Path) -> dict:
     return {
         "readonly": readonly,
         "composite_view": ui.get("composite_view", "bigraph-loom"),
+        "auto_results": ui.get("auto_results", True),
     }
 
 

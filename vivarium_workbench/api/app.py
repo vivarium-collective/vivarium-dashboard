@@ -2815,7 +2815,9 @@ def create_app() -> FastAPI:
         Reads workspace.yaml's ``ui:`` block.  Missing/unreadable workspace →
         all-default values.  Always 200.
 
-        Keys: ``composite_view`` (default "bigraph-loom").
+        Keys: ``composite_view`` (default "bigraph-loom"), ``auto_results``
+        (default True — gates whether a composite run auto-runs its declared
+        analyses/visualizations).
 
         The legacy handler serializes whatever ``ui.get(...)`` returns at HTTP
         200, even a non-string value (e.g. ``composite_view: 42``).  The typed

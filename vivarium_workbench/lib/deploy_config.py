@@ -1,7 +1,8 @@
 """Deployment-config layer for ``ui.*`` bindings (workbench issue #471).
 
 ``workspace.yaml``'s ``ui:`` block is a three-way straddler: it holds genuine
-workspace preferences (``composite_view``) alongside **deployment / integration
+workspace preferences (``composite_view``, ``auto_results``) alongside
+**deployment / integration
 bindings** — URLs to hosted external singletons such as ``ptools_server_url``,
 ``dashboard_public_base_url`` and ``viz_viewer_urls``. The latter belong to a
 deployment-config layer, not to the scientific record (see ``lib/staging.py``,

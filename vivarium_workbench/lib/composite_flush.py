@@ -273,18 +273,33 @@ def render_report_card(*, req, viz_names: list, analyses: list) -> str:
     )
 
 
+def _auto_results_enabled(run_dir: Path) -> bool:
+    """Read ``ui.auto_results`` (default True) for the workspace owning
+    ``run_dir``.  Mirrors ``_render_analysis``'s ``ws_root = run_dir.parents[2]``
+    (``run_dir`` is ``<ws>/.pbg/runs/<run_id>``). Best-effort: any failure
+    (bad path, unreadable workspace.yaml, ...) degrades to the default
+    ``True`` rather than blocking the flush."""
+    try:
+        ws_root = Path(run_dir).parents[2]
+        from vivarium_workbench.lib.system_info import build_ui_config
+        return bool(build_ui_config(ws_root).get("auto_results", True))
+    except Exception:  # noqa: BLE001 — default True, never block the flush
+        return True
+
+
 def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
               run_id: str, core) -> dict:
     run_dir = Path(run_dir)
     analyses: list = []
     has_analyses = False
-    try:
-        analyses = _dispatch_analyses(
-            spec_id=spec_id, db_file=db_file, run_id=run_id, core=core,
-            run_dir=run_dir, req=req)
-        has_analyses = bool(analyses)
-    except Exception:
-        traceback.print_exc()
+    if _auto_results_enabled(run_dir):
+        try:
+            analyses = _dispatch_analyses(
+                spec_id=spec_id, db_file=db_file, run_id=run_id, core=core,
+                run_dir=run_dir, req=req)
+            has_analyses = bool(analyses)
+        except Exception:
+            traceback.print_exc()
     try:
         (run_dir / "analyses.json").write_text(
             json.dumps(analyses, default=str), encoding="utf-8")

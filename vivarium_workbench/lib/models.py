@@ -1131,6 +1131,7 @@ class UiConfig(BaseModel):
     # controls and goes remote-only (no Local source option).
     readonly: bool = False
     composite_view: str
+    auto_results: bool = True
 
 
 class WorkspaceHome(BaseModel):
