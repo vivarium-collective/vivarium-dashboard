@@ -46,11 +46,25 @@ def run_declared_results(run_dir, spec: dict, *, ws_root, run_id: str,
     if analyses_entries:
         written, ana_errors = run_study_analyses(run_dir, spec, run_id, ws_root)
         errors.extend(ana_errors)
+        # analyses.json must be a JSON LIST -- it mirrors the shape the other
+        # two writers of this same file use (composite_flush.run_flush's
+        # per-analysis dicts; remote_run_landing._fold_analyses's
+        # {"name","written","errors"} entries), because the real consumer
+        # (composite_run_views.py) derives has_analyses from
+        # `content not in ("", "[]")`. A dict is never "[]", so it would
+        # false-positive has_analyses=True even when nothing was produced.
+        # Only emit a non-empty list when analyses actually wrote output --
+        # a pure-failure run (no written files, even with errors) must still
+        # read as has_analyses=False.
+        if written:
+            names = [e.get("name") for e in analyses_entries if isinstance(e, dict)]
+            entries = [{"name": ", ".join(str(n) for n in names if n) or None,
+                       "written": written, "errors": ana_errors}]
+        else:
+            entries = []
         try:
             out_path = run_dir / "analyses.json"
-            out_path.write_text(
-                json.dumps({"written": written, "errors": ana_errors}, default=str),
-                encoding="utf-8")
+            out_path.write_text(json.dumps(entries, default=str), encoding="utf-8")
             analyses_path = str(out_path)
         except Exception as exc:  # noqa: BLE001 — best-effort, never raise
             errors.append({"error": f"failed to write analyses.json: "
@@ -63,13 +77,15 @@ def run_declared_results(run_dir, spec: dict, *, ws_root, run_id: str,
         viz_names = viz_files
         errors.extend(viz_errors)
 
-    # render_report_card lives in composite_flush.py, which (Task 5) will
-    # import run_declared_results from this module -- import lazily here so
-    # the two modules never form a load-time cycle.
-    from vivarium_workbench.lib.composite_flush import render_report_card
-
     report_path = None
     try:
+        # render_report_card lives in composite_flush.py, which (Task 5) will
+        # import run_declared_results from this module -- import lazily here
+        # (inside this try, not at module top) so the two modules never form
+        # a load-time cycle AND so an import failure degrades to an error
+        # entry + PARTIAL rather than raising out of a function documented
+        # as never raising.
+        from vivarium_workbench.lib.composite_flush import render_report_card
         html = render_report_card(req=None, viz_names=viz_names,
                                    analyses=analyses_entries)
         out_path = run_dir / "report.html"

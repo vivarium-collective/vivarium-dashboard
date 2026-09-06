@@ -41,17 +41,48 @@ def test_analyses_error_is_partial_real_run_study_analyses(tmp_path):
     assert any("no persistent run store" in e.get("error", "")
                for e in out["errors"])
 
+    # analyses.json must be a JSON LIST (matching the other two writers of
+    # this file: composite_flush.run_flush, remote_run_landing._fold_analyses)
+    # -- and, since no files were actually produced, an EMPTY list, even
+    # though there were errors. The real consumer (composite_run_views.py)
+    # derives has_analyses from `content not in ("", "[]")`, so a pure-failure
+    # run must read as has_analyses=False, not silently false-positive.
     analyses_path = Path(out["analyses"])
     assert analyses_path == run_dir / "analyses.json"
-    written = json.loads(analyses_path.read_text())
-    assert written["written"] == []
-    assert any("no persistent run store" in e.get("error", "")
-               for e in written["errors"])
+    raw = analyses_path.read_text()
+    assert raw == "[]"
+    assert json.loads(raw) == []
 
     # Report card is still rendered (best-effort) even when analyses fail.
     assert out["report"] == str(run_dir / "report.html")
     assert (run_dir / "report.html").is_file()
     assert out["viz"] == []
+
+
+def test_analyses_success_writes_nonempty_list(tmp_path, monkeypatch):
+    """run_study_analyses producing real output -> analyses.json is a
+    non-empty JSON LIST (not the dict shape this module used to write)."""
+
+    def fake_run_study_analyses(study_dir, spec, run_id, ws_root):
+        return ["viz/simularium/out.json"], []
+
+    monkeypatch.setattr(declared_results, "run_study_analyses",
+                        fake_run_study_analyses)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    spec = {"analyses": [{"name": "some_analysis"}], "visualizations": [],
+            "baseline": {"composite": "c"}}
+    out = declared_results.run_declared_results(
+        run_dir, spec, ws_root=tmp_path, run_id="r1")
+
+    assert out["status"] == "OK"
+    analyses_path = Path(out["analyses"])
+    entries = json.loads(analyses_path.read_text())
+    assert isinstance(entries, list)
+    assert len(entries) == 1
+    assert entries[0]["written"] == ["viz/simularium/out.json"]
+    assert entries[0]["errors"] == []
+    assert entries[0]["name"] == "some_analysis"
 
 
 def test_unregistered_analysis_is_partial_mocked(tmp_path, monkeypatch):
@@ -126,3 +157,56 @@ def test_render_report_card_imported_lazily_not_at_module_level():
     import vivarium_workbench.lib.declared_results as dr
     assert not hasattr(dr, "render_report_card")
     assert "composite_flush" not in dr.__dict__
+
+
+def test_report_card_raising_degrades_to_partial(tmp_path, monkeypatch):
+    """render_report_card raising must be caught -- the function is
+    documented as never raising -- and degrade to PARTIAL, not propagate."""
+    import vivarium_workbench.lib.composite_flush as composite_flush
+
+    def boom(**kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(composite_flush, "render_report_card", boom)
+    monkeypatch.setattr(declared_results, "render_study_visualizations",
+                        lambda *a, **k: ([], []))
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    spec = {"analyses": [], "visualizations": [{"name": "foo"}],
+            "baseline": {"composite": "c"}}
+
+    out = declared_results.run_declared_results(
+        run_dir, spec, ws_root=tmp_path, run_id="r1")
+
+    assert out["status"] == "PARTIAL"
+    assert any("boom" in e.get("error", "") for e in out["errors"])
+    assert out["report"] is None
+    assert not (run_dir / "report.html").exists()
+
+
+def test_report_card_import_failure_degrades_to_partial(tmp_path, monkeypatch):
+    """A failure to even IMPORT render_report_card (the lazy import itself)
+    must also degrade to PARTIAL, not raise -- this is why the import lives
+    inside the try, not just the call."""
+    import sys
+    import types
+
+    fake_module = types.ModuleType("vivarium_workbench.lib.composite_flush")
+    # Deliberately has no render_report_card attribute -> the lazy
+    # `from ... import render_report_card` raises ImportError.
+    monkeypatch.setitem(sys.modules, "vivarium_workbench.lib.composite_flush",
+                        fake_module)
+    monkeypatch.setattr(declared_results, "render_study_visualizations",
+                        lambda *a, **k: ([], []))
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    spec = {"analyses": [], "visualizations": [{"name": "foo"}],
+            "baseline": {"composite": "c"}}
+
+    out = declared_results.run_declared_results(
+        run_dir, spec, ws_root=tmp_path, run_id="r1")
+
+    assert out["status"] == "PARTIAL"
+    assert any("ImportError" in e.get("error", "") for e in out["errors"])
+    assert out["report"] is None
+    assert not (run_dir / "report.html").exists()
