@@ -1022,6 +1022,39 @@
   // route, no new endpoint). One card per unique composite; a study with no
   // declared composite gets a clear empty note instead of a blank panel.
   var _modelCardsLoaded = false;
+  // Render the study's ONE canonical config (source of truth) as a single panel
+  // at the top of the model section, resolved from the config file so every study
+  // displays the same legible config regardless of per-arm mechanics (config_file
+  // fold vs whole_config path vs inlined params). `ref` is study.config, else
+  // three_arm.native_config (the vEcoli source the run_config is generated from).
+  function _renderStudyConfigPanel(mount, ref, esc) {
+    var wrap = document.createElement('div');
+    wrap.className = 'model-study-config';
+    wrap.style.cssText = 'margin:0 0 14px 0';
+    wrap.innerHTML =
+      '<details class="model-config-used" open style="margin:0">' +
+      '<summary class="muted" style="font-size:0.78em;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;cursor:pointer">' +
+      'Config used <span style="font-weight:400;text-transform:none">— source of truth: <code>' + esc(ref) + '</code>, run by both arms</span></summary>' +
+      '<pre class="study-config-pre" style="font-size:0.8em;line-height:1.45;background:var(--surface-2,#f6f8fa);border:1px solid var(--border,#e1e4e8);border-radius:6px;padding:8px 10px;margin:4px 0 0;overflow:auto;max-height:420px">Resolving ' + esc(ref) + ' …</pre></details>';
+    mount.appendChild(wrap);
+    var pre = wrap.querySelector('.study-config-pre');
+    var api = (window.DataSource && window.DataSource.apiUrl)
+      ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+    fetch(api('/api/study-config-file?study=' + encodeURIComponent(studyName()) +
+              '&ref=' + encodeURIComponent(ref)))
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!pre) return;
+        if (!j || !j.content) { pre.textContent = ref + ' (config not resolvable from the workspace)'; return; }
+        // Drop meta keys (_note explaining run_config is generated) — show the
+        // config itself, the experiment definition a reader cares about.
+        var shown = {};
+        Object.keys(j.content).forEach(function (k) { if (k[0] !== '_') shown[k] = j.content[k]; });
+        pre.textContent = _yamlish(shown);
+      })
+      .catch(function () { if (pre) pre.textContent = ref + ' (could not load config)'; });
+  }
+
   function _loadModelCards(force) {
     var mount = document.getElementById('model-composite-cards');
     if (!mount) return;
@@ -1070,6 +1103,16 @@
     var modelSection = document.getElementById('model-section');
     if (modelSection) modelSection.style.display = 'none';
     mount.innerHTML = '';
+    // The study's ONE canonical config (source of truth) — the vEcoli config both
+    // model arms derive from (study.config, else three_arm.native_config, surfaced
+    // by the template as data-study-config). Render it ONCE for the whole study so
+    // every study shows the same legible config, instead of each arm's derived
+    // params (run_config vs whole_config vs inlined). Absent → fall back to the
+    // per-arm panels below (a non-comparison / single-model study).
+    var _esc0 = window.SimTable ? window.SimTable.esc : function (s) { return String(s == null ? '' : s); };
+    var _studyCfgRef = (mount.getAttribute('data-study-config') || '').trim();
+    var _hasStudyCfg = !!_studyCfgRef;
+    if (_hasStudyCfg) _renderStudyConfigPanel(mount, _studyCfgRef, _esc0);
     order.forEach(function (id) {
       var entry = byId[id];
       var wrap = document.createElement('div');
@@ -1085,7 +1128,11 @@
       // reader sees which config produced this model without opening the loom.
       var _cfgObj = {}; try { _cfgObj = JSON.parse(entry.overridesJson || '{}'); } catch (e) {}
       var _cfgUsedHtml = '';
-      if (_cfgObj && Object.keys(_cfgObj).length) {
+      // Suppressed when the study has a canonical config panel above — the arms
+      // both derive from that ONE config, so per-arm param dumps would just be
+      // the same thing shown twice (or the confusing run_config vs whole_config
+      // split). Only shown for single-model studies with no canonical config.
+      if (!_hasStudyCfg && _cfgObj && Object.keys(_cfgObj).length) {
         _cfgUsedHtml = '<details class="model-config-used" open style="margin:0 0 8px 0">' +
           '<summary class="muted" style="font-size:0.78em;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;cursor:pointer">Config used</summary>' +
           '<pre class="model-config-used-pre" style="font-size:0.8em;line-height:1.45;background:var(--surface-2,#f6f8fa);border:1px solid var(--border,#e1e4e8);border-radius:6px;padding:8px 10px;margin:4px 0 0;overflow:auto;max-height:360px">' +
@@ -1103,7 +1150,7 @@
       // value survives — e.g. vecoli's whole_config.)
       var _cfgRef = (typeof _cfgObj.whole_config === 'string' && _cfgObj.whole_config) ||
                     (typeof _cfgObj.config_file === 'string' && _cfgObj.config_file) || '';
-      if (_cfgRef) {
+      if (!_hasStudyCfg && _cfgRef) {
         var _preEl = wrap.querySelector('.model-config-used-pre');
         var _cfApi = (window.DataSource && window.DataSource.apiUrl)
           ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
