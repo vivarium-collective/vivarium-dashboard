@@ -953,12 +953,17 @@
       if (!keys.length) return pad + '{}';
       return keys.map(function (k) {
         var val = v[k];
-        var hasChildren = val && typeof val === 'object' &&
-          (Array.isArray(val) ? val.length : Object.keys(val).length);
-        if (hasChildren) {
-          // inline short arrays of scalars (e.g. bounds [0, 100]) for readability
-          if (Array.isArray(val) && val.every(function (x) { return typeof x !== 'object'; })) {
-            return pad + k + ': [' + val.map(scalar).join(', ') + ']';
+        if (val && typeof val === 'object') {
+          // Empty collections must render literally — never fall through to
+          // scalar(), which stringifies {} to "[object Object]" and [] to "".
+          if (Array.isArray(val)) {
+            if (!val.length) return pad + k + ': []';
+            // inline short arrays of scalars (e.g. bounds [0, 100]) for readability
+            if (val.every(function (x) { return typeof x !== 'object'; })) {
+              return pad + k + ': [' + val.map(scalar).join(', ') + ']';
+            }
+          } else if (!Object.keys(val).length) {
+            return pad + k + ': {}';
           }
           return pad + k + ':\n' + _yamlish(val, indent + 1);
         }
@@ -975,7 +980,12 @@
     var procs = [];
     (function walk(node, name) {
       if (!node || typeof node !== 'object') return;
-      if (node._type === 'process' && node.config) {
+      // Only surface processes that actually carry config. A whole-cell
+      // composite (ecoli_baseline) exposes bookkeeping steps like global_clock
+      // with an empty {} config; rendering those as "Configuration" is pure
+      // noise (the study's real config is the "Config used" panel above).
+      if (node._type === 'process' && node.config &&
+          typeof node.config === 'object' && Object.keys(node.config).length) {
         procs.push({ name: name, address: node.address || '', config: node.config });
       }
       Object.keys(node).forEach(function (k) {
@@ -1078,7 +1088,7 @@
       if (_cfgObj && Object.keys(_cfgObj).length) {
         _cfgUsedHtml = '<details class="model-config-used" open style="margin:0 0 8px 0">' +
           '<summary class="muted" style="font-size:0.78em;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;cursor:pointer">Config used</summary>' +
-          '<pre style="font-size:0.8em;line-height:1.45;background:var(--surface-2,#f6f8fa);border:1px solid var(--border,#e1e4e8);border-radius:6px;padding:8px 10px;margin:4px 0 0;overflow:auto;max-height:360px">' +
+          '<pre class="model-config-used-pre" style="font-size:0.8em;line-height:1.45;background:var(--surface-2,#f6f8fa);border:1px solid var(--border,#e1e4e8);border-radius:6px;padding:8px 10px;margin:4px 0 0;overflow:auto;max-height:360px">' +
           esc(_yamlish(_cfgObj)) + '</pre></details>';
       }
       wrap.innerHTML = '<div class="muted" style="font-size:0.78em;font-weight:600;margin:0 0 4px 2px;text-transform:uppercase;letter-spacing:0.02em">' +
@@ -1086,6 +1096,33 @@
         _cfgUsedHtml +
         '<p class="muted" style="font-size:0.85em;margin:0">Resolving composite…</p>';
       mount.appendChild(wrap);
+      // Expand a config-file reference (the vecoli arm's whole_config, or a
+      // config_file) to the ACTUAL config that runs, so "Config used" shows the
+      // real config instead of a bare path. (ecoli_baseline's config_file is
+      // already folded server-side into params, so this only fires when a path
+      // value survives — e.g. vecoli's whole_config.)
+      var _cfgRef = (typeof _cfgObj.whole_config === 'string' && _cfgObj.whole_config) ||
+                    (typeof _cfgObj.config_file === 'string' && _cfgObj.config_file) || '';
+      if (_cfgRef) {
+        var _preEl = wrap.querySelector('.model-config-used-pre');
+        var _cfApi = (window.DataSource && window.DataSource.apiUrl)
+          ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
+        fetch(_cfApi('/api/study-config-file?study=' + encodeURIComponent(studyName()) +
+                     '&ref=' + encodeURIComponent(_cfgRef)))
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (j) {
+            if (!j || !j.content || !_preEl) return;
+            // Show the config file's contents, then the non-path params (e.g.
+            // variant) that select within it. Drop meta keys (_note) + the path.
+            var merged = {};
+            Object.keys(j.content).forEach(function (k) { if (k[0] !== '_') merged[k] = j.content[k]; });
+            Object.keys(_cfgObj).forEach(function (k) {
+              if (k !== 'whole_config' && k !== 'config_file') merged[k] = _cfgObj[k];
+            });
+            _preEl.textContent = _yamlish(merged);
+          })
+          .catch(function () { /* keep the bare-path fallback already rendered */ });
+      }
       // Snapshot-aware: a read-only bundle has no live /api/composite-resolve,
       // so publish.py bakes the card payload to api/composite-resolve/<id>.json.
       var _mcApi = (window.DataSource && window.DataSource.apiUrl) ? window.DataSource.apiUrl.bind(window.DataSource) : function (p) { return p; };
