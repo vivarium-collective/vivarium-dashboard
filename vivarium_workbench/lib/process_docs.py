@@ -68,11 +68,20 @@ def _contract_for_class(cls: Any) -> dict | None:
     equations + symbol key), expanded to the loom's ``_contract`` shape so the
     process CARD can render it. ``None`` when the class declares no contract."""
     c = getattr(cls, "contract", None)
+    # A structured ProcessContract (bigraph_schema.contract) exposes a to_dict()
+    # accessor with the same summary/description/math/symbols fields. Normalize it
+    # to the dict shape below — duck-typed (no import) so this stays import-light
+    # and back-compatible with a plain-dict contract.
+    if c is not None and not isinstance(c, dict) and hasattr(c, "to_dict"):
+        try:
+            c = c.to_dict()
+        except Exception:
+            c = None
     if not isinstance(c, dict) or not c.get("summary"):
         return None
     return {
         "summary": c["summary"],
-        "description": c.get("description", c["summary"]),
+        "description": c.get("description") or c["summary"],
         "status": "",
         "math": list(c.get("math", [])),
         "symbols": dict(c.get("symbols", {})),
