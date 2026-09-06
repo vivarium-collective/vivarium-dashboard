@@ -1134,6 +1134,17 @@ class UiConfig(BaseModel):
     auto_results: bool = True
 
 
+class UiConfigUpdateBody(BaseModel):
+    """POST /api/ui-config {auto_results: bool}
+
+    Task 9 (composite-run-auto-results): the write side of ``UiConfig.auto_results``.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    auto_results: Optional[bool] = None
+
+
 class WorkspaceHome(BaseModel):
     """``GET /api/workspace`` payload (lib.system_info.build_workspace_home).
 

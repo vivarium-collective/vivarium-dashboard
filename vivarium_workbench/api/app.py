@@ -66,6 +66,7 @@ from vivarium_workbench.lib import investigation_run_views as _investigation_run
 from vivarium_workbench.lib import compare_group_mutations as _compare_grp_mut
 from vivarium_workbench.lib import viz_write_mutations as _viz_write_mut
 from vivarium_workbench.lib import viz_commit_mutations as _viz_commit_mut
+from vivarium_workbench.lib import ui_settings_mutations as _ui_settings_mut
 from vivarium_workbench.lib import viz_accept_views as _viz_accept_views
 from vivarium_workbench.lib import viz_preview_views as _viz_preview_views
 from vivarium_workbench.lib import viz_preview_instance_views as _viz_preview_instance_views
@@ -196,6 +197,7 @@ from vivarium_workbench.lib.models import (
     StudyChartsPayload,
     SystemDepsCheck,
     UiConfig,
+    UiConfigUpdateBody,
     VisualizationClassesPayload,
     VisualizationInstances,
     VisualizationStatus,
@@ -2832,6 +2834,33 @@ def create_app() -> FastAPI:
             return UiConfig.model_validate(data)
         except ValidationError:
             return JSONResponse(status_code=200, content=data)
+
+    @app.post(
+        "/api/ui-config",
+        tags=["System"],
+        summary="Persist a UI feature flag into workspace.yaml's ui: block",
+    )
+    def ui_config_update_route(
+        req: UiConfigUpdateBody,
+        ws: Path = Depends(get_workspace),
+    ) -> Union[dict, JSONResponse]:
+        """Persist ``ui.auto_results`` for POST /api/ui-config.
+
+        Body: ``{auto_results: bool}`` — the default-on setting (Task 7) that
+        gates whether a composite run auto-runs its declared analyses/
+        visualizations (``lib.composite_flush.run_flush``).
+
+        400 when ``auto_results`` is missing or not a bool; 200
+        ``{ok: true, auto_results: <bool>}`` on success. This is a mirror, not
+        the source of truth — a mirror (e.g. the loom viewer checkbox) reads it
+        back via ``GET /api/ui-config``.
+
+        Delegates to ``lib.ui_settings_mutations.ui_config_update``.
+        """
+        body, status = _ui_settings_mut.ui_config_update(ws, req.model_dump(exclude_unset=True))
+        if status != 200:
+            return JSONResponse(status_code=status, content=body)
+        return body
 
     @app.get(
         "/api/workspace",
