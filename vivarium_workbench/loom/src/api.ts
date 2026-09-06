@@ -155,7 +155,21 @@ export async function fetchInnerComposite(
   if (overrides && Object.keys(overrides).length) {
     q.set('overrides', JSON.stringify(overrides));
   }
-  const r = await fetch('/api/composite-inner-state?' + q.toString());
+  // The inner build is ParCa-heavy and can wedge (a stuck env-worker build never
+  // returns), which otherwise leaves the preview on "building inner model…"
+  // forever. Cap it so the caller falls to a retryable error instead of hanging.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 60000);
+  let r: Response;
+  try {
+    r = await fetch('/api/composite-inner-state?' + q.toString(), { signal: ctrl.signal });
+  } catch (e: any) {
+    throw new Error(
+      e?.name === 'AbortError' ? 'inner composite build timed out' : (e?.message || String(e)),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
   const body = await r.json();
   if (!r.ok) throw new Error(body.error || `HTTP ${r.status}`);
   return body as InnerCompositeResponse;

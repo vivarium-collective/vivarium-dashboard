@@ -24,8 +24,20 @@ type CacheEntry = { status: 'loading' | 'ready' | 'error'; graph?: Graph; error?
 const _CACHE = new Map<string, CacheEntry>();
 const _WAITERS = new Map<string, Set<() => void>>();
 
-function _key(rootId: string, hops: string[][]): string {
-  return rootId + '::' + JSON.stringify(hops);
+// The config overrides these previews must resolve with (n_generations>1 → the
+// batch's batch_runner exists to drill into, etc.), set by App whenever the
+// root's applied config changes. Module-level so we don't thread a prop through
+// every ProcessNode; the cache key includes it, so a config change re-keys
+// instead of surfacing a stale default-config preview (or hanging on a hop that
+// only exists in the config-applied graph).
+let _lastOverrides: Record<string, unknown> = {};
+export function setInnerCompositeOverrides(ov: Record<string, unknown> | undefined): void {
+  _lastOverrides = ov || {};
+}
+
+function _key(rootId: string, hops: string[][], overrides: Record<string, unknown> = _lastOverrides): string {
+  const ov = overrides && Object.keys(overrides).length ? '::' + JSON.stringify(overrides) : '';
+  return rootId + '::' + JSON.stringify(hops) + ov;
 }
 
 function _notify(key: string) {
@@ -37,11 +49,13 @@ function _notify(key: string) {
  *  right after a server (re)start, and the first cold build is a few seconds —
  *  a single attempt turns those into a permanent "preview unavailable". Retry a
  *  few times before giving up so the preview renders on its own. */
-async function _fetchWithRetry(rootId: string, hops: string[][], tries = 4) {
+async function _fetchWithRetry(
+  rootId: string, hops: string[][], overrides: Record<string, unknown>, tries = 4,
+) {
   let lastErr: any;
   for (let i = 0; i < tries; i++) {
     try {
-      return await fetchInnerComposite(rootId, hops);
+      return await fetchInnerComposite(rootId, hops, overrides);
     } catch (e) {
       lastErr = e;
       if (i < tries - 1) await new Promise((r) => setTimeout(r, 700 * (i + 1)));
@@ -50,15 +64,15 @@ async function _fetchWithRetry(rootId: string, hops: string[][], tries = 4) {
   throw lastErr;
 }
 
-async function _load(rootId: string, hops: string[][]) {
-  const key = _key(rootId, hops);
+async function _load(rootId: string, hops: string[][], overrides: Record<string, unknown> = _lastOverrides) {
+  const key = _key(rootId, hops, overrides);
   const cur = _CACHE.get(key);
   // Load once; but a prior ERROR is retryable (click-to-retry re-enters here).
   if (cur && cur.status !== 'error') return;
   _CACHE.set(key, { status: 'loading' });
   _notify(key);
   try {
-    const res = await _fetchWithRetry(rootId, hops);
+    const res = await _fetchWithRetry(rootId, hops, overrides);
     _CACHE.set(key, { status: 'ready', graph: _overviewGraph(res.state) });
   } catch (e: any) {
     _CACHE.set(key, { status: 'error', error: e?.message || String(e) });
@@ -92,8 +106,10 @@ function _overviewGraph(state: any): Graph {
 /** Warm the cache for a Composite Process's inner composite in the background,
  *  so its in-card mini-map renders instantly when the user zooms in (no
  *  "building…" flash). No-op if already loaded/loading. */
-export function prefetchInner(rootId: string, hops: string[][]) {
-  if (!_CACHE.has(_key(rootId, hops))) _load(rootId, hops);
+export function prefetchInner(
+  rootId: string, hops: string[][], overrides: Record<string, unknown> = _lastOverrides,
+) {
+  if (!_CACHE.has(_key(rootId, hops, overrides))) _load(rootId, hops, overrides);
 }
 
 const PROC = { w: 176, h: 64 };
