@@ -3129,6 +3129,14 @@ class CompositeTestRunRequest(BaseModel):
     steps: Optional[float] = None
     label: Optional[str] = None
     emit_paths: Optional[list] = None
+    # Config declaration surface (composite-auto-results Task 6): optional
+    # study-shaped (possibly scale-grouped) analyses/visualizations blocks to
+    # auto-run on flush, merged with the composite's own defaults downstream
+    # (lib.ephemeral_study.merge_declarations). Declared explicitly (rather
+    # than relying on extra="allow" passthrough) so they're documented in the
+    # OpenAPI schema and generated TS types.
+    analyses: Optional[list] = None
+    visualizations: Optional[list] = None
 
 
 # ---------------------------------------------------------------------------

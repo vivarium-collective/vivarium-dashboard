@@ -48,6 +48,15 @@ class RunRequest:
     # report) simply parses as None, not a KeyError. When present, execute()'s
     # completion tail runs lib.rerun.verify_reproduction(reran_from, run_id).
     reran_from: "str | None" = None
+    # Config declaration surface (composite-auto-results Task 6): the
+    # composite-run body's config-declared ``analyses``/``visualizations``
+    # block, written into request.json by composite_test_run_views. Read by
+    # composite_flush._dispatch_analyses/_dispatch_visualizations
+    # (``getattr(req, "declared_results", None) or {}``) and merged with the
+    # composite's own defaults via ephemeral_study.merge_declarations — config
+    # wins on name collision. Empty/absent = a no-op merge (composite defaults
+    # flow through unchanged), never a crash.
+    declared_results: dict = None  # type: ignore[assignment]
 
     @classmethod
     def from_file(cls, path: Path) -> "RunRequest":
@@ -67,6 +76,9 @@ class RunRequest:
             target=data.get("target") or "local",
             reran_from=data.get("reran_from"),
             seed_state=data.get("seed_state") or {},
+            declared_results=data.get("declared_results") or {
+                "analyses": [], "visualizations": [],
+            },
         )
 
 

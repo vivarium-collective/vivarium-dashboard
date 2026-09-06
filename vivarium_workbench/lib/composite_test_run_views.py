@@ -81,6 +81,21 @@ def composite_test_run(ws_root: Path, body: dict) -> tuple[dict, int]:
     seed_state = body.get("seed_state") or {}
     if not isinstance(seed_state, dict):
         seed_state = {}
+    # Config declaration surface: a composite-run body may declare analyses
+    # and/or visualizations to auto-run on flush (study-shaped, possibly
+    # scale-grouped -- NOT flattened here; ephemeral_study.merge_declarations
+    # does that downstream). Absent/malformed degrades to the empty shape so
+    # the Task 5 merge is a no-op.
+    declared_analyses = body.get("analyses") or []
+    if not isinstance(declared_analyses, list):
+        declared_analyses = []
+    declared_visualizations = body.get("visualizations") or []
+    if not isinstance(declared_visualizations, list):
+        declared_visualizations = []
+    declared_results = {
+        "analyses": declared_analyses,
+        "visualizations": declared_visualizations,
+    }
     if not spec_id:
         return {"error": "missing id"}, 400
 
@@ -129,6 +144,7 @@ def composite_test_run(ws_root: Path, body: dict) -> tuple[dict, int]:
         "steps": steps,
         "emit_paths": emit_paths,
         "seed_state": seed_state,
+        "declared_results": declared_results,
         "db_file": db_file,
         "log_path": log_rel,
         # SP-D2: which target the detached runner dispatches to (local subprocess
