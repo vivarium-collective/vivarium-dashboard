@@ -72,6 +72,49 @@ def test_absent_declaration_degrades_to_empty(tmp_path, monkeypatch, fixed_run_i
     assert data["declared_results"] == {"analyses": [], "visualizations": []}
 
 
+def test_declared_analyses_scale_grouped_dict_round_trips(
+        tmp_path, monkeypatch, fixed_run_id, _no_spawn):
+    """The documented config shape for ``analyses`` is scale-grouped -- a DICT
+    like ``{"multigeneration": [...]}`` -- not a flat list. A prior bug
+    coerced any non-list value (i.e. this dict) to ``[]``, silently dropping
+    it. It must survive into ``request.json`` unchanged."""
+    ws = _make_ws(tmp_path)
+    analyses = {"multigeneration": ["ptools_rxns_multigeneration"]}
+
+    body, status = views.composite_test_run(ws, {
+        "id": "demo.spec",
+        "analyses": analyses,
+    })
+    assert status == 202
+
+    req_path = ws / ".pbg" / "runs" / fixed_run_id / "request.json"
+    data = json.loads(req_path.read_text())
+    assert data["declared_results"]["analyses"] == analyses
+
+    req = RunRequest.from_file(req_path)
+    assert req.declared_results["analyses"] == analyses
+
+    from vivarium_workbench.lib.ephemeral_study import merge_declarations
+    merged = merge_declarations({}, req.declared_results)
+    assert merged["analyses"] == [{"name": "ptools_rxns_multigeneration"}]
+
+
+def test_declared_analyses_invalid_type_degrades_to_empty(
+        tmp_path, monkeypatch, fixed_run_id, _no_spawn):
+    """A genuinely invalid type (not list, not dict) still degrades safely."""
+    ws = _make_ws(tmp_path)
+    body, status = views.composite_test_run(ws, {
+        "id": "demo.spec",
+        "analyses": "not-a-valid-shape",
+        "visualizations": 42,
+    })
+    assert status == 202
+
+    req_path = ws / ".pbg" / "runs" / fixed_run_id / "request.json"
+    data = json.loads(req_path.read_text())
+    assert data["declared_results"] == {"analyses": [], "visualizations": []}
+
+
 def test_run_request_from_file_populates_declared_results(tmp_path):
     run_dir = tmp_path
     request_path = run_dir / "request.json"

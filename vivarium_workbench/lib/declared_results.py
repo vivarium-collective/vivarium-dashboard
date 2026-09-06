@@ -1,10 +1,23 @@
 """Shared results driver: run declared analyses + viz + report card for a run.
 
-Called by BOTH the study flush (Task 4) and the composite completion seam
+Intended for BOTH the study flush (Task 4) and the composite completion seam
 (Task 5) so studies and composite runs emit an identical results contract.
 ``spec`` is any study-shaped dict -- a real ``study.yaml`` or the ephemeral
 single-composite spec (``vivarium_workbench.lib.ephemeral_study``) -- read
 only for its ``analyses``/``visualizations`` entries.
+
+Status: this module's ``run_declared_results`` is not yet called from any
+production path. The study completion path calls ``run_study_analyses``
+(``study_run_post.py``) directly; the live composite completion seam uses
+its own sweep-dir-scoped ``composite_flush._dispatch_analyses`` /
+``_render_analysis``; the remote (GovCloud) path injects
+``analysis_options`` directly into the dispatch. All three currently reach
+the same env-worker ``run_study_analyses`` capability without routing
+through this function -- a deliberate outcome of the Task 4 descope and
+Task 5 reshape, not an oversight. This module is retained as the intended
+shared entry point (not dead code): a future unification pass should route
+the study and composite seams through ``run_declared_results`` instead of
+their separate call sites.
 """
 from __future__ import annotations
 
