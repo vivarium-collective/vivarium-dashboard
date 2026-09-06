@@ -811,6 +811,50 @@ def _remote_failure_reason(exc: Exception) -> str:
     return f"{type(exc).__name__}: {msg}"
 
 
+def _remote_analysis_options(req: RunRequest, run_dir: Path) -> "dict | None":
+    """Build v2ecoli-shaped ``analysis_options`` for a deployment-target submit.
+
+    Composite-auto-results Task 8: the composite deployment path (this module)
+    submitted no ``analysis_options`` at all, unlike the study path
+    (``remote_run_views.py``'s ``build_analysis_options`` call). Mirrors that:
+    merges the composite's own ``@composite_generator(analyses=[...])``
+    declarations (``composite_flush._composite_analyses`` — returns ``[]`` when
+    ``process_bigraph.composite_generator`` isn't importable, e.g. a
+    non-editable install; ``req.declared_results`` still flows through in that
+    case) with ``req.declared_results["analyses"]`` (a config-declared block —
+    ``ephemeral_study.merge_declarations``, config wins by name), then resolves
+    each entry's v2ecoli scale (``study_run_post.build_analysis_options``).
+
+    Gated by the workspace's ``auto_results`` setting
+    (``composite_flush._auto_results_enabled``, Task 7): ``False`` returns
+    ``None`` — today's behavior (no analysis_options injected).
+
+    Best-effort: any failure (bad path, unresolvable analysis names, missing
+    v2ecoli) degrades to ``None`` rather than blocking the remote dispatch;
+    unresolved-name errors are logged to the run's log.
+    """
+    from vivarium_workbench.lib import composite_flush, ephemeral_study, study_run_post
+
+    try:
+        if not composite_flush._auto_results_enabled(run_dir):
+            return None
+        composite_defaults = {
+            "analyses": composite_flush._composite_analyses(req.spec_id, None)
+        }
+        config_declared = getattr(req, "declared_results", None) or {}
+        declared = ephemeral_study.merge_declarations(composite_defaults, config_declared)
+        analyses = declared.get("analyses") or []
+        if not analyses:
+            return None
+        options, errors = study_run_post.build_analysis_options(analyses, req.workspace)
+        for err in errors:
+            _write_log(req, f"composite remote analysis config: {err.get('error')}")
+        return options or None
+    except Exception as exc:  # noqa: BLE001 — best-effort, never block remote dispatch
+        _write_log(req, f"note: could not build remote analysis_options: {exc}")
+        return None
+
+
 def _execute_remote(req: RunRequest, run_dir: Path) -> int:
     """Dispatch a 'deployment'-target run to sms-api and land results. Returns 0/1.
 
@@ -821,16 +865,25 @@ def _execute_remote(req: RunRequest, run_dir: Path) -> int:
     ``results.zip`` sits in ``run_dir``; unpacking it into a viewable emitter store
     (viz/chart rendering) is a follow-on — this establishes the run lifecycle end
     to end (running → completed/failed) on the deployment target.
+
+    Composite-auto-results Task 8: also injects ``analysis_options`` into the
+    submit (see ``_remote_analysis_options``) — added to the call only when
+    non-empty, so a caller/test double built against the pre-Task-8 3-kwarg
+    ``run_remote`` signature (``dest``/``n_steps``/``overrides``) keeps working
+    unchanged when there's nothing to inject.
     """
     from vivarium_workbench.lib import remote_run
 
     conn = cr.connect(req.db_file)
     try:
         try:
-            remote_run.run_remote(
-                req.workspace, req.spec_id, dest=run_dir, n_steps=req.steps,
-                overrides=req.overrides,
+            analysis_options = _remote_analysis_options(req, run_dir)
+            run_remote_kwargs: dict = dict(
+                dest=run_dir, n_steps=req.steps, overrides=req.overrides,
             )
+            if analysis_options:
+                run_remote_kwargs["analysis_options"] = analysis_options
+            remote_run.run_remote(req.workspace, req.spec_id, **run_remote_kwargs)
         except Exception as exc:
             tb = traceback.format_exc()
             reason = _remote_failure_reason(exc)
