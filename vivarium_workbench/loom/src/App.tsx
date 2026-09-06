@@ -33,7 +33,7 @@ import { placeNewNodesNoOverlap } from './layouts/incremental';
 import {
   collapseRedundantProcesses, collapseRedundantStores, processesToHyperedges, relaxHyperedgePositions,
 } from './collapseRedundant';
-import { prefetchInner } from './nodes/InnerCompositePreview';
+import { prefetchInner, setInnerCompositeOverrides } from './nodes/InnerCompositePreview';
 import { isHiddenByAncestor, retargetEdgesToVisible, hiddenNodeIds } from './panels/filterHidden';
 import ViewsMenu from './panels/ViewsMenu';
 import LayoutMenu from './panels/LayoutMenu';
@@ -1757,7 +1757,7 @@ export default function App() {
     if (!root) return;
     const newHops = [...drillHops, data.path];
     try {
-      const res = await fetchInnerComposite(root, newHops, urlOverrides);
+      const res = await fetchInnerComposite(root, newHops, overrides);
       if (!res?.state) return;
       applyLoadedState(res.state);
       setDrillHops(newHops);
@@ -1777,7 +1777,7 @@ export default function App() {
     } catch (e) {
       console.error('[bigraph-loom] drill failed', e);
     }
-  }, [drillHops, drillCrumbs, applyLoadedState, urlOverrides]);
+  }, [drillHops, drillCrumbs, applyLoadedState, overrides]);
 
   // Switch to a drill tab (hops:[] = the root "Super-sim"). Re-fetches that
   // level so the shown state stays consistent (cached server-side).
@@ -1789,8 +1789,8 @@ export default function App() {
         // Re-fetch the ROOT WITH overrides so switching back to the root tab
         // restores the config-applied top-level view (e.g. the batch's
         // batch_runner), not the bare default composite.
-        const ov = (urlOverrides && Object.keys(urlOverrides).length)
-          ? '&overrides=' + encodeURIComponent(JSON.stringify(urlOverrides)) : '';
+        const ov = (overrides && Object.keys(overrides).length)
+          ? '&overrides=' + encodeURIComponent(JSON.stringify(overrides)) : '';
         const r = await fetch('/api/composite-state?ref=' + encodeURIComponent(root) + ov);
         const data = await r.json();
         const st = (data && typeof data === 'object' && 'state' in data) ? data.state : data;
@@ -1801,7 +1801,7 @@ export default function App() {
         setCompositeId(root);
         setName(rootNameRef.current);
       } else {
-        const res = await fetchInnerComposite(root, tab.hops, urlOverrides);
+        const res = await fetchInnerComposite(root, tab.hops, overrides);
         if (!res?.state) return;
         applyLoadedState(res.state);
         setDrillHops(tab.hops);
@@ -1814,7 +1814,7 @@ export default function App() {
     } catch (e) {
       console.error('[bigraph-loom] tab switch failed', e);
     }
-  }, [applyLoadedState, urlOverrides]);
+  }, [applyLoadedState, overrides]);
 
   // Close a drill tab; if it was active, fall back to the root "Super-sim".
   const closeTab = useCallback((key: string, e: { stopPropagation: () => void }) => {
@@ -1827,10 +1827,18 @@ export default function App() {
     });
   }, [selectTab]);
 
+  // Keep the inner-composite previews resolving with the CURRENT applied config
+  // (n_generations>1 → the batch_runner exists to drill into), not the bare
+  // default composite — otherwise the preview fetches a root without that node
+  // and hangs on "building inner model…".
+  useEffect(() => {
+    setInnerCompositeOverrides(overrides);
+  }, [overrides]);
+
   // Prefetch every Composite Process's inner composite in the BACKGROUND as soon
   // as the composite loads, so its in-card mini-map renders instantly when the
   // user zooms in (no "building…" flash). Deferred + best-effort; the env worker
-  // is serial so these just queue. Re-runs per composite / drill level.
+  // is serial so these just queue. Re-runs per composite / drill level / config.
   useEffect(() => {
     if (STATIC) return;
     const root = drillHops.length === 0 ? compositeId : rootIdRef.current;
@@ -1840,10 +1848,10 @@ export default function App() {
     );
     if (!comps.length) return;
     const t = window.setTimeout(() => {
-      for (const n of comps) prefetchInner(root, [...drillHops, n.data.path]);
+      for (const n of comps) prefetchInner(root, [...drillHops, n.data.path], overrides);
     }, 400);
     return () => clearTimeout(t);
-  }, [raw, compositeId, drillHops, STATIC]);
+  }, [raw, compositeId, drillHops, STATIC, overrides]);
 
   const handleNodeDoubleClick = useCallback((_: any, node: any) => {
     // A Composite Process drills into its inner composite (all the way down).
