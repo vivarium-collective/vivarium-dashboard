@@ -746,7 +746,13 @@
      composite") which remain the authoring surface; this mount is the
      read-rich view. Independent of `_has_build` so it still renders (or
      shows a clear empty note) for a study with no build-shaped fields. #}
-  <div id="model-composite-cards" class="model-composite-cards" data-study="{{ study.name }}">
+  {# The study's ONE canonical config (source of truth) — the vEcoli config both
+     model arms derive from. Preferred field is study.config; falls back to the
+     comparison field study.three_arm.native_config. Surfaced here so the Model
+     tab shows a single, consistent config for the whole study rather than each
+     arm's own derived params (run_config vs whole_config vs inlined). #}
+  <div id="model-composite-cards" class="model-composite-cards" data-study="{{ study.name }}"
+       data-study-config="{{ study.config or (study.three_arm.native_config if (study.three_arm and study.three_arm.native_config) else '') }}">
     <p class="muted" style="font-size:0.85em;margin:0">Loading composite card(s)…</p>
   </div>
 
