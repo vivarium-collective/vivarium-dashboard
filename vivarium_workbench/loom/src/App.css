@@ -825,11 +825,18 @@ body {
   overflow-wrap: break-word;
 }
 .inner-preview-hint { font-size: 10px; color: #64748b; font-style: italic; }
-.inner-preview-idle {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  cursor: pointer;
+/* Static, figure-appropriate caption of what the inner composite IS — kept
+   separate from the interaction help, which lives only in the hover title. */
+.inner-preview-desc { font-size: 10px; color: #475569; line-height: 1.35; padding: 3px 7px 4px; }
+/* Idle / loading / error states stack the badge, the caption, and a status hint. */
+.inner-preview-idle, .inner-preview-loading, .inner-preview-error {
+  display: flex; flex-direction: column; gap: 3px; padding: 6px 7px; cursor: pointer;
 }
-.inner-preview-idle:hover { background: #eff6ff; }
+.inner-preview-idle .inner-preview-desc,
+.inner-preview-loading .inner-preview-desc,
+.inner-preview-error .inner-preview-desc { padding: 0; }
+.inner-preview-loading { cursor: default; }
+.inner-preview-idle:hover, .inner-preview-error:hover { background: #eff6ff; }
 .inner-preview-loading .inner-preview-hint { color: #2563eb; }
 
 /* ── Inspector panel ─────────────────────────────────────────────────────── */

@@ -19,6 +19,18 @@ import { displayName } from '../labels';
 type Graph = { nodes: any[]; edges: any[] };
 type CacheEntry = { status: 'loading' | 'ready' | 'error'; graph?: Graph; error?: string };
 
+// Two kinds of text about the inner composite, deliberately kept apart:
+//  • INNER_DESC — a static, figure-appropriate caption of WHAT this is (it reads
+//    the same whether or not the preview renders, and belongs in printed/figure
+//    output). It never mentions the mouse.
+//  • INNER_INTERACT — HOW to use it, surfaced only on hover (the title tooltip),
+//    so the interaction help doesn't clutter the static figure.
+const INNER_DESC =
+  'Inside this Composite Process: the internal process-bigraph it runs — the ' +
+  'sub-processes it schedules each step and the shared stores they read and write.';
+const INNER_INTERACT =
+  'Scroll to zoom · drag to pan · double-click the card to open the full explorer';
+
 // Module-level cache keyed by the drill target, so re-renders / re-mounts (and
 // both colony cells sharing the same inner model shape) never refetch.
 const _CACHE = new Map<string, CacheEntry>();
@@ -286,14 +298,15 @@ function MiniMap(props: {
   const panned = k !== 1 || pan.x !== 0 || pan.y !== 0;
 
   return (
-    <div className="inner-preview">
+    <div className="inner-preview" title={INNER_INTERACT}>
       <div className="inner-preview-head">
         <span className="inner-preview-badge">⤢ inner composite</span>
         <span className="inner-preview-count">
-          {procCount} processes · {storeCount} stores · drag / scroll
-          {panned && <button className="mini-reset" onClick={reset} title="Reset view">reset</button>}
+          {procCount} sub-processes · {storeCount} stores
+          {panned && <button className="mini-reset" onClick={reset} title="Reset the preview's zoom and pan">reset</button>}
         </span>
       </div>
+      <div className="inner-preview-desc">{INNER_DESC}</div>
       <svg
         ref={svgRef}
         /* nodrag/nowheel: let THIS element handle drag + wheel instead of the
@@ -493,35 +506,41 @@ export default function InnerCompositePreview(props: {
   }, [key, props.auto]);
 
   if (!entry) {
-    // Idle (contract tier, not auto): show the viz icon to render on demand.
+    // Idle (contract tier, not auto): show the caption + a build-on-demand hint.
     return (
       <div
         className="inner-preview inner-preview-idle"
-        title="Render a preview of this Composite Process's inner model"
+        title={'Click to build the preview · ' + INNER_INTERACT}
         onClick={(e) => { e.stopPropagation(); _load(props.rootId, props.hops); }}
       >
         <span className="inner-preview-badge">⤢ inner composite</span>
-        <span className="inner-preview-hint">click to preview · double-click to open</span>
+        <span className="inner-preview-desc">{INNER_DESC}</span>
+        <span className="inner-preview-hint">click to build the preview</span>
       </div>
     );
   }
   if (entry.status === 'loading') {
     return (
-      <div className="inner-preview inner-preview-loading">
+      <div className="inner-preview inner-preview-loading" title={INNER_INTERACT}>
         <span className="inner-preview-badge">⤢ inner composite</span>
-        <span className="inner-preview-hint">building inner model…</span>
+        <span className="inner-preview-desc">{INNER_DESC}</span>
+        <span className="inner-preview-hint">building the inner model… (resolving the Composite's sub-model)</span>
       </div>
     );
   }
   if (entry.status === 'error' || !entry.graph) {
+    // Keep the figure-appropriate caption even when the live build fails, and put
+    // the actual reason + retry/open guidance in the hover tooltip.
     return (
       <div
         className="inner-preview inner-preview-error"
-        title="Retry building the inner-composite preview"
+        title={(entry.error ? 'Could not build the preview: ' + entry.error + '\n\n' : '') +
+               'Click to retry · double-click the card to open the full explorer'}
         onClick={(e) => { e.stopPropagation(); _load(props.rootId, props.hops); }}
       >
         <span className="inner-preview-badge">⤢ inner composite</span>
-        <span className="inner-preview-hint">preview unavailable — click to retry</span>
+        <span className="inner-preview-desc">{INNER_DESC}</span>
+        <span className="inner-preview-hint">preview couldn’t be built here — hover for details · click to retry</span>
       </div>
     );
   }
