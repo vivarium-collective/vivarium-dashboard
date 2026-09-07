@@ -1860,6 +1860,9 @@ a.viv-bs-commit:hover { text-decoration: underline; }
         <h3 id="ce-name" hidden></h3>
         <code id="ce-id" hidden></code>
         <code id="ce-module" hidden></code>
+        <label class="js-authoring" style="display:flex;align-items:center;gap:4px;font-size:0.85em;cursor:pointer;white-space:nowrap" title="When a composite run finishes, automatically run its declared analyses/visualizations (workspace setting ui.auto_results).">
+          <input type="checkbox" id="ui-auto-results-cb" checked onchange="_setAutoResults(this.checked)"> Auto-run results
+        </label>
         <button class="btn-mini" onclick="_popoutLoom('composite-explore-frame')" title="Open in a separate window. If it opens as a tab, your browser's 'open new pages as tabs' preference is overriding the popup hint (Safari → Tabs → 'Open pages in tabs instead of windows' → set to 'Manually').">Pop out &#8599;</button>
       </div>
       <iframe id="composite-explore-frame"

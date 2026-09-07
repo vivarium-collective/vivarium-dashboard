@@ -392,6 +392,7 @@ export interface GithubRepo {
 export interface UiConfig {
   readonly: boolean;
   composite_view: string;
+  auto_results: boolean;
 }
 
 export interface WorkspaceHome {

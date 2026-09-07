@@ -14,6 +14,7 @@ from pathlib import Path
 from viva_superpowers import diff_reports, build_report
 from viva_superpowers.study_verdict import severity_gate
 from vivarium_workbench.lib.conclusion_card import _CANON_SEVERITY
+from vivarium_workbench.lib.ephemeral_study import merge_declarations
 
 _RUN_VERDICT_SCHEMA = "run_verdict/v1"
 
@@ -217,13 +218,21 @@ def _render_analysis(*, name: str, params: dict, db_file: str, run_id: str,
 
 
 def _dispatch_analyses(*, spec_id: str, db_file: str, run_id: str, core,
-                        run_dir=None) -> list:
-    """Render every ``@composite_generator(analyses=[...])`` entry over this
-    run's emitter output. Returns the list of rendered-artifact dicts; []
-    when the composite declares no analyses (graceful no-op). Best-effort:
-    each entry is rendered in isolation — a failing analysis is logged and
-    skipped, never breaks the flush."""
-    analyses = _composite_analyses(spec_id, core)
+                        run_dir=None, req=None) -> list:
+    """Render every declared analysis over this run's emitter output.
+
+    The declaration is ``merge_declarations(composite_defaults,
+    config_declared)`` — the composite's own
+    ``@composite_generator(analyses=[...])`` entries (``_composite_analyses``)
+    overlaid by ``req.declared_results["analyses"]`` (a config-declared block;
+    ``{}`` until a future task populates it, so composite defaults flow
+    through unchanged today). Config wins on name collision. Returns the list
+    of rendered-artifact dicts; [] when nothing is declared (graceful no-op).
+    Best-effort: each entry is rendered in isolation — a failing analysis is
+    logged and skipped, never breaks the flush."""
+    composite_defaults = {"analyses": _composite_analyses(spec_id, core)}
+    config_declared = getattr(req, "declared_results", None) or {}
+    analyses = merge_declarations(composite_defaults, config_declared)["analyses"]
     if not analyses:
         return []
     out = []
@@ -264,18 +273,33 @@ def render_report_card(*, req, viz_names: list, analyses: list) -> str:
     )
 
 
+def _auto_results_enabled(run_dir: Path) -> bool:
+    """Read ``ui.auto_results`` (default True) for the workspace owning
+    ``run_dir``.  Mirrors ``_render_analysis``'s ``ws_root = run_dir.parents[2]``
+    (``run_dir`` is ``<ws>/.pbg/runs/<run_id>``). Best-effort: any failure
+    (bad path, unreadable workspace.yaml, ...) degrades to the default
+    ``True`` rather than blocking the flush."""
+    try:
+        ws_root = Path(run_dir).parents[2]
+        from vivarium_workbench.lib.system_info import build_ui_config
+        return bool(build_ui_config(ws_root).get("auto_results", True))
+    except Exception:  # noqa: BLE001 — default True, never block the flush
+        return True
+
+
 def run_flush(run_dir: Path, *, req, spec_id: str, db_file: str,
               run_id: str, core) -> dict:
     run_dir = Path(run_dir)
     analyses: list = []
     has_analyses = False
-    try:
-        analyses = _dispatch_analyses(
-            spec_id=spec_id, db_file=db_file, run_id=run_id, core=core,
-            run_dir=run_dir)
-        has_analyses = bool(analyses)
-    except Exception:
-        traceback.print_exc()
+    if _auto_results_enabled(run_dir):
+        try:
+            analyses = _dispatch_analyses(
+                spec_id=spec_id, db_file=db_file, run_id=run_id, core=core,
+                run_dir=run_dir, req=req)
+            has_analyses = bool(analyses)
+        except Exception:
+            traceback.print_exc()
     try:
         (run_dir / "analyses.json").write_text(
             json.dumps(analyses, default=str), encoding="utf-8")

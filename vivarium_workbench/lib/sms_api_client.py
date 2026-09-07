@@ -507,6 +507,7 @@ class SmsApiClient:
         extra_pip_deps: list[str] | None = None,
         interval_time: float = 1.0,
         filename: str = "composite.pbg",
+        analysis_options: dict | None = None,
     ) -> int:
         """POST /compose/v1/simulation/run — submit a .pbg file for execution.
 
@@ -526,6 +527,16 @@ class SmsApiClient:
             Step interval forwarded to the sms-api run endpoint.
         filename:
             Filename reported in the multipart header (cosmetic).
+        analysis_options:
+            v2ecoli-shaped ``{scale: {name: params}}`` analyses to run
+            server-side (composite-auto-results Task 8), JSON-encoded into a
+            single ``analysis_options`` query param — this endpoint has no
+            JSON-body channel like ``run_simulation``'s. NOTE: as of this
+            writing the ``/compose/v1/simulation/run`` sms-api route does not
+            yet read this param server-side (unlike ``/api/v1/simulations``);
+            it is threaded through here so the client is ready the moment
+            sms-api adds support, but it is a no-op against a compose endpoint
+            that doesn't parse it.
 
         Returns
         -------
@@ -544,6 +555,8 @@ class SmsApiClient:
         params: dict = {"interval_time": interval_time}
         if extra_pip_deps:
             params["extra_pip_deps"] = extra_pip_deps  # list → repeated key via doseq
+        if analysis_options:
+            params["analysis_options"] = json.dumps(analysis_options)
 
         url = self.base_url + "/compose/v1/simulation/run"
         if params:

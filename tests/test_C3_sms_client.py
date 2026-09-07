@@ -180,6 +180,31 @@ def test_compose_submit_raises_on_server_error(monkeypatch):
             c.compose_submit(b"pbg")
 
 
+def test_compose_submit_no_analysis_options_no_query_param(monkeypatch):
+    """compose_submit with no analysis_options sends no analysis_options param
+    (composite-auto-results Task 8 — must not regress the no-analyses case)."""
+    cap = {}
+    with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 1}):
+        c = SmsApiClient("http://h:8080")
+        c.compose_submit(b"pbg", analysis_options=None)
+    qs = parse_qs(urlsplit(cap["url"]).query)
+    assert "analysis_options" not in qs
+
+
+def test_compose_submit_encodes_analysis_options_as_json_query_param(monkeypatch):
+    """analysis_options (composite-auto-results Task 8) is JSON-encoded into a
+    single ?analysis_options= query param — this endpoint has no JSON-body
+    channel like run_simulation's, unlike the multipart-only /compose/v1 route."""
+    cap = {}
+    options = {"multigeneration": {"ptools_rxns_multigeneration": {}}}
+    with _patch_urlopen(monkeypatch, cap, {"simulation_database_id": 5}):
+        c = SmsApiClient("http://h:8080")
+        c.compose_submit(b"pbg-bytes", analysis_options=options)
+    qs = parse_qs(urlsplit(cap["url"]).query)
+    assert "analysis_options" in qs, f"URL query: {urlsplit(cap['url']).query!r}"
+    assert json.loads(qs["analysis_options"][0]) == options
+
+
 # ---------------------------------------------------------------------------
 # compose_status
 # ---------------------------------------------------------------------------

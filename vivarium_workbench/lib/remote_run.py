@@ -102,6 +102,7 @@ def run_remote(
     poll_timeout: float = _DEFAULT_POLL_TIMEOUT,
     skip_preflight: bool = False,
     expected_variant_count: "int | None" = None,
+    analysis_options: "dict | None" = None,
 ) -> Path:
     """Export a composite, submit to sms-api, poll, and land results.zip.
 
@@ -119,6 +120,12 @@ def run_remote(
     dest:
         Directory for the landed ``results.zip``.  Defaults to
         ``<ws_root>/.pbg/remote-results/``.
+    analysis_options:
+        v2ecoli-shaped ``{scale: {name: params}}`` analyses to run server-side
+        (composite-auto-results Task 8 — mirrors the study path's
+        ``remote_run_views.remote_run_submit`` injection). Forwarded to
+        ``client.compose_submit``'s own ``analysis_options`` param.  Default
+        ``None`` keeps every pre-Task-8 caller unchanged.
     poll_timeout:
         Wall-clock ceiling (seconds) for the whole poll loop; raises
         :exc:`TimeoutError` if the run hasn't reached a terminal state by then.
@@ -209,7 +216,14 @@ def run_remote(
     # their step counts stay unbounded.
     steps = max(0, min(int(n_steps), 1000))
     print(f"Submitting composite '{composite_id}' to sms-api ({steps} steps)…")
-    sim_id = client.compose_submit(pbg_bytes, extra_pip_deps=extra_pip_deps, interval_time=float(steps))
+    # analysis_options is added to the call only when present, so a client test
+    # double built against the pre-Task-8 compose_submit(pbg_bytes,
+    # extra_pip_deps=, interval_time=) signature (no **kwargs catch-all) keeps
+    # working unchanged when there's nothing to inject.
+    compose_kwargs: dict = dict(extra_pip_deps=extra_pip_deps, interval_time=float(steps))
+    if analysis_options:
+        compose_kwargs["analysis_options"] = analysis_options
+    sim_id = client.compose_submit(pbg_bytes, **compose_kwargs)
     print(f"Submitted. Simulation id: {sim_id}")
 
     # Poll until terminal state — bounded by a wall-clock deadline and tolerant of a

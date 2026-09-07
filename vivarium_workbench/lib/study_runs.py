@@ -252,6 +252,8 @@ def _run_post_run_flush(ws_root, study_dir, spec, spec_id, run_id, full_params,
     # analysis outputs are on disk by the time the client refreshes.
     # Skipped when the caller (env_worker._run_study) is handling analyses
     # itself, directly — see the ``skip_analyses`` docstring above.
+    # Same primitive as the composite path's run_declared_results
+    # (declared_results.py) -- see tests/test_results_no_drift.py.
     if not skip_analyses:
         analysis_files, analysis_errors = study_run_post.run_study_analyses(
             study_dir, spec, run_id, ws_root)

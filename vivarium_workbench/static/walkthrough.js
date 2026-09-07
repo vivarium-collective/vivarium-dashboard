@@ -512,7 +512,7 @@
   window._closeStudyEmbedded = _closeStudyEmbedded;
 
   // -------------------------------------------------------------------------
-  // UI feature flags (ui.composite_view)
+  // UI feature flags (ui.composite_view, ui.auto_results)
   // -------------------------------------------------------------------------
   window._uiConfig = null;
   fetch('/api/ui-config').then(function(r) { return r.json(); }).then(function(cfg) {
@@ -521,6 +521,7 @@
     // CSS; the Source panel reads this flag at render time to go remote-only.
     if (window._uiConfig.readonly) document.body.classList.add('readonly');
     _applyCompositeViewMode();
+    _applyAutoResultsCheckbox();
   });
 
   function _applyCompositeViewMode() {
@@ -538,6 +539,43 @@
     }
   }
   window._applyCompositeViewMode = _applyCompositeViewMode;
+
+  // Composite loom viewer chrome: a default-on checkbox mirroring the
+  // workspace's ui.auto_results setting (Task 7 — gates whether a composite
+  // run auto-runs its declared analyses/visualizations). Default checked when
+  // unset (cfg.auto_results !== false), matching build_ui_config's default.
+  function _applyAutoResultsCheckbox() {
+    var cfg = window._uiConfig || {};
+    var cb = document.getElementById('ui-auto-results-cb');
+    if (!cb) return;
+    cb.checked = cfg.auto_results !== false;
+  }
+  window._applyAutoResultsCheckbox = _applyAutoResultsCheckbox;
+
+  // Checkbox onchange handler: POST the new value to the settings endpoint.
+  // This is a mirror, not the source of truth — workspace.yaml stays that.
+  function _setAutoResults(checked) {
+    var cb = document.getElementById('ui-auto-results-cb');
+    fetch(_api('/api/ui-config'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_results: !!checked }),
+    }).then(function(r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function() {
+      window._uiConfig = window._uiConfig || {};
+      window._uiConfig.auto_results = !!checked;
+    }).catch(function(err) {
+      // Revert the checkbox on failure so it doesn't silently drift from the
+      // persisted workspace setting.
+      if (cb) cb.checked = !checked;
+      if (typeof console !== 'undefined' && console.error) {
+        console.error('Failed to persist ui.auto_results:', err);
+      }
+    });
+  }
+  window._setAutoResults = _setAutoResults;
 
   // -------------------------------------------------------------------------
   // Form submission helper

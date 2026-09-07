@@ -193,6 +193,63 @@ def test_run_remote_clamps_steps(tmp_path, monkeypatch, n_steps, expected):
 
 
 # ---------------------------------------------------------------------------
+# Composite-auto-results Task 8: run_remote's analysis_options param must
+# reach client.compose_submit(analysis_options=...) — exercised at the REAL
+# run_remote -> client.compose_submit boundary (no mocking of run_remote
+# itself), so the actual compose_kwargs conditional-forward in remote_run.py
+# is under test, not just the run_runner-level gate/merge logic.
+# ---------------------------------------------------------------------------
+
+class _AnalysisOptionsCaptureClient:
+    """Fake SmsApiClient capturing exactly what compose_submit was called
+    with, so a test can assert on the analysis_options kwarg specifically."""
+
+    def __init__(self):
+        self.compose_submit_kwargs = None
+
+    def compose_submit(self, pbg_bytes, **kwargs):
+        self.compose_submit_kwargs = kwargs
+        return 123
+
+    def compose_status(self, sim_id):
+        return {"status": "completed"}
+
+    def download_compose_results(self, sim_id, dest):
+        p = Path(dest) / "results.zip"
+        p.write_bytes(b"")
+        return p
+
+
+def test_run_remote_forwards_analysis_options_to_compose_submit(tmp_path, monkeypatch):
+    """A truthy analysis_options reaches client.compose_submit(analysis_options=...)
+    unchanged."""
+    from vivarium_workbench.lib import remote_run
+    _stub_remote_boundaries(monkeypatch)
+    client = _AnalysisOptionsCaptureClient()
+    options = {"multigeneration": {"ptools_rxns_multigeneration": {}}}
+    remote_run.run_remote(
+        tmp_path, "some.composite", client=client,
+        poll_interval=0, dest=tmp_path, skip_preflight=True,
+        analysis_options=options)
+    assert client.compose_submit_kwargs["analysis_options"] == options
+
+
+def test_run_remote_omits_analysis_options_kwarg_when_falsy(tmp_path, monkeypatch):
+    """analysis_options=None (the default, every pre-Task-8 caller) must NOT
+    add an analysis_options kwarg to the compose_submit call at all -- proven
+    here with the ORIGINAL _CaptureClient, whose compose_submit signature has
+    no analysis_options param: a stray kwarg would raise TypeError."""
+    from vivarium_workbench.lib import remote_run
+    _stub_remote_boundaries(monkeypatch)
+    client = _CaptureClient()
+    remote_run.run_remote(
+        tmp_path, "some.composite", client=client,
+        poll_interval=0, dest=tmp_path, skip_preflight=True,
+        analysis_options=None)
+    assert client.interval_time == 1.0  # reached compose_submit without error
+
+
+# ---------------------------------------------------------------------------
 # N3 / option C: run_remote's pip-URL derivation.
 # On a pinned deployment the prod pod's /workspace is dirty-by-design, so run_remote
 # must NOT call git_pip_url (it raises on a dirty tree). Instead it derives the commit
