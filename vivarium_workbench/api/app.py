@@ -2837,6 +2837,7 @@ def create_app() -> FastAPI:
 
     @app.post(
         "/api/ui-config",
+        response_model=None,
         tags=["System"],
         summary="Persist a UI feature flag into workspace.yaml's ui: block",
     )
